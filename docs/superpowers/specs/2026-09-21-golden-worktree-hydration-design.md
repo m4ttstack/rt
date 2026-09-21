@@ -78,13 +78,23 @@ in the same pass proceeds regardless (cold create until the golden is ready).
 in each pass, so a master bump reaches the donor before any member that
 might be hydrated from it. Members freshen exactly as today.
 
-**Never provisioned, never disposed.** No handler path ever transitions
-the golden to `claimed` or `disposable`. `rt worktree dispose` by name is
-refused by dispose's existing guard 1 (`kind !== "ephemeral"`), which
-returns `kind-golden`; no new guard is needed. The only way to remove it is
-to set `onDeck` to 0: replenish, which today returns immediately at
-`onDeck <= 0`, first scraps any `kind: "golden"` row through `scrapTree`.
-Existing members are left alone at `onDeck: 0`, as today.
+**Never provisioned, never disposed.** Provision cannot reach it:
+`selectOnDeck` and `isClaimable` both require `kind === "ephemeral"`.
+`rt worktree dispose` by name is refused by dispose's existing guard 1
+(`kind !== "ephemeral"`), which returns `kind-golden`; no new guard is
+needed there.
+
+One handler does have to change. `worktree:adopt` skips only `main` and
+`ephemeral` rows; everything else is rewritten to `ephemeral` + `claimed`
+(with `--claim`) or parked and disposed. A golden would be handed to a
+caller as an ordinary claimed tree and then become eligible for
+merge-reactor disposal, so the adopt loop gains `golden` to its
+managed-kind skip.
+
+The only way to remove a golden is to set `onDeck` to 0: replenish, which
+today returns immediately at `onDeck <= 0`, first scraps any
+`kind: "golden"` row through `scrapTree`. Existing members are left alone at
+`onDeck: 0`, as today.
 
 ### Hydration
 
@@ -102,10 +112,13 @@ exactly like `runCreate`, and on any failure scraps through the same
    "is the golden current" check from the hot path.
 
 2. **Enumerate the donor's artifacts.** `git -C <golden> status --ignored
-   --porcelain` lines prefixed `!!`, minus `*.log` and anything under
+   --porcelain -z`, records prefixed `!!`, minus `*.log` and anything under
    `.git`. Each entry is a top-level ignored path (a directory like
    `node_modules/` or `apps/backend/generated/`, or a file like
-   `packages/collision-iq/tsconfig.tsbuildinfo`).
+   `packages/collision-iq/tsconfig.tsbuildinfo`). `-z` rather than plain
+   `--porcelain`: v1 C-quotes any path containing a space or a special byte,
+   and a quoted path would be cloned to the wrong destination and fail every
+   hydrate for that repo into permanent backoff.
 
 3. **Clone each path with one `clonefile(2)` call.** Through the child
    process `rt worktree hydrate-clone <src> <dst>` (below), invoked via
@@ -167,11 +180,19 @@ Hydration is an optimization over cold create, never a replacement for it.
 Replenish cold-creates when:
 
 - no `kind: "golden"` row exists, or it is `creating`, or it carries a
-  `nextRetryAt` in the future;
+  `nextRetryAt` in the future, or it carries `retryFailures > 0`;
 - the golden has no `readyStamp` (a held team ladder never stamped it);
 - `cfg.root` and the golden root resolve to different `st_dev` values
   (checked once per replenish pass with `statSync`);
 - a `hydrate-clone` call exits 3 or 4.
+
+`retryFailures > 0` is deliberately redundant with the `nextRetryAt` check.
+Inside the reconciler pass, freshen always runs before replenish under one
+hold, so a golden whose ready ladder just died is guaranteed to carry a live
+deadline by the time replenish reads it. Nothing makes that ordering a
+property of hydration itself, and a direct caller would lose it, so the
+predicate refuses a golden with recorded failures on its own terms rather
+than trusting the pass order.
 
 A `hydrate-clone` exit of 1 or 5, or a `git worktree add` failure, scraps
 the half-built tree through `scrapTree` and counts against the member's
@@ -215,6 +236,10 @@ golden) plus per-member freshens as before.
   instead of its `on-deck` state; `freshen`'s candidate filter includes it.
 - `reconcile`: a registered golden is not re-adopted; `replenish` at
   `onDeck: 0` scraps it and nothing else.
+- `worktree:adopt`: with `--claim`, a golden row keeps its kind and state and
+  appears in none of `claimed`, `unmanaged`, `disposed`.
+- `parseIgnoredPaths`: a path containing a space survives verbatim (the case
+  porcelain v1 would C-quote).
 - Hydration unit: ignored-path enumeration from porcelain output (drops
   `*.log`, keeps files and dirs), `readyStamp`/`readyAt` inheritance,
   exit-code mapping.

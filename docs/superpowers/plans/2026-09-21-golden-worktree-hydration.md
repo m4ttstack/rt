@@ -122,17 +122,16 @@ describe("golden kind", () => {
     expect(GOLDEN_BRANCH).toBe("golden");
   });
 
-  test("a golden record beats an unmanaged challenger for the same path", () => {
+  test("a golden record beats a newer unmanaged challenger for the same path", () => {
     const held: TreeRecord = { name: "golden", path: "/p", kind: "golden", branch: "golden", createdAt: "2026-01-01T00:00:00.000Z", readyStamp: "abc" };
     const challenger: TreeRecord = { name: "p", path: "/p", kind: "unmanaged", branch: null, createdAt: "2026-02-01T00:00:00.000Z" };
-    saveRegistry("acme", [held]);
-    saveRegistry("acme", [challenger, held]);
-    const [row] = loadRegistry("acme");
-    expect(row!.kind).toBe("golden");
+    const merged = mergeRegistries([held], [challenger]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.kind).toBe("golden");
   });
 });
 ```
-(Use the file's existing HOME/`closeStateDb` `beforeEach`; import `TreeRecord`, `saveRegistry`, `loadRegistry` if not already imported.)
+`mergeRegistries` is the dedupe seam; `saveRegistry` writes the array verbatim, so asserting through save/load would pass or fail for the wrong reason. Import `mergeRegistries` and `TreeRecord` from `../registry.ts`; the file's existing HOME/`closeStateDb` `beforeEach` still applies.
 
 Append to `lib/__tests__/rt-paths.test.ts`:
 
@@ -162,6 +161,7 @@ export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
 export const GOLDEN_NAME = "golden";
 export const GOLDEN_BRANCH = "golden";
 ```
+and update the now-stale field comment on `TreeRecord.state` (line 13) from `// ephemeral only` to `// ephemeral and golden only`.
 and
 ```ts
 const MANAGED_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(["main", "ephemeral", "golden"]);
@@ -626,8 +626,8 @@ git commit -m "worktree: createTree target golden"
   ```ts
   export type CloneRunner = (src: string, dst: string) => Promise<{ exitCode: number; stderr: string }>;
   export const defaultCloneRunner: CloneRunner; // runCapture([rtBinaryPath(), "worktree", "hydrate-clone", src, dst], { timeoutMs: 15 * 60_000, stderr: "pipe" })
-  export function parseIgnoredPaths(porcelain: string): string[]; // "!! " lines, trailing "/" stripped, drops *.log and paths starting with ".git/"
-  export async function listIgnoredPaths(treePath: string): Promise<string[] | null>; // git status --ignored --porcelain; null on git failure
+  export function parseIgnoredPaths(porcelainZ: string): string[]; // NUL-separated records, "!! " prefix, trailing "/" stripped, drops *.log and paths under ".git"
+  export async function listIgnoredPaths(treePath: string): Promise<string[] | null>; // git status --ignored --porcelain -z; null on git failure
   export type HydrateResult =
     | { ok: true; tree: TreeRecord }
     | { ok: false; error: "busy" }
@@ -661,7 +661,7 @@ const inProcessClone: CloneRunner = async (src, dst) => {
 };
 
 describe("parseIgnoredPaths", () => {
-  test("keeps !! entries, strips trailing slash, drops logs and .git", () => {
+  test("keeps !! records, strips trailing slash, drops logs and .git", () => {
     const out = [
       "!! node_modules/",
       "!! apps/backend/generated/",
@@ -670,12 +670,16 @@ describe("parseIgnoredPaths", () => {
       "?? untracked.txt",
       " M tracked.ts",
       "!! .git/hooks-cache/",
-    ].join("\n");
+    ].join("\0") + "\0";
     expect(parseIgnoredPaths(out)).toEqual([
       "node_modules",
       "apps/backend/generated",
       "packages/x/tsconfig.tsbuildinfo",
     ]);
+  });
+
+  test("a path with a space survives verbatim (porcelain v1 would C-quote it)", () => {
+    expect(parseIgnoredPaths("!! apps/my app/generated/\0")).toEqual(["apps/my app/generated"]);
   });
 });
 
@@ -800,9 +804,14 @@ export const defaultCloneRunner: CloneRunner = async (src, dst) => {
   return { exitCode: r.exitCode, stderr: r.stderr.trim() };
 };
 
-export function parseIgnoredPaths(porcelain: string): string[] {
+/**
+ * `-z` records, not `--porcelain` lines: porcelain v1 C-quotes any path with a
+ * space or a special byte, and a quoted path would be cloned to the wrong
+ * place and fail every hydrate for that repo into permanent backoff.
+ */
+export function parseIgnoredPaths(porcelainZ: string): string[] {
   const out: string[] = [];
-  for (const line of porcelain.split("\n")) {
+  for (const line of porcelainZ.split("\0")) {
     if (!line.startsWith("!! ")) continue;
     let p = line.slice(3);
     if (p.endsWith("/")) p = p.slice(0, -1);
@@ -813,7 +822,7 @@ export function parseIgnoredPaths(porcelain: string): string[] {
 }
 
 export async function listIgnoredPaths(treePath: string): Promise<string[] | null> {
-  const r = await runGit(treePath, ["status", "--ignored", "--porcelain"]);
+  const r = await runGit(treePath, ["status", "--ignored", "--porcelain", "-z"]);
   if (r.exitCode !== 0) return null;
   return parseIgnoredPaths(r.stdout);
 }
@@ -879,7 +888,7 @@ async function runHydrate(
   }
 
   const artifacts = await listIgnoredPaths(golden.path);
-  if (artifacts === null) return fail("git status --ignored (golden)", "git status failed on the golden tree");
+  if (artifacts === null) return fail("git status --ignored -z (golden)", "git status failed on the golden tree");
 
   for (const relPath of artifacts) {
     const src = join(golden.path, relPath);
@@ -949,7 +958,6 @@ import { clonePath, cloneExitCode } from "../../../worktree/clonefile.ts";
 import type { CloneRunner } from "../../../worktree/hydrate.ts";
 import { goldenRoot } from "../../../rt-paths.ts";
 import { loadRegistry } from "../../../worktree/registry.ts";
-import { deriveRepoIdentity as deriveId } from "../../../settings/identity.ts";
 
 const inProcessClone: CloneRunner = async (src, dst) => {
   const r = clonePath(src, dst);
@@ -975,6 +983,9 @@ describe("replenish.ts: chooseCreateMode", () => {
   });
   test("golden without readyStamp is cold", () => {
     expect(chooseCreateMode([{ ...golden, readyStamp: undefined }], "/pool", now, same).mode).toBe("cold");
+  });
+  test("a golden with recorded failures is cold even with no live backoff deadline", () => {
+    expect(chooseCreateMode([{ ...golden, retryFailures: 1 }], "/pool", now, same).mode).toBe("cold");
   });
   test("different volume is cold", () => {
     expect(chooseCreateMode([golden], "/pool", now, () => false)).toEqual({ mode: "cold", why: "golden and pool root are on different volumes" });
@@ -1019,9 +1030,10 @@ describe("replenish.ts: golden lifecycle", () => {
   });
 
   test("a golden create failure backs off and members still cold-create", async () => {
-    // The ladder fails only inside the golden root, so the golden build dies and members cold-create.
-    const identity = await deriveId(repo);
-    const gRoot = goldenRoot(identity.kind === "remote" ? identity.id : repoName);
+    // createTree keys the golden path off the repoName it is handed, verbatim,
+    // so the gate script must be built from that same call, not from a
+    // re-derived identity.
+    const gRoot = goldenRoot(repoName);
     await declareWorktrees(repo, repoName, {
       onDeck: 1,
       root: join(repo, ".worktrees"),
@@ -1056,7 +1068,7 @@ describe("replenish.ts: golden lifecycle", () => {
   });
 });
 ```
-The golden's backoff key is `${repoName}#golden` so a failing golden build never blocks member creates.
+The golden's backoff key is `${repoName}#golden` so a failing golden build never blocks member creates. The suite already imports `createBackoff`; keep using it in the new `beforeEach`.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1090,6 +1102,11 @@ export function chooseCreateMode(
   if (!golden) return { mode: "cold", why: "no golden" };
   if (golden.state !== "on-deck") return { mode: "cold", why: `golden is ${golden.state ?? "unstated"}` };
   if (golden.nextRetryAt && Date.parse(golden.nextRetryAt) > now) return { mode: "cold", why: "golden in backoff" };
+  // retryFailures outlives nextRetryAt, so a golden whose ready ladder died is
+  // refused as a donor even when its deadline has since passed and nothing has
+  // re-freshened it. Without this the predicate would depend on the caller
+  // running freshen first, which only the reconciler pass guarantees.
+  if ((golden.retryFailures ?? 0) > 0) return { mode: "cold", why: "golden has recorded failures" };
   if (!golden.readyStamp) return { mode: "cold", why: "golden has no readyStamp" };
   if (!sameVolume(golden.path, cfgRoot)) return { mode: "cold", why: "golden and pool root are on different volumes" };
   return { mode: "hydrate", golden };
@@ -1105,6 +1122,13 @@ function sameDev(a: string, b: string): boolean {
 ```
 
 Extend `replenishAndShrink`'s deps type with `clone?: CloneRunner; sameVolume?: (a: string, b: string) => boolean;`.
+
+Stat once per pass, not per member: just before the member loop, compute
+```ts
+  const volumeOk = (deps.sameVolume ?? sameDev)(goldenRoot(repoName), cfg.root);
+  const sameVolumeForPass = () => volumeOk;
+```
+and pass `sameVolumeForPass` into `chooseCreateMode` below.
 
 Replace the early return `if (onDeck <= 0) return;` with:
 ```ts
@@ -1137,7 +1161,7 @@ Before the member `while` loop, ensure the golden (its own backoff key, so a bro
 Inside the member loop, replace the `createTree(...)` call in `withCreateLock` with a mode-aware build:
 ```ts
     const p: Promise<void> = withCreateLock(repoPath, async () => {
-      const chosen = chooseCreateMode(loadRegistry(repoName), cfg.root, Date.now(), deps.sameVolume ?? sameDev);
+      const chosen = chooseCreateMode(loadRegistry(repoName), cfg.root, Date.now(), sameVolumeForPass);
       if (chosen.mode === "hydrate") {
         const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone: deps.clone });
         if (h.ok || h.error === "busy") return h;
@@ -1150,6 +1174,22 @@ Inside the member loop, replace the `createTree(...)` call in `withCreateLock` w
     })
 ```
 The `.then((result) => ...)` chain that follows stays as is: both `HydrateResult` and `CreateResult` carry `ok`, `error`, and (for failures) `failedStep`. Widen the parameter type to `CreateResult | HydrateResult` and read `failedStep` with `"failedStep" in result ? result.failedStep : undefined`.
+
+- [ ] **Step 3b: Add the reconcile adopt test**
+
+Append to `lib/daemon/__tests__/worktree-reconciler.test.ts` (or `lib/daemon/reconciler/__tests__/reconcile.test.ts`, wherever that suite's `reconcileRepoRegistry` tests live):
+
+```ts
+  test("a registered golden is not re-adopted as unmanaged", async () => {
+    const golden: TreeRecord = { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString(), readyStamp: "abc" };
+    saveRegistry(repoName, [golden]);
+    await reconcileRepoRegistry({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    const rows = loadRegistry(repoName).filter((r) => r.path === golden.path);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("golden");
+  });
+```
+Match the suite's real `reconcileRepoRegistry` call shape and helper names; the assertion is that step (b) leaves a known golden path alone.
 
 - [ ] **Step 4: Run the replenish suite**
 
@@ -1181,12 +1221,19 @@ Append inside `describe("freshen.ts: freshenRepo", ...)`:
 
 ```ts
   test("golden is a candidate and is freshened before members", async () => {
-    // Build a golden and one member the way replenish would, then advance origin.
-    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    // A `changed:` step whose glob the bump touches: freshenOne only advances
+    // readyStamp when at least one step actually ran (toRun.length > 0), so an
+    // empty ladder would leave every stamp untouched and prove nothing.
+    await declareWorktrees(repo, repoName, {
+      onDeck: 1,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: "touch .freshened", when: "changed:tracked.txt" }],
+    });
     const g = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never, target: "golden" });
     const m = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never });
     if (!g.ok || !m.ok) throw new Error("setup");
-    execSync("git -c user.email=t@t -c user.name=t commit -q --allow-empty -m bump && git push -q origin HEAD", { cwd: repo, shell: "/bin/zsh" });
+    writeFileSync(join(repo, "tracked.txt"), "bump\n");
+    execSync("git add tracked.txt && git -c user.email=t@t -c user.name=t commit -qm bump && git push -q origin HEAD", { cwd: repo, shell: "/bin/zsh" });
     const newSha = execSync("git rev-parse HEAD", { cwd: repo, encoding: "utf8" }).trim();
 
     const ran = await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
@@ -1196,9 +1243,10 @@ Append inside `describe("freshen.ts: freshenRepo", ...)`:
     const after = loadRegistry(repoName);
     expect(after.find((t) => t.kind === "golden")?.readyStamp).toBe(newSha);
     expect(after.find((t) => t.name === m.tree.name)?.readyStamp).toBe(newSha);
+    expect(existsSync(join(g.tree.path, ".freshened"))).toBe(true);
   });
 ```
-Import `createTree` from `../../../worktree/create.ts` and `loadRegistry` if missing; reuse this file's `declareWorktrees`/`makeRepo` helpers (copy from `replenish.test.ts` if the file lacks them).
+Import `createTree` from `../../../worktree/create.ts`, plus `loadRegistry`, `writeFileSync` and `existsSync` if missing; reuse this file's `declareWorktrees`/`makeRepo` helpers (copy from `replenish.test.ts` if the file lacks them). A team-authored `ready` ladder is gated behind `ready-approve`, so declare it in the machine store the way `declareWorktrees` already does (that is the user/machine rung, which `evaluateReadyGate` does not hold).
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1232,6 +1280,75 @@ Expected: PASS.
 ```bash
 git add lib/daemon/reconciler/freshen.ts lib/daemon/reconciler/__tests__/freshen.test.ts
 git commit -m "reconciler: freshen the golden first"
+```
+
+---
+
+### Task 8b: `worktree:adopt` leaves the golden alone
+
+**Files:**
+- Modify: `lib/daemon/handlers/worktree.ts:799-846` (the adopt loop)
+- Test: `lib/daemon/__tests__/worktree-handlers.test.ts` (append)
+
+**Interfaces:**
+- Consumes: `TreeKind "golden"` (Task 2).
+- Produces: the adopt loop skips `kind === "golden"` rows exactly as it skips `ephemeral` ones; a golden is never reported in `claimed`, `unmanaged`, or `disposed`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+describe("worktree:adopt and the golden", () => {
+  test("adopt --claim leaves a golden row untouched and does not report it", async () => {
+    // Build the handler map the way the suite's other adopt tests do, with a
+    // registry holding one golden row and one unmanaged row.
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenPath, kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString(), readyStamp: "abc" },
+      { name: "stray", path: strayPath, kind: "unmanaged", branch: "some-branch", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await handlers["worktree:adopt"]({ repoName, claim: true });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.claimed).toEqual(["stray"]);
+    expect(res.data.claimed).not.toContain("golden");
+    expect(res.data.unmanaged).not.toContain("golden");
+    expect(res.data.disposed).not.toContain("golden");
+
+    const after = loadRegistry(repoName).find((r) => r.path === goldenPath)!;
+    expect(after.kind).toBe("golden");
+    expect(after.state).toBe("on-deck");
+    expect(after.claimedAt).toBeUndefined();
+  });
+});
+```
+Mirror the suite's existing adopt test for how it builds `handlers`, `repoName`, and the on-disk worktrees; the two assertions that matter are the golden's kind/state surviving and it being absent from every result array.
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `bun test lib/daemon/__tests__/worktree-handlers.test.ts -t "adopt --claim leaves a golden"`
+Expected: FAIL. Today the golden falls past the `main` and `ephemeral` skips into the `payload?.claim === true` branch and is rewritten to `kind: "ephemeral", state: "claimed"`, which also makes it eligible for merge-reactor disposal.
+
+- [ ] **Step 3: Implement**
+
+In the adopt loop in `lib/daemon/handlers/worktree.ts`, widen the managed-kind skip:
+
+```ts
+          // Trees rt already manages are left exactly as they are. The golden
+          // is rt's hydration donor: adopting it would hand the pool's source
+          // to a caller and then let the merge reactor dispose it.
+          if (rec.kind === "ephemeral" || rec.kind === "golden") continue;
+```
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `bun test lib/daemon/__tests__/worktree-handlers.test.ts`
+Expected: PASS, including the pre-existing adopt tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/daemon/handlers/worktree.ts lib/daemon/__tests__/worktree-handlers.test.ts
+git commit -m "worktree: adopt skips the golden"
 ```
 
 ---
@@ -1280,7 +1397,7 @@ Append inside the existing `describe` in `commands/__tests__/worktree.test.ts`, 
 
 - [ ] **Step 2: Write the failing guard tests**
 
-Append to `lib/daemon/__tests__/worktree-handlers.test.ts` (import `isClaimable` from `../handlers/worktree.ts`, `disposeTree` from `../../worktree/dispose.ts`, `TreeRecord` from `../../worktree/registry.ts`; reuse the file's HOME/`closeStateDb` setup):
+Append to `lib/daemon/__tests__/worktree-handlers.test.ts` (import `isClaimable` from `../handlers/worktree.ts`, `disposeTree` from `../../worktree/dispose.ts`, `saveRegistry` and `TreeRecord` from `../../worktree/registry.ts`; reuse the file's HOME/`closeStateDb` setup):
 
 ```ts
 describe("golden guards", () => {
@@ -1291,18 +1408,21 @@ describe("golden guards", () => {
   });
 
   test("dispose refuses the golden with kind-golden even when forced", async () => {
-    const r = await disposeTree(
+    // dispose re-reads the registry under the lock and refuses "changed" if the
+    // row is absent, so the row has to be there or guard 1 never runs.
+    saveRegistry("acme", [golden]);
+    const outcome = await disposeTree(
       { repoName: "acme", repoPath: "/repo", cacheEntries: {}, emit: () => {}, log: { info: () => {}, warn: () => {}, debug: () => {} } as never, killProcesses: false, findRunningRun: () => ({ kind: "none" }) },
       golden,
       { auto: false, force: true },
     );
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.reason).toBe("kind-golden");
+    expect(outcome.disposed).toBe(false);
+    if (outcome.disposed) return;
+    expect(outcome.refusal).toBe("kind-golden");
   });
 });
 ```
-Match `disposeTree`'s actual option and result field names by reading `lib/worktree/dispose.ts` (`refuse(...)` returns the reason; the option bag is what `replenish.ts:224` passes). Adjust `force`/`reason` spellings to the real ones; the assertion is that guard 1 fires with `kind-golden`.
+The outcome shape is `{ disposed: false; refusal: string; detail?: string }` (`lib/worktree/dispose.ts:137-142`), and guard 1 is `refuse(\`kind-${rec.kind}\`)` at `:225`, so `kind-golden` needs no new code. Read `disposeTree`'s option bag as `replenish.ts:224` passes it and match the real spellings.
 
 - [ ] **Step 3: Run to verify failure**
 
@@ -1322,6 +1442,39 @@ At `:728`, widen the freshen candidate filter:
 ```ts
       .filter((r) => ((r.kind === "ephemeral" || r.kind === "golden") && r.state === "on-deck") || r.kind === "main")
 ```
+
+- [ ] **Step 4b: Test the freshen picker filter**
+
+Append to `commands/__tests__/worktree.test.ts`, using the file's `installFakePick` pattern (see its existing await-ready breadcrumb test for the TTY setup):
+
+```ts
+  test("freshen's picker offers the golden alongside on-deck members", async () => {
+    const { installFakePick } = await import("../../lib/ui/pick-fake.ts");
+    const origIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    installFakeDaemon({
+      ok: true,
+      data: {
+        trees: [
+          { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "lupin", path: "/l", kind: "ephemeral", state: "on-deck", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "hedwig", path: "/h", kind: "ephemeral", state: "claimed", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+        ],
+      },
+    });
+    const seen = installFakePick({ choose: null });
+    try {
+      await worktreeFreshen([], {});
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", { value: origIsTTY, configurable: true });
+    }
+    const labels = seen.lastOptions().map((o) => o.label.trim());
+    expect(labels).toContain("golden");
+    expect(labels).toContain("lupin");
+    expect(labels).not.toContain("hedwig");
+  });
+```
+Read `lib/ui/pick-fake.ts` for the real fake's API and match it (the accessor for the options it was handed may be named differently); the assertion is that the golden reaches the picker and a claimed tree does not. Import `worktreeFreshen` from `../worktree.ts`.
 
 - [ ] **Step 5: Run both suites**
 
