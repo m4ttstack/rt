@@ -97,6 +97,7 @@ interface FakeClientCalls {
   stageSelection: { diff: StagingDiff; selection: DiffSelection }[];
   discardSelection: { diff: StagingDiff; selection: DiffSelection }[];
   checkoutBranch: string[];
+  createBranch: { name: string; opts?: { from?: string; checkout?: boolean } }[];
   stageFileFully: { path: string; originalPath?: string }[];
   resetToCommit: { sha: string; mode: string }[];
 }
@@ -113,8 +114,9 @@ function makeFakeClient(overrides: {
   remotes?: GitClient["remotes"];
   log?: GitClient["log"];
   resetToCommit?: GitClient["resetToCommit"];
+  createBranch?: GitClient["createBranch"];
 } = {}): GitClient & { calls: FakeClientCalls } {
-  const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], stageFileFully: [], resetToCommit: [] };
+  const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], createBranch: [], stageFileFully: [], resetToCommit: [] };
   const client: GitClient = {
     dir: "/repo",
     snapshot: overrides.snapshot ?? (async () => baseSnapshot()),
@@ -154,7 +156,10 @@ function makeFakeClient(overrides: {
     checkoutBranch: async (name: string) => {
       calls.checkoutBranch.push(name);
     },
-    createBranch: async () => {},
+    createBranch: async (name: string, opts?: { from?: string; checkout?: boolean }) => {
+      calls.createBranch.push({ name, opts });
+      if (overrides.createBranch) await overrides.createBranch(name, opts);
+    },
     createTag: async () => {},
     deleteTag: async () => {},
     pushTag: async () => {},
@@ -997,7 +1002,7 @@ describe("MissionDriver: checkout guard", () => {
     expect(last.notice).toBe("guarded-branch is checked out elsewhere");
   });
 
-  test("the 'new branch from…' action row (new:true/from) answers with a Notice instead of a silent no-op", async () => {
+  test("a new-branch intent with no name is a silent no-op", async () => {
     const client = makeFakeClient();
     const session = new FakeSession([
       { t: "intent", name: "mission:checkout", payload: { new: true, from: "main" } },
@@ -1008,8 +1013,39 @@ describe("MissionDriver: checkout guard", () => {
     await new MissionDriver(deps, START).run();
 
     expect(client.calls.checkoutBranch).toHaveLength(0);
+    expect(client.calls.createBranch).toHaveLength(0);
+    expect(session.pushed).toHaveLength(0);
+  });
+
+  test("a new-branch intent creates the branch from the given base and checks it out", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:checkout", payload: { new: true, from: "main", name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient();
+    await new MissionDriver(baseDeps({ session, client }), START).run();
+
+    expect(client.calls.createBranch).toEqual([
+      { name: "my-feature", opts: { from: "main", checkout: true } },
+    ]);
     const last = session.pushed.at(-1) as MissionModel;
-    expect(last.notice).toBe("use rt worktree provision");
+    expect(last.notice).toBe("");
+  });
+
+  test("a failed branch creation surfaces the git message as a notice", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:checkout", payload: { new: true, from: "main", name: "bad name" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({
+      createBranch: async () => {
+        throw new Error("invalid branch name: bad name");
+      },
+    });
+    await new MissionDriver(baseDeps({ session, client }), START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("invalid branch name: bad name");
   });
 });
 

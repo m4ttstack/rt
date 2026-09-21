@@ -84,6 +84,7 @@ interface CheckoutPayload {
   branch?: string;
   new?: boolean;
   from?: string;
+  name?: string;
 }
 
 interface WorktreePayload {
@@ -732,13 +733,11 @@ export class MissionDriver {
 
   private async handleCheckout(payload: CheckoutPayload | undefined): Promise<void> {
     if (!payload) return;
-    if (typeof payload.branch !== "string") {
-      // The "new branch from…" action row (new:true/from) has no creation
-      // flow wired yet -- v1 answers it with a notice, not silence.
-      this.state.notice = "use rt worktree provision";
-      this.push();
+    if (payload.new === true) {
+      await this.createBranch(payload);
       return;
     }
+    if (typeof payload.branch !== "string") return;
     const verdict = await this.guardBranch(payload.branch);
     if (verdict.verdict === "refuse") {
       this.state.notice = verdict.detail;
@@ -747,6 +746,26 @@ export class MissionDriver {
     }
     const client = this.deps.client(this.state.currentWorktree);
     await client.checkoutBranch(payload.branch);
+    this.state.notice = "";
+    this.state.selectedPath = null;
+    this.state.selections = new Map();
+    await this.refresh();
+    this.push();
+  }
+
+  private async createBranch(payload: CheckoutPayload): Promise<void> {
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    if (name === "") return;
+    const client = this.deps.client(this.state.currentWorktree);
+    try {
+      // One atomic checkout -b: git leaves no branch behind when the
+      // checkout itself fails, so a dirty tree cannot strand one.
+      await client.createBranch(name, { from: payload.from, checkout: true });
+    } catch (err) {
+      this.state.notice = err instanceof Error ? err.message : String(err);
+      this.push();
+      return;
+    }
     this.state.notice = "";
     this.state.selectedPath = null;
     this.state.selections = new Map();
