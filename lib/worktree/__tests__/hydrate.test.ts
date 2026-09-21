@@ -28,7 +28,7 @@ function writeMachineStore(obj: Record<string, unknown>): void {
 /**
  * Gives `repoPath` a resolvable settings identity, pinning its (local
  * bare-clone) origin via the machine store's `rt.repoIdentityOverrides` when
- * it doesn't itself normalize — exactly the fork/local-remote mechanism
+ * it doesn't itself normalize... exactly the fork/local-remote mechanism
  * production uses.
  */
 async function ensureIdentity(repoPath: string, repoName: string): Promise<string> {
@@ -43,7 +43,7 @@ async function ensureIdentity(repoPath: string, repoName: string): Promise<strin
   return identity;
 }
 
-/** Seeds `rt.worktrees` for `repoPath` in the machine store — the store-only replacement for the old per-repo config.json fixture. */
+/** Seeds `rt.worktrees` for `repoPath` in the machine store... the store-only replacement for the old per-repo config.json fixture. */
 async function declareWorktrees(repoPath: string, repoName: string, declared: unknown): Promise<void> {
   const identity = await ensureIdentity(repoPath, repoName);
   const store = readMachineStore();
@@ -122,7 +122,7 @@ describe("hydrateTree", () => {
     events = [];
     writeFileSync(join(repo, ".gitignore"), "node_modules/\ngenerated/\n*.log\n");
     execSync("git add .gitignore && git -c user.email=t@t -c user.name=t commit -qm gitignore && git push -q origin HEAD", { cwd: repo, shell: "/bin/zsh" });
-    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "touch .ready-ran" }] });
     const made = await createTree({ ...makeDeps(repoName, repo, events), target: "golden" });
     if (!made.ok) throw new Error("golden create failed");
     golden = made.tree;
@@ -138,6 +138,10 @@ describe("hydrateTree", () => {
     expect(paths).toEqual(["generated", "node_modules"]);
   });
 
+  test("the golden's own create ran its ready ladder (sentinel mechanism sanity check)", () => {
+    expect(existsSync(join(golden.path, ".ready-ran"))).toBe(true);
+  });
+
   test("happy path: member at golden sha, artifacts cloned, stamps inherited, no ready step run", async () => {
     const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden, clone: inProcessClone });
     expect(result.ok).toBe(true);
@@ -151,12 +155,15 @@ describe("hydrateTree", () => {
     expect(readFileSync(join(t.path, "node_modules", "pkg", "index.js"), "utf8")).toBe("module.exports = 1;\n");
     expect(readFileSync(join(t.path, "generated", "types.ts"), "utf8")).toBe("export type T = 1;\n");
     expect(existsSync(join(t.path, "debug.log"))).toBe(false);
+    expect(existsSync(join(t.path, ".ready-ran"))).toBe(false);
     const head = execSync("git rev-parse HEAD", { cwd: t.path, encoding: "utf8" }).trim();
     expect(head).toBe(golden.readyStamp!);
     const wt = (await listWorktreesAsync(repo))!.find((w) => w.path === t.path);
     expect(wt?.branch).toBe(`on-deck/${t.name}`);
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(1);
-    expect(events.some((e) => e.type === "worktree:created")).toBe(true);
+    expect(
+      events.some((e) => e.type === "worktree:created" && (e.data as { hydratedFrom?: string }).hydratedFrom === golden.name),
+    ).toBe(true);
   });
 
   test("clone exit 3 reports hydrate-unavailable and scraps the half-built tree", async () => {

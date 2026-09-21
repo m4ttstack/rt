@@ -13,7 +13,7 @@ import { pickName } from "./names.ts";
 import { loadWorktreeRepoConfig } from "./config.ts";
 import { withTreeLock } from "./locks.ts";
 import { scrapTree, type CreateDeps } from "./create.ts";
-import { runCapture } from "../subprocess.ts";
+import { runCapture, MAX_LOGGED_OUTPUT, outputTail } from "../subprocess.ts";
 import { rtBinaryPath } from "../dev-mode.ts";
 import { reconcileForRepo } from "../daemon/doppler-sync.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
@@ -62,7 +62,8 @@ export type HydrateResult =
 
 export async function hydrateTree(deps: CreateDeps & { golden: TreeRecord; clone?: CloneRunner }): Promise<HydrateResult> {
   const { repoName, repoPath, golden } = deps;
-  if (!golden.readyStamp) return { ok: false, error: "hydrate-unavailable", detail: "golden has no readyStamp" };
+  const readyStamp = golden.readyStamp;
+  if (!readyStamp) return { ok: false, error: "hydrate-unavailable", detail: "golden has no readyStamp" };
   const clone = deps.clone ?? defaultCloneRunner;
 
   const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
@@ -74,7 +75,7 @@ export async function hydrateTree(deps: CreateDeps & { golden: TreeRecord; clone
   const rootInsideRepo = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
   if (rootInsideRepo) await ensureInfoExclude(repoPath, `${rel.split("/")[0]}/`);
 
-  const outcome = await withTreeLock(path, () => runHydrate(deps, clone, golden, name, path));
+  const outcome = await withTreeLock(path, () => runHydrate(deps, clone, golden, readyStamp, name, path));
   if (outcome === "busy") return { ok: false, error: "busy" };
   return outcome;
 }
@@ -83,6 +84,7 @@ async function runHydrate(
   deps: CreateDeps,
   clone: CloneRunner,
   golden: TreeRecord,
+  readyStamp: string,
   name: string,
   path: string,
 ): Promise<HydrateResult> {
@@ -92,10 +94,15 @@ async function runHydrate(
 
   const trees = loadRegistry(repoName);
   trees.push(rec);
-  saveRegistry(repoName, trees);
+  if (!saveRegistry(repoName, trees)) {
+    return { ok: false, error: "create-failed", failedStep: "registry-write", output: "" };
+  }
 
   const fail = async (failedStep: string, output: string): Promise<HydrateResult> => {
-    log.warn({ repo: repoName, tree: name, failedStep, output }, "worktree hydrate failed");
+    log.warn(
+      { repo: repoName, tree: name, failedStep, output: outputTail(output, MAX_LOGGED_OUTPUT) },
+      "worktree hydrate failed",
+    );
     await scrapTree(deps, rec);
     return { ok: false, error: "create-failed", failedStep, output };
   };
@@ -105,8 +112,8 @@ async function runHydrate(
     return { ok: false, error: "hydrate-unavailable", detail };
   };
 
-  const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, golden.readyStamp!], { timeoutMs: ADD_TIMEOUT_MS });
-  if (add.exitCode !== 0) return fail(`git worktree add -b ${branch} ${path} ${golden.readyStamp}`, add.stdout + add.stderr);
+  const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, readyStamp], { timeoutMs: ADD_TIMEOUT_MS });
+  if (add.exitCode !== 0) return fail(`git worktree add -b ${branch} ${path} ${readyStamp}`, add.stdout + add.stderr);
 
   const gitEntries = await listWorktreesAsync(repoPath);
   if (gitEntries !== null) {
@@ -130,7 +137,7 @@ async function runHydrate(
   const updated: TreeRecord = {
     ...rec,
     state: "on-deck",
-    readyStamp: golden.readyStamp,
+    readyStamp,
     ...(golden.readyAt ? { readyAt: golden.readyAt } : {}),
   };
   const finalTrees = loadRegistry(repoName).map((t) => (t.path === path ? updated : t));
