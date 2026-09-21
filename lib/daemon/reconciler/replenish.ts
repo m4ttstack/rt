@@ -194,10 +194,11 @@ export async function replenishAndShrink(
     return;
   }
 
-  // cfg.root is otherwise created lazily by a member's own `git worktree
-  // add`, which runs after the volume check below... on a repo's first ever
-  // pass that leaves the check racing a path that doesn't exist yet. Make it
-  // exist first so the check reflects ground truth, not "path missing".
+  // sameDev needs BOTH paths present, and cfg.root is otherwise created
+  // lazily by a member's own `git worktree add`, which runs after the volume
+  // check below... on a repo's first ever pass that leaves the check racing
+  // a path that doesn't exist yet. Make it exist first so the check reflects
+  // ground truth, not "path missing".
   try { mkdirSync(cfg.root, { recursive: true }); } catch { /* stat below degrades safely either way */ }
 
   // Lazy and memoized once per pass, not eagerly: the golden root does not

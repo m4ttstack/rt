@@ -1689,7 +1689,10 @@ describe("replenish / shrink", () => {
       fakeAppConfig(),
     );
 
-    expect(loadRegistry(repoName).filter((t) => t.state === "on-deck").length).toBe(1);
+    // Filtered by kind, matching this describe block's other member-count
+    // assertions: replenish also builds a golden on this repo's first pass,
+    // and that row is on-deck too, but it isn't the member this test is about.
+    expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck").length).toBe(1);
     expect(__test__.createBackoff.has(repoName)).toBe(false);
   });
 
@@ -1765,6 +1768,14 @@ describe("detached trigger / latency", () => {
     writeFileSync(join(repo, "wip.txt"), "not idle\n");
 
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "sleep 3" }] });
+    // A golden already on record (state on-deck, no readyStamp keeps it out of
+    // chooseCreateMode's hydrate path) makes replenish's ensure-golden step a
+    // no-op, so this pass runs the declared ready ladder once, for the
+    // member, not twice: this test measures kick/coalescing timing, not the
+    // golden's own first-build cost.
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString() },
+    ]);
 
     const events: Array<{ type: string; data: any }> = [];
     const reconciler = createWorktreeReconciler({
@@ -1807,6 +1818,12 @@ describe("detached trigger / latency", () => {
     addBareOrigin(repo);
     writeFileSync(join(repo, "wip.txt"), "not idle\n");
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "sleep 2" }] });
+    // Same reasoning as the kick() test above: a pre-recorded golden keeps
+    // replenish's ensure-golden step a no-op, so the ready ladder still runs
+    // exactly once this pass.
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString() },
+    ]);
 
     let repoIndexCalls = 0;
     const reconciler = createWorktreeReconciler({
