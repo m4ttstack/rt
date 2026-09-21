@@ -19,6 +19,18 @@ export {
 export { persistOrWarn, runCriticalWrite } from './busy.ts';
 
 export {
+  beatStillValid,
+  claimWriterLease,
+  LEASE_BEAT_MS,
+  LEASE_STALE_MS,
+  renewWriterLease,
+  stateWriterLeaseIo,
+  writerRank,
+  type WriterLeaseIo,
+  type WriterLeaseRow,
+} from './writer-lease.ts';
+
+export {
   type Lane,
   mintHandle,
   reportPathForHandle,

@@ -172,6 +172,32 @@ state. A first run against an existing install one-shot
 imports any legacy per-lane JSON state files it finds and renames the old
 `state/` directory aside.
 
+### One writer per state root
+
+Because that path ignores which checkout is running, several boards started
+by hand (in worktrees, say) share one state root with the supervised one,
+and each would react to the same transition: one review's `done` signal
+once produced four re-review latch threads on the same MR, one per process.
+So a board claims a **writer lease** at boot, a `writer/lease` row in
+`state.db`, and only the holder runs the autonomous side: the agent-status
+feed, the gate sweep, the boot resume pass, the legacy-session migration,
+the `rt.notify.eventBridges` rule and the peer tick. Everyone else serves
+the UI, the read API and SSE exactly as before, and logs one line saying
+which pid owns the root.
+
+A board deck supervises outranks one started by hand (deck injects
+`MATTSTACK_CANONICAL_HOST`, which is the signal), so it takes the lease even
+when it boots last, and the displaced process stands its own write side down
+within one 15s heartbeat. A lease whose holder has died, or whose heartbeat
+is over 60s old, is free for the next board to claim.
+
+Deciding and writing the lease happen in one `IMMEDIATE` transaction, so two
+boots cannot both read the same free lease and both believe they won it, and
+a lease only counts when the db acknowledged it. A heartbeat lost to
+contention (`state.db` gives the server a 250ms busy timeout, so that is
+ordinary) is not a displacement: the holder keeps the lease until the beat
+it last committed is stale enough for another board to claim anyway.
+
 A launched pane (review, respond, doctor) never sees `BOARD_STATE_DB`
 itself. Instead the server hands it a **claim ticket**: a `--state <path>`
 argv value that is really an opaque handle, `<root>/state/<lane>s/<slug>.json`,
