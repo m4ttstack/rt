@@ -211,14 +211,23 @@ class HerdrBridge {
     /// frontmost. Walk up from the pane's shell pid to whichever terminal
     /// emulator hosts it and activate that app so the change is actually seen.
     func focusPane(_ pane: HerdrPane) {
-        // Every focus path funnels through here: the daemon's POST, both
-        // notification click handlers, and the process panel. A running flock
-        // answers for its own windows and sends its own workspace, tab and
-        // pane focus, so nothing below needs to run.
-        if FlockBridge.focusPane(pane.paneId) { return }
-
         run(["workspace", "focus", pane.workspaceId])
         run(["tab", "focus", pane.tabId])
+
+        // flock first, and not as a tiebreak: it draws the pane itself and
+        // mirrors the focus those two calls just sent, so raising it is the
+        // whole job. The ancestry walk below cannot answer for flock at all,
+        // since it looks for terminal-emulator bundles and flock is a client,
+        // not an emulator.
+        if let flock = FlockPreference.preferred(runningBundleIDs: Self.runningBundleIDs()) {
+            DispatchQueue.main.async {
+                NSRunningApplication.runningApplications(withBundleIdentifier: flock)
+                    .first?
+                    .activate(options: [.activateAllWindows])
+            }
+            return
+        }
+
         // Shell ancestry only reaches the terminal when the pane runs under
         // it; a daemon-hosted pane's shell hangs off the launchd-parented
         // herdr server, so fall back to walking up from an attach client.
@@ -231,6 +240,10 @@ class HerdrBridge {
         } else {
             TrayLog.warn("no terminal found for herdr pane", ["pane_id": pane.paneId, "host_pid": pane.hostPid])
         }
+    }
+
+    private static func runningBundleIDs() -> Set<String> {
+        Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
     }
 
     enum FocusOutcome { case focused, notFound, herdrUnavailable }
