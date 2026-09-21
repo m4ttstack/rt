@@ -176,7 +176,7 @@ async function runCreate(
     return { ok: false, error: "create-failed", failedStep: "registry-flip" };
   }
 
-  emit("worktree:created", { repo: repoName, tree: name, path });
+  emit("worktree:created", { repo: repoName, tree: name, path, kind });
   log.info({ repo: repoName, tree: name, path }, "worktree created");
 
   return { ok: true, tree: updated };

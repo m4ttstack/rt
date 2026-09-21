@@ -154,8 +154,8 @@ describe("reconciler per-repo concurrency (S094)", () => {
     const reconciler = createWorktreeReconciler({
       cache: { entries: {} },
       repoIndex: () => ({ [slowName]: slowRepo }),
-      emit: (type: string) => {
-        if (type === "worktree:created") order.push("created");
+      emit: (type: string, data: unknown) => {
+        if (type === "worktree:created" && (data as { kind?: string }).kind === "ephemeral") order.push("created");
       },
       log: fakeLog(),
       findRunningRunByWorktree: () => ({ kind: "none" }),

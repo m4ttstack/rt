@@ -146,7 +146,7 @@ async function runHydrate(
     return { ok: false, error: "create-failed", failedStep: "registry-flip", output: "" };
   }
 
-  emit("worktree:created", { repo: repoName, tree: name, path, hydratedFrom: golden.name });
+  emit("worktree:created", { repo: repoName, tree: name, path, kind: "ephemeral", hydratedFrom: golden.name });
   log.info({ repo: repoName, tree: name, path, golden: golden.name }, "worktree hydrated from golden");
   return { ok: true, tree: updated };
 }
