@@ -183,14 +183,15 @@ because the lint and the type table speak in roles.
 | `text-1` | `#1c2024` | slate 12 | 13.41 | `#edeef0` | slate 12 | 12.43 | none | every size |
 | `text-2` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.5 | display, title, body |
 | `text-3` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.8 | meta |
-| `text-4` | `#1c2024` | slate 12 | 13.41 | `#edeef0` | slate 12 | 12.43 | 7.0 | small, micro |
+| `text-4` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.8 | small, micro |
 
 Every value is measured against all four surfaces and carries its worst
 case, so it is safe on any of them. `text-2` and `text-3` share a value by
 design: slate 11's worst case is 4.86 on the light row surface, so the meta
-bar is set there (§6). `text-4` is the same hex as `text-1`: small and micro
-text takes the high-contrast step, which is what Radix means by 12, and
-there is no quieter small-text value to look for.
+bar is set there (§6). `text-4` shares that value too: slate 12 is the only
+step clearing a 7.0 bar, and `text-1` already holds it, so a 7.0 small bar
+forced small text to the full-ink step and left no secondary tier at all.
+The bar moved to 4.8 rather than the step moving. §11 records the evidence.
 
 **Margins.** With published values rather than solved ones the margins are
 whatever Radix gives; the gate in §9 asserts `ratio >= bar` at full float
@@ -213,8 +214,8 @@ system lacked:** nothing stopped a colour tuned for body copy being used on
 | `title` | 15.3 | 600 | 1.3 | 4.5 | `text-2` |
 | `body` | 14.45 | 400 | 1.5 | 4.5 | `text-2` |
 | `meta` | 13.26 | 400 | 1.45 | 4.8 | `text-3` |
-| `small` | 11.9 | 400 | 1.4 | 7.0 | `text-4` |
-| `micro` | 10.54 | 500 | 1.35 | 7.0 | `text-4` |
+| `small` | 11.9 | 400 | 1.4 | 4.8 | `text-4` |
+| `micro` | 10.54 | 500 | 1.35 | 4.8 | `text-4` |
 
 The 4.5 rows are WCAG AA. The 4.8 and 7.0 rows are this platform's bars
 (§1.1), not a standard's. The meta bar is always slate 11's measured floor
@@ -562,7 +563,7 @@ moving the labels and the ledger cannot be green.
    rest; the neutral fill keeps `light-dark(<text-1>, #ffffff)`), `filled` hover
    from `--fill-<hue>-hover` so tui-kit and Mantine hover to the same
    colour. The `muted` intent is not a hue: its `outline`/`subtle` text is
-   `--text-2` and its `light` text `--text-4` (slate 11 and 12). `Button.tsx`'s
+   `--text-2` and its `light` text `--text-4` (slate 11 for both). `Button.tsx`'s
    pinned `default|bad` colour reads `--text-bad`. `known-contrast-debt.ts`
    carries four families (fill, on-fill, vivid text, line), each keyed
    finely enough that no scheme or surface can fall through a branch, and the
