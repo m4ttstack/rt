@@ -83,10 +83,20 @@ func runPTY(t *testing.T, argv []string, stdinLines []string, keys []string, env
 			}
 		}
 	}()
+	// A non-empty buffer is not a painted screen: terminal setup (alt screen,
+	// cursor hide, the Kitty keyboard push) reaches the pty before any cell is
+	// drawn. Replaying the buffer is the only way to tell the two apart, and
+	// conflating them is exactly how these tests flaked -- keys landed on a
+	// program that had not drawn yet, it quit, and the assertion then ran
+	// against a blank screen.
 	painted := func() bool {
 		mu.Lock()
-		defer mu.Unlock()
-		return ttyBuf.Len() > 0
+		raw := ttyBuf.String()
+		mu.Unlock()
+		if raw == "" {
+			return false
+		}
+		return strings.TrimSpace(Screen(raw)) != ""
 	}
 
 	for _, l := range stdinLines {
@@ -113,7 +123,7 @@ func runPTY(t *testing.T, argv []string, stdinLines []string, keys []string, env
 			return false
 		}
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) && !painted() && !isExited() {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -121,7 +131,7 @@ func runPTY(t *testing.T, argv []string, stdinLines []string, keys []string, env
 		_ = stdinW.Close()
 		_ = cmd.Process.Kill()
 		<-exited
-		t.Fatal("rt-ui neither painted nor exited within 3s")
+		t.Fatal("rt-ui drew no cell and did not exit within 10s")
 	}
 	if closeStdin {
 		stdinW.Close()

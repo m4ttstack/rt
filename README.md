@@ -208,9 +208,10 @@ rt git push               # push to origin/<branch>, fixing a wrong upstream
 rt git push force         # push with --force-with-lease, after a rebase or amend
 rt git upstream           # fix the branch upstream to track origin/<branch>
 rt git reset origin       # sync with origin after a remote rebase
-rt git reset soft         # soft reset to HEAD (unstage files)
-rt git reset hard         # hard reset to HEAD (discard all changes)
-rt git commit             # interactive staging + commit with live diff preview
+rt git reset soft         # unstage everything (resets the index to HEAD, keeps your edits)
+rt git reset hard         # discard every working-tree change (resets to HEAD)
+rt git undo               # undo the last commit, keeping its changes in the working tree
+rt git commit             # interactive staging + commit (file list with +/- stats)
 rt git backup             # back up the current branch to a backup ref
 rt git restore            # restore from a backup branch
 ```
@@ -219,6 +220,17 @@ rt git restore            # restore from a backup branch
 rt sync                   # rebase the current worktree onto master, then push
 rt sync all               # sync every worktree in the repo
 ```
+
+### Mission control
+
+```bash
+rt glitter                # full-screen board: changes, diffs, history, branches, commit
+```
+
+A GitHub Desktop-style board in the terminal, with a real diff pane and mouse
+support. Checkboxes are commit intent, not index state: the index is rebuilt
+from your selections at commit time, so anything staged outside the board is
+replaced by what the checkboxes say. Needs an interactive terminal.
 
 ### Running things
 

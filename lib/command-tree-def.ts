@@ -696,14 +696,14 @@ export const TREE: Record<string, CommandNode> = {
             args: [],
           },
           soft: {
-            description: "Soft reset to HEAD (unstage files)",
+            description: "Unstage everything, keeping your edits (to undo a commit, use rt git undo)",
             module: "./commands/git/reset.ts",
             fn: "softResetCommand",
             context: "worktree",
             args: [],
           },
           hard: {
-            description: "Hard reset to HEAD (discard all changes)",
+            description: "Discard every working-tree change (to undo a commit, use rt git undo)",
             module: "./commands/git/reset.ts",
             fn: "hardResetCommand",
             context: "worktree",
