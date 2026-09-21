@@ -809,21 +809,31 @@ func TestNamingEnterWithATypedNameClosesTheModal(t *testing.T) {
 // hand-rolled parallel copy of modalBoxLines' own layout, so any line-count
 // or width drift here would desync every click in the modal.
 func TestNamingKeepsTheModalGeometryIdentical(t *testing.T) {
-	m := newTestMission()
-	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
-	before := m.View().Content
-	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
-	after := m.View().Content
+	// width=18 is narrow enough that renderMissionModal's own box-width
+	// clamp bites: unless modalNameWidth tracks that same clamp, the name
+	// field is built wider than the line it composes onto, and lipgloss's
+	// wrap (rather than truncate) on Width() turns the overflow into an
+	// extra physical row in the composited frame.
+	for _, width := range []int{100, 18} {
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			m := newTestMission()
+			m.width = width
+			m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+			before := m.View().Content
+			m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+			after := m.View().Content
 
-	beforeLines := strings.Split(before, "\n")
-	afterLines := strings.Split(after, "\n")
-	if len(beforeLines) != len(afterLines) {
-		t.Fatalf("naming changed the frame height: %d lines, want %d", len(afterLines), len(beforeLines))
-	}
-	for i := range beforeLines {
-		if bw, aw := lipgloss.Width(beforeLines[i]), lipgloss.Width(afterLines[i]); bw != aw {
-			t.Fatalf("line %d width changed from %d to %d while naming", i, bw, aw)
-		}
+			beforeLines := strings.Split(before, "\n")
+			afterLines := strings.Split(after, "\n")
+			if len(beforeLines) != len(afterLines) {
+				t.Fatalf("naming changed the frame height: %d lines, want %d", len(afterLines), len(beforeLines))
+			}
+			for i := range beforeLines {
+				if bw, aw := lipgloss.Width(beforeLines[i]), lipgloss.Width(afterLines[i]); bw != aw {
+					t.Fatalf("line %d width changed from %d to %d while naming", i, bw, aw)
+				}
+			}
+		})
 	}
 }
 

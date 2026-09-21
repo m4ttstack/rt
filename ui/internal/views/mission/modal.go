@@ -537,10 +537,33 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	return need
 }
 
+// modalInnerWidth is the box's actual rendered content width: modalWidth's
+// own content-driven sizing, clamped to the frame the box composites onto --
+// the same clamp renderMissionModal applies before calling modalBoxLines.
+// Anything that sizes content to fit the rendered box (modalNameWidth) must
+// go through this, not modalWidth directly, or it disagrees with the box
+// below the clamp boundary (a frame narrower than modalContentMax + 2).
+func modalInnerWidth(ms *modalState, frameWidth int) int {
+	inner := modalWidth(ms, frameWidth)
+	if inner > frameWidth-2 {
+		inner = frameWidth - 2
+	}
+	if inner < 1 {
+		inner = 1
+	}
+	return inner
+}
+
 // modalNameWidth is the name field's own width: the filter line's text area,
-// which is the box's content width less the chevron and its trailing space.
+// which is the box's content width less the chevron, its trailing space, and
+// one more cell for the input's own cursor -- bubbles' textinput.SetWidth
+// bounds the text/placeholder run only, and both its placeholderView and its
+// end-of-line cursor path render one further cell for the cursor itself, so
+// a field built at the full text-area width renders one cell wider than it.
 func modalNameWidth(ms *modalState, frameWidth int) int {
-	w := modalWidth(ms, frameWidth) - lipgloss.Width(theme.GlyphChevron) - 1
+	const cursorCell = 1
+	prefixW := lipgloss.Width(theme.GlyphChevron) + 1
+	w := modalInnerWidth(ms, frameWidth) - prefixW - cursorCell
 	if w < 0 {
 		return 0
 	}
@@ -954,13 +977,7 @@ func clampX(x, boxW, parentW int) int {
 // keybar) for as long as they're open. That is intended, not a bug.
 func renderMissionModal(parent string, ms *modalState, width, height, topBarHeight int) string {
 	dimmed := dimForeground(parent)
-	inner := modalWidth(ms, width)
-	if inner > width-2 {
-		inner = width - 2
-	}
-	if inner < 1 {
-		inner = 1
-	}
+	inner := modalInnerWidth(ms, width)
 	boxInnerHeight := height - topBarHeight - 2 // -2 for the box's own top/bottom border
 	if boxInnerHeight < 1 {
 		boxInnerHeight = 1
