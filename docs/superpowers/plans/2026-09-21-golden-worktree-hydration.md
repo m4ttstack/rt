@@ -1123,12 +1123,22 @@ function sameDev(a: string, b: string): boolean {
 
 Extend `replenishAndShrink`'s deps type with `clone?: CloneRunner; sameVolume?: (a: string, b: string) => boolean;`.
 
-Stat once per pass, not per member: just before the member loop, compute
+Stat once per pass, not per member, and lazily: the golden root does not
+exist until the ensure block above has run, and `sameDev` degrades to
+`false` on a missing path, so a thunk evaluated eagerly would make every
+member of a repo's first pass cold-create. Memoize on first call instead of
+relying on where this sits relative to the ensure block:
+
 ```ts
-  const volumeOk = (deps.sameVolume ?? sameDev)(goldenRoot(repoName), cfg.root);
-  const sameVolumeForPass = () => volumeOk;
+  let volumeOk: boolean | undefined;
+  const sameVolumeForPass = (a: string, b: string): boolean => {
+    volumeOk ??= (deps.sameVolume ?? sameDev)(a, b);
+    return volumeOk;
+  };
 ```
-and pass `sameVolumeForPass` into `chooseCreateMode` below.
+`chooseCreateMode` only calls it once it has a golden in hand, so the first
+call always happens after the golden exists on disk. Pass
+`sameVolumeForPass` into `chooseCreateMode` below.
 
 Replace the early return `if (onDeck <= 0) return;` with:
 ```ts
@@ -1456,25 +1466,27 @@ Append to `commands/__tests__/worktree.test.ts`, using the file's `installFakePi
       ok: true,
       data: {
         trees: [
-          { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
-          { name: "lupin", path: "/l", kind: "ephemeral", state: "on-deck", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
-          { name: "hedwig", path: "/h", kind: "ephemeral", state: "claimed", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "lupin", path: "/l", kind: "ephemeral", state: "on-deck", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "hedwig", path: "/h", kind: "ephemeral", state: "claimed", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
         ],
       },
     });
-    const seen = installFakePick({ choose: null });
+    const fake = installFakePick([{ kind: "result", result: { action: "cancel", value: null, query: "" } }]);
     try {
       await worktreeFreshen([], {});
     } finally {
+      fake.restore();
       Object.defineProperty(process.stdin, "isTTY", { value: origIsTTY, configurable: true });
     }
-    const labels = seen.lastOptions().map((o) => o.label.trim());
-    expect(labels).toContain("golden");
-    expect(labels).toContain("lupin");
-    expect(labels).not.toContain("hedwig");
+    expect(fake.calls).toHaveLength(1);
+    const values = fake.calls[0]!.request.rows.map((r) => r.value);
+    expect(values).toContain("/g");
+    expect(values).toContain("/l");
+    expect(values).not.toContain("/h");
   });
 ```
-Read `lib/ui/pick-fake.ts` for the real fake's API and match it (the accessor for the options it was handed may be named differently); the assertion is that the golden reaches the picker and a claimed tree does not. Import `worktreeFreshen` from `../worktree.ts`.
+`installFakePick` takes a `PickFakeStep[]` script and returns `{ calls, restore }`; the rows it was handed are on `calls[0].request.rows`, and `pickOneTree` sets each row's `value` to the tree path. The working pattern is the await-ready breadcrumb test at `commands/__tests__/worktree.test.ts:196`. `action: "cancel"` is what `filterableSelect` turns into a null pick (`lib/pick-wrappers.ts:97`), so the picker closes without selecting and the assertion lands on what reached it. Import `worktreeFreshen` from `../worktree.ts`.
 
 - [ ] **Step 5: Run both suites**
 
