@@ -200,6 +200,7 @@ export interface MissionActionModel {
 
 export interface MissionLastCommit {
   summary: string;
+  /** Driver-computed relative date, GHD-style ("2 minutes ago") -- same convention as action.meta and MissionBranchRow.when; the view renders it verbatim. */
   when: string;
   undoable: boolean;
 }

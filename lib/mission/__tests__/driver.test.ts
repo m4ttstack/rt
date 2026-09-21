@@ -817,6 +817,41 @@ describe("MissionDriver: undo", () => {
   });
 });
 
+// A real (non-fixture) repo surfaced this: git-core's log entry carries a
+// raw ISO authorDate, and the undo strip rendered it verbatim ("Committed
+// 2026-09-20T19:21:02-05:00 ...") instead of a relative time. Preformatted
+// here to match action.meta and MissionBranchRow.when's own convention (the
+// driver formats once per refresh; the view renders whatever string it gets).
+describe("MissionDriver: last commit's `when` is driver-formatted relative time", () => {
+  test("formats log[0].authorDate through formatRelativeTime using deps.now()", async () => {
+    const client = makeFakeClient({
+      log: async () => [
+        {
+          sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          parents: [],
+          authorName: "Test",
+          authorEmail: "test@example.com",
+          authorDate: "2026-09-17T23:58:00Z", // 2 minutes before baseDeps' now()
+          subject: "fix parser",
+          body: "",
+        },
+      ],
+    });
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.commit.lastCommit?.summary).toBe("fix parser");
+    expect(opened!.commit.lastCommit?.when).toBe("2 minutes ago");
+  });
+});
+
 describe("MissionDriver: action", () => {
   test("pushes a busy model before the result model", async () => {
     const session = new FakeSession([

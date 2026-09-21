@@ -19,6 +19,7 @@ import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../pac
 import type { BranchGuardVerdict, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import type { getRemoteDefaultBranch } from "../git-ops.ts";
+import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
@@ -314,8 +315,13 @@ export class MissionDriver {
     this.stashCount = stashes.length;
     const entry = log[0];
     this.headShortSha = entry ? entry.sha.slice(0, 7) : "";
+    // Preformatted here, not in model.ts, matching action.meta and
+    // MissionBranchRow.when's own convention: the driver formats once per
+    // refresh, the view renders whatever string it gets verbatim -- a raw
+    // ISO timestamp reaching the undo strip read as a real bug on a plain
+    // (non-rt) repo, where nothing else was masking it.
     this.lastCommit = entry
-      ? { summary: entry.subject, when: entry.authorDate, undoable: (snapshot.ahead ?? 0) > 0 }
+      ? { summary: entry.subject, when: formatRelativeTime(entry.authorDate, this.deps.now()), undoable: (snapshot.ahead ?? 0) > 0 }
       : null;
     await this.refreshDiff(client);
     this.recomputeAction();
