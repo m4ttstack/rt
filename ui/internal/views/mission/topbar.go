@@ -114,29 +114,44 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 	if name == "" {
 		name = m.Current.Worktree
 	}
+	icon := theme.GlyphWorktree
+	var iconColor color.Color = theme.Dimmer
 	trailing := segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron)
 	if m.Current.Settling {
+		// Mirrors the action segment's busy-replaces-icon convention
+		// (actionGlyph): the icon column is never subject to renderSegment's
+		// clip, so it survives as the settling indication at any width, even
+		// the 80-column case below where the name+marker text budget cannot
+		// fit the word "settling" at all.
+		icon = theme.SpinnerFrames[0]
+		iconColor = theme.Peach
 		// renderSegment's own clip takes from the right, so the marker --
 		// not the name -- would be the first thing lost on a real (narrow)
 		// terminal. Reserving its width here and clipping the name INTO
 		// that budget, rather than appending and letting the outer clip
 		// decide, is what keeps "settling" visible instead of the name.
-		avail := segmentBottomAvail(width, theme.GlyphWorktree, trailing, chevronTrailingPad)
+		avail := segmentBottomAvail(width, icon, trailing, chevronTrailingPad)
 		markerW := lipgloss.Width(settlingMarker)
-		nameAvail := avail - markerW - 1 // 1 cell separator between name and marker
-		if nameAvail < 0 {
-			nameAvail = 0
+		if avail >= markerW {
+			nameAvail := avail - markerW - 1 // 1 cell separator between name and marker
+			if nameAvail < 0 {
+				nameAvail = 0
+			}
+			clippedName := clip(name, nameAvail)
+			if clippedName == "" {
+				name = settlingMarker
+			} else {
+				name = clippedName + " " + settlingMarker
+			}
 		}
-		clippedName := clip(name, nameAvail)
-		if clippedName == "" {
-			name = settlingMarker
-		} else {
-			name = clippedName + " " + settlingMarker
-		}
+		// Below markerW, the word itself has nowhere to go even alone --
+		// the spinner icon above is the sole indication, so the name is
+		// left as-is rather than appended with a fragment renderSegment's
+		// own clip would just mangle further.
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        theme.GlyphWorktree,
-		iconColor:   theme.Dimmer,
+		icon:        icon,
+		iconColor:   iconColor,
 		top:         "Current Worktree",
 		topColor:    theme.Dimmer,
 		bottom:      name,

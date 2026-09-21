@@ -689,6 +689,35 @@ func TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth(t *testing.T) {
 	}
 }
 
+// TestSettlingIndicatorSurvivesAtEightyColumns pins an 80-column frame
+// (segW == 10, segmentBottomAvail == 2 -- too small even for the bare word
+// "settling") against the realistic case an agent's terminal actually hits.
+// The name+marker text budget cannot carry the word at this width, so the
+// spinner icon that replaces the worktree glyph is the fallback indication:
+// renderSegment never clips the icon column the way it clips the bottom
+// row's text.
+func TestSettlingIndicatorSurvivesAtEightyColumns(t *testing.T) {
+	const segmentWidthAt80Cols = 10
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "some-worktree", Settling: true}}, segmentWidthAt80Cols, false, false))
+	if !strings.Contains(out, theme.SpinnerFrames[0]) {
+		t.Fatalf("settling indicator missing at 80 columns:\n%s", out)
+	}
+}
+
+// TestSettlingIndicatorAt130ColumnsUnchanged pins that the 130-column
+// behavior above the 97-column marker-fits threshold is untouched by the
+// spinner fallback: the full word still renders alongside the icon.
+func TestSettlingIndicatorAt130ColumnsUnchanged(t *testing.T) {
+	const segmentWidthAt130Cols = 27
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "gandalf", Settling: true}}, segmentWidthAt130Cols, false, false))
+	if !strings.Contains(out, settlingMarker) {
+		t.Fatalf("settling marker missing at 130 columns:\n%s", out)
+	}
+	if !strings.Contains(out, theme.SpinnerFrames[0]) {
+		t.Fatalf("settling spinner icon missing at 130 columns:\n%s", out)
+	}
+}
+
 func TestModalOpenDimsParentAndEscRestoresUndimmed(t *testing.T) {
 	m := newTestMission()
 	before := m.View().Content
