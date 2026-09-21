@@ -527,7 +527,7 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	if ms.action != nil {
 		consider(2 + lipgloss.Width(ms.action.label)) // bar + gap
 	}
-	consider(1 + lipgloss.Width(modalKeybarPlainText(ms.zone)))
+	consider(1 + lipgloss.Width(modalKeybarPlainText(ms)))
 	if need > modalContentMax {
 		need = modalContentMax
 	}
@@ -552,16 +552,26 @@ func modalNameWidth(ms *modalState, frameWidth int) int {
 // region): query is user-typed and unbounded, so -- the same class of bug
 // as the commit button (CodeRabbit, PR #353) -- it is clipped before
 // Width() rather than left to wrap, mirroring changes.go's renderFilterRow.
-func modalFilterLine(query, placeholder string, width int) string {
+//
+// The name field deliberately reuses this line rather than adding one: an
+// extra line would have to be mirrored by hand in modalHitTest, whose layout
+// walk is a parallel copy of modalBoxLines, and any drift there misplaces
+// every click in the modal.
+func modalFilterLine(ms *modalState, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
 	prefixW := lipgloss.Width(theme.GlyphChevron) + 1
 	textW := width - prefixW
 	if textW < 0 {
 		textW = 0
 	}
-	body, style := placeholder, bg.Foreground(theme.Faint)
-	if query != "" {
-		body, style = query, bg.Foreground(theme.Text)
+	if ms.naming {
+		// The input renders its own cursor and is already width-bounded by
+		// SetWidth, so it is composed rather than clipped here.
+		return bg.Width(width).Render(bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + ms.nameInput.View())
+	}
+	body, style := ms.placeholder, bg.Foreground(theme.Faint)
+	if ms.query != "" {
+		body, style = ms.query, bg.Foreground(theme.Text)
 	}
 	left := bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + style.Render(clip(body, textW))
 	return bg.Width(width).Render(left)
@@ -720,11 +730,15 @@ func modalGroupHeaderLine(text string, width int) string {
 	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + clip(text, textW)))
 }
 
-// modalKeybarPairs lists a zone's wired key/label pairs, in display order:
-// only what this modal actually dispatches, never the boards' unwired
-// ctrl-f/ctrl-w/ctrl-d.
-func modalKeybarPairs(zone zoneID) [][2]string {
-	switch zone {
+// modalKeybarPairs lists the foldout's own wired key/label pairs, in display
+// order: only what this modal actually dispatches, never the boards' unwired
+// ctrl-f/ctrl-w/ctrl-d. While naming, enter and esc mean create/cancel
+// instead of whatever the zone's own action row wires them to.
+func modalKeybarPairs(ms *modalState) [][2]string {
+	if ms.naming {
+		return [][2]string{{"enter", "create"}, {"esc", "cancel"}}
+	}
+	switch ms.zone {
 	case zoneRepo:
 		return [][2]string{{"enter", "open"}, {"esc", "close"}}
 	case zoneBranch:
@@ -736,8 +750,8 @@ func modalKeybarPairs(zone zoneID) [][2]string {
 	}
 }
 
-func modalKeybarPlainText(zone zoneID) string {
-	pairs := modalKeybarPairs(zone)
+func modalKeybarPlainText(ms *modalState) string {
+	pairs := modalKeybarPairs(ms)
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
 		parts[i] = p[0] + " " + p[1]
@@ -748,13 +762,13 @@ func modalKeybarPlainText(zone zoneID) string {
 // modalKeybarLine is the foldout's own keybar, inside the border: the same
 // key/label/dot grammar the main keybar uses (changes.go's renderKeybar),
 // painted on the box's own Surface background.
-func modalKeybarLine(zone zoneID, width int) string {
+func modalKeybarLine(ms *modalState, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
 	dot := bg.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
 		return bg.Foreground(theme.KeybarKey).Bold(true).Render(k) + bg.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
-	pairs := modalKeybarPairs(zone)
+	pairs := modalKeybarPairs(ms)
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
 		parts[i] = key(p[0], p[1])
@@ -847,7 +861,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 		rowRegionH = 0
 	}
 
-	lines := []string{modalFilterLine(ms.query, ms.placeholder, width), modalRuleLine(width)}
+	lines := []string{modalFilterLine(ms, width), modalRuleLine(width)}
 
 	displayLines := modalDisplayLines(ms)
 	switch {
@@ -869,7 +883,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 			if dl.header != "" {
 				row = modalGroupHeaderLine(dl.header, rowWidth)
 			} else {
-				row = modalRowLine(ms.rows[ms.matches[dl.matchIdx].Index], rowWidth, dl.matchIdx == ms.cursor, dl.matchIdx == ms.hoverRow)
+				row = modalRowLine(ms.rows[ms.matches[dl.matchIdx].Index], rowWidth, dl.matchIdx == ms.cursor && !ms.naming, dl.matchIdx == ms.hoverRow)
 			}
 			if scrolling {
 				row += modalThumbCell(i-top, thumbTop, thumbH)
@@ -884,7 +898,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
 	}
 	lines = append(lines, modalRuleLine(width))
-	lines = append(lines, modalKeybarLine(ms.zone, width))
+	lines = append(lines, modalKeybarLine(ms, width))
 	return lines
 }
 

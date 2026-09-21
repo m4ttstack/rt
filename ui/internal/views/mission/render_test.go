@@ -804,6 +804,62 @@ func TestNamingEnterWithATypedNameClosesTheModal(t *testing.T) {
 	}
 }
 
+// TestNamingKeepsTheModalGeometryIdentical pins the reason the name field
+// reuses the filter line rather than adding one: modalHitTest is a
+// hand-rolled parallel copy of modalBoxLines' own layout, so any line-count
+// or width drift here would desync every click in the modal.
+func TestNamingKeepsTheModalGeometryIdentical(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	before := m.View().Content
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	after := m.View().Content
+
+	beforeLines := strings.Split(before, "\n")
+	afterLines := strings.Split(after, "\n")
+	if len(beforeLines) != len(afterLines) {
+		t.Fatalf("naming changed the frame height: %d lines, want %d", len(afterLines), len(beforeLines))
+	}
+	for i := range beforeLines {
+		if bw, aw := lipgloss.Width(beforeLines[i]), lipgloss.Width(afterLines[i]); bw != aw {
+			t.Fatalf("line %d width changed from %d to %d while naming", i, bw, aw)
+		}
+	}
+}
+
+func TestNamingShowsItsPlaceholderAndKeybar(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	screen := ansi.Strip(m.View().Content)
+
+	if !strings.Contains(screen, "new branch name") {
+		t.Fatalf("name placeholder missing:\n%s", screen)
+	}
+	if strings.Contains(screen, "filter branches") {
+		t.Fatalf("filter placeholder still painted while naming:\n%s", screen)
+	}
+	if !strings.Contains(screen, "enter create") || !strings.Contains(screen, "esc cancel") {
+		t.Fatalf("naming keybar missing:\n%s", screen)
+	}
+}
+
+// TestNamingHidesTheRowCursor pins modalRowLine's own cursor glyph
+// (theme.GlyphBar in theme.Pink, on a theme.SelBg background): while naming,
+// enter creates rather than acting on the cursor row, so painting that row
+// as the cursor target would be a lie.
+func TestNamingHidesTheRowCursor(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	withCursor := ansi.Strip(m.View().Content)
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	naming := ansi.Strip(m.View().Content)
+
+	if strings.Count(naming, theme.GlyphBar) >= strings.Count(withCursor, theme.GlyphBar) {
+		t.Fatalf("row cursor still painted while naming:\n%s", naming)
+	}
+}
+
 func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
@@ -996,7 +1052,8 @@ func TestModalFilterPlaceholdersPerModal(t *testing.T) {
 func TestModalFilterLineClipsLongQueryToOneRow(t *testing.T) {
 	const width = 30
 	long := strings.Repeat("a very long typed filter query ", 3)
-	out := modalFilterLine(long, "filter branches", width)
+	ms := &modalState{query: long, placeholder: "filter branches"}
+	out := modalFilterLine(ms, width)
 	if strings.Contains(out, "\n") {
 		t.Fatalf("filter row should render exactly 1 row even with a long query: %q", out)
 	}
