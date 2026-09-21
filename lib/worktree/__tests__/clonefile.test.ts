@@ -14,7 +14,11 @@ function fixture(): { dir: string; src: string } {
 }
 
 describe("clonePath", () => {
-  test("clones a directory tree; contents match, inodes differ, writes do not leak back", () => {
+  // Does not assert block sharing: that is a property of clonefile(2) itself
+  // (it either clones copy-on-write or fails with ENOTSUP), and F_LOG2PHYS,
+  // the only way to probe physical extents, is unreadable through bun:ffi
+  // (returns rc=0 with an all-zero struct), so there is no cheap in-suite check.
+  test("clones a directory tree; contents match, inodes differ, writes do not leak back to the donor", () => {
     const { dir, src } = fixture();
     const dst = join(dir, "dst");
     const r = clonePath(src, dst);
