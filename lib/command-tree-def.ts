@@ -1188,6 +1188,17 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the raw result as JSON" },
         ],
       },
+      "hydrate-clone": {
+        description: "Hidden verb the daemon spawns to clonefile(2) a golden tree's artifacts into a new member; never call directly",
+        module: "./commands/worktree.ts",
+        fn: "worktreeHydrateClone",
+        hidden: true,
+        omitBehavior: { exempt: "daemon-facing by contract; src and dst are arbitrary paths" },
+        args: [
+          { name: "Source", type: "text", placeholder: "/path/to/golden/node_modules", hint: "Path to clone from" },
+          { name: "Destination", type: "text", placeholder: "/path/to/member/node_modules", hint: "Path to create" },
+        ],
+      },
       "claude-hook": {
         description: "Claude Code WorktreeCreate/WorktreeRemove hook endpoint (stdin JSON in, tree path out)",
         module: "./commands/worktree-hook.ts",

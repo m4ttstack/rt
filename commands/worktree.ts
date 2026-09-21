@@ -26,6 +26,7 @@ import { maybeOfferClaudeHook } from "./worktree-hook.ts";
 import { writeReadyApproval } from "../lib/worktree/ready-approval.ts";
 import { daemonQuery, lastQueryTimedOut, type DaemonResponse } from "../lib/daemon-client.ts";
 import { listWorktrees } from "../lib/git-worktrees.ts";
+import { clonePath, cloneExitCode, CLONE_EXIT } from "../lib/worktree/clonefile.ts";
 import {
   parseEachArgs,
   filterTargets,
@@ -879,4 +880,16 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
   const summary = formatSummary(results);
   console.log(`  ${hasFailures(results) ? red : green}${summary}${reset}\n`);
   if (hasFailures(results)) process.exit(1);
+}
+
+/** Child-process body for hydration: one clonefile(2) of <src> at <dst>. Exit codes are the daemon's contract; see lib/worktree/clonefile.ts. */
+export async function worktreeHydrateClone(args: string[], _ctx: unknown): Promise<void> {
+  const [src, dst] = args.filter((a) => !a.startsWith("--"));
+  if (!src || !dst || src === dst) {
+    console.error("usage: rt worktree hydrate-clone <src> <dst>");
+    process.exit(CLONE_EXIT.usage);
+  }
+  const r = clonePath(src, dst);
+  if (!r.ok) console.error(`clonefile: ${r.message}`);
+  process.exit(cloneExitCode(r));
 }
