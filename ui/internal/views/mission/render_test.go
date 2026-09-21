@@ -658,13 +658,34 @@ func TestWorktreeModalWidthFloorsAtSegmentWidthOnAWideFrame(t *testing.T) {
 	}
 }
 
+// TestSettlingWorktreeShowsInTheTopBar uses newTestMission's own fixture
+// width (100, unmodified) rather than an artificially wide frame -- at 100
+// the worktree segment is narrow enough (segmentBottomAvail == 9) that the
+// marker only survives if the name gives way to it, which is the behavior
+// under test.
 func TestSettlingWorktreeShowsInTheTopBar(t *testing.T) {
 	m := newTestMission()
-	m.width = 300 // wide enough that the worktree segment's clip does not eat the marker
 	m.model.Current.Settling = true
 	screen := ansi.Strip(m.View().Content)
 	if !strings.Contains(screen, "settling") {
 		t.Fatalf("settling worktree not marked in the top bar:\n%s", screen)
+	}
+}
+
+// TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth pins a normal
+// 130-column terminal (renderTopBar's three-way split gives the worktree
+// segment 27 cells there) against a worktree name long enough to fill that
+// whole segment on its own. The marker must still render, and the name --
+// not the marker -- is what gets clipped.
+func TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth(t *testing.T) {
+	const segmentWidthAt130Cols = 27
+	const longName = "glitter-pty-gate-and-docs"
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: longName, Settling: true}}, segmentWidthAt130Cols, false, false))
+	if !strings.Contains(out, "settling") {
+		t.Fatalf("settling marker lost to clipping at a realistic width:\n%s", out)
+	}
+	if strings.Contains(out, longName) {
+		t.Fatalf("worktree name rendered in full instead of giving way to the marker:\n%s", out)
 	}
 }
 
