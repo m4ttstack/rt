@@ -786,10 +786,6 @@ func modalKeybarPlainTextFor(zone zoneID, naming bool) string {
 	return strings.Join(parts, " · ")
 }
 
-func modalKeybarPlainText(ms *modalState) string {
-	return modalKeybarPlainTextFor(ms.zone, ms.naming)
-}
-
 // modalKeybarMaxPlainWidth is the widest keybar text a zone can ever show,
 // naming or not, so modalWidth sizes the box off a bound that does not
 // shift when naming opens or closes (a ratified geometry invariant).
