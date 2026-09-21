@@ -73,10 +73,6 @@ line here and a ticket there; removing one means removing all three.
   "History lands in v2". No commit data reaches the wire model.
 - **Stash foldout.** The strip shows a count and a chevron; a click
   answers "Stash foldout lands in v2". No restore, apply, or drop.
-- **Branch creation and worktree provisioning.** Both foldout action
-  rows exist and are reachable, and both answer "use rt worktree
-  provision". Neither creates anything; a name-entry affordance inside
-  a foldout has no precedent yet.
 - **Publish repository.** The action segment renders the state for
   parity; activating it answers "publishing a repository is not wired
   yet".
@@ -149,6 +145,12 @@ skipping straight to row content and token colors):
 2. Composition: what docks where (the commit block pins to the sidebar
    bottom with flexible fill above), what stretches, what stays fixed
    (sidebar width), where rules run unbroken.
+   - **Foldout name entry.** A foldout that can create something collects
+     the name inline: ctrl-n turns the filter line into a name field, the
+     row list goes inert, and the keybar reads `enter create · esc cancel`.
+     The box keeps its exact height and hit zones, because an extra line
+     would have to be mirrored by hand in the modal's own hit-test walk.
+     Ratified 2026-09-21.
 3. Iconography: every icon on the board and the exact glyph the build
    uses for it; a substitution is a finding to fix or explicitly ratify
    here, never a silent approximation.
