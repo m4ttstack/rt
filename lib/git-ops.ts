@@ -122,16 +122,20 @@ export function getRemoteDefaultBranch(
 /**
  * Reads the effective `pull.rebase` config (local, global, or system,
  * whichever `git config --get` resolves), argv-only since the caller never
- * builds a command string here. Any set, non-"false" value (true,
- * interactive, merges, preserve) means a plain `pull` rebases; unset or
- * "false" means it merges.
+ * builds a command string here.
+ *
+ * GHD parity (app/src/lib/stores/git-store.ts's checkPullWithRebase): only
+ * the exact string "true" means rebase. Unset, "false", or anything else
+ * (interactive, merges, preserve, a typo) all mean not-rebase -- GHD itself
+ * logs a warning on an unrecognized value and falls back rather than
+ * guessing which of git's own richer rebase modes the user meant.
  */
 export function getPullRebase(cwd: string): boolean {
   try {
     const out = execFileSync("git", ["config", "--get", "pull.rebase"], {
       cwd, encoding: "utf8", stdio: "pipe",
     }).trim();
-    return out !== "" && out !== "false";
+    return out === "true";
   } catch {
     return false; // unset, or git config exited non-zero
   }

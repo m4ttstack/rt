@@ -135,10 +135,14 @@ describe("getPullRebase", () => {
     expect(getPullRebase(repo)).toBe(false);
   });
 
-  test("true for the non-boolean 'interactive' and 'merges' values", () => {
+  // GHD parity (app/src/lib/stores/git-store.ts's checkPullWithRebase):
+  // only the exact string "true" means rebase; any other non-"false" value
+  // (interactive, merges, a typo) logs a warning there and falls back to
+  // undefined/not-rebase rather than guessing.
+  test("false for the non-boolean 'interactive' and 'merges' values (GHD parity)", () => {
     execSync("git config pull.rebase interactive", { cwd: repo, shell: "/bin/zsh" });
-    expect(getPullRebase(repo)).toBe(true);
+    expect(getPullRebase(repo)).toBe(false);
     execSync("git config pull.rebase merges", { cwd: repo, shell: "/bin/zsh" });
-    expect(getPullRebase(repo)).toBe(true);
+    expect(getPullRebase(repo)).toBe(false);
   });
 });
