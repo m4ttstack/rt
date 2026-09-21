@@ -9,18 +9,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Which of this PR's files can affect the glitter board. Cheap ubuntu job so
+  # the expensive macos one below can be skipped outright.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      glitter: ${{ steps.filter.outputs.glitter }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A push to main always runs it: main is what releases cut from, and
+          # a path filter that is wrong should fail there rather than ship.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "glitter=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qE '^(ui/|lib/mission/|lib/ui/|commands/glitter\.ts|packages/git-core/|e2e/(pty/|glitter-repo\.ts|interactive\.ts|harness\.ts|setup\.ts)|\.github/workflows/e2e\.yml|package\.json)'; then
+            echo "glitter=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "glitter=false" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-
-      # The glitter pty gate drives the real rt-ui, so this job needs Go.
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: ui/go.mod
-          cache-dependency-path: ui/go.sum
 
       - name: Install dependencies
         run: |
@@ -51,7 +72,7 @@ jobs:
           codesign --force --sign - --entitlements scripts/entitlements.plist dist/rt
 
       - name: Run e2e tests
-        run: bun test --preload ./e2e/setup.ts --timeout 60000 e2e/
+        run: bun run test:e2e
         env:
           RT_BINARY: ${{ github.workspace }}/dist/rt
 
@@ -62,3 +83,57 @@ jobs:
           name: e2e-debug
           path: e2e/artifacts/
           retention-days: 7
+
+  # The glitter pty gate drives the real rt-ui, so it needs Go and a helper
+  # build the other e2e tests never touch. It is its own job so that cost
+  # lands only on PRs that can actually break the board -- and so a run that
+  # does not apply shows up as a skipped check rather than a silent pass.
+  #
+  # The trigger is every input the board is built from, NOT just ui/: the
+  # driver, the command, and git-core are TypeScript, and the two bugs this
+  # gate was written after (RT-221) were both TypeScript with no Go diff.
+  glitter-pty:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.glitter == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ui/go.mod
+          cache-dependency-path: ui/go.sum
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: cargo-termwright-${{ runner.os }}
+          restore-keys: cargo-termwright-
+
+      - name: Install Termwright
+        run: |
+          if ! command -v termwright &>/dev/null; then
+            cargo install termwright
+          fi
+
+      - name: Build rt binary
+        run: bun build --compile ./cli.ts --outfile dist/rt --define 'RT_VERSION="e2e-test"'
+
+      - name: Codesign binary (ad-hoc with JIT entitlements)
+        run: |
+          codesign --remove-signature dist/rt
+          codesign --force --sign - --entitlements scripts/entitlements.plist dist/rt
+
+      - name: Run the glitter pty gate
+        run: bun run test:pty
+        env:
+          RT_BINARY: ${{ github.workspace }}/dist/rt

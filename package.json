@@ -11,8 +11,9 @@
   "scripts": {
     "test": "bun test lib commands packages scripts rt-tray/Tests/stub-rt",
     "test:watch": "bun test --watch lib commands packages scripts rt-tray/Tests/stub-rt",
-    "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/",
-    "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/",
+    "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/",
+    "test:pty": "bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
+    "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/ && bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
     "docs:gen": "bun scripts/gen-docs.ts",
     "docs:check": "bun scripts/check-docs.ts",
     "picker:check": "bun scripts/lib/picker-conformance.ts",

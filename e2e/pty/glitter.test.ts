@@ -18,7 +18,7 @@ import { createTestHome } from "../harness.ts";
 import { startInteractive, type TermwrightSession } from "../interactive.ts";
 import { createGlitterRepo, type GlitterRepo } from "../glitter-repo.ts";
 
-const REPO_ROOT = import.meta.dir.replace("/e2e/tests", "");
+const REPO_ROOT = import.meta.dir.replace("/e2e/pty", "");
 const RT_UI_BIN = join(REPO_ROOT, "ui", "dist", "rt-ui");
 const PAINT_TIMEOUT = 15_000;
 
