@@ -1,5 +1,5 @@
 import type { ClientContext } from "./client.ts";
-import type { BranchInfo, TagInfo } from "./types.ts";
+import type { BranchInfo, RemoteInfo, TagInfo } from "./types.ts";
 import { rawGit } from "./exec.ts";
 import { assertSafeCommitish, assertSafeRemote, assertValidTagName } from "./ref-guard.ts";
 
@@ -52,6 +52,15 @@ export async function getBranches(ctx: ClientContext): Promise<BranchInfo[]> {
         committedAt: committedAt ?? "",
       };
     });
+}
+
+export async function getRemotes(ctx: ClientContext): Promise<RemoteInfo[]> {
+  const out = await rawGit(ctx.dir, ["remote"]);
+  return out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((name) => name.length > 0)
+    .map((name) => ({ name }));
 }
 
 const TAG_FORMAT = [

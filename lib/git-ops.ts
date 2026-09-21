@@ -5,7 +5,7 @@
  * Uses child_process for all git commands.
  */
 
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 
 /**
  * Get the current branch name (or null if detached HEAD).
@@ -117,4 +117,22 @@ export function getRemoteDefaultBranch(
     } catch { /* doesn't exist */ }
   }
   return null;
+}
+
+/**
+ * Reads the effective `pull.rebase` config (local, global, or system,
+ * whichever `git config --get` resolves), argv-only since the caller never
+ * builds a command string here. Any set, non-"false" value (true,
+ * interactive, merges, preserve) means a plain `pull` rebases; unset or
+ * "false" means it merges.
+ */
+export function getPullRebase(cwd: string): boolean {
+  try {
+    const out = execFileSync("git", ["config", "--get", "pull.rebase"], {
+      cwd, encoding: "utf8", stdio: "pipe",
+    }).trim();
+    return out !== "" && out !== "false";
+  } catch {
+    return false; // unset, or git config exited non-zero
+  }
 }

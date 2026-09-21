@@ -110,6 +110,7 @@ function makeFakeClient(overrides: {
   stagingDiff?: (path: string) => Promise<StagingDiff>;
   undoLastCommit?: GitClient["undoLastCommit"];
   branches?: () => Promise<BranchInfo[]>;
+  remotes?: GitClient["remotes"];
   log?: GitClient["log"];
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], stageFileFully: [], resetToCommit: [] };
@@ -118,6 +119,10 @@ function makeFakeClient(overrides: {
     snapshot: overrides.snapshot ?? (async () => baseSnapshot()),
     diffFile: async () => ({ path: "", kind: "text", hunks: [] }),
     branches: overrides.branches ?? (async () => []),
+    // Default names a real remote so the existing action-kind tests (push,
+    // publish-branch, ...) keep reaching those kinds -- deriveAction reads
+    // remoteName === null as "no remote at all" (publish-repo).
+    remotes: overrides.remotes ?? (async () => [{ name: "origin" }]),
     tags: async () => [],
     log: overrides.log ?? (async () => []),
     stashes: async () => [],

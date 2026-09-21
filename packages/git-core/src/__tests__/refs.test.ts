@@ -60,6 +60,29 @@ describe("branches", () => {
   });
 });
 
+describe("remotes", () => {
+  it("lists a configured remote's name", async () => {
+    const sb = await seeded();
+    try {
+      await sb.addBareRemote("upstream");
+      const remotes = await createGitClient(sb.dir).remotes();
+      expect(remotes).toEqual([{ name: "upstream" }]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("is empty when no remote is configured", async () => {
+    const sb = await seeded();
+    try {
+      const remotes = await createGitClient(sb.dir).remotes();
+      expect(remotes).toEqual([]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+});
+
 describe("tags", () => {
   it("annotated vs lightweight", async () => {
     const sb = await seeded();

@@ -56,6 +56,10 @@ export interface BranchInfo {
   committedAt: string; // ISO 8601
 }
 
+export interface RemoteInfo {
+  name: string;
+}
+
 export interface TagInfo {
   name: string;
   sha: string;
@@ -101,6 +105,8 @@ export interface GitClient {
   snapshot(): Promise<RepoSnapshot>;
   diffFile(path: string, opts?: { staged?: boolean; untracked?: boolean }): Promise<FileDiff>;
   branches(): Promise<BranchInfo[]>;
+  /** Configured remote names, in `git remote`'s own order; empty for a repo with none. */
+  remotes(): Promise<RemoteInfo[]>;
   tags(): Promise<TagInfo[]>;
   log(opts?: { maxCount?: number; file?: string }): Promise<LogEntry[]>;
   stashes(): Promise<StashEntry[]>;
