@@ -123,6 +123,10 @@ RT-221's own "line-level unstage is impossible" residual dissolves
 under this model: unchecking a line was always just deselecting it,
 once staging stopped being a git call at all.
 
+## Worktree provisioning: the name field names the branch
+
+When provisioning a worktree from a foldout, the inline name field captures the BRANCH name, not the worktree's directory name. rt picks the folder name itself from a pool (names like `theoden` or `denethor`); the provisioning verb refuses outright when given no branch, which is why the field cannot be blank. A reader seeing "Provision new worktree..." and a text entry naturally assumes the name typed is the folder -- this note clarifies it captures the branch instead.
+
 ## Terminal-fidelity deltas (same set the picker ratified)
 
 No drop shadows (modal lift = Surface token + Panel border + parent dim),
@@ -148,9 +152,10 @@ skipping straight to row content and token colors):
    - **Foldout name entry.** A foldout that can create something collects
      the name inline: ctrl-n turns the filter line into a name field, the
      row list goes inert, and the keybar reads `enter create · esc cancel`.
-     The box keeps its exact height and hit zones, because an extra line
-     would have to be mirrored by hand in the modal's own hit-test walk.
-     Ratified 2026-09-21.
+     Esc is two-level: the first leaves naming and returns to filtering with
+     the modal still open; the second closes the modal. The box keeps its
+     exact height and hit zones, because an extra line would have to be
+     mirrored by hand in the modal's own hit-test walk. Ratified 2026-09-21.
 3. Iconography: every icon on the board and the exact glyph the build
    uses for it; a substitution is a finding to fix or explicitly ratify
    here, never a silent approximation.
@@ -159,6 +164,10 @@ skipping straight to row content and token colors):
 5. States: every board state (rest/hover/cursor/disabled/empty) rendered
    and captured, including states the boards do NOT draw; an unboarded
    state (like empty) is a gap to board first, not to improvise.
+   - **Worktree settling marker.** A freshly provisioned worktree wears a
+     "settling" marker in the top bar until the daemon reports its ready
+     steps finished. Its width is reserved so the worktree name clips first,
+     keeping the marker visible on a narrow terminal.
 
 ## Terminal geometry (ratified 2026-09-19)
 
