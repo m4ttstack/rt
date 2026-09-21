@@ -35,10 +35,11 @@ final class WebViewStore {
         config.websiteDataStore = .default()
         let view = WKWebView(frame: .zero, configuration: config)
         view.allowsBackForwardNavigationGestures = true
-        // What shows through before a page has painted. Left at its default
-        // it is white, which flashes against the shell's dark chrome every
-        // time a tab is opened for the first time.
-        view.underPageBackgroundColor = ShellChrome.bar.nsColor
+        // underPageBackgroundColor stays at its default, which WebKit derives
+        // from the page. Pinning it to the shell's dark chrome also fills the
+        // scroller gutter of any page that reserves one, and macOS draws a
+        // light page's thumb as translucent black -- invisible against it.
+        // LoadingOverlay is what covers a tab's first paint.
         if let url = URL(string: app.url) { view.load(URLRequest(url: url)) }
         views[app.name] = view
         return view
