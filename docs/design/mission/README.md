@@ -60,6 +60,47 @@ shadows, no radii).
   surface.
 - The History tab is deferred; the tab renders dimmed.
 
+## Staging model: rt adopts GitHub Desktop's own (ratified 2026-09-21)
+
+The diff pane always shows a file's FULL change against HEAD (`git diff
+HEAD -- <path>`), independent of what's actually in the index --
+untracked files diff against `/dev/null` (whole file as additions),
+renamed files diff against the index (GHD's own acknowledged
+compromise: "technically incorrect, the best kind of incorrect"), and
+every other status diffs against HEAD, so staged and unstaged content
+show together in one view. A checkbox (per line, per hunk, or the
+whole file) means "include this in the next commit," not "already in
+the index" -- toggling one only ever mutates the driver's own
+selection; it never runs a git command. Every file's selection seeds
+to All the moment it first appears.
+
+**The real git index is a scratch pad the commit step owns outright.**
+At commit time the driver resets the WHOLE index to HEAD, then
+rebuilds it file by file from each one's own selection (GHD's exact
+sequencing, `app/src/lib/git/commit.ts`'s `createCommit`), then runs
+the actual `git commit`. This means **anything staged outside
+glitter -- a plain `git add`, another agent editing the same repo
+concurrently, a leftover `git add -p` from a terminal session -- is
+rebuilt away at the next commit and replaced with exactly what the
+mission view's own checkboxes say.** This is GitHub Desktop's own
+accepted behavior, not an oversight, and worth stating plainly given
+this estate routinely has multiple agents working the same checkout.
+
+A selection persists across the whole session, not just one render:
+it survives an unrelated refresh (a git-status sweep, a badge update)
+untouched, is seeded fresh only for a file that's newly appeared, and
+is pruned only when a file is gone entirely. The one deliberate
+exception is a Partial selection specifically -- a commit that took
+some of a file's checked lines, or a discard, changes that file's
+remaining diff shape, so a Partial selection's absolute line indices
+no longer point at the same content; GHD's own fix (and rt's) is to
+downgrade it to None rather than carry it forward or reseed it to All,
+so the user reviews what's left rather than it silently riding along.
+
+RT-221's own "line-level unstage is impossible" residual dissolves
+under this model: unchecking a line was always just deselecting it,
+once staging stopped being a git call at all.
+
 ## Terminal-fidelity deltas (same set the picker ratified)
 
 No drop shadows (modal lift = Surface token + Panel border + parent dim),

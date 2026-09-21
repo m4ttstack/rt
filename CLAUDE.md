@@ -97,6 +97,20 @@ writing a third version -- this was a standing correction after mission's
 own diff pane and Changes list had each grown a byte-for-byte duplicate of
 the picker's viewport math independently.
 
+### Mission adopts GitHub Desktop's staging model
+
+`rt glitter`'s checkboxes (line, hunk, or whole file) are commit
+INTENT, not index state -- toggling one never touches git. The real
+index is rebuilt from scratch at commit time (reset to HEAD, then
+restaged file by file from each one's own selection), so **anything
+staged outside glitter -- a plain `git add`, another agent editing the
+same repo concurrently -- is discarded at the next commit and replaced
+with exactly what the checkboxes say.** This is GitHub Desktop's own
+behavior, not a bug. Full design and the one selection-persistence
+exception (a Partial selection downgrades to None, not All, once a
+commit or discard shifts its file's diff shape) are in
+`docs/design/mission/README.md`'s "Staging model" section.
+
 ## The TypeScript CLI is UI-free
 
 The rt TS CLI (`commands/`, `lib/`, `cli.ts`, `scripts/`) is pure Bun/TypeScript
