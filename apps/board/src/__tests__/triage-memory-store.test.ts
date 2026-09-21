@@ -13,6 +13,7 @@ import {
   tryClaimCron,
   writeMemory,
   writeRefreshedIdentity,
+  writeStandDown,
 } from '../triage/memory-store.ts';
 import { emptyMrMemory, type DispatchMemory } from '../triage/memory.ts';
 
@@ -161,5 +162,47 @@ describe('writeRefreshedIdentity', () => {
     const final = readMemory(db);
     expect(final.identity).toEqual({ username: 'fresh', fetchedAt: 2 });
     expect(final.mrs['https://x/mr/1']!.attemptsToday).toBe(5); // not clobbered
+  });
+});
+
+describe('writeStandDown', () => {
+  test('merges only standDown onto the CURRENT row, never a stale earlier read', () => {
+    writeMemory(
+      {
+        identity: null,
+        mrs: {
+          'https://x/mr/1': {
+            ...emptyMrMemory('2026-08-08'),
+            attemptsToday: 2,
+          },
+        },
+      },
+      db
+    );
+    // A triage pass writing other fields (attempt budgets) during the gap
+    // between this caller's read and its write -- same race
+    // writeRefreshedIdentity's own test guards against.
+    const concurrent = readMemory(db);
+    concurrent.mrs['https://x/mr/1']!.attemptsToday = 5;
+    writeMemory(concurrent, db);
+
+    writeStandDown('https://x/mr/1', true, '2026-08-08', db);
+
+    const final = readMemory(db);
+    expect(final.mrs['https://x/mr/1']!.standDown).toBe(true);
+    expect(final.mrs['https://x/mr/1']!.attemptsToday).toBe(5); // not clobbered
+  });
+
+  test('an MR with no memory row yet gets a fresh one', () => {
+    writeStandDown('https://x/mr/9', true, '2026-08-08', db);
+    const mem = readMemory(db);
+    expect(mem.mrs['https://x/mr/9']?.standDown).toBe(true);
+    expect(mem.mrs['https://x/mr/9']?.attemptsToday).toBe(0);
+  });
+
+  test('on: false clears the flag without touching anything else', () => {
+    writeStandDown('https://x/mr/1', true, '2026-08-08', db);
+    writeStandDown('https://x/mr/1', false, '2026-08-08', db);
+    expect(readMemory(db).mrs['https://x/mr/1']?.standDown).toBe(false);
   });
 });

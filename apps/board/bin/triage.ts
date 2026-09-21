@@ -17,7 +17,7 @@ import {
   readDoctorStates,
   writeDoctorState,
 } from '../src/doctor-state.ts';
-import { launchDoctor } from '../src/herdr.ts';
+import { launchDoctor, sendPaneText } from '../src/herdr.ts';
 import { latchGateway } from '../src/latch/gateway.ts';
 import { resolveLaunchSkill } from '../src/manifest-bindings.ts';
 import { makeSwitchboardClient } from '../src/peer/client.ts';
@@ -184,6 +184,8 @@ try {
     notify: (title, message) => notifyEscalation(title, message, triage.notify),
     memory,
     writeMemory,
+    readFreshMemory: readMemory,
+    sendPaneText,
     now: () => Date.now(),
     // BOARD-10: one CI attendant per MR (plain files under ~/.mattstack/ci-attendants).
     attendants: {

@@ -155,6 +155,13 @@ export function doctorResumeDispatchFields(
   };
 }
 
+/** Sent to a live doctor pane on stand-down -- both at the normal call site
+    and at the post-launch race guard (server.ts's manual completion,
+    triage/run.ts's auto completion), so a pane that only gets a paneId
+    AFTER the operator stood its MR down still hears about it. */
+export const STAND_DOWN_PANE_MESSAGE =
+  'Operator stood down auto-doctor on this MR/stack. Stop and exit -- this pane will not be resumed automatically.';
+
 export interface StandDownPlan {
   /** paneId to nudge via sendPaneText, or null when there's no live pane to tell. */
   paneToNudge: string | null;

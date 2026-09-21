@@ -98,6 +98,7 @@ import {
   planStandDown,
   pruneDoctorStates,
   readDoctorStates,
+  STAND_DOWN_PANE_MESSAGE,
   writeDoctorState,
   type DoctorState,
   type DoctorStatus,
@@ -261,11 +262,11 @@ import {
   readMemory,
   releaseCron,
   tryClaimCron,
-  writeMemory,
   writeRefreshedIdentity,
+  writeStandDown,
 } from './triage/memory-store.ts';
-import { emptyMrMemory } from './triage/memory.ts';
 import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
+import { resolveStandDownTarget } from './view.ts';
 
 /** Capture-harness mode: boot from a committed fixture dir instead of live
     config, serve canned endpoint responses, hold no tokens, start no relay.
@@ -1767,6 +1768,26 @@ const httpServer = Bun.serve({
         })
           .then(result => {
             if (result.focusedExisting) return;
+            // Race guard: the row may have closed out (operator stand-down)
+            // while this launch was in flight -- readDoctorStates() here is
+            // a fresh read, not the `existing` this handler captured before
+            // dispatching. A terminal row is never resurrected to 'queued'.
+            // Only nudge the fresh pane when it's actually a stand-down
+            // (readMemory, not the doctor row's message string) -- a terminal
+            // row for some other reason gets left alone rather than handed a
+            // misleading "operator stood down" message.
+            const fresh = readDoctorStates().get(parsed.mrUrl);
+            if (fresh && !DOCTOR_IN_FLIGHT.has(fresh.status)) {
+              if (result.paneId && readMemory().mrs[parsed.mrUrl]?.standDown) {
+                void sendPaneText(result.paneId, STAND_DOWN_PANE_MESSAGE).catch(
+                  err =>
+                    console.error(
+                      `stand-down pane nudge (post-launch) failed: ${err instanceof Error ? err.message : err}`
+                    )
+                );
+              }
+              return;
+            }
             writeDoctorState(statePath, {
               status: 'queued',
               tabId: result.tabId,
@@ -2218,10 +2239,13 @@ const httpServer = Bun.serve({
         // The row menu's "never diagnose this stack": a sticky per-MR flag
         // runTriage checks (self or any ancestor) before every dispatch --
         // see triage/run.ts's isStoodDown. Turning it on also cleans up
-        // whatever the doctor left on THIS MR's own row: a stale error or
-        // open escalation gate (writeDoctorState to a terminal status
-        // auto-closes it, see gates/cache.ts's isAnsweredRowTerminal), any
-        // held draft note, and a live pane if one is still running.
+        // whatever the doctor left on THIS MR's own row, AND every
+        // descendant's (a stand-down covers the whole stack, but only the
+        // submitted MR's own memory flag is set -- descendants inherit it
+        // via isStoodDown's ancestor walk): a stale error or open escalation
+        // gate (writeDoctorState to a terminal status auto-closes it, see
+        // gates/cache.ts's isAnsweredRowTerminal), any held draft note, and
+        // a live pane if one is still running.
         if (req.method !== 'POST')
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
@@ -2236,62 +2260,80 @@ const httpServer = Bun.serve({
         } catch {
           return new Response('invalid json', { status: 400 });
         }
-        const { mrUrl, iid, on } = (body ?? {}) as {
+        const { mrUrl, on } = (body ?? {}) as {
           mrUrl?: unknown;
-          iid?: unknown;
           on?: unknown;
         };
         if (typeof mrUrl !== 'string' || !mrUrl)
-          return new Response(
-            'expected { mrUrl: string, iid: number, on: boolean }',
-            { status: 400 }
-          );
-        if (typeof iid !== 'number' || !Number.isFinite(iid))
-          return new Response(
-            'expected { mrUrl: string, iid: number, on: boolean }',
-            { status: 400 }
-          );
+          return new Response('expected { mrUrl: string, on: boolean }', {
+            status: 400,
+          });
         if (typeof on !== 'boolean')
-          return new Response(
-            'expected { mrUrl: string, iid: number, on: boolean }',
-            { status: 400 }
-          );
+          return new Response('expected { mrUrl: string, on: boolean }', {
+            status: 400,
+          });
+        // Resolve + authorize from the snapshot rather than trusting the
+        // body: the client-side row-menu gate (own MRs only) is not a
+        // security boundary on its own.
+        const snapshot = await cache.get();
+        const resolved = resolveStandDownTarget(
+          mrUrl,
+          snapshot.mrs,
+          config.defaultMember
+        );
+        if (!resolved.ok)
+          return new Response(resolved.error, { status: resolved.status });
+        const { mr, descendants } = resolved;
 
-        const mem = readMemory();
         const dayStamp = new Date().toISOString().slice(0, 10);
-        mem.mrs[mrUrl] = {
-          ...(mem.mrs[mrUrl] ?? emptyMrMemory(dayStamp)),
-          standDown: on,
-        };
-        writeMemory(mem);
+        // Serialized behind the same claim bin/triage.ts's own pass holds
+        // across its read-await-write: without it, a triage pass reading
+        // memory while this request is in flight (or vice versa) can drop
+        // either side's write -- see writeStandDown and tryClaimCron's own
+        // doc comment. A few short retries cover the common case (the claim
+        // is usually free); a live holder mid-launch is rare enough that
+        // refusing outright beats risking a silent lost write.
+        let claimed: string | false = false;
+        for (let attempt = 0; attempt < 5 && claimed === false; attempt++) {
+          claimed = tryClaimCron(Date.now());
+          if (claimed === false) await new Promise(r => setTimeout(r, 100));
+        }
+        if (claimed === false)
+          return new Response('triage is busy, try again', { status: 503 });
+        try {
+          writeStandDown(mr.webUrl!, on, dayStamp);
+        } finally {
+          releaseCron(claimed);
+        }
 
         if (on) {
-          const plan = planStandDown(
-            readDoctorStates().get(mrUrl),
-            DOCTOR_IN_FLIGHT
-          );
-          if (plan.paneToNudge) {
-            try {
-              await sendPaneText(
-                plan.paneToNudge,
-                'Operator stood down auto-doctor on this MR/stack. Stop and exit -- this pane will not be resumed automatically.'
-              );
-            } catch (err) {
-              console.error(
-                `stand-down pane nudge failed: ${err instanceof Error ? err.message : err}`
-              );
+          for (const target of [mr, ...descendants]) {
+            if (!target.webUrl) continue;
+            const plan = planStandDown(
+              readDoctorStates().get(target.webUrl),
+              DOCTOR_IN_FLIGHT
+            );
+            if (plan.paneToNudge) {
+              try {
+                await sendPaneText(plan.paneToNudge, STAND_DOWN_PANE_MESSAGE);
+              } catch (err) {
+                console.error(
+                  `stand-down pane nudge failed: ${err instanceof Error ? err.message : err}`
+                );
+              }
             }
-          }
-          if (plan.clearDoctorState) {
-            writeDoctorState(doctorFilePath(mrUrl), {
-              mrUrl,
-              iid,
-              status: 'done',
-              message: 'stood down by operator',
-            });
-          }
-          for (const d of heldDraftsByMr(readDrafts()).get(mrUrl) ?? []) {
-            writeDraft(mrUrl, d.kind, { status: 'dismissed' });
+            if (plan.clearDoctorState) {
+              writeDoctorState(doctorFilePath(target.webUrl), {
+                mrUrl: target.webUrl,
+                iid: target.iid,
+                status: 'done',
+                message: 'stood down by operator',
+              });
+            }
+            for (const d of heldDraftsByMr(readDrafts()).get(target.webUrl) ??
+              []) {
+              writeDraft(target.webUrl, d.kind, { status: 'dismissed' });
+            }
           }
         }
 

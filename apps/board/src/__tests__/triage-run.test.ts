@@ -16,10 +16,12 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
   audit: AuditEntry[];
   launches: any[];
   notifies: string[];
+  paneNudges: Array<{ paneId: string; text: string }>;
 } {
   const audit: AuditEntry[] = [];
   const launches: any[] = [];
   const notifies: string[] = [];
+  const paneNudges: Array<{ paneId: string; text: string }> = [];
   const base: TriageRunDeps = {
     triage: parseTriageBlock({ enabled: true, doctorSkill: 'team:doctor-api' }),
     doctorCwd: '/repo',
@@ -68,10 +70,17 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
     },
     memory: { identity: null, mrs: {} } as DispatchMemory,
     writeMemory: () => {},
+    // Defaults to the SAME in-process snapshot (no separate-process race);
+    // a test exercising the post-launch stand-down race overrides this to
+    // simulate a different process's write landing mid-launch.
+    readFreshMemory: () => base.memory,
+    sendPaneText: async (paneId, text) => {
+      paneNudges.push({ paneId, text });
+    },
     now: () => 1_000_000_000,
     identity: 'matt',
   };
-  return Object.assign(base, over, { audit, launches, notifies });
+  return Object.assign(base, over, { audit, launches, notifies, paneNudges });
 }
 
 describe('runTriage', () => {
@@ -672,5 +681,85 @@ describe('runTriage stand-down (operator "never diagnose this stack")', () => {
     const result = await runTriage(d);
     expect(d.launches.map(l => l.iid)).toContain(1);
     expect(result.dispatched).toBeGreaterThan(0);
+  });
+});
+
+describe('runTriage post-launch stand-down race', () => {
+  // A stand-down landing from a DIFFERENT process (the board server) while
+  // this run's own launchDoctor await is in flight: readDoctorStates() and
+  // readFreshMemory() are both fresh reads, distinct from this run's own
+  // `memory` snapshot, so they can see a write this process never made.
+  function raceDeps(
+    over: Partial<ReturnType<typeof deps>> = {}
+  ): ReturnType<typeof deps> {
+    return deps({
+      readDoctorStates: () =>
+        new Map([
+          [
+            'https://x/mr/1',
+            {
+              mrUrl: 'https://x/mr/1',
+              iid: 1,
+              status: 'done' as const,
+              message: 'stood down by operator',
+              startedAt: 0,
+              updatedAt: 0,
+            },
+          ],
+        ]),
+      readFreshMemory: () => ({
+        identity: null,
+        mrs: {
+          'https://x/mr/1': { ...emptyMrMemory('1970-01-12'), standDown: true },
+        },
+      }),
+      ...over,
+    });
+  }
+
+  test('a row closed by stand-down mid-launch is never resurrected to queued', async () => {
+    const writes: Array<{ status?: string; paneId?: string }> = [];
+    const d = raceDeps({
+      writeDoctorState: (path, patch) => {
+        writes.push(patch);
+        return {
+          mrUrl: patch.mrUrl ?? '',
+          iid: patch.iid ?? 0,
+          status: patch.status,
+          startedAt: 0,
+          updatedAt: 0,
+        };
+      },
+    });
+    await runTriage(d);
+    // The dispatch-time write (status: 'queued', origin: 'auto', no paneId
+    // yet) is expected; the completion write carrying the fresh paneId is
+    // the one that must never land once the race guard sees the row closed.
+    expect(writes.some(w => w.status === 'queued' && w.paneId)).toBe(false);
+    expect(d.paneNudges).toEqual([
+      { paneId: 'p', text: expect.stringContaining('stood down') },
+    ]);
+  });
+
+  test('the freshly launched pane gets the stand-down message', async () => {
+    const d = raceDeps();
+    await runTriage(d);
+    expect(d.paneNudges).toHaveLength(1);
+    expect(d.paneNudges[0]!.paneId).toBe('p'); // the launch's own paneId
+  });
+
+  test('a terminal row for an unrelated reason (not standDown) gets no nudge', async () => {
+    const d = raceDeps({
+      readFreshMemory: () => ({ identity: null, mrs: {} }), // standDown absent
+    });
+    await runTriage(d);
+    expect(d.paneNudges).toEqual([]);
+  });
+
+  test('no race (default fresh reads): dispatch proceeds normally, no nudge', async () => {
+    const d = deps();
+    await runTriage(d);
+    expect(d.paneNudges).toEqual([]);
+    expect(d.launches).toHaveLength(1);
   });
 });

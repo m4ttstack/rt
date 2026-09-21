@@ -1,5 +1,9 @@
 import type { AgentLaunchResult } from '../agent-launch.ts';
-import type { DoctorState, DoctorStatus } from '../doctor-state.ts';
+import {
+  STAND_DOWN_PANE_MESSAGE,
+  type DoctorState,
+  type DoctorStatus,
+} from '../doctor-state.ts';
 import type { LaunchPaneOpts } from '../herdr.ts';
 import { draftBinPath } from '../herdr.ts';
 import type { AuditEntry } from './audit.ts';
@@ -156,6 +160,13 @@ export interface TriageRunDeps {
   notify(title: string, message: string): Promise<void>;
   memory: DispatchMemory;
   writeMemory(mem: DispatchMemory): void;
+  /** A FRESH disk read, distinct from `memory` (this run's own in-process
+      snapshot, mutated in place and written back at the end): used only to
+      catch a stand-down that landed in another process (the board server)
+      while a launchDoctor await was in flight -- see the post-launch race
+      guard below. */
+  readFreshMemory(): DispatchMemory;
+  sendPaneText(paneId: string, text: string): Promise<void>;
   now(): number;
   attendants?: AttendantsPort;
 }
@@ -362,13 +373,32 @@ export async function runTriage(
         draftBin: draftBinPath(),
       });
       if (!launchResult.focusedExisting) {
-        deps.writeDoctorState(statePath, {
-          status: 'queued',
-          tabId: launchResult.tabId,
-          workspaceId: launchResult.workspaceId,
-          agentId: launchResult.agentId,
-          paneId: launchResult.paneId,
-        });
+        // Race guard: an operator stand-down (a different process, the
+        // board server) may have closed this row out while the launch
+        // above was in flight -- deps.readDoctorStates() is a fresh read,
+        // not `existing` from before dispatch. A terminal row is never
+        // resurrected to 'queued'; if it's specifically a stand-down
+        // (readFreshMemory, not just "some terminal state"), the pane that
+        // only just got a paneId is told to stop instead.
+        const fresh = deps.readDoctorStates().get(edge.mrUrl);
+        if (fresh && !IN_FLIGHT.has(fresh.status)) {
+          if (
+            launchResult.paneId &&
+            deps.readFreshMemory().mrs[edge.mrUrl]?.standDown
+          ) {
+            await deps
+              .sendPaneText(launchResult.paneId, STAND_DOWN_PANE_MESSAGE)
+              .catch(() => {});
+          }
+        } else {
+          deps.writeDoctorState(statePath, {
+            status: 'queued',
+            tabId: launchResult.tabId,
+            workspaceId: launchResult.workspaceId,
+            agentId: launchResult.agentId,
+            paneId: launchResult.paneId,
+          });
+        }
       }
       deps.attendants?.claim(
         edge.mrUrl,

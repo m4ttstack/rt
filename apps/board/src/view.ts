@@ -201,6 +201,28 @@ export function nestStacks<M extends BoardMR>(mrs: M[]): StackNode<M>[] {
   return roots;
 }
 
+/** Every MR (any depth) whose ancestor chain runs through `mr` -- the set
+    POST /triage/stand-down also has to clean up (pane nudge, doctor-state
+    reset, held-draft dismissal) when it's toggled on, since a stand-down
+    cascades DOWN to descendants but only the submitted MR's own flag gets
+    set. Nearest descendants first (breadth-first), not that callers rely on
+    the order today. */
+export function descendantsOf<M extends BoardMR>(mr: M, mrs: M[]): M[] {
+  const parentOf = stackParents(mrs);
+  const out: M[] = [];
+  const queue = [mr];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const [child, parent] of parentOf) {
+      if (parent === cur) {
+        out.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return out;
+}
+
 /** Whether `mr` has at least one resolved descendant among `mrs` -- the
     question the stand-down toggle's copy needs ("ignore this MR" vs "ignore
     this stack"), since a stand-down only ever cascades DOWN to descendants
@@ -211,11 +233,34 @@ export function hasStackDescendants<M extends BoardMR>(
   mr: M,
   mrs: M[]
 ): boolean {
-  const parentOf = stackParents(mrs);
-  for (const parent of parentOf.values()) {
-    if (parent === mr) return true;
-  }
-  return false;
+  return descendantsOf(mr, mrs).length > 0;
+}
+
+export type StandDownTarget<M extends BoardMR> =
+  | { ok: true; mr: M; descendants: M[] }
+  | { ok: false; status: 400 | 403; error: string };
+
+/** POST /triage/stand-down's resolve-and-authorize step, pulled out as a
+    pure function so it's unit-testable without a live rt daemon (server.ts
+    itself boots a real HTTP server on import, so nothing there is
+    plain-importable in a test -- see triage-manual-doctor.test.ts for the
+    same reason resolveDispatchIdentity lives outside server.ts). The
+    client-side row-menu gate (own MRs only) is not a security boundary on
+    its own; this is the real one. An unknown mrUrl 400s rather than
+    creating a persistent memory row for something that isn't a real board
+    MR. `defaultMember` is never `'all'` for a real owner: an "all" board
+    (no single seat) always refuses, since no real username is ever the
+    literal string "all". */
+export function resolveStandDownTarget<M extends BoardMR>(
+  mrUrl: string,
+  mrs: M[],
+  defaultMember: string
+): StandDownTarget<M> {
+  const mr = mrs.find(m => m.webUrl === mrUrl);
+  if (!mr) return { ok: false, status: 400, error: `unknown MR "${mrUrl}"` };
+  if (mr.author.username !== defaultMember)
+    return { ok: false, status: 403, error: 'not your MR' };
+  return { ok: true, mr, descendants: descendantsOf(mr, mrs) };
 }
 
 /** Depth-first flattening of one stack tree, for views that render a chain as

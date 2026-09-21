@@ -8,7 +8,7 @@ import {
   runCriticalWrite,
   setKvValue,
 } from '../state/index.ts';
-import type { DispatchMemory } from './memory.ts';
+import { emptyMrMemory, type DispatchMemory } from './memory.ts';
 
 /** A fresh fallback object per call -- getKvValue returns this reference
     verbatim on a miss, and callers (resolveDispatchIdentity, the nudge pass)
@@ -65,6 +65,30 @@ export function writeRefreshedIdentity(
     const tx = db.transaction(() => {
       const fresh = readMemory(db);
       fresh.identity = identity;
+      setKvValue('triage', 'memory', fresh, db);
+    });
+    tx.immediate();
+  });
+}
+
+/** Writes back ONLY one MR's standDown flag, onto a fresh read of the
+    CURRENT row -- same discipline as writeRefreshedIdentity, so the auto
+    triage pass's attempt budgets / lastHandledPipelineId / dayStamp for
+    THIS MR (or any other) are never clobbered by POST /triage/stand-down,
+    and vice versa. Caller must hold tryClaimCron() around this call. */
+export function writeStandDown(
+  mrUrl: string,
+  on: boolean,
+  dayStamp: string,
+  db: Database = getStateDb()
+): void {
+  runCriticalWrite('triage stand-down write', () => {
+    const tx = db.transaction(() => {
+      const fresh = readMemory(db);
+      fresh.mrs[mrUrl] = {
+        ...(fresh.mrs[mrUrl] ?? emptyMrMemory(dayStamp)),
+        standDown: on,
+      };
       setKvValue('triage', 'memory', fresh, db);
     });
     tx.immediate();

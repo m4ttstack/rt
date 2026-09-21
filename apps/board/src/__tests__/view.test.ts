@@ -6,6 +6,7 @@ import {
   behindToken,
   dataAgeLabel,
   DEFAULT_VIEW,
+  descendantsOf,
   dropPeer,
   filterByMember,
   filterBySlack,
@@ -18,6 +19,7 @@ import {
   nestStacks,
   offRosterPeers,
   parseViewState,
+  resolveStandDownTarget,
   rosterUsernamesFor,
   serializeViewState,
   sortMRs,
@@ -472,6 +474,87 @@ describe('nestStacks', () => {
       const mrs = [root, middle, leaf];
       expect(hasStackDescendants(middle, mrs)).toBe(true);
       expect(hasStackDescendants(leaf, mrs)).toBe(false);
+    });
+  });
+
+  describe('resolveStandDownTarget', () => {
+    test('unknown MR: 400', () => {
+      const solo = smr(1, 'feat-a', 'master');
+      expect(resolveStandDownTarget('https://x/nope', [solo], 'alice')).toEqual(
+        { ok: false, status: 400, error: 'unknown MR "https://x/nope"' }
+      );
+    });
+
+    test("someone else's MR: 403, even though the URL resolves", () => {
+      const theirs = mr({
+        iid: 1,
+        webUrl: url(1),
+        sourceBranch: 'feat-a',
+        targetBranch: 'master',
+        isStacked: false,
+        author: { id: 'x', username: 'bob', name: 'Bob', avatarUrl: null },
+      } as any);
+      expect(resolveStandDownTarget(url(1), [theirs], 'alice')).toEqual({
+        ok: false,
+        status: 403,
+        error: 'not your MR',
+      });
+    });
+
+    test('own MR with no descendants: ok, empty descendants list', () => {
+      const solo = smr(1, 'feat-a', 'master');
+      const result = resolveStandDownTarget(url(1), [solo], 'alice');
+      expect(result).toEqual({ ok: true, mr: solo, descendants: [] });
+    });
+
+    test('own MR with descendants: ok, descendants populated (whole stack)', () => {
+      const parent = smr(1, 'feat-a', 'master');
+      const child = smr(2, 'feat-b', 'feat-a');
+      const grandchild = smr(3, 'feat-c', 'feat-b');
+      const mrs = [parent, child, grandchild];
+      const result = resolveStandDownTarget(url(1), mrs, 'alice');
+      expect(result.ok).toBe(true);
+      expect(
+        (result as { descendants: typeof mrs }).descendants.map(m => m.iid)
+      ).toEqual([2, 3]);
+    });
+
+    test('an "all" board (no single owner) always refuses -- never a real username', () => {
+      const solo = smr(1, 'feat-a', 'master');
+      expect(resolveStandDownTarget(url(1), [solo], 'all')).toEqual({
+        ok: false,
+        status: 403,
+        error: 'not your MR',
+      });
+    });
+  });
+
+  describe('descendantsOf', () => {
+    test('a root returns every descendant at every depth, nearest first', () => {
+      const root = smr(1, 'l1', 'master');
+      const middle = smr(2, 'l2', 'l1');
+      const leaf = smr(3, 'l3', 'l2');
+      const mrs = [root, middle, leaf];
+      expect(descendantsOf(root, mrs).map(m => m.iid)).toEqual([2, 3]);
+    });
+
+    test('a leaf has no descendants', () => {
+      const root = smr(1, 'l1', 'master');
+      const leaf = smr(2, 'l2', 'l1');
+      expect(descendantsOf(leaf, [root, leaf])).toEqual([]);
+    });
+
+    test("siblings are not one another's descendants", () => {
+      const root = smr(1, 'l1', 'master');
+      const a = smr(2, 'l2a', 'l1');
+      const b = smr(3, 'l2b', 'l1');
+      const mrs = [root, a, b];
+      expect(descendantsOf(a, mrs)).toEqual([]);
+      expect(
+        descendantsOf(root, mrs)
+          .map(m => m.iid)
+          .sort()
+      ).toEqual([2, 3]);
     });
   });
 });
