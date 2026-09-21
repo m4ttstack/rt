@@ -12,11 +12,15 @@
 import { existsSync } from "fs";
 import { isAbsolute, join, relative } from "path";
 import {
+  GOLDEN_BRANCH,
+  GOLDEN_NAME,
   loadRegistry,
   saveRegistry,
   usedNames,
+  type TreeKind,
   type TreeRecord,
 } from "./registry.ts";
+import { goldenRoot } from "../rt-paths.ts";
 import {
   runGit,
   remoteDefaultRef,
@@ -40,6 +44,8 @@ export interface CreateDeps {
   repoPath: string;
   emit: (type: string, data: unknown) => void;
   log: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  /** "golden" builds the hydration donor at goldenRoot with a fixed name; default is a pool member. */
+  target?: "member" | "golden";
 }
 
 export type CreateResult =
@@ -51,8 +57,9 @@ export async function createTree(deps: CreateDeps): Promise<CreateResult> {
   const { repoName, repoPath } = deps;
   const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
   const existing = loadRegistry(repoName);
-  const name = pickName(cfg.namePool, usedNames(existing));
-  const path = join(cfg.root, name);
+  const golden = deps.target === "golden";
+  const name = golden ? GOLDEN_NAME : pickName(cfg.namePool, usedNames(existing));
+  const path = golden ? goldenRoot(repoName) : join(cfg.root, name);
 
   // The default pool root (RT-52) lives outside the clone, so info/exclude is
   // only needed when a user override points root back inside the repo.
@@ -76,12 +83,14 @@ async function runCreate(
   path: string,
 ): Promise<CreateResult> {
   const { repoName, repoPath, emit, log } = deps;
-  const branch = `on-deck/${name}`;
+  const golden = deps.target === "golden";
+  const branch = golden ? GOLDEN_BRANCH : `on-deck/${name}`;
+  const kind: TreeKind = golden ? "golden" : "ephemeral";
 
   const rec: TreeRecord = {
     name,
     path,
-    kind: "ephemeral",
+    kind,
     state: "creating",
     branch,
     createdAt: new Date().toISOString(),

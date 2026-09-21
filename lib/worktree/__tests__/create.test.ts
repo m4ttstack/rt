@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { machineSettingsPath, teamSettingsPath } from "../../rt-paths.ts";
+import { goldenRoot, machineSettingsPath, teamSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../registry.ts";
@@ -190,6 +190,26 @@ describe("createTree", () => {
     const registry = loadRegistry(repoName);
     expect(registry[0]!.readyAt).toBeUndefined();
     expect(registry[0]!.readyStamp).toBeUndefined();
+  });
+
+  test("target golden: fixed name, goldenRoot path, golden branch, kind golden, ready like a member", async () => {
+    const expectedSha = execSync("git rev-parse HEAD", { cwd: repo, encoding: "utf8" }).trim();
+    const deps = { ...makeDeps(repoName, repo, events), target: "golden" as const };
+
+    const result = await createTree(deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.tree.kind).toBe("golden");
+    expect(result.tree.name).toBe("golden");
+    expect(result.tree.branch).toBe("golden");
+    expect(result.tree.state).toBe("on-deck");
+    expect(result.tree.readyStamp).toBe(expectedSha);
+    expect(result.tree.path).toBe(goldenRoot(repoName));
+    expect(result.tree.path.startsWith(join(repo, ".worktrees"))).toBe(false);
+
+    const worktrees = (await listWorktreesAsync(repo))!;
+    expect(worktrees.find((w) => w.path === result.tree.path)?.branch).toBe("golden");
   });
 });
 
