@@ -101,6 +101,7 @@ type Current struct {
 	WorktreeName string `json:"worktreeName"`
 	Branch       string `json:"branch"`
 	Detached     bool   `json:"detached"`
+	Settling     bool   `json:"settling"`
 }
 
 type Model struct {

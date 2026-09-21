@@ -217,6 +217,7 @@ export class MissionDriver {
       showOversized: new Set(),
       selections: new Map(),
       confirmDiscard: null,
+      settling: false,
     };
   }
 
@@ -225,6 +226,16 @@ export class MissionDriver {
     const session = await this.deps.openSession("mission", this.model());
     this.session = session;
     const sub = this.deps.subscribe((ev) => {
+      if (ev.type === "worktree:ready-settled") {
+        const data = ev.data as { path?: string; ok?: boolean } | undefined;
+        if (data?.path !== this.state.currentWorktree) return;
+        this.state.settling = false;
+        if (data?.ok === false) {
+          this.state.notice = "a ready step failed; dependencies in this tree may be stale";
+        }
+        this.push();
+        return;
+      }
       if (ev.type !== "git-status") return;
       void this.onGitStatus().catch((err) => {
         this.state.notice = `error: ${err instanceof Error ? err.message : String(err)}`;
@@ -820,7 +831,7 @@ export class MissionDriver {
       return;
     }
 
-    const data = res.data as { path?: string } | undefined;
+    const data = res.data as { path?: string; readyPending?: boolean } | undefined;
     if (typeof data?.path !== "string") {
       this.state.notice = "the daemon provisioned a tree but returned no path";
       this.push();
@@ -828,6 +839,7 @@ export class MissionDriver {
     }
     this.state.notice = "";
     this.state.currentWorktree = data.path;
+    this.state.settling = data.readyPending === true;
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();

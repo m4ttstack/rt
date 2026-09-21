@@ -658,6 +658,16 @@ func TestWorktreeModalWidthFloorsAtSegmentWidthOnAWideFrame(t *testing.T) {
 	}
 }
 
+func TestSettlingWorktreeShowsInTheTopBar(t *testing.T) {
+	m := newTestMission()
+	m.width = 300 // wide enough that the worktree segment's clip does not eat the marker
+	m.model.Current.Settling = true
+	screen := ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "settling") {
+		t.Fatalf("settling worktree not marked in the top bar:\n%s", screen)
+	}
+}
+
 func TestModalOpenDimsParentAndEscRestoresUndimmed(t *testing.T) {
 	m := newTestMission()
 	before := m.View().Content

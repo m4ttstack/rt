@@ -1182,6 +1182,102 @@ describe("MissionDriver: provisioning a worktree", () => {
 
     expect(calls).not.toContain("worktree:provision");
   });
+
+  test("a readyPending provision leaves the board settling until the daemon says otherwise", async () => {
+    let emit: ((ev: DaemonEvent) => void) | null = null;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true, readySteps: ["install"] } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+    deps.subscribe = (onEvent) => {
+      emit = onEvent;
+      return { close: () => {} };
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    const afterProvision = session.pushed.find((m) => m.current.worktree === "/trees/rohan");
+    expect(afterProvision?.current.settling).toBe(true);
+  });
+
+  test("a worktree:ready-settled event for the current tree clears settling", async () => {
+    let emit: ((ev: DaemonEvent) => void) | null = null;
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+      subscribe: (onEvent) => {
+        emit = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    session.send({ t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } });
+    await flushMicrotasks();
+
+    const afterProvision = session.pushed.find((m) => m.current.worktree === "/trees/rohan");
+    expect(afterProvision?.current.settling).toBe(true);
+
+    emit!({ type: "worktree:ready-settled", data: { repo: "repo-tools", tree: "rohan", path: "/trees/rohan", ok: true } });
+    await flushMicrotasks();
+
+    const cleared = session.pushed.at(-1);
+    expect(cleared?.current.settling).toBe(false);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a worktree:ready-settled event for a different path leaves settling untouched", async () => {
+    let emit: ((ev: DaemonEvent) => void) | null = null;
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+      subscribe: (onEvent) => {
+        emit = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    session.send({ t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } });
+    await flushMicrotasks();
+
+    const pushedBefore = session.pushed.length;
+    emit!({ type: "worktree:ready-settled", data: { repo: "repo-tools", tree: "isengard", path: "/trees/isengard", ok: true } });
+    await flushMicrotasks();
+
+    // No new push for an event that does not match the current tree.
+    expect(session.pushed.length).toBe(pushedBefore);
+    expect(session.pushed.at(-1)?.current.settling).toBe(true);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
 });
 
 describe("MissionDriver: undo", () => {

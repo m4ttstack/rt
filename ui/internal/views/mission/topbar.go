@@ -110,6 +110,9 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 	if name == "" {
 		name = m.Current.Worktree
 	}
+	if m.Current.Settling {
+		name += "  settling"
+	}
 	return renderSegment(width, segmentSpec{
 		icon:        theme.GlyphWorktree,
 		iconColor:   theme.Dimmer,

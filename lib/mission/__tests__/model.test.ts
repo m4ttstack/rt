@@ -83,6 +83,7 @@ function baseState(overrides: Partial<MissionState> = {}): MissionState {
     notice: "",
     showOversized: new Set(),
     selections: new Map(),
+    settling: false,
     ...overrides,
   };
 }
@@ -352,6 +353,13 @@ describe("current.worktreeName falls back to the checkout directory's basename",
   test("a real rt worktree name is unaffected", () => {
     const model = buildModel(baseInput());
     expect(model.current.worktreeName).toBe("repo");
+  });
+});
+
+describe("current.settling", () => {
+  test("buildModel reports settling false by default", () => {
+    const model = buildModel(baseInput());
+    expect(model.current.settling).toBe(false);
   });
 });
 
