@@ -869,13 +869,7 @@ func (m *Mission) diffHit(diffX, y int) hit {
 // block (action/keybar) rather than there being nothing left to hit.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
-	inner := modalWidth(ms, m.width)
-	if maxInner := m.width - 2; inner > maxInner {
-		inner = maxInner
-	}
-	if inner < 1 {
-		inner = 1
-	}
+	inner := modalInnerWidth(ms, m.width)
 	boxW := inner + 2
 	bx := clampX(segmentOrigin(ms.zone, m.width), boxW, m.width)
 	by := m.layout().topH

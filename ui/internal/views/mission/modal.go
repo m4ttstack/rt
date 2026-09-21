@@ -527,7 +527,7 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	if ms.action != nil {
 		consider(2 + lipgloss.Width(ms.action.label)) // bar + gap
 	}
-	consider(1 + lipgloss.Width(modalKeybarPlainText(ms)))
+	consider(1 + modalKeybarMaxPlainWidth(ms.zone))
 	if need > modalContentMax {
 		need = modalContentMax
 	}
@@ -753,15 +753,15 @@ func modalGroupHeaderLine(text string, width int) string {
 	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + clip(text, textW)))
 }
 
-// modalKeybarPairs lists the foldout's own wired key/label pairs, in display
-// order: only what this modal actually dispatches, never the boards' unwired
+// modalKeybarPairsFor lists a zone's wired key/label pairs, in display order:
+// only what this modal actually dispatches, never the boards' unwired
 // ctrl-f/ctrl-w/ctrl-d. While naming, enter and esc mean create/cancel
 // instead of whatever the zone's own action row wires them to.
-func modalKeybarPairs(ms *modalState) [][2]string {
-	if ms.naming {
+func modalKeybarPairsFor(zone zoneID, naming bool) [][2]string {
+	if naming {
 		return [][2]string{{"enter", "create"}, {"esc", "cancel"}}
 	}
-	switch ms.zone {
+	switch zone {
 	case zoneRepo:
 		return [][2]string{{"enter", "open"}, {"esc", "close"}}
 	case zoneBranch:
@@ -773,13 +773,34 @@ func modalKeybarPairs(ms *modalState) [][2]string {
 	}
 }
 
-func modalKeybarPlainText(ms *modalState) string {
-	pairs := modalKeybarPairs(ms)
+func modalKeybarPairs(ms *modalState) [][2]string {
+	return modalKeybarPairsFor(ms.zone, ms.naming)
+}
+
+func modalKeybarPlainTextFor(zone zoneID, naming bool) string {
+	pairs := modalKeybarPairsFor(zone, naming)
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
 		parts[i] = p[0] + " " + p[1]
 	}
 	return strings.Join(parts, " · ")
+}
+
+func modalKeybarPlainText(ms *modalState) string {
+	return modalKeybarPlainTextFor(ms.zone, ms.naming)
+}
+
+// modalKeybarMaxPlainWidth is the widest keybar text a zone can ever show,
+// naming or not, so modalWidth sizes the box off a bound that does not
+// shift when naming opens or closes (a ratified geometry invariant).
+func modalKeybarMaxPlainWidth(zone zoneID) int {
+	max := 0
+	for _, naming := range []bool{false, true} {
+		if w := lipgloss.Width(modalKeybarPlainTextFor(zone, naming)); w > max {
+			max = w
+		}
+	}
+	return max
 }
 
 // modalKeybarLine is the foldout's own keybar, inside the border: the same

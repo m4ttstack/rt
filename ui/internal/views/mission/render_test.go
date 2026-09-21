@@ -851,8 +851,14 @@ func TestNamingKeepsTheModalGeometryIdentical(t *testing.T) {
 			m.width = width
 			m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 			before := m.View().Content
+			innerBefore := modalInnerWidth(m.modal, m.width)
 			m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 			after := m.View().Content
+			innerAfter := modalInnerWidth(m.modal, m.width)
+
+			if innerBefore != innerAfter {
+				t.Fatalf("modal inner width changed from %d to %d while naming", innerBefore, innerAfter)
+			}
 
 			beforeLines := strings.Split(before, "\n")
 			afterLines := strings.Split(after, "\n")
