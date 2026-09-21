@@ -9,7 +9,11 @@ export interface ParsedFinding {
   id: string;
   tier: string;
   title: string;
+  /** A real diff anchor (`path/to/file.ts:42`), safe to render as code. */
   anchor?: string;
+  /** The engine's `fileLabel` for a finding that anchors to nothing in the
+      diff -- prose, not a path, so it must never be styled as one. */
+  anchorLabel?: string;
   fix?: string;
   kind?: string;
 }
@@ -38,7 +42,13 @@ export function parseFindingOption(option: GateOption): ParsedFinding | null {
   if (description !== undefined) {
     const at = description.indexOf(' · ');
     if (at >= 0) {
-      parsed.anchor = description.slice(0, at);
+      // The lead segment is only an anchor if it looks like one. The engine
+      // puts its `fileLabel` here for findings that anchor to nothing in the
+      // diff, and that text is prose -- rendering it as a path claims a
+      // source location the finding does not have.
+      const lead = description.slice(0, at);
+      if (ANCHORISH_RE.test(lead)) parsed.anchor = lead;
+      else parsed.anchorLabel = lead;
       parsed.fix = description.slice(at + 3);
     } else if (ANCHORISH_RE.test(description)) {
       parsed.anchor = description;

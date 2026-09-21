@@ -57,6 +57,31 @@ describe('parseFindingOption', () => {
     expect(parsed?.anchor).toBeUndefined();
   });
 
+  test('a prose lead segment is an anchorLabel, never an anchor', () => {
+    const parsed = parseFindingOption({
+      value: 'f13',
+      label: '[Important] Street View payload provenance is unverified',
+      description:
+        'MR verification evidence (Street View payloads); not inline-anchorable · confirm the payloads are verbatim',
+    });
+    expect(parsed?.anchor).toBeUndefined();
+    expect(parsed?.anchorLabel).toBe(
+      'MR verification evidence (Street View payloads); not inline-anchorable'
+    );
+    expect(parsed?.fix).toBe('confirm the payloads are verbatim');
+  });
+
+  test('a path lead segment stays an anchor, with no label', () => {
+    const parsed = parseFindingOption({
+      value: 'f14',
+      label: '[Minor] Trap comment overstates the claim',
+      description: 'apps/widgets/src/noiseFilter.ts:18 · soften it',
+    });
+    expect(parsed?.anchor).toBe('apps/widgets/src/noiseFilter.ts:18');
+    expect(parsed?.anchorLabel).toBeUndefined();
+    expect(parsed?.fix).toBe('soften it');
+  });
+
   test('non-finding options give null', () => {
     expect(parseFindingOption('approve')).toBeNull();
     expect(

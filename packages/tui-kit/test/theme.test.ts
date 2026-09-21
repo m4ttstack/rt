@@ -197,13 +197,21 @@ const SURFACE_RAMP_RULING = new Set(["--bg", "--panel", "--card"]);
 // carries its census literal through `resolve()`. See the "text conformance"
 // block further down for their own coverage.
 const TEXT_CONFORMANCE_RULING = new Set(["--fg", "--muted"]);
+// `--panel`/`--card` are excluded from the DARK sweep: the dark-surface
+// retune darkened the dark ramp so cards read as surfaces on the page
+// rather than glowing above it. Light is untouched. See the "dark surface
+// retune" block further down for their own coverage.
+const DARK_SURFACE_RETUNE = new Set(["--panel", "--card"]);
 const LIGHT_COLORS = [...LIGHT].filter(
   ([name]) =>
     SLOT[name]!.kind === "color" &&
     !SURFACE_RAMP_RULING.has(name) &&
     !TEXT_CONFORMANCE_RULING.has(name),
 );
-const DARK_COLORS = [...DARK].filter(([name]) => !TEXT_CONFORMANCE_RULING.has(name));
+const DARK_COLORS = [...DARK].filter(
+  ([name]) =>
+    !TEXT_CONFORMANCE_RULING.has(name) && !DARK_SURFACE_RETUNE.has(name),
+);
 
 test.each(LIGHT_COLORS)(
   "light %s carries the census value verbatim, in the theme and through the generated CSS",
@@ -282,9 +290,26 @@ test("the light surface ramp carries the split-chrome ruling's values, ordered b
 
 test("chrome carries the ruling's value in both schemes", () => {
   expect(tuiTheme.tokens.colors.surface!.chrome).toBe("#f3f4f7");
-  expect(tuiTheme.dark!.colors!.surface!.chrome).toBe("#232a47");
+  expect(tuiTheme.dark!.colors!.surface!.chrome).toBe("#1a1c28");
   expect(resolve("--chrome", "light")).toBe("#f3f4f7");
-  expect(resolve("--chrome", "dark")).toBe("#232a47");
+  expect(resolve("--chrome", "dark")).toBe("#1a1c28");
+});
+
+// ── dark surface retune ──────────────────────────────────────────────────
+// A departure from census parity (see the DARK_SURFACE_RETUNE filter
+// above). The census ramp lifted dark panel/card well above the page
+// (#232a47/#292f4d against a #16161e bg), which read as glowing slabs
+// rather than surfaces. These values keep the census ordering
+// bg < inset/overlay < panel < card at a tighter range; the ordering
+// itself is enforced by the tokens package's own luminance invariants.
+
+test("the dark surface ramp carries the retune's values, ordered bg < panel < card", () => {
+  expect(tuiTheme.dark!.colors!.surface!.bg).toBe("#16161e");
+  expect(tuiTheme.dark!.colors!.surface!.panel).toBe("#1a1c28");
+  expect(tuiTheme.dark!.colors!.surface!.card).toBe("#1e2030");
+  expect(resolve("--bg", "dark")).toBe("#16161e");
+  expect(resolve("--panel", "dark")).toBe("#1a1c28");
+  expect(resolve("--card", "dark")).toBe("#1e2030");
 });
 
 // ── text conformance ─────────────────────────────────────────────────────
@@ -348,7 +373,7 @@ test("generated css exposes the alias contract with verbatim values reachable", 
   }
   expect(css).toContain("#4658ff"); // light accent, verbatim
   expect(css).toContain("#7aa2f7"); // dark accent, verbatim
-  expect(css).toContain("#232a47"); // dark panel (the 2026-08-19 tuning), verbatim
+  expect(css).toContain("#1a1c28"); // dark panel (the dark-surface retune), verbatim
   expect(css).toContain(".dark");   // darkMode selector
 });
 

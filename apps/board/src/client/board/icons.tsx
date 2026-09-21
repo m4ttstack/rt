@@ -203,6 +203,17 @@ export function CircleCheckFilledIcon() {
   );
 }
 
+/** Broken link: marks a finding whose location is prose rather than a diff
+    anchor, so the label beside it never reads as a file path. */
+export function NoAnchorIcon() {
+  return (
+    <svg {...RECORD_ICON} width={12} height={12}>
+      <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 4 8" />
+      <path d="m2 2 20 20" />
+    </svg>
+  );
+}
+
 export function SearchCheckIcon() {
   return (
     <svg {...RECORD_ICON}>

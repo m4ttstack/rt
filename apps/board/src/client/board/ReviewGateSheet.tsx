@@ -36,6 +36,7 @@ import { parseGateContext, sectionFor } from './gate-context.ts';
 import { AnsweredChip, type GateFormState } from './GateForm.tsx';
 import {
   CircleCheckFilledIcon,
+  NoAnchorIcon,
   PencilLineIcon,
   SearchCheckIcon,
 } from './icons.tsx';
@@ -666,17 +667,23 @@ function ReviewGateSheet({
                                 <span className="tui-review-finding-title">
                                   {f.title}
                                 </span>
-                                {f.anchor && (
-                                  <span className="tui-review-finding-anchor">
-                                    {f.anchor}
-                                  </span>
-                                )}
                                 {f.kind && (
                                   <span className="tui-review-finding-kind">
                                     {f.kind}
                                   </span>
                                 )}
                               </span>
+                              {f.anchor && (
+                                <span className="tui-review-finding-anchor">
+                                  {f.anchor}
+                                </span>
+                              )}
+                              {f.anchorLabel && (
+                                <span className="tui-review-finding-anchor-label">
+                                  <NoAnchorIcon />
+                                  {f.anchorLabel}
+                                </span>
+                              )}
                               {f.fix && (
                                 <span className="tui-review-finding-fix">
                                   {f.fix}
@@ -770,86 +777,99 @@ function ReviewGateSheet({
             </div>
           ) : (
             <>
-              <div className="tui-review-decision-card">
-                <span className="tui-review-decision-label">
-                  decision context
-                </span>
-                {report?.summary?.readiness ? (
-                  <p className="tui-review-decision-lead">
-                    {readinessProse(report.summary.readiness)}
-                  </p>
-                ) : (
-                  outcomeSection?.verdict && (
+              <div className="tui-review-rail-scroll">
+                <div className="tui-review-decision-card">
+                  <span className="tui-review-decision-label">
+                    decision context
+                  </span>
+                  {report?.summary?.readiness ? (
                     <p className="tui-review-decision-lead">
-                      {readinessProse(outcomeSection.verdict)}
+                      {readinessProse(report.summary.readiness)}
                     </p>
-                  )
-                )}
-                {report?.summary?.reasoning ? (
-                  <p className="tui-review-decision-reasoning">
-                    {report.summary.reasoning}
-                  </p>
-                ) : (
-                  (outcomeSection?.remainder ??
-                    outcomeSection?.body ??
-                    parsedContext?.preamble) && (
-                    <div className="tui-review-decision-reasoning">
-                      <Markdown unstyled linkTargetBlank>
-                        {outcomeSection?.remainder ??
-                          outcomeSection?.body ??
-                          parsedContext?.preamble ??
-                          ''}
-                      </Markdown>
+                  ) : (
+                    outcomeSection?.verdict && (
+                      <p className="tui-review-decision-lead">
+                        {readinessProse(outcomeSection.verdict)}
+                      </p>
+                    )
+                  )}
+                  {report?.summary?.reasoning ? (
+                    <p className="tui-review-decision-reasoning">
+                      {report.summary.reasoning}
+                    </p>
+                  ) : (
+                    (outcomeSection?.remainder ??
+                      outcomeSection?.body ??
+                      parsedContext?.preamble) && (
+                      <div className="tui-review-decision-reasoning">
+                        <Markdown unstyled linkTargetBlank>
+                          {outcomeSection?.remainder ??
+                            outcomeSection?.body ??
+                            parsedContext?.preamble ??
+                            ''}
+                        </Markdown>
+                      </div>
+                    )
+                  )}
+                  {tierGroups.length > 0 && (
+                    <div className="tui-review-tier-pills">
+                      {tierGroups.map(([tier, items]) => (
+                        <span
+                          className="tui-review-tier-pill"
+                          data-tier={tier}
+                          key={tier}
+                        >
+                          {tier} ({items.length})
+                        </span>
+                      ))}
                     </div>
-                  )
-                )}
-                {tierGroups.length > 0 && (
-                  <div className="tui-review-tier-pills">
-                    {tierGroups.map(([tier, items]) => (
-                      <span
-                        className="tui-review-tier-pill"
-                        data-tier={tier}
-                        key={tier}
-                      >
-                        {tier} ({items.length})
-                      </span>
-                    ))}
+                  )}
+                </div>
+
+                {checks.length > 0 && (
+                  <div className="tui-review-checks-card">
+                    <span className="tui-review-checks-title">checks</span>
+                    <div className="tui-review-checks-list">
+                      {checks.map((c, i) => (
+                        <div className="tui-review-check-row" key={i}>
+                          <Chip
+                            intent={
+                              c.tag === 'FAIL'
+                                ? 'bad'
+                                : c.tag === 'PASS'
+                                  ? 'ok'
+                                  : 'muted'
+                            }
+                            variant="outline"
+                            uppercase
+                            className="tui-review-check-chip"
+                          >
+                            {c.tag}
+                          </Chip>
+                          <span className="tui-review-check-text">
+                            {c.text}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {checks.length > 0 && (
-                <div className="tui-review-checks-card">
-                  <span className="tui-review-checks-title">checks</span>
-                  <div className="tui-review-checks-list">
-                    {checks.map((c, i) => (
-                      <div className="tui-review-check-row" key={i}>
-                        <Chip
-                          intent={
-                            c.tag === 'FAIL'
-                              ? 'bad'
-                              : c.tag === 'PASS'
-                                ? 'ok'
-                                : 'muted'
-                          }
-                          variant="outline"
-                          uppercase
-                          className="tui-review-check-chip"
-                        >
-                          {c.tag}
-                        </Chip>
-                        <span className="tui-review-check-text">{c.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {outcomeQuestion && (
                 <div className="tui-review-verdict">
-                  <h3 className="tui-review-verdict-heading">
-                    Verdict on !{mr?.iid ?? ''}
-                  </h3>
+                  <div className="tui-review-verdict-head">
+                    <h3 className="tui-review-verdict-heading">
+                      Verdict on !{mr?.iid ?? ''}
+                    </h3>
+                    <button
+                      type="button"
+                      className="tui-review-reset"
+                      onClick={handleReset}
+                    >
+                      reset
+                    </button>
+                  </div>
                   <div className="tui-gate-choices">
                     {outcomeQuestion.options.map((o: GateOption) => {
                       const display = optionDisplayFor(o);
@@ -929,16 +949,6 @@ function ReviewGateSheet({
                         : outcomeText
                           ? `post ${selectedFindings.size} · ${outcomeText}`
                           : `post ${selectedFindings.size}`}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="subtle"
-                    intent="muted"
-                    size="lg"
-                    className="tui-review-reset"
-                    onClick={handleReset}
-                  >
-                    reset
                   </Button>
                   {form.failed && (
                     <span className="tui-gate-error">

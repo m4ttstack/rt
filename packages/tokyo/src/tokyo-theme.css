@@ -95,12 +95,12 @@
   /* BEGIN GENERATED: tokyo tokens dark */
   /* Dark never inverted (bg < panel < card already), so --tk-chrome equals the
      panel rung: the rail/nav frame reads as a step up from the near-black page. */
-  --tk-chrome: #232a47;
+  --tk-chrome: #1a1c28;
   --tk-bg: #16161e;
-  --tk-panel: #232a47;
-  --tk-card: #292f4d;
-  --tk-inset: #1c2136;
-  --tk-overlay: #1c2136;
+  --tk-panel: #1a1c28;
+  --tk-card: #1e2030;
+  --tk-inset: #181a24;
+  --tk-overlay: #181a24;
   --tk-border: #3b4261;
   --tk-border-soft: #313853;
   --tk-border-on-card: #505879;

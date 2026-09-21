@@ -85,11 +85,11 @@ export const GENERATED_DARK_COLORS = {
   },
   "surface": {
     "bg": "#16161e",
-    "panel": "#232a47",
-    "card": "#292f4d",
-    "chrome": "#232a47",
-    "inset": "#1c2136",
-    "overlay": "#1c2136"
+    "panel": "#1a1c28",
+    "card": "#1e2030",
+    "chrome": "#1a1c28",
+    "inset": "#181a24",
+    "overlay": "#181a24"
   },
   "line": {
     "border": "#3b4261",

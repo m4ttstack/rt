@@ -30,11 +30,11 @@
     --color-purple-500: light-dark(#9b45ff, #bb9af7);
     --color-red-500: light-dark(#ff3d81, #f7768e);
     --color-surface-bg: light-dark(#f7f8fa, #16161e);
-    --color-surface-card: light-dark(#ffffff, #292f4d);
-    --color-surface-chrome: light-dark(#f3f4f7, #232a47);
-    --color-surface-inset: light-dark(#f7f8fa, #1c2136);
-    --color-surface-overlay: light-dark(#fbfbfc, #1c2136);
-    --color-surface-panel: light-dark(#fbfbfc, #232a47);
+    --color-surface-card: light-dark(#ffffff, #1e2030);
+    --color-surface-chrome: light-dark(#f3f4f7, #1a1c28);
+    --color-surface-inset: light-dark(#f7f8fa, #181a24);
+    --color-surface-overlay: light-dark(#fbfbfc, #181a24);
+    --color-surface-panel: light-dark(#fbfbfc, #1a1c28);
     --radius-lg: 8px;
     --radius-md: 6px;
     --radius-pill: 999px;

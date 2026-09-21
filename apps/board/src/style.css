@@ -3658,7 +3658,7 @@ body {
 }
 .tui-review-queue-pos {
   font-size: var(--gate-font-meta);
-  color: var(--muted);
+  color: var(--muted-text);
   white-space: nowrap;
 }
 .tui-review-head-sep {
@@ -3670,7 +3670,7 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--muted-text);
 }
 .tui-review-close {
   display: inline-flex;
@@ -3706,9 +3706,22 @@ body {
   background: var(--card);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 26px;
+  min-height: 0;
+}
+/* The rail splits in two: reference material scrolls, the decision docks.
+   The submit is the one control a long report must never push off-screen,
+   so the scroll lives on the half above it rather than on the rail. */
+.tui-review-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* The rail itself carries no padding: the scroller owns it, so it fills
+     the rail edge to edge and its scrollbar rides the rail's own edge
+     instead of floating inside a gutter. */
+  padding: 22px 26px 14px;
 }
 
 /* MR card */
@@ -3732,6 +3745,9 @@ body {
 .tui-review-mr-body {
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .tui-review-mr-head {
   display: flex;
@@ -3741,24 +3757,28 @@ body {
 }
 .tui-review-author {
   color: var(--purple);
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
 }
 .tui-review-mr-open {
-  color: var(--muted);
+  color: var(--muted-text);
   font-size: var(--gate-font-meta);
 }
+/* The locked design holds one scale across this card (author 15, title
+   13.5, meta 12, all sans) and lets the author line carry the emphasis. A
+   16px bold title plus an 11px mono meta was three sizes and two families
+   fighting inside one block. */
 .tui-review-mr-title {
-  margin: 6px 0 4px;
-  font-size: 16px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
 }
 .tui-review-mr-meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--muted);
-  font-size: var(--gate-font-meta);
-  font-family: var(--font-mono);
+  color: var(--muted-text);
+  font-size: 12px;
 }
 .tui-review-diff {
   display: inline-flex;
@@ -3783,7 +3803,7 @@ body {
   font-weight: 600;
 }
 .tui-review-find-tally {
-  color: var(--muted);
+  color: var(--muted-text);
   font-size: var(--gate-font-meta);
   white-space: nowrap;
 }
@@ -3833,9 +3853,12 @@ body {
   color: var(--red-text);
   background: color-mix(in srgb, var(--red) 15%, transparent);
 }
+/* warnText is tuned to clear AA on white (4.58:1), which leaves nothing
+   for a wash underneath it. The pill keeps the token's hue and darkens it
+   just enough to pay for its own background. */
 .tui-review-tier-pill[data-tier='Important'] {
-  color: var(--color-gray-warnText);
-  background: color-mix(in srgb, var(--amber) 15%, transparent);
+  color: color-mix(in srgb, var(--color-gray-warnText) 86%, #000);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
 }
 .tui-review-allnone-group {
   display: inline-flex;
@@ -3844,7 +3867,7 @@ body {
   margin-left: auto;
 }
 .tui-review-allnone-sep {
-  color: var(--muted);
+  color: var(--muted-text);
   font-size: 12px;
 }
 /* rest faint; hover = accent + underline; mousedown deepens; a no-op end
@@ -3854,7 +3877,7 @@ body {
   background: none;
   padding: 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-text);
   cursor: pointer;
 }
 .tui-review-allnone:hover {
@@ -3864,17 +3887,52 @@ body {
 .tui-review-allnone:active {
   color: color-mix(in srgb, var(--accent) 80%, var(--fg));
 }
+/* Inert (already all / already none). WCAG exempts inactive controls, but
+   a 0.55 veil on the dim token read as broken rather than spent, so the
+   de-emphasis now comes off the text token at a lighter veil. */
 .tui-review-allnone[data-noop] {
-  color: var(--muted);
-  opacity: 0.55;
+  color: var(--muted-text);
+  opacity: 0.72;
   pointer-events: none;
 }
+/* The label wraps the checkbox, so the entire block toggles the finding --
+   it needs to say so. The horizontal padding gives the wash a body and the
+   matching negative margin keeps the text on the same left edge it had
+   without it. */
 .tui-review-finding-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 0;
+  padding: 10px;
+  margin: 0 -10px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background-color 120ms;
+}
+/* Above the list's sticky bottom fade: that gradient paints --card over
+   whatever it covers, so without this the last row's hover wash showed
+   through it as a half-veiled rectangle. */
+.tui-review-finding-row:hover,
+.tui-review-finding-row:active,
+.tui-review-finding-row:focus-within {
+  position: relative;
+  z-index: 1;
+}
+.tui-review-finding-row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.tui-review-finding-row:active {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+/* Keyboard parity: the checkbox inside takes focus, and the row it belongs
+   to is what the eye needs to find. */
+.tui-review-finding-row:focus-within {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tui-review-finding-row:focus-within .tui-gate-choice-input:focus-visible {
+  outline: none;
 }
 .tui-review-finding-row .tui-gate-choice-input {
   margin-top: 3px;
@@ -3894,9 +3952,13 @@ body {
   min-width: 0;
   flex: 1;
 }
+/* Line 1 is the title and its kind chip alone. The anchor used to sit here
+   too, which stole width from the title and forced it to wrap -- and a
+   finding whose location is prose (the engine's fileLabel) then rendered as
+   a code path. Anchor and fix each get their own line below instead. */
 .tui-review-finding-line1 {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 10px;
 }
 .tui-review-finding-title {
@@ -3915,12 +3977,24 @@ body {
 .tui-review-finding-anchor {
   font-family: var(--font-mono);
   font-size: var(--gate-font-meta);
+  color: var(--accent-text);
+  overflow-wrap: anywhere;
+}
+/* A finding that anchors to nothing in the diff: prose, so it never takes
+   the mono/accent treatment a real path gets. */
+.tui-review-finding-anchor-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--gate-font-meta);
+  font-style: italic;
+  color: var(--muted-text);
+}
+.tui-review-finding-anchor-label svg {
   color: var(--muted);
-  flex-shrink: 0;
-  text-align: right;
 }
 .tui-review-finding-fix {
-  color: var(--muted);
+  color: var(--muted-text);
   font-size: var(--gate-font-meta);
 }
 
@@ -3951,7 +4025,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--muted-text);
   padding-top: 2px;
 }
 .tui-review-record-content {
@@ -3988,7 +4062,7 @@ body {
   font-weight: 500;
 }
 .tui-review-record-detail {
-  color: var(--muted);
+  color: var(--muted-text);
   font-size: var(--gate-font-meta);
 }
 .tui-review-full-report {
@@ -4009,16 +4083,20 @@ body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted);
+  color: var(--muted-text);
 }
 .tui-review-decision-lead {
   margin: 0;
   font-weight: 600;
   color: var(--fg);
 }
+/* The verdict's rationale is the reason the reader is here, not a
+   footnote: it reads at full foreground alongside the checks, while the
+   genuinely secondary lines (fix gists, strengths detail, option
+   subtitles) stay on the muted text token. */
 .tui-review-decision-reasoning {
   margin: 0;
-  color: var(--muted);
+  color: var(--fg);
   font-size: var(--gate-font-meta);
 }
 .tui-review-tier-pills {
@@ -4040,7 +4118,7 @@ body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted);
+  color: var(--muted-text);
 }
 .tui-review-checks-list {
   display: flex;
@@ -4063,7 +4141,13 @@ body {
   font-size: var(--gate-font-meta);
   line-height: 1.4;
 }
+/* The docked decision is its own plane: one step off the rail's card, bled
+   to the rail's edges with a hairline above it, so the scrolling reference
+   material above reads as passing behind it. */
 .tui-review-verdict {
+  background: var(--surface-wash-fg-4-card);
+  border-top: 1px solid var(--border-soft);
+  padding: 14px 26px 18px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4077,11 +4161,25 @@ body {
   min-height: 44px;
   border-radius: 8px;
 }
+/* Sits with the verdict heading rather than under the submit: a full-width
+   lg button spent a whole row of docked height on the least-used control. */
 .tui-review-reset {
-  align-self: flex-start;
-  --button-bg: transparent;
-  --button-border: transparent;
-  --button-hover: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--muted-text);
+  cursor: pointer;
+}
+.tui-review-reset:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+.tui-review-verdict-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 /* CAS-loss face: the rail swaps entirely to this instead of appearing to
    accept a selection that can no longer be posted. */
