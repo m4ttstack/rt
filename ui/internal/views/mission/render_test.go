@@ -787,6 +787,23 @@ func TestNamingTypingDoesNotFilterTheList(t *testing.T) {
 	}
 }
 
+// TestNamingEnterWithATypedNameClosesTheModal pins commitModalName's own
+// closeModal call: mission_test.go's session tests can only observe the
+// emitted intent, not the view's own modal field, so this is the one place
+// a regression that dropped the close (while still emitting) would surface.
+func TestNamingEnterWithATypedNameClosesTheModal(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "my-feature" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != nil {
+		t.Fatal("modal stayed open after a successful create")
+	}
+}
+
 func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
