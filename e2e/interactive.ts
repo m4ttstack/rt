@@ -35,6 +35,8 @@ export interface TermwrightSession {
   press(key: string): Promise<void>;
   type(text: string): Promise<void>;
   ctrl(char: string): Promise<void>;
+  /** Raw bytes to the pty, for key encodings `press`/`ctrl` cannot express (CSI-u chords, mouse reports). */
+  raw(bytes: number[]): Promise<void>;
   waitForText(text: string, timeoutMs?: number): Promise<void>;
   waitForIdle(idleMs?: number, timeoutMs?: number): Promise<void>;
   stop(): Promise<void>;
@@ -217,6 +219,10 @@ export async function startInteractive(
 
   let stopped = false;
 
+  async function sendRaw(bytes: number[]): Promise<void> {
+    await twSend(socketPath, "raw", { bytes_base64: Buffer.from(bytes).toString("base64") });
+  }
+
   return {
     async screen(): Promise<string> {
       const result = await twSend(socketPath, "screen", { format: "text" });
@@ -234,12 +240,13 @@ export async function startInteractive(
     async ctrl(char: string): Promise<void> {
       const seq = CTRL_ARROW_SEQUENCES[char.toLowerCase()];
       if (seq) {
-        const b64 = Buffer.from(seq).toString("base64");
-        await twSend(socketPath, "raw", { bytes_base64: b64 });
+        await sendRaw(seq);
       } else {
         await twSend(socketPath, "hotkey", { ctrl: true, ch: char });
       }
     },
+
+    raw: sendRaw,
 
     async waitForText(text: string, timeoutMs = 5000): Promise<void> {
       // The transport socket timeout must outlast the logical wait, or a wait
