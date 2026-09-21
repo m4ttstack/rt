@@ -6,6 +6,7 @@
     all reads its standing state for whoever the board's seat is. The
     pill and the line may name the same fact ("changes requested" twice):
     one is where the MR is, the other is what to do about it. */
+import { unwrapGateAnswer } from '@mattstack/gate-kit';
 import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested } from '../../data.ts';
 import { respondOutcome } from '../../respond-outcome.ts';
@@ -207,9 +208,12 @@ function gateLines(mr: BoardMRWithReview): Candidate[] {
       });
       continue;
     }
+    // A noted answer wire-carries as { value, note } rather than a bare
+    // string/array; unwrapping first is what keeps this from joining
+    // "[object Object]" into the summary.
     const summary = Object.values(gate.answers ?? {})
+      .map(v => unwrapGateAnswer(v).value)
       .flatMap(v => (Array.isArray(v) ? v : [v]))
-      .map(String)
       .join(', ');
     out.push({
       tone: 'quiet',

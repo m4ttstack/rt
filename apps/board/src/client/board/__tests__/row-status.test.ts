@@ -661,6 +661,31 @@ describe('rowStatus: gates', () => {
       verbs: [],
     });
   });
+
+  test('an answer wrapped with a note unwraps to its value, not [object Object]', () => {
+    const [line] = candidateLines(
+      mr({
+        gates: [
+          gate({
+            status: 'answered',
+            answers: {
+              tiers: { value: 'Minor', note: 'small nit' },
+              outcome: 'leave-parent',
+            },
+          }),
+        ] as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'quiet',
+      word: 'answered',
+      detail: 'Minor, leave-parent',
+      verbs: [],
+    });
+  });
 });
 
 describe('rowStatus: respond lane', () => {
