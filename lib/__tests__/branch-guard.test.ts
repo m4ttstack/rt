@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkBranchGuard } from "../branch-guard.ts";
+import { buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
 import type { StackGuardRunners } from "../stack-guard.ts";
 
 function git(cwd: string, ...args: string[]): string {
@@ -224,6 +224,58 @@ describe("checkBranchGuard", () => {
       expect(verdict.reason).toBe("worktree");
       expect(verdict.detail).toContain(wtPath);
     }
+    rmSync(parent, { recursive: true, force: true });
+  });
+});
+
+describe("buildWorktreeGuardMap", () => {
+  test("maps a branch checked out in another worktree to a reason naming its path", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
+    const dir = join(parent, "main");
+    mkdirSync(dir);
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "test@test");
+    git(dir, "config", "user.name", "test");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "init");
+    git(dir, "branch", "feature-x");
+    const wtPath = join(parent, "wt");
+    git(dir, "worktree", "add", wtPath, "feature-x");
+
+    const guards = await buildWorktreeGuardMap(dir);
+
+    expect(guards.get("feature-x")).toContain(wtPath);
+    expect(guards.has("main")).toBe(false);
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  test("is empty (never throws) when the current worktree owns every branch it knows about", async () => {
+    const dir = makeRepo();
+    const guards = await buildWorktreeGuardMap(dir);
+    expect(guards.size).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("is empty when worktree state cannot be listed", async () => {
+    const dir = makeRepo();
+    const guards = await buildWorktreeGuardMap(dir, async () => null);
+    expect(guards.size).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("never guards the worktree containing cwd itself, even from a nested subdirectory", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
+    const dir = join(parent, "main");
+    mkdirSync(dir);
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "test@test");
+    git(dir, "config", "user.name", "test");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "init");
+    const subDir = join(dir, "sub");
+    mkdirSync(subDir);
+
+    const guards = await buildWorktreeGuardMap(subDir);
+
+    expect(guards.has("main")).toBe(false);
     rmSync(parent, { recursive: true, force: true });
   });
 });
