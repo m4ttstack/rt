@@ -514,10 +514,11 @@ export class MissionDriver {
   // full HEAD-vs-worktree diff (client.stagingDiff's own new shape) rather
   // than the old worktree-vs-index one -- the same diff the pane actually
   // shows, so a discard always targets the line/hunk the user is looking
-  // at. The stale selection is dropped after: a discard changes the file's
-  // diff shape, so any persisted selection's absolute indices no longer
-  // point at the same content -- reconcileSelections re-seeds it to All on
-  // the refresh() below.
+  // at. A stale Partial selection is downgraded to None after (GHD's own
+  // rule for exactly this "the diff's shape shifted underneath a Partial
+  // selection's absolute indices" case -- see handleCommit's identical
+  // treatment); All/None both mean the same thing regardless of the
+  // diff's shape, so neither needs touching.
   private async handleDiscard(payload: StagePayload | undefined): Promise<void> {
     if (!payload || typeof payload.path !== "string") return;
     const now = this.deps.now().getTime();
@@ -551,7 +552,9 @@ export class MissionDriver {
     if (!discardSelection) return;
 
     await client.discardSelection(diff, discardSelection);
-    this.state.selections.delete(payload.path);
+    if (this.currentSelection(payload.path).getSelectionType() === DiffSelectionType.Partial) {
+      this.state.selections.set(payload.path, DiffSelection.fromInitialSelection(DiffSelectionType.None));
+    }
     this.state.notice = "";
     await this.refresh();
     this.push();
@@ -599,11 +602,22 @@ export class MissionDriver {
     this.state.description = "";
     this.state.amending = false;
     this.state.notice = "";
-    // The committed selections no longer describe anything meaningful (the
-    // files they covered are gone or changed shape); reconcileSelections
-    // re-seeds whatever remains to All on the refresh() below, the same
-    // fresh-start GHD itself gets once a commit lands.
-    this.state.selections = new Map();
+    // GHD's own post-commit reconciliation (app/src/lib/stores/updates/
+    // changes-state.ts's updateChangedFiles, called with clearPartialState:
+    // true right after a commit lands): a file whose selection was Partial
+    // just had SOME of its lines committed, so its remaining diff's shape
+    // shifted -- the old selection's absolute indices no longer point at
+    // the same content, and GHD's own fix is to downgrade it to None, not
+    // carry it forward or reseed it to All. All/None files are untouched
+    // here: a fully-checked file that fully committed simply vanishes from
+    // the next snapshot and gets pruned by reconcileSelections; one that
+    // was deliberately left unchecked was never touched by this commit and
+    // must not spring back to checked just because a commit happened.
+    for (const [path, selection] of this.state.selections) {
+      if (selection.getSelectionType() === DiffSelectionType.Partial) {
+        this.state.selections.set(path, DiffSelection.fromInitialSelection(DiffSelectionType.None));
+      }
+    }
     await this.refresh();
     this.push();
   }

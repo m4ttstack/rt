@@ -260,6 +260,17 @@ function toChangeStatus(kind: ChangedFile["kind"]): MissionChangeRow["status"] {
   }
 }
 
+// Ordinal comparison on lowercased strings -- GHD's own caseInsensitiveCompare
+// (app/src/lib/compare.ts), not locale-aware collation, so the ordering is
+// identical for every user regardless of locale.
+function caseInsensitiveComparePath(a: string, b: string): number {
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  if (al < bl) return -1;
+  if (al > bl) return 1;
+  return 0;
+}
+
 // GHD's own model (ratified 2026-09-21): a checkbox means "include in the
 // next commit," not "already in the index" -- include is purely a read of
 // the driver's own persisted selection now, never file.staged/unstaged.
@@ -384,12 +395,21 @@ export function buildModel(input: {
 
   const branchRows: MissionBranchRow[] = buildBranchRows(branches, guards, defaultBranch, now);
 
-  const allChanges: MissionChangeRow[] = snapshot.files.map((file) => ({
-    path: file.path,
-    origPath: file.originalPath ?? "",
-    status: toChangeStatus(file.kind),
-    include: deriveInclude(state.selections.get(file.path)),
-  }));
+  // GHD's own ordering rule (app/src/lib/stores/updates/changes-state.ts's
+  // updateChangedFiles, ratified 2026-09-21): the list sorts by path,
+  // case-insensitively, on every status refresh -- independent of staged
+  // state or selection -- so a row never jumps position just because
+  // something got checked or the index changed underneath it. Sorted here,
+  // not left to whatever order git status/snapshot.files happened to
+  // return, which regroups as the index changes.
+  const allChanges: MissionChangeRow[] = snapshot.files
+    .map((file) => ({
+      path: file.path,
+      origPath: file.originalPath ?? "",
+      status: toChangeStatus(file.kind),
+      include: deriveInclude(state.selections.get(file.path)),
+    }))
+    .sort((a, b) => caseInsensitiveComparePath(a.path, b.path));
 
   // The filter narrows only the visible list; totals and the commit gate
   // keep counting every change, or filtering would silently disable commit.

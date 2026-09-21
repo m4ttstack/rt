@@ -105,7 +105,9 @@ func TestSpaceOnCursorRowEmitsStageWithPath(t *testing.T) {
 	s := s5open(t)
 	s.Type(" ")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+	// mission.go, not model.go: the Changes list now sorts case-insensitively
+	// by path (ratified 2026-09-21), and "mission.go" < "model.go" ('i' < 'o').
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
 		t.Fatalf("stage intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -183,16 +185,18 @@ func TestAmendToggleEnablesCommitDespiteWireCanCommitFalse(t *testing.T) {
 // TestListCursorMoveEmitsSelectWithRowPath: moving the Changes cursor loads
 // that row's diff, so down and back up each emit mission:select with the row
 // the cursor landed on.
+// Row order is the Changes list's own case-insensitive path sort (ratified
+// 2026-09-21): mission.go, model.go, topbar.go ('i' < 'o' < 't').
 func TestListCursorMoveEmitsSelectWithRowPath(t *testing.T) {
 	s := s5open(t)
 	s.Type("\x1b[B")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
 		t.Fatalf("select intent after down: %q", l)
 	}
 	s.Type("\x1b[A")
 	l, ok = s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
 		t.Fatalf("select intent after up: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -215,11 +219,14 @@ func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
 // (mission.go, absolute y=12 per the coordinate walk on
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
 // on the first: the click moves the cursor and emits that row's select.
+// Row 2 (0-indexed) is "topbar.go" under the Changes list's own
+// case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
+// topbar.go.
 func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 20, 12))
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
 		t.Fatalf("file-row click select intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -598,11 +605,14 @@ const (
 // (docs/design/mission/README.md's Terminal geometry table: the tabs-gap
 // blank band row), +1 for row index 1 = bodyY 8; topH(3)+bodyY(8) = frame
 // y 11, checkbox at x=2 (the "  " prefix's own width).
+// Row 1 (0-indexed) is "model.go" under the Changes list's own
+// case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
+// topbar.go.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 2, 11))
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
 		t.Fatalf("checkbox click stage intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)

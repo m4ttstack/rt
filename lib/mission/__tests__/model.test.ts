@@ -542,6 +542,55 @@ describe("commit button label", () => {
   });
 });
 
+// Owner-verified real-repo defect: rows reordered when files got staged,
+// because allChanges rendered in snapshot.files' own order, which regroups
+// as the index changes underneath it. GHD's own fix (app/src/lib/stores/
+// updates/changes-state.ts's updateChangedFiles, ratified 2026-09-21):
+// sort by path, case-insensitively, on every refresh -- independent of
+// staged/selection state -- so order depends only on which paths are
+// present, never on how git status happened to list them.
+describe("Changes list order is stable (case-insensitive path sort, ratified 2026-09-21)", () => {
+  test("a scrambled snapshot.files order yields the same rendered order as the sorted one", () => {
+    const scrambled = [
+      changedFile({ path: "zebra.txt" }),
+      changedFile({ path: "apple.txt" }),
+      changedFile({ path: "mango.txt" }),
+    ];
+    const model = buildModel(baseInput({ snapshot: { files: scrambled } }));
+    expect(model.changes.map((c) => c.path)).toEqual(["apple.txt", "mango.txt", "zebra.txt"]);
+  });
+
+  test("the same files returning in a DIFFERENT order (as if staged, reordering the underlying status) renders identically", () => {
+    const first = [changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" }), changedFile({ path: "mango.txt" })];
+    const second = [changedFile({ path: "mango.txt" }), changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" })];
+    const orderA = buildModel(baseInput({ snapshot: { files: first } })).changes.map((c) => c.path);
+    const orderB = buildModel(baseInput({ snapshot: { files: second } })).changes.map((c) => c.path);
+    expect(orderA).toEqual(orderB);
+  });
+
+  test("mixed-case paths sort case-insensitively, not by raw byte order", () => {
+    const files = [changedFile({ path: "Banana.txt" }), changedFile({ path: "apple.txt" }), changedFile({ path: "cherry.txt" })];
+    const model = buildModel(baseInput({ snapshot: { files } }));
+    // Byte/ordinal order would put "Banana.txt" (capital B, 0x42) before
+    // "apple.txt" and "cherry.txt" (lowercase, 0x61+); case-insensitive
+    // sorts it between them instead.
+    expect(model.changes.map((c) => c.path)).toEqual(["apple.txt", "Banana.txt", "cherry.txt"]);
+  });
+
+  test("the selected file's diff still resolves correctly by path after the underlying status reorders (cursor stays on the FILE, not a row index)", () => {
+    const before = [changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" })];
+    const after = [changedFile({ path: "apple.txt" }), changedFile({ path: "zebra.txt" })]; // same files, different incoming order
+    const stagingDiff = { path: "zebra.txt", kind: "text" as const, untracked: false, hunks: [] };
+    const beforeModel = buildModel(baseInput({ state: { selectedPath: "zebra.txt" }, snapshot: { files: before }, stagingDiff }));
+    const afterModel = buildModel(baseInput({ state: { selectedPath: "zebra.txt" }, snapshot: { files: after }, stagingDiff }));
+    expect(beforeModel.diff.path).toBe("zebra.txt");
+    expect(afterModel.diff.path).toBe("zebra.txt");
+    // Row position moved (zebra.txt sorts after apple.txt either way here),
+    // but selection tracking is by path, not index, in both directions.
+    expect(afterModel.changes.map((c) => c.path)).toEqual(["apple.txt", "zebra.txt"]);
+  });
+});
+
 describe("changes filter", () => {
   const files = [
     changedFile({ path: "lib/mission/driver.ts", staged: true, unstaged: false }),

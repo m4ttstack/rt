@@ -43,9 +43,9 @@
     { "name": "rt-100-ancient-other", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "other", "default": false, "when": "last month" }
   ],
   "changes": [
+    { "path": "ui/internal/views/mission/mission.go", "origPath": "", "status": "modified", "include": "partial" },
     { "path": "ui/internal/views/mission/model.go", "origPath": "", "status": "modified", "include": "all" },
-    { "path": "ui/internal/views/mission/topbar.go", "origPath": "", "status": "new", "include": "all" },
-    { "path": "ui/internal/views/mission/mission.go", "origPath": "", "status": "modified", "include": "partial" }
+    { "path": "ui/internal/views/mission/topbar.go", "origPath": "", "status": "new", "include": "all" }
   ],
   "changedTotal": 3,
   "stagedTotal": 3,

@@ -240,14 +240,16 @@ describe("mission compose: driver + git-core against a real repo", () => {
       expect(porcelainAfterCommit).toContain(" M a.txt"); // delta remains, unstaged
       expect(porcelainAfterCommit).toContain("?? b.txt"); // still untracked, untouched
       expect(committed.commit.summary).toBe("");
-      // The committed selections are gone; a.txt still has a remaining
-      // change (delta) so it reappears and re-seeds to All (GHD's own
-      // default for anything reconcileSelections sees as freshly current);
-      // b.txt does too (its earlier None was about content since committed
-      // away, not persisted forever).
-      expect(committed.stagedTotal).toBe(2);
-      expect(committed.changes.find((c) => c.path === "a.txt")?.include).toBe("all");
-      expect(committed.changes.find((c) => c.path === "b.txt")?.include).toBe("all");
+      // GHD's own post-commit reconciliation: a.txt's selection was
+      // Partial (some of it just committed), so its remaining diff's shape
+      // shifted underneath those absolute indices -- downgraded to None,
+      // not reseeded to All, so the user reviews delta fresh rather than
+      // it silently riding along into the next commit. b.txt's selection
+      // was already None (deliberately toggled off in step 3) and a
+      // commit it wasn't part of at all must not change that.
+      expect(committed.stagedTotal).toBe(0);
+      expect(committed.changes.find((c) => c.path === "a.txt")?.include).toBe("none");
+      expect(committed.changes.find((c) => c.path === "b.txt")?.include).toBe("none");
 
       // 6. Undo restores the pre-commit history and returns the changes to
       // the working tree (mixed reset: nothing staged, b.txt untracked again).
