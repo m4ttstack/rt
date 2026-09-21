@@ -8,6 +8,7 @@ import {
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
+import { basename } from "path";
 import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
@@ -414,7 +415,13 @@ export function buildModel(input: {
     oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
   });
 
-  const worktreeName = worktreeRows.find((worktree) => worktree.path === state.currentWorktree)?.name ?? "";
+  // On a plain (non-rt-managed) repo, worktree:list has no row for the
+  // checkout at all -- or rt-client's WorktreeTreeRow.name (an rt worktree
+  // name, e.g. "gandalf") comes back "" -- and the segment must never fall
+  // back to rendering the raw checkout path (mission.go's renderWorktreeSegment
+  // does that itself when Current.WorktreeName is ""), so the directory's own
+  // basename stands in.
+  const worktreeName = worktreeRows.find((worktree) => worktree.path === state.currentWorktree)?.name || basename(state.currentWorktree);
 
   const current: MissionCurrent = {
     repo: state.currentRepo,

@@ -323,6 +323,38 @@ describe("joinWorktreeRows", () => {
   });
 });
 
+// A plain (non-rt-managed) repo's worktree:list has no rt worktree name for
+// the checkout -- WorktreeTreeRow.name comes back "" -- and the segment must
+// never fall back to the raw checkout path (a real-repo defect the mission
+// fixtures never exposed, since every fixture models an rt-managed worktree
+// with a daemon-assigned name).
+describe("current.worktreeName falls back to the checkout directory's basename", () => {
+  test("an empty WorktreeRow.name yields the basename, not the raw path", () => {
+    const model = buildModel(
+      baseInput({
+        state: { currentWorktree: "/Users/matt/Documents/glitter-demo" },
+        worktrees: [{ path: "/Users/matt/Documents/glitter-demo", name: "", branch: "main", onDeck: false, badge: badge() }],
+      }),
+    );
+    expect(model.current.worktreeName).toBe("glitter-demo");
+  });
+
+  test("no matching WorktreeRow at all (worktree:list returned nothing) also falls back to the basename", () => {
+    const model = buildModel(
+      baseInput({
+        state: { currentWorktree: "/Users/matt/Documents/glitter-demo" },
+        worktrees: [],
+      }),
+    );
+    expect(model.current.worktreeName).toBe("glitter-demo");
+  });
+
+  test("a real rt worktree name is unaffected", () => {
+    const model = buildModel(baseInput());
+    expect(model.current.worktreeName).toBe("repo");
+  });
+});
+
 describe("repo modal group derivation", () => {
   test.each([
     ["github remote", serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/repo-tools" }), "github.com/m4ttstack"],
