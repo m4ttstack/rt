@@ -1349,6 +1349,87 @@ func TestCommitEmitClearsLocalDrafts(t *testing.T) {
 	}
 }
 
+// TestClickCheckboxOnAnotherRowAlsoSelectsIt: RT-221. A checkbox click always
+// emitted its own stage intent, but never mission:select -- so the diff pane
+// kept showing the previously selected file until the next row click or
+// arrow key. Clicking a DIFFERENT row's checkbox must batch the stage intent
+// with a select intent, mirroring clickFileRow's own selectPathCmd.
+func TestClickCheckboxOnAnotherRowAlsoSelectsIt(t *testing.T) {
+	m := newTestMission()
+	m.model.Changes = []ChangeRow{
+		{Path: "a.txt", Include: "all"},
+		{Path: "b.txt", Include: "all"},
+	}
+	m.selected = "a.txt"
+
+	_, cmd := m.clickCheckbox(1)
+	if cmd == nil {
+		t.Fatal("clicking a checkbox must still emit its stage intent")
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("checkbox click on a different row should batch stage+select, got %#v", msg)
+	}
+	if m.selected != "b.txt" {
+		t.Fatalf("checkbox click should move the cursor to the clicked row, got %q", m.selected)
+	}
+}
+
+// TestClickCheckboxOnTheAlreadySelectedRowStillStages pins the other half:
+// no redundant select intent when the clicked row is already the one
+// showing in the diff pane (selectPathCmd's own no-op-on-unchanged rule).
+func TestClickCheckboxOnTheAlreadySelectedRowStillStages(t *testing.T) {
+	m := newTestMission()
+	m.model.Changes = []ChangeRow{
+		{Path: "a.txt", Include: "all"},
+		{Path: "b.txt", Include: "all"},
+	}
+	m.selected = "a.txt"
+
+	_, cmd := m.clickCheckbox(0)
+	if cmd == nil {
+		t.Fatal("clicking a checkbox must still emit its stage intent")
+	}
+}
+
+// TestCommitRefusalRestoresDraftAfterEmit: RT-221. Emitting mission:commit
+// clears the local drafts -- the only point they can ever go back to empty,
+// since a non-empty draft always outranks a push. A refusal or failure must
+// restore them via the next push's Commit.Summary/Description, or the typed
+// message is lost with no way to recover it.
+func TestCommitRefusalRestoresDraftAfterEmit(t *testing.T) {
+	m := newTestMission()
+	m.model.Commit.CanCommit = true
+	m.focus = focusSummary
+	m.summaryInput.SetValue("Amend it")
+	m.descriptionInput.SetValue("body text")
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}); cmd == nil {
+		t.Fatal("ctrl+enter with the gate open must emit")
+	}
+	if m.summaryInput.Value() != "" {
+		t.Fatalf("emit should have cleared the summary draft, got %q", m.summaryInput.Value())
+	}
+
+	mod := modalFixtureModel()
+	mod.Notice = "main is a stack root; amend refused"
+	mod.Commit.Summary = "Amend it"
+	mod.Commit.Description = "body text"
+	raw, err := json.Marshal(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(session.ModelUpdate{Raw: raw})
+	m = next.(*Mission)
+
+	if got := m.summaryInput.Value(); got != "Amend it" {
+		t.Fatalf("a refused commit should restore the typed summary: %q", got)
+	}
+	if got := m.descriptionInput.Value(); got != "body text" {
+		t.Fatalf("a refused commit should restore the typed description: %q", got)
+	}
+}
+
 // ─── mouse routing ──────────────────────────────────────────────────────
 
 // mouseFixtureModel is a small, self-contained model for the mouse-routing

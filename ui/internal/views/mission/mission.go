@@ -1023,14 +1023,20 @@ func (m *Mission) clickFileRow(idx int) (tea.Model, tea.Cmd) {
 	return m, m.selectPathCmd(prev)
 }
 
+// clickCheckbox always emits the row's stage intent; when the click also
+// lands on a row that wasn't already selected, it batches a select intent
+// alongside it (mirroring clickFileRow's own selectPathCmd) so the diff pane
+// loads that file immediately instead of waiting for the next row click or
+// arrow key.
 func (m *Mission) clickCheckbox(idx int) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(m.model.Changes) {
 		return m, nil
 	}
 	path := m.model.Changes[idx].Path
+	prev := m.selected
 	m.selected = path
 	m.focus = focusList
-	return m, m.stageIntent(path, "toggle-file")
+	return m, tea.Batch(m.stageIntent(path, "toggle-file"), m.selectPathCmd(prev))
 }
 
 func (m *Mission) clickCommitButton() (tea.Model, tea.Cmd) {

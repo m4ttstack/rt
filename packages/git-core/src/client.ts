@@ -1,7 +1,7 @@
 import { simpleGit, type SimpleGit } from "simple-git";
 import { getSnapshot } from "./snapshot.ts";
 import { getFileDiff } from "./diff.ts";
-import { getBranches, getTags, createTag, deleteTag, pushTag, fetchRemote } from "./refs.ts";
+import { getBranches, getRemotes, getTags, createTag, deleteTag, pushTag, fetchRemote } from "./refs.ts";
 import { getLog } from "./log.ts";
 import { getStashes, stashPush, stashApply, stashPop, stashDrop } from "./stash.ts";
 import { getFetchState } from "./fetch-state.ts";
@@ -49,6 +49,7 @@ export function createGitClient(dir: string): GitClient {
     snapshot: () => getSnapshot(ctx),
     diffFile: (path, opts) => getFileDiff(ctx, path, opts),
     branches: () => getBranches(ctx),
+    remotes: () => getRemotes(ctx),
     tags: () => getTags(ctx),
     log: (opts) => getLog(ctx, opts),
     stashes: () => getStashes(ctx),

@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { getRemoteDefaultBranch } from "../git-ops.ts";
+import { getPullRebase, getRemoteDefaultBranch } from "../git-ops.ts";
 
 // Mirrors lib/worktree/__tests__/git-async.test.ts's own sandbox pattern:
 // realpathSync because git canonicalizes /var -> /private/var on macOS
@@ -114,5 +114,35 @@ describe("getRemoteDefaultBranch", () => {
     execSync("git remote set-url origin /nonexistent/o.git", { cwd: repo, shell: "/bin/zsh" });
     expect(() => getRemoteDefaultBranch(repo, "origin", { preferRemote: true })).not.toThrow();
     expect(getRemoteDefaultBranch(repo, "origin", { preferRemote: true })).toBe("origin/main");
+  });
+});
+
+describe("getPullRebase", () => {
+  let repo: string;
+  beforeEach(() => { repo = makeRepo(); });
+
+  test("false when pull.rebase is unset", () => {
+    expect(getPullRebase(repo)).toBe(false);
+  });
+
+  test("true when pull.rebase is set true", () => {
+    execSync("git config pull.rebase true", { cwd: repo, shell: "/bin/zsh" });
+    expect(getPullRebase(repo)).toBe(true);
+  });
+
+  test("false when pull.rebase is explicitly false", () => {
+    execSync("git config pull.rebase false", { cwd: repo, shell: "/bin/zsh" });
+    expect(getPullRebase(repo)).toBe(false);
+  });
+
+  // GHD parity (app/src/lib/stores/git-store.ts's checkPullWithRebase):
+  // only the exact string "true" means rebase; any other non-"false" value
+  // (interactive, merges, a typo) logs a warning there and falls back to
+  // undefined/not-rebase rather than guessing.
+  test("false for the non-boolean 'interactive' and 'merges' values (GHD parity)", () => {
+    execSync("git config pull.rebase interactive", { cwd: repo, shell: "/bin/zsh" });
+    expect(getPullRebase(repo)).toBe(false);
+    execSync("git config pull.rebase merges", { cwd: repo, shell: "/bin/zsh" });
+    expect(getPullRebase(repo)).toBe(false);
   });
 });

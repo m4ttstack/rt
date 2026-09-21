@@ -110,7 +110,9 @@ function makeFakeClient(overrides: {
   stagingDiff?: (path: string) => Promise<StagingDiff>;
   undoLastCommit?: GitClient["undoLastCommit"];
   branches?: () => Promise<BranchInfo[]>;
+  remotes?: GitClient["remotes"];
   log?: GitClient["log"];
+  resetToCommit?: GitClient["resetToCommit"];
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], stageFileFully: [], resetToCommit: [] };
   const client: GitClient = {
@@ -118,6 +120,10 @@ function makeFakeClient(overrides: {
     snapshot: overrides.snapshot ?? (async () => baseSnapshot()),
     diffFile: async () => ({ path: "", kind: "text", hunks: [] }),
     branches: overrides.branches ?? (async () => []),
+    // Default names a real remote so the existing action-kind tests (push,
+    // publish-branch, ...) keep reaching those kinds -- deriveAction reads
+    // remoteName === null as "no remote at all" (publish-repo).
+    remotes: overrides.remotes ?? (async () => [{ name: "origin" }]),
     tags: async () => [],
     log: overrides.log ?? (async () => []),
     stashes: async () => [],
@@ -138,8 +144,9 @@ function makeFakeClient(overrides: {
       calls.discardSelection.push({ diff, selection });
     },
     undoLastCommit: overrides.undoLastCommit ?? (async () => ({ ok: true, undoneSha: "deadbeef" })),
-    resetToCommit: async (sha: string, mode: string) => {
+    resetToCommit: async (sha: string, mode: "soft" | "mixed" | "hard") => {
       calls.resetToCommit.push({ sha, mode });
+      if (overrides.resetToCommit) await overrides.resetToCommit(sha, mode);
     },
     stageFileFully: async (path: string, originalPath?: string) => {
       calls.stageFileFully.push({ path, originalPath });
@@ -256,6 +263,8 @@ function baseDeps(over: {
   guard?: MissionDeps["guard"];
   now?: MissionDeps["now"];
   resolveDefaultBranch?: MissionDeps["resolveDefaultBranch"];
+  readPullRebase?: MissionDeps["readPullRebase"];
+  buildGuards?: MissionDeps["buildGuards"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -279,6 +288,8 @@ function baseDeps(over: {
     // per test and makes the resolver itself spy-able (see the caching test
     // below).
     resolveDefaultBranch: over.resolveDefaultBranch ?? (() => null),
+    readPullRebase: over.readPullRebase ?? (() => false),
+    buildGuards: over.buildGuards ?? (async () => new Map()),
   };
 }
 
@@ -506,6 +517,96 @@ describe("MissionDriver: badge resolution", () => {
   });
 });
 
+describe("MissionDriver: real remote name, pull.rebase, and guards (RT-219)", () => {
+  test("a repo with no remote shows Publish repository in the action segment", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({ remotes: async () => [] });
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.action.kind).toBe("publish-repo");
+    expect(opened!.action.title).toBe("Publish repository");
+  });
+
+  test("a remote named something other than origin flows into runAction", async () => {
+    let capturedOpts: { remote?: string; branch: string | null } | null = null;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:action" },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ remotes: async () => [{ name: "upstream" }] });
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 1, behind: 0 })] }] } },
+      runAction: async (_cwd, _kind, opts) => {
+        capturedOpts = opts;
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(capturedOpts!).toEqual({ remote: "upstream", branch: "main" });
+  });
+
+  test("pull.rebase=true renders the with-rebase title in the action segment", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 0, behind: 1 })] }] } },
+      readPullRebase: () => true,
+    });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.action.kind).toBe("pull-rebase");
+    expect(opened!.action.title).toBe("Pull origin with rebase");
+  });
+
+  test("a branch checked out in another worktree renders guardedBy in the branch modal rows", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      branches: async () => [
+        { name: "main", current: true, sha: "a", upstream: null, upstreamGone: false, ahead: null, behind: null, committedAt: "2026-01-01T00:00:00Z" },
+        { name: "feature-x", current: false, sha: "b", upstream: null, upstreamGone: false, ahead: null, behind: null, committedAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      buildGuards: async () => new Map([["feature-x", "feature-x is already checked out in another worktree at /elsewhere"]]),
+    });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    const row = opened!.branches.find((b) => b.name === "feature-x")!;
+    expect(row.guardedBy).toContain("/elsewhere");
+  });
+});
+
 describe("MissionDriver: detached HEAD", () => {
   test("sends the short head sha as current.branch when the snapshot has no branch", async () => {
     const client = makeFakeClient({
@@ -713,6 +814,69 @@ describe("MissionDriver: commit", () => {
     expect(amendCalled).toBe(false);
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("main is a stack root; amend refused");
+  });
+
+  // RT-221: the view clears its own local summary/description drafts the
+  // moment it emits mission:commit (the only point a non-empty local draft
+  // can ever go back to empty -- see mission.go's emitCommit/SetModel). A
+  // refusal or failure must echo the rejected text back onto the wire
+  // model so the now-empty view fields re-seed from it, or the typed
+  // message is lost with no way to recover it.
+  test("a branch-guard refusal on amend restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Amend it", description: "body text", amend: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      guard: async () => ({ verdict: "refuse", reason: "stack", detail: "main is a stack root; amend refused" }),
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("main is a stack root; amend refused");
+    expect(last.commit.summary).toBe("Amend it");
+    expect(last.commit.description).toBe("body text");
+  });
+
+  test("a commit that fails in git restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Fix the thing", description: "extra detail" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      commit: () => {
+        throw new Error("nothing to commit");
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("commit failed: nothing to commit");
+    expect(last.commit.summary).toBe("Fix the thing");
+    expect(last.commit.description).toBe("extra detail");
+  });
+
+  test("a commit-time index rebuild that fails restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Fix the thing", description: "extra detail" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({
+      resetToCommit: async () => {
+        throw new Error("index.lock exists");
+      },
+    });
+
+    await new MissionDriver(baseDeps({ session, client }), START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("commit failed: index.lock exists");
+    expect(last.commit.summary).toBe("Fix the thing");
+    expect(last.commit.description).toBe("extra detail");
   });
 });
 
