@@ -38,8 +38,6 @@ type RunActionFn = (cwd: string, kind: ActionKind, opts: { remote?: string; bran
 type CommitStagedFn = (cwd: string, message: string, opts?: { amend?: boolean; noVerify?: boolean; allowEmpty?: boolean; coAuthors?: string[] }) => string;
 type AmendStagedFn = (cwd: string, opts?: { message?: string; noVerify?: boolean }) => string;
 type GuardFn = typeof checkBranchGuard;
-type StageFileFn = (cwd: string, path: string) => void;
-type UnstageFileFn = (cwd: string, path: string, origPath?: string) => void;
 type ResolveDefaultBranchFn = typeof getRemoteDefaultBranch;
 
 export interface MissionDeps {
@@ -53,10 +51,6 @@ export interface MissionDeps {
   amend: AmendStagedFn;
   guard: GuardFn;
   now: () => Date;
-  /** Whole-file `git add` (commit-ops' stagePath): covers untracked and binary files the patch pipeline cannot. */
-  stageFile: StageFileFn;
-  /** Whole-file `git reset -q HEAD` (commit-ops' unstagePath): the only unstage git-core's forward-only patches allow. */
-  unstageFile: UnstageFileFn;
   /**
    * Resolves the current worktree's remote default branch (e.g.
    * "origin/main"), or null when none resolves. Synchronous (two blocking
@@ -308,6 +302,7 @@ export class MissionDriver {
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    this.reconcileSelections();
     // Seed the diff pane on open (and after a checkout/worktree/repo switch
     // cleared it): the first change is what the view's cursor starts on.
     if (this.state.selectedPath === null) this.state.selectedPath = snapshot.files[0]?.path ?? null;
@@ -348,12 +343,34 @@ export class MissionDriver {
     if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    this.reconcileSelections();
     this.stagingDiff = stagingDiff;
     this.recomputeAction();
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
     this.stagingDiff = this.state.selectedPath ? await client.stagingDiff(this.state.selectedPath) : null;
+  }
+
+  /**
+   * Seeds every newly-appeared changed file's selection to All (GHD's own
+   * default, ratified 2026-09-21) and prunes entries for files that no
+   * longer appear (committed, reverted, or discarded away) so the map never
+   * grows stale forever. Called from every place that replaces this.snapshot
+   * -- refresh(), refreshBadges(), refreshSnapshotAndDiff() -- since any of
+   * them can observe a file the user, or another agent (this estate has
+   * agents that stage/edit independently), touched outside this session.
+   */
+  private reconcileSelections(): void {
+    const present = new Set(this.snapshot.files.map((f) => f.path));
+    for (const path of this.state.selections.keys()) {
+      if (!present.has(path)) this.state.selections.delete(path);
+    }
+    for (const path of present) {
+      if (!this.state.selections.has(path)) {
+        this.state.selections.set(path, DiffSelection.fromInitialSelection(DiffSelectionType.All));
+      }
+    }
   }
 
   private recomputeAction(): void {
@@ -435,75 +452,72 @@ export class MissionDriver {
   }
 
   /**
-   * The file's persisted DiffSelection, or a seed derived from its current
-   * staged state: a fully staged file reads all-selected (so toggle-file
-   * unstages it), anything with unstaged or untracked content reads
-   * none-selected, because its staging diff's lines are by definition not in
-   * the index yet. Seeds are not stored; the map holds only genuinely
-   * divergent selections, and a stage/discard drops the entry so the next
-   * touch re-seeds from the refreshed snapshot.
+   * The file's persisted commit-intent selection (GHD's checkbox model,
+   * ratified 2026-09-21): every changed file's selection is seeded to All
+   * the moment it first appears (reconcileSelections, called from every
+   * refresh/refreshBadges/refreshSnapshotAndDiff) and persists across
+   * pushes and refreshes as the user's own commit intent, independent of
+   * the real git index. This fallback (All) only matters before the very
+   * first reconcile has ever run.
    */
   private currentSelection(path: string): DiffSelection {
-    const existing = this.state.selections.get(path);
-    if (existing) return existing;
-    const file = this.snapshot.files.find((f) => f.path === path);
-    const fullyStaged = file !== undefined && file.staged && !file.unstaged;
-    return DiffSelection.fromInitialSelection(fullyStaged ? DiffSelectionType.All : DiffSelectionType.None);
+    return this.state.selections.get(path) ?? DiffSelection.fromInitialSelection(DiffSelectionType.All);
   }
 
+  /**
+   * GHD's own model (ratified 2026-09-21): toggling a line, hunk, or file
+   * changes the user's commit SELECTION only -- it never touches the real
+   * git index. Nothing here is staged or unstaged; the index is rebuilt
+   * from every file's own selection at commit time (handleCommit's
+   * rebuildIndexFromSelections). client.stagingDiff is still needed here
+   * to resolve a line/hunk payload's compacted selIdx against the diff's
+   * real hunk shape -- the same translation staging always needed, just no
+   * longer followed by a git call.
+   */
   private async handleStage(payload: StagePayload | undefined): Promise<void> {
     if (!payload || typeof payload.path !== "string") return;
-    const cwd = this.state.currentWorktree;
-    const client = this.deps.client(cwd);
     const current = this.currentSelection(payload.path);
 
     if (payload.mode === "toggle-file") {
-      // Whole-file staging bypasses the line-patch pipeline: git add/reset
-      // also cover binary and untracked files, and an unstage cannot be
-      // expressed as a forward cached patch at all.
-      if (current.getSelectionType() === DiffSelectionType.All) {
-        const file = this.snapshot.files.find((f) => f.path === payload.path);
-        this.deps.unstageFile(cwd, payload.path, file?.originalPath);
-      } else {
-        this.deps.stageFile(cwd, payload.path);
-      }
-      this.state.selections.delete(payload.path);
-      await this.refreshSnapshotAndDiff(client);
+      // A tri-state checkbox's own click rule: Partial or None -> All,
+      // All -> None. Mirrors a real checkbox's "indeterminate/unchecked
+      // click checks everything, checked click clears it" behavior.
+      const next =
+        current.getSelectionType() === DiffSelectionType.All
+          ? DiffSelection.fromInitialSelection(DiffSelectionType.None)
+          : DiffSelection.fromInitialSelection(DiffSelectionType.All);
+      this.state.selections.set(payload.path, next);
       this.push();
       return;
     }
 
+    const client = this.deps.client(this.state.currentWorktree);
     const diff = await client.stagingDiff(payload.path);
     let next: DiffSelection | null = null;
     if (payload.mode === "line" && typeof payload.selIdx === "number") {
       const target = resolveCompactedSelIdx(diff, payload.selIdx);
       next = current.withToggleLineSelection(target.absoluteIndex);
-      if (!next.isSelected(target.absoluteIndex)) {
-        // The toggle deselected the pressed line: an unstage, which the
-        // forward-only cached patch cannot express at line granularity.
-        this.state.notice = "unstaging a single line is not supported yet";
-        this.push();
-        return;
-      }
     } else if (payload.mode === "hunk" && typeof payload.selIdx === "number") {
       const target = resolveCompactedSelIdx(diff, payload.selIdx);
-      if (current.isRangeSelected(target.hunkStart, target.hunkLength) === DiffSelectionType.All) {
-        this.state.notice = "unstaging a hunk is not supported yet";
-        this.push();
-        return;
-      }
-      next = current.withRangeSelection(target.hunkStart, target.hunkLength, true);
+      const allSelected = current.isRangeSelected(target.hunkStart, target.hunkLength) === DiffSelectionType.All;
+      next = current.withRangeSelection(target.hunkStart, target.hunkLength, !allSelected);
     }
-    // formatPatch throws on an empty selection, so an all-None result never
-    // reaches stageSelection.
-    if (!next || next.getSelectionType() === DiffSelectionType.None) return;
+    if (!next) return;
 
-    await client.stageSelection(diff, next);
-    this.state.selections.delete(payload.path);
-    await this.refreshSnapshotAndDiff(client);
+    this.state.selections.set(payload.path, next);
     this.push();
   }
 
+  // Unchanged by the GHD staging-model ruling: discard is a real,
+  // destructive working-tree edit, not a selection change, so it still
+  // calls client.discardSelection directly. It now operates against the
+  // full HEAD-vs-worktree diff (client.stagingDiff's own new shape) rather
+  // than the old worktree-vs-index one -- the same diff the pane actually
+  // shows, so a discard always targets the line/hunk the user is looking
+  // at. The stale selection is dropped after: a discard changes the file's
+  // diff shape, so any persisted selection's absolute indices no longer
+  // point at the same content -- reconcileSelections re-seeds it to All on
+  // the refresh() below.
   private async handleDiscard(payload: StagePayload | undefined): Promise<void> {
     if (!payload || typeof payload.path !== "string") return;
     const now = this.deps.now().getTime();
@@ -562,6 +576,17 @@ export class MissionDriver {
     }
 
     const cwd = this.state.currentWorktree;
+    const client = this.deps.client(cwd);
+    // GHD's own sequencing (app/src/lib/git/commit.ts's createCommit):
+    // unconditionally reset the whole index to HEAD, then rebuild it from
+    // each file's own commit-intent selection, THEN commit -- amend or
+    // not. Anything staged outside glitter (a plain `git add`, another
+    // agent working the same repo) is rebuilt away here: the checkbox is
+    // the source of truth now, not whatever happened to already be in the
+    // index. Documented in docs/design/mission/README.md so it's not a
+    // surprise.
+    await this.rebuildIndexFromSelections(client);
+
     const message = payload.description ? `${payload.summary}\n\n${payload.description}` : payload.summary;
     if (payload.amend) {
       this.deps.amend(cwd, { message });
@@ -574,8 +599,39 @@ export class MissionDriver {
     this.state.description = "";
     this.state.amending = false;
     this.state.notice = "";
+    // The committed selections no longer describe anything meaningful (the
+    // files they covered are gone or changed shape); reconcileSelections
+    // re-seeds whatever remains to All on the refresh() below, the same
+    // fresh-start GHD itself gets once a commit lands.
+    this.state.selections = new Map();
     await this.refresh();
     this.push();
+  }
+
+  /**
+   * GHD's own commit-time index rebuild (app/src/lib/git/update-index.ts's
+   * stageFiles, ported to rt's own per-file primitives): the caller has
+   * already reset the index to HEAD; this walks every changed file and
+   * brings the index to match its own selection -- None needs no call
+   * (already at HEAD), All is a whole-file stage (client.stageFileFully),
+   * Partial re-fetches the file's own displayed diff and applies exactly
+   * the checked lines (client.stageSelection, unchanged -- it was already
+   * GHD's own applyPatchToIndex in every way that mattered once the diff
+   * it's handed is the HEAD-vs-worktree one).
+   */
+  private async rebuildIndexFromSelections(client: GitClient): Promise<void> {
+    await client.resetToCommit("HEAD", "mixed");
+    for (const file of this.snapshot.files) {
+      const selection = this.currentSelection(file.path);
+      const type = selection.getSelectionType();
+      if (type === DiffSelectionType.None) continue;
+      if (type === DiffSelectionType.All) {
+        await client.stageFileFully(file.path, file.originalPath);
+        continue;
+      }
+      const diff = await client.stagingDiff(file.path);
+      await client.stageSelection(diff, selection, file.originalPath ? { originalPath: file.originalPath } : {});
+    }
   }
 
   private async handleUndo(): Promise<void> {
@@ -665,6 +721,7 @@ export class MissionDriver {
 
   private async refreshSnapshotAndDiff(client: GitClient): Promise<void> {
     this.snapshot = await client.snapshot();
+    this.reconcileSelections();
     await this.refreshDiff(client);
     this.recomputeAction();
   }
