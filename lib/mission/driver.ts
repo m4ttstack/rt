@@ -90,6 +90,7 @@ interface CheckoutPayload {
 interface WorktreePayload {
   path?: string;
   new?: boolean;
+  name?: string;
 }
 
 interface RepoPayload {
@@ -115,6 +116,17 @@ interface DriverState extends MissionState {
 
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
 const DISCARD_CONFIRM_WINDOW_MS = 5000;
+
+/** Matches the provision CLI's own ceiling: claiming a tree and checking out can legitimately take minutes. */
+const PROVISION_TIMEOUT_MS = 6 * 60_000;
+
+/** The daemon's typed refusals, in the words a board reader can act on. */
+const PROVISION_REFUSALS: Record<string, string> = {
+  "repo-unknown": "this repo is not registered with rt",
+  busy: "another worktree operation is running; try again in a moment",
+  "branch-unresolved": "a branch name is required to provision a worktree",
+  "handoff-write-failed": "the tree was created but could not be claimed; check rt worktree list",
+};
 
 const EMPTY_SNAPSHOT: RepoSnapshot = {
   branch: null,
@@ -775,14 +787,47 @@ export class MissionDriver {
 
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
     if (!payload) return;
-    if (typeof payload.path !== "string") {
-      // The "provision new worktree…" action row (new:true) has no
-      // provisioning flow wired yet -- v1 answers it with a notice.
-      this.state.notice = "use rt worktree provision";
+    if (payload.new === true) {
+      await this.provisionWorktree(payload);
+      return;
+    }
+    if (typeof payload.path !== "string") return;
+    this.state.currentWorktree = payload.path;
+    this.state.selectedPath = null;
+    this.state.selections = new Map();
+    await this.refresh();
+    this.push();
+  }
+
+  private async provisionWorktree(payload: WorktreePayload): Promise<void> {
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    if (name === "") return;
+    const res = await this.deps.daemonQuery("worktree:provision", {
+      repoName: this.state.currentRepo,
+      branch: name,
+      owner: "glitter",
+    }, PROVISION_TIMEOUT_MS);
+
+    if (!res) {
+      this.state.notice = "the rt daemon is not running";
       this.push();
       return;
     }
-    this.state.currentWorktree = payload.path;
+    if (!res.ok) {
+      const code = typeof res.error === "string" ? res.error : "unknown";
+      this.state.notice = PROVISION_REFUSALS[code] ?? `could not provision a worktree: ${code}`;
+      this.push();
+      return;
+    }
+
+    const data = res.data as { path?: string } | undefined;
+    if (typeof data?.path !== "string") {
+      this.state.notice = "the daemon provisioned a tree but returned no path";
+      this.push();
+      return;
+    }
+    this.state.notice = "";
+    this.state.currentWorktree = data.path;
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();

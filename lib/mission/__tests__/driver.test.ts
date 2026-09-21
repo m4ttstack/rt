@@ -1050,18 +1050,24 @@ describe("MissionDriver: checkout guard", () => {
 });
 
 describe("MissionDriver: worktree", () => {
-  test("the 'provision new worktree…' action row (new:true) answers with a Notice instead of a silent no-op", async () => {
+  test("a new-worktree intent with no name is a silent no-op", async () => {
+    const calls: string[] = [];
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { new: true } },
       { t: "intent", name: "quit" },
     ]);
-    const deps = baseDeps({ session });
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        calls.push(cmd);
+        return { ok: true, data: { trees: defaultTrees() } };
+      },
+    });
 
     await new MissionDriver(deps, START).run();
 
-    const last = session.pushed.at(-1) as MissionModel;
-    expect(last.notice).toBe("use rt worktree provision");
-    expect(last.current.worktree).toBe(START.worktree); // never switched
+    expect(calls).not.toContain("worktree:provision");
+    expect(session.pushed).toHaveLength(0); // never switched, never pushed
   });
 
   test("switching worktree re-seeds worktree:list and pushes a model whose Current joins the new path's real name and badge", async () => {
@@ -1106,6 +1112,75 @@ describe("MissionDriver: worktree", () => {
     expect(row?.name).toBe("frodo");
     expect(row?.onDeck).toBe(true);
     expect(row?.badge.ahead).toBe(4);
+  });
+});
+
+describe("MissionDriver: provisioning a worktree", () => {
+  test("provisions with the typed branch name and switches the board to the new tree", async () => {
+    const calls: Array<{ cmd: string; payload: Record<string, unknown> }> = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string, payload?: Record<string, unknown>) => {
+        calls.push({ cmd, payload: payload ?? {} });
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: false } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const provision = calls.find((c) => c.cmd === "worktree:provision");
+    expect(provision?.payload).toMatchObject({ branch: "my-feature", owner: "glitter" });
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/rohan");
+  });
+
+  test("a refusal surfaces as a notice and leaves the board where it was", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") return { ok: false, error: "busy" };
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("another worktree operation is running; try again in a moment");
+    expect(last.current.worktree).toBe(START.worktree);
+  });
+
+  test("a blank name never reaches the daemon", async () => {
+    const calls: string[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "   " } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        calls.push(cmd);
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(calls).not.toContain("worktree:provision");
   });
 });
 
