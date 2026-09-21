@@ -14,10 +14,10 @@ import { tmpdir } from "os";
 import { basename, join } from "path";
 import type { Logger } from "pino";
 import { writeJson } from "../../json-store.ts";
-import { machineSettingsPath, repoDataDir, rtDir } from "../../rt-paths.ts";
+import { goldenRoot, machineSettingsPath, repoDataDir, rtDir } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
-import { loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { GOLDEN_BRANCH, GOLDEN_NAME, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import { readyTaskFor } from "../../worktree/ready-async.ts";
 import { tryLockTree } from "../../worktree/locks.ts";
 import { branchExistsLocalAsync, currentBranchAsync, headSha } from "../../worktree/git-async.ts";
@@ -832,6 +832,38 @@ describe("worktree:adopt", () => {
     expect(feat.state).toBe("claimed");
     expect(feat.disposal).toBe("merge");
     expect(feat.branch).toBe("acme-1-feature");
+  });
+});
+
+describe("worktree:adopt and the golden", () => {
+  test("adopt --claim leaves a golden row untouched and does not report it", async () => {
+    const repo = makeRepo();
+    const golden = goldenRoot(repoName);
+    sh(`git worktree add -b ${GOLDEN_BRANCH} ${golden} origin/main`, repo);
+    const feature = join(repo, ".worktrees", "feature");
+    sh(`git worktree add -b acme-1-feature ${feature} origin/main`, repo);
+
+    const trees = loadRegistry(repoName);
+    trees.push({
+      name: GOLDEN_NAME, path: golden,
+      kind: "golden", state: "on-deck",
+      branch: GOLDEN_BRANCH, createdAt: new Date().toISOString(), readyStamp: "abc",
+    });
+    saveRegistry(repoName, trees);
+
+    const { h } = makeHandlers({ [repoName]: repo });
+    const res: any = await h["worktree:adopt"]!({ repoName, claim: true });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.claimed).toEqual(["feature"]);
+    expect(res.data.claimed).not.toContain(GOLDEN_NAME);
+    expect(res.data.unmanaged).not.toContain(GOLDEN_NAME);
+    expect(res.data.disposed).not.toContain(GOLDEN_NAME);
+
+    const after = loadRegistry(repoName).find((t) => t.path === golden)!;
+    expect(after.kind).toBe("golden");
+    expect(after.state).toBe("on-deck");
+    expect(after.claimedAt).toBeUndefined();
   });
 });
 

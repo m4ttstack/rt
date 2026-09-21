@@ -802,8 +802,10 @@ export function createWorktreeHandlers(
             main = rec.name;
             continue;
           }
-          // Trees rt already manages are left exactly as they are.
-          if (rec.kind === "ephemeral") continue;
+          // Trees rt already manages are left exactly as they are. The golden
+          // is rt's hydration donor: adopting it would hand the pool's source
+          // to a caller and then let the merge reactor dispose it.
+          if (rec.kind === "ephemeral" || rec.kind === "golden") continue;
 
           const parked =
             rec.branch !== null &&
