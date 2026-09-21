@@ -8,6 +8,7 @@ import { closeStateDb } from "../../../state/index.ts";
 import { machineSettingsPath, goldenRoot } from "../../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../../settings/identity.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
+import { tryLockTree } from "../../../worktree/locks.ts";
 import type { WorktreeAppConfig } from "../../../worktree/config.ts";
 import { clonePath, cloneExitCode } from "../../../worktree/clonefile.ts";
 import type { CloneRunner } from "../../../worktree/hydrate.ts";
@@ -310,18 +311,30 @@ describe("replenish.ts: golden lifecycle", () => {
   });
 
   test("hydration still chooses correctly when cfg.root does not exist yet", async () => {
-    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
-    expect(existsSync(join(repo, ".worktrees"))).toBe(false);
+    const cfgRoot = join(repo, ".worktrees");
+    // A single-entry namePool makes hydrateTree's own path deterministic,
+    // so the pre-lock below targets exactly the path it will try.
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: cfgRoot, ready: [], namePool: ["fixedname"] });
+    expect(existsSync(cfgRoot)).toBe(false);
 
-    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    // A successful hydrate's own `git worktree add` would create cfg.root
+    // as a side effect, which would make a post-pass existsSync check pass
+    // for the wrong reason (git created it, not the probe). Pre-locking the
+    // member's path blocks hydrateTree's git worktree add without touching
+    // chooseCreateMode's decision above it, which is what this test needs
+    // to isolate: the volume probe itself never creates cfg.root, even when
+    // it runs for real against a healthy golden and picks hydrate.
+    const release = tryLockTree(join(cfgRoot, "fixedname"));
+    try {
+      await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    } finally {
+      release?.();
+    }
 
+    expect(existsSync(cfgRoot)).toBe(false);
     const trees = loadRegistry(repoName);
-    const golden = findGolden(trees);
-    const member = trees.find((t) => t.kind === "ephemeral" && t.state === "on-deck");
-    // Equal to the golden's own readyStamp/readyAt only if the member was
-    // actually hydrated, not cold-created (a cold create stamps its own).
-    expect(member?.readyStamp).toBe(golden!.readyStamp);
-    expect(member?.readyAt).toBe(golden!.readyAt);
+    expect(findGolden(trees)?.readyStamp).toBeTruthy();
+    expect(trees.find((t) => t.kind === "ephemeral" && t.state === "on-deck")).toBeUndefined();
   });
 
   test("a golden create failure backs off and members still cold-create", async () => {
