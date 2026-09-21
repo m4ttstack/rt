@@ -1,12 +1,14 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
 import type { Logger } from "pino";
 import { writeJson } from "../../../json-store.ts";
-import { rtDir } from "../../../rt-paths.ts";
+import { machineSettingsPath, rtDir } from "../../../rt-paths.ts";
+import { deriveRepoIdentity } from "../../../settings/identity.ts";
 import { closeStateDb } from "../../../state/index.ts";
+import { createTree } from "../../../worktree/create.ts";
 import { headSha } from "../../../worktree/git-async.ts";
 import { loadRegistry, saveRegistry } from "../../../worktree/registry.ts";
 import { freshenRepo } from "../freshen.ts";
@@ -44,6 +46,46 @@ function pushFile(clone: string, relPath: string, contents: string): string {
   sh(`git add -A && git ${GIT_ID} commit -m ${relPath}`, clone);
   sh(`git push -q origin main`, clone);
   return execSync("git rev-parse HEAD", { cwd: clone, encoding: "utf8" }).trim();
+}
+
+function readMachineStore(): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(machineSettingsPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeMachineStore(obj: Record<string, unknown>): void {
+  mkdirSync(join(machineSettingsPath(), ".."), { recursive: true });
+  writeFileSync(machineSettingsPath(), JSON.stringify(obj));
+}
+
+// A team-authored `ready` ladder is gated behind ready-approve; declaring it
+// in the machine store (rather than the repo config) is the user/machine
+// rung, which evaluateReadyGate does not hold.
+async function declareWorktrees(repoPath: string, repoName: string, declared: unknown): Promise<void> {
+  let remote: string | null = null;
+  try {
+    remote = execSync("git config --get remote.origin.url", { cwd: repoPath, encoding: "utf8" }).trim() || null;
+  } catch { /* no origin yet */ }
+  if (!remote) {
+    remote = `git@rttest:${repoName}.git`;
+    execSync(`git remote add origin ${remote}`, { cwd: repoPath, shell: "/bin/zsh" });
+  }
+  let identity: string;
+  const direct = await deriveRepoIdentity(repoPath);
+  if (direct.kind === "remote") {
+    identity = direct.id;
+  } else {
+    identity = `rttest.local/${repoName}`;
+    const store = readMachineStore();
+    const overrides = { ...(store["rt.repoIdentityOverrides"] as Record<string, string> ?? {}), [remote]: identity };
+    writeMachineStore({ ...store, "rt.repoIdentityOverrides": overrides });
+  }
+  const store = readMachineStore();
+  const repos = { ...(store.repos as Record<string, unknown> ?? {}), [identity]: { "rt.worktrees": declared } };
+  writeMachineStore({ ...store, repos });
 }
 
 describe("freshen.ts: freshenRepo", () => {
@@ -93,5 +135,31 @@ describe("freshen.ts: freshenRepo", () => {
     expect(existsSync(join(repo, "dirty.txt"))).toBe(true);
     const rec = loadRegistry(repoName).find((t) => t.path === repo)!;
     expect(rec.readyAt).toBeUndefined();
+  });
+
+  test("golden is a candidate and is freshened before members", async () => {
+    // A `changed:` step whose glob the bump touches: freshenOne only advances
+    // readyStamp when at least one step actually ran (toRun.length > 0), so an
+    // empty ladder would leave every stamp untouched and prove nothing.
+    await declareWorktrees(repo, repoName, {
+      onDeck: 1,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: "touch .freshened", when: "changed:tracked.txt" }],
+    });
+    const g = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never, target: "golden" });
+    const m = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never });
+    if (!g.ok || !m.ok) throw new Error("setup");
+    writeFileSync(join(repo, "tracked.txt"), "bump\n");
+    execSync("git add tracked.txt && git -c user.email=t@t -c user.name=t commit -qm bump && git push -q origin HEAD", { cwd: repo, shell: "/bin/zsh" });
+    const newSha = execSync("git rev-parse HEAD", { cwd: repo, encoding: "utf8" }).trim();
+
+    const ran = await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    expect(ran[0]).toBe("golden");
+    expect(ran).toContain(m.tree.name);
+    const after = loadRegistry(repoName);
+    expect(after.find((t) => t.kind === "golden")?.readyStamp).toBe(newSha);
+    expect(after.find((t) => t.name === m.tree.name)?.readyStamp).toBe(newSha);
+    expect(existsSync(join(g.tree.path, ".freshened"))).toBe(true);
   });
 });

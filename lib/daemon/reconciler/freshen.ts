@@ -63,7 +63,7 @@ export interface FreshenDeps {
  * and synced it.
  */
 async function freshenCandidate(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> {
-  if (rec.kind === "ephemeral") return rec.state === "on-deck";
+  if (rec.kind === "ephemeral" || rec.kind === "golden") return rec.state === "on-deck";
   if (rec.kind !== "main") return false;
   // Idle-main freshen touches the user's own checkout, so it stays opt-in
   // even when ephemeral on-deck freshen is running.
@@ -250,7 +250,8 @@ export async function freshenRepo(
 ): Promise<string[]> {
   const { repoName, log } = deps;
   const now = Date.now();
-  const trees = loadRegistry(repoName);
+  // The golden is the hydration donor, so it takes a master bump before any member does.
+  const trees = loadRegistry(repoName).sort((a, b) => Number(b.kind === "golden") - Number(a.kind === "golden"));
   const ran: string[] = [];
   for (const rec of trees) {
     if (opts.only && rec.name !== opts.only) continue;
