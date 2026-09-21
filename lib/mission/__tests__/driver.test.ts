@@ -1214,6 +1214,30 @@ describe("MissionDriver: provisioning a worktree", () => {
     expect(last.current.worktree).toBe("/trees/rohan");
   });
 
+  test("a readyHeld provision surfaces a notice naming ready-approve instead of switching silently", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyHeld: true } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/rohan");
+    expect(last.notice).toContain("ready-approve");
+    expect(last.current.settling).toBe(false);
+  });
+
   test("a readyPending provision marks the board settling immediately after switching", async () => {
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },

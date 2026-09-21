@@ -849,13 +849,17 @@ export class MissionDriver {
       return;
     }
 
-    const data = res.data as { path?: string; readyPending?: boolean } | undefined;
+    const data = res.data as { path?: string; readyPending?: boolean; readyHeld?: boolean } | undefined;
     if (typeof data?.path !== "string") {
       this.state.notice = "the daemon provisioned a tree but returned no path";
       this.push();
       return;
     }
-    this.state.notice = "";
+    // readyHeld means the daemon withheld readyPending entirely -- a silent
+    // switch onto a tree whose team ready steps never ran is exactly what
+    // the readiness design forbids, so this notice is the one place that
+    // gets said out loud (commands/worktree.ts prints the same case).
+    this.state.notice = data.readyHeld ? "team ready steps held pending approval... run rt worktree ready-approve" : "";
     this.setCurrentWorktree(data.path, data.readyPending === true);
     this.state.selectedPath = null;
     this.state.selections = new Map();
