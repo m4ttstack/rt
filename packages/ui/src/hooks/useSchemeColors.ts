@@ -48,7 +48,7 @@ export const staticSchemeColors = {
     muted: 'var(--ui-text-muted)',
     /** Near-body text that still reads a shade off the default. */
     gray: 'var(--ui-text-gray)',
-    /** The small-text slot (`--ui-text-4`, the high-contrast step for text under 12.5px), used by `useHoverableTextStyle`'s underline. */
+    /** The small-text slot (`--ui-text-4`, text under 12.5px), used by `useHoverableTextStyle`'s underline. */
     dimmed: 'var(--ui-text-dimmed)',
     /**
      * A theme color at its most legible end for text: the deepest shade in

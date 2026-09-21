@@ -67,7 +67,7 @@ export const GENERATED_LIGHT_COLORS = {
     "1": "#1c2024",
     "2": "#60646c",
     "3": "#60646c",
-    "4": "#1c2024"
+    "4": "#60646c"
   },
   "rule": {
     "1": "#b9bbc6",
@@ -177,7 +177,7 @@ export const GENERATED_DARK_COLORS = {
     "1": "#edeef0",
     "2": "#b0b4ba",
     "3": "#b0b4ba",
-    "4": "#edeef0"
+    "4": "#b0b4ba"
   },
   "rule": {
     "1": "#696e77",

@@ -3,7 +3,6 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
-import noDimmedXs from './eslint-local/no-dimmed-xs.js';
 import noInlineStyles from './eslint-local/no-inline-styles.js';
 import requireDataTestid from './eslint-local/require-data-testid.js';
 import tokenNamespacesTsx from './eslint-local/token-namespaces-tsx.js';
@@ -17,7 +16,6 @@ export const local = {
   rules: {
     'require-data-testid': requireDataTestid,
     'no-inline-styles': noInlineStyles,
-    'no-dimmed-xs': noDimmedXs,
     'token-namespaces': tokenNamespacesTsx,
   },
 };
@@ -89,13 +87,6 @@ export function mattstackEslint(opts = {}) {
         'local/no-inline-styles': 'off',
         'local/token-namespaces': 'error',
         'no-restricted-imports': ['error', importWall],
-      },
-    },
-    {
-      files: ['**/*.tsx'],
-      plugins: { local },
-      rules: {
-        'local/no-dimmed-xs': 'error',
       },
     },
     eslintConfigPrettier,

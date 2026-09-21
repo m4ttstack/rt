@@ -183,14 +183,15 @@ because the lint and the type table speak in roles.
 | `text-1` | `#1c2024` | slate 12 | 13.41 | `#edeef0` | slate 12 | 12.43 | none | every size |
 | `text-2` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.5 | display, title, body |
 | `text-3` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.8 | meta |
-| `text-4` | `#1c2024` | slate 12 | 13.41 | `#edeef0` | slate 12 | 12.43 | 7.0 | small, micro |
+| `text-4` | `#60646c` | slate 11 | 4.86 | `#b0b4ba` | slate 11 | 6.93 | 4.8 | small, micro |
 
 Every value is measured against all four surfaces and carries its worst
 case, so it is safe on any of them. `text-2` and `text-3` share a value by
 design: slate 11's worst case is 4.86 on the light row surface, so the meta
-bar is set there (§6). `text-4` is the same hex as `text-1`: small and micro
-text takes the high-contrast step, which is what Radix means by 12, and
-there is no quieter small-text value to look for.
+bar is set there (§6). `text-4` shares that value too: slate 12 is the only
+step clearing a 7.0 bar, and `text-1` already holds it, so a 7.0 small bar
+forced small text to the full-ink step and left no secondary tier at all.
+The bar moved to 4.8 rather than the step moving. §11 records the evidence.
 
 **Margins.** With published values rather than solved ones the margins are
 whatever Radix gives; the gate in §9 asserts `ratio >= bar` at full float
@@ -213,8 +214,8 @@ system lacked:** nothing stopped a colour tuned for body copy being used on
 | `title` | 15.3 | 600 | 1.3 | 4.5 | `text-2` |
 | `body` | 14.45 | 400 | 1.5 | 4.5 | `text-2` |
 | `meta` | 13.26 | 400 | 1.45 | 4.8 | `text-3` |
-| `small` | 11.9 | 400 | 1.4 | 7.0 | `text-4` |
-| `micro` | 10.54 | 500 | 1.35 | 7.0 | `text-4` |
+| `small` | 11.9 | 400 | 1.4 | 4.8 | `text-4` |
+| `micro` | 10.54 | 500 | 1.35 | 4.8 | `text-4` |
 
 The 4.5 rows are WCAG AA. The 4.8 and 7.0 rows are this platform's bars
 (§1.1), not a standard's. The meta bar is always slate 11's measured floor
@@ -562,7 +563,7 @@ moving the labels and the ledger cannot be green.
    rest; the neutral fill keeps `light-dark(<text-1>, #ffffff)`), `filled` hover
    from `--fill-<hue>-hover` so tui-kit and Mantine hover to the same
    colour. The `muted` intent is not a hue: its `outline`/`subtle` text is
-   `--text-2` and its `light` text `--text-4` (slate 11 and 12). `Button.tsx`'s
+   `--text-2` and its `light` text `--text-4` (slate 11 for both). `Button.tsx`'s
    pinned `default|bad` colour reads `--text-bad`. `known-contrast-debt.ts`
    carries four families (fill, on-fill, vivid text, line), each keyed
    finely enough that no scheme or surface can fall through a branch, and the
@@ -658,3 +659,37 @@ them.
   there), light teal-10 and cyan-10 into the §7 fill ledger beside
   orange-10, and light `bad` body text from crimson 11 to 12 (11 measures
   4.41, under AA).
+
+## 11. Revision: text-4 moves off the high-contrast step
+
+`--text-4` shipped as the same hex as `--text-1` (§5): the 7.0 small-text
+bar left slate 11 (4.86 light, 6.93 dark) short, and slate 12 was the only
+step that cleared it, so small and dimmed text rendered at full ink
+wherever a screen used `text-4` for anything other than a control that
+wanted full ink on purpose. This read as one screen disagreeing with
+itself about what "secondary" meant, filed as the apps repo's issue 103.
+
+The fix is the bar, not the step: there is no third neutral text step
+between 11 and 12 to promote into, so lowering `text-4`'s bar to 4.8 (§6's
+meta bar, already set at slate 11's own measured floor) is the only way to
+give small text a secondary colour at all. That reopens exactly the
+question §1.1 raised: 4.5 measured as illegible at 10.5-12px on these
+fonts, which is why the 7.0 bar existed. The deciding step was rendering
+slate 11 at the board's real small-text sizes (10.5, 11.2, 11.9, 12.2px)
+against the worst surface in both schemes, with realistic row metadata
+rather than lorem ipsum, and reading the result rather than the number:
+legible at every size tested, in both schemes, clearly distinct from the
+full-ink `text-1` next to it.
+
+`--text-4` now shares slate 11 with `--text-2`/`--text-3` (worst case 4.86
+light, 6.93 dark) instead of promoting to slate 12, and its bar drops from
+7.0 to 4.8 to match. The practical effect: `text-2`, `text-3` and `text-4`
+become one secondary tier and `text-1` stays the only full-ink tier, rather
+than the four nominal tiers that only ever delivered two, wrongly paired.
+Mantine's `c="dimmed"` at `xs` (slate 11, previously under the 7.0 bar) is
+safe under the new 4.8 bar, so `local/no-dimmed-xs` no longer guards
+against anything and is removed rather than left enforcing a bar that no
+longer exists. One rest-state control in the board (`.tui-review-allnone`)
+had documented that it wanted `text-4` specifically for its old
+full-ink value; it now reads `--text-1` directly so its appearance does
+not move.

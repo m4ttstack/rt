@@ -160,7 +160,9 @@ function buildScheme(spec: SchemeSpec): ColorScheme {
   // stretch, so hue 11 measures 3.7 to 4.4 off the card. Those cells are
   // ledgered against this token now rather than against a separate one.
   const hueText = hueValue(scale => at(scale, 11));
-  // The high-contrast step, and what the platform's 7.0 small-text bar needs.
+  // The high-contrast step. The neutral ramp's small slot came down to
+  // slate 11 so small text could read as secondary, but a hue at step 11
+  // is already the default, so hue small text keeps 12 and its 7.0 bar.
   const hueTextSmall = hueValue(scale => at(scale, 12));
   // Radix Themes ships this decision per scale as `--<scale>-contrast`, and
   // it is white for every scale we use except amber. Only the pale scales
@@ -254,7 +256,10 @@ export const TOKENS: Tokens = {
     // Slate 2, 3, 4 rather than 1, 2, 3: on 1..3 the four light surfaces
     // measure 16.39 to 14.41 against text-1 and read as one white.
     surfaceSteps: ['#ffffff', 2, 3, 4],
-    textSteps: [12, 11, 11, 12],
+    // text-4 shares slate 11 with text-2/text-3 rather than promoting to 12:
+    // 11's worst case (4.86 here) is rendered-legible at 10.5-12px, and 12
+    // is where text-1 already sits, which is the collision this fixes.
+    textSteps: [12, 11, 11, 11],
     lineSteps: [8, 7, 6],
     surfaceRole: {
       card: 1,
@@ -274,7 +279,7 @@ export const TOKENS: Tokens = {
   dark: buildScheme({
     scheme: 'dark',
     surfaceSteps: [1, 2, 3, 4],
-    textSteps: [12, 11, 11, 12],
+    textSteps: [12, 11, 11, 11],
     lineSteps: [9, 7, 6],
     surfaceRole: {
       card: 3,
