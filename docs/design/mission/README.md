@@ -60,6 +60,32 @@ shadows, no radii).
   surface.
 - The History tab is deferred; the tab renders dimmed.
 
+## Deferred to v2
+
+The features v1 ships a placeholder for, or does not ship at all. This
+list is the in-repo half of a pair: each line has a ticket on the
+"glitter v2" milestone of the mission-control project, and the ids live
+only there because the repo is public and the purity gate rejects them
+in source. Adding a "lands in v2" notice to the code means adding a
+line here and a ticket there; removing one means removing all three.
+
+- **History tab.** Renders dimmed with a "v2" marker; a click answers
+  "History lands in v2". No commit data reaches the wire model.
+- **Stash foldout.** The strip shows a count and a chevron; a click
+  answers "Stash foldout lands in v2". No restore, apply, or drop.
+- **Branch creation and worktree provisioning.** Both foldout action
+  rows exist and are reachable, and both answer "use rt worktree
+  provision". Neither creates anything; a name-entry affordance inside
+  a foldout has no precedent yet.
+- **Publish repository.** The action segment renders the state for
+  parity; activating it answers "publishing a repository is not wired
+  yet".
+- **Row context menus.** Right-click answers "menu lands with polish".
+- **Not copied from GitHub Desktop at all:** the Pull Requests tab and
+  its merge-into footer, image diffs (submodule diffs collapse into the
+  binary message today), drag-and-drop cherry-pick, and clone or
+  create-repository flows.
+
 ## Staging model: rt adopts GitHub Desktop's own (ratified 2026-09-21)
 
 The diff pane always shows a file's FULL change against HEAD (`git diff
