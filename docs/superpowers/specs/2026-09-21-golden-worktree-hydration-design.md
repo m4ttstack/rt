@@ -45,7 +45,7 @@ freshened by the same freshen pass, and never claimable.
 |---|---|
 | `kind` | `"golden"` (new `TreeKind` member) |
 | `name` | `golden` (fixed; not drawn from `namePool`) |
-| `branch` | `golden/<name>` (same shape as `on-deck/<name>`) |
+| `branch` | `golden` (one fixed branch per repo) |
 | `path` | `goldenRoot(identity)`, a new `rt-paths.ts` helper beside `worktreePoolRoot`, resolving under `~/.mattstack/rt/golden/<pool segment>/` |
 | `state` | `creating` while building, `on-deck` once ready (reusing the existing readiness meaning; nothing reads it as claimable because `kind !== "ephemeral"`) |
 
@@ -218,9 +218,11 @@ golden) plus per-member freshens as before.
 - Hydration unit: ignored-path enumeration from porcelain output (drops
   `*.log`, keeps files and dirs), `readyStamp`/`readyAt` inheritance,
   exit-code mapping.
-- `hydrate-clone` real-FS test on a temp dir under the test HOME: clones a
-  nested tree, asserts `F_LOG2PHYS` offsets match for a file in each, asserts
-  the exit codes for `EEXIST` and a missing source.
+- `clonefile` wrapper real-FS test on a temp dir: clones a nested tree,
+  asserts contents match, inodes differ, and a write to the clone does not
+  reach the donor (copy-on-write), plus the exit codes for `EEXIST` and a
+  missing source. Block sharing itself was proven once in the spike via
+  `fcntl(F_LOG2PHYS)` and is not re-proven per test run.
 - e2e: the hidden verb's usage exit code and stderr on bad argv.
 - Signed-binary `bun:ffi` check as the first implementation task, recorded
   in the plan with its outcome.
