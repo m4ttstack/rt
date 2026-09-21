@@ -426,7 +426,11 @@ function RoomRow({
       <Text
         fw={active ? 600 : undefined}
         truncate
-        style={{ flex: 1, minWidth: 0 }}
+        /* The artboards' `.room` sets no font-size, so the row name is the
+           shell's own 13.5px. A sizeless Mantine `Text` resolves to `md`
+           (16px) instead of inheriting, which put the name above every
+           other row in the tree. */
+        style={{ flex: 1, minWidth: 0, fontSize: 'inherit' }}
       >
         {room.room}
       </Text>

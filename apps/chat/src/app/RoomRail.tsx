@@ -136,10 +136,13 @@ export function RoomRail({
       >
         <Text
           component="h3"
-          size="xs"
           fw={600}
           style={{
             margin: 0,
+            // The artboards' FLEET span is `.xs` -- the same step as the
+            // count beside it. `size="xs"` is 13px under `chatFontTheme`,
+            // which made the header outgrow its own row.
+            fontSize: 'var(--tk-fs-3xs)',
             color: 'var(--tk-text-3)',
             letterSpacing: '0.04em',
           }}
