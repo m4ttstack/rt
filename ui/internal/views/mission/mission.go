@@ -98,8 +98,8 @@ func New(em *session.Emitter) *Mission {
 	return &Mission{
 		em:               em,
 		reason:           session.ReasonClosed,
-		summaryInput:     newCommitInput(""),
-		descriptionInput: newCommitInput("Description"),
+		summaryInput:     newTextInput("", commitBoxInner),
+		descriptionInput: newTextInput("Description", commitBoxInner),
 		hoverFile:        -1,
 		hoverDiffLine:    -1,
 	}
@@ -114,15 +114,14 @@ func (m *Mission) now() time.Time {
 	return time.Now()
 }
 
-// newCommitInput builds a commit-box textinput themed to the rt palette:
-// Pink cursor, Faint placeholder, no prompt glyph (the box border is the
-// only chrome).
-func newCommitInput(placeholder string) textinput.Model {
+// Pink cursor, Faint placeholder, no prompt glyph (the caller's own box or
+// line is the only chrome).
+func newTextInput(placeholder string, width int) textinput.Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.CharLimit = 0
 	ti.Placeholder = placeholder
-	ti.SetWidth(commitBoxInner)
+	ti.SetWidth(width)
 	styles := ti.Styles()
 	styles.Focused.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
 	styles.Focused.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
@@ -870,13 +869,7 @@ func (m *Mission) diffHit(diffX, y int) hit {
 // block (action/keybar) rather than there being nothing left to hit.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
-	inner := modalWidth(ms, m.width)
-	if maxInner := m.width - 2; inner > maxInner {
-		inner = maxInner
-	}
-	if inner < 1 {
-		inner = 1
-	}
+	inner := modalInnerWidth(ms, m.width)
 	boxW := inner + 2
 	bx := clampX(segmentOrigin(ms.zone, m.width), boxW, m.width)
 	by := m.layout().topH

@@ -5,7 +5,8 @@
     "worktree": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf",
     "worktreeName": "gandalf",
     "branch": "rt-191-mission-tui",
-    "detached": false
+    "detached": false,
+    "settling": false
   },
   "action": {
     "kind": "pull",

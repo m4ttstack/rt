@@ -105,20 +105,59 @@ func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 	}, hovered, isOpen)
 }
 
+// settlingMarker is the suffix a freshly provisioned tree wears in the
+// worktree segment while its ready steps are still running in the daemon.
+const settlingMarker = "settling"
+
 func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 	name := m.Current.WorktreeName
 	if name == "" {
 		name = m.Current.Worktree
 	}
+	icon := theme.GlyphWorktree
+	var iconColor color.Color = theme.Dimmer
+	trailing := segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron)
+	if m.Current.Settling {
+		// Mirrors the action segment's busy-replaces-icon convention
+		// (actionGlyph): the icon column is never subject to renderSegment's
+		// clip, so it survives as the settling indication at any width, even
+		// the 80-column case below where the name+marker text budget cannot
+		// fit the word "settling" at all.
+		icon = theme.SpinnerFrames[0]
+		iconColor = theme.Peach
+		// renderSegment's own clip takes from the right, so the marker --
+		// not the name -- would be the first thing lost on a real (narrow)
+		// terminal. Reserving its width here and clipping the name INTO
+		// that budget, rather than appending and letting the outer clip
+		// decide, is what keeps "settling" visible instead of the name.
+		avail := segmentBottomAvail(width, icon, trailing, chevronTrailingPad)
+		markerW := lipgloss.Width(settlingMarker)
+		if avail >= markerW {
+			nameAvail := avail - markerW - 1 // 1 cell separator between name and marker
+			if nameAvail < 0 {
+				nameAvail = 0
+			}
+			clippedName := clip(name, nameAvail)
+			if clippedName == "" {
+				name = settlingMarker
+			} else {
+				name = clippedName + " " + settlingMarker
+			}
+		}
+		// Below markerW, the word itself has nowhere to go even alone --
+		// the spinner icon above is the sole indication, so the name is
+		// left as-is rather than appended with a fragment renderSegment's
+		// own clip would just mangle further.
+	}
 	return renderSegment(width, segmentSpec{
-		icon:        theme.GlyphWorktree,
-		iconColor:   theme.Dimmer,
+		icon:        icon,
+		iconColor:   iconColor,
 		top:         "Current Worktree",
 		topColor:    theme.Dimmer,
 		bottom:      name,
 		bottomColor: theme.Text,
 		bottomBold:  true,
-		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
+		trailing:    trailing,
 		trailingPad: chevronTrailingPad,
 	}, hovered, isOpen)
 }
@@ -224,6 +263,26 @@ func segmentBase(hovered, isOpen bool) lipgloss.Style {
 	return base
 }
 
+// segmentBottomAvail returns how many cells a segment's bottom-row value has
+// to work with, given the same icon/trailing/trailingPad renderSegment
+// itself uses to compute that budget. Exposed so a segment that must
+// protect part of its value from renderSegment's own right-to-left clip
+// (renderWorktreeSegment's settling marker) can split its text against the
+// identical budget before handing it over.
+func segmentBottomAvail(width int, icon, trailing string, trailingPad int) int {
+	iconW := lipgloss.Width(icon)
+	prefixW := 1 + iconW + 2 // leading space + icon column + gap
+	trailW := lipgloss.Width(trailing)
+	avail := width - prefixW - trailW - trailingPad
+	if trailW > 0 {
+		avail-- // gap before the trailing accessory
+	}
+	if avail < 0 {
+		avail = 0
+	}
+	return avail
+}
+
 // renderSegment lays spec out as a fixed-width, three-row block: the icon
 // leads the bottom row with the top row indented to match, an optional
 // trailing accessory (chevron or pills) sits flush right on the bottom row,
@@ -250,14 +309,8 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	row1 := base.Render(" "+strings.Repeat(" ", iconW)+"  ") + top
 	row1 = base.Width(width).Render(row1)
 
+	bottomAvail := segmentBottomAvail(width, spec.icon, spec.trailing, spec.trailingPad)
 	trailW := lipgloss.Width(spec.trailing)
-	bottomAvail := width - prefixW - trailW - spec.trailingPad
-	if trailW > 0 {
-		bottomAvail-- // gap before the trailing accessory
-	}
-	if bottomAvail < 0 {
-		bottomAvail = 0
-	}
 	icon := base.Foreground(spec.iconColor).Render(spec.icon)
 	value := base.Foreground(spec.bottomColor).Bold(spec.bottomBold).Render(clip(spec.bottom, bottomAvail))
 	row2 := base.Render(" ") + icon + base.Render("  ") + value

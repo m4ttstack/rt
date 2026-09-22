@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -43,22 +44,30 @@ type modalRow struct {
 // last cursor slot, after whatever the query leaves visible, so typing
 // never buries or hides it.
 type modalActionRow struct {
-	label   string
-	payload json.RawMessage
+	label        string
+	buildPayload func(name string) json.RawMessage
 }
 
 // modalState is one open foldout. cursor indexes into matches, except the
 // value len(matches) which means "the action row" -- see slotSelectable.
 type modalState struct {
-	zone         zoneID
-	intent       string
-	placeholder  string
-	buildPayload func(value string) json.RawMessage
-	rows         []modalRow
-	action       *modalActionRow
-	query        string
-	matches      []picker.Match
-	cursor       int
+	zone            zoneID
+	intent          string
+	placeholder     string
+	namePlaceholder string
+	buildPayload    func(value string) json.RawMessage
+	rows            []modalRow
+	action          *modalActionRow
+	query           string
+	matches         []picker.Match
+	cursor          int
+
+	// naming is the action row's second step: ctrl-n opens a name field in
+	// place of the filter line and only the following enter emits. The
+	// field is separate from query because refilter() resets the cursor on
+	// every keystroke, which a name being typed must not do.
+	naming    bool
+	nameInput textinput.Model
 
 	// hoverRow/hoverAction are the mouse's own position, independent of
 	// cursor exactly as the base list's hover is independent of its
@@ -74,8 +83,8 @@ type modalState struct {
 	scrollTop int
 }
 
-func newModal(zone zoneID, intent, placeholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
-	ms := &modalState{zone: zone, intent: intent, placeholder: placeholder, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
+func newModal(zone zoneID, intent, placeholder, namePlaceholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
+	ms := &modalState{zone: zone, intent: intent, placeholder: placeholder, namePlaceholder: namePlaceholder, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
 	ms.refilter()
 	return ms
 }
@@ -91,6 +100,7 @@ type checkoutPayload struct {
 type checkoutNewPayload struct {
 	New  bool   `json:"new"`
 	From string `json:"from"`
+	Name string `json:"name"`
 }
 
 type worktreePayload struct {
@@ -98,7 +108,8 @@ type worktreePayload struct {
 }
 
 type worktreeNewPayload struct {
-	New bool `json:"new"`
+	New  bool   `json:"new"`
+	Name string `json:"name"`
 }
 
 // newRepoModal lists every repo, grouped by RepoRow.Group. It has no action
@@ -115,7 +126,7 @@ func newRepoModal(m Model) *modalState {
 			group: r.Group, current: r.Current, selectable: true, value: r.ID,
 		}
 	}
-	return newModal(zoneRepo, "mission:repo", "filter repos", func(v string) json.RawMessage {
+	return newModal(zoneRepo, "mission:repo", "filter repos", "", func(v string) json.RawMessage {
 		return mustPayload(repoPayload{Repo: v})
 	}, rows, nil)
 }
@@ -145,10 +156,12 @@ func newBranchModal(m Model) *modalState {
 		}
 	}
 	action := &modalActionRow{
-		label:   "New branch from " + m.Current.Branch + "…",
-		payload: mustPayload(checkoutNewPayload{New: true, From: m.Current.Branch}),
+		label: "New branch from " + m.Current.Branch + "…",
+		buildPayload: func(name string) json.RawMessage {
+			return mustPayload(checkoutNewPayload{New: true, From: m.Current.Branch, Name: name})
+		},
 	}
-	return newModal(zoneBranch, "mission:checkout", "filter branches", func(v string) json.RawMessage {
+	return newModal(zoneBranch, "mission:checkout", "filter branches", "new branch name", func(v string) json.RawMessage {
 		return mustPayload(checkoutPayload{Branch: v})
 	}, rows, action)
 }
@@ -174,14 +187,16 @@ func newWorktreeModal(m Model) *modalState {
 		}
 	}
 	action := &modalActionRow{
-		label:   "Provision new worktree…",
-		payload: mustPayload(worktreeNewPayload{New: true}),
+		label: "Provision new worktree…",
+		buildPayload: func(name string) json.RawMessage {
+			return mustPayload(worktreeNewPayload{New: true, Name: name})
+		},
 	}
 	repoLabel := m.Current.RepoLabel
 	if repoLabel == "" {
 		repoLabel = m.Current.Repo
 	}
-	return newModal(zoneWorktree, "mission:worktree", "filter worktrees · "+repoLabel, func(v string) json.RawMessage {
+	return newModal(zoneWorktree, "mission:worktree", "filter worktrees · "+repoLabel, "branch name for the new worktree", func(v string) json.RawMessage {
 		return mustPayload(worktreePayload{Path: v})
 	}, rows, action)
 }
@@ -356,6 +371,19 @@ func (m *Mission) openZone() zoneID {
 
 func (m *Mission) modalKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	ms := m.modal
+	if ms.naming {
+		switch v.String() {
+		case "esc":
+			ms.naming = false
+			ms.nameInput.Blur()
+			return m, nil
+		case "enter":
+			return m.commitModalName()
+		}
+		var cmd tea.Cmd
+		ms.nameInput, cmd = ms.nameInput.Update(v)
+		return m, cmd
+	}
 	switch v.String() {
 	case "esc":
 		m.closeModal()
@@ -398,16 +426,31 @@ func (m *Mission) selectModalRow() (tea.Model, tea.Cmd) {
 	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
 }
 
-// selectModalAction fires the trailing action row's fixed payload
-// regardless of where the cursor sits -- ctrl-n's own path, and the one
-// enter takes when the cursor already sits on the action slot. A repo
-// modal has no action row, so ctrl-n there is simply a no-op.
+// selectModalAction opens the trailing action row's name field regardless of
+// where the cursor sits: ctrl-n's own path, and the one enter takes when the
+// cursor already sits on the action slot. A repo modal has no action row, so
+// ctrl-n there is simply a no-op. Nothing is emitted here; commitModalName
+// does that once a name exists.
 func (m *Mission) selectModalAction() (tea.Model, tea.Cmd) {
 	ms := m.modal
-	if ms.action == nil {
+	if ms.action == nil || ms.naming {
 		return m, nil
 	}
-	intent, payload := ms.intent, ms.action.payload
+	ms.naming = true
+	ms.nameInput = newTextInput(ms.namePlaceholder, modalNameWidth(ms, m.width))
+	return m, ms.nameInput.Focus()
+}
+
+// commitModalName emits the action row's intent with the typed name. A blank
+// or whitespace-only name is inert, the same gate the commit button applies
+// to its summary.
+func (m *Mission) commitModalName() (tea.Model, tea.Cmd) {
+	ms := m.modal
+	name := strings.TrimSpace(ms.nameInput.Value())
+	if name == "" {
+		return m, nil
+	}
+	intent, payload := ms.intent, ms.action.buildPayload(name)
 	m.closeModal()
 	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
 }
@@ -484,7 +527,7 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	if ms.action != nil {
 		consider(2 + lipgloss.Width(ms.action.label)) // bar + gap
 	}
-	consider(1 + lipgloss.Width(modalKeybarPlainText(ms.zone)))
+	consider(1 + modalKeybarMaxPlainWidth(ms.zone))
 	if need > modalContentMax {
 		need = modalContentMax
 	}
@@ -494,21 +537,64 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	return need
 }
 
+// modalInnerWidth is the box's actual rendered content width: modalWidth's
+// own content-driven sizing, clamped to the frame the box composites onto --
+// the same clamp renderMissionModal applies before calling modalBoxLines.
+// Anything that sizes content to fit the rendered box (modalNameWidth) must
+// go through this, not modalWidth directly, or it disagrees with the box
+// below the clamp boundary (a frame narrower than modalContentMax + 2).
+func modalInnerWidth(ms *modalState, frameWidth int) int {
+	inner := modalWidth(ms, frameWidth)
+	if inner > frameWidth-2 {
+		inner = frameWidth - 2
+	}
+	if inner < 1 {
+		inner = 1
+	}
+	return inner
+}
+
+// modalNameWidth is the name field's own width: the filter line's text area,
+// which is the box's content width less the chevron, its trailing space, and
+// one more cell for the input's own cursor -- bubbles' textinput.SetWidth
+// bounds the text/placeholder run only, and both its placeholderView and its
+// end-of-line cursor path render one further cell for the cursor itself, so
+// a field built at the full text-area width renders one cell wider than it.
+func modalNameWidth(ms *modalState, frameWidth int) int {
+	const cursorCell = 1
+	prefixW := lipgloss.Width(theme.GlyphChevron) + 1
+	w := modalInnerWidth(ms, frameWidth) - prefixW - cursorCell
+	if w < 0 {
+		return 0
+	}
+	return w
+}
+
 // modalFilterLine is the foldout's own fixed-height filter row
 // (modalFixedRows reserves exactly 1 row for it above the scrollable
 // region): query is user-typed and unbounded, so -- the same class of bug
 // as the commit button (CodeRabbit, PR #353) -- it is clipped before
 // Width() rather than left to wrap, mirroring changes.go's renderFilterRow.
-func modalFilterLine(query, placeholder string, width int) string {
+//
+// The name field deliberately reuses this line rather than adding one: an
+// extra line would have to be mirrored by hand in modalHitTest, whose layout
+// walk is a parallel copy of modalBoxLines, and any drift there misplaces
+// every click in the modal.
+func modalFilterLine(ms *modalState, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
 	prefixW := lipgloss.Width(theme.GlyphChevron) + 1
 	textW := width - prefixW
 	if textW < 0 {
 		textW = 0
 	}
-	body, style := placeholder, bg.Foreground(theme.Faint)
-	if query != "" {
-		body, style = query, bg.Foreground(theme.Text)
+	if ms.naming {
+		// The input renders its own cursor and is already width-bounded by
+		// SetWidth, so it is composed rather than clipped here.
+		return bg.Width(width).Render(bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + ms.nameInput.View())
+	}
+	body, style := ms.placeholder, bg.Foreground(theme.Faint)
+	if ms.query != "" {
+		body, style = ms.query, bg.Foreground(theme.Text)
 	}
 	left := bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + style.Render(clip(body, textW))
 	return bg.Width(width).Render(left)
@@ -667,10 +753,14 @@ func modalGroupHeaderLine(text string, width int) string {
 	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + clip(text, textW)))
 }
 
-// modalKeybarPairs lists a zone's wired key/label pairs, in display order:
+// modalKeybarPairsFor lists a zone's wired key/label pairs, in display order:
 // only what this modal actually dispatches, never the boards' unwired
-// ctrl-f/ctrl-w/ctrl-d.
-func modalKeybarPairs(zone zoneID) [][2]string {
+// ctrl-f/ctrl-w/ctrl-d. While naming, enter and esc mean create/cancel
+// instead of whatever the zone's own action row wires them to.
+func modalKeybarPairsFor(zone zoneID, naming bool) [][2]string {
+	if naming {
+		return [][2]string{{"enter", "create"}, {"esc", "cancel"}}
+	}
 	switch zone {
 	case zoneRepo:
 		return [][2]string{{"enter", "open"}, {"esc", "close"}}
@@ -683,8 +773,12 @@ func modalKeybarPairs(zone zoneID) [][2]string {
 	}
 }
 
-func modalKeybarPlainText(zone zoneID) string {
-	pairs := modalKeybarPairs(zone)
+func modalKeybarPairs(ms *modalState) [][2]string {
+	return modalKeybarPairsFor(ms.zone, ms.naming)
+}
+
+func modalKeybarPlainTextFor(zone zoneID, naming bool) string {
+	pairs := modalKeybarPairsFor(zone, naming)
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
 		parts[i] = p[0] + " " + p[1]
@@ -692,16 +786,29 @@ func modalKeybarPlainText(zone zoneID) string {
 	return strings.Join(parts, " · ")
 }
 
+// modalKeybarMaxPlainWidth is the widest keybar text a zone can ever show,
+// naming or not, so modalWidth sizes the box off a bound that does not
+// shift when naming opens or closes (a ratified geometry invariant).
+func modalKeybarMaxPlainWidth(zone zoneID) int {
+	max := 0
+	for _, naming := range []bool{false, true} {
+		if w := lipgloss.Width(modalKeybarPlainTextFor(zone, naming)); w > max {
+			max = w
+		}
+	}
+	return max
+}
+
 // modalKeybarLine is the foldout's own keybar, inside the border: the same
 // key/label/dot grammar the main keybar uses (changes.go's renderKeybar),
 // painted on the box's own Surface background.
-func modalKeybarLine(zone zoneID, width int) string {
+func modalKeybarLine(ms *modalState, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
 	dot := bg.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
 		return bg.Foreground(theme.KeybarKey).Bold(true).Render(k) + bg.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
-	pairs := modalKeybarPairs(zone)
+	pairs := modalKeybarPairs(ms)
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
 		parts[i] = key(p[0], p[1])
@@ -794,7 +901,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 		rowRegionH = 0
 	}
 
-	lines := []string{modalFilterLine(ms.query, ms.placeholder, width), modalRuleLine(width)}
+	lines := []string{modalFilterLine(ms, width), modalRuleLine(width)}
 
 	displayLines := modalDisplayLines(ms)
 	switch {
@@ -816,7 +923,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 			if dl.header != "" {
 				row = modalGroupHeaderLine(dl.header, rowWidth)
 			} else {
-				row = modalRowLine(ms.rows[ms.matches[dl.matchIdx].Index], rowWidth, dl.matchIdx == ms.cursor, dl.matchIdx == ms.hoverRow)
+				row = modalRowLine(ms.rows[ms.matches[dl.matchIdx].Index], rowWidth, dl.matchIdx == ms.cursor && !ms.naming, dl.matchIdx == ms.hoverRow)
 			}
 			if scrolling {
 				row += modalThumbCell(i-top, thumbTop, thumbH)
@@ -831,7 +938,7 @@ func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
 		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
 	}
 	lines = append(lines, modalRuleLine(width))
-	lines = append(lines, modalKeybarLine(ms.zone, width))
+	lines = append(lines, modalKeybarLine(ms, width))
 	return lines
 }
 
@@ -887,13 +994,7 @@ func clampX(x, boxW, parentW int) int {
 // keybar) for as long as they're open. That is intended, not a bug.
 func renderMissionModal(parent string, ms *modalState, width, height, topBarHeight int) string {
 	dimmed := dimForeground(parent)
-	inner := modalWidth(ms, width)
-	if inner > width-2 {
-		inner = width - 2
-	}
-	if inner < 1 {
-		inner = 1
-	}
+	inner := modalInnerWidth(ms, width)
 	boxInnerHeight := height - topBarHeight - 2 // -2 for the box's own top/bottom border
 	if boxInnerHeight < 1 {
 		boxInnerHeight = 1

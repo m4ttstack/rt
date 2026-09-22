@@ -59,6 +59,7 @@ export interface MissionState {
   notice: string;
   showOversized: Set<string>;
   selections: Map<string, DiffSelection>;
+  settling: boolean;
 }
 
 /** No `rt worktree list` row shape carries a pre-joined git badge; the driver joins one before calling buildModel. */
@@ -450,6 +451,7 @@ export function buildModel(input: {
     worktreeName,
     branch: snapshot.branch ?? (snapshot.detached ? (headShortSha ?? "") : ""),
     detached: snapshot.detached,
+    settling: state.settling,
   };
 
   const actionModel: MissionActionModel = {

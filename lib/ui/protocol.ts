@@ -223,6 +223,8 @@ export interface MissionCurrent {
   worktreeName: string;
   branch: string;
   detached: boolean;
+  /** The tree was provisioned moments ago and its ready steps are still running in the daemon. */
+  settling: boolean;
 }
 
 export interface MissionModel {

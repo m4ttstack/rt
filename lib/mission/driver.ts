@@ -84,11 +84,13 @@ interface CheckoutPayload {
   branch?: string;
   new?: boolean;
   from?: string;
+  name?: string;
 }
 
 interface WorktreePayload {
   path?: string;
   new?: boolean;
+  name?: string;
 }
 
 interface RepoPayload {
@@ -114,6 +116,17 @@ interface DriverState extends MissionState {
 
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
 const DISCARD_CONFIRM_WINDOW_MS = 5000;
+
+/** Matches the provision CLI's own ceiling: claiming a tree and checking out can legitimately take minutes. */
+const PROVISION_TIMEOUT_MS = 6 * 60_000;
+
+/** The daemon's typed refusals, in the words a board reader can act on. */
+const PROVISION_REFUSALS: Record<string, string> = {
+  "repo-unknown": "this repo is not registered with rt",
+  busy: "another worktree operation is running; try again in a moment",
+  "branch-unresolved": "a branch name is required to provision a worktree",
+  "handoff-write-failed": "the tree was created but could not be claimed; check rt worktree list",
+};
 
 const EMPTY_SNAPSHOT: RepoSnapshot = {
   branch: null,
@@ -188,6 +201,20 @@ export class MissionDriver {
    *  doc comment) -- checkoutBranch enforcement always goes through
    *  guardBranch()/checkBranchGuard, never this map. */
   private guards: Map<string, string> = new Map();
+  /** True only while provisionWorktree's daemonQuery await is in flight. The
+   *  daemon runs the ready task before that reply lands, so a
+   *  worktree:ready-settled event for the tree being provisioned can arrive
+   *  before currentWorktree has switched to it -- this gate is what tells
+   *  the subscription handler such an event is worth caching in
+   *  pendingSettledEvents rather than discarding it as unrelated. */
+  private provisioning = false;
+  /** Path -> ok, for a worktree:ready-settled event that arrived while
+   *  provisioning was true and didn't match the OLD currentWorktree.
+   *  provisionWorktree consumes (and clears) its own path's entry once the
+   *  daemon reply reveals what that path is; cleared at the start of every
+   *  provision attempt so an unmatched entry from an earlier one never
+   *  lingers. */
+  private pendingSettledEvents: Map<string, boolean> = new Map();
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -204,6 +231,7 @@ export class MissionDriver {
       showOversized: new Set(),
       selections: new Map(),
       confirmDiscard: null,
+      settling: false,
     };
   }
 
@@ -212,6 +240,22 @@ export class MissionDriver {
     const session = await this.deps.openSession("mission", this.model());
     this.session = session;
     const sub = this.deps.subscribe((ev) => {
+      if (ev.type === "worktree:ready-settled") {
+        const data = ev.data as { path?: string; ok?: boolean } | undefined;
+        if (typeof data?.path !== "string") return;
+        if (data.path === this.state.currentWorktree) {
+          this.state.settling = false;
+          if (data.ok === false) {
+            this.state.notice = "a ready step failed; dependencies in this tree may be stale";
+          }
+          this.push();
+          return;
+        }
+        // Doesn't match yet because the provision reply hasn't landed --
+        // cache it for provisionWorktree to consume once it has.
+        if (this.provisioning) this.pendingSettledEvents.set(data.path, data.ok !== false);
+        return;
+      }
       if (ev.type !== "git-status") return;
       void this.onGitStatus().catch((err) => {
         this.state.notice = `error: ${err instanceof Error ? err.message : String(err)}`;
@@ -732,13 +776,11 @@ export class MissionDriver {
 
   private async handleCheckout(payload: CheckoutPayload | undefined): Promise<void> {
     if (!payload) return;
-    if (typeof payload.branch !== "string") {
-      // The "new branch from…" action row (new:true/from) has no creation
-      // flow wired yet -- v1 answers it with a notice, not silence.
-      this.state.notice = "use rt worktree provision";
-      this.push();
+    if (payload.new === true) {
+      await this.createBranch(payload);
       return;
     }
+    if (typeof payload.branch !== "string") return;
     const verdict = await this.guardBranch(payload.branch);
     if (verdict.verdict === "refuse") {
       this.state.notice = verdict.detail;
@@ -754,16 +796,111 @@ export class MissionDriver {
     this.push();
   }
 
-  private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
-    if (!payload) return;
-    if (typeof payload.path !== "string") {
-      // The "provision new worktree…" action row (new:true) has no
-      // provisioning flow wired yet -- v1 answers it with a notice.
-      this.state.notice = "use rt worktree provision";
+  private async createBranch(payload: CheckoutPayload): Promise<void> {
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    if (name === "") return;
+    const client = this.deps.client(this.state.currentWorktree);
+    try {
+      // One atomic checkout -b: git leaves no branch behind when the
+      // checkout itself fails, so a dirty tree cannot strand one.
+      await client.createBranch(name, { from: payload.from, checkout: true });
+    } catch (err) {
+      this.state.notice = err instanceof Error ? err.message : String(err);
       this.push();
       return;
     }
-    this.state.currentWorktree = payload.path;
+    this.state.notice = "";
+    this.state.selectedPath = null;
+    this.state.selections = new Map();
+    await this.refresh();
+    this.push();
+  }
+
+  /**
+   * The single place `currentWorktree` is ever reassigned: `settling` must
+   * travel with it, since a tree the board switches away from can never
+   * again produce a `worktree:ready-settled` event this driver acts on
+   * (the event's path no longer matches `currentWorktree` by then), and a
+   * tree the board switches TO is ready unless the caller says otherwise.
+   * Only provisionWorktree's fresh tree passes true.
+   */
+  private setCurrentWorktree(path: string, settling: boolean): void {
+    this.state.currentWorktree = path;
+    this.state.settling = settling;
+  }
+
+  private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
+    if (!payload) return;
+    if (payload.new === true) {
+      await this.provisionWorktree(payload);
+      return;
+    }
+    if (typeof payload.path !== "string") return;
+    this.setCurrentWorktree(payload.path, false);
+    this.state.selectedPath = null;
+    this.state.selections = new Map();
+    await this.refresh();
+    this.push();
+  }
+
+  private async provisionWorktree(payload: WorktreePayload): Promise<void> {
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    if (name === "") return;
+    // Provisioning can run for minutes (PROVISION_TIMEOUT_MS): the modal has
+    // already closed by the time this awaits, so the board must say why it
+    // is frozen rather than sitting blank until the daemon replies.
+    this.state.notice = `provisioning ${name}...`;
+    this.push();
+    // A stale entry from an earlier provision attempt (one whose path never
+    // matched, e.g. a refusal) must not be mistaken for this attempt's own
+    // settled event below.
+    this.pendingSettledEvents.clear();
+    this.provisioning = true;
+    let res: Awaited<ReturnType<DaemonQueryFn>>;
+    try {
+      res = await this.deps.daemonQuery("worktree:provision", {
+        repoName: this.state.currentRepo,
+        branch: name,
+        owner: "glitter",
+      }, PROVISION_TIMEOUT_MS);
+    } finally {
+      this.provisioning = false;
+    }
+
+    if (!res) {
+      this.state.notice = "the rt daemon is not running";
+      this.push();
+      return;
+    }
+    if (!res.ok) {
+      const code = typeof res.error === "string" ? res.error : "unknown";
+      this.state.notice = PROVISION_REFUSALS[code] ?? `could not provision a worktree: ${code}`;
+      this.push();
+      return;
+    }
+
+    const data = res.data as { path?: string; readyPending?: boolean; readyHeld?: boolean } | undefined;
+    if (typeof data?.path !== "string") {
+      this.state.notice = "the daemon provisioned a tree but returned no path";
+      this.push();
+      return;
+    }
+    // A settled event for this exact path may have already arrived and been
+    // cached above, while currentWorktree still pointed at the OLD tree --
+    // consuming it here is what keeps its `ok` (and thus its failure
+    // notice) from being lost to that ordering.
+    const cachedOk = this.pendingSettledEvents.get(data.path);
+    this.pendingSettledEvents.delete(data.path);
+    // readyHeld means the daemon withheld readyPending entirely -- a silent
+    // switch onto a tree whose team ready steps never ran is exactly what
+    // the readiness design forbids, so this notice is the one place that
+    // gets said out loud (commands/worktree.ts prints the same case).
+    this.state.notice = data.readyHeld
+      ? "team ready steps held pending approval... run rt worktree ready-approve"
+      : cachedOk === false
+        ? "a ready step failed; dependencies in this tree may be stale"
+        : "";
+    this.setCurrentWorktree(data.path, data.readyPending === true && cachedOk === undefined);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
@@ -781,7 +918,7 @@ export class MissionDriver {
       return;
     }
     this.state.currentRepo = payload.repo;
-    this.state.currentWorktree = target.worktree;
+    this.setCurrentWorktree(target.worktree, false);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();

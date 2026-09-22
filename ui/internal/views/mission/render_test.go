@@ -658,6 +658,66 @@ func TestWorktreeModalWidthFloorsAtSegmentWidthOnAWideFrame(t *testing.T) {
 	}
 }
 
+// TestSettlingWorktreeShowsInTheTopBar uses newTestMission's own fixture
+// width (100, unmodified) rather than an artificially wide frame -- at 100
+// the worktree segment is narrow enough (segmentBottomAvail == 9) that the
+// marker only survives if the name gives way to it, which is the behavior
+// under test.
+func TestSettlingWorktreeShowsInTheTopBar(t *testing.T) {
+	m := newTestMission()
+	m.model.Current.Settling = true
+	screen := ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "settling") {
+		t.Fatalf("settling worktree not marked in the top bar:\n%s", screen)
+	}
+}
+
+// TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth pins a normal
+// 130-column terminal (renderTopBar's three-way split gives the worktree
+// segment 27 cells there) against a worktree name long enough to fill that
+// whole segment on its own. The marker must still render, and the name --
+// not the marker -- is what gets clipped.
+func TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth(t *testing.T) {
+	const segmentWidthAt130Cols = 27
+	const longName = "glitter-pty-gate-and-docs"
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: longName, Settling: true}}, segmentWidthAt130Cols, false, false))
+	if !strings.Contains(out, "settling") {
+		t.Fatalf("settling marker lost to clipping at a realistic width:\n%s", out)
+	}
+	if strings.Contains(out, longName) {
+		t.Fatalf("worktree name rendered in full instead of giving way to the marker:\n%s", out)
+	}
+}
+
+// TestSettlingIndicatorSurvivesAtEightyColumns pins an 80-column frame
+// (segW == 10, segmentBottomAvail == 2 -- too small even for the bare word
+// "settling") against the realistic case an agent's terminal actually hits.
+// The name+marker text budget cannot carry the word at this width, so the
+// spinner icon that replaces the worktree glyph is the fallback indication:
+// renderSegment never clips the icon column the way it clips the bottom
+// row's text.
+func TestSettlingIndicatorSurvivesAtEightyColumns(t *testing.T) {
+	const segmentWidthAt80Cols = 10
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "some-worktree", Settling: true}}, segmentWidthAt80Cols, false, false))
+	if !strings.Contains(out, theme.SpinnerFrames[0]) {
+		t.Fatalf("settling indicator missing at 80 columns:\n%s", out)
+	}
+}
+
+// TestSettlingIndicatorAt130ColumnsUnchanged pins that the 130-column
+// behavior above the 97-column marker-fits threshold is untouched by the
+// spinner fallback: the full word still renders alongside the icon.
+func TestSettlingIndicatorAt130ColumnsUnchanged(t *testing.T) {
+	const segmentWidthAt130Cols = 27
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "gandalf", Settling: true}}, segmentWidthAt130Cols, false, false))
+	if !strings.Contains(out, settlingMarker) {
+		t.Fatalf("settling marker missing at 130 columns:\n%s", out)
+	}
+	if !strings.Contains(out, theme.SpinnerFrames[0]) {
+		t.Fatalf("settling spinner icon missing at 130 columns:\n%s", out)
+	}
+}
+
 func TestModalOpenDimsParentAndEscRestoresUndimmed(t *testing.T) {
 	m := newTestMission()
 	before := m.View().Content
@@ -710,6 +770,169 @@ func TestModalGuardedBranchRowSkippedByCursorMovement(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if !m.modal.onActionSlot() {
 		t.Fatalf("cursor moved past the last slot")
+	}
+}
+
+// TestCtrlNEntersNamingMode pins the naming sub-mode's own internal flag: an
+// action row's ctrl-n opens the name field rather than emitting straight
+// away (mission_test.go's session tests pin the emission side of the same
+// contract).
+func TestCtrlNEntersNamingMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open rune
+	}{
+		{"branch", 'b'},
+		{"worktree", 'w'},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestMission()
+			m.Update(tea.KeyPressMsg{Code: tc.open, Text: string(tc.open)})
+			m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+			if !m.modal.naming {
+				t.Fatal("ctrl-n did not enter naming mode")
+			}
+		})
+	}
+}
+
+// TestNamingEnterWithBlankNameLeavesModalOpenAndNaming mirrors the gate the
+// commit button applies to its own summary: a whitespace-only name is inert.
+func TestNamingEnterWithBlankNameLeavesModalOpenAndNaming(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "   " {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal == nil || !m.modal.naming {
+		t.Fatal("a blank enter should leave the modal open and still naming")
+	}
+}
+
+// TestEscLeavesNamingButKeepsTheModalOpen pins the two-step esc: the first
+// esc backs out of naming only, the second closes the modal.
+func TestEscLeavesNamingButKeepsTheModalOpen(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	if m.modal == nil {
+		t.Fatal("first esc closed the modal, want it to only leave naming")
+	}
+	if m.modal.naming {
+		t.Fatal("esc did not leave naming mode")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.modal != nil {
+		t.Fatal("second esc did not close the modal")
+	}
+}
+
+// TestNamingTypingDoesNotFilterTheList pins the reason naming keeps its own
+// field separate from query: refilter resets the cursor on every keystroke,
+// which typing a name must not do to the row list underneath it.
+func TestNamingTypingDoesNotFilterTheList(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	before := len(m.modal.matches)
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "zzzz" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := len(m.modal.matches); got != before {
+		t.Fatalf("typing a name refiltered the list to %d rows, want %d unchanged", got, before)
+	}
+}
+
+// TestNamingEnterWithATypedNameClosesTheModal pins commitModalName's own
+// closeModal call: mission_test.go's session tests can only observe the
+// emitted intent, not the view's own modal field, so this is the one place
+// a regression that dropped the close (while still emitting) would surface.
+func TestNamingEnterWithATypedNameClosesTheModal(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "my-feature" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal != nil {
+		t.Fatal("modal stayed open after a successful create")
+	}
+}
+
+// TestNamingKeepsTheModalGeometryIdentical pins the reason the name field
+// reuses the filter line rather than adding one: modalHitTest is a
+// hand-rolled parallel copy of modalBoxLines' own layout, so any line-count
+// or width drift here would desync every click in the modal.
+func TestNamingKeepsTheModalGeometryIdentical(t *testing.T) {
+	// width=18 is narrow enough that renderMissionModal's own box-width
+	// clamp bites: unless modalNameWidth tracks that same clamp, the name
+	// field is built wider than the line it composes onto, and lipgloss's
+	// wrap (rather than truncate) on Width() turns the overflow into an
+	// extra physical row in the composited frame.
+	for _, width := range []int{100, 18} {
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			m := newTestMission()
+			m.width = width
+			m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+			before := m.View().Content
+			innerBefore := modalInnerWidth(m.modal, m.width)
+			m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+			after := m.View().Content
+			innerAfter := modalInnerWidth(m.modal, m.width)
+
+			if innerBefore != innerAfter {
+				t.Fatalf("modal inner width changed from %d to %d while naming", innerBefore, innerAfter)
+			}
+
+			beforeLines := strings.Split(before, "\n")
+			afterLines := strings.Split(after, "\n")
+			if len(beforeLines) != len(afterLines) {
+				t.Fatalf("naming changed the frame height: %d lines, want %d", len(afterLines), len(beforeLines))
+			}
+			for i := range beforeLines {
+				if bw, aw := lipgloss.Width(beforeLines[i]), lipgloss.Width(afterLines[i]); bw != aw {
+					t.Fatalf("line %d width changed from %d to %d while naming", i, bw, aw)
+				}
+			}
+		})
+	}
+}
+
+func TestNamingShowsItsPlaceholderAndKeybar(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	screen := ansi.Strip(m.View().Content)
+
+	if !strings.Contains(screen, "new branch name") {
+		t.Fatalf("name placeholder missing:\n%s", screen)
+	}
+	if strings.Contains(screen, "filter branches") {
+		t.Fatalf("filter placeholder still painted while naming:\n%s", screen)
+	}
+	if !strings.Contains(screen, "enter create") || !strings.Contains(screen, "esc cancel") {
+		t.Fatalf("naming keybar missing:\n%s", screen)
+	}
+}
+
+// TestNamingHidesTheRowCursor pins modalRowLine's own cursor glyph
+// (theme.GlyphBar in theme.Pink, on a theme.SelBg background): while naming,
+// enter creates rather than acting on the cursor row, so painting that row
+// as the cursor target would be a lie.
+func TestNamingHidesTheRowCursor(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	withCursor := ansi.Strip(m.View().Content)
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	naming := ansi.Strip(m.View().Content)
+
+	if strings.Count(naming, theme.GlyphBar) >= strings.Count(withCursor, theme.GlyphBar) {
+		t.Fatalf("row cursor still painted while naming:\n%s", naming)
 	}
 }
 
@@ -905,7 +1128,8 @@ func TestModalFilterPlaceholdersPerModal(t *testing.T) {
 func TestModalFilterLineClipsLongQueryToOneRow(t *testing.T) {
 	const width = 30
 	long := strings.Repeat("a very long typed filter query ", 3)
-	out := modalFilterLine(long, "filter branches", width)
+	ms := &modalState{query: long, placeholder: "filter branches"}
+	out := modalFilterLine(ms, width)
 	if strings.Contains(out, "\n") {
 		t.Fatalf("filter row should render exactly 1 row even with a long query: %q", out)
 	}
