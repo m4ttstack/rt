@@ -2851,7 +2851,7 @@ body {
 .tui-respond-object-ref {
   flex-shrink: 0;
   font-weight: 500;
-  color: var(--text-accent-small);
+  color: var(--text-accent);
 }
 .tui-respond-object-title {
   min-width: 0;
