@@ -150,6 +150,32 @@ test('a plan@1 gate renders the header card in place of the MR strip and the con
   expect(text).not.toContain('demo-worktree');
 });
 
+test("a structured header with a prose question still renders that question's context", async () => {
+  await renderModal(
+    gate({
+      questions: [
+        {
+          id: 'thread-1',
+          label: 'queue/enqueue.ts:88',
+          multi: false,
+          context: 'Two threads on this file were left unresolved.',
+          options: [
+            { value: 'reply:t1', label: 'reply' },
+            { value: 'fix:t1', label: 'fix' },
+            { value: 'skip:t1', label: 'skip' },
+          ],
+        },
+      ],
+    }),
+    MR
+  );
+  expect($('.tui-respond-head')).not.toBeNull();
+  expect($('.tui-thread-card')).toBeNull();
+  expect($('.tui-gate-question-context')!.textContent).toContain(
+    'Two threads on this file were left unresolved.'
+  );
+});
+
 test('the chips row renders the derived chips in order', async () => {
   await renderModal(gate({}), MR);
   expect(
@@ -177,6 +203,15 @@ test('parked and escalated chips move onto the action strip', async () => {
   await renderModal(gate({ status: 'parked', escalatedAt: 5 }), MR);
   expect($('.tui-triage-head-actions [data-gate="parked"]')).not.toBeNull();
   expect($('.tui-triage-head-actions [data-gate="escalated"]')).not.toBeNull();
+});
+
+test('a prose gate keeps its parked chip in the MR strip', async () => {
+  await renderModal(
+    gate({ status: 'parked', context: 'Two threads from renee, both valid.' }),
+    MR
+  );
+  expect($('.tui-triage-strip [data-gate="parked"]')).not.toBeNull();
+  expect($('.tui-triage-head-actions [data-gate="parked"]')).toBeNull();
 });
 
 test('with no MR row the object line falls back to the subject reference', async () => {
