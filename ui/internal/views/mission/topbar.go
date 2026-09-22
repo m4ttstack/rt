@@ -57,16 +57,17 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
 	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
-	// The divider's own pad row must wear the same half-block split as its
-	// neighbors' pad rows (renderSegment) -- a full-height BgSubtle cell
-	// here, against half-height fill on both sides, would notch outward at
-	// the seam instead of matching it.
+	// The divider's own pad and trailing rows must wear the same half-block
+	// split as its neighbors' pad and trailing rows (renderSegment) -- a
+	// full-height BgSubtle cell here, against half-height fill on both
+	// sides, would notch outward at either seam instead of matching it.
 	padDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.BgSubtle).Render(theme.GlyphHalfBlockLower)
+	trailingDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.BgSubtle).Render(theme.GlyphHalfBlockUpper)
 	// Must match renderSegment's own row count exactly: JoinHorizontal pads a
 	// shorter block to the tallest with unstyled filler rows, which would
 	// leave the divider's own extra row unpainted (bleeding the terminal
 	// default through) rather than sharing BgSubtle with its neighbors.
-	div := padDivCell + "\n" + strings.Repeat(divCell+"\n", 2) + divCell
+	div := padDivCell + "\n" + divCell + "\n" + divCell + "\n" + trailingDivCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
 
@@ -303,15 +304,15 @@ func segmentBottomAvail(width int, icon, trailing string, trailingPad int) int {
 // pad breathing above the label (the owner's ruling that the top bar wants
 // half a line of padding above it, not a full one), the icon leads the bottom
 // row with the top row indented to match, an optional trailing accessory
-// (chevron or pills) sits flush right on the bottom row, and a final blank
-// row carries the board's own bottom breathing beneath the value
-// (docs/design/mission/README.md's Terminal geometry table: the board's
-// text block ends at 44px into a 56px/2.15-cell band). The label/value/
-// trailing rows are painted with the segment's own background (segmentBase)
-// so the fill reads as one segment rather than text floating on the bar,
-// the pad row instead carries that same fill as its half-block foreground
-// (see the pad row's own comment), and hover/open covers the full four-row
-// span a click can land on.
+// (chevron or pills) sits flush right on the bottom row, and a mirrored
+// half-row trails beneath the value, carrying the board's own bottom
+// breathing (docs/design/mission/README.md's Terminal geometry table: the
+// board's text block ends at 44px into a 56px/2.15-cell band). The label/
+// value/trailing-accessory rows are painted with the segment's own
+// background (segmentBase) so the fill reads as one segment rather than
+// text floating on the bar; the pad and trailing rows instead carry that
+// same fill as a half-block foreground (see the pad row's own comment), and
+// hover/open covers the full four-row span a click can land on.
 func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	if width < 0 {
 		width = 0
@@ -356,7 +357,10 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	}
 	row2 = base.Width(width).Render(row2)
 
-	row3 := base.Width(width).Render("")
+	// Mirrors the pad row: the upper half wears the segment's own live fill,
+	// the lower half is theme.Bg, so the band ends the way it started
+	// instead of dropping to a full-height row.
+	row3 := padStyle.Render(strings.Repeat(theme.GlyphHalfBlockUpper, width))
 
 	return pad + "\n" + row1 + "\n" + row2 + "\n" + row3
 }
