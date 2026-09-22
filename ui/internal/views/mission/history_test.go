@@ -225,6 +225,30 @@ func TestStaleHistoryDebounceTickIsNoOp(t *testing.T) {
 	}
 }
 
+// TestHistoryMoveAtEdgeSchedulesNothing: the driver's select reloads the
+// changeset and resets its file cursor, so a move that cannot change the
+// selection must not schedule one.
+func TestHistoryMoveAtEdgeSchedulesNothing(t *testing.T) {
+	m := newHistoryTestMission()
+	if _, cmd := m.Update(upKey()); cmd != nil {
+		t.Fatal("up on the newest commit must not schedule a select")
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}); cmd != nil {
+		t.Fatal("shift+up on the newest commit must not schedule a select")
+	}
+	if _, cmd := m.Update(tea.MouseWheelMsg{X: 5, Y: m.layout().topH + historyFixedTopRows, Button: tea.MouseWheelUp}); cmd != nil {
+		t.Fatal("wheel up on the newest commit must not schedule a select")
+	}
+	m.historyCursor, m.historyAnchor = "s3", ""
+	if _, cmd := m.Update(downKey()); cmd != nil {
+		t.Fatal("down on the last commit must not schedule a select")
+	}
+	m.historyAnchor = "s2"
+	if _, cmd := m.Update(downKey()); cmd == nil {
+		t.Fatal("a plain move that collapses a range changes the selection and must still schedule a select")
+	}
+}
+
 func TestShiftDownExtendsRange(t *testing.T) {
 	m := newHistoryTestMission()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})

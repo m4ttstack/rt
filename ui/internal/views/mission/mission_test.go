@@ -804,6 +804,18 @@ func TestHistoryDownEmitsDebouncedSelect(t *testing.T) {
 	s.Wait()
 }
 
+// TestHistoryUpAtTopDoesNotEmit is TestListCursorAtTopUpDoesNotEmit for the
+// commit list; the window outlasts the 150ms debounce.
+func TestHistoryUpAtTopDoesNotEmit(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[A")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("up on the newest commit must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 func TestHistoryShiftDownEmitsRange(t *testing.T) {
 	s := openHistory(t)
 	s.Type("\x1b[1;2B")

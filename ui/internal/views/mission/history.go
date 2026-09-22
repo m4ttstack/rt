@@ -173,6 +173,7 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	if n == 0 {
 		return nil
 	}
+	before := strings.Join(m.historySelectionShas(), ",")
 	if extend {
 		if m.historyAnchor == "" {
 			m.historyAnchor = m.historyCursor
@@ -182,6 +183,11 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	}
 	i := max(0, min(n-1, m.historyIndex(m.historyCursor)+delta))
 	m.historyCursor = commits[i].Sha
+	// The driver's select resets its file cursor, so a move clamped at
+	// either end must not re-select what is already showing.
+	if strings.Join(m.historySelectionShas(), ",") == before {
+		return m.maybeRequestMore()
+	}
 	m.historyGen++
 	gen := m.historyGen
 	tick := selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
