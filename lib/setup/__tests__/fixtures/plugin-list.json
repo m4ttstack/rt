@@ -148,5 +148,14 @@
     "installPath": "/Users/user/.claude/plugins/cache/example-official/typescript-lsp/1.0.0",
     "installedAt": "2026-07-24T15:02:30.550Z",
     "lastUpdated": "2026-07-24T15:02:30.550Z"
+  },
+  {
+    "id": "superpowers@claude-plugins-official",
+    "version": "6.4.1",
+    "scope": "user",
+    "enabled": true,
+    "installPath": "/Users/user/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1",
+    "installedAt": "2026-08-26T13:28:09.485Z",
+    "lastUpdated": "2026-09-22T17:09:10.860Z"
   }
 ]

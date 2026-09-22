@@ -19,7 +19,7 @@ import type { ToolResolution } from "../../deps/resolve.ts";
 import { fakeProbes, fakeTray, ok } from "./fakes.ts";
 import type { Probes } from "../probes.ts";
 
-import { MATTSTACK_MARKETPLACE_SOURCE, pluginsInstallStep } from "../steps/plugins.ts";
+import { MATTSTACK_MARKETPLACE_SOURCE, OFFICIAL_MARKETPLACE_SOURCE, pluginsInstallStep } from "../steps/plugins.ts";
 import { gitIdentityStep } from "../steps/git-identity.ts";
 import { linearMcpStep } from "../steps/linear-mcp.ts";
 import { applyBaselinePermissions, claudePermissionsStep } from "../steps/claude-permissions.ts";
@@ -163,6 +163,34 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(logs.some((l) => l.line.includes("claude.plugins") && l.line.includes("dropped 1"))).toBe(true);
     });
 
+    test("superpowers installs as a trusted baseline plugin, its marketplace added right after rt's own and ahead of team/user sources", async () => {
+      const teamDir = join(home, ".mattstack", "teams", "acme");
+      const marketplacePath = join(teamDir, ".claude-plugin", "marketplace.json");
+      setSetting("claude.marketplaces", ["https://example.com/extra-market"], "user");
+
+      const execCalls: string[][] = [];
+      const p = fakeProbes({
+        home,
+        env: { PATH: "/usr/local/bin" },
+        files: { "/usr/local/bin/claude": "bin", [marketplacePath]: JSON.stringify({ name: "acme-market", plugins: [{ name: "acme-skills" }] }) },
+        exec: async (argv) => {
+          execCalls.push(argv);
+          return argv[2] === "list" ? ok("[]") : ok("");
+        },
+      });
+      const { ctx } = makeCtx(p, { team: { slug: "acme", name: "Acme", mode: "none" } });
+
+      const outcome = await pluginsInstallStep.run(ctx);
+      expect(outcome.state).toBe("done");
+
+      const marketSrcs = execCalls.filter((a) => a.includes("marketplace") && a.includes("add")).map((a) => a.at(-1));
+      expect(marketSrcs.slice(0, 2)).toEqual([MATTSTACK_MARKETPLACE_SOURCE, OFFICIAL_MARKETPLACE_SOURCE]);
+
+      expect(BASE_PLUGINS).toContain("superpowers@claude-plugins-official");
+      expect(execCalls.some((a) => a[2] === "install" && a.at(-1) === "superpowers@claude-plugins-official")).toBe(true);
+      expect(execCalls.some((a) => a[2] === "enable" && a.at(-1) === "superpowers@claude-plugins-official")).toBe(true);
+    });
+
     test("happy path: one custom marketplace + team marketplace/plugin, one config dir — full argv sequence, setup-state recorded", async () => {
       const teamDir = join(home, ".mattstack", "teams", "acme");
       const marketplacePath = join(teamDir, ".claude-plugin", "marketplace.json");
@@ -183,15 +211,15 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       const outcome = await pluginsInstallStep.run(ctx);
 
       expect(outcome.state).toBe("done");
-      expect(detailOf(outcome)).toContain("3 marketplace(s), 4 plugin(s) across 1 config dir(s)");
+      expect(detailOf(outcome)).toContain("4 marketplace(s), 5 plugin(s) across 1 config dir(s)");
       expect(detailOf(outcome)).toContain(MERGE_MANIFESTS_MISSING_CODE); // no mattstack plugin on disk yet in this fake — materialize honestly skips
       // acme-skills is team-authored (came from the team's own marketplace.json) — installed, never auto-enabled.
       expect(detailOf(outcome)).toContain("awaiting your approval to enable: acme-skills@acme-market");
 
       const marketAdds = execCalls.filter((c) => c.argv.includes("marketplace") && c.argv.includes("add"));
       const installs = execCalls.filter((c) => c.argv[1] === "plugin" && c.argv[2] === "install");
-      expect(marketAdds).toHaveLength(3);
-      expect(installs).toHaveLength(4);
+      expect(marketAdds).toHaveLength(4);
+      expect(installs).toHaveLength(5);
       expect(execCalls.every((c) => c.argv[0] === "/usr/local/bin/claude")).toBe(true);
       expect(execCalls.every((c) => c.env?.CLAUDE_CONFIG_DIR === join(home, ".claude"))).toBe(true);
 
@@ -202,7 +230,7 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(marketSrcs).toEqual(expect.arrayContaining(["https://example.com/extra-market", MATTSTACK_MARKETPLACE_SOURCE, teamDir]));
 
       const pluginNames = installs.map((c) => c.argv.at(-1) ?? "");
-      expect(pluginNames).toEqual(expect.arrayContaining(["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack", "acme-skills@acme-market"]));
+      expect(pluginNames).toEqual(expect.arrayContaining(["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack", "superpowers@claude-plugins-official", "acme-skills@acme-market"]));
 
       const state = readSetupState(p);
       expect([...state.marketplaces].sort()).toEqual([...marketSrcs].sort());
@@ -332,6 +360,7 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
         "mattstack@mattstack": false, // a baseline plugin that drifted off
         "fast-browser@mattstack": true,
         "chat@mattstack": true,
+        "superpowers@claude-plugins-official": true,
       };
       const execCalls: string[][] = [];
       const p = fakeProbes({

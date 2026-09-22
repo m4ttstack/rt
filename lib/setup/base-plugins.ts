@@ -4,4 +4,11 @@
  * without a validator importing a step (or a second copy of the list drifting
  * from the first).
  */
-export const BASE_PLUGINS: string[] = ["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack"];
+export const BASE_PLUGINS: string[] = [
+  "mattstack@mattstack",
+  "fast-browser@mattstack",
+  "chat@mattstack",
+  // The mattstack skills and every compiled team pack invoke superpowers:*
+  // skills; without it a pipeline dies mid-run on a missing skill.
+  "superpowers@claude-plugins-official",
+];

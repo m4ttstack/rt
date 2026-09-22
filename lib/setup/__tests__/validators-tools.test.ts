@@ -28,7 +28,7 @@ import { PORTLESS_LAUNCHD_PLIST } from "../steps/services.ts";
 
 const FIXTURE_DIR = join(import.meta.dir, "fixtures");
 
-/** Real `claude plugin list --json` shape: chat@mattstack, fast-browser@mattstack and mattstack@mattstack all enabled, plus other real plugins. */
+/** Real `claude plugin list --json` shape: every BASE_PLUGINS entry enabled, plus other real plugins. */
 const REAL_PLUGIN_LIST_JSON = readFileSync(join(FIXTURE_DIR, "plugin-list.json"), "utf8");
 type RealPluginEntry = { id: string; enabled: boolean };
 const REAL_PLUGIN_ENTRIES: RealPluginEntry[] = JSON.parse(REAL_PLUGIN_LIST_JSON);
@@ -514,7 +514,7 @@ describe("toolRows - tool.plugins", () => {
     return (argv) => (argv[0] === "claude" && argv[1] === "plugin" && argv[2] === "list" ? result : ok());
   }
 
-  test("real plugin listing, all three baseline plugins present and enabled -> ready", async () => {
+  test("real plugin listing, every baseline plugin present and enabled -> ready", async () => {
     const r = await pickRow(toolRows(fakeProbes({ exec: listExec(ok(REAL_PLUGIN_LIST_JSON)) }), [], { hasBrew: true, secrets: NO_SECRETS }, NOOP_SEAMS), "tool.plugins");
     expect(r.status).toBe("ready");
     expect(r.required).toBe(false);

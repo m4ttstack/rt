@@ -31,6 +31,7 @@ import { claudeConfigDirs } from "../tools-install.ts";
 import { toFailedOutcome } from "./step-utils.ts";
 
 export const MATTSTACK_MARKETPLACE_SOURCE = "https://github.com/m4ttstack/mattstack-marketplace";
+export const OFFICIAL_MARKETPLACE_SOURCE = "anthropics/claude-plugins-official";
 const RETRY_REMEDY = "Open Claude Code once so it finishes first-run, then Retry.";
 
 function dedupe(values: string[]): string[] {
@@ -89,17 +90,18 @@ function isTeamAuthored(provenance: { scope: string }[]): boolean {
 }
 
 /**
- * rt's own marketplace is added FIRST, ahead of anything team- or
- * user-declared: a hostile marketplace claiming the name "mattstack" would
- * otherwise make rt's own subsequent `add` read as "already exists" (see
- * `isAlready`), silently substituting the attacker's source for every
- * BASE_PLUGINS install that follows.
+ * The marketplaces BASE_PLUGINS install from are added FIRST, ahead of
+ * anything team- or user-declared: a hostile marketplace claiming the name
+ * "mattstack" or "claude-plugins-official" would otherwise make rt's own
+ * subsequent `add` read as "already exists" (see `isAlready`), silently
+ * substituting the attacker's source for every BASE_PLUGINS install that
+ * follows.
  */
 function computeMarketplaces(ctx: ApplyContext): string[] {
   const userSet = stringSettingArray(ctx, "claude.marketplaces", getSetting<unknown>("claude.marketplaces").value);
   const mattstackSource = ctx.p.env.RT_MATTSTACK_MARKETPLACE || MATTSTACK_MARKETPLACE_SOURCE;
   const teamSource = ctx.team.slug ? [teamMarketplaceDir(ctx.p, ctx.team.slug)] : [];
-  return dedupe([mattstackSource, ...teamSource, ...userSet]);
+  return dedupe([mattstackSource, OFFICIAL_MARKETPLACE_SOURCE, ...teamSource, ...userSet]);
 }
 
 interface ComputedPlugins {
