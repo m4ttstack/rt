@@ -31,88 +31,194 @@ public final class RecordingCommandRunner: CommandRunner, @unchecked Sendable {
     }
 }
 
-public struct SystemCommandRunner: CommandRunner {
-    public init() {}
-    public func run(_ executable: String, _ args: [String]) async -> CommandOutcome {
+// MARK: - Spawn driver (the testable orchestration)
+
+/// What SpawnDriver wires into a backend before starting it. Each callback is
+/// safe to invoke from any queue.
+public struct SpawnHandlers: Sendable {
+    public let stdout: @Sendable (Data) -> Void
+    public let stderr: @Sendable (Data) -> Void
+    public let stdoutEOF: @Sendable () -> Void
+    public let stderrEOF: @Sendable () -> Void
+    public let exited: @Sendable (Int32) -> Void
+}
+
+/// One spawned child, as the driver sees it. The real implementation wraps
+/// Foundation.Process; checks drive the orchestration with a scripted fake.
+public protocol SpawnBackend: Sendable {
+    /// Wire the handlers, then start the child. Throws when the exec fails.
+    func start(_ handlers: SpawnHandlers) throws
+    var isRunning: Bool { get }
+    func forceKill()
+    /// Stop delivering pipe callbacks; called once the outcome has settled so
+    /// a leaked write end can't keep the machinery alive.
+    func detach()
+}
+
+/// Injectable timer so the orchestration is testable without real clocks.
+public typealias SpawnScheduler = @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
+
+/// Runs one spawn to a guaranteed outcome. Three ways a spawn used to park
+/// its caller forever, each now bounded:
+///
+/// - a child that never exits is killed at `timeout`;
+/// - a child that exits while a grandchild holds a pipe's write end never
+///   delivers EOF (deck's managed-app relaunches do this), so termination
+///   arms an `eofGrace` settle with whatever was collected;
+/// - either way the continuation resumes exactly once.
+///
+/// Behind the daemon lifecycle gate, one such park silently wedged every
+/// later start/stop/restart (2026-09-21).
+public enum SpawnDriver {
+
+    public static func run(backend: SpawnBackend, timeout: TimeInterval, eofGrace: TimeInterval = 2,
+                           schedule: @escaping SpawnScheduler) async -> CommandOutcome {
         await withCheckedContinuation { cont in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: executable)
-            p.arguments = args
-            let out = Pipe(), err = Pipe()
-            p.standardOutput = out; p.standardError = err
-
-            let state = PipeDrainState()
-            let group = DispatchGroup()
-
-            // A chatty child (launchctl, the privileged helper, deck) can fill
-            // the ~64KB pipe buffer; draining stdout/stderr as data arrives,
-            // rather than in terminationHandler after waiting for exit, is
-            // what keeps the child from blocking on a full pipe and the
-            // continuation from hanging forever.
-            func drain(_ pipe: Pipe, into append: @escaping (Data) -> Void) {
-                group.enter()
-                pipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if data.isEmpty {
-                        handle.readabilityHandler = nil
-                        group.leave()
-                    } else {
-                        append(data)
-                    }
-                }
-            }
-            drain(out, into: state.appendOut)
-            drain(err, into: state.appendErr)
-
-            group.enter()
-            p.terminationHandler = { proc in
-                state.setExitCode(proc.terminationStatus)
-                group.leave()
-            }
-
-            group.notify(queue: .global()) {
+            let state = SpawnState()
+            let settle: @Sendable () -> Void = {
                 guard state.markResumedOnce() else { return }
+                backend.detach()
                 cont.resume(returning: state.outcome())
             }
 
+            let handlers = SpawnHandlers(
+                stdout: { state.appendOut($0) },
+                stderr: { state.appendErr($0) },
+                stdoutEOF: { if state.leave() { settle() } },
+                stderrEOF: { if state.leave() { settle() } },
+                exited: { code in
+                    state.setExitCode(code)
+                    let drained = state.leave()
+                    // The EOFs usually follow within milliseconds; when a
+                    // grandchild inherited a write end they never come.
+                    schedule(eofGrace) { settle() }
+                    if drained { settle() }
+                }
+            )
+
+            schedule(timeout) {
+                if state.markTimedOut(), backend.isRunning {
+                    state.appendErr(Data("command timed out after \(Int(timeout))s; killed\n".utf8))
+                    state.setExitCode(124)
+                    backend.forceKill()
+                }
+                schedule(eofGrace) { settle() }
+            }
+
             do {
-                try p.run()
+                try backend.start(handlers)
             } catch {
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
                 state.setExitCode(127)
                 state.appendErr(Data(String(describing: error).utf8))
-                // the process never started, so termination/EOF will never
-                // fire on their own — settle the group's outstanding enters
-                // so group.notify still runs the single resume path above.
-                group.leave(); group.leave(); group.leave()
+                settle()
             }
         }
     }
 }
 
-/// Guards the pieces `SystemCommandRunner` touches from multiple queues
-/// (readabilityHandler callbacks, terminationHandler, the catch path) so the
-/// checked continuation resumes exactly once.
-private final class PipeDrainState: @unchecked Sendable {
+/// Guards the pieces the driver touches from multiple queues so the checked
+/// continuation resumes exactly once and the exit code wins no races.
+private final class SpawnState: @unchecked Sendable {
     private let lock = NSLock()
     private var outData = Data()
     private var errData = Data()
     private var code: Int32 = 127
     private var resumed = false
+    private var timedOut = false
+    /// stdout EOF + stderr EOF + exit; all three in means fully drained.
+    private var pending = 3
 
     func appendOut(_ d: Data) { lock.lock(); outData.append(d); lock.unlock() }
     func appendErr(_ d: Data) { lock.lock(); errData.append(d); lock.unlock() }
     func setExitCode(_ c: Int32) { lock.lock(); code = c; lock.unlock() }
+    /// Returns true when this was the last outstanding leaf.
+    func leave() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        pending -= 1
+        return pending == 0
+    }
     func markResumedOnce() -> Bool {
         lock.lock(); defer { lock.unlock() }
         if resumed { return false }
         resumed = true
         return true
     }
+    /// True exactly once, and never after the outcome has settled — the
+    /// deadline closure must not kill a child whose run already resolved.
+    func markTimedOut() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if resumed || timedOut { return false }
+        timedOut = true
+        return true
+    }
     func outcome() -> CommandOutcome {
         lock.lock(); defer { lock.unlock() }
         return CommandOutcome(exitCode: code, stdout: String(decoding: outData, as: UTF8.self), stderr: String(decoding: errData, as: UTF8.self))
+    }
+}
+
+// MARK: - Real runner
+
+/// Foundation.Process behind the SpawnBackend seam. Draining stdout/stderr as
+/// data arrives, rather than after exit, is what keeps a chatty child
+/// (launchctl, the privileged helper, deck) from blocking on a full ~64KB
+/// pipe buffer.
+private final class ProcessSpawnBackend: SpawnBackend, @unchecked Sendable {
+    private let process = Process()
+    private let out = Pipe()
+    private let err = Pipe()
+
+    init(executable: String, args: [String]) {
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = args
+        process.standardOutput = out
+        process.standardError = err
+    }
+
+    func start(_ handlers: SpawnHandlers) throws {
+        func drain(_ pipe: Pipe, data: @escaping @Sendable (Data) -> Void, eof: @escaping @Sendable () -> Void) {
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    eof()
+                } else {
+                    data(chunk)
+                }
+            }
+        }
+        drain(out, data: handlers.stdout, eof: handlers.stdoutEOF)
+        drain(err, data: handlers.stderr, eof: handlers.stderrEOF)
+        process.terminationHandler = { handlers.exited($0.terminationStatus) }
+        do {
+            try process.run()
+        } catch {
+            detach()
+            throw error
+        }
+    }
+
+    var isRunning: Bool { process.isRunning }
+    func forceKill() { kill(process.processIdentifier, SIGKILL) }
+    func detach() {
+        out.fileHandleForReading.readabilityHandler = nil
+        err.fileHandleForReading.readabilityHandler = nil
+    }
+}
+
+public struct SystemCommandRunner: CommandRunner {
+    /// Upper bound on any single spawn; generous because deck's managed-app
+    /// restart legitimately takes ~10s.
+    private let timeout: TimeInterval
+
+    public init(timeout: TimeInterval = 60) { self.timeout = timeout }
+
+    public func run(_ executable: String, _ args: [String]) async -> CommandOutcome {
+        await SpawnDriver.run(
+            backend: ProcessSpawnBackend(executable: executable, args: args),
+            timeout: timeout,
+            schedule: { delay, work in DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: work) }
+        )
     }
 }
 
