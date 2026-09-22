@@ -113,7 +113,6 @@ export type CreateMode = { mode: "hydrate"; golden: TreeRecord } | { mode: "cold
 export function chooseCreateMode(
   trees: TreeRecord[],
   cfgRoot: string,
-  now: number,
   sameVolume: (a: string, b: string) => boolean,
 ): CreateMode {
   const golden = findGolden(trees);
@@ -172,7 +171,7 @@ export async function buildMember(
   },
 ): Promise<CreateResult & { hydratedFrom?: string }> {
   const { repoName, repoPath, emit, log, cfgRoot, sameVolume, clone, via } = deps;
-  const chosen = chooseCreateMode(loadRegistry(repoName), cfgRoot, Date.now(), sameVolume);
+  const chosen = chooseCreateMode(loadRegistry(repoName), cfgRoot, sameVolume);
   if (chosen.mode === "hydrate") {
     const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone });
     if (h.ok) return { ...h, hydratedFrom: chosen.golden.name };
