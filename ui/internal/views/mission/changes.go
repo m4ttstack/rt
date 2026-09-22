@@ -20,40 +20,46 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the three-row tab strip per Main.png/EmptyState.png:
-// a blank pad row, the Changes/History label row, and the underline row,
-// Changes and History each occupy HALF the sidebar width, and the underline
-// runs the full width -- Pink under the active tab's half, Rule under the
-// inactive half (the board's own bottom border). Changes is always the
-// active tab; History has no wire state to select it yet (renderKeybar's own
-// "History lands in v2" notice covers a click on it).
-//
-// The pad and label rows together are the button (sidebarHit's own two-row
-// span for hitTabHistory); hoverHistory paints HoverBg behind BOTH, on the
-// History half only. The underline is the active-tab indicator, not part of
-// the button: it never takes hover, matching sidebarHit resolving it to no
-// hit target -- the invariant this button holds is that the cells that
-// hover are exactly the cells that click, not a superset or a subset.
-func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
+// renderTabsRow paints the three-row tab strip per Main.png/History.png: a
+// blank pad row, the Changes/History label row, and the underline row. Each
+// tab owns HALF the width; the underline is Pink under the active half and
+// Rule under the other. The pad and label rows of the INACTIVE half are its
+// button (sidebarHit/historySidebarHit resolve exactly those cells to
+// hitTab), so hoverInactive paints HoverBg there and nowhere else: the
+// active tab is inert and never hovers, and the underline never takes hover.
+func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	half := width / 2
 	otherHalf := width - half
+	historyActive := activeTab == "history"
 
-	historyOn := on
-	if hoverHistory {
-		historyOn = on.Background(theme.HoverBg)
+	changesOn, historyOn := on, on
+	if hoverInactive {
+		if historyActive {
+			changesOn = on.Background(theme.HoverBg)
+		} else {
+			historyOn = on.Background(theme.HoverBg)
+		}
+	}
+	label := func(style lipgloss.Style, text string, active bool) string {
+		if active {
+			return style.Foreground(theme.Text).Bold(true).Render(text)
+		}
+		return style.Foreground(theme.Dimmer).Render(text)
 	}
 
-	pad := on.Width(half).Render("") + historyOn.Width(otherHalf).Render("")
-
-	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
-		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	historyLabel := historyOn.Foreground(theme.Dimmer).Render("History") + historyOn.Foreground(theme.Faint).Render(" v2")
-
-	top := on.Width(half).Align(lipgloss.Center).Render(changesLabel) +
+	pad := changesOn.Width(half).Render("") + historyOn.Width(otherHalf).Render("")
+	changesLabel := label(changesOn, "Changes", !historyActive) + changesOn.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
+	historyLabel := label(historyOn, "History", historyActive)
+	top := changesOn.Width(half).Align(lipgloss.Center).Render(changesLabel) +
 		historyOn.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
-	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
-		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
+
+	changesRule, historyRule := theme.Pink, theme.Rule
+	if historyActive {
+		changesRule, historyRule = theme.Rule, theme.Pink
+	}
+	underline := on.Foreground(changesRule).Render(strings.Repeat("─", half)) +
+		on.Foreground(historyRule).Render(strings.Repeat("─", otherHalf))
 	return pad + "\n" + top + "\n" + underline
 }
 
@@ -330,10 +336,10 @@ func renderUndoStrip(lc LastCommit, hovered bool, width int) string {
 	return justify(on, width, left, right)
 }
 
-// renderKeybar is the bottom full-width legend, key glyphs in KeybarKey
-// (bold) and their labels in KeybarLabel, separated by a Dim middle dot --
-// the same grammar the picker and board keybars use.
-func renderKeybar(width int) string {
+// renderKeybar is the bottom full-width legend for the active tab, key
+// glyphs in KeybarKey (bold) and their labels in KeybarLabel, separated by a
+// Dim middle dot -- the same grammar the picker and board keybars use.
+func renderKeybar(width int, tab string) string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	dot := on.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
@@ -342,6 +348,13 @@ func renderKeybar(width int) string {
 	pairs := [][2]string{
 		{"space", "stage"}, {"enter", "diff"}, {"c", "commit"}, {"f", "action"},
 		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
+		{"2", "history"},
+	}
+	if tab == "history" {
+		pairs = [][2]string{
+			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"e", "expand"},
+			{"1", "changes"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
+		}
 	}
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {

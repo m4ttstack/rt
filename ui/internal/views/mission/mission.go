@@ -29,7 +29,15 @@ const (
 	focusSummary
 	focusDescription
 	focusModal
+	focusHistoryFiles
 )
+
+// diffScroll is one tab's diff pane position, stashed while the other tab
+// owns the pane.
+type diffScroll struct {
+	cursor, top int
+	path        string
+}
 
 type Mission struct {
 	em     *session.Emitter
@@ -90,12 +98,34 @@ type Mission struct {
 	// alongside hoverFile/hoverDiffLine, so a pointer that leaves a region
 	// can never leave its highlight stuck.
 	hoverCommitButton      bool
-	hoverTabHistory        bool
+	hoverTab               bool
 	hoverFilterRow         bool
 	hoverCommitSummary     bool
 	hoverCommitDescription bool
 	hoverStash             bool
 	hoverUndoChip          bool
+
+	// History tab view state. historyCursor/historyAnchor are held by sha
+	// (the list reorders and grows across pushes); the anchor is "" unless a
+	// shift gesture opened a range. historyGen is the History debounce's
+	// generation, selectGen's counterpart. historyMoreFor is the list length
+	// the last mission:history-more went out for, -1 before any.
+	historyCursor    string
+	historyAnchor    string
+	historyTop       int
+	historyGen       int
+	historyMoreFor   int
+	hoverCommit      int
+	historyFile      string
+	historyFilesTop  int
+	hoverHistoryFile int
+	historyExpanded  bool
+	hoverExpander    bool
+
+	// lastTab is the tab the previous push showed; tabDiff holds each tab's
+	// diff position while the other tab owns the pane.
+	lastTab string
+	tabDiff map[string]diffScroll
 
 	// lastClickPath/lastClickAt pair a file row's two clicks into a double
 	// click (focuses the diff) the same way the picker's own clickRow does
@@ -125,6 +155,10 @@ func New(em *session.Emitter) *Mission {
 		descriptionInput: newTextInput("Description", commitBoxInner),
 		hoverFile:        -1,
 		hoverDiffLine:    -1,
+		hoverCommit:      -1,
+		hoverHistoryFile: -1,
+		historyMoreFor:   -1,
+		tabDiff:          map[string]diffScroll{},
 	}
 }
 
@@ -182,6 +216,19 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	}
 	m.model = decoded
 	m.clampSelection()
+	m.clampHistory()
+	if tab := tabKey(m.model.Tab); tab != tabKey(m.lastTab) {
+		if m.tabDiff == nil {
+			m.tabDiff = map[string]diffScroll{}
+		}
+		m.tabDiff[tabKey(m.lastTab)] = diffScroll{cursor: m.diffCursor, top: m.diffTop, path: m.diffPath}
+		restored := m.tabDiff[tab]
+		m.diffCursor, m.diffTop, m.diffPath = restored.cursor, restored.top, restored.path
+		if m.modal == nil {
+			m.focus = focusList
+		}
+	}
+	m.lastTab = m.model.Tab
 	m.clampDiffCursor()
 	if m.summaryInput.Value() == "" {
 		m.summaryInput.SetValue(m.model.Commit.Summary)
@@ -196,6 +243,14 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		m.filterText = m.model.Filter
 	}
 	return nil
+}
+
+// tabKey folds an older producer's "" into "changes", the tab it means.
+func tabKey(tab string) string {
+	if tab == "history" {
+		return "history"
+	}
+	return "changes"
 }
 
 // clampSelection keeps the cursor on the same path across a model swap when
@@ -259,6 +314,11 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.selectPending = false
 		return m, m.selectPathCmd(m.selectPendingBase)
+	case historyDebounceMsg:
+		if v.generation != m.historyGen || v.kind != historyDebounceCommit {
+			return m, nil
+		}
+		return m, m.emitHistorySelect()
 	case tea.MouseClickMsg:
 		return m.mouseClick(v)
 	case tea.MouseMotionMsg:
@@ -279,7 +339,12 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.commitKey(v)
 		case focusDiff:
 			return m.diffKey(v)
+		case focusHistoryFiles:
+			return m.historyListKey(v)
 		default:
+			if m.historyTab() {
+				return m.historyListKey(v)
+			}
 			return m.listKey(v)
 		}
 	}
@@ -317,6 +382,8 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openWorktreeModal()
 	case "r":
 		return m.openRepoModal()
+	case "2":
+		return m, m.emitTab("history")
 	case "q":
 		return m.quit()
 	}
@@ -499,7 +566,7 @@ const sidebarFixedTopRows = 8
 
 func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
-		renderTabsRow(m.model.ChangedTotal, m.hoverTabHistory, width),
+		renderTabsRow(m.model.ChangedTotal, "changes", m.hoverTab, width),
 		blankRows(width, 1),
 		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, m.hoverFilterRow, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
@@ -578,6 +645,9 @@ func (m *Mission) renderChangesList(width, listRegionH int) string {
 // never gets pushed off screen by a long list -- the list scrolls within
 // what remains instead.
 func (m *Mission) renderSidebar(width, height int) string {
+	if m.historyTab() {
+		return m.renderHistorySidebar(width, height)
+	}
 	listRegionH := m.listRegionHeight(width, height)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.sidebarFixedTop(width),
@@ -622,15 +692,22 @@ type frameLayout struct {
 func (m *Mission) layout() frameLayout {
 	l := frameLayout{
 		topH:    lipgloss.Height(renderTopBar(m.model, m.width, m.hoverZone, m.openZone())),
-		keybarH: lipgloss.Height(renderKeybar(m.width)),
+		keybarH: lipgloss.Height(renderKeybar(m.width, m.model.Tab)),
 	}
 	if m.noticeText() != "" {
 		l.noticeH = 1
 	}
+	l.bodyH = m.height - l.topH - l.keybarH - l.noticeH
+	if m.historyTab() {
+		l.sidebarTopH = historyFixedTopRows
+		l.bodyH = max(l.bodyH, historyFixedTopRows)
+		l.listRegionH = l.bodyH - historyFixedTopRows
+		l.sidebarFillerH = max(l.listRegionH-len(m.model.History.Commits)*historyRowHeight, 0)
+		return l
+	}
 	l.sidebarTopH = sidebarFixedTopRows
 	l.sidebarDockedH = lipgloss.Height(m.sidebarDocked(sidebarWidth))
 	natural := l.sidebarTopH + l.sidebarDockedH
-	l.bodyH = m.height - l.topH - l.keybarH - l.noticeH
 	if l.bodyH < natural {
 		l.bodyH = natural
 	}
@@ -645,7 +722,7 @@ func (m *Mission) layout() frameLayout {
 func (m *Mission) View() tea.View {
 	top := renderTopBar(m.model, m.width, m.hoverZone, m.openZone())
 	diffW := m.diffWidth()
-	keybar := renderKeybar(m.width)
+	keybar := renderKeybar(m.width, m.model.Tab)
 	l := m.layout()
 	bodyHeight := l.bodyH
 
@@ -707,7 +784,7 @@ type hitKind int
 const (
 	hitNone hitKind = iota
 	hitTopbar
-	hitTabHistory
+	hitTab
 	hitFilterRow
 	hitFileCheckbox
 	hitFileRow
@@ -721,10 +798,14 @@ const (
 	hitModalRow
 	hitModalAction
 	hitModalOutside
+	hitCommitRow
+	hitHistoryFile
+	hitHistoryExpander
 )
 
-// hit is hitTest's result: idx is a Changes/Diff.Lines/modal-matches index
-// depending on kind, zone is topbar.go's own segment enum for hitTopbar.
+// hit is hitTest's result: idx is a Changes/Diff.Lines/modal-matches/History
+// commit index depending on kind (for hitTab, 0 is Changes and 1 History),
+// zone is topbar.go's own segment enum for hitTopbar.
 type hit struct {
 	kind hitKind
 	idx  int
@@ -754,6 +835,8 @@ func (m *Mission) hitTest(x, y int) hit {
 		return hit{}
 	}
 	switch {
+	case x < sidebarWidth && m.historyTab():
+		return m.historySidebarHit(x, bodyY, l.listRegionH)
 	case x < sidebarWidth:
 		return m.sidebarHit(x, bodyY, l.listRegionH)
 	case x == sidebarWidth:
@@ -878,14 +961,14 @@ func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 }
 
 // tabsHit mirrors renderTabsRow's own half-width Changes/History split
-// (changes.go): a click anywhere in the left half is inert (Changes is
-// already the active tab), a click anywhere in the right half resolves to
-// History.
+// (changes.go) on the Changes tab: a click anywhere in the left half is inert
+// (Changes is already the active tab), a click anywhere in the right half
+// resolves to History.
 func tabsHit(width, x int) hit {
 	if x < width/2 {
 		return hit{}
 	}
-	return hit{kind: hitTabHistory}
+	return hit{kind: hitTab, idx: 1}
 }
 
 // fileRowHit mirrors renderChangeRow's own checkbox column span
@@ -1010,8 +1093,13 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	switch h.kind {
 	case hitTopbar:
 		return m.clickTopbar(h.zone)
-	case hitTabHistory:
-		m.localNotice = "History lands in v2"
+	case hitTab:
+		if h.idx == 1 {
+			return m, m.emitTab("history")
+		}
+		return m, m.emitTab("changes")
+	case hitCommitRow:
+		return m.clickCommitRow(h.idx, mouse.Mod&tea.ModShift != 0)
 	case hitFilterRow:
 		m.focus = focusFilter
 		m.filterText = m.model.Filter
@@ -1146,12 +1234,15 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	m.hoverDiffLine = -1
 	m.hoverGutter = false
 	m.hoverCommitButton = false
-	m.hoverTabHistory = false
+	m.hoverTab = false
 	m.hoverFilterRow = false
 	m.hoverCommitSummary = false
 	m.hoverCommitDescription = false
 	m.hoverStash = false
 	m.hoverUndoChip = false
+	m.hoverCommit = -1
+	m.hoverHistoryFile = -1
+	m.hoverExpander = false
 	if m.modal != nil {
 		m.modal.hoverRow = -1
 		m.modal.hoverAction = false
@@ -1172,8 +1263,10 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 		m.modal.hoverAction = true
 	case hitCommitButton:
 		m.hoverCommitButton = true
-	case hitTabHistory:
-		m.hoverTabHistory = true
+	case hitTab:
+		m.hoverTab = true
+	case hitCommitRow:
+		m.hoverCommit = h.idx
 	case hitFilterRow:
 		m.hoverFilterRow = true
 	case hitCommitSummary:
@@ -1224,6 +1317,9 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	if mouse.X >= sidebarWidth {
 		m.moveDiffCursor(delta)
 		return m, nil
+	}
+	if m.historyTab() {
+		return m, m.historyMove(delta, false)
 	}
 	return m, m.cursorSelectCmd(delta)
 }
