@@ -26,17 +26,24 @@ const commitBoxInner = sidebarWidth - 4
 // Rule under the inactive half (the board's own bottom border). Changes is
 // always the active tab; History has no wire state to select it yet
 // (renderKeybar's own "History lands in v2" notice covers a click on it).
-func renderTabsRow(changedTotal, width int) string {
+// hoverHistory paints HoverBg behind the History label's own half only --
+// the underline's active/inactive split is untouched by hover.
+func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	half := width / 2
 	otherHalf := width - half
 
+	historyOn := on
+	if hoverHistory {
+		historyOn = on.Background(theme.HoverBg)
+	}
+
 	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
 		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	historyLabel := on.Foreground(theme.Dimmer).Render("History") + on.Foreground(theme.Faint).Render(" v2")
+	historyLabel := historyOn.Foreground(theme.Dimmer).Render("History") + historyOn.Foreground(theme.Faint).Render(" v2")
 
 	top := on.Width(half).Align(lipgloss.Center).Render(changesLabel) +
-		on.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
+		historyOn.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
 	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
 		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
 	return top + "\n" + underline
@@ -44,8 +51,11 @@ func renderTabsRow(changedTotal, width int) string {
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the
 // Faint placeholder while empty. The border brightens to Pink while the
-// filter itself holds focus, mirroring the summary/description boxes below.
-func renderFilterRow(text string, focused bool, width int) string {
+// filter itself holds focus, mirroring the summary/description boxes below;
+// hover gets the exact same Pink treatment (unlike the summary/description
+// boxes, the filter box has no separate dimmer hover tone to stay distinct
+// from -- hovering it while it also holds focus is simply a no-op repaint).
+func renderFilterRow(text string, focused, hovered bool, width int) string {
 	inner := width - 4
 	if inner < 1 {
 		inner = 1
@@ -64,7 +74,7 @@ func renderFilterRow(text string, focused bool, width int) string {
 	}
 	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
 	border := theme.Panel
-	if focused {
+	if focused || hovered {
 		border = theme.Pink
 	}
 	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
@@ -185,9 +195,14 @@ func renderChangeRow(c ChangeRow, width int, cursor, hover bool) string {
 }
 
 // renderStashStrip is the "Stashed changes · N ❯" row: a notice strip, not
-// yet a foldout (a later interaction pass wires the click).
-func renderStashStrip(count, width int) string {
-	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+// yet a foldout (a later interaction pass wires the click). hovered swaps
+// its whole-strip BgSubtle rest fill for HoverBg.
+func renderStashStrip(count int, hovered bool, width int) string {
+	bg := theme.BgSubtle
+	if hovered {
+		bg = theme.HoverBg
+	}
+	on := lipgloss.NewStyle().Background(bg)
 	left := on.Foreground(theme.Dim).Render(fmt.Sprintf("Stashed changes · %d", count))
 	right := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron)
 	return justify(on, width, left, right)
@@ -197,8 +212,11 @@ func renderStashStrip(count, width int) string {
 // summary box, the description box, and the commit button, top to bottom.
 // Amending overrides the button's own label to "Amend last commit" -- a
 // display-only substitution; enabled (the caller's commitEnabled result)
-// still gates the button's treatment, amending or not.
-func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, enabled bool) string {
+// still gates the button's treatment, amending or not. hoverButton/
+// hoverSummary/hoverDescription are each region's own independent hover
+// flag (mission.go's mouseMotion never sets more than one at a time, but
+// nothing here assumes that).
+func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, enabled, hoverButton, hoverSummary, hoverDescription bool) string {
 	var lines []string
 	if amending {
 		on := lipgloss.NewStyle().Background(theme.Bg)
@@ -209,22 +227,27 @@ func renderCommitBox(width int, summaryView, descriptionView string, amending bo
 	// row in the terminal (docs/design/mission/README.md's Terminal
 	// geometry table).
 	lines = append(lines, blankRows(width, 1))
-	lines = append(lines, boxLine(width, summaryView))
-	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
+	lines = append(lines, boxLine(width, summaryView, hoverSummary))
+	lines = append(lines, boxBlock(width, []string{descriptionView, ""}, hoverDescription))
 	// The board's own gap between the description box and the button (8px)
 	// reads as one blank band row -- unlike the summary/description seam,
 	// which stays flush (docs/design/mission/README.md's Terminal geometry
 	// table).
 	lines = append(lines, blankRows(width, 1))
-	lines = append(lines, renderCommitButton(width, buttonLabel, enabled))
+	lines = append(lines, renderCommitButton(width, buttonLabel, enabled, hoverButton))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-func boxLine(width int, content string) string {
-	return boxBlock(width, []string{content})
+func boxLine(width int, content string, hovered bool) string {
+	return boxBlock(width, []string{content}, hovered)
 }
 
-func boxBlock(width int, contentLines []string) string {
+// boxBlock's border brightens to GutterHoverBar (Pink blended half-way
+// toward Bg -- the same dimmer-than-full-Pink tone the diff gutter's own
+// hover preview already established) while hovered: dimmer than the filter
+// box's Pink focus treatment on purpose, so a hovered summary/description
+// box never reads as already focused.
+func boxBlock(width int, contentLines []string, hovered bool) string {
 	inner := width - 4
 	if inner < 1 {
 		inner = 1
@@ -234,7 +257,11 @@ func boxBlock(width int, contentLines []string) string {
 	for i, l := range contentLines {
 		padded[i] = on.Width(inner).Render(l)
 	}
-	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).BorderBackground(theme.Bg).Padding(0, 1).
+	var border color.Color = theme.Panel
+	if hovered {
+		border = theme.GutterHoverBar
+	}
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(strings.Join(padded, "\n"))
 }
 
@@ -258,10 +285,16 @@ func boxBlock(width int, contentLines []string) string {
 // files to <branch>" would otherwise spill it onto a second row -- CodeRabbit
 // finding on PR #353). The block is a fixed THREE-row unit in the sidebar's
 // own layout now; sidebarHit maps all three rows to the same hit target.
-func renderCommitButton(width int, label string, canCommit bool) string {
+// hovered brightens the fill to PinkSoft, but only when canCommit: a
+// disabled button must never hover, since hover always means "this will do
+// something".
+func renderCommitButton(width int, label string, canCommit, hovered bool) string {
 	buttonColor, textColor := theme.Pink, theme.Bg
-	if !canCommit {
+	switch {
+	case !canCommit:
 		buttonColor, textColor = theme.Panel, theme.Dimmer
+	case hovered:
+		buttonColor = theme.PinkSoft
 	}
 	capStyle := lipgloss.NewStyle().Width(width).Background(theme.Bg).Foreground(buttonColor)
 	labelStyle := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true).Background(buttonColor).Foreground(textColor)
@@ -271,11 +304,17 @@ func renderCommitButton(width int, label string, canCommit bool) string {
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit
-// leaves behind: what got committed, when, and the Undo chip.
-func renderUndoStrip(lc LastCommit, width int) string {
+// leaves behind: what got committed, when, and the Undo chip. hovered
+// brightens the chip's own Panel fill to HoverBg -- the strip's WarnBg line
+// around it is untouched, so hover reads as the chip, not the whole row.
+func renderUndoStrip(lc LastCommit, hovered bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.WarnBg)
 	left := on.Foreground(theme.Dimmer).Render("Committed "+lc.When+" · ") + on.Foreground(theme.TextSoft).Render(lc.Summary)
-	right := on.Foreground(theme.Text).Background(theme.Panel).Padding(0, 1).Render("Undo")
+	chipBg := theme.Panel
+	if hovered {
+		chipBg = theme.HoverBg
+	}
+	right := on.Foreground(theme.Text).Background(chipBg).Padding(0, 1).Render("Undo")
 	return justify(on, width, left, right)
 }
 

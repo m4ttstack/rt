@@ -283,13 +283,159 @@ func TestRenderChangeRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
 }
 
 func TestRenderCommitButtonDisabledWearsPanelBg(t *testing.T) {
-	out := renderCommitButton(40, "Commit 2 files to main", false)
+	out := renderCommitButton(40, "Commit 2 files to main", false, false)
 	if !strings.Contains(out, bgSGR(theme.Panel)) {
 		t.Fatalf("disabled button should wear Panel bg: %q", out)
 	}
-	enabled := renderCommitButton(40, "Commit 2 files to main", true)
+	enabled := renderCommitButton(40, "Commit 2 files to main", true, false)
 	if !strings.Contains(enabled, bgSGR(theme.Pink)) {
 		t.Fatalf("enabled button should wear Pink bg: %q", enabled)
+	}
+}
+
+// TestRenderCommitButtonHoverBrightensOnlyWhenPressable pins item 1: a
+// pressable (canCommit) hovered button brightens to PinkSoft, but a
+// disabled button hovered must NOT brighten -- hover always means "this
+// will do something", and geometry (row count, per-row width) must not
+// shift between the hovered and rest states.
+func TestRenderCommitButtonHoverBrightensOnlyWhenPressable(t *testing.T) {
+	const width = 40
+	rest := renderCommitButton(width, "Commit 2 files to main", true, false)
+	hovered := renderCommitButton(width, "Commit 2 files to main", true, true)
+	if strings.Contains(rest, bgSGR(theme.PinkSoft)) {
+		t.Fatalf("un-hovered enabled button must not wear PinkSoft: %q", rest)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.PinkSoft)) {
+		t.Fatalf("hovered enabled button should brighten to PinkSoft: %q", hovered)
+	}
+
+	disabledHovered := renderCommitButton(width, "Commit 2 files to main", false, true)
+	if strings.Contains(disabledHovered, bgSGR(theme.PinkSoft)) {
+		t.Fatalf("a disabled button must never hover-brighten: %q", disabledHovered)
+	}
+	if !strings.Contains(disabledHovered, bgSGR(theme.Panel)) {
+		t.Fatalf("a disabled button hovered should still wear Panel bg: %q", disabledHovered)
+	}
+
+	restLines := strings.Split(rest, "\n")
+	hoveredLines := strings.Split(hovered, "\n")
+	if len(restLines) != len(hoveredLines) {
+		t.Fatalf("hover must not change the button's row count: rest=%d hovered=%d", len(restLines), len(hoveredLines))
+	}
+	for i := range restLines {
+		rw := lipgloss.Width(ansi.Strip(restLines[i]))
+		hw := lipgloss.Width(ansi.Strip(hoveredLines[i]))
+		if rw != hw || rw != width {
+			t.Fatalf("row %d width must stay %d in both states, got rest=%d hovered=%d", i, width, rw, hw)
+		}
+	}
+}
+
+// TestRenderFilterRowHoverBrightensBorderLikeFocus pins item 3: hovering the
+// filter box brightens its border to Pink, the exact same treatment focus
+// already uses -- and hover must not change the box's rendered width.
+func TestRenderFilterRowHoverBrightensBorderLikeFocus(t *testing.T) {
+	rest := renderFilterRow("", false, false, sidebarWidth)
+	hovered := renderFilterRow("", false, true, sidebarWidth)
+	focused := renderFilterRow("", true, false, sidebarWidth)
+
+	if strings.Contains(rest, fgSGR(theme.Pink)) {
+		t.Fatalf("un-hovered, un-focused filter row must not wear a Pink border: %q", rest)
+	}
+	if !strings.Contains(hovered, fgSGR(theme.Pink)) {
+		t.Fatalf("hovered filter row should brighten its border to Pink: %q", hovered)
+	}
+	if lipgloss.Width(ansi.Strip(hovered)) != lipgloss.Width(ansi.Strip(focused)) {
+		t.Fatalf("hovered and focused filter rows should have identical widths")
+	}
+	if lipgloss.Width(ansi.Strip(rest)) != lipgloss.Width(ansi.Strip(hovered)) {
+		t.Fatalf("hover must not change the filter row's rendered width: rest=%d hovered=%d",
+			lipgloss.Width(ansi.Strip(rest)), lipgloss.Width(ansi.Strip(hovered)))
+	}
+}
+
+// TestRenderCommitSummaryDescriptionHoverIsDistinctFromFocus pins items 4/5
+// and the owner's explicit nuance: a hovered summary/description box must
+// NOT wear the filter box's own Pink focus color (that would read as
+// already focused) -- it gets GutterHoverBar, the same dimmer-than-Pink
+// tone the diff gutter's own hover preview already uses -- and hover must
+// not change either box's geometry.
+func TestRenderCommitSummaryDescriptionHoverIsDistinctFromFocus(t *testing.T) {
+	restBox := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false, false, false, false)
+	summaryHover := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false, false, true, false)
+	descriptionHover := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false, false, false, true)
+
+	if strings.Contains(restBox, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("rest-state commit box must not wear GutterHoverBar: %q", restBox)
+	}
+	if !strings.Contains(summaryHover, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("hovered summary box should wear GutterHoverBar on its border: %q", summaryHover)
+	}
+	if strings.Contains(summaryHover, fgSGR(theme.Pink)) {
+		t.Fatalf("hovered summary box must NOT wear the focus Pink border (would read as focused): %q", summaryHover)
+	}
+	if !strings.Contains(descriptionHover, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("hovered description box should wear GutterHoverBar on its border: %q", descriptionHover)
+	}
+	if strings.Contains(descriptionHover, fgSGR(theme.Pink)) {
+		t.Fatalf("hovered description box must NOT wear the focus Pink border (would read as focused): %q", descriptionHover)
+	}
+
+	restLines := strings.Split(restBox, "\n")
+	summaryLines := strings.Split(summaryHover, "\n")
+	descriptionLines := strings.Split(descriptionHover, "\n")
+	if len(restLines) != len(summaryLines) || len(restLines) != len(descriptionLines) {
+		t.Fatalf("hover must not change the commit box's row count: rest=%d summary=%d description=%d",
+			len(restLines), len(summaryLines), len(descriptionLines))
+	}
+	for i := range restLines {
+		want := lipgloss.Width(ansi.Strip(restLines[i]))
+		if got := lipgloss.Width(ansi.Strip(summaryLines[i])); got != want {
+			t.Fatalf("row %d width changed under summary hover: want %d got %d", i, want, got)
+		}
+		if got := lipgloss.Width(ansi.Strip(descriptionLines[i])); got != want {
+			t.Fatalf("row %d width changed under description hover: want %d got %d", i, want, got)
+		}
+	}
+}
+
+// TestRenderStashStripHoverPaintsHoverBg pins item 6: hovering the stash
+// strip swaps its whole rest-state BgSubtle fill for HoverBg, without
+// changing its rendered width.
+func TestRenderStashStripHoverPaintsHoverBg(t *testing.T) {
+	rest := renderStashStrip(2, false, sidebarWidth)
+	hovered := renderStashStrip(2, true, sidebarWidth)
+	if strings.Contains(rest, bgSGR(theme.HoverBg)) {
+		t.Fatalf("un-hovered stash strip must not wear HoverBg: %q", rest)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered stash strip should wear HoverBg: %q", hovered)
+	}
+	if lipgloss.Width(ansi.Strip(rest)) != lipgloss.Width(ansi.Strip(hovered)) {
+		t.Fatalf("hover must not change the stash strip's rendered width")
+	}
+}
+
+// TestRenderUndoStripHoverPaintsChipOnlyNotWholeLine pins item 7: hovering
+// the undo chip brightens only the chip's own Panel fill to HoverBg -- the
+// WarnBg line it sits on must be untouched -- and the chip's own width
+// (hence the strip's) must not move.
+func TestRenderUndoStripHoverPaintsChipOnlyNotWholeLine(t *testing.T) {
+	lc := LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true}
+	rest := renderUndoStrip(lc, false, sidebarWidth)
+	hovered := renderUndoStrip(lc, true, sidebarWidth)
+
+	if strings.Contains(rest, bgSGR(theme.HoverBg)) {
+		t.Fatalf("un-hovered undo strip must not wear HoverBg anywhere: %q", rest)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered undo strip should wear HoverBg on its chip: %q", hovered)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.WarnBg)) {
+		t.Fatalf("hovering the chip must not remove the strip's own WarnBg line: %q", hovered)
+	}
+	if lipgloss.Width(ansi.Strip(rest)) != lipgloss.Width(ansi.Strip(hovered)) {
+		t.Fatalf("hover must not change the undo strip's rendered width")
 	}
 }
 
@@ -299,7 +445,7 @@ func TestRenderCommitButtonDisabledWearsPanelBg(t *testing.T) {
 // treatment, amending or not), while a non-amending box keeps the wire label.
 func TestRenderCommitBoxAmendingOverridesButtonLabel(t *testing.T) {
 	const wireLabel = "Commit 2 files to main"
-	amending := renderCommitBox(sidebarWidth, "", "", true, wireLabel, false)
+	amending := renderCommitBox(sidebarWidth, "", "", true, wireLabel, false, false, false, false)
 	amendingPlain := ansi.Strip(amending)
 	if !strings.Contains(amendingPlain, "Amend last commit") {
 		t.Fatalf("amending commit box should show \"Amend last commit\":\n%s", amendingPlain)
@@ -311,7 +457,7 @@ func TestRenderCommitBoxAmendingOverridesButtonLabel(t *testing.T) {
 		t.Fatalf("amending with CanCommit false should still wear Panel (disabled): %q", amending)
 	}
 
-	notAmending := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, wireLabel, true))
+	notAmending := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, wireLabel, true, false, false, false))
 	if !strings.Contains(notAmending, wireLabel) {
 		t.Fatalf("non-amending commit box should keep the wire label:\n%s", notAmending)
 	}
@@ -321,7 +467,7 @@ func TestRenderCommitBoxAmendingOverridesButtonLabel(t *testing.T) {
 }
 
 func TestRenderUndoStripAppearsWithFixtureModel(t *testing.T) {
-	out := renderUndoStrip(LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true}, sidebarWidth)
+	out := renderUndoStrip(LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true}, false, sidebarWidth)
 	for _, want := range []string{"Committed 2 minutes ago", "fix parser", "Undo"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("undo strip missing %q:\n%s", want, out)
@@ -335,7 +481,7 @@ func TestRenderUndoStripAppearsWithFixtureModel(t *testing.T) {
 // line past sidebarWidth, or it drags the whole sidebar block wider with it.
 func TestRenderUndoStripClipsLongSummaryToSidebarWidth(t *testing.T) {
 	longSummary := strings.Repeat("a very long commit summary that keeps going ", 5)
-	out := renderUndoStrip(LastCommit{Summary: longSummary, When: "2 minutes ago", Undoable: true}, sidebarWidth)
+	out := renderUndoStrip(LastCommit{Summary: longSummary, When: "2 minutes ago", Undoable: true}, false, sidebarWidth)
 	for _, line := range strings.Split(out, "\n") {
 		if w := lipgloss.Width(line); w != sidebarWidth {
 			t.Fatalf("undo strip row width = %d, want sidebarWidth %d:\n%s", w, sidebarWidth, out)
@@ -1732,6 +1878,92 @@ func TestMouseMotionOverFileRowSetsHoverNotCursor(t *testing.T) {
 	}
 }
 
+// hoverFixtureMission builds a Mission whose model exercises all seven newly
+// hoverable regions at once (a nonzero StashCount, a pressable commit
+// button, and an undoable last commit) so one test can visit every one of
+// them off a single fixture.
+func hoverFixtureMission() *Mission {
+	m := New(nil)
+	m.width, m.height = 100, 40
+	m.model = Model{
+		Current:      Current{Repo: "repo-tools", Branch: "main"},
+		Changes:      []ChangeRow{{Path: "a.go", Status: "modified", Include: "all"}},
+		ChangedTotal: 1,
+		StagedTotal:  1,
+		StashCount:   2,
+		Commit: CommitModel{
+			ButtonLabel: "Commit 1 file to main",
+			CanCommit:   true,
+			LastCommit:  &LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true},
+		},
+	}
+	m.summaryInput.SetValue("msg")
+	m.selected = "a.go"
+	return m
+}
+
+// findHitY scans the frame's Y range at column x for the first row hitTest
+// resolves to kind -- the same "trust hitTest, don't re-derive its row
+// arithmetic" approach commitButtonY's own callers already take, reused here
+// for regions this test does not otherwise need a named helper for.
+func findHitY(m *Mission, x int, kind hitKind) (int, bool) {
+	for y := 0; y < m.height; y++ {
+		if m.hitTest(x, y).kind == kind {
+			return y, true
+		}
+	}
+	return 0, false
+}
+
+// TestMouseMotionWiresAndClearsNewHoverFields is the regression case the
+// brief calls out by name: each of the seven newly hoverable regions must
+// set its own hover field while the pointer sits over it, and moving the
+// pointer away to a coordinate none of them own must clear ALL seven, not
+// just the one that had been set -- a field that fails to clear leaves a
+// stuck highlight, the main failure mode a per-field bool is prone to.
+func TestMouseMotionWiresAndClearsNewHoverFields(t *testing.T) {
+	m := hoverFixtureMission()
+
+	cases := []struct {
+		name string
+		kind hitKind
+		x    int
+		get  func(*Mission) bool
+	}{
+		{"commit button", hitCommitButton, 20, func(m *Mission) bool { return m.hoverCommitButton }},
+		{"tab history", hitTabHistory, sidebarWidth - 1, func(m *Mission) bool { return m.hoverTabHistory }},
+		{"filter row", hitFilterRow, 5, func(m *Mission) bool { return m.hoverFilterRow }},
+		{"commit summary", hitCommitSummary, 20, func(m *Mission) bool { return m.hoverCommitSummary }},
+		{"commit description", hitCommitDescription, 20, func(m *Mission) bool { return m.hoverCommitDescription }},
+		{"stash", hitStash, 5, func(m *Mission) bool { return m.hoverStash }},
+		{"undo chip", hitUndoChip, 20, func(m *Mission) bool { return m.hoverUndoChip }},
+	}
+
+	for _, tc := range cases {
+		y, ok := findHitY(m, tc.x, tc.kind)
+		if !ok {
+			t.Fatalf("%s: setup: no row at x=%d resolves to %v in this fixture", tc.name, tc.x, tc.kind)
+		}
+		next, _ := m.Update(tea.MouseMotionMsg{X: tc.x, Y: y})
+		m = next.(*Mission)
+		if !tc.get(m) {
+			t.Fatalf("%s: hovering its own hit region should set its hover field", tc.name)
+		}
+
+		// (0,0) sits in the top bar's repo segment, a region none of the
+		// seven fields track -- moving there must clear every one of them.
+		next, _ = m.Update(tea.MouseMotionMsg{X: 0, Y: 0})
+		m = next.(*Mission)
+		if tc.get(m) {
+			t.Fatalf("%s: hover field should clear once the pointer leaves its region", tc.name)
+		}
+		if m.hoverCommitButton || m.hoverTabHistory || m.hoverFilterRow || m.hoverCommitSummary ||
+			m.hoverCommitDescription || m.hoverStash || m.hoverUndoChip {
+			t.Fatalf("%s: some hover field stayed stuck after the pointer moved away: %+v", tc.name, m)
+		}
+	}
+}
+
 // TestMouseWheelOverDiffScrollsIt is the brief's own Step 1 example: a wheel
 // tick with the pointer over the diff pane moves the diff line cursor
 // (there being no scroll offset independent of the cursor -- see
@@ -2016,7 +2248,7 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 // half, spanning the full width between them.
 func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 	const width = 46
-	out := renderTabsRow(3, width)
+	out := renderTabsRow(3, false, width)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 2 {
 		t.Fatalf("tabs row should render exactly 2 rows, got %d:\n%s", len(lines), out)
@@ -2047,7 +2279,7 @@ func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 // right half.
 func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	const width = 46
-	out := renderTabsRow(3, width)
+	out := renderTabsRow(3, false, width)
 	top := ansi.Strip(strings.Split(out, "\n")[0])
 	half := width / 2
 	left, right := top[:half], top[half:]
@@ -2061,6 +2293,55 @@ func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	}
 	if !strings.Contains(right, "History") {
 		t.Fatalf("right half should contain the History label: %q", right)
+	}
+}
+
+// TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly pins item 2: hovering the
+// History tab paints HoverBg behind its own half of the LABEL row only --
+// the Changes half and the underline's Pink/Rule split are both untouched,
+// and the half widths (hence the row's overall width) never move.
+func TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly(t *testing.T) {
+	const width = 46
+	half := width / 2
+	rest := renderTabsRow(3, false, width)
+	hovered := renderTabsRow(3, true, width)
+
+	restLines := strings.Split(rest, "\n")
+	hoveredLines := strings.Split(hovered, "\n")
+	if len(restLines) != 2 || len(hoveredLines) != 2 {
+		t.Fatalf("tabs row should stay exactly 2 rows in both states: rest=%d hovered=%d", len(restLines), len(hoveredLines))
+	}
+
+	hoveredTop := hoveredLines[0]
+	restTop := restLines[0]
+	if strings.Contains(restTop, bgSGR(theme.HoverBg)) {
+		t.Fatalf("un-hovered tabs row must not wear HoverBg: %q", restTop)
+	}
+	if !strings.Contains(hoveredTop, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovering History should paint HoverBg somewhere in the label row: %q", hoveredTop)
+	}
+
+	// The Changes label sits in the left half of the label row; splitting on
+	// display width (not byte index, since it carries ANSI codes) isolates
+	// it from the History half so a HoverBg leak into the active tab is
+	// caught, not just HoverBg's presence somewhere in the row.
+	leftPlain := ansi.Strip(hoveredTop)[:half]
+	if strings.Contains(leftPlain, "History") {
+		t.Fatalf("setup: left-half slice should not contain History: %q", leftPlain)
+	}
+
+	// The underline (row 1) must keep its exact Pink/Rule split regardless
+	// of hover.
+	if hoveredLines[1] != restLines[1] {
+		t.Fatalf("hover must not alter the underline row:\nrest   =%q\nhovered=%q", restLines[1], hoveredLines[1])
+	}
+
+	for i := range restLines {
+		rw := lipgloss.Width(ansi.Strip(restLines[i]))
+		hw := lipgloss.Width(ansi.Strip(hoveredLines[i]))
+		if rw != hw || rw != width {
+			t.Fatalf("row %d width must stay %d in both states, got rest=%d hovered=%d", i, width, rw, hw)
+		}
 	}
 }
 
@@ -2161,7 +2442,7 @@ func TestRenderCommitButtonThreeRowsHalfBlockCaps(t *testing.T) {
 		{"disabled", false, theme.Panel, theme.Dimmer},
 	}
 	for _, tc := range cases {
-		out := renderCommitButton(width, label, tc.canCommit)
+		out := renderCommitButton(width, label, tc.canCommit, false)
 		lines := strings.Split(out, "\n")
 		if len(lines) != 3 {
 			t.Fatalf("%s: button should render exactly 3 rows, got %d:\n%s", tc.name, len(lines), out)
@@ -2212,7 +2493,7 @@ func TestRenderCommitButtonThreeRowsHalfBlockCaps(t *testing.T) {
 func TestRenderCommitButtonClipsLongLabelToOneRow(t *testing.T) {
 	const width = 40
 	long := "Commit 3 files to a-very-long-feature-branch-name-that-would-otherwise-wrap"
-	out := renderCommitButton(width, long, true)
+	out := renderCommitButton(width, long, true, false)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 3 {
 		t.Fatalf("commit button must render exactly 3 rows even with a long label, got %d:\n%s", len(lines), out)
@@ -2282,7 +2563,7 @@ func TestCommitButtonNeverWrapsKeepsUndoChipRowAligned(t *testing.T) {
 // blank Bg row separates the description box from the button (the board's
 // 8px gap), unlike the flush summary/description seam.
 func TestRenderCommitBoxHasGapBeforeButton(t *testing.T) {
-	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false))
+	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false, false, false, false))
 	lines := strings.Split(out, "\n")
 	// row0 = box top pad, row1-3 = summary box, row4-7 = description box,
 	// row8 = the new gap, row9-11 = the button's own 3 rows (top half-block
@@ -2309,7 +2590,7 @@ func TestRenderCommitBoxHasGapBeforeButton(t *testing.T) {
 // box's own top padding (board pad=12) is one blank Bg row immediately
 // before the summary box's own top border.
 func TestRenderCommitBoxHasBlankBandBeforeSummaryBox(t *testing.T) {
-	out := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false)
+	out := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false, false, false, false)
 	lines := strings.Split(out, "\n")
 	if strings.TrimSpace(ansi.Strip(lines[0])) != "" {
 		t.Fatalf("the commit box's own top-padding row should be blank: %q", lines[0])
@@ -2327,7 +2608,7 @@ func TestRenderCommitBoxHasBlankBandBeforeSummaryBox(t *testing.T) {
 // banner still leads, but the blank pad row -- and everything after it --
 // keeps its own fixed position relative to the summary box.
 func TestRenderCommitBoxAmendingBannerThenBlankThenSummaryBox(t *testing.T) {
-	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", true, "Commit 2 files to main", false))
+	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", true, "Commit 2 files to main", false, false, false, false))
 	lines := strings.Split(out, "\n")
 	if !strings.Contains(lines[0], "Amending last commit") {
 		t.Fatalf("row 0 should be the amend banner: %q", lines[0])
