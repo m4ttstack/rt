@@ -14,6 +14,7 @@ import { daemonQuery, subscribeToDaemon } from "../lib/daemon-client.ts";
 import { buildWorktreeGuardMap, checkBranchGuard } from "../lib/branch-guard.ts";
 import { commitStaged, amendStaged } from "../lib/commit-ops.ts";
 import { getPullRebase, getRemoteDefaultBranch } from "../lib/git-ops.ts";
+import { listWorktreesAsync } from "../lib/worktree/git-async.ts";
 
 export async function glitterCommand(_args: string[], ctx: CommandContext): Promise<void> {
   if (!interactive()) {
@@ -41,6 +42,7 @@ export async function glitterCommand(_args: string[], ctx: CommandContext): Prom
     resolveDefaultBranch: getRemoteDefaultBranch,
     readPullRebase: getPullRebase,
     buildGuards: buildWorktreeGuardMap,
+    listGitWorktrees: listWorktreesAsync,
   };
 
   const driver = new MissionDriver(deps, {

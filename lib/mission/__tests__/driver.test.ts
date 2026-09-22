@@ -11,6 +11,7 @@ import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packag
 import type { GitWorktreeBadge } from "../../../packages/rt-client/src/commands.ts";
 import type { BranchGuardVerdict } from "../../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription } from "../../daemon-client.ts";
+import type { WorktreeEntry } from "../../worktree/git-async.ts";
 import type { SessionIntent } from "../../ui/protocol.ts";
 import type { SessionEnd, SessionHandle } from "../../ui/spawn.ts";
 import { SessionDied } from "../../runner/runner.ts";
@@ -270,6 +271,7 @@ function baseDeps(over: {
   resolveDefaultBranch?: MissionDeps["resolveDefaultBranch"];
   readPullRebase?: MissionDeps["readPullRebase"];
   buildGuards?: MissionDeps["buildGuards"];
+  listGitWorktrees?: MissionDeps["listGitWorktrees"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -295,6 +297,12 @@ function baseDeps(over: {
     resolveDefaultBranch: over.resolveDefaultBranch ?? (() => null),
     readPullRebase: over.readPullRebase ?? (() => false),
     buildGuards: over.buildGuards ?? (async () => new Map()),
+    // START's worktree is never a real git checkout in this file's tests
+    // either, so the real listWorktreesAsync would just fail; null is also
+    // exactly what "git failed" looks like, exercising the degrade-to-registry
+    // path by default rather than a happy path every other test would have to
+    // opt out of.
+    listGitWorktrees: over.listGitWorktrees ?? (async () => null),
   };
 }
 
@@ -1112,6 +1120,138 @@ describe("MissionDriver: worktree", () => {
     expect(row?.name).toBe("frodo");
     expect(row?.onDeck).toBe(true);
     expect(row?.badge.ahead).toBe(4);
+  });
+});
+
+// Owner-found real-repo defect: a worktree made via plain `git worktree add`
+// (GitHub Desktop, or by hand) never touches rt's registry, so worktree:list
+// alone missed it -- even the tree the user was currently standing in, while
+// `git worktree list` on the same repo saw it fine. These cover the union.
+describe("MissionDriver: worktree list unions git truth with the registry", () => {
+  function gitEntry(path: string, branch: string | null = "main"): WorktreeEntry {
+    return { path, branch, headSha: "deadbeef", isBare: false };
+  }
+
+  test("a repo whose registry is empty but whose git worktree list has entries shows those entries", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: [] } } : { ok: true, data: { repos: [] } },
+      listGitWorktrees: async () => [gitEntry("/repo"), gitEntry("/repo2", "feature")],
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.worktrees.map((w) => w.path).sort()).toEqual(["/repo", "/repo2"]);
+  });
+
+  test("the canonical checkout appears even when the registry knows nothing about the repo", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: [] } } : { ok: true, data: { repos: [] } },
+      listGitWorktrees: async () => [gitEntry(START.worktree)],
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.worktrees.some((w) => w.path === START.worktree)).toBe(true);
+  });
+
+  test("where both sources have the same path, the registry's name and on-deck state win", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: [{ path: "/repo", name: "gandalf", branch: "main", state: "on-deck" }] } }
+          : { ok: true, data: { repos: [] } },
+      listGitWorktrees: async () => [gitEntry("/repo")],
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    const row = opened!.worktrees.find((w) => w.path === "/repo");
+    expect(row?.name).toBe("gandalf");
+    expect(row?.onDeck).toBe(true);
+  });
+
+  test("a git-only row gets a usable name and does not claim to be on-deck", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: [] } } : { ok: true, data: { repos: [] } },
+      listGitWorktrees: async () => [gitEntry(START.worktree), gitEntry("/trees/frodo", "feature-x")],
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    const row = opened!.worktrees.find((w) => w.path === "/trees/frodo");
+    expect(row?.name).toBe("frodo");
+    expect(row?.branch).toBe("feature-x");
+    expect(row?.onDeck).toBe(false);
+  });
+
+  test("listWorktreesAsync returning null leaves the registry rows intact rather than emptying the list", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge()] }] } },
+      listGitWorktrees: async () => null,
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.worktrees.map((w) => w.path)).toEqual(["/repo"]);
+  });
+
+  test("switching to a git-only worktree works", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { path: "/trees/frodo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: [] } } : { ok: true, data: { repos: [] } },
+      listGitWorktrees: async () => [gitEntry(START.worktree), gitEntry("/trees/frodo", "feature-x")],
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/frodo");
   });
 });
 
