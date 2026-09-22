@@ -10,6 +10,7 @@ import { existsSync, statfsSync, statSync } from "fs";
 import { dirname, resolve } from "path";
 import {
   findByPath,
+  isRtOwnedBranch,
   loadRegistry,
   type TreeRecord,
 } from "../../worktree/registry.ts";
@@ -204,8 +205,12 @@ export async function replenishAndShrink(
   if (onDeck <= 0) {
     const golden = findGolden(loadRegistry(repoName));
     if (golden) {
+      // The branch goes with it: a left-behind rt/golden makes the next
+      // golden's `git worktree add -b` fail for as long as it exists.
       const result = await withCreateLock(repoPath, () =>
-        withTreeLock(golden.path, () => scrapTree({ repoName, repoPath, emit, log }, golden)),
+        withTreeLock(golden.path, () =>
+          scrapTree({ repoName, repoPath, emit, log }, golden, { deleteBranch: isRtOwnedBranch(golden.branch) }),
+        ),
       );
       if (result !== "busy") {
         log.info({ repo: repoName }, "replenish: onDeck is 0; scrapped the golden");

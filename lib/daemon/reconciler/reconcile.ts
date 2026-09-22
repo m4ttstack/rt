@@ -9,6 +9,7 @@ import { existsSync } from "fs";
 import type { Logger } from "pino";
 import { canon } from "../../fs-canon.ts";
 import {
+  isRtOwnedBranch,
   loadRegistry,
   registryEpoch,
   saveRegistry,
@@ -229,7 +230,9 @@ async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<Pass
   for (const rec of trees) {
     if (appConfig.enabled && rec.state === "creating" && !isTreeLocked(rec.path)) {
       log.info({ repo: repoName, tree: rec.name, path: rec.path }, "reconcile: scrapping orphaned creating tree");
-      await scrapTree(createDeps, rec);
+      // Nothing here witnessed the create, so a row parked on some other ref
+      // (a crash before the branch was made, a hand-moved tree) keeps it.
+      await scrapTree(createDeps, rec, { deleteBranch: isRtOwnedBranch(rec.branch) });
       scrapped = true;
       continue;
     }

@@ -4,7 +4,21 @@ import { deleteKvValue, getKvValue, hasKvValue, importLegacyJsonFile, listKvValu
 
 export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
 export const GOLDEN_NAME = "golden";
-export const GOLDEN_BRANCH = "golden";
+/**
+ * Namespaced, not a bare `golden`: a top-level name can collide with a branch
+ * the user already has, and every path that gets rid of a half-built tree
+ * deletes the branch it believes it owns.
+ */
+export const GOLDEN_BRANCH = "rt/golden";
+
+/**
+ * Whether `branch` sits in a namespace rt creates and therefore may delete.
+ * A tolerant cleanup path (scrapTree) has no other way to tell a ref it made
+ * from one the user made at the same name.
+ */
+export function isRtOwnedBranch(branch: string | null | undefined): boolean {
+  return typeof branch === "string" && (branch.startsWith("on-deck/") || branch === GOLDEN_BRANCH);
+}
 export type TreeState = "creating" | "on-deck" | "claimed" | "disposable";
 export type DisposalMode = "merge" | "job";
 

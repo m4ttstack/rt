@@ -18,7 +18,7 @@ import { closeStateDb, getStateDb } from "../../state/index.ts";
 import { setKvValueCritical } from "../../state/kv-blob.ts";
 import {
   loadRegistry, saveRegistry, registryEpoch, mergeRegistries,
-  GOLDEN_NAME, GOLDEN_BRANCH, type TreeRecord, type TreeKind,
+  GOLDEN_NAME, GOLDEN_BRANCH, isRtOwnedBranch, type TreeRecord,
 } from "../registry.ts";
 import { tryLockTree } from "../locks.ts";
 import { reconcileRepoRegistry } from "../../daemon/worktree-reconciler.ts";
@@ -229,11 +229,16 @@ describe("reconcile and an in-flight create's registry flip", () => {
 });
 
 describe("golden kind", () => {
-  test("golden is a TreeKind and has fixed name/branch", () => {
-    const k: TreeKind = "golden";
-    expect(k).toBe("golden");
+  test("the golden's branch is namespaced, so a user's own branch at that name is not rt's to delete", () => {
     expect(GOLDEN_NAME).toBe("golden");
-    expect(GOLDEN_BRANCH).toBe("golden");
+    expect(GOLDEN_BRANCH).toBe("rt/golden");
+    expect(GOLDEN_BRANCH).toContain("/");
+    expect(isRtOwnedBranch(GOLDEN_BRANCH)).toBe(true);
+    expect(isRtOwnedBranch("on-deck/bellatrix")).toBe(true);
+    // The bare name the golden used to take, and anything else a human picks.
+    expect(isRtOwnedBranch(GOLDEN_NAME)).toBe(false);
+    expect(isRtOwnedBranch("main")).toBe(false);
+    expect(isRtOwnedBranch(null)).toBe(false);
   });
 
   test("a golden record beats a newer unmanaged challenger for the same path", () => {

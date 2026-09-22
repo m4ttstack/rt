@@ -6,7 +6,7 @@ import { join } from "path";
 import { goldenRoot, machineSettingsPath, teamSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
-import { loadRegistry, saveRegistry, type TreeRecord } from "../registry.ts";
+import { GOLDEN_BRANCH, loadRegistry, saveRegistry, type TreeRecord } from "../registry.ts";
 import { branchExistsLocalAsync, listWorktreesAsync } from "../git-async.ts";
 import { createTree, scrapTree, type CreateDeps } from "../create.ts";
 import { loadDopplerConfig } from "../../doppler-config.ts";
@@ -202,14 +202,29 @@ describe("createTree", () => {
 
     expect(result.tree.kind).toBe("golden");
     expect(result.tree.name).toBe("golden");
-    expect(result.tree.branch).toBe("golden");
+    expect(result.tree.branch).toBe(GOLDEN_BRANCH);
     expect(result.tree.state).toBe("on-deck");
     expect(result.tree.readyStamp).toBe(expectedSha);
     expect(result.tree.path).toBe(goldenRoot(repoName));
     expect(result.tree.path.startsWith(join(repo, ".worktrees"))).toBe(false);
 
     const worktrees = (await listWorktreesAsync(repo))!;
-    expect(worktrees.find((w) => w.path === result.tree.path)?.branch).toBe("golden");
+    expect(worktrees.find((w) => w.path === result.tree.path)?.branch).toBe(GOLDEN_BRANCH);
+  });
+
+  test("a golden create that collides with an existing branch at that name leaves the branch alone", async () => {
+    // The user's ref, sitting where the golden wants to be. `git worktree add
+    // -b` refuses, and the scrap that follows must not take the ref with it.
+    execSync(`git -C ${repo} branch ${GOLDEN_BRANCH}`, { shell: "/bin/zsh" });
+    const before = execSync(`git -C ${repo} rev-parse ${GOLDEN_BRANCH}`, { encoding: "utf8", shell: "/bin/zsh" }).trim();
+
+    const result = await createTree({ ...makeDeps(repoName, repo, events), target: "golden" });
+
+    expect(result.ok).toBe(false);
+    expect(await branchExistsLocalAsync(repo, GOLDEN_BRANCH)).toBe(true);
+    const after = execSync(`git -C ${repo} rev-parse ${GOLDEN_BRANCH}`, { encoding: "utf8", shell: "/bin/zsh" }).trim();
+    expect(after).toBe(before);
+    expect(loadRegistry(repoName).length).toBe(0);
   });
 });
 

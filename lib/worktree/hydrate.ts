@@ -98,22 +98,27 @@ async function runHydrate(
     return { ok: false, error: "create-failed", failedStep: "registry-write", output: "" };
   }
 
+  // Only a branch this attempt's own `git worktree add -b` brought into being
+  // may be deleted on the way out.
+  let branchCreated = false;
+
   const fail = async (failedStep: string, output: string): Promise<HydrateResult> => {
     log.warn(
       { repo: repoName, tree: name, failedStep, output: outputTail(output, MAX_LOGGED_OUTPUT) },
       "worktree hydrate failed",
     );
-    await scrapTree(deps, rec);
+    await scrapTree(deps, rec, { deleteBranch: branchCreated });
     return { ok: false, error: "create-failed", failedStep, output };
   };
   const unavailable = async (detail: string): Promise<HydrateResult> => {
     log.warn({ repo: repoName, tree: name, detail }, "worktree hydrate unavailable; caller falls back to cold create");
-    await scrapTree(deps, rec);
+    await scrapTree(deps, rec, { deleteBranch: branchCreated });
     return { ok: false, error: "hydrate-unavailable", detail };
   };
 
   const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, readyStamp], { timeoutMs: ADD_TIMEOUT_MS });
   if (add.exitCode !== 0) return fail(`git worktree add -b ${branch} ${path} ${readyStamp}`, add.stdout + add.stderr);
+  branchCreated = true;
 
   const gitEntries = await listWorktreesAsync(repoPath);
   if (gitEntries !== null) {
