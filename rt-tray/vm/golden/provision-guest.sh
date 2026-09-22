@@ -66,6 +66,16 @@ sudo systemsetup -setcomputersleep Off >/dev/null 2>&1 || true
 sudo defaults write /Library/Preferences/com.apple.screensaver loginWindowIdleTime 0
 sudo -u "$TESTER" defaults -currentHost write com.apple.screensaver idleTime 0
 sudo -u "$TESTER" defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+# Setup Assistant greets any newly created user on first login (Apple Account
+# sign-in, the licence text) and sits over the desktop taking frontmost. It
+# was never suppressed here, so it turned up in a clean-room run's window
+# dumps and had to be clicked through by hand.
+for k in DidSeeCloudSetup DidSeeSiriSetup DidSeePrivacy DidSeeAppearanceSetup \
+         DidSeeAccessibility DidSeeActivationLock DidSeeSyncSetup2; do
+  sudo -u "$TESTER" defaults write com.apple.SetupAssistant "$k" -bool true || true
+done
+sudo -u "$TESTER" defaults write com.apple.SetupAssistant LastSeenCloudProductVersion -string "$(sw_vers -productVersion)" || true
+sudo -u "$TESTER" defaults write com.apple.SetupAssistant LastSeenBuddyBuildVersion -string "$(sw_vers -buildVersion)" || true
 # screenLock off must run in the user's session; done post-login by build-golden via ssh-as-tester.
 
 # 6. Marker.

@@ -233,6 +233,28 @@ vm_dialog_verdict() {
   printf none
 }
 
+# A freshly created user meets Setup Assistant on first login: Apple Account
+# sign-in, the licence text, the rest. It sits over the desktop, takes
+# frontmost, and appears in every window dump, so a run that probes for
+# dialogs reads it as noise at best and clicks into it at worst.
+#
+# Suppressed per-run rather than only in provisioning, because provisioning's
+# version only reaches goldens built after it, and a golden is rebuilt about
+# as often as never. Best effort throughout: a guest that never showed it is
+# the normal case, and none of this is worth failing a run over.
+vm_dismiss_setup_assistant() {
+  local vm="$1" u="${2:-$VM_TESTER_USER}"
+  vm_ssh_try "$u" "$vm" '
+    for k in DidSeeCloudSetup DidSeeSiriSetup DidSeePrivacy DidSeeAppearanceSetup \
+             DidSeeAccessibility DidSeeActivationLock DidSeeSyncSetup2; do
+      defaults write com.apple.SetupAssistant "$k" -bool true 2>/dev/null
+    done
+    defaults write com.apple.SetupAssistant LastSeenCloudProductVersion -string "$(sw_vers -productVersion)" 2>/dev/null
+    defaults write com.apple.SetupAssistant LastSeenBuddyBuildVersion -string "$(sw_vers -buildVersion)" 2>/dev/null
+    killall "Setup Assistant" 2>/dev/null
+    true' >/dev/null 2>&1 || true
+}
+
 vm_wait_ssh() {
   local user="$1" vm="$2" timeout="${3:-300}" start; start=$(date +%s)
   while :; do

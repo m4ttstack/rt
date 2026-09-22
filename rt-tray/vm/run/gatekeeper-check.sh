@@ -159,6 +159,7 @@ TRUSTED=1; vm_trust_key "$RUN_VM" || TRUSTED=0
 vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 300 \
   && vm_phase_end boot pass \
   || { vm_phase_end boot fail "guest never answered ssh$([ "$TRUSTED" = 0 ] && echo "; the key re-trust step failed first, so this is auth, not boot")"; exit 1; }
+vm_dismiss_setup_assistant "$RUN_VM"
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/00-booted.png" || true
 
 vm_phase_begin stage
@@ -298,14 +299,31 @@ vm_phase_end install pass "Finder-copied to $DEST_APP, quarantine intact"
 # otherwise still be on screen when the real app is probed.
 vm_phase_begin control
 CTRL_APP="$STAGE/GatekeeperControl.app"
+# A real Mach-O, not a shell script. A script-backed bundle never reaches
+# Gatekeeper at all: LaunchServices finds no native code and asks to install
+# Rosetta instead, so the control failed for a reason that had nothing to do
+# with the probe. Copying a system binary and appending one byte invalidates
+# its signature without needing a compiler or the CLT, neither of which the
+# cleanroom golden has.
 vm_ssh "$VM_TESTER_USER" "$RUN_VM" "
   rm -rf '$CTRL_APP' && mkdir -p '$CTRL_APP/Contents/MacOS'
-  printf '#!/bin/bash\nsleep 120\n' > '$CTRL_APP/Contents/MacOS/GatekeeperControl'
-  chmod +x '$CTRL_APP/Contents/MacOS/GatekeeperControl'
+  cp /bin/sleep '$CTRL_APP/Contents/MacOS/GatekeeperControl'
+  chmod u+w '$CTRL_APP/Contents/MacOS/GatekeeperControl'
+  printf '\\0' >> '$CTRL_APP/Contents/MacOS/GatekeeperControl'
   /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string GatekeeperControl' \
     -c 'Add :CFBundleIdentifier string dev.mattstack.gkcontrol' \
     -c 'Add :CFBundlePackageType string APPL' -c Save '$CTRL_APP/Contents/Info.plist' >/dev/null
   xattr -w com.apple.quarantine '$QUAR_VALUE' '$CTRL_APP'"
+
+# Asserted before launching, so a fixture that Gatekeeper would happily accept
+# is reported as a broken fixture rather than as a blind probe. Those are
+# opposite conclusions and the run must not confuse them.
+if vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "spctl --assess --type execute '$CTRL_APP'" \
+    >>"$VM_RUN_DIR/logs/control.log" 2>&1; then
+  vm_phase_end control fail "the control app was ACCEPTED by spctl, so it is not a valid known-bad fixture and proves nothing about the probe. Fix the fixture in this script, not the probe."
+  exit 1
+fi
+
 vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
   "osascript -e 'tell application \"Finder\" to open POSIX file \"$CTRL_APP\"'" \
   >>"$VM_RUN_DIR/logs/control.log" 2>&1 || true

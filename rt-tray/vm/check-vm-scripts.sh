@@ -87,6 +87,22 @@ t "gatekeeper-check judges dialogs by text, not owner" bash -c \
 # The control has to run before the real launch and has to be able to fail the
 # run, or it is decoration: a probe that cannot produce a refusal makes every
 # clean result meaningless, which is the defect this whole phase answers.
+# A script-backed bundle never reaches Gatekeeper: LaunchServices finds no
+# native code and offers Rosetta instead, so the control failed for a reason
+# unrelated to the probe. And spctl is asked BEFORE the launch so an accepted
+# fixture reports as a broken fixture, not as a blind probe.
+t "gatekeeper-check control app is a real Mach-O" bash -c \
+  '! grep -q "printf .#!/bin/bash" run/gatekeeper-check.sh && grep -qF "cp /bin/sleep" run/gatekeeper-check.sh'
+t "gatekeeper-check asserts the fixture is rejected before launching it" bash -c '
+  ctrl=$(grep -n CTRL_APP run/gatekeeper-check.sh)
+  assess=$(printf "%s\n" "$ctrl" | grep -F "spctl --assess" | head -1 | cut -d: -f1)
+  open=$(printf "%s\n" "$ctrl" | grep -F "open POSIX file" | head -1 | cut -d: -f1)
+  [ -n "$assess" ] && [ -n "$open" ] && [ "$assess" -lt "$open" ] \
+    && grep -qF "not a valid known-bad fixture" run/gatekeeper-check.sh'
+t "setup assistant suppressed per-run and in provisioning" bash -c \
+  'grep -q "^vm_dismiss_setup_assistant()" lib/common.sh \
+   && grep -q "vm_dismiss_setup_assistant" run/gatekeeper-check.sh \
+   && grep -q "DidSeeCloudSetup" golden/provision-guest.sh'
 t "gatekeeper-check proves the probe on a known-bad app first" bash -c '
   ctrl=$(grep -n "vm_phase_begin control" run/gatekeeper-check.sh | cut -d: -f1)
   launch=$(grep -n "vm_phase_begin launch" run/gatekeeper-check.sh | cut -d: -f1)
