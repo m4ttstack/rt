@@ -51,10 +51,11 @@ func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the
 // Faint placeholder while empty. The border brightens to Pink while the
-// filter itself holds focus, mirroring the summary/description boxes below;
-// hover gets the exact same Pink treatment (unlike the summary/description
-// boxes, the filter box has no separate dimmer hover tone to stay distinct
-// from -- hovering it while it also holds focus is simply a no-op repaint).
+// filter itself holds focus; hover gets GutterHoverBar instead (the same
+// dimmer-than-Pink tone the summary/description boxes use), never the
+// focus color itself -- all three sibling boxes share the one rule that a
+// hover reading as already-focused is wrong, focused still wins outright
+// when both are true.
 func renderFilterRow(text string, focused, hovered bool, width int) string {
 	inner := width - 4
 	if inner < 1 {
@@ -73,9 +74,12 @@ func renderFilterRow(text string, focused, hovered bool, width int) string {
 		bodyStyle = on.Foreground(theme.Faint)
 	}
 	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
-	border := theme.Panel
-	if focused || hovered {
+	var border color.Color = theme.Panel
+	switch {
+	case focused:
 		border = theme.Pink
+	case hovered:
+		border = theme.GutterHoverBar
 	}
 	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(on.Width(inner).Render(line))

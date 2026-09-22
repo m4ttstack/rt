@@ -331,26 +331,38 @@ func TestRenderCommitButtonHoverBrightensOnlyWhenPressable(t *testing.T) {
 	}
 }
 
-// TestRenderFilterRowHoverBrightensBorderLikeFocus pins item 3: hovering the
-// filter box brightens its border to Pink, the exact same treatment focus
-// already uses -- and hover must not change the box's rendered width.
-func TestRenderFilterRowHoverBrightensBorderLikeFocus(t *testing.T) {
+// TestRenderFilterRowHoverIsDistinctFromFocus pins item 3, corrected: the
+// filter box is one of three sibling text boxes (with summary and
+// description) that all share the same rule -- a hover reading as
+// already-focused is wrong -- so hover brightens the border to
+// GutterHoverBar, never Pink; focus keeps Pink and wins outright when both
+// are true. Hover must not change the box's rendered width.
+func TestRenderFilterRowHoverIsDistinctFromFocus(t *testing.T) {
 	rest := renderFilterRow("", false, false, sidebarWidth)
 	hovered := renderFilterRow("", false, true, sidebarWidth)
 	focused := renderFilterRow("", true, false, sidebarWidth)
+	focusedAndHovered := renderFilterRow("", true, true, sidebarWidth)
 
-	if strings.Contains(rest, fgSGR(theme.Pink)) {
-		t.Fatalf("un-hovered, un-focused filter row must not wear a Pink border: %q", rest)
+	if strings.Contains(rest, fgSGR(theme.Pink)) || strings.Contains(rest, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("un-hovered, un-focused filter row must not wear either accent border: %q", rest)
 	}
-	if !strings.Contains(hovered, fgSGR(theme.Pink)) {
-		t.Fatalf("hovered filter row should brighten its border to Pink: %q", hovered)
+	if !strings.Contains(hovered, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("hovered filter row should brighten its border to GutterHoverBar: %q", hovered)
 	}
-	if lipgloss.Width(ansi.Strip(hovered)) != lipgloss.Width(ansi.Strip(focused)) {
-		t.Fatalf("hovered and focused filter rows should have identical widths")
+	if strings.Contains(hovered, fgSGR(theme.Pink)) {
+		t.Fatalf("hovered (not focused) filter row must NOT wear the focus Pink border (would read as focused): %q", hovered)
 	}
-	if lipgloss.Width(ansi.Strip(rest)) != lipgloss.Width(ansi.Strip(hovered)) {
-		t.Fatalf("hover must not change the filter row's rendered width: rest=%d hovered=%d",
-			lipgloss.Width(ansi.Strip(rest)), lipgloss.Width(ansi.Strip(hovered)))
+	if !strings.Contains(focused, fgSGR(theme.Pink)) {
+		t.Fatalf("focused filter row should keep its Pink border: %q", focused)
+	}
+	if !strings.Contains(focusedAndHovered, fgSGR(theme.Pink)) || strings.Contains(focusedAndHovered, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("focus should win outright over hover: %q", focusedAndHovered)
+	}
+
+	for _, out := range []string{rest, hovered, focused, focusedAndHovered} {
+		if w := lipgloss.Width(ansi.Strip(out)); w != lipgloss.Width(ansi.Strip(rest)) {
+			t.Fatalf("hover/focus must not change the filter row's rendered width, got %d want %d", w, lipgloss.Width(ansi.Strip(rest)))
+		}
 	}
 }
 
