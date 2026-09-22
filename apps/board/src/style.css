@@ -2328,6 +2328,129 @@ body {
 .tui-gate-question-context [data-part='markdown'] > * + * {
   margin-top: 6px;
 }
+/* Respond gates' small uppercase tags: a thread's severity, a reply's verb.
+   Grey unless a hue names what needs the eye. */
+.tui-respond-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font: 700 9px / 1.2 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.tui-respond-pill[data-hue='amber'] {
+  color: var(--text-warn-small);
+  background: color-mix(in srgb, var(--fill-warn) 17%, transparent);
+}
+.tui-respond-pill[data-hue='green'] {
+  color: var(--text-ok-small);
+  background: color-mix(in srgb, var(--fill-ok) 17%, transparent);
+}
+.tui-respond-pill[data-hue='accent'] {
+  color: var(--text-accent-small);
+  background: color-mix(in srgb, var(--fill-accent) 17%, transparent);
+}
+/* A structured thread's head: file:line and its severity lead, the
+   ordinal and the step dots hold the right edge. */
+.tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-head {
+  justify-content: flex-start;
+  align-items: center;
+}
+.tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-ord {
+  margin-left: auto;
+  font: 400 var(--gate-font-meta) / 1.4 var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-2);
+}
+.tui-thread-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-thread-card [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-thread-card [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-thread-points {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tui-thread-points li::marker {
+  color: var(--text-2);
+}
+.tui-thread-verdict {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.tui-thread-verdict-k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.tui-thread-verdict-call {
+  font-weight: 700;
+  color: var(--text-2);
+}
+.tui-thread-verdict-call[data-call='valid'] {
+  color: var(--text-ok-small);
+}
+.tui-thread-verdict-call[data-call='valid-low-value'] {
+  color: var(--text-warn-small);
+}
+/* pushback: the claim is wrong and the reply says so. needs-clarification:
+   a hold, with the question for the reviewer in the note. */
+.tui-thread-verdict-call[data-call='pushback'] {
+  color: var(--text-bad-small);
+}
+.tui-thread-verdict-call[data-call='needs-clarification'] {
+  color: var(--text-accent-small);
+}
+.tui-thread-verdict-note {
+  color: var(--text-2);
+}
+/* The reply box: green when it holds the exact text that will be posted,
+   neutral when it only holds the intent of a reply. */
+.tui-thread-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fill-ok) 12%, transparent);
+}
+.tui-thread-reply[data-kind='direction'] {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.tui-thread-reply-k {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-ok-small);
+}
+.tui-thread-reply[data-kind='direction'] .tui-thread-reply-k {
+  color: var(--text-2);
+}
 .tui-gate-quote {
   margin: 0;
   padding: 2px 0 2px 12px;

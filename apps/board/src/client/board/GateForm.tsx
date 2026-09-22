@@ -25,6 +25,8 @@ import {
   sectionFor,
   type ContextSection,
 } from './gate-context.ts';
+import { parseGateCtx, type GateCtx } from './gate-ctx.ts';
+import { SeverityPill, ThreadCard } from './RespondCards.tsx';
 
 function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
@@ -347,6 +349,19 @@ function GateForm({
       ),
     [context, gate.questions]
   );
+  const questionCtx = useMemo(
+    () =>
+      new Map<string, GateCtx | null>(
+        gate.questions.map(q => [q.id, parseGateCtx(q.context)])
+      ),
+    [gate.questions]
+  );
+  // A thread's "N of M" counts the gate's thread-* questions, which the
+  // gate contract keeps positional.
+  const threadIds = useMemo(
+    () => gate.questions.filter(q => /^thread-/.test(q.id)).map(q => q.id),
+    [gate.questions]
+  );
   return (
     <Questionnaire.Root
       className="tui-gate-form"
@@ -374,7 +389,12 @@ function GateForm({
       {display.map(q => {
         const current = selections[q.name];
         const picked = new Set(Array.isArray(current) ? current : []);
-        const section = sectionFor(context, { id: q.name, label: q.prompt });
+        const qctx = questionCtx.get(q.name) ?? null;
+        const threadCtx = qctx?.shape === 'thread@1' ? qctx : null;
+        const threadOrd = threadCtx ? threadIds.indexOf(q.name) : -1;
+        const section = threadCtx
+          ? undefined
+          : sectionFor(context, { id: q.name, label: q.prompt });
         const threadAt = section ? threadKeys.indexOf(section.key) : -1;
         return (
           <Questionnaire.Item
@@ -384,6 +404,7 @@ function GateForm({
             multiple={q.multiple}
             className="tui-gate-question"
             data-sectioned={section ? 'true' : undefined}
+            data-gate-ctx={threadCtx ? 'thread' : undefined}
           >
             <div className="tui-gate-question-head">
               {threadAt >= 0 && (
@@ -394,6 +415,12 @@ function GateForm({
               <Questionnaire.Title className="tui-gate-question-label">
                 {q.prompt}
               </Questionnaire.Title>
+              {threadCtx && <SeverityPill severity={threadCtx.severity} />}
+              {threadOrd >= 0 && (
+                <span className="tui-gate-question-ord">
+                  thread {threadOrd + 1} of {threadIds.length}
+                </span>
+              )}
               {stepped && (
                 <Questionnaire.Progress
                   className="tui-gate-progress"
@@ -415,18 +442,23 @@ function GateForm({
                         ))}
                       </span>
                       {!section &&
+                        !threadCtx &&
                         `Question ${state.current} of ${state.total}`}
                     </span>
                   )}
                 />
               )}
             </div>
-            {q.context && (
-              <div className="tui-gate-question-context">
-                <Markdown unstyled linkTargetBlank>
-                  {q.context}
-                </Markdown>
-              </div>
+            {threadCtx ? (
+              <ThreadCard ctx={threadCtx} />
+            ) : (
+              q.context && (
+                <div className="tui-gate-question-context">
+                  <Markdown unstyled linkTargetBlank>
+                    {q.context}
+                  </Markdown>
+                </div>
+              )
             )}
             {section && <QuestionContext section={section} />}
             <Questionnaire.Choices className="tui-gate-choices">
