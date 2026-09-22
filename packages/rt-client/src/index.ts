@@ -88,6 +88,8 @@ export type {
   Discussion,
   DemandDecl,
   ProjectMRsScope,
+  ProjectSyncError,
+  ProjectSyncErrorKind,
   ProjectMRsData,
   DiscussionsData,
   MrByBranchEntry,

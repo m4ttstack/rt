@@ -31,12 +31,27 @@ export interface ProjectMRsScope {
   knownSections?: string[];
 }
 
+/** Classified cause of a repo's failing project sync (lib/daemon/project-sync-health.ts). */
+export type ProjectSyncErrorKind = "rate-limited" | "auth" | "server-error" | "timeout" | "other";
+
+/** A repo's current unbroken run of failed project syncs. */
+export interface ProjectSyncError {
+  /** First failure of the run; later failures leave it alone. */
+  since: number;
+  lastAt: number;
+  kind: ProjectSyncErrorKind;
+  /** Raw error text, capped at 200 chars. */
+  message: string;
+}
+
 export interface ProjectMRsData {
   mrs: Record<string, { pr: PullRequest; fetchedAt: number; codeownerSections?: string[] }>;
   listSyncedAt: number;
   source: "poll" | "events" | "mutation";
   syncedAt: number;
   scope?: ProjectMRsScope;
+  /** Present while this repo's most recent project sync failed. */
+  syncError?: ProjectSyncError;
 }
 
 export interface DiscussionsData {
