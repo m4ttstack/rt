@@ -8,7 +8,7 @@ const PLAN = {
   round: 1,
   threads: { total: 2, blocking: 1 },
   adjudication: 'both valid · fresh-context adjudicated',
-};
+} as const;
 
 const POST = {
   'gate-ctx': 'post@1',
@@ -16,7 +16,7 @@ const POST = {
   round: 1,
   replies: 2,
   fixes: [{ sha: 'ab12cd3' }],
-};
+} as const;
 
 const THREAD = {
   'gate-ctx': 'thread@1',
@@ -35,7 +35,7 @@ const THREAD = {
     kind: 'verbatim',
     text: 'fixed. enqueue() now drops non-retryable jobs; added a test.',
   },
-};
+} as const;
 
 const REPLIES = {
   'gate-ctx': 'replies@1',
@@ -54,13 +54,13 @@ const REPLIES = {
       text: 'agreed on the wording; noted the contract in the doc.',
     },
   ],
-};
+} as const;
 
 const j = (v: unknown) => JSON.stringify(v);
 
 describe('valid shapes', () => {
   test('plan@1', () => {
-    expect(parseGateCtx(j(PLAN as any))).toEqual({
+    expect(parseGateCtx(j(PLAN))).toEqual({
       shape: 'plan@1',
       reviewer: 'renee',
       round: 1,
@@ -82,7 +82,7 @@ describe('valid shapes', () => {
   });
 
   test('post@1', () => {
-    expect(parseGateCtx(j(POST as any))).toEqual({
+    expect(parseGateCtx(j(POST))).toEqual({
       shape: 'post@1',
       reviewer: 'renee',
       round: 1,
@@ -104,13 +104,13 @@ describe('valid shapes', () => {
   });
 
   test('thread@1', () => {
-    expect(parseGateCtx(j(THREAD as any))).toEqual({
+    expect(parseGateCtx(j(THREAD))).toEqual({
       shape: 'thread@1',
       author: 'renee',
       severity: 'blocking',
-      claim: THREAD.claim as any,
+      claim: { ...THREAD.claim, points: [...THREAD.claim.points] },
       verdict: { call: 'valid', note: 'confirmed against the checkout' },
-      reply: THREAD.reply as any,
+      reply: THREAD.reply,
     });
   });
 
@@ -150,15 +150,15 @@ describe('valid shapes', () => {
       'needs-clarification',
       'no-ask',
     ] as const)
-      expect(
-        parseGateCtx(j({ ...THREAD, verdict: { call } } as any))
-      ).toMatchObject({ verdict: { call } });
+      expect(parseGateCtx(j({ ...THREAD, verdict: { call } }))).toMatchObject({
+        verdict: { call },
+      });
   });
 
   test('replies@1', () => {
-    expect(parseGateCtx(j(REPLIES as any))).toEqual({
+    expect(parseGateCtx(j(REPLIES))).toEqual({
       shape: 'replies@1',
-      replies: REPLIES.replies as any,
+      replies: [...REPLIES.replies],
     });
   });
 
@@ -194,7 +194,7 @@ describe('unknown extra keys are accepted and dropped', () => {
       j({
         ...REPLIES,
         replies: [{ ...REPLIES.replies[0], extra: 1 }],
-      } as any)
+      })
     );
     expect(parsed).not.toBeNull();
     expect((parsed as { replies: object[] }).replies[0]).not.toHaveProperty(
