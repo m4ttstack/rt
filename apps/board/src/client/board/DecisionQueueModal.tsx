@@ -14,12 +14,14 @@ import {
   type ParsedGateContext,
   type ParsedLabelledLines,
 } from './gate-context.ts';
+import { parseGateCtx, type PlanCtx, type PostCtx } from './gate-ctx.ts';
 import {
   AnsweredChip,
   GateForm,
   useGateForm,
   type GateFormState,
 } from './GateForm.tsx';
+import { RespondGateHeader } from './RespondGateHeader.tsx';
 import { isReviewSheetGate, ReviewGateSheet } from './ReviewGateSheet.tsx';
 import {
   DELIVERY_STUCK_MESSAGE,
@@ -161,6 +163,25 @@ function OverviewStrip({
   );
 }
 
+/** The gate's own state chips; they ride the MR strip, or the action strip
+    when the header card has taken the strip's place. */
+function GateStateChips({ gate }: { gate: GateRow }) {
+  return (
+    <>
+      {gate.status === 'parked' && (
+        <Chip intent="warn" variant="outline" uppercase data-gate="parked">
+          parked
+        </Chip>
+      )}
+      {gate.escalatedAt != null && (
+        <Chip intent="warn" variant="outline" uppercase data-gate="escalated">
+          escalated
+        </Chip>
+      )}
+    </>
+  );
+}
+
 /** The queue-hosted face of one gate: `GateForm` inside the kit Modal, with
     queue chrome around it -- the only place a gate's form actually mounts,
     since a row now shows a chip that opens this modal rather than the form
@@ -203,16 +224,23 @@ function DecisionQueueModal({
 }) {
   const form = useGateForm(gate, onAnswered);
   const paneGone = gate.executor === 'gone';
+  const headerCtx = useMemo((): PlanCtx | PostCtx | null => {
+    const ctx = parseGateCtx(gate.context);
+    return ctx?.shape === 'plan@1' || ctx?.shape === 'post@1' ? ctx : null;
+  }, [gate.context]);
+  // A structured gate context is never prose: the header card is its only
+  // reading, so neither the B7 strip, the B9 groups nor the pane sees it.
+  const proseContext = headerCtx ? undefined : gate.context;
   // Only a context the questions actually pick up collapses to the strip;
   // sections that match no question (a per-option split, say) stay in the
   // pane where they can be read.
   const sectioned = useMemo(() => {
-    const parsed = parseGateContext(gate.context);
+    const parsed = parseGateContext(proseContext);
     return parsed &&
       gate.questions.some(q => sectionFor(parsed, { id: q.id, label: q.label }))
       ? parsed
       : null;
-  }, [gate.context, gate.questions]);
+  }, [proseContext, gate.questions]);
   const [fullContext, setFullContext] = useState(false);
   // The grouped pane is a parse of the text, not the text: the toggle in
   // its head brings the asker's own words back, so nothing the parse
@@ -227,8 +255,8 @@ function DecisionQueueModal({
   // every line carry its own prefix. Only when no question already owns
   // the context (B7), which is the richer reading of the same blob.
   const grouped = useMemo(
-    () => (sectioned ? null : parseLabelledLines(gate.context)),
-    [sectioned, gate.context]
+    () => (sectioned ? null : parseLabelledLines(proseContext)),
+    [sectioned, proseContext]
   );
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
@@ -318,81 +346,74 @@ function DecisionQueueModal({
           >
             skip gate
           </Button>
+          {headerCtx && <GateStateChips gate={gate} />}
         </span>
       </div>
-      <div className="tui-triage-strip">
-        <div className="tui-triage-row-1">
-          {mr ? (
-            <>
-              <span className="tui-title">{cleanTitle(mr.title)}</span>
-              {mr.sourceBranch &&
-                extractTicketId(mr.sourceBranch, mr.title) && (
-                  <a
-                    className="tui-ticket"
-                    href={ticketUrl(
-                      extractTicketId(mr.sourceBranch, mr.title)!
-                    )}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
-                  >
-                    {extractTicketId(mr.sourceBranch, mr.title)}
-                  </a>
+      {headerCtx ? (
+        <RespondGateHeader gate={gate} mr={mr} ctx={headerCtx} />
+      ) : (
+        <div className="tui-triage-strip">
+          <div className="tui-triage-row-1">
+            {mr ? (
+              <>
+                <span className="tui-title">{cleanTitle(mr.title)}</span>
+                {mr.sourceBranch &&
+                  extractTicketId(mr.sourceBranch, mr.title) && (
+                    <a
+                      className="tui-ticket"
+                      href={ticketUrl(
+                        extractTicketId(mr.sourceBranch, mr.title)!
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
+                    >
+                      {extractTicketId(mr.sourceBranch, mr.title)}
+                    </a>
+                  )}
+                <span className="tui-triage-kind">{gate.label}</span>
+              </>
+            ) : (
+              <span className="tui-title">{gate.label}</span>
+            )}
+            <GateStateChips gate={gate} />
+          </div>
+          <div className="tui-row-2">
+            {mr ? (
+              <>
+                {mr.author && (
+                  <span className="tui-author-tag">
+                    {mr.author.name || mr.author.username}
+                  </span>
                 )}
-              <span className="tui-triage-kind">{gate.label}</span>
-            </>
-          ) : (
-            <span className="tui-title">{gate.label}</span>
-          )}
-          {gate.status === 'parked' && (
-            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-              parked
-            </Chip>
-          )}
-          {gate.escalatedAt != null && (
-            <Chip
-              intent="warn"
-              variant="outline"
-              uppercase
-              data-gate="escalated"
-            >
-              escalated
-            </Chip>
-          )}
-        </div>
-        <div className="tui-row-2">
-          {mr ? (
-            <>
-              {mr.author && (
-                <span className="tui-author-tag">
-                  {mr.author.name || mr.author.username}
-                </span>
-              )}
-              <span className="tui-mr-iid">!{mr.iid}</span>
-              <span className="tui-row-sep">|</span>
-              {mr.sourceBranch && (
-                <span className="tui-branch">{mr.sourceBranch}</span>
-              )}
-            </>
-          ) : (
-            <span className="tui-subject">{gate.subject}</span>
-          )}
-          <span className="tui-row-sep">·</span>
-          <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
-          {gate.origin && (
-            // Panes pass the worktree as a full path; the strip shows only
-            // its basename (the full value stays on hover).
-            <span title={gate.origin.worktree}>
-              {[
-                gate.origin.worktree?.split('/').filter(Boolean).pop(),
-                gate.origin.paneId,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+                <span className="tui-mr-iid">!{mr.iid}</span>
+                <span className="tui-row-sep">|</span>
+                {mr.sourceBranch && (
+                  <span className="tui-branch">{mr.sourceBranch}</span>
+                )}
+              </>
+            ) : (
+              <span className="tui-subject">{gate.subject}</span>
+            )}
+            <span className="tui-row-sep">·</span>
+            <span>
+              {ago(new Date(gate.openedAt).toISOString(), Date.now())}
             </span>
-          )}
+            {gate.origin && (
+              // Panes pass the worktree as a full path; the strip shows only
+              // its basename (the full value stays on hover).
+              <span title={gate.origin.worktree}>
+                {[
+                  gate.origin.worktree?.split('/').filter(Boolean).pop(),
+                  gate.origin.paneId,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {(() => {
         const face =
           deliveryStuck || executionUnassigned ? (
@@ -464,14 +485,14 @@ function DecisionQueueModal({
         // pane back.
         return (
           <div className="tui-triage-body">
-            {gate.context && sectioned && (
+            {proseContext && sectioned && (
               <OverviewStrip
                 parsed={sectioned}
                 open={fullContext}
                 onToggle={() => setFullContext(v => !v)}
               />
             )}
-            {gate.context && (!sectioned || fullContext) && (
+            {proseContext && (!sectioned || fullContext) && (
               <ScrollPane
                 title={
                   grouped ? (
@@ -499,7 +520,7 @@ function DecisionQueueModal({
                   <GroupedContext parsed={grouped} />
                 ) : (
                   <Markdown unstyled linkTargetBlank>
-                    {gate.context}
+                    {proseContext}
                   </Markdown>
                 )}
               </ScrollPane>

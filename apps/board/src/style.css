@@ -2342,15 +2342,18 @@ body {
   color: var(--text-2);
   background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
-.tui-respond-pill[data-hue='amber'] {
+.tui-respond-pill[data-hue='amber'],
+.tui-respond-chip[data-hue='amber'] {
   color: var(--text-warn-small);
   background: color-mix(in srgb, var(--fill-warn) 17%, transparent);
 }
-.tui-respond-pill[data-hue='green'] {
+.tui-respond-pill[data-hue='green'],
+.tui-respond-chip[data-hue='green'] {
   color: var(--text-ok-small);
   background: color-mix(in srgb, var(--fill-ok) 17%, transparent);
 }
-.tui-respond-pill[data-hue='accent'] {
+.tui-respond-pill[data-hue='accent'],
+.tui-respond-chip[data-hue='accent'] {
   color: var(--text-accent-small);
   background: color-mix(in srgb, var(--fill-accent) 17%, transparent);
 }
@@ -2795,6 +2798,87 @@ body {
   font-size: var(--gate-font-meta);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+/* The respond gate's header card, in place of the MR strip when the
+   gate-level context is structured: who is being answered leads, the MR is
+   the object line, the operator plumbing (pane, worktree) is gone. */
+.tui-respond-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.tui-respond-head-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.tui-respond-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tui-respond-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tui-respond-headline {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--text-1);
+}
+.tui-respond-headline strong {
+  font-weight: 700;
+}
+.tui-respond-object {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-1);
+}
+.tui-respond-object-ref {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--text-accent-small);
+}
+.tui-respond-object-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-respond-meta {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.tui-respond-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tui-respond-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font: 500 11px / 1.2 var(--font-sans);
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
 .tui-triage-strip {
   display: flex;

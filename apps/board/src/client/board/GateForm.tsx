@@ -356,6 +356,7 @@ function GateForm({
       ),
     [gate.questions]
   );
+  const gateCtx = useMemo(() => parseGateCtx(gate.context), [gate.context]);
   // A thread's "N of M" counts the gate's thread-* questions, which the
   // gate contract keeps positional.
   const threadIds = useMemo(
@@ -379,7 +380,7 @@ function GateForm({
         );
       }}
     >
-      {showContextFallback && gate.context && !sectioned && (
+      {showContextFallback && gate.context && !sectioned && !gateCtx && (
         <div className="tui-gate-context-raw">
           <Markdown unstyled linkTargetBlank>
             {gate.context}
