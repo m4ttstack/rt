@@ -484,7 +484,10 @@ function DecisionQueueModal({
         // collapses to a one-line strip instead; the disclosure brings the
         // pane back.
         return (
-          <div className="tui-triage-body">
+          <div
+            className="tui-triage-body"
+            data-respond={headerCtx ? 'true' : undefined}
+          >
             {proseContext && sectioned && (
               <OverviewStrip
                 parsed={sectioned}

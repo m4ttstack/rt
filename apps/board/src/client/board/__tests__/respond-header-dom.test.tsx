@@ -142,6 +142,7 @@ test('a plan@1 gate renders the header card in place of the MR strip and the con
   expect(meta).toContain('Alex Doe');
   expect($('.tui-triage-strip')).toBeNull();
   expect($('.tui-triage-modal [data-part="scrollpane"]')).toBeNull();
+  expect($('.tui-triage-body[data-respond]')).not.toBeNull();
   expect($('.tui-triage-overview')).toBeNull();
   const text = document.body.textContent ?? '';
   expect(text).not.toContain('gate-ctx');
@@ -197,6 +198,7 @@ test('a prose respond gate keeps the MR strip and the context pane', async () =>
   expect(
     $('.tui-triage-modal [data-part="scrollpane"]')!.textContent
   ).toContain('Two threads from renee, both valid.');
+  expect($('.tui-triage-body[data-respond]')).toBeNull();
 });
 
 test('a malformed plan context keeps the MR strip and the context pane', async () => {

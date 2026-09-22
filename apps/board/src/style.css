@@ -2754,6 +2754,11 @@ body {
   width: 100%;
   max-width: 40rem;
 }
+/* Under the respond header card the form spans the body, so the question
+   card's edges line up with the card above it. */
+.tui-triage-body[data-respond] .tui-triage-form-col .tui-gate-form {
+  max-width: none;
+}
 .tui-attention-card {
   width: 100%;
   max-width: 34rem;
