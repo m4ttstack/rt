@@ -263,6 +263,54 @@ describe("HistoryStore", () => {
     expect(store.hasMore).toBe(true);
   });
 
+  test("a page load's rejection is caught by the caller, not an unhandled rejection", async () => {
+    const { client } = fakeClient({ history: shas("c", 250) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    const original = client.commits;
+    let fail = true;
+    client.commits = (range, limit, skip) => {
+      if (skip === 100 && fail) {
+        fail = false;
+        return Promise.reject(new Error("git log failed"));
+      }
+      return original(range, limit, skip);
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      let caught: unknown;
+      try {
+        await store.loadNextBatch(client, BRANCH);
+      } catch (err) {
+        caught = err;
+      }
+      expect((caught as Error)?.message).toBe("git log failed");
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).toEqual([]);
+      await store.loadNextBatch(client, BRANCH);
+      expect(store.commits.length).toBe(200);
+      expect(store.hasMore).toBe(true);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  test("syncTip sets tip from the batch it loaded, not the earlier head probe", async () => {
+    const history = shas("c", 3);
+    const { client } = fakeClient({ history });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    history.unshift("new");
+    const original = client.commits;
+    client.commits = (range, limit, skip) => (limit === 1 ? Promise.resolve([fakeCommit("stale-head")]) : original(range, limit, skip));
+    expect(await store.syncTip(client, BRANCH)).toBe(true);
+    expect(store.tip).toBe("new");
+    expect(store.tip).toBe(store.commits[0]!.sha);
+  });
+
   test("a contiguous range loads the range changeset oldest first", async () => {
     const { client, calls } = fakeClient({ history: shas("c", 4) });
     const store = new HistoryStore();
@@ -315,6 +363,29 @@ describe("HistoryStore", () => {
     expect(store.isContiguous()).toBe(true);
     expect(store.changeset?.files[0]!.path).toBe("range.ts");
     expect(calls.range.length).toBe(rangeCallsBefore + 1);
+  });
+
+  test("a loaded contiguous range with a non-first file selected survives a reload unchanged", async () => {
+    const history = shas("c", 4);
+    const { client, calls } = fakeClient({ history });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    client.commitRangeChangedFiles = async (list) => {
+      calls.range.push([...list]);
+      return { files: [file("range-a.ts"), file("range-b.ts")], linesAdded: 2, linesDeleted: 1 };
+    };
+    await store.select(client, ["c001", "c002"]);
+    await store.selectFile(client, "range-b.ts");
+    expect(store.selectedFile?.path).toBe("range-b.ts");
+    const changesetBefore = store.changeset;
+    const rangeCallsBefore = calls.range.length;
+    history.unshift("new");
+    await store.syncTip(client, BRANCH);
+    expect(store.selection).toEqual(["c001", "c002"]);
+    expect(store.isContiguous()).toBe(true);
+    expect(store.changeset).toBe(changesetBefore);
+    expect(store.selectedFile?.path).toBe("range-b.ts");
+    expect(calls.range.length).toBe(rangeCallsBefore);
   });
 
   test("a slow range changeset is dropped when a reload leaves the same selection non-contiguous", async () => {

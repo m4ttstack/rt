@@ -16,7 +16,7 @@ export type HistoryBranch = { name: string; upstream: string | null } | null;
  * worktree's client. Selection is newest first, in list order.
  */
 export class HistoryStore {
-  commits: Commit[] = [];
+  commits: readonly Commit[] = [];
   localShas = new Set<string>();
   tip: string | null = null;
   loaded = false;
@@ -29,7 +29,7 @@ export class HistoryStore {
   /** Bumped only by a real reload (syncTip) or reset. Guards a slower sync in flight against a newer one that lands first. */
   private generation = 0;
   private pendingBatch: Promise<void> | null = null;
-  private pendingBase: Commit[] | null = null;
+  private pendingBase: readonly Commit[] | null = null;
 
   reset(): void {
     this.commits = [];
@@ -54,7 +54,9 @@ export class HistoryStore {
     if (gen !== this.generation) return false;
     this.commits = batch;
     this.localShas = new Set(local.map((c) => c.sha));
-    this.tip = head;
+    // The head probe and the batch fetch are separate git calls; HEAD can move
+    // between them, so tip comes from the batch actually loaded, not the probe.
+    this.tip = batch[0]?.sha ?? null;
     this.loaded = true;
     this.hasMore = batch.length === COMMIT_BATCH_SIZE;
     await this.updateOrSelectFirstCommit(client);
@@ -64,10 +66,14 @@ export class HistoryStore {
   private async updateOrSelectFirstCommit(client: GitClient): Promise<void> {
     const present = new Set(this.commits.map((c) => c.sha));
     if (this.selection.length > 0 && this.selection.every((sha) => present.has(sha))) {
-      // Always re-run for a kept multi-selection: a reload can make it contiguous
-      // (load the range) or break it (select() clears to the non-contiguous
-      // state) -- either way the previous changeset may no longer match reality.
-      if (this.selection.length > 1) await this.select(client, this.selection);
+      // A range's content depends only on its shas, not their position, so a
+      // still-contiguous range with an already-loaded changeset is left alone
+      // (a reload would otherwise reset the file cursor to the first file on
+      // every tip move). Re-run only when it broke (clear to non-contiguous)
+      // or is only now able to load (was cleared while non-contiguous).
+      if (this.selection.length > 1 && (!this.isContiguous() || this.changeset === null)) {
+        await this.select(client, this.selection);
+      }
       return;
     }
     const first = this.commits[0];
@@ -88,16 +94,20 @@ export class HistoryStore {
     const promise = this.fetchNextBatch(client, branch, base);
     this.pendingBatch = promise;
     this.pendingBase = base;
-    promise.finally(() => {
+    const clear = (): void => {
       if (this.pendingBatch === promise) {
         this.pendingBatch = null;
         this.pendingBase = null;
       }
-    });
+    };
+    // Both handlers, never .finally: .finally's derived promise re-rejects and
+    // nothing holds it, so a page failure the caller already caught would also
+    // surface as an unhandled rejection here.
+    promise.then(clear, clear);
     return promise;
   }
 
-  private async fetchNextBatch(client: GitClient, branch: HistoryBranch, base: Commit[]): Promise<void> {
+  private async fetchNextBatch(client: GitClient, branch: HistoryBranch, base: readonly Commit[]): Promise<void> {
     const last = base.at(-1);
     let newCommits: Commit[] = [];
     let localAdditions: Commit[] = [];
@@ -111,9 +121,7 @@ export class HistoryStore {
     }
     // this.commits is only ever reassigned wholesale, never mutated: an identity
     // mismatch here means a reload or reset replaced the list while this fetch
-    // awaited. Catches a load that started between a reload deciding to reload
-    // and it writing the new list, which comparing generation numbers alone
-    // would miss (the load would capture the already-bumped generation).
+    // awaited.
     if (this.commits !== base) return;
     for (const c of localAdditions) this.localShas.add(c.sha);
     const known = new Set(base.map((c) => c.sha));
