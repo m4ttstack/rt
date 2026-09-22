@@ -36,6 +36,26 @@ let notificationClickChecks: [Check] = [
     Check("a malformed URL with no pane routes nowhere") { c in
         c.expectEqual(NotificationClick.focusPaneRoute(url: "https://[", paneId: nil), .none)
     },
+    Check("gate_pane banner click prefers the pane over the URL") { c in
+        let r = NotificationClick.bannerRoute(
+            category: NotificationClick.gatePaneCategory,
+            url: "https://console.mattstack/gates/g1", paneId: "pane-7")
+        c.expectEqual(r, .focusPane("pane-7"))
+    },
+    Check("gate_pane banner click falls back to the URL without a pane") { c in
+        let r = NotificationClick.bannerRoute(
+            category: NotificationClick.gatePaneCategory,
+            url: "https://console.mattstack/gates/g1", paneId: nil)
+        c.expectEqual(r, .openURL("https://console.mattstack/gates/g1"))
+    },
+    Check("open button prefers the URL over the pane") { c in
+        let r = NotificationClick.openRoute(
+            url: "https://console.mattstack/gates/g1", paneId: "pane-7")
+        c.expectEqual(r, .openURL("https://console.mattstack/gates/g1"))
+    },
+    Check("open button falls back to pane focus on a malformed URL") { c in
+        c.expectEqual(NotificationClick.openRoute(url: "https://[", paneId: "pane-7"), .focusPane("pane-7"))
+    },
     Check("focus-pane button prefers the pane over the URL") { c in
         let r = NotificationClick.focusPaneRoute(
             url: "https://board.mattstack/?gate=g1", paneId: "pane-7")

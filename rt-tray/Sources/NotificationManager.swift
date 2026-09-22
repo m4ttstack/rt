@@ -101,6 +101,12 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             options: .foreground
         )
 
+        let openSurface = UNNotificationAction(
+            identifier: "OPEN_SURFACE",
+            title: "Open",
+            options: .foreground
+        )
+
         let categories: [UNNotificationCategory] = [
             UNNotificationCategory(
                 identifier: "keyboard_conflict",
@@ -170,6 +176,11 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(
                 identifier: "gate",
                 actions: [focusPane],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: NotificationClick.gatePaneCategory,
+                actions: [openSurface],
                 intentIdentifiers: []
             ),
         ]
@@ -418,6 +429,12 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
         case "FOCUS_PANE":
             follow(NotificationClick.focusPaneRoute(
+                url: url,
+                paneId: userInfo["paneId"] as? String
+            ))
+
+        case "OPEN_SURFACE":
+            follow(NotificationClick.openRoute(
                 url: url,
                 paneId: userInfo["paneId"] as? String
             ))
