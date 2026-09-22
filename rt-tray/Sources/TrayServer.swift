@@ -344,26 +344,42 @@ class TrayServer {
                 self.sendResponse(connection: connection, status: 200,
                                   body: TrayHealth.body(isDevBuild: BundleFlavor.isDevBuild))
 
+            // The three lifecycle endpoints reply AFTER the op with its real
+            // outcome — the old unconditional {"ok":true} ack read as success
+            // even when the gate silently ate the op (2026-09-21). A missing
+            // lifecycle is a 500 for the same reason: `?.` made it invisible.
             } else if method == "POST" && path == "/daemon/start" {
                 let origin = DaemonOrigin.http(clientHeader: DaemonOrigin.header("X-RT-Client", in: str))
-                DispatchQueue.main.async {
-                    Task { await self.daemonLifecycle?.startDaemon(origin: origin) }
+                Task { @MainActor in
+                    guard let lifecycle = self.daemonLifecycle else {
+                        self.sendResponse(connection: connection, status: 500, body: "{\"ok\":false,\"error\":\"no daemonLifecycle wired\"}", path: path)
+                        return
+                    }
+                    let ok = await lifecycle.startDaemon(origin: origin)
+                    self.sendResponse(connection: connection, status: ok ? 200 : 500, body: "{\"ok\":\(ok)}", path: ok ? nil : path)
                 }
-                self.sendResponse(connection: connection, status: 200, body: "{\"ok\":true}")
 
             } else if method == "POST" && path == "/daemon/stop" {
                 let origin = DaemonOrigin.http(clientHeader: DaemonOrigin.header("X-RT-Client", in: str))
-                DispatchQueue.main.async {
-                    Task { await self.daemonLifecycle?.stopDaemon(origin: origin) }
+                Task { @MainActor in
+                    guard let lifecycle = self.daemonLifecycle else {
+                        self.sendResponse(connection: connection, status: 500, body: "{\"ok\":false,\"error\":\"no daemonLifecycle wired\"}", path: path)
+                        return
+                    }
+                    let ok = await lifecycle.stopDaemon(origin: origin)
+                    self.sendResponse(connection: connection, status: ok ? 200 : 500, body: "{\"ok\":\(ok)}", path: ok ? nil : path)
                 }
-                self.sendResponse(connection: connection, status: 200, body: "{\"ok\":true}")
 
             } else if method == "POST" && path == "/daemon/restart" {
                 let origin = DaemonOrigin.http(clientHeader: DaemonOrigin.header("X-RT-Client", in: str))
-                DispatchQueue.main.async {
-                    Task { await self.daemonLifecycle?.restartDaemon(origin: origin) }
+                Task { @MainActor in
+                    guard let lifecycle = self.daemonLifecycle else {
+                        self.sendResponse(connection: connection, status: 500, body: "{\"ok\":false,\"error\":\"no daemonLifecycle wired\"}", path: path)
+                        return
+                    }
+                    let ok = await lifecycle.restartDaemon(origin: origin)
+                    self.sendResponse(connection: connection, status: ok ? 200 : 500, body: "{\"ok\":\(ok)}", path: ok ? nil : path)
                 }
-                self.sendResponse(connection: connection, status: 200, body: "{\"ok\":true}")
 
             } else if method == "POST" && path == "/flavor/retire" {
                 // Flavor handoff (spec MAT-383 §3). `rt settings dev-mode

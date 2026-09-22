@@ -266,4 +266,69 @@ let daemonLifecycleChecks: [Check] = [
         c.expectEqual(await rec.invocations, 2, "coalescing is per in-flight start, not a one-shot latch")
         c.expectEqual(await rec.order, ["first", "second"])
     },
+
+    Check("DaemonLifecycleGate: a stuck body times out, frees the gate, and the next op runs") { c in
+        let log = GateEventLog()
+        let gate = DaemonLifecycleGate(deadline: 0.05, observer: { log.add($0) })
+        let latch = Latch()
+
+        let r1 = await gate.run(.restart, origin: "attempt-1") { await latch.wait(); return true }
+        c.expect(!r1, "a timed-out op must report failure, not success")
+        c.expect(log.has { if case .deadlineExceeded(let op, let origin, _) = $0 { return op == "restart" && origin == "attempt-1" }; return false },
+                 "the deadline firing must be observable, got: \(log.events)")
+
+        // The 2026-09-21 wedge: with no deadline, this second op parked
+        // forever with no trace, and every restart after it was a silent no-op.
+        let r2 = await gate.run(.restart, origin: "attempt-2") { true }
+        c.expect(r2, "the gate must be free again after a timed-out op")
+
+        await latch.open()
+        await spinUntil(c, "the abandoned body's completion to be observed") {
+            log.has { if case .abandonedCompleted(let op, _) = $0 { return op == "restart" }; return false }
+        }
+    },
+
+    Check("DaemonLifecycleGate reports entry, parking with the holder, and the retired skip") { c in
+        let log = GateEventLog()
+        let gate = DaemonLifecycleGate(observer: { log.add($0) })
+        let rec = BodyRecorder()
+        let latch = Latch()
+
+        let op1 = Task {
+            await gate.run(.restart, origin: "socket rt-cli/1") {
+                await rec.enter("restart")
+                await latch.wait()
+                await rec.leave()
+                return true
+            }
+        }
+        await spinUntil(c, "the restart to enter its body") { await rec.invocations == 1 }
+        c.expect(log.has { if case .entered(let op, let origin) = $0 { return op == "restart" && origin == "socket rt-cli/1" }; return false },
+                 "every op logs on entry, got: \(log.events)")
+
+        let op2 = Task {
+            await gate.run(.stop, origin: "gear menu") { true }
+        }
+        await spinUntil(c, "the stop to park behind the restart") {
+            log.has { if case .parked(let op, _, let holder) = $0 { return op == "stop" && holder.contains("restart") }; return false }
+        }
+        await latch.open()
+        _ = await op1.value
+        _ = await op2.value
+
+        _ = await gate.retire { true }
+        let after = await gate.run(.restart, origin: "late") { true }
+        c.expect(!after)
+        c.expect(log.has { if case .skippedRetired(let op, let origin) = $0 { return op == "restart" && origin == "late" }; return false },
+                 "an op eaten by the retire latch must say so, got: \(log.events)")
+    },
 ]
+
+/// Collects gate events across threads so checks can assert on them.
+private final class GateEventLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var all: [DaemonGateEvent] = []
+    func add(_ e: DaemonGateEvent) { lock.lock(); all.append(e); lock.unlock() }
+    var events: [DaemonGateEvent] { lock.lock(); defer { lock.unlock() }; return all }
+    func has(_ p: (DaemonGateEvent) -> Bool) -> Bool { events.contains(where: p) }
+}

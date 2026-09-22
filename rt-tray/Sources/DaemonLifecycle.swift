@@ -49,13 +49,30 @@ class DaemonLifecycle: @unchecked Sendable {
     /// concurrent starts. Every public entry point below goes through it; the
     /// `…Ungated` bodies are what the gate runs, and are also what the restart
     /// fallback re-enters (going back through the gate from inside a held op
-    /// would deadlock).
-    private let gate = DaemonLifecycleGate()
+    /// would deadlock). The observer is the only trace an op leaves before
+    /// its body's first action — without it, an op the gate eats (wedged
+    /// slot, retire latch) is invisible in the log (2026-09-21).
+    private let gate = DaemonLifecycleGate(observer: { event in
+        switch event {
+        case .entered(let op, let origin):
+            TrayLog.info("lifecycle op entered gate", ["op": op, "origin": origin])
+        case .parked(let op, let origin, let holder):
+            TrayLog.info("lifecycle op parked behind holder", ["op": op, "origin": origin, "holder": holder])
+        case .skippedRetired(let op, let origin):
+            TrayLog.warn("lifecycle op skipped; gate retired", ["op": op, "origin": origin])
+        case .deadlineExceeded(let op, let origin, let seconds):
+            TrayLog.error("lifecycle op exceeded deadline; gate freed, op abandoned",
+                          ["op": op, "origin": origin, "seconds": "\(Int(seconds))"])
+        case .abandonedCompleted(let op, let origin):
+            TrayLog.warn("abandoned lifecycle op completed late", ["op": op, "origin": origin])
+        }
+    })
 
     // MARK: - Start
 
-    func startDaemon(origin: String) async {
-        _ = await gate.run(.start) { await self.startDaemonUngated(origin: origin) }
+    @discardableResult
+    func startDaemon(origin: String) async -> Bool {
+        await gate.run(.start, origin: origin) { await self.startDaemonUngated(origin: origin) }
     }
 
     @discardableResult
@@ -89,8 +106,9 @@ class DaemonLifecycle: @unchecked Sendable {
 
     // MARK: - Stop
 
-    func stopDaemon(origin: String) async {
-        _ = await gate.run(.stop) { self.stopDaemonUngated(origin: origin) }
+    @discardableResult
+    func stopDaemon(origin: String) async -> Bool {
+        await gate.run(.stop, origin: origin) { self.stopDaemonUngated(origin: origin) }
     }
 
     /// The teardown stop for flavor handover: waits for any in-flight
@@ -100,7 +118,7 @@ class DaemonLifecycle: @unchecked Sendable {
     /// up — that would leave both flavors registered, fighting over
     /// rt.pid/rt.sock.
     func stopDaemonForTeardown(origin: String) async {
-        _ = await gate.retire { self.stopDaemonUngated(origin: origin) }
+        _ = await gate.retire(origin: origin) { self.stopDaemonUngated(origin: origin) }
     }
 
     @discardableResult
@@ -120,8 +138,9 @@ class DaemonLifecycle: @unchecked Sendable {
     /// launchctl kickstart -k restarts the running job in place — preserves
     /// the registration and lets KeepAlive cover any gap. Falls back to
     /// unregister/register if kickstart isn't available.
-    func restartDaemon(origin: String) async {
-        _ = await gate.run(.restart) { await self.restartDaemonUngated(origin: origin) }
+    @discardableResult
+    func restartDaemon(origin: String) async -> Bool {
+        await gate.run(.restart, origin: origin) { await self.restartDaemonUngated(origin: origin) }
     }
 
     @discardableResult

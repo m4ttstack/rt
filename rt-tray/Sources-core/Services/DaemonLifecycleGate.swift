@@ -42,6 +42,21 @@ public enum DaemonOrigin {
     }
 }
 
+/// What the gate tells its owner about lifecycle traffic. Every op emits
+/// `entered` before anything can eat it — the 2026-09-21 wedge was only
+/// invisible because nothing logged until a body's first action, and the
+/// bodies never ran.
+public enum DaemonGateEvent: Equatable, Sendable {
+    case entered(op: String, origin: String)
+    case parked(op: String, origin: String, holder: String)
+    case skippedRetired(op: String, origin: String)
+    case deadlineExceeded(op: String, origin: String, seconds: TimeInterval)
+    /// A body abandoned at its deadline eventually finished anyway.
+    case abandonedCompleted(op: String, origin: String)
+}
+
+public typealias DaemonGateObserver = @Sendable (DaemonGateEvent) -> Void
+
 /// Serializes daemon LaunchAgent lifecycle work and collapses a herd of
 /// concurrent starts into one.
 ///
@@ -67,16 +82,34 @@ public actor DaemonLifecycleGate {
     /// unregister would re-register the agent this app just gave up, leaving
     /// two flavors registered (the situation /flavor/retire exists to end).
     private var isRetired = false
+    /// Who holds the slot right now, for the parked event.
+    private var holderLabel = ""
+
+    /// A body still running this long past acquire is abandoned: the gate
+    /// logs it, reports failure, and frees the slot. Generous on purpose —
+    /// every spawn under it has its own tighter timeout, so only something
+    /// stuck beyond all inner bounds is ever abandoned, and an abandoned
+    /// body finishing late runs beside at most one live op instead of
+    /// wedging every restart forever (2026-09-21).
+    private let deadline: TimeInterval
+    private nonisolated let observer: DaemonGateObserver?
 
     /// Check-harness introspection; production code has no business reading
     /// these.
     public var startJoinerCount: Int { startJoiners.count }
     public var waiterCount: Int { waiters.count }
 
-    public init() {}
+    public init(deadline: TimeInterval = 120, observer: DaemonGateObserver? = nil) {
+        self.deadline = deadline
+        self.observer = observer
+    }
 
-    public func run(_ op: DaemonLifecycleOp, _ body: @Sendable () async -> Bool) async -> Bool {
-        if isRetired { return false }
+    public func run(_ op: DaemonLifecycleOp, origin: String = "", _ body: @escaping @Sendable () async -> Bool) async -> Bool {
+        observer?(.entered(op: op.rawValue, origin: origin))
+        if isRetired {
+            observer?(.skippedRetired(op: op.rawValue, origin: origin))
+            return false
+        }
         if op == .start {
             if startPending {
                 return await withCheckedContinuation { startJoiners.append($0) }
@@ -84,24 +117,62 @@ public actor DaemonLifecycleGate {
             startPending = true
         }
 
+        if busy { observer?(.parked(op: op.rawValue, origin: origin, holder: holderLabel)) }
         await acquire()
         // Re-checked after the wait: a retire that took the slot while this op
         // was parked has latched, and the body must not run behind it.
         if isRetired {
             release()
             if op == .start { settleStart(with: false) }
+            observer?(.skippedRetired(op: op.rawValue, origin: origin))
             return false
         }
-        let result = await body()
+        holderLabel = "\(op.rawValue) (\(origin))"
+        let result = await raceBody(op, origin: origin, body)
+        holderLabel = ""
         release()
 
         if op == .start { settleStart(with: result) }
         return result
     }
 
+    /// Runs the body against the deadline. A body that outlives it keeps
+    /// running detached — it cannot be cancelled and must not be awaited —
+    /// but the gate stops waiting: false is the op's result, and the late
+    /// completion is only observed, never re-released.
+    private func raceBody(_ op: DaemonLifecycleOp, origin: String,
+                          _ body: @escaping @Sendable () async -> Bool) async -> Bool {
+        let bodyTask = Task { await body() }
+        let settled = OnceFlag()
+        let observer = self.observer
+        let deadline = self.deadline
+        let result: Bool? = await withCheckedContinuation { cont in
+            let sleeper = Task {
+                try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
+                guard settled.take() else { return }
+                observer?(.deadlineExceeded(op: op.rawValue, origin: origin, seconds: deadline))
+                cont.resume(returning: nil)
+            }
+            Task {
+                let r = await bodyTask.value
+                guard settled.take() else {
+                    observer?(.abandonedCompleted(op: op.rawValue, origin: origin))
+                    return
+                }
+                sleeper.cancel()
+                cont.resume(returning: r)
+            }
+        }
+        return result ?? false
+    }
+
     /// Runs `body` (the teardown unregister) with no other op in flight, then
-    /// latches the gate shut: every later or still-parked op no-ops.
-    public func retire(_ body: @Sendable () async -> Bool) async -> Bool {
+    /// latches the gate shut: every later or still-parked op no-ops. No
+    /// deadline: the teardown unregister is synchronous and must never be
+    /// abandoned halfway.
+    public func retire(origin: String = "", _ body: @Sendable () async -> Bool) async -> Bool {
+        observer?(.entered(op: "retire", origin: origin))
+        if busy { observer?(.parked(op: "retire", origin: origin, holder: holderLabel)) }
         await acquire()
         isRetired = true
         let result = await body()
@@ -129,5 +200,18 @@ public actor DaemonLifecycleGate {
     private func release() {
         busy = false
         if !waiters.isEmpty { waiters.removeFirst().resume() }
+    }
+}
+
+/// First `take()` wins; the checked continuation in `raceBody` resumes
+/// exactly once no matter how the body and the deadline interleave.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var taken = false
+    func take() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if taken { return false }
+        taken = true
+        return true
     }
 }
