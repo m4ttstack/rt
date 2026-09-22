@@ -63,6 +63,7 @@ import {
   DecisionQueueModal,
 } from './DecisionQueueModal.tsx';
 import {
+  gateDeepLinkAction,
   gateParam,
   mrForGate,
   stripGateParam,
@@ -176,7 +177,10 @@ export function Board() {
   const validatedOnce = useRef(false);
   // The iid a `?gate=<id>` deep link resolved to on first load, consumed by
   // the scroll/flash/strip effect below once that row has actually rendered.
-  const [gateDeepLinkIid, setGateDeepLinkIid] = useState<number | null>(null);
+  const [gateDeepLink, setGateDeepLink] = useState<{
+    iid: number | null;
+    gateId: string;
+  } | null>(null);
 
   const pickTheme = (m: ThemeMode) => {
     localStorage.setItem(THEME_KEY, m);
@@ -267,7 +271,14 @@ export function Board() {
           new Set(usernames),
           linkedIid
         );
-        setGateDeepLinkIid(linkedIid);
+        setGateDeepLink({ iid: linkedIid, gateId: gateId! });
+      } else if (
+        gateId &&
+        (d.queueExtras ?? []).some(g => g.gateId === gateId)
+      ) {
+        // A human-owned gate with no MR row (a pane-attention gate) has no
+        // row to widen filters for or flash, but it can still open the modal.
+        setGateDeepLink({ iid: null, gateId });
       }
       // Landing on the seat tab without a grouping in the URL means its own
       // grouping; a grouping the user picked there rides in the URL.
@@ -756,39 +767,6 @@ export function Board() {
     return () => clearInterval(t);
   }, [optimisticLifecycle.active, load]);
 
-  // `?gate=<id>` deep link: by the time this runs, the linked row has already
-  // rendered (gateDeepLinkIid is set in the same batch as the data that
-  // produced it). history.replaceState strips the param so a refresh doesn't
-  // re-scroll.
-  useEffect(() => {
-    if (gateDeepLinkIid === null) return;
-    const row = document.querySelector(
-      `[data-mr-iid="${CSS.escape(String(gateDeepLinkIid))}"]`
-    );
-    // An empty relative url is a no-op for replaceState (it keeps the
-    // current query) -- fall back to the bare pathname, same as update().
-    history.replaceState(
-      null,
-      '',
-      stripGateParam(location.search) || location.pathname
-    );
-    if (!row) {
-      setGateDeepLinkIid(null);
-      return;
-    }
-    row.scrollIntoView({ block: 'center' });
-    row.classList.add('tui-row-flash');
-    // Resetting gateDeepLinkIid changes this effect's own dependency, which
-    // re-runs its cleanup -- doing that synchronously here would clearTimeout
-    // the flash removal before it ever fires. Reset it from inside the
-    // timeout instead, once the flash has actually been removed.
-    const t = setTimeout(() => {
-      row.classList.remove('tui-row-flash');
-      setGateDeepLinkIid(null);
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [gateDeepLinkIid]);
-
   // The pure filter/group/sort pipeline (overlay -> tabFiltered ->
   // filterBySlack(filterByMember(...)) -> groupMRs(...).map(sortMRs...)),
   // hoisted above the loading guard below and memoized so it has exactly one
@@ -925,6 +903,56 @@ export function Board() {
   }, [data]);
   const queue = useDecisionQueue(queueEntries, answeredGateIds);
   const activeGateId = queue.active?.gate.gateId ?? null;
+
+  // `?gate=<id>` deep link: by the time this runs, the linked row and queue
+  // entries have already rendered (gateDeepLink is set in the same batch as
+  // the data that produced them). history.replaceState strips the param so a
+  // refresh doesn't re-open. A gate still owed an answer opens the decision
+  // modal at that gate; an answered or unknown one degrades to the row
+  // scroll+flash.
+  //
+  // Deliberately keyed on gateDeepLink alone: this is a one-shot consumption
+  // of the link, and re-running it when a poll reshuffles queueEntries would
+  // re-scroll or re-open mid-flash. The closure's queueEntries/queue are from
+  // the same batch that set gateDeepLink, which is exactly the snapshot the
+  // link should act on.
+  useEffect(() => {
+    if (gateDeepLink === null) return;
+    // An empty relative url is a no-op for replaceState (it keeps the
+    // current query) -- fall back to the bare pathname, same as update().
+    history.replaceState(
+      null,
+      '',
+      stripGateParam(location.search) || location.pathname
+    );
+    if (gateDeepLinkAction(queueEntries, gateDeepLink.gateId) === 'modal') {
+      queue.openAt(gateDeepLink.gateId);
+      setGateDeepLink(null);
+      return;
+    }
+    const row =
+      gateDeepLink.iid === null
+        ? null
+        : document.querySelector(
+            `[data-mr-iid="${CSS.escape(String(gateDeepLink.iid))}"]`
+          );
+    if (!row) {
+      setGateDeepLink(null);
+      return;
+    }
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('tui-row-flash');
+    // Resetting gateDeepLink changes this effect's own dependency, which
+    // re-runs its cleanup -- doing that synchronously here would clearTimeout
+    // the flash removal before it ever fires. Reset it from inside the
+    // timeout instead, once the flash has actually been removed.
+    const t = setTimeout(() => {
+      row.classList.remove('tui-row-flash');
+      setGateDeepLink(null);
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot link consumption; see above
+  }, [gateDeepLink]);
 
   if (!data) {
     return (

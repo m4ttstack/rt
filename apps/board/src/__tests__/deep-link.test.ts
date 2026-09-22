@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  gateDeepLinkAction,
   gateParam,
   mrForGate,
   stripGateParam,
@@ -186,5 +187,21 @@ describe('stripGateParam', () => {
 
   test('returns empty string for an empty search string', () => {
     expect(stripGateParam('')).toBe('');
+  });
+});
+
+describe('gateDeepLinkAction', () => {
+  const entries = [{ gate: { gateId: 'g1' } }, { gate: { gateId: 'g2' } }];
+
+  test('a gate with a queue entry opens the modal', () => {
+    expect(gateDeepLinkAction(entries, 'g1')).toBe('modal');
+  });
+
+  test('a gate without a queue entry falls back to the row flash', () => {
+    expect(gateDeepLinkAction(entries, 'answered-elsewhere')).toBe('flash');
+  });
+
+  test('an empty queue always falls back to the row flash', () => {
+    expect(gateDeepLinkAction([], 'g1')).toBe('flash');
   });
 });

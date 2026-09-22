@@ -1,8 +1,11 @@
-/** DOM-level regression test for the `?gate=<id>` deep link effect in
+/** DOM-level regression tests for the `?gate=<id>` deep link effect in
     Board.tsx: a real happy-dom document, a real Board render, and a real
-    `history.replaceState` -- the bug this guards (an empty relative URL
-    leaving `location.search` untouched) only reproduces against a real
-    History API, not a hand-rolled stub. */
+    `history.replaceState` -- the bug the strip assertion guards (an empty
+    relative URL leaving `location.search` untouched) only reproduces
+    against a real History API, not a hand-rolled stub.
+
+    A gate still owed an answer opens the decision modal at that gate; an
+    answered one degrades to the row scroll+flash. */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
@@ -21,7 +24,7 @@ class FakeEventSource {
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const BOARD_DATA = {
+const boardData = (gateStatus: 'open' | 'answered') => ({
   title: 'MRs ready for review',
   defaultMember: 'all',
   members: [{ username: 'matt', name: 'Matthew Goodwin', count: 1 }],
@@ -53,7 +56,7 @@ const BOARD_DATA = {
           gateId: 'g1',
           kind: 'review-post',
           label: 'review',
-          status: 'open',
+          status: gateStatus,
           openedAt: 1,
           questions: [],
         },
@@ -78,7 +81,9 @@ const BOARD_DATA = {
   canInvite: false,
   peering: null,
   tabs: [{ id: 'team', label: 'Team', source: { kind: 'authors' } }],
-};
+});
+
+let currentData = boardData('open');
 
 let React: typeof import('react');
 let createRoot: typeof import('react-dom/client').createRoot;
@@ -88,7 +93,7 @@ beforeAll(async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.startsWith('/data.json')) {
-      return new Response(JSON.stringify(BOARD_DATA), { status: 200 });
+      return new Response(JSON.stringify(currentData), { status: 200 });
     }
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
@@ -104,7 +109,11 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
-test('a ?gate=<id> deep link scrolls to, flashes, and strips the matching row', async () => {
+async function renderBoard(): Promise<{
+  container: HTMLElement;
+  scrolled: Element[];
+  cleanup: () => Promise<void>;
+}> {
   const container = document.createElement('div');
   document.body.appendChild(container);
 
@@ -115,25 +124,59 @@ test('a ?gate=<id> deep link scrolls to, flashes, and strips the matching row', 
   };
 
   const root = createRoot(container);
-  try {
-    await React.act(async () => {
-      root.render(React.createElement(Board));
-    });
-    // Flush the /data.json fetch's microtasks and the resulting setState.
-    await React.act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+  await React.act(async () => {
+    root.render(React.createElement(Board));
+  });
+  // Flush the /data.json fetch's microtasks and the resulting setState.
+  await React.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
 
+  return {
+    container,
+    scrolled,
+    cleanup: async () => {
+      Element.prototype.scrollIntoView = original;
+      await React.act(async () => {
+        root.unmount();
+      });
+      container.remove();
+    },
+  };
+}
+
+test('a ?gate=<id> deep link to a pending gate opens the decision modal and strips the param', async () => {
+  currentData = boardData('open');
+  const { container, scrolled, cleanup } = await renderBoard();
+  try {
+    // A review-post gate renders the ReviewGateSheet face; other kinds
+    // render the triage shell. Either one is "the decision modal opened".
+    expect(
+      container.querySelector('.tui-triage-modal, .tui-review-sheet')
+    ).not.toBeNull();
+    expect(window.location.search).toBe('');
+    const row = container.querySelector('[data-mr-iid="1"]');
+    expect(scrolled.length).toBe(0);
+    expect(row?.classList.contains('tui-row-flash')).toBe(false);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a ?gate=<id> deep link to an answered gate scrolls to, flashes, and strips the matching row', async () => {
+  history.replaceState(null, '', '/?gate=g1');
+  currentData = boardData('answered');
+  const { container, scrolled, cleanup } = await renderBoard();
+  try {
     const row = container.querySelector('[data-mr-iid="1"]');
     expect(row).not.toBeNull();
     expect(scrolled[0] === row).toBe(true);
     expect(row?.classList.contains('tui-row-flash')).toBe(true);
     expect(window.location.search).toBe('');
+    expect(
+      container.querySelector('.tui-triage-modal, .tui-review-sheet')
+    ).toBeNull();
   } finally {
-    Element.prototype.scrollIntoView = original;
-    await React.act(async () => {
-      root.unmount();
-    });
-    container.remove();
+    await cleanup();
   }
 });

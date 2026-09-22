@@ -63,6 +63,17 @@ export function viewStateForGate<
   return next;
 }
 
+/** Where a consumed `?gate=<id>` deep link lands: the decision modal when
+    the gate still has a queue entry (an answer is owed), else the row
+    scroll+flash -- an answered or unknown gate has nothing left to decide,
+    so the link degrades to pointing at where it happened. */
+export function gateDeepLinkAction(
+  entries: Array<{ gate: { gateId: string } }>,
+  gateId: string
+): 'modal' | 'flash' {
+  return entries.some(e => e.gate.gateId === gateId) ? 'modal' : 'flash';
+}
+
 /** `search` without its `gate` param; every other param rides along untouched. */
 export function stripGateParam(search: string): string {
   const params = new URLSearchParams(search);
