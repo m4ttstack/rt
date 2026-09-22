@@ -102,8 +102,10 @@ Required: `reviewer`; `threads.total` (plan) / `replies` (post). Optional:
   request; `"none"` is a thread with no ask (a top-level summary).
 - `claim.summary` is one or two sentences; `claim.points` is zero or more
   bullets. The emitter splits, not the renderer.
-- `verdict.call`: `"valid" | "valid-low-value" | "invalid" | "no-ask"`,
-  plus a free `note`.
+- `verdict.call`: the adjudicator's verbatim vocabulary --
+  `"valid" | "valid-low-value" | "pushback" | "needs-clarification" |
+  "no-ask"` -- plus a free `note`. There is no mapping layer and no
+  `"invalid"`; the wire carries what the adjudicator said.
 - `reply.kind`: `"verbatim"` (the exact text that will be posted),
   `"direction"` (the reply exists only as intent so far), or `"none"`
   (nothing will be posted -- e.g. a fix whose reply finalizes later, or a
@@ -289,3 +291,17 @@ board tab left open from before the deploy shows a structured gate's
 context as raw JSON through Markdown until the tab reloads -- board
 deploys already require a reload, so this is the known cost of the known
 rule, not a new hazard.
+
+## Amendments (2026-09-22, shepherd rulings during execution)
+
+- verdict.call is the adjudicator's verbatim vocabulary (above);
+  "invalid" was removed before any parser shipped.
+- The gate-level `reviewer` is ONE name: the reviewer on the most
+  threads, ties broken by first appearance. Co-reviewers appear per
+  thread via `author`.
+- gate-ctx.sh's prose fallback uses untrimmed prose when it fits, else
+  trimmed, and reports `fits` (exit 0 even when over).
+- When a handed-back open still exceeds 8192 bytes (`fits: false`), the
+  board wrapper drops whole question contexts largest-first until under
+  budget; the direct path opens verbatim and lets the daemon drop. Both
+  end under budget; dropped threads render label and options.
