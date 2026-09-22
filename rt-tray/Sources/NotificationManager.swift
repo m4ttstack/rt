@@ -398,6 +398,9 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     /// Maps a pure route onto its side effect. Focus is best-effort on
     /// click; the outcome isn't surfaced.
     private func follow(_ route: NotificationClick.Route) {
+        if route.suppressesActivationShow {
+            appDelegate?.suppressReopenShow(for: 2)
+        }
         switch route {
         case .showKeyboardConflict:
             NotificationCenter.default.post(name: .showKeyboardConflict, object: nil)
