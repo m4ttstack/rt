@@ -215,9 +215,16 @@ vm_trust_key() {
 #
 # Lifted here so the run script and its gate classify with the same code; two
 # copies of the pattern list is a test that passes while the script drifts.
+#
+# The wording moved: older releases say "cannot be opened because the developer
+# cannot be verified", macOS 15 and 26 say "Apple could not verify <app> is
+# free of malware". A pattern list written from memory of the old phrasing
+# matches neither of the two a current guest actually shows, which is why
+# gatekeeper-check proves this list against a deliberately unsigned app in the
+# same run rather than trusting it.
 vm_dialog_verdict() {
   case "$1" in
-    *"cannot be opened"*|*"developer cannot be verified"*|*"will damage your computer"*|*"unidentified developer"*|*"Malware Blocked"*|*"contains malware"*)
+    *"cannot be opened"*|*"can't be opened"*|*"developer cannot be verified"*|*"could not verify"*|*"free of malware"*|*"will damage your computer"*|*"unidentified developer"*|*"Malware Blocked"*|*"contains malware"*)
       printf block; return ;;
   esac
   case "$1" in

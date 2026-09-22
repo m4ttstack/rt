@@ -50,11 +50,18 @@ printf '%s\n' 'ax_osa() { printf "%s" "$1"; }' 'ax_admin_auth_once() { return 1;
 t "dialogs.sh refuses when GUEST_RUN unmounted"   bash -c 'out=$(env -u GUEST_RUN bash run/guest/dialogs.sh dump 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "is not mounted"'
 t "dialogs.sh rejects an unknown subcommand"      bash -c '! (env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh bogus >/dev/null 2>&1)'
 t "dialogs.sh AppleScript compiles"               bash -c '
-  for sub in dump approve; do
-    env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh "$sub" > "/tmp/vmcheck-dlg/$sub.applescript" || exit 1
+  env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh dump > /tmp/vmcheck-dlg/dump.applescript || exit 1
+  env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh click "downloaded from the Internet" Open > /tmp/vmcheck-dlg/click.applescript || exit 1
+  for sub in dump click; do
     osacompile -o "/tmp/vmcheck-dlg/$sub.scpt" "/tmp/vmcheck-dlg/$sub.applescript" || exit 1
   done'
 t "dialogs.sh calls helpers ax.sh defines"        bash -c 'grep -q "^ax_osa()" run/guest/ax.sh && grep -q "^ax_admin_auth_once()" run/guest/ax.sh'
+t "dialogs.sh click needs both arguments"         bash -c '! (env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh click "only one" >/dev/null 2>&1)'
+# The harness never deletes anything in the guest, and the button sits right
+# beside the one the control phase means to click.
+t "dialogs.sh refuses a destructive button"       bash -c '
+  out=$(env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh click "anything" "Move to Trash" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf "%s" "$out" | grep -q "refusing to click a destructive button"'
 
 t "gatekeeper-check usage (no artifact)"          bash -c \
   'out=$(bash run/gatekeeper-check.sh 2>&1); rc=$?; [ "$rc" -ne 0 ] && printf "%s" "$out" | grep -q "usage: gatekeeper-check.sh"'
@@ -63,6 +70,18 @@ t "gatekeeper-check --dmg and --app are exclusive" bash -c \
 t "gatekeeper-check --dry-run"                    env VM_ARTIFACTS=/tmp/vmcheck-art bash run/gatekeeper-check.sh --app ../mattstack.app --dry-run
 t "gatekeeper-check judges dialogs by text, not owner" bash -c \
   '! grep -q "windows of process .CoreServicesUIAgent" run/gatekeeper-check.sh && grep -q "vm_dialog_verdict" run/gatekeeper-check.sh'
+# The control has to run before the real launch and has to be able to fail the
+# run, or it is decoration: a probe that cannot produce a refusal makes every
+# clean result meaningless, which is the defect this whole phase answers.
+t "gatekeeper-check proves the probe on a known-bad app first" bash -c '
+  ctrl=$(grep -n "vm_phase_begin control" run/gatekeeper-check.sh | cut -d: -f1)
+  launch=$(grep -n "vm_phase_begin launch" run/gatekeeper-check.sh | cut -d: -f1)
+  [ -n "$ctrl" ] && [ -n "$launch" ] && [ "$ctrl" -lt "$launch" ] \
+    && grep -q "vm_phase_end control fail" run/gatekeeper-check.sh'
+t "gatekeeper-check bounds the backgrounded copy" bash -c \
+  'grep -q "killed it so the run reports instead of hanging" run/gatekeeper-check.sh'
+t "gatekeeper-check answers the automation consent prompt" bash -c \
+  'grep -q "wants access to control" run/gatekeeper-check.sh'
 # The "no syntax error" half of this assertion is load-bearing, not decoration: osascript exits 1
 # on both a clean "not found" runtime error and a broken-script compile error alike, so an
 # exit-code-only check can green-light a walk() AppleScript that never even compiles.

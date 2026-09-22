@@ -139,6 +139,13 @@ probe_dialogs() {
   printf '%s' "$out"
 }
 
+# Clicks a button in the guest dialog whose text contains a phrase; prints the
+# owning process, or nothing when no such dialog is up.
+dialog_click() {
+  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+    "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' click '$1' '$2' 2>/dev/null" || true
+}
+
 vm_phase_begin clone
 tart clone "$GOLDEN" "$RUN_VM" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 \
   && vm_phase_end clone pass || { vm_phase_end clone fail "tart clone failed (see logs/tart.log)"; exit 1; }
@@ -214,13 +221,30 @@ COPY_PID=$!
 ci=0
 while kill -0 "$COPY_PID" 2>/dev/null && [ "$ci" -lt 45 ]; do
   sleep 2; ci=$((ci+1))
-  case "$(probe_dialogs "install t=$((ci*2))s")" in
+  SEEN=$(probe_dialogs "install t=$((ci*2))s")
+  case "$SEEN" in
+    # Driving Finder over ssh makes sshd the automating process, so macOS asks
+    # the tester to consent before the copy runs at all. It is the harness's
+    # own prompt, not the app's, and answering it is what keeps the copy from
+    # blocking forever behind a dialog nobody is watching.
+    *"wants access to control"*)
+      dialog_click "wants access to control" OK >/dev/null || true ;;
+  esac
+  case "$SEEN" in
     *SecurityAgent*|*"trying to modify"*|*"Touch ID or Password"*)
       vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
         "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' admin" \
         >>"$VM_RUN_DIR/logs/dialogs.log" 2>&1 || true ;;
   esac
 done
+# Bounded, because an unbounded wait on a copy still blocked behind a prompt
+# this loop could not answer presents as a wedged guest, and that reads as an
+# infrastructure problem rather than the dialog it actually is. dialogs.log
+# names what was on screen when this fired.
+if kill -0 "$COPY_PID" 2>/dev/null; then
+  kill "$COPY_PID" 2>/dev/null || true
+  vm_warn "the Finder copy was still running after 90s; killed it so the run reports instead of hanging"
+fi
 wait "$COPY_PID" 2>/dev/null || true
 COPY_ERR=$(cat "$COPY_LOG" 2>/dev/null || true)
 if ! vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "test -d '$DEST_APP'"; then
@@ -234,6 +258,70 @@ if [ -z "$STILL" ]; then
 fi
 vm_phase_end install pass "Finder-copied to $DEST_APP, quarantine intact"
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/01-installed.png" || true
+
+# ── control: prove this probe, in this session, can SEE a refusal ────────────
+#
+# Everything after this rests on a negative: no refusal appeared. That is only
+# worth anything if the probe could have produced one, and tonight's blind
+# CoreServicesUIAgent probe is the standing proof that assuming so is how a
+# check passes while testing nothing. The old positive control asked whether
+# System Events answers at all, which is a different question from whether it
+# can see THIS class of dialog, so it stayed green while the probe it guarded
+# was blind.
+#
+# So a deliberately unsigned app is launched first, through the same probe, in
+# the same guest, and must classify as a block. It also proves the pattern
+# list itself: the refusal wording changed across releases, and a list that
+# matches no dialog a current guest shows is the same fail-open wearing a
+# different hat. If the control is not seen the run fails HERE and never
+# reports a verdict about the real app, which is what should have happened
+# tonight.
+#
+# It runs before the real launch and is torn down first: its own dialog would
+# otherwise still be on screen when the real app is probed.
+vm_phase_begin control
+CTRL_APP="$STAGE/GatekeeperControl.app"
+vm_ssh "$VM_TESTER_USER" "$RUN_VM" "
+  rm -rf '$CTRL_APP' && mkdir -p '$CTRL_APP/Contents/MacOS'
+  printf '#!/bin/bash\nsleep 120\n' > '$CTRL_APP/Contents/MacOS/GatekeeperControl'
+  chmod +x '$CTRL_APP/Contents/MacOS/GatekeeperControl'
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string GatekeeperControl' \
+    -c 'Add :CFBundleIdentifier string dev.mattstack.gkcontrol' \
+    -c 'Add :CFBundlePackageType string APPL' -c Save '$CTRL_APP/Contents/Info.plist' >/dev/null
+  xattr -w com.apple.quarantine '$QUAR_VALUE' '$CTRL_APP'"
+vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+  "osascript -e 'tell application \"Finder\" to open POSIX file \"$CTRL_APP\"'" \
+  >>"$VM_RUN_DIR/logs/control.log" 2>&1 || true
+
+CTRL_SEEN=""; CTRL_DEADLINE=$(( $(date +%s) + 60 ))
+while [ "$(date +%s)" -lt "$CTRL_DEADLINE" ]; do
+  sleep 1
+  CTRL_SEEN=$(probe_dialogs "control")
+  [ "$(vm_dialog_verdict "$CTRL_SEEN")" = block ] && break
+  CTRL_SEEN=""
+done
+"$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/05-control.png" || true
+# Dismissed by the app's own name, which every refusal wording quotes, and
+# never with the "Move to Trash" button sitting beside it: dialogs.sh refuses
+# that name outright. The button label varies by release, so each candidate is
+# tried in turn and a miss is not a failure.
+for b in Done OK Cancel; do
+  if [ -n "$(dialog_click GatekeeperControl "$b")" ]; then break; fi
+done
+vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "rm -rf '$CTRL_APP'" >/dev/null 2>&1 || true
+# Torn down before the real launch is probed, so a leftover control dialog
+# cannot be mistaken for the app's own.
+LEFT=$(probe_dialogs "control (after dismissal)")
+if [ "$(vm_dialog_verdict "$LEFT")" = block ]; then
+  vm_phase_end control fail "the control's refusal dialog is still on screen, so the launch probe below would read it as $APP_NAME's own" "05-control.png"
+  exit 1
+fi
+
+if [ -z "$CTRL_SEEN" ]; then
+  vm_phase_end control fail "an unsigned app raised no refusal this probe could see, so a clean result for $APP_NAME would prove nothing; logs/dialogs.log has every window that did appear" "05-control.png"
+  exit 1
+fi
+vm_phase_end control pass "the probe classified an unsigned app as refused, so a clean result below is a real negative"
 
 # ── launch: dialogs are told apart by what they SAY, not by who owns them.
 #    A notarized app on a clean machine is expected to raise the "downloaded
@@ -266,8 +354,7 @@ while [ "$(date +%s)" -lt "$LAUNCH_DEADLINE" ]; do
     block)
       BLOCK="$SEEN"; break ;;
     prompt)
-      WHO=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
-        "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' approve 2>/dev/null" || true)
+      WHO=$(dialog_click "downloaded from the Internet" Open)
       [ -n "$WHO" ] && APPROVED="$WHO"
       continue ;;
   esac
