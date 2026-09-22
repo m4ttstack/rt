@@ -6,7 +6,7 @@ import { join } from "path";
 import { machineSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
-import { loadRegistry, type TreeRecord } from "../registry.ts";
+import { loadRegistry, saveRegistry, type TreeRecord } from "../registry.ts";
 import { listWorktreesAsync, branchExistsLocalAsync } from "../git-async.ts";
 import * as gitAsync from "../git-async.ts";
 import { createTree, type CreateDeps } from "../create.ts";
@@ -241,16 +241,51 @@ describe("hydrateTree", () => {
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
     const wts = (await listWorktreesAsync(repo))!;
     expect(wts.some((w) => w.branch?.startsWith("on-deck/"))).toBe(false);
-    // `git worktree add -b` runs before the donor lock is even checked, so
-    // the branch really was created and then had to be deleted on the way
-    // out; `git worktree list` cannot see that ref once its worktree is
-    // gone, so only the direct check proves the delete happened.
+    // `git worktree add -b` now runs inside the donor lock, so a busy lock
+    // means the branch was never created at all; the direct ref check (not
+    // `git worktree list`, which only sees branches still attached to a
+    // live worktree) is what proves that rather than assumes it.
     expect(await branchExistsLocalAsync(repo, "on-deck/fixedname")).toBe(false);
   });
 
   test("a golden without readyStamp is refused before any git mutation", async () => {
     const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden: { ...golden, readyStamp: undefined }, clone: inProcessClone });
     expect(result).toEqual({ ok: false, error: "hydrate-unavailable", detail: "golden has no readyStamp" });
+    expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
+  });
+
+  test("a donor that advances after the caller's read is not used stale: the member gets the fresh commit and fresh artifacts, not the caller's snapshot", async () => {
+    // Simulates the race: `deps.golden` here plays the role of a registry row
+    // a reconciler pass read before this hydrate started; the donor keeps
+    // moving (freshen fast-forwards it) before the donor lock is acquired.
+    const staleGolden = { ...golden };
+
+    writeFileSync(join(golden.path, "node_modules", "pkg", "index.js"), "module.exports = 2;\n");
+    execSync("git -c user.email=t@t -c user.name=t commit -q --allow-empty -m advance", { cwd: golden.path, shell: "/bin/zsh" });
+    const advancedSha = execSync("git rev-parse HEAD", { cwd: golden.path, encoding: "utf8" }).trim();
+    expect(advancedSha).not.toBe(staleGolden.readyStamp);
+    const advancedAt = new Date(Date.now() + 1000).toISOString();
+    saveRegistry(repoName, loadRegistry(repoName).map((t) =>
+      t.path === golden.path ? { ...t, readyStamp: advancedSha, readyAt: advancedAt } : t,
+    ));
+
+    const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden: staleGolden, clone: inProcessClone });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const t = result.tree;
+    expect(t.readyStamp).toBe(advancedSha);
+    expect(t.readyAt).toBe(advancedAt);
+    const head = execSync("git rev-parse HEAD", { cwd: t.path, encoding: "utf8" }).trim();
+    expect(head).toBe(advancedSha);
+    expect(readFileSync(join(t.path, "node_modules", "pkg", "index.js"), "utf8")).toBe("module.exports = 2;\n");
+  });
+
+  test("a golden that disappears from the registry between the caller's read and the donor lock is hydrate-unavailable", async () => {
+    const staleGolden = { ...golden };
+    saveRegistry(repoName, loadRegistry(repoName).filter((t) => t.path !== golden.path));
+
+    const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden: staleGolden, clone: inProcessClone });
+    expect(result).toEqual({ ok: false, error: "hydrate-unavailable", detail: "golden is gone or has no readyStamp" });
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
   });
 });

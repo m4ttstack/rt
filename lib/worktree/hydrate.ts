@@ -55,7 +55,7 @@ export async function listIgnoredPaths(treePath: string): Promise<string[] | nul
 }
 
 type CloneOutcome =
-  | { kind: "ok" }
+  | { kind: "ok"; readyStamp: string; readyAt?: string }
   | { kind: "unavailable"; detail: string }
   | { kind: "failed"; step: string; output: string };
 
@@ -67,8 +67,7 @@ export type HydrateResult =
 
 export async function hydrateTree(deps: CreateDeps & { golden: TreeRecord; clone?: CloneRunner }): Promise<HydrateResult> {
   const { repoName, repoPath, golden } = deps;
-  const readyStamp = golden.readyStamp;
-  if (!readyStamp) return { ok: false, error: "hydrate-unavailable", detail: "golden has no readyStamp" };
+  if (!golden.readyStamp) return { ok: false, error: "hydrate-unavailable", detail: "golden has no readyStamp" };
   const clone = deps.clone ?? defaultCloneRunner;
 
   const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
@@ -80,7 +79,7 @@ export async function hydrateTree(deps: CreateDeps & { golden: TreeRecord; clone
   const rootInsideRepo = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
   if (rootInsideRepo) await ensureInfoExclude(repoPath, `${rel.split("/")[0]}/`);
 
-  const outcome = await withTreeLock(path, () => runHydrate(deps, clone, golden, readyStamp, name, path));
+  const outcome = await withTreeLock(path, () => runHydrate(deps, clone, golden, name, path));
   if (outcome === "busy") return { ok: false, error: "busy" };
   return outcome;
 }
@@ -89,7 +88,6 @@ async function runHydrate(
   deps: CreateDeps,
   clone: CloneRunner,
   golden: TreeRecord,
-  readyStamp: string,
   name: string,
   path: string,
 ): Promise<HydrateResult> {
@@ -122,28 +120,38 @@ async function runHydrate(
     return { ok: false, error: "hydrate-unavailable", detail };
   };
 
-  const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, readyStamp], { timeoutMs: ADD_TIMEOUT_MS });
-  if (add.exitCode !== 0) return fail(`git worktree add -b ${branch} ${path} ${readyStamp}`, add.stdout + add.stderr);
-  branchCreated = true;
+  // The donor's own lock covers the stamp re-read too, not just the clone
+  // loop: a stamp read from the caller's `golden` argument can be stale by
+  // the time this runs (freshen fast-forwards the donor between the
+  // reconciler's read and this lock acquisition), which would add the
+  // member at an old commit while cloning artifacts from the newer donor.
+  // Re-reading the registry row under the same lock freshen's own writes
+  // take is the only way to make the commit and the artifacts agree.
+  const outcome = await withTreeLock(golden.path, async (): Promise<CloneOutcome> => {
+    const freshGolden = loadRegistry(repoName).find((t) => t.path === golden.path);
+    if (!freshGolden || freshGolden.kind !== "golden" || !freshGolden.readyStamp) {
+      return { kind: "unavailable", detail: "golden is gone or has no readyStamp" };
+    }
+    const readyStamp = freshGolden.readyStamp;
 
-  const gitEntries = await listWorktreesAsync(repoPath);
-  if (gitEntries !== null) {
-    const derived = await deriveRepoIdentity(repoPath);
-    await reconcileForRepo({ repoIdentity: derived.kind === "remote" ? derived.id : null, worktreeRoots: gitEntries.map((w) => w.path) });
-  }
+    const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, readyStamp], { timeoutMs: ADD_TIMEOUT_MS });
+    if (add.exitCode !== 0) {
+      return { kind: "failed", step: `git worktree add -b ${branch} ${path} ${readyStamp}`, output: add.stdout + add.stderr };
+    }
+    branchCreated = true;
 
-  // The donor's own lock, not just the member's: freshen reinstalls the
-  // golden in place, and a reconciler pass released at its deadline is only
-  // safe because every git mutation still running holds a per-tree lock.
-  // Enumerating and cloning an unlocked donor mid-reinstall would hand the
-  // member a torn node_modules under a readyStamp that says it is fine.
-  const cloned = await withTreeLock(golden.path, async (): Promise<CloneOutcome> => {
-    const artifacts = await listIgnoredPaths(golden.path);
+    const gitEntries = await listWorktreesAsync(repoPath);
+    if (gitEntries !== null) {
+      const derived = await deriveRepoIdentity(repoPath);
+      await reconcileForRepo({ repoIdentity: derived.kind === "remote" ? derived.id : null, worktreeRoots: gitEntries.map((w) => w.path) });
+    }
+
+    const artifacts = await listIgnoredPaths(freshGolden.path);
     if (artifacts === null) {
       return { kind: "failed", step: "git status --ignored -z (golden)", output: "git status failed on the golden tree" };
     }
     for (const relPath of artifacts) {
-      const src = join(golden.path, relPath);
+      const src = join(freshGolden.path, relPath);
       const dst = join(path, relPath);
       mkdirSync(dirname(dst), { recursive: true });
       const r = await clone(src, dst);
@@ -151,17 +159,17 @@ async function runHydrate(
       if (r.exitCode === 3 || r.exitCode === 4) return { kind: "unavailable", detail: r.stderr };
       return { kind: "failed", step: `hydrate-clone ${relPath}`, output: r.stderr };
     }
-    return { kind: "ok" };
+    return { kind: "ok", readyStamp, readyAt: freshGolden.readyAt };
   });
-  if (cloned === "busy") return unavailable("golden tree lock is held");
-  if (cloned.kind === "unavailable") return unavailable(cloned.detail);
-  if (cloned.kind === "failed") return fail(cloned.step, cloned.output);
+  if (outcome === "busy") return unavailable("golden tree lock is held");
+  if (outcome.kind === "unavailable") return unavailable(outcome.detail);
+  if (outcome.kind === "failed") return fail(outcome.step, outcome.output);
 
   const updated: TreeRecord = {
     ...rec,
     state: "on-deck",
-    readyStamp,
-    ...(golden.readyAt ? { readyAt: golden.readyAt } : {}),
+    readyStamp: outcome.readyStamp,
+    ...(outcome.readyAt ? { readyAt: outcome.readyAt } : {}),
   };
   const finalTrees = loadRegistry(repoName).map((t) => (t.path === path ? updated : t));
   if (!saveRegistry(repoName, finalTrees)) {
