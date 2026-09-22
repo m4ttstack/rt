@@ -386,6 +386,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// system behavior (raise it) is left alone.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
+            // A notification click that routed to a pane activates this app
+            // as a side effect; showing the shell window would upstage the
+            // pane the user is being sent to.
+            if Date() < suppressReopenShowUntil { return true }
             Task { @MainActor in
                 // `windowModel.controller` is a weak back-reference; fall
                 // back to the strongly-held `mattstackWindow` ivar if it's
@@ -619,6 +623,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             }
         }
     }
+    private var suppressReopenShowUntil: Date = .distantPast
+
+    /// NotificationManager calls this just before following a pane-bound
+    /// click route, so the activation that click causes does not also
+    /// raise the shell window.
+    func suppressReopenShow(for seconds: TimeInterval) {
+        suppressReopenShowUntil = Date().addingTimeInterval(seconds)
+    }
+
     @objc private func handleSystemSessionEnding() { systemSessionEnding = true }
     @objc private func showSetupStatus() { Task { @MainActor in coordinator?.openSetupStatus() } }
     @objc private func showSettings() { Task { @MainActor in coordinator?.showSettings() } }

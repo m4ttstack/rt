@@ -18,6 +18,18 @@ public enum NotificationClick {
         case openURL(String)
         case focusPane(String)
         case none
+
+        /// Clicking a notification also activates the app, and activation
+        /// with no visible window triggers the reopen handler's window
+        /// show. A route that leaves the shell window alone (a pane jump,
+        /// a no-op) must suppress that show or every pane-bound click
+        /// drags the window up first.
+        public var suppressesActivationShow: Bool {
+            switch self {
+            case .focusPane, .none: return true
+            case .showKeyboardConflict, .showProcessPanel, .openURL: return false
+            }
+        }
     }
 
     /// The banner-body click. The surface URL outranks pane focus: a

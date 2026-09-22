@@ -66,6 +66,13 @@ let notificationClickChecks: [Check] = [
     Check("HTTP survives the scheme guard case-insensitively") { c in
         c.expectEqual(NotificationClick.openRoute(url: "HTTP://x.test/a", paneId: nil), .openURL("HTTP://x.test/a"))
     },
+    Check("pane and no-op routes suppress the activation window pop; window-bound routes do not") { c in
+        c.expect(NotificationClick.Route.focusPane("p").suppressesActivationShow)
+        c.expect(NotificationClick.Route.none.suppressesActivationShow)
+        c.expect(!NotificationClick.Route.openURL("https://x.test").suppressesActivationShow)
+        c.expect(!NotificationClick.Route.showProcessPanel.suppressesActivationShow)
+        c.expect(!NotificationClick.Route.showKeyboardConflict.suppressesActivationShow)
+    },
     Check("focus-pane button prefers the pane over the URL") { c in
         let r = NotificationClick.focusPaneRoute(
             url: "https://board.mattstack/?gate=g1", paneId: "pane-7")
