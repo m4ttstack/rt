@@ -57,11 +57,16 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
 	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
+	// The divider's own pad row must wear the same half-block split as its
+	// neighbors' pad rows (renderSegment) -- a full-height BgSubtle cell
+	// here, against half-height fill on both sides, would notch outward at
+	// the seam instead of matching it.
+	padDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.BgSubtle).Render(theme.GlyphHalfBlockLower)
 	// Must match renderSegment's own row count exactly: JoinHorizontal pads a
 	// shorter block to the tallest with unstyled filler rows, which would
 	// leave the divider's own extra row unpainted (bleeding the terminal
 	// default through) rather than sharing BgSubtle with its neighbors.
-	div := strings.Repeat(divCell+"\n", 3) + divCell
+	div := padDivCell + "\n" + strings.Repeat(divCell+"\n", 2) + divCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
 
@@ -249,6 +254,20 @@ func pill(text string, col color.Color) string {
 	return lipgloss.NewStyle().Foreground(col).Background(theme.Panel).Padding(0, 1).Render(text)
 }
 
+// segmentBaseColor is the raw fill color segmentBase paints: BgSubtle at
+// rest, Surface once open, HoverBg while hovered. Split out from
+// segmentBase so the pad row's half-block glyph (renderSegment) can carry
+// the same live fill as its own foreground without re-deriving it.
+func segmentBaseColor(hovered, isOpen bool) color.Color {
+	switch {
+	case isOpen:
+		return theme.Surface
+	case hovered:
+		return theme.HoverBg
+	}
+	return theme.BgSubtle
+}
+
 // segmentBase is the background every fragment of a top-bar segment
 // paints: BgSubtle at rest, Surface once open, HoverBg while hovered.
 // renderSegment uses it for its own two rows, and each segment function
@@ -257,14 +276,7 @@ func pill(text string, col color.Color) string {
 // handing it to renderSegment -- otherwise that accessory renders through
 // the bare fg() helper and carries no background of its own.
 func segmentBase(hovered, isOpen bool) lipgloss.Style {
-	base := lipgloss.NewStyle().Background(theme.BgSubtle)
-	switch {
-	case isOpen:
-		return base.Background(theme.Surface)
-	case hovered:
-		return base.Background(theme.HoverBg)
-	}
-	return base
+	return lipgloss.NewStyle().Background(segmentBaseColor(hovered, isOpen))
 }
 
 // segmentBottomAvail returns how many cells a segment's bottom-row value has
@@ -287,24 +299,33 @@ func segmentBottomAvail(width int, icon, trailing string, trailingPad int) int {
 	return avail
 }
 
-// renderSegment lays spec out as a fixed-width, four-row block: a blank pad
-// row breathing above the label (the owner's ruling that the top bar wants a
-// line of padding above it), the icon leads the bottom row with the top row
-// indented to match, an optional trailing accessory (chevron or pills) sits
-// flush right on the bottom row, and a final blank row carries the board's
-// own bottom breathing beneath the value (docs/design/mission/README.md's
-// Terminal geometry table: the board's text block ends at 44px into a
-// 56px/2.15-cell band). All four rows are painted with the segment's own
-// background (segmentBase) so the fill reads as one segment rather than
-// text floating on the bar, and hover/open covers the full four-row span a
-// click can land on.
+// renderSegment lays spec out as a fixed-width, four-row block: a half-row
+// pad breathing above the label (the owner's ruling that the top bar wants
+// half a line of padding above it, not a full one), the icon leads the bottom
+// row with the top row indented to match, an optional trailing accessory
+// (chevron or pills) sits flush right on the bottom row, and a final blank
+// row carries the board's own bottom breathing beneath the value
+// (docs/design/mission/README.md's Terminal geometry table: the board's
+// text block ends at 44px into a 56px/2.15-cell band). The label/value/
+// trailing rows are painted with the segment's own background (segmentBase)
+// so the fill reads as one segment rather than text floating on the bar,
+// the pad row instead carries that same fill as its half-block foreground
+// (see the pad row's own comment), and hover/open covers the full four-row
+// span a click can land on.
 func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	if width < 0 {
 		width = 0
 	}
 	base := segmentBase(hovered, isOpen)
 
-	pad := base.Width(width).Render("")
+	// Half, not full: the pad row's bottom half wears the segment's own
+	// live fill (segmentBaseColor) as the half-block's FOREGROUND, over a
+	// theme.Bg background for the top half -- same technique as the commit
+	// button's caps (changes.go). The color must track hover/open, or a
+	// hovered/open segment's fill would show a canvas-colored notch across
+	// its own top edge where the pad row stops matching it.
+	padStyle := lipgloss.NewStyle().Width(width).Background(theme.Bg).Foreground(segmentBaseColor(hovered, isOpen))
+	pad := padStyle.Render(strings.Repeat(theme.GlyphHalfBlockLower, width))
 
 	iconW := lipgloss.Width(spec.icon)
 	prefixW := 1 + iconW + 2 // leading space + icon column + gap
