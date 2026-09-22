@@ -24,13 +24,19 @@ function open() {
   });
 }
 
-function cstr(s: string) {
-  return ptr(Buffer.from(`${s}\0`));
+function cstr(s: string): Buffer {
+  return Buffer.from(`${s}\0`);
 }
 
 export function clonePath(src: string, dst: string): CloneResult {
   lib ??= open();
-  const rc = lib.symbols.clonefile(cstr(src), cstr(dst), 0);
+  // bun:ffi's ptr() does not root the buffer it points into, so the Buffer
+  // must be held in a local that outlives the call, not just the pointer:
+  // a GC between cstr() returning and clonefile running could otherwise
+  // free the bytes clonefile reads.
+  const srcBuf = cstr(src);
+  const dstBuf = cstr(dst);
+  const rc = lib.symbols.clonefile(ptr(srcBuf), ptr(dstBuf), 0);
   if (rc === 0) return { ok: true };
   const errno = read.i32(lib.symbols.__error()!, 0);
   const message = String(lib.symbols.strerror(errno) ?? `errno ${errno}`);
