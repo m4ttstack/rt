@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -11,6 +11,17 @@ import { tryLockTree } from "../../../worktree/locks.ts";
 import { markHandoffDelivered } from "../../../worktree/patch.ts";
 import { legacyWorktreePoolRoots, worktreePoolRoot } from "../../../rt-paths.ts";
 import { branchExistsLocalAsync } from "../../../worktree/git-async.ts";
+import { scrubGitEnv } from "../../../../packages/git-core/src/exec.ts";
+
+/**
+ * No shell, and GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE stripped from the
+ * child's env: a temp path containing a space would split under `/bin/zsh`
+ * string interpolation, and those three vars inherited from the parent can
+ * point git at state outside the temp repo these tests build.
+ */
+function git(cwd: string, args: string[]): void {
+  execFileSync("git", args, { cwd, env: scrubGitEnv() });
+}
 
 function fakeLog(): Logger {
   return { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as unknown as Logger;
@@ -62,7 +73,7 @@ describe("reconcile.ts: reconcileRepo", () => {
   });
 
   test("prunes an rt-owned branch along with the row, so the name is free again", async () => {
-    execSync(`git -C ${repo} branch on-deck/ghost`, { cwd: repo, shell: "/bin/zsh" });
+    git(repo, ["branch", "on-deck/ghost"]);
     const ghost: TreeRecord = {
       name: "ghost",
       path: join(repo, ".worktrees", "ghost"),
@@ -82,10 +93,7 @@ describe("reconcile.ts: reconcileRepo", () => {
 
     // The freed branch name must be usable again, which is the actual failure
     // mode a leftover ref causes: a subsequent create at that name.
-    execSync(`git -C ${repo} worktree add -q -b on-deck/ghost ${join(repo, ".worktrees", "ghost")}`, {
-      cwd: repo,
-      shell: "/bin/zsh",
-    });
+    git(repo, ["worktree", "add", "-q", "-b", "on-deck/ghost", join(repo, ".worktrees", "ghost")]);
     expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(true);
   });
 
@@ -94,7 +102,7 @@ describe("reconcile.ts: reconcileRepo", () => {
     // out in a real worktree at a path other than the registered one, so
     // `git branch -D` refuses to delete it no matter how many passes retry.
     const liveCheckout = join(repo, ".worktrees", "other-ghost");
-    execSync(`git -C ${repo} worktree add -q -b on-deck/ghost ${liveCheckout}`, { cwd: repo, shell: "/bin/zsh" });
+    git(repo, ["worktree", "add", "-q", "-b", "on-deck/ghost", liveCheckout]);
     const ghost: TreeRecord = {
       name: "ghost",
       path: join(repo, ".worktrees", "ghost"),
@@ -114,7 +122,7 @@ describe("reconcile.ts: reconcileRepo", () => {
 
     // A later pass, once the real blocker is gone, actually retries and
     // finishes the delete rather than being stuck forever.
-    execSync(`git -C ${repo} worktree remove ${liveCheckout}`, { cwd: repo, shell: "/bin/zsh" });
+    git(repo, ["worktree", "remove", liveCheckout]);
     await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
 
     expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeUndefined();
@@ -122,7 +130,7 @@ describe("reconcile.ts: reconcileRepo", () => {
   });
 
   test("prunes a registered tree's row but leaves a non-rt-owned branch alone", async () => {
-    execSync(`git -C ${repo} branch feat-ghost`, { cwd: repo, shell: "/bin/zsh" });
+    git(repo, ["branch", "feat-ghost"]);
     const ghost: TreeRecord = {
       name: "ghost",
       path: join(repo, ".worktrees", "ghost"),
