@@ -92,12 +92,17 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
   const { repoName, log, emit } = deps;
   const fields = { repo: repoName, tree: rec.name, path: rec.path };
 
-  const fail = (): void => {
+  // `inconsistent` is true only when this failure happened after a mutation
+  // that may not have completed (a stash, a fast-forward, a ready step); a
+  // failure that never touched the tree (the fetch, or a stash push that
+  // left it untouched) leaves the donor fit and must not set it.
+  const fail = (inconsistent: boolean): void => {
     const failures = (rec.retryFailures ?? 0) + 1;
     const backoffMs = backoffDelayMs(failures);
     patchTree(repoName, rec.path, (r) => {
       r.retryFailures = failures;
       r.nextRetryAt = new Date(Date.now() + backoffMs).toISOString();
+      if (inconsistent) r.treeMayBeInconsistent = true;
     });
   };
 
@@ -109,7 +114,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
   });
   if (fetchResult.exitCode !== 0) {
     log.warn({ ...fields, output: fetchResult.stderr.trim() }, "freshen: fetch failed");
-    fail();
+    fail(false);
     return false;
   }
 
@@ -156,7 +161,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
         { ...fields, output: push.stderr.trim() },
         "freshen: stash push failed; leaving tree and stash untouched",
       );
-      fail();
+      fail(false);
       return false;
     }
     // A resolved marker is required before any pop ... a positional index
@@ -168,7 +173,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
         { ...fields },
         "freshen: stash push succeeded but its marker could not be resolved; aborting without a pop",
       );
-      fail();
+      fail(true);
       return false;
     }
     stashName = resolved.name;
@@ -179,7 +184,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
     if (after.exitCode !== 0 || after.stdout.trim().length > 0) {
       log.warn({ ...fields }, "freshen: stash did not clear the worktree; aborting");
       await popStash();
-      fail();
+      fail(true);
       return false;
     }
   }
@@ -188,11 +193,11 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
   if (ff.exitCode !== 0) {
     log.warn({ ...fields, defaultRef, output: ff.stderr.trim() }, "freshen: fast-forward failed");
     await popStash();
-    fail();
+    fail(true);
     return false;
   }
   if (!(await popStash())) {
-    fail();
+    fail(true);
     return false;
   }
 
@@ -215,7 +220,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
       },
       "freshen: ready step failed",
     );
-    fail();
+    fail(true);
     return false;
   }
 
@@ -224,6 +229,7 @@ async function freshenOne(deps: FreshenDeps, rec: TreeRecord): Promise<boolean> 
     r.readyAt = new Date().toISOString();
     r.retryFailures = 0;
     delete r.nextRetryAt;
+    delete r.treeMayBeInconsistent;
     if (newStamp) r.readyStamp = newStamp;
   });
 

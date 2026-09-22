@@ -119,12 +119,13 @@ export function chooseCreateMode(
   const golden = findGolden(trees);
   if (!golden) return { mode: "cold", why: "no golden" };
   if (golden.state !== "on-deck") return { mode: "cold", why: `golden is ${golden.state ?? "unstated"}` };
-  if (golden.nextRetryAt && Date.parse(golden.nextRetryAt) > now) return { mode: "cold", why: "golden in backoff" };
-  // retryFailures outlives nextRetryAt, so a golden whose ready ladder died is
-  // refused as a donor even when its deadline has since passed and nothing has
-  // re-freshened it. Without this the predicate would depend on the caller
-  // running freshen first, which only the reconciler pass guarantees.
-  if ((golden.retryFailures ?? 0) > 0) return { mode: "cold", why: "golden has recorded failures" };
+  // A fetch failure leaves the donor fit: hydration adds at a local sha and
+  // clones local files, so it needs no network at all. Refusing the golden
+  // for that is exactly what stops the pool refilling during an upstream
+  // outage. `nextRetryAt` and `retryFailures` govern freshen's own retry
+  // schedule and say nothing about the tree on disk; only a failure that may
+  // have left it inconsistent with readyStamp disqualifies it as a donor.
+  if (golden.treeMayBeInconsistent) return { mode: "cold", why: "golden tree may be inconsistent with its readyStamp" };
   if (!golden.readyStamp) return { mode: "cold", why: "golden has no readyStamp" };
   if (!sameVolume(golden.path, cfgRoot)) return { mode: "cold", why: "golden and pool root are on different volumes" };
   return { mode: "hydrate", golden };

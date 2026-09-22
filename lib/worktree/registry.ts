@@ -42,6 +42,12 @@ export interface TreeRecord {
   disposableReason?: string;
   retryFailures?: number; // shared backoff counter (create/freshen)
   nextRetryAt?: string; // ISO; skip mutating work until then
+  // Set only by a freshen failure that may have left the working tree out of
+  // sync with readyStamp (a stash or fast-forward or ready step half-run); a
+  // fetch failure never sets it, since nothing on disk was touched. Cleared
+  // alongside retryFailures/nextRetryAt on the next successful freshen.
+  // chooseCreateMode is the only reader: it is what "fit to clone from" means.
+  treeMayBeInconsistent?: boolean;
   missCount?: number; // consecutive reconcile passes the path was absent from git ground truth (S063 hold)
 }
 
