@@ -291,7 +291,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     ],
   },
   report: {
-    description: "Worker: post a progress report into the herd room",
+    description: "Worker: post the final report into the herd room and mark the job done",
     module: "./commands/herd.ts",
     fn: "report",
     omitBehavior: { exempt: "agent-facing; the body is free-form prose on stdin" },
