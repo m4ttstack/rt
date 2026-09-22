@@ -211,6 +211,7 @@ import {
   readRespondReport,
   readRespondStates,
   respondFilePath,
+  respondFreshDispatchFields,
   respondReportPath,
   respondResumeDispatchFields,
   writeRespondState,
@@ -1644,6 +1645,7 @@ const httpServer = Bun.serve({
           skill: resolveLaunchSkill('respond', parsed.mrUrl),
           author,
           ...loadAgentSettings(),
+          ...respondFreshDispatchFields(existing),
           note,
         })
           .then(result => {
