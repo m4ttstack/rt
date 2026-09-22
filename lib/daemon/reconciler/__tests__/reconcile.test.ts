@@ -89,6 +89,38 @@ describe("reconcile.ts: reconcileRepo", () => {
     expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(true);
   });
 
+  test("a failed branch delete keeps the row and the branch, so a later pass can retry", async () => {
+    // Injected by a genuine git constraint, not a mock: the branch is checked
+    // out in a real worktree at a path other than the registered one, so
+    // `git branch -D` refuses to delete it no matter how many passes retry.
+    const liveCheckout = join(repo, ".worktrees", "other-ghost");
+    execSync(`git -C ${repo} worktree add -q -b on-deck/ghost ${liveCheckout}`, { cwd: repo, shell: "/bin/zsh" });
+    const ghost: TreeRecord = {
+      name: "ghost",
+      path: join(repo, ".worktrees", "ghost"),
+      kind: "ephemeral",
+      state: "on-deck",
+      branch: "on-deck/ghost",
+      createdAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [ghost]);
+
+    for (let i = 0; i < 3; i++) {
+      await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    }
+
+    expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeDefined();
+    expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(true);
+
+    // A later pass, once the real blocker is gone, actually retries and
+    // finishes the delete rather than being stuck forever.
+    execSync(`git -C ${repo} worktree remove ${liveCheckout}`, { cwd: repo, shell: "/bin/zsh" });
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeUndefined();
+    expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(false);
+  });
+
   test("prunes a registered tree's row but leaves a non-rt-owned branch alone", async () => {
     execSync(`git -C ${repo} branch feat-ghost`, { cwd: repo, shell: "/bin/zsh" });
     const ghost: TreeRecord = {
