@@ -6,9 +6,9 @@ import type { TabConfig } from '../../config.ts';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
 import type { GateRow } from '../../gates/store.ts';
-import type { MrAction } from '../../mr-action.ts';
 import { sectionStatus } from '../../sections.ts';
 import {
+  menuActsOnSelection,
   postableOf,
   selectionOf,
   tabChangeClearsSelection,
@@ -21,7 +21,6 @@ import {
   filterByTab,
   GROUP_KEYS,
   groupMRs,
-  hasStackDescendants,
   NEEDS_ME_TAB,
   nestStacks,
   parseViewState,
@@ -35,7 +34,7 @@ import type {
   StackNode,
   ViewState,
 } from '../../view.ts';
-import { postAction } from '../api.ts';
+import { postAction, type ActionResult } from '../api.ts';
 import type {
   BoardData,
   BoardMRWithReview,
@@ -44,6 +43,15 @@ import type {
   RowMenuState,
   ThemeMode,
 } from '../types.ts';
+import {
+  dispatchRowAction,
+  runBulk,
+  runOne,
+  type LaunchOpts,
+  type RowHandlers,
+  type RunnerDeps,
+} from './action-runner.ts';
+import { ActionMenu } from './ActionMenu.tsx';
 import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
@@ -61,7 +69,7 @@ import {
   viewStateForGate,
 } from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
-import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
+import { boardSummary, draftKey, mrLine } from './format.ts';
 import {
   useBoardData,
   useLaunchAction,
@@ -71,6 +79,13 @@ import {
 import { NEED_LABEL, NEED_ORDER, needOf } from './needs-me.ts';
 import { overlay } from './optimistic.ts';
 import { RespondModal, ReviewModal } from './ReviewModal.tsx';
+import {
+  bulkActions,
+  type ActionEnv,
+  type LaunchFlow,
+  type RowAction,
+  type RunOpts,
+} from './row-actions.ts';
 import { RowMenu } from './RowMenu.tsx';
 import { RowView } from './RowView.tsx';
 import { SelectionBar } from './SelectionBar.tsx';
@@ -126,6 +141,20 @@ function emptyQueueCopy(
   }
   return 'nothing waiting on review ✓';
 }
+
+// Module scope, not inline in useLaunchAction's call below: an inline arrow
+// is a new function every render, which breaks the memo chain running
+// through launch, runner, runRowAction and rowHandlers.
+const resumeReviewFailureMessage = (
+  result: ActionResult,
+  mr: BoardMR
+): string =>
+  `resume review failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ''}`;
+const resumeRespondFailureMessage = (
+  result: ActionResult,
+  mr: BoardMR
+): string =>
+  `resume respond failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ''}`;
 
 // ── board ──────────────────────────────────────────────────────────────────
 
@@ -384,12 +413,11 @@ export function Board() {
     setRowMenu({ x: e.clientX, y: e.clientY, mr });
   }, []);
 
-  // Six near-identical "launch a pane" actions collapse onto useLaunchAction:
-  // claim optimistic queued state (skipped for resume, whose axis is null),
-  // toast, POST, and reconcile on the answer. See launch-flow.ts's
-  // runLaunchFlow for the shared shape; note is folded into `extra` since
-  // JSON.stringify already drops it when undefined, matching every one of
-  // today's payloads.
+  // Six "launch a pane" flows collapse onto useLaunchAction: claim optimistic
+  // queued state (skipped for resume, whose axis is null), toast, POST, and
+  // reconcile on the answer. See launch-flow.ts's runLaunchFlow for the
+  // shared shape; note is folded into `extra` since JSON.stringify already
+  // drops it when undefined, matching every one of today's payloads.
   const launchReview = useLaunchAction({
     axis: 'review',
     path: '/review',
@@ -399,12 +427,6 @@ export function Board() {
     addToast,
     reload: load,
   });
-  const handleLaunch = useCallback(
-    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
-      launchReview(mr, { tabId: state.tab }, note, intent),
-    [launchReview, state.tab]
-  );
-
   const reReviewAction = useLaunchAction({
     axis: 'review',
     path: '/review',
@@ -414,12 +436,6 @@ export function Board() {
     addToast,
     reload: load,
   });
-  const handleReReview = useCallback(
-    (mr: BoardMR, note?: string) =>
-      reReviewAction(mr, { reReview: true, tabId: state.tab }, note),
-    [reReviewAction, state.tab]
-  );
-
   const respondAction = useLaunchAction({
     axis: 'respond',
     path: '/respond',
@@ -429,12 +445,6 @@ export function Board() {
     addToast,
     reload: load,
   });
-  const handleRespond = useCallback(
-    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
-      respondAction(mr, {}, note, intent),
-    [respondAction]
-  );
-
   const doctorAction = useLaunchAction({
     axis: 'doctor',
     path: '/doctor',
@@ -444,33 +454,6 @@ export function Board() {
     addToast,
     reload: load,
   });
-  const handleDoctor = useCallback(
-    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
-      doctorAction(mr, {}, note, intent),
-    [doctorAction]
-  );
-  // The doctor chassis scoped to a checkout rebase — the fallback when the
-  // GitLab-side rebase can't (conflicts) or didn't work.
-  const handleRebaseLocal = useCallback(
-    (mr: BoardMR, note?: string) => doctorAction(mr, { mode: 'rebase' }, note),
-    [doctorAction]
-  );
-
-  // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
-  // opened the gate, via the exact same launch endpoint a fresh launch from
-  // the row would use -- the server-side dedup (existing tabId + in-flight
-  // status) re-focuses that pane, and the focus intent makes a gone pane a
-  // refusal rather than a fresh launch, so this never invents a distinct
-  // focus call.
-  const handleFocusPane = useCallback(
-    (mr: BoardMR, domain: GateDomain) => {
-      if (domain === 'review') handleLaunch(mr, undefined, 'focus');
-      else if (domain === 'respond') handleRespond(mr, undefined, 'focus');
-      else handleDoctor(mr, undefined, 'focus');
-    },
-    [handleLaunch, handleRespond, handleDoctor]
-  );
-
   // Resume actions: axis null means useLaunchAction's setQueued/rollback are
   // no-ops, matching today's handleResume (which never claimed a badge before
   // the reload settled). Bespoke failureMessage restores handleResume's own
@@ -485,15 +468,8 @@ export function Board() {
     optimistic: optimisticLifecycle,
     addToast,
     reload: load,
-    failureMessage: (result, mr) =>
-      `resume review failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ''}`,
+    failureMessage: resumeReviewFailureMessage,
   });
-  const handleResumeReview = useCallback(
-    (mr: BoardMR, note?: string) =>
-      resumeReviewAction(mr, { resume: true }, note),
-    [resumeReviewAction]
-  );
-
   const resumeRespondAction = useLaunchAction({
     axis: null,
     path: '/respond',
@@ -502,50 +478,99 @@ export function Board() {
     optimistic: optimisticLifecycle,
     addToast,
     reload: load,
-    failureMessage: (result, mr) =>
-      `resume respond failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ''}`,
+    failureMessage: resumeRespondFailureMessage,
   });
+
+  // Each flow's payload lives here once: the row menu, the bulk menu, the
+  // status line's verbs and the decision queue all launch through it.
+  const launch = useCallback(
+    (flow: LaunchFlow, mr: BoardMR, opts: LaunchOpts = {}) => {
+      const { note, intent, quiet } = opts;
+      switch (flow) {
+        case 'review':
+          return launchReview(mr, { tabId: state.tab }, note, intent, quiet);
+        case 're-review':
+          return reReviewAction(
+            mr,
+            { reReview: true, tabId: state.tab },
+            note,
+            undefined,
+            quiet
+          );
+        case 'resume-review':
+          return resumeReviewAction(
+            mr,
+            { resume: true },
+            note,
+            undefined,
+            quiet
+          );
+        case 'respond':
+          return respondAction(mr, {}, note, intent, quiet);
+        case 'resume-respond':
+          return resumeRespondAction(
+            mr,
+            { resume: true },
+            note,
+            undefined,
+            quiet
+          );
+        case 'doctor':
+          return doctorAction(mr, {}, note, intent, quiet);
+        case 'rebase-local':
+          // The doctor chassis scoped to a checkout rebase: the fallback when
+          // the GitLab-side rebase can't (conflicts) or didn't work.
+          return doctorAction(mr, { mode: 'rebase' }, note, undefined, quiet);
+      }
+    },
+    [
+      launchReview,
+      reReviewAction,
+      resumeReviewAction,
+      respondAction,
+      resumeRespondAction,
+      doctorAction,
+      state.tab,
+    ]
+  );
+  const handleLaunch = useCallback(
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      void launch('review', mr, { note, intent }),
+    [launch]
+  );
+  const handleReReview = useCallback(
+    (mr: BoardMR, note?: string) => void launch('re-review', mr, { note }),
+    [launch]
+  );
+  const handleRespond = useCallback(
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      void launch('respond', mr, { note, intent }),
+    [launch]
+  );
+  const handleDoctor = useCallback(
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      void launch('doctor', mr, { note, intent }),
+    [launch]
+  );
   const handleResumeRespond = useCallback(
-    (mr: BoardMR, note?: string) =>
-      resumeRespondAction(mr, { resume: true }, note),
-    [resumeRespondAction]
+    (mr: BoardMR, note?: string) => void launch('resume-respond', mr, { note }),
+    [launch]
   );
 
-  // Ask a peer's board for a re-review of one of our MRs. No optimistic chip:
-  // the server writes the sent-nudge file before answering, so the reload right
-  // behind this brings back the real state one poll sooner than guessing would.
-  // Bespoke (not useLaunchAction): the failure toast prefers the server's own
-  // refusal text over a generic status message.
-  const handleAsk = useCallback(
-    (
-      mr: BoardMR,
-      reviewer: string,
-      kind: 'review' | 're-review' | 'respond'
-    ) => {
-      if (!mr.webUrl) return;
-      addToast(`requesting ${kind} of !${mr.iid} from ${reviewer}…`);
-      postAction('/nudge', {
-        mrUrl: mr.webUrl,
-        iid: mr.iid,
-        reviewer,
-        kind,
-      }).then(result => {
-        if (!result.ok) {
-          // A permanent refusal (409) answers in plain text with the reason
-          // the relay gave -- e.g. the reviewer has no board on the
-          // switchboard. That's the whole point of the failure, so show it.
-          const why = result.text.trim();
-          addToast(
-            why || `couldn't request ${kind} for !${mr.iid} (${result.status})`
-          );
-          return;
-        }
-        if (result.body?.queued)
-          addToast(`switchboard unreachable... queued the ask to ${reviewer}`);
-        load();
-      });
-    },
-    [addToast, load]
+  // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
+  // opened the gate, via the exact same launch endpoint a fresh launch from
+  // the row would use -- the server-side dedup (existing tabId + in-flight
+  // status) re-focuses that pane, and the focus intent makes a gone pane a
+  // refusal rather than a fresh launch, so this never invents a distinct
+  // focus call.
+  const handleFocusPane = useCallback(
+    (mr: BoardMR, domain: GateDomain) =>
+      void launch(
+        domain === 'review' || domain === 'respond' ? domain : 'doctor',
+        mr,
+        { intent: 'focus' }
+      ),
+    [launch]
   );
 
   // The status line's clear verb: tombstones the dead run daemon-side
@@ -623,59 +648,6 @@ export function Board() {
     [addToast, load]
   );
 
-  // Flip one of your own MRs between draft and ready. No optimistic state: the
-  // flip lives in GitLab, so the row waits for the reload rather than claiming a
-  // change the API might have refused.
-  const handleDraftState = useCallback(
-    (mr: BoardMR, draft: boolean) => {
-      if (!mr.webUrl) return;
-      const verb = draft ? 'draft' : 'ready';
-      addToast(`marking !${mr.iid} ${verb}…`);
-      postAction('/draft', { mrUrl: mr.webUrl, iid: mr.iid, draft }).then(
-        result => {
-          if (!result.ok) {
-            addToast(`couldn't mark !${mr.iid} ${verb} (${result.status})`);
-            return;
-          }
-          addToast(
-            draft
-              ? `!${mr.iid} is back to draft`
-              : `!${mr.iid} is ready for review`
-          );
-          void load(true);
-        }
-      );
-    },
-    [addToast, load]
-  );
-
-  const handleMrAction = useCallback(
-    (mr: BoardMR, action: MrAction) => {
-      if (!mr.webUrl) return;
-      const wording: Record<MrAction, [pending: string, done: string]> = {
-        merge: ['merging', 'merge accepted'],
-        rebase: ['rebasing', 'rebase started'],
-        setAutoMerge: ['arming auto-merge on', 'auto-merge armed for'],
-        cancelAutoMerge: ['canceling auto-merge on', 'auto-merge canceled for'],
-      };
-      const [pending, done] = wording[action];
-      addToast(`${pending} !${mr.iid}…`);
-      postAction('/mr/action', {
-        mrUrl: mr.webUrl,
-        iid: mr.iid,
-        action,
-      }).then(result => {
-        if (!result.ok) {
-          addToast(`couldn't ${action} !${mr.iid} (${result.status})`);
-          return;
-        }
-        addToast(`${done} !${mr.iid}`);
-        void load(true);
-      });
-    },
-    [addToast, load]
-  );
-
   const handleCopy = useCallback(
     (mr: BoardMR) => {
       const text = data
@@ -743,51 +715,34 @@ export function Board() {
     [addToast, load]
   );
 
-  const handleResolveSlack = useCallback(
-    (mr: BoardMR) => {
-      if (!mr.webUrl) return;
-      addToast(`finding slack thread for !${mr.iid}…`);
-      postAction('/slack/resolve', { mrUrl: mr.webUrl, iid: mr.iid }).then(
-        result => {
-          if (!result.ok)
-            return addToast(
-              `slack lookup failed for !${mr.iid} (${result.status})`
-            );
-          addToast(
-            result.body?.status === 'found'
-              ? `found slack thread for !${mr.iid}`
-              : `no slack thread found for !${mr.iid}`
-          );
-          load();
-        }
-      );
-    },
-    [addToast, load]
+  const runner: RunnerDeps = useMemo(
+    () => ({
+      post: (path, payload) => postAction(path, payload),
+      launch,
+      addToast,
+      reload: fresh => void load(fresh),
+    }),
+    [launch, addToast, load]
   );
-
-  const handleReactSlack = useCallback(
-    (mr: BoardMR, emoji: string, remove: boolean): Promise<string[] | null> => {
-      if (!mr.webUrl) return Promise.resolve(null);
-      const glyph =
-        getSlackMarks().find(m => m.emoji === emoji)?.glyph ?? emoji;
-      const verb = remove ? 'unmark' : 'add';
-      return postAction('/slack/react', {
-        mrUrl: mr.webUrl,
-        emoji,
-        remove,
-      }).then(result => {
-        if (!result.ok) {
-          addToast(
-            `couldn't ${verb} ${glyph} for !${mr.iid} (${result.status})`
-          );
-          return null;
-        }
-        addToast(`${remove ? 'unmarked' : 'marked'} ${glyph} on !${mr.iid}`);
-        load();
-        return result.body?.reactions ?? null;
-      });
-    },
-    [addToast, load]
+  const rowHandlers: RowHandlers = useMemo(
+    () => ({
+      copy: handleCopy,
+      note: mr => setNoteEditing(mr.webUrl ?? null),
+      open: url => window.open(url, '_blank', 'noopener'),
+      viewReport: (mr, lane) =>
+        (lane === 'review' ? setReviewModal : setRespondModal)(
+          mr as BoardMRWithReview
+        ),
+      dismiss: handleDismissLane,
+      standDown: handleStandDown,
+      postSlack: handlePostSlack,
+    }),
+    [handleCopy, handleDismissLane, handleStandDown, handlePostSlack]
+  );
+  const runRowAction = useCallback(
+    (action: RowAction, mr: BoardMR, opts: RunOpts) =>
+      dispatchRowAction(action.request, mr, opts, runner, rowHandlers),
+    [runner, rowHandlers]
   );
 
   // Poll faster while a review, response, or doctor run is active, so the
@@ -1066,13 +1021,32 @@ export function Board() {
     selected,
     onToggleSelect: toggleSelect,
     onClearOrphan: handleClearOrphan,
-    onMerge: mr => handleMrAction(mr, 'merge'),
+    onMerge: mr => void runOne({ kind: 'mr', action: 'merge' }, mr, runner),
     onDismissLane: handleDismissLane,
     onStandDown: handleStandDown,
     noteEditing,
     onEditNote: setNoteEditing,
     onSaveNote: handleSaveNote,
   };
+  const actionEnv: ActionEnv = {
+    local: data.local,
+    slackEnabled: data.slackEnabled,
+    self:
+      data.defaultMember && data.defaultMember !== 'all'
+        ? data.defaultMember
+        : null,
+    roster: data.members.map(m => m.username),
+    peers: data.peers,
+    allMrs: data.mrs,
+  };
+  // A remote board has no bulk actions (each needs the local server), so a
+  // right-click there keeps the row's own menu instead of an empty one.
+  const bulkEntries =
+    data.local &&
+    rowMenu &&
+    menuActsOnSelection(rowMenu.mr, selected, selectedMrs.length)
+      ? bulkActions(selectedMrs, actionEnv)
+      : null;
   const openSettings = () => {
     setMenuOpen(false);
     setShowSettings(true);
@@ -1209,6 +1183,14 @@ export function Board() {
             templates={data.slackTemplates}
             onClear={clearSelection}
             posting={postingSummary}
+            onActions={
+              data.local
+                ? (x, y) => {
+                    const first = selectedMrs[0];
+                    if (first) setRowMenu({ x, y, mr: first });
+                  }
+                : undefined
+            }
             slackPost={
               data.slackEnabled && data.local && postableSelected.length > 0
                 ? {
@@ -1371,61 +1353,28 @@ export function Board() {
         />
       )}
 
-      {rowMenu && (
-        <RowMenu
-          menu={rowMenu}
-          ctx={rowCtx}
-          onClose={() => setRowMenu(null)}
-          onLaunch={handleLaunch}
-          onReReview={handleReReview}
-          onCopy={handleCopy}
-          onResolveSlack={handleResolveSlack}
-          onReactSlack={handleReactSlack}
-          onPostSlack={handlePostSlack}
-          onRespond={handleRespond}
-          canRespond={rowMenu.mr.author.username === data.defaultMember}
-          onDoctor={handleDoctor}
-          // Doctor is mechanical repair (rebase / CI), so it's offered for anyone's
-          // MR that's actually broken — not gated to your own MRs the way respond is.
-          canDoctor={
-            !!(
-              rowMenu.mr.blockers?.pipelineFailing ||
-              rowMenu.mr.blockers?.hasConflicts
-            )
-          }
-          // Own MRs only, same gate as canDraftState/canNudge below --
-          // auto-doctor (fetchOwnMrs) never touches anyone else's MR.
-          canStandDown={rowMenu.mr.author.username === data.defaultMember}
-          // Copy only: "ignore this stack" vs "ignore this MR" -- the flag
-          // itself is per-MR regardless (see triage/run.ts's isStoodDown).
-          mrHasStackDescendants={hasStackDescendants(rowMenu.mr, data.mrs)}
-          onDraftState={handleDraftState}
-          // Your own MRs only, both directions. buildBoard already hides other
-          // people's drafts, but their ready MRs are on the board, so this gate
-          // is what keeps "mark as draft" off them.
-          canDraftState={rowMenu.mr.author.username === data.defaultMember}
-          onMrAction={handleMrAction}
-          onRebaseLocal={handleRebaseLocal}
-          onNudge={(mr2, reviewer) => handleAsk(mr2, reviewer, 're-review')}
-          // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
-          // the server enforces the same gate (403 "not your MR").
-          canNudge={rowMenu.mr.author.username === data.defaultMember}
-          onResumeReview={handleResumeReview}
-          roster={data.members.map(m => m.username)}
-          onRequestReview={(mr2, reviewer) =>
-            handleAsk(mr2, reviewer, 'review')
-          }
-          // The reverse ask: only on a teammate's MR, and only when this
-          // board has an identity to ask as.
-          canAskRespond={
-            !!data.defaultMember &&
-            data.defaultMember !== 'all' &&
-            rowMenu.mr.author.username !== data.defaultMember
-          }
-          onAskRespond={(mr2, reviewer) => handleAsk(mr2, reviewer, 'respond')}
-          peers={data.peers}
-        />
-      )}
+      {rowMenu &&
+        (bulkEntries ? (
+          <ActionMenu
+            x={rowMenu.x}
+            y={rowMenu.y}
+            subject={`${selectedMrs.length} selected`}
+            entries={bulkEntries}
+            empty={`nothing fits all ${selectedMrs.length}`}
+            onClose={() => setRowMenu(null)}
+            onRun={(key, opts) => {
+              const entry = bulkEntries.find(e => e.key === key);
+              return entry ? runBulk(entry, opts, runner) : undefined;
+            }}
+          />
+        ) : (
+          <RowMenu
+            menu={rowMenu}
+            env={actionEnv}
+            onRun={runRowAction}
+            onClose={() => setRowMenu(null)}
+          />
+        ))}
 
       {reviewModal && (
         <ReviewModal mr={reviewModal} onClose={() => setReviewModal(null)} />

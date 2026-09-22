@@ -158,7 +158,7 @@ export interface StackNode<M extends BoardMR = BoardMR> {
     than vanishing into an unwalkable loop. Shared by nestStacks (which draws
     the tree) and groupMRs (which pulls a child into its parent's group), so
     the two can never disagree about who is whose child. */
-function stackParents<M extends BoardMR>(mrs: M[]): Map<M, M> {
+export function stackParents<M extends BoardMR>(mrs: M[]): Map<M, M> {
   const branchKey = (mr: BoardMR, branch: string) =>
     `${projectKeyOf(mr.webUrl ?? '')}::${branch}`;
   const bySource = new Map<string, M>();

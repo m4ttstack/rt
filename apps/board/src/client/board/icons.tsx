@@ -156,6 +156,8 @@ const MENU_PATHS = {
     'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM15 6a9 9 0 0 0-9 9',
   dismiss: 'M18 6 6 18M6 6l12 12',
   note: 'M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l7-7V5a2 2 0 0 0-2-2ZM14 21v-5a2 2 0 0 1 2-2h5M7 8h8M7 12h5',
+  checks: 'M3 17l2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8',
+  chevron: 'M6 9l6 6 6-6',
 } as const;
 
 /** The row menu's non-agent icons: what a click lands on, in place of the

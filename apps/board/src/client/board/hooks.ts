@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BoardMR } from '../../data.ts';
-import { getData, getMember, postAction } from '../api.ts';
+import { getData, getMember, postAction, type ActionResult } from '../api.ts';
 import type { BoardData, BoardMRWithReview, Toast } from '../types.ts';
 import { setSlackMarks } from './format.ts';
 import { runLaunchFlow, type LaunchFlowDeps } from './launch-flow.ts';
@@ -222,8 +222,9 @@ export function useLaunchAction(opts: {
   mr: BoardMR,
   extra?: Record<string, unknown>,
   note?: string,
-  intent?: 'launch' | 'focus'
-) => void {
+  intent?: 'launch' | 'focus',
+  quiet?: boolean
+) => Promise<ActionResult | undefined> {
   const {
     axis,
     path,
@@ -239,21 +240,24 @@ export function useLaunchAction(opts: {
       mr: BoardMR,
       extra: Record<string, unknown> = {},
       note?: string,
-      intent?: 'launch' | 'focus'
+      intent?: 'launch' | 'focus',
+      quiet = false
     ) => {
       const url = mr.webUrl;
+      // Quiet drops this flow's toasts and reload so a bulk run can speak
+      // and reload once for all of its launches; the optimistic badge stays.
       const deps: LaunchFlowDeps = {
         post: payload => postAction(path, payload),
         setQueued:
           axis && url ? () => optimistic.setQueued(axis, url) : () => {},
         rollback: axis && url ? () => optimistic.rollback(axis, url) : () => {},
-        addToast,
-        reload,
+        addToast: quiet ? () => {} : addToast,
+        reload: quiet ? () => {} : reload,
         verbing,
         noun,
         failureMessage,
       };
-      void runLaunchFlow(deps, mr, { ...extra, note }, intent);
+      return runLaunchFlow(deps, mr, { ...extra, note }, intent);
     },
     [axis, path, verbing, noun, optimistic, addToast, reload, failureMessage]
   );

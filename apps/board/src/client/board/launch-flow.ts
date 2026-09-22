@@ -34,8 +34,8 @@ export async function runLaunchFlow(
   mr: BoardMR,
   extra: Record<string, unknown>,
   intent: 'launch' | 'focus' = 'launch'
-): Promise<void> {
-  if (!mr.webUrl) return;
+): Promise<ActionResult | undefined> {
+  if (!mr.webUrl) return undefined;
   // Focus clicks ride the same endpoint (the server's in-flight dedup does
   // the focusing), but claiming "queued" or toasting a launch would misstate
   // what the click asked for -- the pane is already running. `focus: true`
@@ -57,7 +57,7 @@ export async function runLaunchFlow(
         `couldn't focus ${deps.noun} pane for !${mr.iid}${result.text ? `: ${result.text}` : ` (${result.status})`}`
       );
       deps.reload();
-      return;
+      return result;
     }
     deps.rollback();
     deps.addToast(
@@ -65,7 +65,7 @@ export async function runLaunchFlow(
         ? deps.failureMessage(result, mr)
         : `couldn't launch ${deps.noun} for !${mr.iid} (${result.status})`
     );
-    return;
+    return result;
   }
   // Resume actions route through here too (axis: null + a bespoke
   // failureMessage above), but the server never sets `focused` on a resume
@@ -78,4 +78,5 @@ export async function runLaunchFlow(
         : `${deps.noun} already running for !${mr.iid} — focused its tab`
     );
   deps.reload();
+  return result;
 }

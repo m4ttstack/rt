@@ -3281,6 +3281,27 @@ body {
   width: 13px;
   text-align: center;
 }
+/* A bulk item that cannot run keeps its words on one line with the reason
+   wrapped under them, indented past the 13px icon and 9px gap. The
+   recipe's :disabled rule dims the whole item. */
+.tui-menu-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tui-menu-reason {
+  max-width: 15rem;
+  padding-left: 22px;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: normal;
+}
+/* A selection no bulk action fits: one line where the items would be,
+   padded like an item so the menu keeps its shape. */
+.tui-menu-empty {
+  padding: 7px 8px;
+  color: var(--text-3);
+}
 .tui-menu-agent {
   font-weight: 600;
   color: var(--lane);

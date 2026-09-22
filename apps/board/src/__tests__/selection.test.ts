@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  menuActsOnSelection,
   postableOf,
   selectionOf,
   tabChangeClearsSelection,
@@ -76,4 +77,12 @@ describe('tabChangeClearsSelection', () => {
     expect(tabChangeClearsSelection({ group: 'status' }, 'team')).toBe(false);
     expect(tabChangeClearsSelection({ sort: 'progress' }, 'team')).toBe(false);
   });
+});
+
+test('a right-click acts on the selection only from a checked row, two or more checked', () => {
+  const sel = new Set(['u1', 'u2']);
+  expect(menuActsOnSelection({ webUrl: 'u1' }, sel, 2)).toBe(true);
+  expect(menuActsOnSelection({ webUrl: 'u3' }, sel, 2)).toBe(false);
+  expect(menuActsOnSelection({ webUrl: 'u1' }, new Set(['u1']), 1)).toBe(false);
+  expect(menuActsOnSelection({ webUrl: null }, sel, 2)).toBe(false);
 });

@@ -1,167 +1,30 @@
-import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { expect, test } from 'bun:test';
+
+import { MR_URL, mrx } from './menu-fixtures.ts';
 import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  test,
-} from 'bun:test';
+  clickItem,
+  harness,
+  itemTexts,
+  openMenu,
+  useMenuHarness,
+} from './row-menu-harness.tsx';
 
-GlobalRegistrator.register({ url: 'http://localhost/' });
-(
-  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+useMenuHarness();
 
-let React: typeof import('react');
-let createRoot: typeof import('react-dom/client').createRoot;
-let RowMenu: typeof import('../RowMenu.tsx').RowMenu;
-type RowContext = import('../../types.ts').RowContext;
-type BoardMR = import('../../../data.ts').BoardMR;
-type BoardMRWithReview = import('../../types.ts').BoardMRWithReview;
-
-beforeAll(async () => {
-  React = await import('react');
-  ({ createRoot } = await import('react-dom/client'));
-  ({ RowMenu } = await import('../RowMenu.tsx'));
-});
-afterAll(async () => {
-  await GlobalRegistrator.unregister();
-});
-
-const URL = 'https://gitlab.example.com/acme/webapp/-/merge_requests/1418';
-
-function mrx(over: Partial<BoardMRWithReview> = {}): BoardMRWithReview {
-  return {
-    iid: 1418,
-    title: 'Port the flows',
-    webUrl: URL,
-    sourceBranch: 'f',
-    targetBranch: 'main',
-    author: { username: 'pat', name: 'Pat' },
-    reviews: { isApproved: false, required: 0, given: 0, reviewers: [] },
-    blockers: { any: false },
-    mergeButton: { visible: false, disabled: false, loading: false },
-    rebaseButton: { visible: false, loading: false },
-    autoMergeButton: { visible: false, isActive: false },
-    behindTarget: 0,
-    ...over,
-  } as never;
-}
-
-const ctx = {
-  local: true,
-  self: 'pat',
-  slackTemplates: {},
-  slackEnabled: false,
-  onOpenReview: () => {},
-  onOpenRespond: () => {},
-  onOpenDraft: () => {},
-  draftResolved: new Map(),
-  onDismissLane: () => {},
-  onEditNote: () => {},
-  onStandDown: (mr2: BoardMR, on: boolean) =>
-    standDownCalls.push({ iid: mr2.iid, on }),
-} as unknown as RowContext;
-
-let container: HTMLDivElement;
-let root: ReturnType<typeof createRoot>;
-let asked: Array<{ iid: number; reviewer: string }>;
-let respondAsks: Array<{ iid: number; reviewer: string }>;
-let standDownCalls: Array<{ iid: number; on: boolean }>;
-
-const noop = () => {};
-
-async function render(
-  mr: BoardMRWithReview,
-  roster: string[],
-  opts: {
-    canNudge?: boolean;
-    canAskRespond?: boolean;
-    peers?: string[];
-    canStandDown?: boolean;
-    mrHasStackDescendants?: boolean;
-  } = {}
-) {
-  container = document.createElement('div');
-  document.body.appendChild(container);
-  root = createRoot(container);
-  await React.act(async () => {
-    root.render(
-      <RowMenu
-        menu={{ x: 10, y: 10, mr: mr as BoardMR }}
-        ctx={ctx}
-        onClose={noop}
-        onLaunch={noop}
-        onReReview={noop}
-        onCopy={noop}
-        onResolveSlack={noop}
-        onReactSlack={async () => null}
-        onPostSlack={noop}
-        onRespond={noop}
-        canRespond={true}
-        onDoctor={noop}
-        canDoctor={false}
-        canStandDown={opts.canStandDown ?? false}
-        mrHasStackDescendants={opts.mrHasStackDescendants ?? false}
-        onDraftState={noop}
-        canDraftState={true}
-        onMrAction={noop}
-        onRebaseLocal={noop}
-        onNudge={noop}
-        canNudge={opts.canNudge ?? true}
-        onResumeReview={noop}
-        roster={roster}
-        onRequestReview={(mr2, reviewer) =>
-          asked.push({ iid: mr2.iid, reviewer })
-        }
-        canAskRespond={opts.canAskRespond ?? false}
-        peers={opts.peers}
-        onAskRespond={(mr2, reviewer) =>
-          respondAsks.push({ iid: mr2.iid, reviewer })
-        }
-      />
-    );
-  });
-}
-
-beforeEach(() => {
-  asked = [];
-  respondAsks = [];
-  standDownCalls = [];
-});
-afterEach(async () => {
-  await React.act(async () => root.unmount());
-  container.remove();
-});
-
-function itemByText(text: string): HTMLElement {
-  const items = [...document.querySelectorAll('[role="menuitem"]')];
-  const hit = items.find(el => el.textContent?.includes(text));
-  if (!hit) {
-    throw new Error(
-      `no menu item "${text}" in: ${items.map(el => el.textContent).join(' | ')}`
-    );
-  }
-  return hit as HTMLElement;
-}
+const URL = MR_URL(1418);
 
 test('own MR with free roster members offers the picker and fires the ask', async () => {
-  await render(mrx(), ['pat', 'kim', 'jo']);
-  const open = itemByText('request review from…');
-  await React.act(async () => open.click());
+  await openMenu(mrx(1418), { self: 'pat', roster: ['pat', 'kim', 'jo'] });
+  await clickItem('request review from…');
   // Second stage lists only the free members -- never the author.
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
-    el => el.textContent
-  );
-  expect(items.some(t => t?.includes('pat'))).toBe(false);
-  await React.act(async () => itemByText('kim').click());
-  expect(asked).toEqual([{ iid: 1418, reviewer: 'kim' }]);
+  expect(itemTexts().some(t => t.includes('pat'))).toBe(false);
+  await clickItem('kim');
+  expect(harness.effects).toEqual([{ effect: 'ask:review:kim', iid: 1418 }]);
 });
 
 test('engaged peers and an outstanding ask hide the item', async () => {
-  await render(
-    mrx({
+  await openMenu(
+    mrx(1418, {
       peerReviews: [
         {
           mrUrl: URL,
@@ -180,80 +43,66 @@ test('engaged peers and an outstanding ask hide the item', async () => {
         },
       ],
     }),
-    ['pat', 'kim', 'jo']
+    { self: 'pat', roster: ['pat', 'kim', 'jo'] }
   );
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
-    el => el.textContent
-  );
-  expect(items.some(t => t?.includes('request review from'))).toBe(false);
+  expect(itemTexts().some(t => t.includes('request review from'))).toBe(false);
 });
 
 test("a commented review on a teammate's MR offers the respond ask", async () => {
-  await render(
-    mrx({
+  await openMenu(
+    mrx(1418, {
       author: { username: 'kim', name: 'Kim' },
       review: { status: 'done', outcome: 'comment' },
-    } as never),
-    ['pat', 'kim'],
-    { canNudge: false, canAskRespond: true }
+    }),
+    { self: 'pat', roster: ['pat', 'kim'] }
   );
-  await React.act(async () => itemByText("ask kim's agent to respond").click());
-  expect(respondAsks).toEqual([{ iid: 1418, reviewer: 'kim' }]);
+  await clickItem("ask kim's agent to respond");
+  expect(harness.effects).toEqual([{ effect: 'ask:respond:kim', iid: 1418 }]);
 });
 
 test('no respond ask without a commented review of mine', async () => {
-  await render(
-    mrx({ author: { username: 'kim', name: 'Kim' } } as never),
-    ['pat', 'kim'],
-    { canNudge: false, canAskRespond: true }
-  );
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
-    el => el.textContent
-  );
-  expect(items.some(t => t?.includes('agent to respond'))).toBe(false);
+  await openMenu(mrx(1418, { author: { username: 'kim', name: 'Kim' } }), {
+    self: 'pat',
+    roster: ['pat', 'kim'],
+  });
+  expect(itemTexts().some(t => t.includes('agent to respond'))).toBe(false);
 });
 
 test('a known enrollment list narrows the picker to enrolled members', async () => {
-  await render(mrx(), ['pat', 'kim', 'jo'], { peers: ['kim'] });
-  await React.act(async () => itemByText('request review from…').click());
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
-    el => el.textContent
-  );
-  expect(items.some(t => t?.includes('kim'))).toBe(true);
-  expect(items.some(t => t?.includes('jo'))).toBe(false);
+  await openMenu(mrx(1418), {
+    self: 'pat',
+    roster: ['pat', 'kim', 'jo'],
+    peers: ['kim'],
+  });
+  await clickItem('request review from…');
+  expect(itemTexts().some(t => t.includes('kim'))).toBe(true);
+  expect(itemTexts().some(t => t.includes('jo'))).toBe(false);
 });
 
-test("the stand-down item is hidden on someone else's MR (canStandDown false)", async () => {
-  await render(mrx(), ['pat'], { canStandDown: false });
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
-    el => el.textContent
-  );
-  expect(items.some(t => t?.includes('auto-doctor'))).toBe(false);
+test("the stand-down item is hidden on someone else's MR", async () => {
+  await openMenu(mrx(1418), { self: 'kim', roster: ['pat'] });
+  expect(itemTexts().some(t => t.includes('auto-doctor'))).toBe(false);
 });
 
 test('a standalone MR offers "ignore this MR" and fires on: true', async () => {
-  await render(mrx(), ['pat'], {
-    canStandDown: true,
-    mrHasStackDescendants: false,
-  });
-  const item = itemByText('auto-doctor: ignore this MR');
-  await React.act(async () => item.click());
-  expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
+  await openMenu(mrx(1418), { self: 'pat', roster: ['pat'] });
+  await clickItem('auto-doctor: ignore this MR');
+  expect(harness.effects).toEqual([{ effect: 'stand-down:true', iid: 1418 }]);
 });
 
 test('an MR with its own descendants offers "ignore this stack" instead', async () => {
-  await render(mrx(), ['pat'], {
-    canStandDown: true,
-    mrHasStackDescendants: true,
-  });
-  const item = itemByText('auto-doctor: ignore this stack');
-  await React.act(async () => item.click());
-  expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
+  const mr = mrx(1418);
+  const child = mrx(1500, { isStacked: true, targetBranch: 'f-1418' });
+  await openMenu(mr, { self: 'pat', roster: ['pat'], allMrs: [mr, child] });
+  await clickItem('auto-doctor: ignore this stack');
+  expect(harness.effects).toEqual([{ effect: 'stand-down:true', iid: 1418 }]);
 });
 
 test('once stood down, the item flips to re-enable and fires on: false', async () => {
-  await render(mrx({ standDown: true }), ['pat'], { canStandDown: true });
-  const item = itemByText('re-enable auto-doctor');
-  await React.act(async () => item.click());
-  expect(standDownCalls).toEqual([{ iid: 1418, on: false }]);
+  await openMenu(mrx(1418, { standDown: true }), {
+    self: 'pat',
+    roster: ['pat'],
+  });
+  await clickItem('re-enable auto-doctor');
+  expect(harness.effects).toEqual([{ effect: 'stand-down:false', iid: 1418 }]);
 });

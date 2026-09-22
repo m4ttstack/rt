@@ -165,3 +165,20 @@ test('launch flow: a launch never sends focus:true', async () => {
   );
   expect(posted).toEqual({ mrUrl: 'u', iid: 7, mode: 'rebase' });
 });
+test('launch flow returns the server result', async () => {
+  const reply = { ok: true, status: 200, body: null, text: '' };
+  const result = await runLaunchFlow(
+    {
+      post: async () => reply,
+      setQueued: () => {},
+      rollback: () => {},
+      addToast: () => {},
+      reload: () => {},
+      verbing: 'launching review',
+      noun: 'review',
+    },
+    { webUrl: 'u', iid: 7 } as never,
+    {}
+  );
+  expect(result).toBe(reply);
+});

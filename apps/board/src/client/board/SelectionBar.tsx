@@ -9,7 +9,7 @@ import {
   type SlackTemplates,
 } from '../../template.ts';
 import { boardSummary } from './format.ts';
-import { SlackLogo } from './icons.tsx';
+import { MenuGlyph, SlackLogo } from './icons.tsx';
 
 /** Shown only while something is selected. Carries the count, an editable
     header line, and the actions retargeted to the selection. */
@@ -20,6 +20,7 @@ function SelectionBar({
   onClear,
   slackPost,
   posting,
+  onActions,
 }: {
   selectedMrs: BoardMR[];
   inViewCount: number;
@@ -34,6 +35,10 @@ function SelectionBar({
       reads slack-ref files that are only written once a message lands, so it
       does not catch a second click that starts before the first returns. */
   posting?: boolean;
+  /** Opens the row menu for the selection, anchored under the button.
+      Undefined on a remote board, where nothing on the bulk menu applies:
+      the actions button itself does not render. */
+  onActions?: (x: number, y: number) => void;
 }) {
   const count = selectedMrs.length;
   // Once you type, the line is yours: re-substituting {count} on every check
@@ -92,6 +97,19 @@ function SelectionBar({
             title="post the selection to slack"
           >
             <SlackLogo /> {posting ? 'posting…' : `post ${slackPost.count}`}
+          </button>
+        )}
+        {onActions && (
+          <button
+            className="tui-copy"
+            onClick={e => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onActions(r.left, r.bottom + 4);
+            }}
+            title="act on the selection"
+            aria-haspopup="menu"
+          >
+            <MenuGlyph kind="checks" /> actions <MenuGlyph kind="chevron" />
           </button>
         )}
         <button
