@@ -740,7 +740,8 @@ body {
    pointer. An agent verb wears its lane's color and the bot mark, so the
    reader knows which agent a click starts before reading the word; a decide
    verb reads the warn hue; a secondary verb (hover only) is muted; navigation
-   (open, read, view) stays quiet text. */
+   (open, read, view) stays quiet text, and merge, the one plain verb that
+   changes the MR, takes the strongest gray. */
 .tui-status-verb {
   margin: 0;
   padding: 1px 6px;
@@ -789,6 +790,9 @@ body {
 .tui-status-verb[data-secondary] {
   --verb: var(--text-4);
   --verb-wash: var(--muted);
+}
+.tui-status-verb[data-verb='merge'] {
+  color: var(--text-1);
 }
 /* An armed merge is a decision waiting on its second click: the decide hue,
    and the wash stays on at rest so it reads as a different state, not a
