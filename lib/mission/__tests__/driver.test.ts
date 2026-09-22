@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AppFileStatusKind,
   DiffSelection,
   type BranchInfo,
+  type Commit,
+  type CommittedFileChange,
   type GitClient,
   type RepoSnapshot,
   type StagingDiff,
@@ -91,6 +94,30 @@ function oneHunkDiff(path = "a.txt"): StagingDiff {
   return { path, kind: "text", untracked: false, hunks: [hunk] };
 }
 
+// One hunk with `lineCount` add lines -- past OVERSIZED_LINE_CUTOFF (3000, see
+// model.ts) this is what a real oversized commit diff looks like, mirroring
+// model.test.ts's own bigStagingDiff.
+function bigHistoryDiff(path: string, lineCount: number): StagingDiff {
+  const lines = [new DiffLine("@@ -1,1 +1,1 @@", DiffLineType.Hunk, 1, null, null)];
+  for (let i = 0; i < lineCount - 1; i++) {
+    lines.push(new DiffLine(`+line ${i}`, DiffLineType.Add, i + 2, null, i + 1));
+  }
+  const header = new DiffHunkHeader(1, 1, 1, lineCount);
+  const hunk = new DiffHunk(header, lines, 0, lines.length - 1, DiffHunkExpansionType.None);
+  return { path, kind: "text", untracked: false, hunks: [hunk] };
+}
+
+// Task 4's own history.test.ts fixtures, reused here so the History-tab
+// driver tests build commits/files the same way the store's own unit tests do.
+function fakeCommit(sha: string, summary = sha): Commit {
+  const id = { name: "Pat", email: "pat@example.com", date: new Date("2026-09-20T00:00:00Z"), tzOffset: 0 };
+  return { sha, shortSha: sha.slice(0, 7), summary, body: "", author: id, committer: id, parentSHAs: [], trailers: [], tags: [], coAuthors: [], authoredByCommitter: true, isMergeCommit: false };
+}
+
+function historyFile(path: string, commitish = "x"): CommittedFileChange {
+  return { path, status: { kind: AppFileStatusKind.Modified }, commitish, parentCommitish: `${commitish}^` };
+}
+
 // ─── fake GitClient ──────────────────────────────────────────────────────────
 
 interface FakeClientCalls {
@@ -101,6 +128,10 @@ interface FakeClientCalls {
   createBranch: { name: string; opts?: { from?: string; checkout?: boolean } }[];
   stageFileFully: { path: string; originalPath?: string }[];
   resetToCommit: { sha: string; mode: string }[];
+  commits: { range?: string; limit?: number; skip?: number }[];
+  localCommits: (number | undefined)[];
+  changedFiles: string[];
+  commitDiff: string[];
 }
 
 function baseSnapshot(overrides: Partial<RepoSnapshot> = {}): RepoSnapshot {
@@ -116,8 +147,24 @@ function makeFakeClient(overrides: {
   log?: GitClient["log"];
   resetToCommit?: GitClient["resetToCommit"];
   createBranch?: GitClient["createBranch"];
+  commits?: GitClient["commits"];
+  localCommits?: GitClient["localCommits"];
+  changedFiles?: GitClient["changedFiles"];
+  commitDiff?: GitClient["commitDiff"];
 } = {}): GitClient & { calls: FakeClientCalls } {
-  const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], createBranch: [], stageFileFully: [], resetToCommit: [] };
+  const calls: FakeClientCalls = {
+    stagingDiff: [],
+    stageSelection: [],
+    discardSelection: [],
+    checkoutBranch: [],
+    createBranch: [],
+    stageFileFully: [],
+    resetToCommit: [],
+    commits: [],
+    localCommits: [],
+    changedFiles: [],
+    commitDiff: [],
+  };
   const client: GitClient = {
     dir: "/repo",
     snapshot: overrides.snapshot ?? (async () => baseSnapshot()),
@@ -164,11 +211,27 @@ function makeFakeClient(overrides: {
     createTag: async () => {},
     deleteTag: async () => {},
     pushTag: async () => {},
-    commits: async () => [],
-    localCommits: async () => [],
-    changedFiles: async () => ({ files: [], linesAdded: 0, linesDeleted: 0 }),
+    commits: async (range?: string, limit?: number, skip?: number, additionalArgs?: ReadonlyArray<string>) => {
+      calls.commits.push({ range, limit, skip });
+      if (overrides.commits) return overrides.commits(range, limit, skip, additionalArgs);
+      const all = [fakeCommit("h1"), fakeCommit("h2")];
+      return limit === 1 ? all.slice(0, 1) : all;
+    },
+    localCommits: async (branch, skip) => {
+      calls.localCommits.push(skip);
+      return overrides.localCommits ? overrides.localCommits(branch, skip) : [];
+    },
+    changedFiles: async (sha: string) => {
+      calls.changedFiles.push(sha);
+      if (overrides.changedFiles) return overrides.changedFiles(sha);
+      return { files: [historyFile("src/a.ts", sha)], linesAdded: 1, linesDeleted: 0 };
+    },
     commitRangeChangedFiles: async () => ({ files: [], linesAdded: 0, linesDeleted: 0 }),
-    commitDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
+    commitDiff: async (file, sha) => {
+      calls.commitDiff.push(`${sha}:${file.path}`);
+      if (overrides.commitDiff) return overrides.commitDiff(file, sha);
+      return oneHunkDiff(file.path);
+    },
     commitRangeDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
   };
   return Object.assign(client, { calls });
@@ -416,61 +479,84 @@ describe("MissionDriver: staging (selection-only, ratified 2026-09-21)", () => {
 });
 
 describe("MissionDriver: discard two-step confirm", () => {
+  // A mutable "now" the test steps forward at chosen points, not a
+  // call-count-indexed array: model()/push() reads deps.now() too (for the
+  // History tab's relative-time formatting), and that incidental read count
+  // is not part of what this test is verifying.
   test("a second matching discard within the window executes discardSelection", async () => {
     const client = makeFakeClient();
-    const times = [1_000, 2_000]; // 1s apart, inside the 5s window
-    let call = 0;
-    const session = new FakeSession([
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "quit" },
-    ]);
-    const deps = baseDeps({ session, client, now: () => new Date(times[call++]!) });
+    let now = 1_000;
+    const session = new QueueSession();
+    const deps = baseDeps({ session, client, now: () => new Date(now) });
 
-    await new MissionDriver(deps, START).run();
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
 
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
     expect((session.pushed[0] as MissionModel).notice).toBe("press d again to discard");
+
+    now = 2_000; // 1s later, inside the 5s window
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
+
     expect(client.calls.discardSelection).toHaveLength(1);
     const { selection } = client.calls.discardSelection[0]!;
     expect(selection.isSelected(3)).toBe(true); // the armed target is what gets discarded
     expect((session.pushed.at(-1) as MissionModel).notice).toBe("");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 
   test("a late second discard past the window re-arms instead of executing", async () => {
     const client = makeFakeClient();
-    const times = [1_000, 20_000]; // 19s apart, outside the 5s window
-    let call = 0;
-    const session = new FakeSession([
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "quit" },
-    ]);
-    const deps = baseDeps({ session, client, now: () => new Date(times[call++]!) });
+    let now = 1_000;
+    const session = new QueueSession();
+    const deps = baseDeps({ session, client, now: () => new Date(now) });
 
-    await new MissionDriver(deps, START).run();
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
+
+    now = 20_000; // 19s later, outside the 5s window
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
 
     expect(client.calls.discardSelection).toHaveLength(0);
     expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 });
 
 describe("MissionDriver: discard disarm", () => {
   test("any non-discard intent disarms an armed discard, so the next d re-arms instead of executing", async () => {
     const client = makeFakeClient();
-    const times = [1_000, 2_000]; // both discards inside the 5s window
-    let call = 0;
-    const session = new FakeSession([
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "mission:select", payload: { filter: "" } },
-      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
-      { t: "intent", name: "quit" },
-    ]);
-    const deps = baseDeps({ session, client, now: () => new Date(times[call++]!) });
+    let now = 1_000;
+    const session = new QueueSession();
+    const deps = baseDeps({ session, client, now: () => new Date(now) });
 
-    await new MissionDriver(deps, START).run();
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:select", payload: { filter: "" } });
+    await flushMicrotasks();
+
+    now = 2_000; // still inside the 5s window, but the select in between disarmed it
+    session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
+    await flushMicrotasks();
 
     expect(client.calls.discardSelection).toHaveLength(0);
     expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 });
 
@@ -2067,5 +2153,216 @@ describe("MissionDriver: seed", () => {
     expect(opened!.diff.path).toBe("a.txt");
     expect(opened!.diff.kind).toBe("text");
     expect(opened!.diff.lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("MissionDriver: History tab", () => {
+  test("Changes-only sessions never read history", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.commits).toHaveLength(0);
+  });
+
+  test("opening the tab loads history lazily", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const loadingPush = session.pushed.find((m) => m.tab === "history" && m.history.loading === true);
+    expect(loadingPush).toBeDefined();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
+    expect(last.history.header?.sha).toBe("h1");
+    expect(last.diff.readOnly).toBe(true);
+    expect(last.diff.path).toBe("src/a.ts");
+  });
+
+  test("selecting a commit loads its files and moves the header", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:history-select", payload: { shas: ["h2"] } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.changedFiles.at(-1)).toBe("h2");
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.header?.sha).toBe("h2");
+  });
+
+  test("selecting a file loads its diff", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:history-file", payload: { path: "src/a.ts" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    // One commitDiff call from the tab-open auto-select, a second from the
+    // explicit mission:history-file intent -- missing the second means the
+    // handler never re-ran selectFile.
+    expect(client.calls.commitDiff).toEqual(["h1:src/a.ts", "h1:src/a.ts"]);
+  });
+
+  test("paging loads a second batch and grows the commit list", async () => {
+    const client = makeFakeClient({
+      commits: async (_range, limit, skip) => {
+        if (limit === 1) return [fakeCommit("p000")];
+        if (skip === 100) return Array.from({ length: 5 }, (_, i) => fakeCommit(`q${i}`));
+        return Array.from({ length: 100 }, (_, i) => fakeCommit(`p${String(i).padStart(3, "0")}`));
+      },
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:history-more" },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits).toHaveLength(105);
+  });
+
+  test("tab state is kept across a switch back to Changes and forth again", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:history-select", payload: { shas: ["h2"] } },
+      { t: "intent", name: "mission:tab", payload: { tab: "changes" } },
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const changesPush = session.pushed.find((m) => m.tab === "changes");
+    expect(changesPush).toBeDefined();
+    expect(changesPush!.diff.readOnly).toBe(false);
+    expect(changesPush!.diff.path).toBe("");
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.tab).toBe("history");
+    expect(last.history.header?.sha).toBe("h2");
+    // The tip never moved between the two History opens, so only the
+    // original open's full batch load should ever have happened.
+    expect(client.calls.commits.filter((c) => c.limit === 100)).toHaveLength(1);
+  });
+
+  test("a new tip while on History reloads and keeps the selection (Review Focus 4)", async () => {
+    let tipMoved = false;
+    const client = makeFakeClient({
+      commits: async (_range, limit) => {
+        const list = tipMoved ? [fakeCommit("h0"), fakeCommit("h1"), fakeCommit("h2")] : [fakeCommit("h1"), fakeCommit("h2")];
+        return limit === 1 ? list.slice(0, 1) : list;
+      },
+    });
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:history-select", payload: { shas: ["h2"] } });
+    await flushMicrotasks();
+
+    tipMoved = true;
+    expect(captured).not.toBeNull();
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits[0]!.sha).toBe("h0");
+    expect(last.history.header?.sha).toBe("h2");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a worktree switch resets history so the next History open loads a first batch again", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:worktree", payload: { path: "/repo2" } },
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? {
+              ok: true,
+              data: {
+                trees: [
+                  { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+                  { path: "/repo2", name: "frodo", branch: "feature", state: "claimed" },
+                ],
+              },
+            }
+          : {
+              ok: true,
+              data: {
+                repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/repo2", branch: "feature" })] }],
+              },
+            },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    // A worktree switch that DIDN'T reset history would still see the old
+    // tip as unchanged and never issue this second full batch load.
+    expect(client.calls.commits.filter((c) => c.limit === 100)).toHaveLength(2);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
+  });
+
+  test("oversized show-anyway flips the diff kind without a refetch", async () => {
+    const client = makeFakeClient({
+      commitDiff: async (file) => bigHistoryDiff(file.path, 3001),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:history-file", payload: { path: "src/a.ts", showOversized: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const beforeOverride = session.pushed.find((m) => m.tab === "history" && m.diff.kind === "oversized");
+    expect(beforeOverride).toBeDefined();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.diff.kind).toBe("text");
   });
 });

@@ -26,6 +26,8 @@ import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
 import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts";
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
+import { HistoryStore, type HistoryBranch } from "./history.ts";
+import { buildHistoryModel } from "./history-model.ts";
 import { buildModel, joinWorktreeRows, mergeWorktreeTrees, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import { SessionDied } from "../runner/runner.ts";
 
@@ -121,8 +123,22 @@ interface ConfirmDiscard {
   armedAt: number;
 }
 
+interface TabPayload {
+  tab: "changes" | "history";
+}
+
+interface HistorySelectPayload {
+  shas: string[];
+}
+
+interface HistoryFilePayload {
+  path: string;
+  showOversized?: boolean;
+}
+
 interface DriverState extends MissionState {
   confirmDiscard: ConfirmDiscard | null;
+  tab: "changes" | "history";
 }
 
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
@@ -228,6 +244,9 @@ export class MissionDriver {
    *  provision attempt so an unmatched entry from an earlier one never
    *  lingers. */
   private pendingSettledEvents: Map<string, boolean> = new Map();
+  private readonly history = new HistoryStore();
+  /** True only while the initial batch for a freshly-opened History tab is in flight; distinct from HistoryStore.loaded so a background tip sync never flashes the loading state. */
+  private historyLoading = false;
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -245,6 +264,7 @@ export class MissionDriver {
       selections: new Map(),
       confirmDiscard: null,
       settling: false,
+      tab: "changes",
     };
   }
 
@@ -313,6 +333,8 @@ export class MissionDriver {
   }
 
   private model(): MissionModel {
+    const history = buildHistoryModel(this.history, { now: this.deps.now(), loading: this.historyLoading });
+    const selectedFile = this.history.selectedFile;
     return buildModel({
       state: this.state,
       rows: this.rows,
@@ -326,6 +348,14 @@ export class MissionDriver {
       action: this.action,
       headShortSha: this.headShortSha,
       defaultBranch: this.defaultBranch,
+      tab: this.state.tab,
+      history,
+      historyDiff: {
+        path: selectedFile?.path ?? null,
+        status: history.files.find((f) => f.path === selectedFile?.path)?.status ?? "",
+        diff: this.history.diff,
+        oversizedOverride: selectedFile ? this.history.isOversizedShown(selectedFile.path) : false,
+      },
     });
   }
 
@@ -360,6 +390,16 @@ export class MissionDriver {
       behind: this.snapshot.behind ?? 0,
       clean: this.snapshot.clean,
     };
+  }
+
+  private historyBranch(): HistoryBranch {
+    return this.snapshot.branch ? { name: this.snapshot.branch, upstream: this.snapshot.upstream } : null;
+  }
+
+  /** A no-op off the History tab: the store never fetches anything a session that stays on Changes will never render. */
+  private async syncHistory(): Promise<void> {
+    if (this.state.tab !== "history") return;
+    await this.history.syncTip(this.deps.client(this.state.currentWorktree), this.historyBranch());
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {
@@ -421,6 +461,7 @@ export class MissionDriver {
       : null;
     await this.refreshDiff(client);
     this.recomputeAction();
+    await this.syncHistory();
   }
 
   /**
@@ -447,6 +488,7 @@ export class MissionDriver {
     this.reconcileSelections();
     this.stagingDiff = stagingDiff;
     this.recomputeAction();
+    await this.syncHistory();
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
@@ -522,9 +564,46 @@ export class MissionDriver {
       case "mission:select":
         await this.handleSelect(intent.payload as SelectPayload | undefined);
         break;
+      case "mission:tab":
+        await this.handleTab(intent.payload as TabPayload | undefined);
+        break;
+      case "mission:history-select": {
+        const payload = intent.payload as HistorySelectPayload | undefined;
+        if (!Array.isArray(payload?.shas)) break;
+        await this.history.select(this.deps.client(this.state.currentWorktree), payload.shas);
+        this.push();
+        break;
+      }
+      case "mission:history-file": {
+        const payload = intent.payload as HistoryFilePayload | undefined;
+        if (typeof payload?.path !== "string") break;
+        if (payload.showOversized === true) this.history.showOversized(payload.path);
+        else await this.history.selectFile(this.deps.client(this.state.currentWorktree), payload.path);
+        this.push();
+        break;
+      }
+      case "mission:history-more":
+        await this.history.loadNextBatch(this.deps.client(this.state.currentWorktree), this.historyBranch());
+        this.push();
+        break;
       default:
         break;
     }
+  }
+
+  private async handleTab(payload: TabPayload | undefined): Promise<void> {
+    if (payload?.tab !== "changes" && payload?.tab !== "history") return;
+    this.state.tab = payload.tab;
+    if (payload.tab === "history") {
+      this.historyLoading = !this.history.loaded;
+      this.push();
+      try {
+        await this.syncHistory();
+      } finally {
+        this.historyLoading = false;
+      }
+    }
+    this.push();
   }
 
   private async handleAction(): Promise<void> {
@@ -842,6 +921,7 @@ export class MissionDriver {
   private setCurrentWorktree(path: string, settling: boolean): void {
     this.state.currentWorktree = path;
     this.state.settling = settling;
+    this.history.reset();
   }
 
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
@@ -958,5 +1038,6 @@ export class MissionDriver {
     this.reconcileSelections();
     await this.refreshDiff(client);
     this.recomputeAction();
+    await this.syncHistory();
   }
 }
