@@ -259,7 +259,7 @@ func pill(text string, col color.Color) string {
 }
 
 // segmentBaseColor is the raw fill color segmentBase paints: TopBarBg at
-// rest, Surface once open, HoverBg while hovered. Split out from
+// rest, Surface once open, TopBarHoverBg while hovered. Split out from
 // segmentBase so the pad row's half-block glyph (renderSegment) can carry
 // the same live fill as its own foreground without re-deriving it.
 func segmentBaseColor(hovered, isOpen bool) color.Color {
@@ -267,13 +267,13 @@ func segmentBaseColor(hovered, isOpen bool) color.Color {
 	case isOpen:
 		return theme.Surface
 	case hovered:
-		return theme.HoverBg
+		return theme.TopBarHoverBg
 	}
 	return theme.TopBarBg
 }
 
 // segmentBase is the background every fragment of a top-bar segment
-// paints: TopBarBg at rest, Surface once open, HoverBg while hovered.
+// paints: TopBarBg at rest, Surface once open, TopBarHoverBg while hovered.
 // renderSegment uses it for its own two rows, and each segment function
 // uses the SAME call (same hovered/isOpen) to color its pre-rendered
 // trailing accessory (a chevron, or the separator between pills) before

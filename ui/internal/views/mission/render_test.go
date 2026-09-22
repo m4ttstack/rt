@@ -2479,9 +2479,9 @@ func TestTopBarIsFourRowsWithMirroredHalfBlockPadding(t *testing.T) {
 
 // TestTopBarPadRowHalfBlockTracksHoverAndOpen pins requirement 1: the pad
 // row's half-block foreground must track the SAME segmentBase color its
-// label/value rows wear (TopBarBg at rest, HoverBg while hovered, Surface
-// while its foldout is open), in all three states -- otherwise a hovered or
-// open segment shows a rest-colored notch across its own top edge.
+// label/value rows wear (TopBarBg at rest, TopBarHoverBg while hovered,
+// Surface while its foldout is open), in all three states -- otherwise a
+// hovered or open segment shows a rest-colored notch across its own top edge.
 func TestTopBarPadRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -2489,7 +2489,7 @@ func TestTopBarPadRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 		want        color.Color
 	}{
 		{"rest", zoneNone, zoneNone, theme.TopBarBg},
-		{"hovered", zoneRepo, zoneNone, theme.HoverBg},
+		{"hovered", zoneRepo, zoneNone, theme.TopBarHoverBg},
 		{"open", zoneNone, zoneRepo, theme.Surface},
 	}
 	for _, tc := range cases {
@@ -2512,7 +2512,7 @@ func TestTopBarTrailingRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 		want        color.Color
 	}{
 		{"rest", zoneNone, zoneNone, theme.TopBarBg},
-		{"hovered", zoneRepo, zoneNone, theme.HoverBg},
+		{"hovered", zoneRepo, zoneNone, theme.TopBarHoverBg},
 		{"open", zoneNone, zoneRepo, theme.Surface},
 	}
 	for _, tc := range cases {
@@ -2586,9 +2586,9 @@ func TestTopBarDividerUsesTopBarBgNotBgSubtle(t *testing.T) {
 }
 
 // TestTopBarHoverCoversAllFourRowsOfItsSegment pins the padding change's
-// hover half: a hovered segment's HoverBg fill spans its full 4-row span.
-// The pad and trailing rows (indices 0 and 3) carry HoverBg as the
-// half-block's FOREGROUND, not its background (that stays theme.Bg, the
+// hover half: a hovered segment's TopBarHoverBg fill spans its full 4-row
+// span. The pad and trailing rows (indices 0 and 3) carry TopBarHoverBg as
+// the half-block's FOREGROUND, not its background (that stays theme.Bg, the
 // canvas the fill rises out of); the label/value rows (1-2) still wear it
 // as a full background.
 func TestTopBarHoverCoversAllFourRowsOfItsSegment(t *testing.T) {
@@ -2597,15 +2597,15 @@ func TestTopBarHoverCoversAllFourRowsOfItsSegment(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("top bar should render exactly 4 rows, got %d:\n%s", len(lines), out)
 	}
-	if !strings.Contains(lines[0], fgSGR(theme.HoverBg)) {
-		t.Fatalf("hovered repo segment's pad row should wear HoverBg as its half-block foreground: %q", lines[0])
+	if !strings.Contains(lines[0], fgSGR(theme.TopBarHoverBg)) {
+		t.Fatalf("hovered repo segment's pad row should wear TopBarHoverBg as its half-block foreground: %q", lines[0])
 	}
-	if !strings.Contains(lines[3], fgSGR(theme.HoverBg)) {
-		t.Fatalf("hovered repo segment's trailing row should wear HoverBg as its half-block foreground: %q", lines[3])
+	if !strings.Contains(lines[3], fgSGR(theme.TopBarHoverBg)) {
+		t.Fatalf("hovered repo segment's trailing row should wear TopBarHoverBg as its half-block foreground: %q", lines[3])
 	}
 	for i := 1; i <= 2; i++ {
-		if !strings.Contains(lines[i], bgSGR(theme.HoverBg)) {
-			t.Fatalf("hovered repo segment's row %d should wear HoverBg across its full span: %q", i, lines[i])
+		if !strings.Contains(lines[i], bgSGR(theme.TopBarHoverBg)) {
+			t.Fatalf("hovered repo segment's row %d should wear TopBarHoverBg across its full span: %q", i, lines[i])
 		}
 	}
 }
@@ -3068,10 +3068,10 @@ func TestMouseClickFileRowWhileScrolledMapsToAbsoluteIndex(t *testing.T) {
 // from the very first cell through the trailing pad, not just behind the
 // text itself; the pad and trailing rows instead wear that same TopBarBg as
 // their half-block foreground over a theme.Bg background (mirrored half
-// rows, not TopBarBg-filled blank ones). TopBarBg is a darker-than-Bg token
-// dedicated to the bar (2026-09-22 ruling that the bar's own BgSubtle read
-// lighter than the canvas and so never separated from it) -- BgSubtle must
-// not appear anywhere in a rest-state segment any more.
+// rows, not TopBarBg-filled blank ones). TopBarBg is a lighter-than-Bg token
+// dedicated to the bar (2026-09-22 correction of an earlier attempt that
+// went darker and merged with the canvas) -- BgSubtle must not appear
+// anywhere in a rest-state segment any more.
 func TestTopBarSegmentRestPaintsTopBarBgBandFullWidth(t *testing.T) {
 	out := renderRepoSegment(pullModel(), sidebarWidth, false, false)
 	if strings.Contains(out, bgSGR(theme.BgSubtle)) || strings.Contains(out, fgSGR(theme.BgSubtle)) {
@@ -3115,16 +3115,16 @@ func TestTopBarSegmentRestPaintsTopBarBgBandFullWidth(t *testing.T) {
 }
 
 // TestTopBarSegmentHoverAndOpenStillWinOverTopBarBgBand guards the
-// composition-order caution: hover's HoverBg and an open foldout's Surface
-// must still replace the rest-state TopBarBg band, never sit beside it --
-// the hovered/open treatments are unchanged by TopBarBg's introduction.
+// composition-order caution: hover's TopBarHoverBg and an open foldout's
+// Surface must still replace the rest-state TopBarBg band, never sit beside
+// it -- the hovered/open treatments are unchanged by TopBarBg's introduction.
 func TestTopBarSegmentHoverAndOpenStillWinOverTopBarBgBand(t *testing.T) {
 	hovered := renderRepoSegment(pullModel(), sidebarWidth, true, false)
 	if strings.Contains(hovered, bgSGR(theme.TopBarBg)) || strings.Contains(hovered, fgSGR(theme.TopBarBg)) {
 		t.Fatalf("hovered segment must not still carry the rest TopBarBg band: %q", hovered)
 	}
-	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
-		t.Fatalf("hovered segment should wear HoverBg: %q", hovered)
+	if !strings.Contains(hovered, bgSGR(theme.TopBarHoverBg)) {
+		t.Fatalf("hovered segment should wear TopBarHoverBg: %q", hovered)
 	}
 	open := renderRepoSegment(pullModel(), sidebarWidth, false, true)
 	if strings.Contains(open, bgSGR(theme.TopBarBg)) || strings.Contains(open, fgSGR(theme.TopBarBg)) {

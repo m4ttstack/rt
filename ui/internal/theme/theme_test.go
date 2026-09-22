@@ -1,6 +1,8 @@
 package theme
 
 import (
+	"image/color"
+	"math"
 	"strings"
 	"testing"
 
@@ -75,5 +77,48 @@ func TestPickerTokens(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s = %s, want %s", k, got[k], v)
 		}
+	}
+}
+
+// relLuminance is the WCAG relative luminance of a color, used below only to
+// pin a direction (lighter/darker), never an exact contrast ratio.
+func relLuminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	lin := func(v uint32) float64 {
+		f := float64(v) / 65535
+		if f <= 0.04045 {
+			return f / 12.92
+		}
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b)
+}
+
+// TestTopBarBgIsLighterThanBg pins the direction, not just a value: a dark
+// app's content already sits near-black, so the top bar's own rest fill has
+// to rise ABOVE the canvas to separate from it, the opposite of GitHub
+// Desktop's light-app toolbar, which separates by sinking below its content
+// (2026-09-22 correction of an earlier attempt that set TopBarBg darker than
+// Bg and merged into it on screen).
+func TestTopBarBgIsLighterThanBg(t *testing.T) {
+	if relLuminance(TopBarBg) <= relLuminance(Bg) {
+		t.Fatalf("TopBarBg (%s, lum %.5f) must be lighter than Bg (%s, lum %.5f)",
+			Hex(TopBarBg), relLuminance(TopBarBg), Hex(Bg), relLuminance(Bg))
+	}
+}
+
+// TestTopBarStateOrdering pins the three top-bar fill states in luminance
+// order: an open segment's Surface (merging with the foldout panel it now
+// shares a color with) sits below the bar's own rest fill, which sits below
+// the bar's own hover fill.
+func TestTopBarStateOrdering(t *testing.T) {
+	open, rest, hover := relLuminance(Surface), relLuminance(TopBarBg), relLuminance(TopBarHoverBg)
+	if !(open < rest) {
+		t.Fatalf("open (Surface %s, lum %.5f) must be darker than rest (TopBarBg %s, lum %.5f)",
+			Hex(Surface), open, Hex(TopBarBg), rest)
+	}
+	if !(rest < hover) {
+		t.Fatalf("rest (TopBarBg %s, lum %.5f) must be darker than hover (TopBarHoverBg %s, lum %.5f)",
+			Hex(TopBarBg), rest, Hex(TopBarHoverBg), hover)
 	}
 }
