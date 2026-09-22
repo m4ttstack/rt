@@ -154,10 +154,18 @@ vm_ssh_pw() {
   vm_ssh_pw_try "$@" || vm_die "ssh failed for $1@$3"
 }
 
+# Password only, explicitly. Without these the client still offers every key
+# in ~/.ssh and the agent first, and each refusal counts against the guest's
+# MaxAuthTries (6 by default), so the password is never reached and the guest
+# answers "Too many authentication failures". That reads as an unreachable or
+# broken VM when the guest is perfectly healthy, and it depends on how many
+# keys the HOST happens to have, so it fails on one machine and not another.
 vm_ssh_pw_try() {
   local user="$1" pass="$2" vm="$3"; shift 3
   local ip; ip=$(vm_ip "$vm" 1) || return 1
-  sshpass -p "$pass" ssh "${VM_SSH_OPTS[@]}" "$user@$ip" "$@"
+  sshpass -p "$pass" ssh "${VM_SSH_OPTS[@]}" \
+    -o PubkeyAuthentication=no -o PreferredAuthentications=password -o IdentitiesOnly=yes \
+    "$user@$ip" "$@"
 }
 
 vm_wait_ssh() {
