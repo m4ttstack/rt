@@ -26,6 +26,9 @@ export class HistoryStore {
   selectedFile: CommittedFileChange | null = null;
   diff: StagingDiff | null = null;
   private oversizedShown = new Set<string>();
+  /** Bumped only by a real reload (syncTip) or reset. Guards a page load or a slower sync in flight against a newer one that lands first. */
+  private generation = 0;
+  private pendingBatch: Promise<void> | null = null;
 
   reset(): void {
     this.commits = [];
@@ -38,13 +41,16 @@ export class HistoryStore {
     this.selectedFile = null;
     this.diff = null;
     this.oversizedShown = new Set();
+    this.generation++;
   }
 
   /** Loads the first batch when nothing is loaded or HEAD moved; returns whether anything changed. */
   async syncTip(client: GitClient, branch: HistoryBranch): Promise<boolean> {
     const head = (await client.commits("HEAD", 1))[0]?.sha ?? null;
     if (this.loaded && head === this.tip) return false;
+    const gen = ++this.generation;
     const [batch, local] = await Promise.all([client.commits("HEAD", COMMIT_BATCH_SIZE, 0), client.localCommits(branch)]);
+    if (gen !== this.generation) return false;
     this.commits = batch;
     this.localShas = new Set(local.map((c) => c.sha));
     this.tip = head;
@@ -56,23 +62,40 @@ export class HistoryStore {
 
   private async updateOrSelectFirstCommit(client: GitClient): Promise<void> {
     const present = new Set(this.commits.map((c) => c.sha));
-    if (this.selection.length > 0 && this.selection.every((sha) => present.has(sha))) return;
+    if (this.selection.length > 0 && this.selection.every((sha) => present.has(sha))) {
+      if (this.selection.length > 1 && !this.isContiguous()) await this.select(client, this.selection);
+      return;
+    }
     const first = this.commits[0];
     await this.select(client, first ? [first.sha] : []);
   }
 
-  async loadNextBatch(client: GitClient, branch: HistoryBranch): Promise<void> {
-    if (!this.hasMore) return;
-    let newCommits: Commit[] = [];
+  /** One page load in flight at a time: a caller racing an existing load joins it instead of issuing a duplicate request. */
+  loadNextBatch(client: GitClient, branch: HistoryBranch): Promise<void> {
+    if (this.pendingBatch) return this.pendingBatch;
+    if (!this.hasMore) return Promise.resolve();
+    const gen = this.generation;
+    const promise = this.fetchNextBatch(client, branch, gen).finally(() => {
+      this.pendingBatch = null;
+    });
+    this.pendingBatch = promise;
+    return promise;
+  }
+
+  private async fetchNextBatch(client: GitClient, branch: HistoryBranch, gen: number): Promise<void> {
     const last = this.commits.at(-1);
+    let newCommits: Commit[] = [];
+    let localAdditions: Commit[] = [];
     if (last && this.localShas.has(last.sha)) {
       const local = await client.localCommits(branch, this.commits.length);
-      newCommits = local.filter((c) => !this.localShas.has(c.sha));
-      for (const c of newCommits) this.localShas.add(c.sha);
+      localAdditions = local.filter((c) => !this.localShas.has(c.sha));
+      newCommits = localAdditions;
     }
     if (newCommits.length === 0) {
       newCommits = await client.commits("HEAD", COMMIT_BATCH_SIZE, this.commits.length);
     }
+    if (gen !== this.generation) return;
+    for (const c of localAdditions) this.localShas.add(c.sha);
     const known = new Set(this.commits.map((c) => c.sha));
     const fresh = newCommits.filter((c) => !known.has(c.sha));
     this.commits = [...this.commits, ...fresh];

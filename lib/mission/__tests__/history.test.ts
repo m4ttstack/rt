@@ -128,8 +128,65 @@ describe("HistoryStore", () => {
     await store.syncTip(client, BRANCH);
     await store.loadNextBatch(client, BRANCH);
     expect(calls.local).toContain(100);
-    expect(store.commits.length).toBeGreaterThan(100);
-    expect(new Set(store.commits.map((c) => c.sha)).size).toBe(store.commits.length);
+    expect(store.commits.length).toBe(120);
+    expect(store.localShas.size).toBe(120);
+    expect(new Set(store.commits.map((c) => c.sha)).size).toBe(120);
+  });
+
+  test("two concurrent loadNextBatch calls collapse into a single in-flight request", async () => {
+    const { client, calls } = fakeClient({ history: shas("c", 250) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    const [first, second] = [store.loadNextBatch(client, BRANCH), store.loadNextBatch(client, BRANCH)];
+    await Promise.all([first, second]);
+    expect(store.commits.length).toBe(200);
+    expect(store.hasMore).toBe(true);
+    expect(calls.commits.filter((c) => c.skip === 100).length).toBe(1);
+    await store.loadNextBatch(client, BRANCH);
+    expect(store.commits.length).toBe(250);
+  });
+
+  test("a syncTip reload drops a stale in-flight page instead of appending it", async () => {
+    const history = shas("c", 250);
+    const { client } = fakeClient({ history });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    const stalePage = history.slice(100, 200).map((s) => fakeCommit(s));
+    let release!: (v: Commit[]) => void;
+    const slow = new Promise<Commit[]>((r) => { release = r; });
+    const original = client.commits;
+    client.commits = (range, limit, skip) => (skip === 100 ? slow : original(range, limit, skip));
+    const pending = store.loadNextBatch(client, BRANCH);
+    const newHistory = shas("n", 3);
+    history.splice(0, history.length, ...newHistory);
+    await store.syncTip(client, BRANCH);
+    release(stalePage);
+    await pending;
+    expect(store.commits.map((c) => c.sha)).toEqual(newHistory);
+  });
+
+  test("an earlier-started, later-resolving syncTip reload does not overwrite a newer one", async () => {
+    const { client } = fakeClient({ history: shas("c", 3) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    const batchA = shas("a", 3).map((s) => fakeCommit(s));
+    const batchB = shas("b", 3).map((s) => fakeCommit(s));
+    let releaseA!: (v: Commit[]) => void;
+    const slowBatchA = new Promise<Commit[]>((r) => { releaseA = r; });
+    let tipCalls = 0;
+    let batchCalls = 0;
+    client.commits = async (_range, limit) => {
+      if (limit === 1) return tipCalls++ === 0 ? [batchA[0]!] : [batchB[0]!];
+      return ++batchCalls === 1 ? slowBatchA : batchB;
+    };
+    const first = store.syncTip(client, BRANCH);
+    await new Promise((r) => setTimeout(r, 0));
+    const second = await store.syncTip(client, BRANCH);
+    releaseA(batchA);
+    await first;
+    expect(second).toBe(true);
+    expect(store.tip).toBe("b000");
+    expect(store.commits.map((c) => c.sha)).toEqual(["b000", "b001", "b002"]);
   });
 
   test("a contiguous range loads the range changeset oldest first", async () => {
@@ -146,11 +203,27 @@ describe("HistoryStore", () => {
     const { client, calls } = fakeClient({ history: shas("c", 4) });
     const store = new HistoryStore();
     await store.syncTip(client, BRANCH);
-    const before = calls.changed.length;
     await store.select(client, ["c000", "c002"]);
     expect(store.isContiguous()).toBe(false);
     expect(store.changeset).toBeNull();
-    expect(calls.changed.length).toBe(before);
+    expect(calls.range).toEqual([]);
+  });
+
+  test("a reload that breaks a kept multi-selection's contiguity clears the changeset", async () => {
+    const history = shas("c", 4);
+    const { client, calls } = fakeClient({ history });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    await store.select(client, ["c001", "c002"]);
+    expect(store.changeset?.files[0]!.path).toBe("range.ts");
+    const rangeCallsBefore = calls.range.length;
+    history.splice(0, 0, "new");
+    history.splice(3, 0, "x000");
+    await store.syncTip(client, BRANCH);
+    expect(store.selection).toEqual(["c001", "c002"]);
+    expect(store.isContiguous()).toBe(false);
+    expect(store.changeset).toBeNull();
+    expect(calls.range.length).toBe(rangeCallsBefore);
   });
 
   test("a slow changeset for a superseded selection is dropped", async () => {
@@ -182,6 +255,22 @@ describe("HistoryStore", () => {
     release({ path: "a.ts", kind: "text", untracked: false, hunks: [] });
     await first;
     expect(store.diff?.path).toBe("b.ts");
+  });
+
+  test("a slow diff is dropped when the selection changes even though the pending path still matches", async () => {
+    const { client } = fakeClient({ history: shas("c", 2), files: { c000: ["a.ts"], c001: ["a.ts"] } });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    let release!: (v: StagingDiff) => void;
+    const slow = new Promise<StagingDiff>((r) => { release = r; });
+    const original = client.commitDiff;
+    client.commitDiff = (f, sha) => (sha === "c000" ? slow : original(f, sha));
+    const first = store.selectFile(client, "a.ts");
+    await store.select(client, ["c001"]);
+    release({ path: "a.ts", kind: "text", untracked: true, hunks: [] });
+    await first;
+    expect(store.selection).toEqual(["c001"]);
+    expect(store.diff?.untracked).toBe(false);
   });
 
   test("reset forgets everything so the next sync reloads", async () => {
