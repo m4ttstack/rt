@@ -444,12 +444,12 @@ func (m *Mission) filterDisplayText() string {
 }
 
 // sidebarFixedTopRows is the constant row count above the (scrollable)
-// Changes list: tabs(2) + the tabs-gap blank band row(1) + the filter
-// box(3) + the master row(1) (docs/design/mission/README.md's Terminal
-// geometry table). Unlike the old content-driven top block, this never
-// varies with the Changes count -- the list itself is now a fixed-height
-// scrolling region, not a block that grows the whole sidebar.
-const sidebarFixedTopRows = 7
+// Changes list: tabs(3, pad+label+underline) + the tabs-gap blank band
+// row(1) + the filter box(3) + the master row(1) (docs/design/mission/
+// README.md's Terminal geometry table). Unlike the old content-driven top
+// block, this never varies with the Changes count -- the list itself is now
+// a fixed-height scrolling region, not a block that grows the whole sidebar.
+const sidebarFixedTopRows = 8
 
 func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -765,10 +765,16 @@ func topbarHit(width, x int) zoneID {
 // list begins, scrolled or not.
 func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
+	// The pad and label rows are the tabs button; hover and click must cover
+	// exactly the same two rows (renderTabsRow's own invariant comment).
 	if y < row+2 {
 		return tabsHit(sidebarWidth, x)
 	}
 	row += 2
+	if y == row {
+		return hit{} // the underline row: an indicator, not part of the button
+	}
+	row++
 	if y == row {
 		return hit{} // the tabs-gap blank band row: no click target
 	}

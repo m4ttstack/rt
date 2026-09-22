@@ -20,14 +20,20 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the two-tab header per Main.png/EmptyState.png: Changes
-// and History each occupy HALF the sidebar width with centered labels, and
-// the underline runs the full width -- Pink under the active tab's half,
-// Rule under the inactive half (the board's own bottom border). Changes is
-// always the active tab; History has no wire state to select it yet
-// (renderKeybar's own "History lands in v2" notice covers a click on it).
-// hoverHistory paints HoverBg behind the History label's own half only --
-// the underline's active/inactive split is untouched by hover.
+// renderTabsRow paints the three-row tab strip per Main.png/EmptyState.png:
+// a blank pad row, the Changes/History label row, and the underline row,
+// Changes and History each occupy HALF the sidebar width, and the underline
+// runs the full width -- Pink under the active tab's half, Rule under the
+// inactive half (the board's own bottom border). Changes is always the
+// active tab; History has no wire state to select it yet (renderKeybar's own
+// "History lands in v2" notice covers a click on it).
+//
+// The pad and label rows together are the button (sidebarHit's own two-row
+// span for hitTabHistory); hoverHistory paints HoverBg behind BOTH, on the
+// History half only. The underline is the active-tab indicator, not part of
+// the button: it never takes hover, matching sidebarHit resolving it to no
+// hit target -- the invariant this button holds is that the cells that
+// hover are exactly the cells that click, not a superset or a subset.
 func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	half := width / 2
@@ -38,6 +44,8 @@ func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
 		historyOn = on.Background(theme.HoverBg)
 	}
 
+	pad := on.Width(half).Render("") + historyOn.Width(otherHalf).Render("")
+
 	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
 		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
 	historyLabel := historyOn.Foreground(theme.Dimmer).Render("History") + historyOn.Foreground(theme.Faint).Render(" v2")
@@ -46,7 +54,7 @@ func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
 		historyOn.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
 	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
 		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
-	return top + "\n" + underline
+	return pad + "\n" + top + "\n" + underline
 }
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the

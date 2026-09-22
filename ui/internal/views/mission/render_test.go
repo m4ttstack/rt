@@ -146,7 +146,7 @@ func TestRenderSegmentChevronSitsTwoCellsBeforeTheRightEdge(t *testing.T) {
 	chevronRune := []rune(theme.GlyphChevron)[0]
 	for _, c := range cases {
 		lines := strings.Split(c.out, "\n")
-		row2 := []rune(ansi.Strip(lines[1]))
+		row2 := []rune(ansi.Strip(lines[2]))
 		if len(row2) != width {
 			t.Fatalf("%s: value row should be exactly %d cells, got %d: %q", c.name, width, len(row2), string(row2))
 		}
@@ -177,7 +177,7 @@ func TestRenderSegmentLongValueClipsWithoutTouchingChevron(t *testing.T) {
 	long := "a-very-long-repo-or-branch-name-that-would-otherwise-collide"
 	out := renderBranchSegment(Model{Current: Current{Branch: long}}, width, false, false)
 	lines := strings.Split(out, "\n")
-	row2 := []rune(ansi.Strip(lines[1]))
+	row2 := []rune(ansi.Strip(lines[2]))
 	if len(row2) != width {
 		t.Fatalf("value row should stay exactly %d cells, got %d: %q", width, len(row2), string(row2))
 	}
@@ -197,7 +197,7 @@ func TestRenderActionSegmentPillsStayFlush(t *testing.T) {
 	const width = 30
 	out := renderActionSegment(ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2}, width, false, false)
 	lines := strings.Split(out, "\n")
-	row2 := []rune(ansi.Strip(lines[1]))
+	row2 := []rune(ansi.Strip(lines[2]))
 	if len(row2) != width {
 		t.Fatalf("value row should be exactly %d cells, got %d: %q", width, len(row2), string(row2))
 	}
@@ -1866,17 +1866,17 @@ func newMouseTestMission() *Mission {
 
 // changesRowY returns the absolute frame row of mouseFixtureModel's Changes
 // list row idx, derived from m.layout()'s own topH (not hardcoded) plus the
-// sidebar's fixed pre-list structure: tabs(2) + the tabs-gap blank band
-// row(1) + the filter box(3) + the master row(1).
+// sidebar's fixed pre-list structure: tabs(3, pad+label+underline) + the
+// tabs-gap blank band row(1) + the filter box(3) + the master row(1).
 func changesRowY(m *Mission, idx int) int {
-	return m.layout().topH + 2 + 1 + 3 + 1 + idx
+	return m.layout().topH + 3 + 1 + 3 + 1 + idx
 }
 
 // filterRowY returns the absolute frame row of the filter box's own first
 // row (any of its three rows resolves to hitFilterRow), derived from
-// m.layout()'s own topH plus the fixed tabs(2) + tabs-gap(1) prefix.
+// m.layout()'s own topH plus the fixed tabs(3) + tabs-gap(1) prefix.
 func filterRowY(m *Mission) int {
-	return m.layout().topH + 2 + 1
+	return m.layout().topH + 3 + 1
 }
 
 // TestMouseMotionOverFileRowSetsHoverNotCursor pins the mouse board's
@@ -2275,10 +2275,10 @@ func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 	const width = 46
 	out := renderTabsRow(3, false, width)
 	lines := strings.Split(out, "\n")
-	if len(lines) != 2 {
-		t.Fatalf("tabs row should render exactly 2 rows, got %d:\n%s", len(lines), out)
+	if len(lines) != 3 {
+		t.Fatalf("tabs row should render exactly 3 rows, got %d:\n%s", len(lines), out)
 	}
-	underline := lines[1]
+	underline := lines[2]
 	half := width / 2
 	pinkRun := strings.Repeat("─", half)
 	ruleRun := strings.Repeat("─", width-half)
@@ -2305,7 +2305,7 @@ func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	const width = 46
 	out := renderTabsRow(3, false, width)
-	top := ansi.Strip(strings.Split(out, "\n")[0])
+	top := ansi.Strip(strings.Split(out, "\n")[1])
 	half := width / 2
 	left, right := top[:half], top[half:]
 	if !strings.Contains(left, "Changes 3") {
@@ -2321,11 +2321,14 @@ func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	}
 }
 
-// TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly pins item 2: hovering the
-// History tab paints HoverBg behind its own half of the LABEL row only --
-// the Changes half and the underline's Pink/Rule split are both untouched,
-// and the half widths (hence the row's overall width) never move.
-func TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly(t *testing.T) {
+// TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline pins the button's
+// own invariant: hovering the History tab paints HoverBg behind its half of
+// BOTH the pad row and the label row -- the two rows sidebarHit resolves to
+// hitTabHistory -- and never the underline row, which is an indicator, not
+// part of the button. The Changes half and the underline's Pink/Rule split
+// are both untouched, and the half widths (hence the row's overall width)
+// never move.
+func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 	const width = 46
 	half := width / 2
 	rest := renderTabsRow(3, false, width)
@@ -2333,32 +2336,35 @@ func TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly(t *testing.T) {
 
 	restLines := strings.Split(rest, "\n")
 	hoveredLines := strings.Split(hovered, "\n")
-	if len(restLines) != 2 || len(hoveredLines) != 2 {
-		t.Fatalf("tabs row should stay exactly 2 rows in both states: rest=%d hovered=%d", len(restLines), len(hoveredLines))
+	if len(restLines) != 3 || len(hoveredLines) != 3 {
+		t.Fatalf("tabs row should stay exactly 3 rows in both states: rest=%d hovered=%d", len(restLines), len(hoveredLines))
 	}
 
-	hoveredTop := hoveredLines[0]
-	restTop := restLines[0]
-	if strings.Contains(restTop, bgSGR(theme.HoverBg)) {
-		t.Fatalf("un-hovered tabs row must not wear HoverBg: %q", restTop)
-	}
-	if !strings.Contains(hoveredTop, bgSGR(theme.HoverBg)) {
-		t.Fatalf("hovering History should paint HoverBg somewhere in the label row: %q", hoveredTop)
+	for _, row := range []int{0, 1} { // pad, label
+		if strings.Contains(restLines[row], bgSGR(theme.HoverBg)) {
+			t.Fatalf("un-hovered row %d must not wear HoverBg: %q", row, restLines[row])
+		}
+		if !strings.Contains(hoveredLines[row], bgSGR(theme.HoverBg)) {
+			t.Fatalf("hovering History should paint HoverBg somewhere in row %d: %q", row, hoveredLines[row])
+		}
 	}
 
 	// The Changes label sits in the left half of the label row; splitting on
 	// display width (not byte index, since it carries ANSI codes) isolates
 	// it from the History half so a HoverBg leak into the active tab is
 	// caught, not just HoverBg's presence somewhere in the row.
-	leftPlain := ansi.Strip(hoveredTop)[:half]
+	leftPlain := ansi.Strip(hoveredLines[1])[:half]
 	if strings.Contains(leftPlain, "History") {
 		t.Fatalf("setup: left-half slice should not contain History: %q", leftPlain)
 	}
 
-	// The underline (row 1) must keep its exact Pink/Rule split regardless
-	// of hover.
-	if hoveredLines[1] != restLines[1] {
-		t.Fatalf("hover must not alter the underline row:\nrest   =%q\nhovered=%q", restLines[1], hoveredLines[1])
+	// The underline (row 2) must keep its exact Pink/Rule split regardless
+	// of hover, and never wear HoverBg.
+	if hoveredLines[2] != restLines[2] {
+		t.Fatalf("hover must not alter the underline row:\nrest   =%q\nhovered=%q", restLines[2], hoveredLines[2])
+	}
+	if strings.Contains(hoveredLines[2], bgSGR(theme.HoverBg)) {
+		t.Fatalf("the underline row must never wear HoverBg: %q", hoveredLines[2])
 	}
 
 	for i := range restLines {
@@ -2366,6 +2372,27 @@ func TestRenderTabsRowHoverPaintsHistoryLabelHalfOnly(t *testing.T) {
 		hw := lipgloss.Width(ansi.Strip(hoveredLines[i]))
 		if rw != hw || rw != width {
 			t.Fatalf("row %d width must stay %d in both states, got rest=%d hovered=%d", i, width, rw, hw)
+		}
+	}
+}
+
+// TestTabsButtonHoverAndClickRowsAgree is the invariant the owner called out
+// by name: every row sidebarHit resolves to hitTabHistory must be a row that
+// renders HoverBg when hovered, and no other row may. A hover-only row (the
+// old underline, clickable but unpainted) or a click-only row is exactly the
+// bug this button exists to rule out.
+func TestTabsButtonHoverAndClickRowsAgree(t *testing.T) {
+	const width = sidebarWidth
+	x := width - 1 // inside the History half
+	hovered := renderTabsRow(3, true, width)
+	lines := strings.Split(hovered, "\n")
+
+	m := &Mission{}
+	for row := 0; row < len(lines); row++ {
+		clicks := m.sidebarHit(x, row, 0).kind == hitTabHistory
+		paintsHover := strings.Contains(lines[row], bgSGR(theme.HoverBg))
+		if clicks != paintsHover {
+			t.Fatalf("row %d: sidebarHit resolves to hitTabHistory=%v but renders HoverBg=%v -- they must agree", row, clicks, paintsHover)
 		}
 	}
 }
@@ -2388,33 +2415,39 @@ func TestTabsHitZonesAreHalfWidth(t *testing.T) {
 // table): quantization ruling ratified 2026-09-19 ────────────────────────
 
 // TestTopBarIsThreeRowsWithBlankBreathingBand pins item 1: the top bar
-// renders exactly 3 rows -- label, value, and a blank BgSubtle-banded row
-// beneath them (the board's own bottom breathing) -- across the whole bar,
-// not just one segment.
-func TestTopBarIsThreeRowsWithBlankBreathingBand(t *testing.T) {
+// renders exactly 4 rows -- a blank pad row, label, value, and a blank
+// BgSubtle-banded row beneath them (the board's own bottom breathing) --
+// across the whole bar, not just one segment.
+func TestTopBarIsFourRowsWithBlankBreathingBand(t *testing.T) {
 	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
 	lines := strings.Split(out, "\n")
-	if len(lines) != 3 {
-		t.Fatalf("top bar should render exactly 3 rows, got %d:\n%s", len(lines), out)
+	if len(lines) != 4 {
+		t.Fatalf("top bar should render exactly 4 rows, got %d:\n%s", len(lines), out)
 	}
-	blank := lines[2]
-	// The composed bar's own divider glyphs ("│" between segments) legitimately
-	// still appear on this row; only the segments' own content must be blank.
-	textOnly := strings.ReplaceAll(strings.TrimSpace(ansi.Strip(blank)), "│", "")
-	if strings.TrimSpace(textOnly) != "" {
-		t.Fatalf("the top bar's third row should carry no segment content, only dividers: %q", blank)
-	}
-	if !strings.Contains(blank, bgSGR(theme.BgSubtle)) {
-		t.Fatalf("the top bar's blank row should still wear the BgSubtle band: %q", blank)
+	for _, y := range []int{0, 3} { // the pad row above, and the blank row below
+		blank := lines[y]
+		// The composed bar's own divider glyphs ("│" between segments)
+		// legitimately still appear on this row; only the segments' own
+		// content must be blank.
+		textOnly := strings.ReplaceAll(strings.TrimSpace(ansi.Strip(blank)), "│", "")
+		if strings.TrimSpace(textOnly) != "" {
+			t.Fatalf("row %d should carry no segment content, only dividers: %q", y, blank)
+		}
+		if !strings.Contains(blank, bgSGR(theme.BgSubtle)) {
+			t.Fatalf("row %d should still wear the BgSubtle band: %q", y, blank)
+		}
 	}
 }
 
-// TestTopBarHoverCoversAllThreeRowsOfItsSegment pins item 1's hover half:
-// a hovered segment's HoverBg fill spans its full 3-row span, including the
-// blank breathing row, not just the label/value rows.
-func TestTopBarHoverCoversAllThreeRowsOfItsSegment(t *testing.T) {
+// TestTopBarHoverCoversAllFourRowsOfItsSegment pins the padding change's
+// hover half: a hovered segment's HoverBg fill spans its full 4-row span,
+// including the new pad row above the label, not just the label/value rows.
+func TestTopBarHoverCoversAllFourRowsOfItsSegment(t *testing.T) {
 	out := renderTopBar(pullModel(), 140, zoneRepo, zoneNone)
 	lines := strings.Split(out, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("top bar should render exactly 4 rows, got %d:\n%s", len(lines), out)
+	}
 	for i, line := range lines {
 		if !strings.Contains(line, bgSGR(theme.HoverBg)) {
 			t.Fatalf("hovered repo segment's row %d should wear HoverBg across its full span: %q", i, line)
@@ -2423,24 +2456,24 @@ func TestTopBarHoverCoversAllThreeRowsOfItsSegment(t *testing.T) {
 }
 
 // TestSidebarTopHasBlankBandAfterTabsBeforeFilter pins item 2: the tabs
-// row + underline row are followed by one blank Bg row (the board's own
-// rule+gap) before the filter box's own top border.
+// strip (pad + label + underline rows) is followed by one blank Bg row (the
+// board's own rule+gap) before the filter box's own top border.
 func TestSidebarTopHasBlankBandAfterTabsBeforeFilter(t *testing.T) {
 	m := &Mission{}
 	top := m.sidebarFixedTop(sidebarWidth)
 	lines := strings.Split(top, "\n")
-	if len(lines) < 4 {
+	if len(lines) < 5 {
 		t.Fatalf("sidebar top block too short to hold tabs+blank+filter: %d rows:\n%s", len(lines), top)
 	}
-	blank := lines[2]
+	blank := lines[3]
 	if strings.TrimSpace(ansi.Strip(blank)) != "" {
-		t.Fatalf("row 2 (after the tabs underline) should be blank: %q", blank)
+		t.Fatalf("row 3 (after the tabs underline) should be blank: %q", blank)
 	}
 	if !strings.Contains(blank, bgSGR(theme.Bg)) {
 		t.Fatalf("the tabs-gap blank row should still wear the Bg fill: %q", blank)
 	}
-	if !strings.Contains(ansi.Strip(lines[3]), "╭") {
-		t.Fatalf("row 3 should be the filter box's own top border: %q", lines[3])
+	if !strings.Contains(ansi.Strip(lines[4]), "╭") {
+		t.Fatalf("row 4 should be the filter box's own top border: %q", lines[4])
 	}
 }
 
@@ -2712,7 +2745,7 @@ func TestFrameBlankBandAboveSummaryBox(t *testing.T) {
 // column, and the row after that is the filter box's own top border.
 func TestFrameTabsGapBlankRowBeforeFilterBox(t *testing.T) {
 	m := newMouseTestMission()
-	blankY := m.layout().topH + 2 // topbar + the tabs row's own 2 lines
+	blankY := m.layout().topH + 3 // topbar + the tabs strip's own 3 lines (pad, label, underline)
 	lines := strings.Split(m.View().Content, "\n")
 	blankSidebarCol := ansi.Strip(lines[blankY])[:sidebarWidth]
 	if strings.TrimSpace(blankSidebarCol) != "" {
@@ -2876,16 +2909,22 @@ func TestMouseClickFileRowWhileScrolledMapsToAbsoluteIndex(t *testing.T) {
 // bands, no terminal-default bleed-through anywhere in the frame) ─────────
 
 // TestTopBarSegmentRestPaintsBgSubtleBandFullWidth pins the top-bar band: at
-// rest (no hover, no open foldout) both the label and value rows wear
+// rest (no hover, no open foldout) the pad, label, and value rows all wear
 // BgSubtle from the very first cell through the trailing pad, not just
 // behind the text itself.
 func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
 	out := renderRepoSegment(pullModel(), sidebarWidth, false, false)
 	lines := strings.Split(out, "\n")
-	if len(lines) != 3 {
-		t.Fatalf("segment should render exactly 3 rows (label, value, blank breathing band), got %d:\n%s", len(lines), out)
+	if len(lines) != 4 {
+		t.Fatalf("segment should render exactly 4 rows (pad, label, value, blank breathing band), got %d:\n%s", len(lines), out)
 	}
-	labelRow, valueRow, blankRow := lines[0], lines[1], lines[2]
+	padRow, labelRow, valueRow, blankRow := lines[0], lines[1], lines[2], lines[3]
+	if !strings.Contains(padRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("the leading pad row should wear the BgSubtle band: %q", padRow)
+	}
+	if strings.TrimSpace(ansi.Strip(padRow)) != "" {
+		t.Fatalf("the leading pad row should be blank: %q", padRow)
+	}
 	if !strings.Contains(labelRow, bgSGR(theme.BgSubtle)) {
 		t.Fatalf("label row should wear the BgSubtle band: %q", labelRow)
 	}
@@ -2899,10 +2938,10 @@ func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
 		t.Fatalf("BgSubtle should still be painting the trailing pad after the value text: %q", valueRow)
 	}
 	if !strings.Contains(blankRow, bgSGR(theme.BgSubtle)) {
-		t.Fatalf("the third, blank breathing row should still wear the BgSubtle band: %q", blankRow)
+		t.Fatalf("the trailing blank breathing row should still wear the BgSubtle band: %q", blankRow)
 	}
 	if strings.TrimSpace(ansi.Strip(blankRow)) != "" {
-		t.Fatalf("the third row should be blank: %q", blankRow)
+		t.Fatalf("the trailing row should be blank: %q", blankRow)
 	}
 }
 
