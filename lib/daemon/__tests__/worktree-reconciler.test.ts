@@ -1875,6 +1875,17 @@ describe("reapRepoTrash", () => {
     expect(existsSync(fresh)).toBe(true);
   });
 
+  test("sweeps a scrapped golden's leftover, which sits beside the golden root and in no pool root", async () => {
+    // Where scrapTree renames a golden to: a sibling of goldenRoot, one level
+    // above it, outside `.worktrees` and outside cfg.root.
+    const leftover = join(dirname(goldenRoot("acme")), ".trash-golden-1700000000003");
+    mkdirSync(leftover, { recursive: true });
+
+    await __test__.reapRepoTrash({ repoName: "acme", repoPath: repo, log: fakeLog() });
+
+    await waitFor(() => !existsSync(leftover));
+  });
+
   // S079: sanitizeRoot (lib/worktree/config.ts) has no ancestor check, so a
   // repo configured with e.g. `root: "${repoRoot}/.."` makes the crash sweep
   // walk the parent directory of every sibling repo for `.trash-*` names.
