@@ -19,11 +19,12 @@ public enum NotificationClick {
     /// The banner-body click. The surface URL outranks pane focus: a
     /// notification that carries a link (a board gate, an MR) opens the
     /// thing it is about, and the pane is reachable through the Focus Pane
-    /// action button instead.
+    /// action button instead. A URL that does not parse must not win the
+    /// route: the follower would no-op on it and swallow the pane fallback.
     public static func bannerRoute(category: String, url: String?, paneId: String?) -> Route {
         if category == keyboardConflictCategory { return .showKeyboardConflict }
         if category == readyHeldCategory { return .showProcessPanel }
-        if let url, !url.isEmpty { return .openURL(url) }
+        if let url, URL(string: url) != nil { return .openURL(url) }
         if let paneId, !paneId.isEmpty { return .focusPane(paneId) }
         return .none
     }
@@ -32,7 +33,7 @@ public enum NotificationClick {
     /// of the banner click, so both targets stay one click away.
     public static func focusPaneRoute(url: String?, paneId: String?) -> Route {
         if let paneId, !paneId.isEmpty { return .focusPane(paneId) }
-        if let url, !url.isEmpty { return .openURL(url) }
+        if let url, URL(string: url) != nil { return .openURL(url) }
         return .none
     }
 }

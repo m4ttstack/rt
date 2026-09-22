@@ -29,6 +29,13 @@ let notificationClickChecks: [Check] = [
             category: NotificationClick.readyHeldCategory, url: nil, paneId: nil)
         c.expectEqual(r, .showProcessPanel)
     },
+    Check("a malformed URL falls through to pane focus on banner click") { c in
+        let r = NotificationClick.bannerRoute(category: "gate", url: "https://[", paneId: "pane-7")
+        c.expectEqual(r, .focusPane("pane-7"))
+    },
+    Check("a malformed URL with no pane routes nowhere") { c in
+        c.expectEqual(NotificationClick.focusPaneRoute(url: "https://[", paneId: nil), .none)
+    },
     Check("focus-pane button prefers the pane over the URL") { c in
         let r = NotificationClick.focusPaneRoute(
             url: "https://board.mattstack/?gate=g1", paneId: "pane-7")
