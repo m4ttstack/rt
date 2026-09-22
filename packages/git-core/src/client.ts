@@ -9,7 +9,7 @@ import { getStagingDiff, stageSelection, discardSelection, stageFileFully } from
 import { undoLastCommit, resetToCommit } from "./commits.ts";
 import { checkoutBranch, createBranch } from "./branch-ops.ts";
 import { scrubGitEnv } from "./exec.ts";
-import { getCommits, getLocalCommits } from "./history.ts";
+import { getCommits, getLocalCommits, getChangedFiles, getCommitRangeChangedFiles, getCommitDiff, getCommitRangeDiff } from "./history.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -73,9 +73,9 @@ export function createGitClient(dir: string): GitClient {
     pushTag: (name, remote) => pushTag(ctx, name, remote),
     commits: (range, limit, skip, additionalArgs) => getCommits(ctx, range, limit, skip, additionalArgs),
     localCommits: (branch, skip) => getLocalCommits(ctx, branch, skip),
-    changedFiles: () => Promise.reject(new Error("changedFiles: not implemented")),
-    commitRangeChangedFiles: () => Promise.reject(new Error("commitRangeChangedFiles: not implemented")),
-    commitDiff: () => Promise.reject(new Error("commitDiff: not implemented")),
-    commitRangeDiff: () => Promise.reject(new Error("commitRangeDiff: not implemented")),
+    changedFiles: (sha) => getChangedFiles(ctx, sha),
+    commitRangeChangedFiles: (shas) => getCommitRangeChangedFiles(ctx, shas),
+    commitDiff: (file, sha) => getCommitDiff(ctx, file, sha),
+    commitRangeDiff: (file, shas) => getCommitRangeDiff(ctx, file, shas),
   };
 }

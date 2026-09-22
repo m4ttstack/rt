@@ -4,9 +4,14 @@ import {
   createLogParser,
   extractCoAuthors,
   parseIdentity,
+  parseRawLogWithNumstat,
   parseRawUnfoldedTrailers,
+  type CommittedFileChange,
 } from "./vendor/ghd/log-parse.ts";
-import type { Commit } from "./types.ts";
+import { AppFileStatusKind } from "./vendor/ghd/types.ts";
+import { DiffParser } from "./vendor/ghd/diff-parser.ts";
+import { classifyDiffText } from "./diff-classify.ts";
+import type { ChangesetData, Commit, StagingDiff } from "./types.ts";
 
 /** GHD's CommitBatchSize (app/src/lib/stores/git-store.ts). */
 export const COMMIT_BATCH_SIZE = 100;
@@ -86,4 +91,88 @@ export async function getLocalCommits(
     return getCommits(ctx, `${branch.upstream}..${branch.name}`, COMMIT_BATCH_SIZE, skip);
   }
   return getCommits(ctx, "HEAD", COMMIT_BATCH_SIZE, skip, ["--not", "--remotes"]);
+}
+
+/** git's empty tree object: the parent to diff a root commit against. */
+const NULL_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+function oldPathArgs(file: CommittedFileChange): string[] {
+  return file.status.kind === AppFileStatusKind.Renamed || file.status.kind === AppFileStatusKind.Copied
+    ? [file.status.oldPath]
+    : [];
+}
+
+function isBadRevision(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /bad revision|unknown revision/.test(message);
+}
+
+/** GHD buildDiff + diffFromRawDiffOutput: the patch is the last NUL-separated piece of --patch-with-raw -z output. */
+function buildCommitDiff(stdout: string, file: CommittedFileChange): StagingDiff {
+  if (file.status.submoduleStatus !== undefined) {
+    return { path: file.path, kind: "submodule", untracked: false, hunks: [] };
+  }
+  const patch = stdout.split("\0").at(-1) ?? "";
+  const kind = classifyDiffText(patch);
+  if (kind !== "text") return { path: file.path, kind, untracked: false, hunks: [] };
+  const hunks = patch.trim() === "" ? [] : new DiffParser().parse(patch).hunks;
+  return { path: file.path, kind: "text", untracked: false, hunks };
+}
+
+/** Port of GHD getChangedFiles (app/src/lib/git/log.ts). */
+export async function getChangedFiles(ctx: ClientContext, sha: string): Promise<ChangesetData> {
+  const stdout = await rawGit(ctx.dir, [
+    "log", sha, "-C", "-M", "-m", "-1", "--no-show-signature", "--first-parent",
+    "--raw", "--format=format:", "--numstat", "-z", "--",
+  ]);
+  return parseRawLogWithNumstat(stdout, sha, `${sha}^`);
+}
+
+/** Port of GHD getCommitRangeChangedFiles (app/src/lib/git/diff.ts); shas oldest first. */
+export async function getCommitRangeChangedFiles(
+  ctx: ClientContext,
+  shas: ReadonlyArray<string>,
+  useNullTreeSHA = false,
+): Promise<ChangesetData> {
+  if (shas.length === 0) throw new Error("No commits to diff...");
+  const oldestCommitRef = useNullTreeSHA ? NULL_TREE_SHA : `${shas[0]}^`;
+  const latestCommitRef = shas.at(-1) ?? "";
+  try {
+    const stdout = await rawGit(ctx.dir, ["diff", oldestCommitRef, latestCommitRef, "-C", "-M", "-z", "--raw", "--numstat", "--"]);
+    return parseRawLogWithNumstat(stdout, latestCommitRef, oldestCommitRef);
+  } catch (err) {
+    if (!useNullTreeSHA && isBadRevision(err)) return getCommitRangeChangedFiles(ctx, shas, true);
+    throw err;
+  }
+}
+
+/** Port of GHD getCommitDiff (app/src/lib/git/diff.ts). */
+export async function getCommitDiff(ctx: ClientContext, file: CommittedFileChange, commitish: string): Promise<StagingDiff> {
+  const stdout = await rawGit(ctx.dir, [
+    "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color",
+    "--", file.path, ...oldPathArgs(file),
+  ]);
+  return buildCommitDiff(stdout, file);
+}
+
+/** Port of GHD getCommitRangeDiff (app/src/lib/git/diff.ts); commits oldest first. */
+export async function getCommitRangeDiff(
+  ctx: ClientContext,
+  file: CommittedFileChange,
+  commits: ReadonlyArray<string>,
+  useNullTreeSHA = false,
+): Promise<StagingDiff> {
+  if (commits.length === 0) throw new Error("No commits to diff...");
+  const oldestCommitRef = useNullTreeSHA ? NULL_TREE_SHA : `${commits[0]}^`;
+  const latestCommit = commits.at(-1) ?? "";
+  try {
+    const stdout = await rawGit(ctx.dir, [
+      "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color",
+      "--", file.path, ...oldPathArgs(file),
+    ]);
+    return buildCommitDiff(stdout, file);
+  } catch (err) {
+    if (!useNullTreeSHA && isBadRevision(err)) return getCommitRangeDiff(ctx, file, commits, true);
+    throw err;
+  }
 }
