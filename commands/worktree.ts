@@ -806,7 +806,7 @@ async function bindingsFromDaemon(repoName: string): Promise<WorktreeBinding[] |
   const res = await daemonQuery("worktree:list", { repoName });
   if (res === null || !res.ok) return null;
   const rows = (res.data?.trees ?? []) as TreeRow[];
-  return rows.map((r) => ({ path: r.path, branch: r.branch, state: r.state }));
+  return rows.map((r) => ({ path: r.path, branch: r.branch, state: r.state, kind: r.kind }));
 }
 
 /** Read-only git fallback — each is the one lifecycle command allowed this, since it never mutates. */
@@ -836,8 +836,13 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
     if (!process.stdin.isTTY) {
       fail("no --all/--on-deck flag and no TTY for the picker — pass --all or --on-deck");
     }
-    const widest  = Math.max(...bindings.map(b => relWorktreeName(repoPath, b.path).length));
-    const options = bindings.map(b => ({
+    const pickable = filterTargets(bindings, "pick");
+    if (pickable.length === 0) {
+      console.log(`\n  ${dim}no worktrees to run in${reset}\n`);
+      return;
+    }
+    const widest  = Math.max(...pickable.map(b => relWorktreeName(repoPath, b.path).length));
+    const options = pickable.map(b => ({
       value: b.path,
       label: relWorktreeName(repoPath, b.path).padEnd(widest),
       hint:  b.branch ?? "(detached)",
@@ -852,7 +857,7 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
       return;
     }
     const set = new Set(selected);
-    targets = bindings.filter(b => set.has(b.path));
+    targets = pickable.filter(b => set.has(b.path));
   } else {
     targets = filterTargets(bindings, parsed.mode);
     if (targets.length === 0) {
