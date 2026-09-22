@@ -882,7 +882,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         Task { @MainActor in
             setHealth(.starting)
 
-            await daemonLifecycle.restartDaemon(origin: DaemonOrigin.menu)
+            // The op's own result is what makes the poll below meaningful: the
+            // still-running OLD daemon answers isReachable too, so polling
+            // after a failed or swallowed kickstart used to read as success.
+            let ok = await daemonLifecycle.restartDaemon(origin: DaemonOrigin.menu)
+            guard ok else {
+                TrayLog.warn("menu restart failed; daemon not restarted")
+                await refreshStatus()
+                return
+            }
 
             // Poll until it comes back (up to 8s)
             for _ in 0..<16 {
