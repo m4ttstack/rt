@@ -14,6 +14,7 @@ import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { WorktreeEntry } from "../worktree/git-async.ts";
 import type { ActionState } from "./git-actions.ts";
+import { EMPTY_HISTORY_MODEL } from "./history-model.ts";
 import type {
   MissionActionModel,
   MissionBadge,
@@ -23,6 +24,10 @@ import type {
   MissionCurrent,
   MissionDiffLine,
   MissionDiffModel,
+  MissionHistoryCommitRow,
+  MissionHistoryFileRow,
+  MissionHistoryHeader,
+  MissionHistoryModel,
   MissionLastCommit,
   MissionModel,
   MissionRepoRow,
@@ -38,6 +43,10 @@ export type {
   MissionCurrent,
   MissionDiffLine,
   MissionDiffModel,
+  MissionHistoryCommitRow,
+  MissionHistoryFileRow,
+  MissionHistoryHeader,
+  MissionHistoryModel,
   MissionLastCommit,
   MissionModel,
   MissionRepoRow,
@@ -352,18 +361,19 @@ function buildDiffModel(input: {
   stagingDiff: StagingDiff | null;
   selection: DiffSelection;
   oversizedOverride: boolean;
+  readOnly: boolean;
 }): MissionDiffModel {
-  const { path, status, stagingDiff, selection, oversizedOverride } = input;
+  const { path, status, stagingDiff, selection, oversizedOverride, readOnly } = input;
   if (path === null || stagingDiff === null) {
-    return { path: "", status: "", kind: "none", stats: "", lang: "", lines: [] };
+    return { path: "", status: "", kind: "none", stats: "", lang: "", lines: [], readOnly };
   }
   if (stagingDiff.kind !== "text") {
-    return { path, status, kind: "binary", stats: "", lang: "", lines: [] };
+    return { path, status, kind: "binary", stats: "", lang: "", lines: [], readOnly };
   }
 
   const totalLines = stagingDiff.hunks.reduce((n, hunk) => n + hunk.lines.length, 0);
   if (totalLines > OVERSIZED_LINE_CUTOFF && !oversizedOverride) {
-    return { path, status, kind: "oversized", stats: "", lang: "", lines: [] };
+    return { path, status, kind: "oversized", stats: "", lang: "", lines: [], readOnly };
   }
 
   let addCount = 0;
@@ -386,6 +396,10 @@ function buildDiffModel(input: {
       const kind = line.type === DiffLineType.Add ? "add" : "del";
       if (kind === "add") addCount++;
       else delCount++;
+      if (readOnly) {
+        lines.push({ oldNo, newNo, kind, text: line.content, selected: false, selIdx: -1 });
+        return;
+      }
       // The wire selIdx stays the compacted ordinal the view echoes back;
       // DiffSelection speaks git-core's absolute numbering
       // (hunk.unifiedDiffStart + in-hunk position), so Selected must be
@@ -401,6 +415,7 @@ function buildDiffModel(input: {
     stats: `+${addCount} -${delCount}`,
     lang: langFor(path),
     lines,
+    readOnly,
   };
 }
 
@@ -421,8 +436,12 @@ export function buildModel(input: {
   defaultBranch: string | null;
   /** Injected for deterministic branch-date formatting in tests; defaults to the real clock. */
   now?: Date;
+  tab?: "changes" | "history";
+  history?: MissionHistoryModel;
+  historyDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date() } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff } = input;
+  const tab = input.tab ?? "changes";
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
     id: row.repo,
@@ -475,13 +494,24 @@ export function buildModel(input: {
     (state.selectedPath ? state.selections.get(state.selectedPath) : undefined) ??
     DiffSelection.fromInitialSelection(DiffSelectionType.All);
 
-  const diff = buildDiffModel({
-    path: state.selectedPath,
-    status: selectedChange?.status ?? "",
-    stagingDiff,
-    selection: diffSelection,
-    oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
-  });
+  const diff =
+    tab === "history"
+      ? buildDiffModel({
+          path: historyDiff?.path ?? null,
+          status: historyDiff?.status ?? "",
+          stagingDiff: historyDiff?.diff ?? null,
+          selection: DiffSelection.fromInitialSelection(DiffSelectionType.None),
+          oversizedOverride: historyDiff?.oversizedOverride ?? false,
+          readOnly: true,
+        })
+      : buildDiffModel({
+          path: state.selectedPath,
+          status: selectedChange?.status ?? "",
+          stagingDiff,
+          selection: diffSelection,
+          oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
+          readOnly: false,
+        });
 
   // On a plain (non-rt-managed) repo, worktree:list has no row for the
   // checkout at all -- or rt-client's WorktreeTreeRow.name (an rt worktree
@@ -537,5 +567,7 @@ export function buildModel(input: {
     commit,
     stashCount: stashes,
     notice: state.notice,
+    tab,
+    history: input.history ?? EMPTY_HISTORY_MODEL,
   };
 }
