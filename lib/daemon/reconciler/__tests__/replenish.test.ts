@@ -178,6 +178,15 @@ describe("replenish.ts: hasFreeDiskGb", () => {
     expect(await hasFreeDiskGb("/no/such/golden/root", absurd)).toBe(true);
     expect(await hasFreeDiskGb(nearestExisting("/no/such/golden/root"), absurd)).toBe(false);
   });
+
+  test("the member-loop disk guard must also be probed through nearestExisting, or a fresh pool root is unguarded on its first build", async () => {
+    // Same trap as the golden probe: cfg.root does not exist before the
+    // pool's first member build, so the raw-path check would silently pass
+    // no matter how full the disk is.
+    const absurd = 1e9;
+    expect(await hasFreeDiskGb("/no/such/pool/root", absurd)).toBe(true);
+    expect(await hasFreeDiskGb(nearestExisting("/no/such/pool/root"), absurd)).toBe(false);
+  });
 });
 
 describe("replenish.ts: per-instance backoff", () => {

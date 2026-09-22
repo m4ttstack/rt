@@ -245,7 +245,7 @@ export async function replenishAndShrink(
     // cfg.root, not repoPath: createTree writes under cfg.root, and the RT-52
     // default root lives off-repo (~/.mattstack/rt/worktrees/<identity>), which
     // can be a different volume than the repo's own filesystem.
-    if (!(await hasFreeDiskGb(cfg.root, WORKTREE_MIN_FREE_DISK_GB))) {
+    if (!(await hasFreeDiskGb(nearestExisting(cfg.root), WORKTREE_MIN_FREE_DISK_GB))) {
       log.warn({ repo: repoName }, "replenish: skipped, free disk below threshold");
       break;
     }
