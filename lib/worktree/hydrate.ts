@@ -100,6 +100,7 @@ async function runHydrate(
   const trees = loadRegistry(repoName);
   trees.push(rec);
   if (!saveRegistry(repoName, trees)) {
+    log.warn({ repo: repoName, tree: name, path }, "worktree hydrate: registry-first write dropped; no git mutation attempted");
     return { ok: false, error: "create-failed", failedStep: "registry-write", output: "" };
   }
 
