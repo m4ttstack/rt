@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
   DiffSelection,
   type BranchInfo,
@@ -1191,6 +1194,36 @@ describe("MissionDriver: worktree list unions git truth with the registry", () =
     const row = opened!.worktrees.find((w) => w.path === "/repo");
     expect(row?.name).toBe("gandalf");
     expect(row?.onDeck).toBe(true);
+  });
+
+  test("a registry path reached through a symlink matches git's canonical path instead of listing twice", async () => {
+    const base = mkdtempSync(join(tmpdir(), "mission-canon-"));
+    const real = join(base, "real");
+    const link = join(base, "link");
+    mkdirSync(real);
+    symlinkSync(real, link);
+    try {
+      const session = new FakeSession([{ t: "intent", name: "quit" }]);
+      let opened: MissionModel | null = null;
+      const deps = baseDeps({
+        session,
+        daemonQuery: async (cmd: string) =>
+          cmd === "worktree:list"
+            ? { ok: true, data: { trees: [{ path: link, name: "gandalf", branch: "main", state: "on-deck" }] } }
+            : { ok: true, data: { repos: [] } },
+        listGitWorktrees: async () => [gitEntry(realpathSync(real))],
+      });
+      deps.openSession = async (view, model) => {
+        opened = model as MissionModel;
+        return session;
+      };
+
+      await new MissionDriver(deps, START).run();
+
+      expect(opened!.worktrees.map((w) => w.name)).toEqual(["gandalf"]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   test("a git-only row gets a usable name and does not claim to be on-deck", async () => {

@@ -169,10 +169,15 @@ function toMissionBadge(badge: GitWorktreeBadge): MissionBadge {
  * null `gitWorktrees` (git's own listing failed) degrades to the registry
  * rows alone, never to an empty list.
  */
-export function mergeWorktreeTrees(trees: WorktreeTreeRow[], gitWorktrees: WorktreeEntry[] | null, repoName: string): WorktreeTreeRow[] {
+export function mergeWorktreeTrees(
+  trees: WorktreeTreeRow[],
+  gitWorktrees: WorktreeEntry[] | null,
+  repoName: string,
+  canonTreePath: (path: string) => string = (path) => path,
+): WorktreeTreeRow[] {
   if (gitWorktrees === null) return trees;
 
-  const byPath = new Map(trees.map((tree) => [tree.path, tree]));
+  const byPath = new Map(trees.map((tree) => [canonTreePath(tree.path), tree]));
   const seen = new Set<string>();
   const merged: WorktreeTreeRow[] = [];
 
@@ -196,7 +201,7 @@ export function mergeWorktreeTrees(trees: WorktreeTreeRow[], gitWorktrees: Workt
   // race between the two reads) still surfaces -- git truth only ADDS rows
   // here, it never removes one the registry already knows about.
   for (const tree of trees) {
-    if (!seen.has(tree.path)) merged.push(tree);
+    if (!seen.has(canonTreePath(tree.path))) merged.push(tree);
   }
 
   return merged;
