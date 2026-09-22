@@ -191,6 +191,38 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(execCalls.some((a) => a[2] === "enable" && a.at(-1) === "superpowers@claude-plugins-official")).toBe(true);
     });
 
+    test("setup-state records only what rt added: a marketplace or plugin already present stays out, so uninstall never removes the member's own", async () => {
+      const execCalls: string[][] = [];
+      const p = fakeProbes({
+        home,
+        env: { PATH: "/usr/local/bin" },
+        files: { "/usr/local/bin/claude": "bin" },
+        exec: async (argv) => {
+          execCalls.push(argv);
+          const [, , verb, sub, target] = argv;
+          if (verb === "list") {
+            return ok(JSON.stringify([{ id: "superpowers@claude-plugins-official", version: "6.4.1", enabled: true }]));
+          }
+          if (verb === "marketplace" && sub === "add" && target === OFFICIAL_MARKETPLACE_SOURCE) {
+            return { code: 1, stdout: "", stderr: "Marketplace 'claude-plugins-official' is already added" };
+          }
+          return ok("");
+        },
+      });
+      const { ctx } = makeCtx(p);
+
+      const outcome = await pluginsInstallStep.run(ctx);
+      expect(outcome.state).toBe("done");
+
+      const state = readSetupState(p);
+      expect(state.marketplaces).toContain(MATTSTACK_MARKETPLACE_SOURCE);
+      expect(state.marketplaces).not.toContain(OFFICIAL_MARKETPLACE_SOURCE);
+      expect(state.plugins).toEqual(expect.arrayContaining(["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack"]));
+      expect(state.plugins).not.toContain("superpowers@claude-plugins-official");
+      // Still enabled and updated like any trusted baseline plugin; only the uninstall record excludes it.
+      expect(execCalls.some((a) => a[2] === "update" && a[3] === "superpowers@claude-plugins-official")).toBe(true);
+    });
+
     test("happy path: one custom marketplace + team marketplace/plugin, one config dir — full argv sequence, setup-state recorded", async () => {
       const teamDir = join(home, ".mattstack", "teams", "acme");
       const marketplacePath = join(teamDir, ".claude-plugin", "marketplace.json");

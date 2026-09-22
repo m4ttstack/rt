@@ -169,6 +169,11 @@ async function pluginsInstallRun(ctx: ApplyContext): Promise<StepOutcome> {
   }
 
   const settled: string[] = [];
+  // Setup-state is the uninstall record, so it holds only what rt itself
+  // added. Anything already present belongs to the member, and uninstall
+  // removing it could orphan every plugin that marketplace serves.
+  const addedMarketplaces: string[] = [];
+  const installedPlugins: string[] = [];
 
   for (const dir of configDirs) {
     const env = { CLAUDE_CONFIG_DIR: dir };
@@ -178,6 +183,7 @@ async function pluginsInstallRun(ctx: ApplyContext): Promise<StepOutcome> {
       if (res.code !== 0 && !isAlready(res)) {
         return { state: "failed", detail: `claude plugin marketplace add exited ${res.code}`, remedy: RETRY_REMEDY };
       }
+      if (!isAlready(res)) addedMarketplaces.push(src);
     }
 
     const runner: ClaudeRunner = {
@@ -245,11 +251,16 @@ async function pluginsInstallRun(ctx: ApplyContext): Promise<StepOutcome> {
         ctx.log("plugins.install", `${plugin}: install rolled back (${outcome.detail})`);
         continue;
       }
+      if (outcome.kind === "installed") installedPlugins.push(plugin);
       settled.push(plugin);
     }
   }
 
-  updateSetupState(ctx.p, (s) => ({ ...s, marketplaces: [...s.marketplaces, ...marketplaces], plugins: [...s.plugins, ...new Set(settled)] }));
+  updateSetupState(ctx.p, (s) => ({
+    ...s,
+    marketplaces: [...new Set([...s.marketplaces, ...addedMarketplaces])],
+    plugins: [...new Set([...s.plugins, ...installedPlugins])],
+  }));
 
   // A rolled-back pack is not installed, so naming it here would tell the
   // member to enable something that is not there and contradict its own
