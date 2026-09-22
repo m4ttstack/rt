@@ -116,11 +116,11 @@ function ReplyChoiceBody({
         </span>
         {children}
       </span>
-      <span className="tui-reply-choice-text">
+      <div className="tui-reply-choice-text">
         <Markdown unstyled linkTargetBlank>
           {entry.text}
         </Markdown>
-      </span>
+      </div>
     </>
   );
 }
