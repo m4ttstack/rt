@@ -336,19 +336,30 @@ while [ "$(date +%s)" -lt "$CTRL_DEADLINE" ]; do
   CTRL_SEEN=""
 done
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/05-control.png" || true
+# One refusal raises more than one alert: the "damaged" one carrying the
+# buttons, and a plainer "The application ... can't be opened" behind it.
+# Dismissing the first and stopping left the second on screen, where the
+# launch probe would have read it as the real app's own refusal. So this
+# drains until nothing classifies as a block, rather than clicking once.
+#
 # Dismissed by the app's own name, which every refusal wording quotes, and
 # never with the "Move to Trash" button sitting beside it: dialogs.sh refuses
-# that name outright. The button label varies by release, so each candidate is
-# tried in turn and a miss is not a failure.
-for b in Done OK Cancel; do
-  if [ -n "$(dialog_click GatekeeperControl "$b")" ]; then break; fi
+# that name outright. Button labels vary by release and by alert, so each
+# candidate is tried and a miss is not a failure.
+LEFT=""; DRAIN=$(( $(date +%s) + 60 ))
+while [ "$(date +%s)" -lt "$DRAIN" ]; do
+  for b in Done OK Cancel Close; do
+    dialog_click GatekeeperControl "$b" >/dev/null || true
+  done
+  LEFT=$(probe_dialogs "control (after dismissal)")
+  [ "$(vm_dialog_verdict "$LEFT")" = block ] || break
+  sleep 1
 done
 vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "rm -rf '$CTRL_APP'" >/dev/null 2>&1 || true
 # Torn down before the real launch is probed, so a leftover control dialog
 # cannot be mistaken for the app's own.
-LEFT=$(probe_dialogs "control (after dismissal)")
 if [ "$(vm_dialog_verdict "$LEFT")" = block ]; then
-  vm_phase_end control fail "the control's refusal dialog is still on screen, so the launch probe below would read it as $APP_NAME's own" "05-control.png"
+  vm_phase_end control fail "the control's refusal dialog is still on screen after 60s of dismissal attempts, so the launch probe below would read it as $APP_NAME's own; logs/dialogs.log names the window that would not close" "05-control.png"
   exit 1
 fi
 
