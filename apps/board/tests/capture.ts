@@ -210,8 +210,9 @@ for (const theme of ['light', 'dark'] as const) {
     await shoot(page, `reviewmodal-${theme}`);
     await page.keyboard.press('Escape');
   }
-  // decision queue: the fixture's respond gate queues first, so this is the
-  // sectioned face (B7): the overview strip and the question's own context.
+  // decision queue: the loop below skips gates until it lands on the
+  // sectioned face (B7): the overview strip and the question's own context,
+  // wherever that gate sits in the queue.
   await page.click('.tui-dq-open');
   await page.waitForSelector('.tui-triage-body');
   for (
