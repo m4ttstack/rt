@@ -18,6 +18,8 @@ import { goldenRoot, machineSettingsPath, repoDataDir, rtDir } from "../../rt-pa
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { GOLDEN_BRANCH, GOLDEN_NAME, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { createTree } from "../../worktree/create.ts";
+import type { CloneRunner } from "../../worktree/hydrate.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { readyTaskFor } from "../../worktree/ready-async.ts";
 import { tryLockTree } from "../../worktree/locks.ts";
@@ -98,6 +100,7 @@ interface Harness {
 function makeHandlers(
   repos: Record<string, string>,
   entries: Record<string, any> = {},
+  clone?: CloneRunner,
 ): Harness {
   const events: Array<{ type: string; data: any }> = [];
   const state = { kicks: 0, cdCacheKicks: 0 };
@@ -113,6 +116,7 @@ function makeHandlers(
     creationInFlight: () => null,
     withReconcilerHeld: async (fn) => fn(),
     findRunningRunByWorktree: () => ({ kind: "none" }),
+    clone,
   });
   return {
     h,
@@ -572,6 +576,81 @@ describe("worktree:create", () => {
     const { h } = makeHandlers({ "acme-legacy": repo });
     const res: any = await h["worktree:create"]!({ repoName: "acme-legacy" });
     expect(res).toEqual({ ok: false, error: "repo-unknown" });
+  });
+});
+
+/** A real, ready golden built the same way the replenish golden-lifecycle tests do. */
+async function makeGolden(repo: string, name: string): Promise<TreeRecord> {
+  const g = await createTree({ repoName: name, repoPath: repo, emit: () => {}, log: fakeLog(), target: "golden" });
+  if (!g.ok) throw new Error("golden create failed in test setup");
+  return g.tree;
+}
+
+/** A golden with one git-ignored artifact, so a clone runner is actually invoked during hydrate. */
+async function makeGoldenWithArtifact(repo: string, name: string): Promise<TreeRecord> {
+  writeFileSync(join(repo, ".gitignore"), "node_modules/\n");
+  sh("git add .gitignore && git -c user.email=t@t -c user.name=t commit -qm ignore && git push -q origin HEAD", repo);
+  const golden = await makeGolden(repo, name);
+  mkdirSync(join(golden.path, "node_modules"), { recursive: true });
+  writeFileSync(join(golden.path, "node_modules", "a.js"), "module.exports = 1;\n");
+  return golden;
+}
+
+describe("worktree:provision hydration", () => {
+  test("hydrates from a ready golden when the pool is empty", async () => {
+    const repo = makeRepo();
+    const golden = await makeGolden(repo, repoName);
+    const { h, events } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-10", ticketTitle: "Hydrate" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.wasOnDeck).toBe(false);
+    expect(res.data.hydratedFrom).toBe(golden.name);
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBe(golden.name);
+  });
+
+  test("no golden: cold-creates as before, with no hydratedFrom", async () => {
+    const repo = makeRepo();
+    const { h, events } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-11", ticketTitle: "Cold" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBeUndefined();
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBeUndefined();
+  });
+
+  test("a hydrate failure still returns a usable tree, via cold create", async () => {
+    const repo = makeRepo();
+    await makeGoldenWithArtifact(repo, repoName);
+    const failing: CloneRunner = async () => ({ exitCode: 1, stderr: "clonefile: Input/output error" });
+    const { h, events } = makeHandlers({ [repoName]: repo }, {}, failing);
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-12", ticketTitle: "Fallback" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBeUndefined();
+    expect(existsSync(res.data.path)).toBe(true);
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBeUndefined();
+  });
+});
+
+describe("worktree:create hydration", () => {
+  test("hydrates from a ready golden", async () => {
+    const repo = makeRepo();
+    const golden = await makeGolden(repo, repoName);
+    const { h, events } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:create"]!({ repoName });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBe(golden.name);
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBe(golden.name);
   });
 });
 
