@@ -56,17 +56,20 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	branch := renderBranchSegment(m, segW, hover == zoneBranch, open == zoneBranch)
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
-	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
+	// TopBarBg, not BgSubtle: the divider shares the bar's own rest fill
+	// (segmentBaseColor's default) so the band reads as one continuous
+	// surface rather than segments floating over a differently-toned strip.
+	divCell := lipgloss.NewStyle().Background(theme.TopBarBg).Foreground(theme.Rule).Render("│")
 	// The divider's own pad and trailing rows must wear the same half-block
 	// split as its neighbors' pad and trailing rows (renderSegment) -- a
-	// full-height BgSubtle cell here, against half-height fill on both
-	// sides, would notch outward at either seam instead of matching it.
-	padDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.BgSubtle).Render(theme.GlyphHalfBlockLower)
-	trailingDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.BgSubtle).Render(theme.GlyphHalfBlockUpper)
+	// full-height cell here, against half-height fill on both sides, would
+	// notch outward at either seam instead of matching it.
+	padDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.TopBarBg).Render(theme.GlyphHalfBlockLower)
+	trailingDivCell := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.TopBarBg).Render(theme.GlyphHalfBlockUpper)
 	// Must match renderSegment's own row count exactly: JoinHorizontal pads a
 	// shorter block to the tallest with unstyled filler rows, which would
 	// leave the divider's own extra row unpainted (bleeding the terminal
-	// default through) rather than sharing BgSubtle with its neighbors.
+	// default through) rather than sharing the bar's fill with its neighbors.
 	div := padDivCell + "\n" + divCell + "\n" + divCell + "\n" + trailingDivCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
@@ -255,7 +258,7 @@ func pill(text string, col color.Color) string {
 	return lipgloss.NewStyle().Foreground(col).Background(theme.Panel).Padding(0, 1).Render(text)
 }
 
-// segmentBaseColor is the raw fill color segmentBase paints: BgSubtle at
+// segmentBaseColor is the raw fill color segmentBase paints: TopBarBg at
 // rest, Surface once open, HoverBg while hovered. Split out from
 // segmentBase so the pad row's half-block glyph (renderSegment) can carry
 // the same live fill as its own foreground without re-deriving it.
@@ -266,11 +269,11 @@ func segmentBaseColor(hovered, isOpen bool) color.Color {
 	case hovered:
 		return theme.HoverBg
 	}
-	return theme.BgSubtle
+	return theme.TopBarBg
 }
 
 // segmentBase is the background every fragment of a top-bar segment
-// paints: BgSubtle at rest, Surface once open, HoverBg while hovered.
+// paints: TopBarBg at rest, Surface once open, HoverBg while hovered.
 // renderSegment uses it for its own two rows, and each segment function
 // uses the SAME call (same hovered/isOpen) to color its pre-rendered
 // trailing accessory (a chevron, or the separator between pills) before

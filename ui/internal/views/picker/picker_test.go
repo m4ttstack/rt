@@ -2754,6 +2754,27 @@ func TestSelectedPanelShowsLabelsOnlyNotTheFullLeftTextWithHint(t *testing.T) {
 	}
 }
 
+// TestSelectedPanelStillUsesBgSubtle is the leak guard for the mission top
+// bar's dedicated TopBarBg token (rt-ui/internal/views/mission/topbar.go):
+// the picker's own selected-panel strip shares BgSubtle with the top bar's
+// OLD rest fill and must keep painting it unchanged, proving the new token
+// stayed scoped to the top bar rather than retuning BgSubtle itself.
+func TestSelectedPanelStillUsesBgSubtle(t *testing.T) {
+	req := protocol.PickRequest{
+		T: "pick", Protocol: protocol.Version, Multi: true,
+		InitialValues: []string{"bill"},
+		Rows: []protocol.PickRow{
+			{Value: "bill", Left: []protocol.PickSegment{{Text: "bill", Tone: "text"}}},
+		},
+	}
+	m := New(req)
+	m.width = 60
+
+	if !strings.Contains(render(m), bgSGR(theme.BgSubtle)) {
+		t.Fatalf("the selected panel's pinned strip should still be BgSubtle")
+	}
+}
+
 // TestMultiFooterLegendMatchesTheBoard pins the Multi board's exact footer
 // grammar: a lav "mark" cluster for space/tab/ctrl-a/enter, with quit still
 // pinned to the far right exactly as the non-multi footer does.

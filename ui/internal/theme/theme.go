@@ -13,6 +13,14 @@ import (
 var (
 	Bg       = lipgloss.Color("#161224")
 	BgSubtle = lipgloss.Color("#1C162C")
+	// TopBarBg is the mission top bar's own rest fill: darker than Bg, the
+	// way GitHub Desktop's toolbar sits darker than its content area, so the
+	// bar visibly separates from the canvas instead of reading as more of it
+	// (2026-09-22 ruling; BgSubtle is six points LIGHTER than Bg and merged
+	// with it on screen). Scoped to the top bar deliberately -- BgSubtle
+	// stays put for the picker's selected-panel strip, the diff staging
+	// hint, and the stash strip, none of which the owner asked to darken.
+	TopBarBg = lipgloss.Color("#100D1C")
 	Surface  = lipgloss.Color("#221A35")
 	HoverBg  = lipgloss.Color("#2F2A4A")
 	SelBg    = lipgloss.Color("#37284B")
