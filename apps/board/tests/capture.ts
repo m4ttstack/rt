@@ -214,13 +214,20 @@ for (const theme of ['light', 'dark'] as const) {
   // sectioned face (B7): the overview strip and the question's own context.
   await page.click('.tui-dq-open');
   await page.waitForSelector('.tui-triage-body');
-  if (!(await page.locator('.tui-gate-question[data-sectioned]').count()))
+  for (
+    let i = 0;
+    i < 10 &&
+    !(await page.locator('.tui-gate-question[data-sectioned]').count());
+    i++
+  ) {
     await page.getByRole('button', { name: 'skip gate' }).click();
+    await page.waitForTimeout(120);
+  }
   await page.waitForSelector('.tui-gate-question[data-sectioned]');
   await shoot(page, `queue-${theme}`);
   // The bracketed-findings gate (B9): the pane groups by label rather than
   // leading every line with its own prefix.
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 10; i++) {
     if (await page.locator('.tui-gate-groups').count()) break;
     await page.getByRole('button', { name: 'skip gate' }).click();
     await page.waitForTimeout(120);
@@ -228,6 +235,25 @@ for (const theme of ['light', 'dark'] as const) {
   await page.waitForSelector('.tui-gate-groups');
   await shoot(page, `queuegroups-${theme}`);
   await page.keyboard.press('Escape');
+  // Structured respond gates: the header card in place of the MR strip,
+  // then the thread card (respond-plan) and the replies card (respond-post).
+  // Each shot reopens the queue, which starts a fresh session at the first
+  // gate, and skips forward to its gate.
+  for (const [shape, name] of [
+    ['plan@1', 'queueplan'],
+    ['post@1', 'queuepost'],
+  ] as const) {
+    await page.click('.tui-dq-open');
+    await page.waitForSelector('.tui-triage-body');
+    const head = page.locator(`.tui-respond-head[data-shape="${shape}"]`);
+    for (let i = 0; i < 10 && !(await head.count()); i++) {
+      await page.getByRole('button', { name: 'skip gate' }).click();
+      await page.waitForTimeout(120);
+    }
+    await head.waitFor();
+    await shoot(page, `${name}-${theme}`);
+    await page.keyboard.press('Escape');
+  }
   // settings modal
   await page.click('.tui-side-gear');
   await page.waitForSelector('[data-part="modal"]');

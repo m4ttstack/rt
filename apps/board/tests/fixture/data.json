@@ -915,6 +915,127 @@
               ]
             }
           ]
+        },
+        {
+          "gateId": "gate-respond-plan-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-plan",
+          "label": "respond gate !1235",
+          "status": "open",
+          "openedAt": 1755603540000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":1,\"threads\":{\"total\":2,\"blocking\":1},\"adjudication\":\"both valid · fresh-context adjudicated\"}",
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"blocking\",\"claim\":{\"summary\":\"The temperature factor is applied twice when the panel re-renders with a cached score.\",\"points\":[\"`scoreFor()` already multiplies by the factor, and the panel multiplies again\",\"a cached score of 0.8 renders as 0.64 after one refresh\"]},\"verdict\":{\"call\":\"valid\",\"note\":\"reproduced against the checkout with a cached score\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}}",
+              "options": [
+                {
+                  "value": "reply:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "reply",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "fix (recommended)",
+                  "description": "drop the second multiply in panel.tsx and add a cached-score render test"
+                },
+                {
+                  "value": "skip:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"non-blocking\",\"claim\":{\"summary\":\"Could the factor's default live in settings instead of a constant?\"},\"verdict\":{\"call\":\"valid-low-value\",\"note\":\"reasonable, but no second caller needs it yet\"},\"reply\":{\"kind\":\"direction\",\"text\":\"Agree it could; keep the constant until a second caller appears, and say so.\"}}",
+              "options": [
+                {
+                  "value": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "reply (recommended)",
+                  "description": "answer with the direction above, no code change"
+                },
+                {
+                  "value": "fix:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "fix",
+                  "description": "move the default into settings now"
+                },
+                {
+                  "value": "skip:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ]
+        },
+        {
+          "gateId": "gate-respond-post-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-post",
+          "label": "respond-post !1235",
+          "status": "open",
+          "openedAt": 1755603480000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"post@1\",\"reviewer\":\"pat\",\"round\":1,\"replies\":2,\"fixes\":[{\"sha\":\"4be91c2\"}]}",
+          "questions": [
+            {
+              "id": "replies",
+              "label": "Post which replies?",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"replies@1\",\"replies\":[{\"thread\":\"f1e2d3c4b5a697887766554433221100ffeeddcc\",\"file\":\"highlights/panel.tsx:118\",\"verb\":\"fix\",\"sha\":\"4be91c2\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"},{\"thread\":\"0a1b2c3d4e5f60718293a4b5c6d7e8f901234567\",\"file\":\"highlights/temperature.ts:42\",\"verb\":\"reply\",\"text\":\"Agreed it could live in settings. Keeping the constant until a second caller needs it; noted that beside the constant.\"}]}",
+              "options": [
+                {
+                  "value": "f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "highlights/panel.tsx:118",
+                  "description": "Good catch. The panel now reads the factored score…"
+                },
+                {
+                  "value": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "highlights/temperature.ts:42",
+                  "description": "Agreed it could live in settings…"
+                }
+              ]
+            },
+            {
+              "id": "disposition",
+              "label": "After posting?",
+              "multi": false,
+              "options": [
+                {
+                  "value": "resolve-addressed",
+                  "label": "resolve-addressed (recommended)",
+                  "description": "resolve each thread just replied to"
+                },
+                {
+                  "value": "leave-open",
+                  "label": "leave-open",
+                  "description": "post the replies without resolving the threads"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
