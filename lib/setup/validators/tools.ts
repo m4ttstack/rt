@@ -19,7 +19,7 @@
 import { resolveTool } from "../../deps/resolve.ts";
 import { detectEditors } from "../../editors.ts";
 import { BACKUP_TOOLS as BACKUP_TOOL_NAMES } from "../../state/backup-tools.ts";
-import { BASE_PLUGINS } from "../base-plugins.ts";
+import { BASE_PLUGINS, resolveBasePlugin } from "../base-plugins.ts";
 import { row, type Action, type Row } from "../contract.ts";
 import { integrationDef } from "../integrations.ts";
 import { callableBySkills, claudeJsonPath, linearServerNames, nameTaken, readClaudeConfig } from "../linear-mcp.ts";
@@ -539,13 +539,14 @@ function pluginsRow(pluginList: ExecResult): Row {
   if (!entries) return row({ ...base, status: "error", detail: "claude plugin list --json output could not be read" });
 
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const absent = BASE_PLUGINS.filter((id) => !byId.has(id));
+  const expected = BASE_PLUGINS.map((id) => resolveBasePlugin(id, (candidate) => byId.has(candidate)));
+  const absent = expected.filter((id) => !byId.has(id));
   if (absent.length > 0) return row({ ...base, status: "missing", detail: `not installed: ${absent.join(", ")}`, action: INSTALL_PLUGINS_ACTION });
 
   // `plugins.install` only enables a plugin best-effort, and disabling one is
   // a deliberate user choice rather than a broken install: needs-you (not
   // invalid) so verify names it and nags without going critical.
-  const disabled = BASE_PLUGINS.filter((id) => byId.get(id)!.enabled !== true);
+  const disabled = expected.filter((id) => byId.get(id)!.enabled !== true);
   if (disabled.length > 0) return row({ ...base, status: "needs-you", detail: `disabled: ${disabled.join(", ")}`, action: ENABLE_PLUGINS_ACTION });
 
   return row({ ...base, status: "ready", detail: `${BASE_PLUGINS.length} plugins installed` });

@@ -732,6 +732,34 @@ describe("joinRedeem", () => {
     expect(calls.settingWrites).toEqual([]);
   });
 
+  test("a team-declared switchboard that is not https: no admin token sent, nothing stored, peering unavailable (the board refuses to boot on a non-loopback http URL)", async () => {
+    const fetchCalls: string[] = [];
+    const p = redeemProbes({
+      fetch: async (url) => {
+        fetchCalls.push(url);
+        return { status: 201, body: JSON.stringify({ token: "tok-1" }), headers: {} };
+      },
+    });
+    const relay = fakeRelay();
+    const warnings: string[] = [];
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "http://switchboard.lan:8787" } } }),
+      readTeamSecret: async () => "admin-token-xyz",
+      warn: (m) => warnings.push(m),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(result.peering).toBe("unavailable");
+    expect(fetchCalls.filter((u) => u.includes("switchboard.lan"))).toEqual([]);
+    expect(calls.secretWrites).toEqual([]);
+    expect(calls.settingWrites).toEqual([]);
+    expect(warnings.some((w) => w.includes("http://switchboard.lan:8787") && w.includes("https"))).toBe(true);
+    expect(result.message).toContain("must be https");
+    expect(result.message).not.toContain("re-invite");
+  });
+
   test("a failing board.switchboardUrl write -> peering:unavailable, join still ok: a token the board cannot find a URL for peers nothing", async () => {
     const p = redeemProbes();
     const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
@@ -750,6 +778,8 @@ describe("joinRedeem", () => {
     expect(result.access).toBe("ok");
     expect(result.peering).toBe("unavailable");
     expect(warnings.some((w) => w.includes("board.switchboardUrl") && w.includes("store is malformed"))).toBe(true);
+    expect(result.message).toContain(`rt settings set board.switchboardUrl '"https://sb.test"' --scope machine`);
+    expect(result.message).not.toContain("re-invite");
   });
 
   test("an embedded token with no team-declared switchboard url is refused: nothing to aim it at, nothing stored", async () => {

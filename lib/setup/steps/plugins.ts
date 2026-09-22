@@ -22,9 +22,9 @@ import { stripJsonc } from "../../jsonc.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import type { ApplyContext } from "../apply.ts";
 import type { StepDef, StepOutcome } from "../apply.ts";
-import { BASE_PLUGINS } from "../base-plugins.ts";
+import { BASE_PLUGINS, resolveBasePlugin } from "../base-plugins.ts";
 import { materializeSkills } from "../skills-materialize.ts";
-import type { Probes } from "../probes.ts";
+import type { ExecResult, Probes } from "../probes.ts";
 import { isAlready, isNotFound, parsePluginList, settlePack, PACK_EXEC_TIMEOUT_MS, type ClaudeRunner } from "../pack-cache.ts";
 import { updateSetupState } from "../state.ts";
 import { claudeConfigDirs } from "../tools-install.ts";
@@ -36,6 +36,24 @@ const RETRY_REMEDY = "Open Claude Code once so it finishes first-run, then Retry
 
 function dedupe(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+/** Registered marketplace names, or null when this claude cannot list them as JSON (the caller then falls back to the add's own reply). */
+async function listMarketplaceNames(run: (args: string[]) => Promise<ExecResult>): Promise<Set<string> | null> {
+  const res = await run(["plugin", "marketplace", "list", "--json"]);
+  if (res.code !== 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(res.stdout);
+    if (!Array.isArray(parsed)) return null;
+    return new Set(parsed.map((m) => (m as { name?: unknown })?.name).filter((n): n is string => typeof n === "string"));
+  } catch {
+    return null;
+  }
+}
+
+/** A repeat add exits 0 and says so on stdout; a same-name clash from a different source fails with "already added" on stderr. */
+function addFoundExisting(res: ExecResult): boolean {
+  return isAlready(res) || /already on disk/i.test(res.stdout);
 }
 
 function isUnknownSubcommand(res: { stdout: string; stderr: string }): boolean {
@@ -178,12 +196,19 @@ async function pluginsInstallRun(ctx: ApplyContext): Promise<StepOutcome> {
   for (const dir of configDirs) {
     const env = { CLAUDE_CONFIG_DIR: dir };
 
+    const runIn = (args: string[]) => ctx.p.exec([...claude.exec!, ...args], { env, timeoutMs: PACK_EXEC_TIMEOUT_MS });
+    // A name appearing in the listing is the only wording-independent proof
+    // that this add created the marketplace rather than finding it there.
+    let known = await listMarketplaceNames(runIn);
     for (const src of marketplaces) {
-      const res = await ctx.p.exec([...claude.exec, "plugin", "marketplace", "add", src], { env, timeoutMs: PACK_EXEC_TIMEOUT_MS });
+      const res = await runIn(["plugin", "marketplace", "add", src]);
       if (res.code !== 0 && !isAlready(res)) {
         return { state: "failed", detail: `claude plugin marketplace add exited ${res.code}`, remedy: RETRY_REMEDY };
       }
-      if (!isAlready(res)) addedMarketplaces.push(src);
+      const after = known ? await listMarketplaceNames(runIn) : null;
+      const created = known && after ? [...after].some((name) => !known!.has(name)) : !addFoundExisting(res);
+      if (created) addedMarketplaces.push(src);
+      known = after;
     }
 
     const runner: ClaudeRunner = {
@@ -202,8 +227,9 @@ async function pluginsInstallRun(ctx: ApplyContext): Promise<StepOutcome> {
     }
     const byId = new Map(installedBefore.map((e) => [e.id, e]));
 
-    for (const plugin of allPlugins) {
-      const teamAuthored = teamAuthoredPlugins.includes(plugin);
+    for (const listed of allPlugins) {
+      const teamAuthored = teamAuthoredPlugins.includes(listed);
+      const plugin = teamAuthored ? listed : resolveBasePlugin(listed, (id) => byId.has(id));
 
       // An already-installed plugin takes update, never install: install would
       // flip a deliberately disabled pack back on.

@@ -191,7 +191,40 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(execCalls.some((a) => a[2] === "enable" && a.at(-1) === "superpowers@claude-plugins-official")).toBe(true);
     });
 
-    test("setup-state records only what rt added: a marketplace or plugin already present stays out, so uninstall never removes the member's own", async () => {
+    // Replies captured from the real CLI (2.1.280): a repeat add exits 0 and
+    // reports on stdout, never stderr.
+    const ALREADY_ON_DISK = "Adding marketplace…✔ Marketplace 'claude-plugins-official' already on disk — declared in user settings";
+    const ADDED = (name: string) => `✔ Successfully added marketplace: ${name} (declared in user settings)`;
+
+    /** A claude that already has the official marketplace and superpowers, answering `marketplace list --json` from what has been added so far. */
+    function memberWithOfficialAlready(execCalls: string[][], opts: { listJson: boolean }) {
+      const names = new Set(["claude-plugins-official"]);
+      const nameFor = (src: string) => (src === OFFICIAL_MARKETPLACE_SOURCE ? "claude-plugins-official" : src === MATTSTACK_MARKETPLACE_SOURCE ? "mattstack" : src);
+      return fakeProbes({
+        home,
+        env: { PATH: "/usr/local/bin" },
+        files: { "/usr/local/bin/claude": "bin" },
+        exec: async (argv) => {
+          execCalls.push(argv);
+          const [, , verb, sub, target] = argv;
+          if (verb === "list") return ok(JSON.stringify([{ id: "superpowers@claude-plugins-official", version: "6.4.1", enabled: true }]));
+          if (verb === "marketplace" && sub === "list") {
+            return opts.listJson
+              ? ok(JSON.stringify([...names].map((name) => ({ name, source: "github" }))))
+              : { code: 1, stdout: "", stderr: "error: unknown option '--json'" };
+          }
+          if (verb === "marketplace" && sub === "add" && target) {
+            const name = nameFor(target);
+            if (names.has(name)) return ok(ALREADY_ON_DISK);
+            names.add(name);
+            return ok(ADDED(name));
+          }
+          return ok("");
+        },
+      });
+    }
+
+    test("a member already running superpowers from its author's own marketplace keeps that copy: no second superpowers is installed", async () => {
       const execCalls: string[][] = [];
       const p = fakeProbes({
         home,
@@ -199,14 +232,7 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
         files: { "/usr/local/bin/claude": "bin" },
         exec: async (argv) => {
           execCalls.push(argv);
-          const [, , verb, sub, target] = argv;
-          if (verb === "list") {
-            return ok(JSON.stringify([{ id: "superpowers@claude-plugins-official", version: "6.4.1", enabled: true }]));
-          }
-          if (verb === "marketplace" && sub === "add" && target === OFFICIAL_MARKETPLACE_SOURCE) {
-            return { code: 1, stdout: "", stderr: "Marketplace 'claude-plugins-official' is already added" };
-          }
-          return ok("");
+          return argv[2] === "list" ? ok(JSON.stringify([{ id: "superpowers@superpowers-marketplace", version: "5.0.0", enabled: true }])) : ok("");
         },
       });
       const { ctx } = makeCtx(p);
@@ -214,14 +240,28 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       const outcome = await pluginsInstallStep.run(ctx);
       expect(outcome.state).toBe("done");
 
-      const state = readSetupState(p);
-      expect(state.marketplaces).toContain(MATTSTACK_MARKETPLACE_SOURCE);
-      expect(state.marketplaces).not.toContain(OFFICIAL_MARKETPLACE_SOURCE);
-      expect(state.plugins).toEqual(expect.arrayContaining(["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack"]));
-      expect(state.plugins).not.toContain("superpowers@claude-plugins-official");
-      // Still enabled and updated like any trusted baseline plugin; only the uninstall record excludes it.
-      expect(execCalls.some((a) => a[2] === "update" && a[3] === "superpowers@claude-plugins-official")).toBe(true);
+      expect(execCalls.some((a) => a.at(-1) === "superpowers@claude-plugins-official")).toBe(false);
+      expect(execCalls.some((a) => a[2] === "update" && a[3] === "superpowers@superpowers-marketplace")).toBe(true);
+      expect(readSetupState(p).plugins).not.toContain("superpowers@superpowers-marketplace");
     });
+
+    for (const listJson of [true, false]) {
+      test(`setup-state records only what rt added (marketplace list ${listJson ? "available" : "unavailable, wording fallback"}): the member's own marketplace and plugin stay out, so uninstall never removes them`, async () => {
+        const execCalls: string[][] = [];
+        const p = memberWithOfficialAlready(execCalls, { listJson });
+        const { ctx } = makeCtx(p);
+
+        const outcome = await pluginsInstallStep.run(ctx);
+        expect(outcome.state).toBe("done");
+
+        const state = readSetupState(p);
+        expect(state.marketplaces).toContain(MATTSTACK_MARKETPLACE_SOURCE);
+        expect(state.marketplaces).not.toContain(OFFICIAL_MARKETPLACE_SOURCE);
+        expect(state.plugins).toEqual(expect.arrayContaining(["mattstack@mattstack", "fast-browser@mattstack", "chat@mattstack"]));
+        expect(state.plugins).not.toContain("superpowers@claude-plugins-official");
+        expect(execCalls.some((a) => a[2] === "update" && a[3] === "superpowers@claude-plugins-official")).toBe(true);
+      });
+    }
 
     test("happy path: one custom marketplace + team marketplace/plugin, one config dir — full argv sequence, setup-state recorded", async () => {
       const teamDir = join(home, ".mattstack", "teams", "acme");

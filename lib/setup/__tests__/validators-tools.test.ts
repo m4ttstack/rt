@@ -541,6 +541,19 @@ describe("toolRows - tool.plugins", () => {
     expect(r.action).toEqual({ type: "run", label: "Install plugins", verb: ["setup", "pack"] });
   });
 
+  test("superpowers from its author's own marketplace satisfies the baseline entry; disabled there, it is named by its own id", async () => {
+    const swap = (enabled: boolean) =>
+      JSON.stringify(
+        REAL_PLUGIN_ENTRIES.filter((e) => e.id !== "superpowers@claude-plugins-official").concat([{ id: "superpowers@superpowers-marketplace", enabled } as RealPluginEntry]),
+      );
+    const ready = await pickRow(toolRows(fakeProbes({ exec: listExec(ok(swap(true))) }), [], { hasBrew: true, secrets: NO_SECRETS }, NOOP_SEAMS), "tool.plugins");
+    expect(ready.status).toBe("ready");
+
+    const off = await pickRow(toolRows(fakeProbes({ exec: listExec(ok(swap(false))) }), [], { hasBrew: true, secrets: NO_SECRETS }, NOOP_SEAMS), "tool.plugins");
+    expect(off.status).toBe("needs-you");
+    expect(off.detail).toContain("superpowers@superpowers-marketplace");
+  });
+
   // Matched by the parsed `id` field against an exact key, never a substring:
   // an id that merely starts with the same text as a baseline plugin's id
   // must not satisfy it.
