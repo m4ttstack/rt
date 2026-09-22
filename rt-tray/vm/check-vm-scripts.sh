@@ -10,6 +10,20 @@ done
 t "common.test.sh"               bash lib/__tests__/common.test.sh
 t "appcast-server.test.ts"       bun test run/helpers/__tests__/appcast-server.test.ts
 t "build-golden --dry-run"       bash golden/build-golden.sh 26 --dry-run
+# A pause nobody can answer used to exit mute under set -e, killing the VM
+# through the EXIT trap after 15 minutes of provisioning, with the failure
+# presenting as "the window vanished". It must refuse before doing any work.
+t "build-golden refuses without a tty" bash -c '
+  out=$(bash golden/build-golden.sh 26 --rebuild < /dev/null 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && printf "%s" "$out" | grep -q "no terminal on stdin" \
+    && ! printf "%s" "$out" | grep -q "clone"'
+t "build-golden promotes only after verify" bash -c '
+  build=$(grep -n "verify-golden.sh" golden/build-golden.sh | head -1 | cut -d: -f1)
+  promote=$(grep -n "tart rename" golden/build-golden.sh | head -1 | cut -d: -f1)
+  [ -n "$build" ] && [ -n "$promote" ] && [ "$build" -lt "$promote" ] \
+    && grep -q "FINAL-building" golden/build-golden.sh'
+t "verify-golden checks Finder automation separately" bash -c \
+  'grep -qF "Finder automation allowed" golden/verify-golden.sh && grep -qF "to get name of home" golden/verify-golden.sh'
 t "build-golden --xcode --dry-run selects the xcode image" bash -c \
   'out=$(bash golden/build-golden.sh 26 --xcode --dry-run 2>&1) && printf "%s" "$out" | grep -q "clone ghcr.io/cirruslabs/macos-tahoe-xcode:latest mattstack-golden-26-xcode"'
 t "walkthrough --dry-run"        env VM_ARTIFACTS=/tmp/vmcheck-art bash run/walkthrough.sh --ver 26 --app ../mattstack.app --dry-run

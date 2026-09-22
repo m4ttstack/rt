@@ -10,18 +10,45 @@ VER="${1:-}"; shift || true
 DRY=0; REBUILD=0; XCODE=0
 for a in "$@"; do case "$a" in --xcode) XCODE=1;; --dry-run) DRY=1;; --rebuild) REBUILD=1;; *) vm_die "unknown arg $a";; esac; done
 
+# Asserted before anything expensive, because the pause this script cannot
+# skip is 15 minutes downstream of here. Without a terminal on stdin the
+# first `read` returns EOF, `set -e` exits, the EXIT trap kills the VM, and
+# the whole build vanishes with no error printed at all... so the failure
+# presents as "the window disappeared" rather than "nobody could answer the
+# prompt". That cost a full provisioning cycle once.
+if [ "$DRY" = 0 ] && [ ! -t 0 ]; then
+  vm_die "no terminal on stdin, and this build pauses for manual clicks that only a human can make.
+  Run it from a real terminal. In Claude Code that means typing it yourself with a leading ! rather
+  than having the agent run it, and note that ! does NOT give a tty either... use a normal shell."
+fi
+
 FLAVOUR=cleanroom; [ "$XCODE" = 1 ] && FLAVOUR=xcuitest
-IMAGE=$(vm_image_for "$VER" "$FLAVOUR"); GOLDEN=$(vm_golden_name "$VER" "$FLAVOUR")
+IMAGE=$(vm_image_for "$VER" "$FLAVOUR"); FINAL=$(vm_golden_name "$VER" "$FLAVOUR")
+# Built under a scratch name and only promoted once verify-golden.sh passes.
+# Deleting the old one up front meant any failure after that point left the
+# estate with no golden at all, and every script that clones it broken...
+# which is exactly what a crash at the manual step did.
+GOLDEN="$FINAL-building"
 run() { if [ "$DRY" = 1 ]; then vm_log "[dry-run] $*"; else "$@"; fi; }
 
-vm_log "golden: $GOLDEN ← $IMAGE"
+# A pause with no terminal to answer it is the failure this guards; each read
+# says which prompt went unanswered instead of letting `set -e` exit mute.
+pause() { read -r -p "$1" _ || vm_die "stdin closed while waiting: $1"; }
+
+vm_log "golden: $FINAL (building as $GOLDEN) ← $IMAGE"
 if [ "$DRY" = 0 ]; then
   vm_require_cmd tart "brew install openai/tools/tart   (old tap: cirruslabs/cli/tart)"
   vm_require_cmd sshpass "brew install cirruslabs/cli/sshpass"
   mkdir -p "$VM_CACHE" "$VM_ARTIFACTS"
   [ -f "$VM_SSH_KEY" ] || ssh-keygen -q -t ed25519 -N '' -C mattstack-vm -f "$VM_SSH_KEY"
+  if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$FINAL"; then
+    [ "$REBUILD" = 1 ] || vm_die "$FINAL exists; pass --rebuild to replace it"
+    vm_log "$FINAL stays in place until the new one verifies"
+  fi
+  # A previous run that died mid-build leaves this behind; it is scratch by
+  # definition, so reclaim it rather than refuse to start.
   if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$GOLDEN"; then
-    [ "$REBUILD" = 1 ] || vm_die "$GOLDEN exists; pass --rebuild to replace it"
+    vm_warn "removing a leftover $GOLDEN from an earlier interrupted build"
     tart stop "$GOLDEN" 2>/dev/null || true; tart delete "$GOLDEN"
   fi
 fi
@@ -75,15 +102,22 @@ cat <<EOF
   │     a script, so this is the only place it can be answered.              │
   └──────────────────────────────────────────────────────────────────────────┘
 EOF
-read -r -p "  Press Enter after steps 1–2… " _
+pause "  Press Enter after steps 1–2… "
 vm_ssh_try "$VM_TESTER_USER" "$GOLDEN" 'osascript -e "tell application \"System Events\" to get name of first process whose frontmost is true"' || true
-read -r -p "  Approved the System Events prompt? Press Enter for the Finder one… " _
+pause "  Approved the System Events prompt? Press Enter for the Finder one… "
 vm_ssh_try "$VM_TESTER_USER" "$GOLDEN" 'osascript -e "tell application \"Finder\" to get name of home"' || true
-read -r -p "  Approved the Finder prompt? Press Enter to verify… " _
+pause "  Approved the Finder prompt? Press Enter to verify… "
 
 "$VM_ROOT/golden/verify-golden.sh" "$VER" "$GOLDEN"
 vm_log "stopping $GOLDEN (never run the golden again; clone it)"
 tart stop "$GOLDEN"
 wait $TART_PID 2>/dev/null || true
 trap - EXIT
-vm_log "golden $GOLDEN ready"
+
+# Promoted only here, with a verified build in hand: until this line the old
+# golden is still the one every other script clones.
+if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$FINAL"; then
+  tart delete "$FINAL"
+fi
+tart rename "$GOLDEN" "$FINAL"
+vm_log "golden $FINAL ready"
