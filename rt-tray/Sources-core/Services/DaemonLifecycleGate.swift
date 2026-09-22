@@ -102,6 +102,10 @@ public actor DaemonLifecycleGate {
     public var waiterCount: Int { waiters.count }
 
     public init(deadline: TimeInterval = 300, observer: DaemonGateObserver? = nil) {
+        // raceBody converts this to UInt64 nanoseconds; a NaN, negative, or
+        // absurd value would trap there instead of at the misconfigured call.
+        precondition(deadline.isFinite && deadline > 0 && deadline < TimeInterval(UInt64.max) / 1_000_000_000,
+                     "gate deadline must be a positive, finite number of seconds")
         self.deadline = deadline
         self.observer = observer
     }
