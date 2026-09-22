@@ -85,6 +85,18 @@ type Mission struct {
 	hoverDiffLine int
 	hoverGutter   bool
 
+	// The sidebar's other hoverable regions, each a plain bool (no index to
+	// carry): mouseMotion clears every one of these at the top of its switch
+	// alongside hoverFile/hoverDiffLine, so a pointer that leaves a region
+	// can never leave its highlight stuck.
+	hoverCommitButton      bool
+	hoverTabHistory        bool
+	hoverFilterRow         bool
+	hoverCommitSummary     bool
+	hoverCommitDescription bool
+	hoverStash             bool
+	hoverUndoChip          bool
+
 	// lastClickPath/lastClickAt pair a file row's two clicks into a double
 	// click (focuses the diff) the same way the picker's own clickRow does
 	// for its list; nowFn overrides the clock in tests, nil meaning
@@ -441,9 +453,9 @@ const sidebarFixedTopRows = 7
 
 func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
-		renderTabsRow(m.model.ChangedTotal, width),
+		renderTabsRow(m.model.ChangedTotal, m.hoverTabHistory, width),
 		blankRows(width, 1),
-		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, width),
+		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, m.hoverFilterRow, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
 	)
 }
@@ -453,12 +465,12 @@ func (m *Mission) sidebarFixedTop(width int) string {
 func (m *Mission) sidebarDocked(width int) string {
 	var docked []string
 	if m.model.StashCount > 0 {
-		docked = append(docked, renderStashStrip(m.model.StashCount, width))
+		docked = append(docked, renderStashStrip(m.model.StashCount, m.hoverStash, width))
 	}
 	docked = append(docked, lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width)))
-	docked = append(docked, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
+	docked = append(docked, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled(), m.hoverCommitButton, m.hoverCommitSummary, m.hoverCommitDescription))
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
-		docked = append(docked, renderUndoStrip(*lc, width))
+		docked = append(docked, renderUndoStrip(*lc, m.hoverUndoChip, width))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, docked...)
 }
@@ -613,6 +625,12 @@ func (m *Mission) View() tea.View {
 
 	v := tea.NewView(out)
 	v.AltScreen = true
+	// The whole board is hover-driven (row/segment/diff-line/modal-row
+	// treatments all key off mouseMotion), and MouseModeCellMotion only
+	// reports movement while a button is held, so hover needs AllMotion
+	// explicitly -- session's wireMouse decorator defers to whatever mode
+	// is already set here rather than overwriting it.
+	v.MouseMode = tea.MouseModeAllMotion
 	// bubbletea's renderer optimizes trailing styled blanks by erasing to
 	// end-of-line rather than emitting every styled space, and an erased
 	// cell paints the TERMINAL's own default background, not whatever SGR
@@ -1075,6 +1093,13 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	m.hoverFile = -1
 	m.hoverDiffLine = -1
 	m.hoverGutter = false
+	m.hoverCommitButton = false
+	m.hoverTabHistory = false
+	m.hoverFilterRow = false
+	m.hoverCommitSummary = false
+	m.hoverCommitDescription = false
+	m.hoverStash = false
+	m.hoverUndoChip = false
 	if m.modal != nil {
 		m.modal.hoverRow = -1
 		m.modal.hoverAction = false
@@ -1093,6 +1118,20 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 		m.modal.hoverRow = h.idx
 	case hitModalAction:
 		m.modal.hoverAction = true
+	case hitCommitButton:
+		m.hoverCommitButton = true
+	case hitTabHistory:
+		m.hoverTabHistory = true
+	case hitFilterRow:
+		m.hoverFilterRow = true
+	case hitCommitSummary:
+		m.hoverCommitSummary = true
+	case hitCommitDescription:
+		m.hoverCommitDescription = true
+	case hitStash:
+		m.hoverStash = true
+	case hitUndoChip:
+		m.hoverUndoChip = true
 	}
 	return m, nil
 }

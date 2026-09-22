@@ -6,17 +6,21 @@
  * same per-repo pass, so splitting them would just duplicate that read.
  */
 
-import { statfsSync } from "fs";
+import { existsSync, statfsSync, statSync } from "fs";
+import { dirname, resolve } from "path";
 import {
   findByPath,
+  isRtOwnedBranch,
   loadRegistry,
   type TreeRecord,
 } from "../../worktree/registry.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
-import { createTree } from "../../worktree/create.ts";
+import { createTree, scrapTree, type CreateResult } from "../../worktree/create.ts";
+import { hydrateTree, type CloneRunner, type HydrateResult } from "../../worktree/hydrate.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeRepoConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { backoffDelayMs, type FreshenDeps } from "./freshen.ts";
+import { goldenRoot } from "../../rt-paths.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 
 // Machine-side clamp (S077): no team declaration builds more than this on one laptop.
@@ -99,6 +103,56 @@ function noteCreateFailure(backoff: CreateBackoffMap, repoName: string): { failu
   return entry;
 }
 
+export function findGolden(trees: TreeRecord[]): TreeRecord | undefined {
+  return trees.find((t) => t.kind === "golden");
+}
+
+export type CreateMode = { mode: "hydrate"; golden: TreeRecord } | { mode: "cold"; why: string };
+
+/** Pure: whether the next member build can be a hydration. Every "no" is a cold create, never a skipped build. */
+export function chooseCreateMode(
+  trees: TreeRecord[],
+  cfgRoot: string,
+  now: number,
+  sameVolume: (a: string, b: string) => boolean,
+): CreateMode {
+  const golden = findGolden(trees);
+  if (!golden) return { mode: "cold", why: "no golden" };
+  if (golden.state !== "on-deck") return { mode: "cold", why: `golden is ${golden.state ?? "unstated"}` };
+  if (golden.nextRetryAt && Date.parse(golden.nextRetryAt) > now) return { mode: "cold", why: "golden in backoff" };
+  // retryFailures outlives nextRetryAt, so a golden whose ready ladder died is
+  // refused as a donor even when its deadline has since passed and nothing has
+  // re-freshened it. Without this the predicate would depend on the caller
+  // running freshen first, which only the reconciler pass guarantees.
+  if ((golden.retryFailures ?? 0) > 0) return { mode: "cold", why: "golden has recorded failures" };
+  if (!golden.readyStamp) return { mode: "cold", why: "golden has no readyStamp" };
+  if (!sameVolume(golden.path, cfgRoot)) return { mode: "cold", why: "golden and pool root are on different volumes" };
+  return { mode: "hydrate", golden };
+}
+
+/** The nearest ancestor of `p` that exists: a not-yet-created path always lands on this ancestor's device. */
+export function nearestExisting(p: string): string {
+  let cur = resolve(p);
+  while (!existsSync(cur)) {
+    const up = dirname(cur);
+    if (up === cur) return cur;
+    cur = up;
+  }
+  return cur;
+}
+
+// The probe must never create the pool root: an existing pool root is what
+// tells reconcile's isHeldByUnreadableMount (reconcile.ts) that the mount is
+// live, so materializing it here would make a genuinely vanished mount look
+// present, un-hold its rows, and let them accrue misses toward pruning.
+function sameDev(a: string, b: string): boolean {
+  try {
+    return statSync(nearestExisting(a)).dev === statSync(nearestExisting(b)).dev;
+  } catch {
+    return false;
+  }
+}
+
 /** On-deck / creating counts used to decide whether to grow or shrink the pool. */
 export function poolCounts(repoName: string): {
   ready: number;
@@ -132,6 +186,10 @@ export async function replenishAndShrink(
     backoff?: CreateBackoffMap;
     /** Threaded into the shrink path's disposeTree call; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
     findRunningRun: (worktree: string) => RunningRunScan;
+    /** Test seam for the artifact-clone step of hydration; production omits it. */
+    clone?: CloneRunner;
+    /** Test seam for the golden/pool-root volume check; default is a real statSync. */
+    sameVolume?: (a: string, b: string) => boolean;
   },
   creationPromises: Map<string, Promise<void>>,
   appConfig: WorktreeAppConfig,
@@ -144,7 +202,31 @@ export async function replenishAndShrink(
   // A store rung's onDeck is a team declaration; the ceiling is this machine's
   // own limit and always wins, so it clamps here rather than in the sanitizer.
   const onDeck = Math.min(cfg.onDeck, WORKTREE_ONDECK_CEILING);
-  if (onDeck <= 0) return;
+  if (onDeck <= 0) {
+    const golden = findGolden(loadRegistry(repoName));
+    if (golden) {
+      // The branch goes with it: a left-behind rt/golden makes the next
+      // golden's `git worktree add -b` fail for as long as it exists.
+      const result = await withCreateLock(repoPath, () =>
+        withTreeLock(golden.path, () =>
+          scrapTree({ repoName, repoPath, emit, log }, golden, { deleteBranch: isRtOwnedBranch(golden.branch) }),
+        ),
+      );
+      if (result !== "busy") {
+        log.info({ repo: repoName }, "replenish: onDeck is 0; scrapped the golden");
+      }
+    }
+    return;
+  }
+
+  // Lazy and memoized once per pass, not eagerly: `sameVolume` degrades to
+  // false on a missing path, and `chooseCreateMode` only reaches this once it
+  // holds a golden row, whose path therefore exists.
+  let volumeOk: boolean | undefined;
+  const sameVolumeForPass = (a: string, b: string): boolean => {
+    volumeOk ??= (deps.sameVolume ?? sameDev)(a, b);
+    return volumeOk;
+  };
 
   let { ready, totalUnclaimed } = poolCounts(repoName);
   let budget = Math.max(0, onDeck - totalUnclaimed);
@@ -163,13 +245,34 @@ export async function replenishAndShrink(
     // cfg.root, not repoPath: createTree writes under cfg.root, and the RT-52
     // default root lives off-repo (~/.mattstack/rt/worktrees/<identity>), which
     // can be a different volume than the repo's own filesystem.
-    if (!(await hasFreeDiskGb(cfg.root, WORKTREE_MIN_FREE_DISK_GB))) {
+    if (!(await hasFreeDiskGb(nearestExisting(cfg.root), WORKTREE_MIN_FREE_DISK_GB))) {
       log.warn({ repo: repoName }, "replenish: skipped, free disk below threshold");
       break;
     }
     budget--;
-    const p: Promise<void> = withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit, log }))
-      .then((result) => {
+    const p: Promise<void> = withCreateLock(repoPath, async () => {
+      const chosen = chooseCreateMode(loadRegistry(repoName), cfg.root, Date.now(), sameVolumeForPass);
+      if (chosen.mode === "hydrate") {
+        const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone: deps.clone });
+        if (h.ok || h.error === "busy") return h;
+        // Every hydrate failure, not just the two clone exits that map to
+        // "unavailable": hydration is an optimization over cold create and
+        // never a replacement for it, so a donor rt cannot read (an older
+        // `rt` with no hydrate-clone verb, a path tracked at the golden's
+        // stamp but ignored at its HEAD, a clone that timed out) must leave
+        // the pool refilling the slow way rather than stop it refilling. At
+        // warn, so a hydrate that is persistently broken reads as broken
+        // rather than merely slow.
+        log.warn(
+          { repo: repoName, error: h.error, reason: h.error === "hydrate-unavailable" ? h.detail : h.failedStep },
+          "replenish: hydrate failed; falling back to cold create",
+        );
+      } else {
+        log.debug?.({ repo: repoName, why: chosen.why }, "replenish: cold create");
+      }
+      return createTree({ repoName, repoPath, emit, log });
+    })
+      .then((result: CreateResult | HydrateResult) => {
         if (result.ok) {
           backoff.delete(repoName);
           return;
@@ -177,9 +280,10 @@ export async function replenishAndShrink(
         // "busy" is another holder of the tree lock, not a failing build: it
         // neither earns a backoff nor clears one.
         if (result.error === "busy") return;
+        const failedStep = "failedStep" in result ? result.failedStep : undefined;
         const { failures, nextRetryAt } = noteCreateFailure(backoff, repoName);
         log.warn(
-          { repo: repoName, error: result.error, failedStep: result.failedStep, failures, nextRetryAt },
+          { repo: repoName, error: result.error, failedStep, failures, nextRetryAt },
           "worktree reconciler: replenish create failed",
         );
       })
@@ -234,6 +338,52 @@ export async function replenishAndShrink(
     });
     counts = poolCounts(repoName);
   }
+
+  await ensureGolden(deps, backoff, cfg.root);
+}
+
+/**
+ * Build the donor, once the pass has nothing else to do. Last, not first: this
+ * is a full cold create (minutes on a monorepo) and it runs under the repo's
+ * create lock, which `worktree:provision` queues on too. Ahead of member
+ * top-up it would push a provision past its own timeout on the very first
+ * pass after this lands. Members cold-create until a golden exists and
+ * hydrate from the next pass on, which is the steady state either way.
+ */
+async function ensureGolden(
+  deps: FreshenDeps & { backoff?: CreateBackoffMap; sameVolume?: (a: string, b: string) => boolean },
+  backoff: CreateBackoffMap,
+  cfgRoot: string,
+): Promise<void> {
+  const { repoName, repoPath, emit, log } = deps;
+  // Its own backoff key, so a broken donor build never holds off member
+  // creates, which stay on the cold path meanwhile.
+  const goldenKey = `${repoName}#golden`;
+  if (findGolden(loadRegistry(repoName)) || createBlockedUntil(backoff, goldenKey)) return;
+  // A cross-volume pool root refuses every hydration anyway (clonefile is
+  // EXDEV across volumes), so building the donor at all would only pay a
+  // full cold build, and every freshen after it, for zero hydrations.
+  if (!(deps.sameVolume ?? sameDev)(goldenRoot(repoName), cfgRoot)) {
+    log.warn({ repo: repoName }, "replenish: golden skipped, pool root is on a different volume");
+    return;
+  }
+  // nearestExisting: the golden root does not exist before the first build,
+  // and statfs on a missing path degrades to "enough disk".
+  if (!(await hasFreeDiskGb(nearestExisting(goldenRoot(repoName)), WORKTREE_MIN_FREE_DISK_GB))) {
+    log.warn({ repo: repoName }, "replenish: golden skipped, free disk below threshold");
+    return;
+  }
+  const g = await withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit, log, target: "golden" }));
+  if (g.ok) {
+    backoff.delete(goldenKey);
+    return;
+  }
+  if (g.error === "busy") return;
+  const { failures, nextRetryAt } = noteCreateFailure(backoff, goldenKey);
+  log.warn(
+    { repo: repoName, error: g.error, failedStep: g.failedStep, failures, nextRetryAt },
+    "worktree reconciler: golden create failed",
+  );
 }
 
 export const __test__ = {

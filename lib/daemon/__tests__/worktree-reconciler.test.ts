@@ -9,7 +9,7 @@ import type { Logger } from "pino";
 import { readJson, writeJson } from "../../json-store.ts";
 import { closeStateDb, listKvValues, setKvValue } from "../../state/index.ts";
 import { composeKey } from "../../state/branch-cache.ts";
-import { machineSettingsPath, rtDir, teamSettingsPath } from "../../rt-paths.ts";
+import { goldenRoot, machineSettingsPath, rtDir, teamSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity, parseIdentity } from "../../settings/identity.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import * as gitAsync from "../../worktree/git-async.ts";
@@ -171,6 +171,15 @@ describe("reconcileRepoRegistry", () => {
 
     const registry = loadRegistry(repoName);
     expect(registry.length).toBe(2);
+  });
+
+  test("a registered golden is not re-adopted as unmanaged", async () => {
+    const golden: TreeRecord = { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString(), readyStamp: "abc" };
+    saveRegistry(repoName, [golden]);
+    await reconcileRepoRegistry(makeDeps(repoName, repo, events));
+    const rows = loadRegistry(repoName).filter((r) => r.path === golden.path);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("golden");
   });
 
   test("a missing path is held for MISSING_PRUNE_PASSES, then pruned and the name reusable by createTree", async () => {
@@ -1680,7 +1689,8 @@ describe("replenish / shrink", () => {
       fakeAppConfig(),
     );
 
-    expect(loadRegistry(repoName).filter((t) => t.state === "on-deck").length).toBe(1);
+    // kind: "ephemeral" excludes the repo's golden row, which is on-deck too but isn't a member.
+    expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck").length).toBe(1);
     expect(__test__.createBackoff.has(repoName)).toBe(false);
   });
 
@@ -1756,6 +1766,14 @@ describe("detached trigger / latency", () => {
     writeFileSync(join(repo, "wip.txt"), "not idle\n");
 
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "sleep 3" }] });
+    // A golden already on record (state on-deck, no readyStamp keeps it out of
+    // chooseCreateMode's hydrate path) makes replenish's ensure-golden step a
+    // no-op, so this pass runs the declared ready ladder once, for the
+    // member, not twice: this test measures kick/coalescing timing, not the
+    // golden's own first-build cost.
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString() },
+    ]);
 
     const events: Array<{ type: string; data: any }> = [];
     const reconciler = createWorktreeReconciler({
@@ -1798,6 +1816,12 @@ describe("detached trigger / latency", () => {
     addBareOrigin(repo);
     writeFileSync(join(repo, "wip.txt"), "not idle\n");
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "sleep 2" }] });
+    // Same reasoning as the kick() test above: a pre-recorded golden keeps
+    // replenish's ensure-golden step a no-op, so the ready ladder still runs
+    // exactly once this pass.
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString() },
+    ]);
 
     let repoIndexCalls = 0;
     const reconciler = createWorktreeReconciler({
@@ -1849,6 +1873,17 @@ describe("reapRepoTrash", () => {
 
     await waitFor(() => !existsSync(leftover) && !existsSync(expired));
     expect(existsSync(fresh)).toBe(true);
+  });
+
+  test("sweeps a scrapped golden's leftover, which sits beside the golden root and in no pool root", async () => {
+    // Where scrapTree renames a golden to: a sibling of goldenRoot, one level
+    // above it, outside `.worktrees` and outside cfg.root.
+    const leftover = join(dirname(goldenRoot("acme")), ".trash-golden-1700000000003");
+    mkdirSync(leftover, { recursive: true });
+
+    await __test__.reapRepoTrash({ repoName: "acme", repoPath: repo, log: fakeLog() });
+
+    await waitFor(() => !existsSync(leftover));
   });
 
   // S079: sanitizeRoot (lib/worktree/config.ts) has no ancestor check, so a

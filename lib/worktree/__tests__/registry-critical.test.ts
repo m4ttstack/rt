@@ -16,7 +16,10 @@ import { writeJson } from "../../json-store.ts";
 import { rtDir } from "../../rt-paths.ts";
 import { closeStateDb, getStateDb } from "../../state/index.ts";
 import { setKvValueCritical } from "../../state/kv-blob.ts";
-import { loadRegistry, saveRegistry, registryEpoch, type TreeRecord } from "../registry.ts";
+import {
+  loadRegistry, saveRegistry, registryEpoch, mergeRegistries,
+  GOLDEN_NAME, GOLDEN_BRANCH, isRtOwnedBranch, type TreeRecord,
+} from "../registry.ts";
 import { tryLockTree } from "../locks.ts";
 import { reconcileRepoRegistry } from "../../daemon/worktree-reconciler.ts";
 import { createWorktreeHandlers } from "../../daemon/handlers/worktree.ts";
@@ -222,5 +225,27 @@ describe("reconcile and an in-flight create's registry flip", () => {
     // the existing sweep (unaffected by this task) scraps it for a retry.
     await reconcileRepoRegistry({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
     expect(loadRegistry(repoName).some((t) => t.path === treePath)).toBe(false);
+  });
+});
+
+describe("golden kind", () => {
+  test("the golden's branch is namespaced, so a user's own branch at that name is not rt's to delete", () => {
+    expect(GOLDEN_NAME).toBe("golden");
+    expect(GOLDEN_BRANCH).toBe("rt/golden");
+    expect(GOLDEN_BRANCH).toContain("/");
+    expect(isRtOwnedBranch(GOLDEN_BRANCH)).toBe(true);
+    expect(isRtOwnedBranch("on-deck/bellatrix")).toBe(true);
+    // The bare name the golden used to take, and anything else a human picks.
+    expect(isRtOwnedBranch(GOLDEN_NAME)).toBe(false);
+    expect(isRtOwnedBranch("main")).toBe(false);
+    expect(isRtOwnedBranch(null)).toBe(false);
+  });
+
+  test("a golden record beats a newer unmanaged challenger for the same path", () => {
+    const held: TreeRecord = { name: "golden", path: "/p", kind: "golden", branch: "golden", createdAt: "2026-01-01T00:00:00.000Z", readyStamp: "abc" };
+    const challenger: TreeRecord = { name: "p", path: "/p", kind: "unmanaged", branch: null, createdAt: "2026-02-01T00:00:00.000Z" };
+    const merged = mergeRegistries([held], [challenger]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.kind).toBe("golden");
   });
 });

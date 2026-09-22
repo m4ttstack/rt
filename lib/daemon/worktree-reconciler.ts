@@ -8,9 +8,9 @@
  * `creationInFlight`).
  */
 
-import { isAbsolute, join, relative, resolve } from "path";
+import { dirname, isAbsolute, join, relative, resolve } from "path";
 import type { Logger } from "pino";
-import { legacyWorktreePoolRoots } from "../rt-paths.ts";
+import { goldenRoot, legacyWorktreePoolRoots } from "../rt-paths.ts";
 import { loadRegistry } from "../worktree/registry.ts";
 import { recoverPendingReady } from "../worktree/ready-async.ts";
 import { MR_TERMINAL_STATES } from "../enrich.ts";
@@ -99,13 +99,13 @@ const MAX_ORPHAN_PASSES = 2;
  *
  * Crash leftovers... sibling `.trash-*` dirs from a disposal whose detached
  * delete died (daemon crash, reboot)... are reaped immediately: nobody will
- * ever look at them again, so a crash costs disk and nothing else. Both roots
- * are swept, the repo's default `.worktrees` and whatever root the repo config
- * declares, because a root that changed after a disposal still has the old
- * root's leftovers in it.
+ * ever look at them again, so a crash costs disk and nothing else. Every root
+ * is swept... the repo's default `.worktrees`, whatever root the repo config
+ * declares, and the golden's parent... because a root that changed after a
+ * disposal still has the old root's leftovers in it.
  *
  * Retained trees (`<root>/.trash/<name>-<epoch>` entries under each of the
- * same two roots, where disposal parks trees stripped-but-recoverable
+ * same roots, where disposal parks trees stripped-but-recoverable
  * (RT-51)) are reaped only past the retention window. Sweeping both roots,
  * not just the tree's current default, is what lets a legacy pool root and
  * the new default pool root both drain during migration.
@@ -127,7 +127,11 @@ function isRootAnAncestorOfRepo(repoPath: string, root: string): boolean {
 async function reapRepoTrash(deps: { repoName: string; repoPath: string; log: Logger }): Promise<void> {
   const { repoName, repoPath, log } = deps;
   const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
-  const roots = [join(repoPath, ".worktrees"), ...legacyWorktreePoolRoots(repoName)];
+  // dirname(goldenRoot): a scrapped golden is renamed to a SIBLING of its own
+  // root, so the leftover a died `rm -rf` leaves behind lands one level up,
+  // outside every pool root. Shared by all repos' goldens, which costs
+  // nothing: only `.trash-` entries are ever reaped, and they are all rt's.
+  const roots = [join(repoPath, ".worktrees"), dirname(goldenRoot(repoName)), ...legacyWorktreePoolRoots(repoName)];
   if (isRootAnAncestorOfRepo(repoPath, cfg.root)) {
     log.warn({ repo: repoName, root: cfg.root, repoPath }, "worktree trash sweep refused a configured root that is an ancestor of the repo");
   } else {

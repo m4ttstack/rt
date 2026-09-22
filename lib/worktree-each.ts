@@ -6,6 +6,8 @@
  * git fallback when the daemon is down), the picker, and process execution.
  */
 
+import { GOLDEN_BRANCH } from "./worktree/registry.ts";
+
 export type SelectionMode = "all" | "on-deck" | "pick";
 
 export interface ParsedEachArgs {
@@ -36,6 +38,8 @@ export interface WorktreeBinding {
   branch: string | null;
   /** Registry state ("on-deck", "claimed", ...); absent from the git-only fallback. */
   state?: string;
+  /** Registry kind ("ephemeral", "golden", ...); absent from the git-only fallback. */
+  kind?: string;
 }
 
 /**
@@ -69,12 +73,24 @@ export function isOnDeck(b: WorktreeBinding): boolean {
 }
 
 /**
- * Resolve the target bindings for a non-interactive mode. "pick" is returned
- * unchanged — the caller runs the picker over the full list.
+ * The golden's state is "on-deck" like a member's, so state alone admits the
+ * hydration donor. A mutating command run in it contaminates every member
+ * hydrated from it afterwards, so it is never an `each` target. The git-only
+ * fallback (daemon down) carries no `kind`, so `branch` is the second check:
+ * it survives that path unlike `kind`.
+ */
+function isGolden(b: WorktreeBinding): boolean {
+  return b.kind === "golden" || b.branch === GOLDEN_BRANCH;
+}
+
+/**
+ * Resolve the target bindings for a non-interactive mode. "pick" returns the
+ * whole selectable list... the caller runs the picker over it.
  */
 export function filterTargets(bindings: WorktreeBinding[], mode: SelectionMode): WorktreeBinding[] {
-  if (mode === "on-deck") return bindings.filter(isOnDeck);
-  return bindings; // "all" and "pick" both start from the full list
+  const selectable = bindings.filter((b) => !isGolden(b));
+  if (mode === "on-deck") return selectable.filter(isOnDeck);
+  return selectable; // "all" and "pick" both start from the full list
 }
 
 /** Worktree path shown relative to the repo's parent dir, else the full path. */

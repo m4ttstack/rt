@@ -9,13 +9,14 @@ import { existsSync } from "fs";
 import type { Logger } from "pino";
 import { canon } from "../../fs-canon.ts";
 import {
+  isRtOwnedBranch,
   loadRegistry,
   registryEpoch,
   saveRegistry,
   type TreeKind,
   type TreeRecord,
 } from "../../worktree/registry.ts";
-import { currentBranchAsync, listWorktreesAsync, runGit, type WorktreeEntry } from "../../worktree/git-async.ts";
+import { branchExistsLocalAsync, currentBranchAsync, listWorktreesAsync, runGit, type WorktreeEntry } from "../../worktree/git-async.ts";
 import { isTreeLocked } from "../../worktree/locks.ts";
 import { scrapTree, type CreateDeps } from "../../worktree/create.ts";
 import { loadWorktreeAppConfig } from "../../worktree/config.ts";
@@ -229,7 +230,9 @@ async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<Pass
   for (const rec of trees) {
     if (appConfig.enabled && rec.state === "creating" && !isTreeLocked(rec.path)) {
       log.info({ repo: repoName, tree: rec.name, path: rec.path }, "reconcile: scrapping orphaned creating tree");
-      await scrapTree(createDeps, rec);
+      // Nothing here witnessed the create, so a row parked on some other ref
+      // (a crash before the branch was made, a hand-moved tree) keeps it.
+      await scrapTree(createDeps, rec, { deleteBranch: isRtOwnedBranch(rec.branch) });
       scrapped = true;
       continue;
     }
@@ -297,8 +300,23 @@ async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<Pass
         afterPrune.push(rec);
         log.info({ repo: repoName, tree: rec.name, path: rec.path, misses }, "reconcile: worktree path missing, holding");
       } else {
-        log.info({ repo: repoName, tree: rec.name, path: rec.path }, "reconcile: pruning registry entry after sustained absence");
-        changed = true;
+        // An rt-owned branch left behind here (a hand-removed golden or
+        // on-deck dir) otherwise wedges every later create at this name
+        // forever, so the delete must actually land before the row is
+        // dropped: a failed `branch -D` with no registry row left behind is
+        // the same wedge with nothing to retry it from.
+        let branchGone = true;
+        if (isRtOwnedBranch(rec.branch)) {
+          await runGit(repoPath, ["branch", "-D", rec.branch as string]);
+          branchGone = !(await branchExistsLocalAsync(repoPath, rec.branch as string));
+        }
+        if (branchGone) {
+          log.info({ repo: repoName, tree: rec.name, path: rec.path }, "reconcile: pruning registry entry after sustained absence");
+          changed = true;
+        } else {
+          log.warn({ repo: repoName, tree: rec.name, path: rec.path, branch: rec.branch }, "reconcile: rt-owned branch delete failed; holding registry row for retry");
+          afterPrune.push(rec);
+        }
       }
     }
   }

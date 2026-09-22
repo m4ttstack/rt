@@ -1,6 +1,7 @@
 import { describe, it, expect, spyOn } from "bun:test";
 import { pickName } from "../names.ts";
 import { slugifyTicketTitle, disambiguate } from "../branch-name.ts";
+import { GOLDEN_NAME } from "../registry.ts";
 
 describe("pickName", () => {
   it("picks a random unused name from pool", () => {
@@ -36,6 +37,27 @@ describe("pickName", () => {
     const result = pickName(undefined, used);
 
     // Should be in format "<adj>-<noun>"
+    expect(result).toMatch(/^[a-z]+-[a-z]+$/);
+  });
+
+  it("never picks GOLDEN_NAME from a custom pool, even when it is unused", () => {
+    const pool = [GOLDEN_NAME, "bravo"];
+    const used = new Set<string>(); // the donor doesn't exist yet, so "golden" reads unused
+
+    const spy = spyOn(Math, "random").mockReturnValue(0);
+    const result = pickName(pool, used);
+    spy.mockRestore();
+
+    expect(result).toBe("bravo");
+  });
+
+  it("falls back to the neutral generator when the pool is only GOLDEN_NAME", () => {
+    const pool = [GOLDEN_NAME];
+    const used = new Set<string>();
+
+    const result = pickName(pool, used);
+
+    expect(result).not.toBe(GOLDEN_NAME);
     expect(result).toMatch(/^[a-z]+-[a-z]+$/);
   });
 

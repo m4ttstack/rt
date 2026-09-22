@@ -89,9 +89,15 @@ func programOptions(ctx context.Context, term *os.File) []tea.ProgramOption {
 	}
 }
 
-// mouseView decorates a View so every frame it paints reports
+// mouseView decorates a View so every frame it paints reports at least
 // MouseModeCellMotion, without requiring board- or echo-style views to know
-// anything about mouse mode themselves.
+// anything about mouse mode themselves. MouseModeNone is bubbletea's zero
+// value, so a view that never touches MouseMode is indistinguishable from
+// one that actively wants mouse off; since this decorator only ever wraps a
+// view that opted into Options.Mouse in the first place, that zero value is
+// read as "didn't ask" and defaulted to CellMotion, never as a real
+// request for none. A view that sets its own mode (mission's AllMotion, for
+// hover) is left alone.
 type mouseView struct{ view View }
 
 func (m mouseView) Init() tea.Cmd { return m.view.Init() }
@@ -109,7 +115,35 @@ func (m mouseView) Reason() Reason                     { return m.view.Reason() 
 
 func (m mouseView) View() tea.View {
 	v := m.view.View()
-	v.MouseMode = tea.MouseModeCellMotion
+	if v.MouseMode == tea.MouseModeNone {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
+}
+
+// noMouseView decorates a View so every frame it paints reports MouseModeNone,
+// regardless of what the inner view requests. This ensures Options.Mouse=false
+// is authoritative... even when the inner view (like mission) sets an explicit
+// mode. Without this, Options.Mouse would be a mere default that inner modes
+// could override, defeating the accessibility/preference contract.
+type noMouseView struct{ view View }
+
+func (n noMouseView) Init() tea.Cmd { return n.view.Init() }
+
+func (n noMouseView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := n.view.Update(msg)
+	if v, ok := updated.(View); ok {
+		n.view = v
+	}
+	return n, cmd
+}
+
+func (n noMouseView) SetModel(raw json.RawMessage) error { return n.view.SetModel(raw) }
+func (n noMouseView) Reason() Reason                     { return n.view.Reason() }
+
+func (n noMouseView) View() tea.View {
+	v := n.view.View()
+	v.MouseMode = tea.MouseModeNone
 	return v
 }
 
@@ -118,7 +152,7 @@ func (m mouseView) View() tea.View {
 // when asked.
 func wireMouse(view View, opts Options) tea.Model {
 	if !opts.Mouse {
-		return view
+		return noMouseView{view: view}
 	}
 	return mouseView{view: view}
 }
