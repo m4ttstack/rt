@@ -65,14 +65,21 @@ cat <<EOF
   │     "App Store & Known Developers" (authenticate admin / admin).         │
   │     The image ships App-Store-only, which rejects notarized             │
   │     Developer ID apps — stricter than a real Mac's default.             │
-  │  3. Back in this terminal press Enter; the script sends one osascript    │
-  │     over ssh — approve the "sshd-keygen-wrapper wants to control         │
-  │     System Events" Automation prompt in the VM with OK.                  │
+  │  3. Back in this terminal press Enter; the script sends two osascripts   │
+  │     over ssh — approve BOTH Automation prompts in the VM with OK:        │
+  │     "…wants to control System Events" and "…wants to control Finder".    │
+  │     Both are needed. Automation is granted per client-target pair, so    │
+  │     approving one grants nothing for the other, and the missing Finder   │
+  │     grant surfaces much later as a two-minute "AppleEvent timed out"     │
+  │     that reads like a broken guest. A TCC prompt cannot be clicked by    │
+  │     a script, so this is the only place it can be answered.              │
   └──────────────────────────────────────────────────────────────────────────┘
 EOF
 read -r -p "  Press Enter after steps 1–2… " _
 vm_ssh_try "$VM_TESTER_USER" "$GOLDEN" 'osascript -e "tell application \"System Events\" to get name of first process whose frontmost is true"' || true
-read -r -p "  Approved the Automation prompt? Press Enter to verify… " _
+read -r -p "  Approved the System Events prompt? Press Enter for the Finder one… " _
+vm_ssh_try "$VM_TESTER_USER" "$GOLDEN" 'osascript -e "tell application \"Finder\" to get name of home"' || true
+read -r -p "  Approved the Finder prompt? Press Enter to verify… " _
 
 "$VM_ROOT/golden/verify-golden.sh" "$VER" "$GOLDEN"
 vm_log "stopping $GOLDEN (never run the golden again; clone it)"

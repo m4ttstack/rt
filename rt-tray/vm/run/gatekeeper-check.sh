@@ -218,17 +218,26 @@ vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
   "osascript -e 'tell application \"Finder\" to duplicate POSIX file \"$SRC_IN_GUEST\" to POSIX file \"$DEST\" with replacing' 2>&1 >/dev/null" \
   >"$COPY_LOG" 2>&1 &
 COPY_PID=$!
-ci=0
+ci=0; TCC_BLOCKED=0
 while kill -0 "$COPY_PID" 2>/dev/null && [ "$ci" -lt 45 ]; do
   sleep 2; ci=$((ci+1))
   SEEN=$(probe_dialogs "install t=$((ci*2))s")
   case "$SEEN" in
-    # Driving Finder over ssh makes sshd the automating process, so macOS asks
-    # the tester to consent before the copy runs at all. It is the harness's
-    # own prompt, not the app's, and answering it is what keeps the copy from
-    # blocking forever behind a dialog nobody is watching.
+    # Driving Finder over ssh makes sshd the automating process, and the golden
+    # grants sshd-keygen-wrapper Apple Events access to System Events ONLY.
+    # Automation is granted per client-target pair, so Finder is a separate
+    # permission this image has never had, and gatekeeper-check is the only
+    # script that drives Finder.
+    #
+    # It cannot be clicked away either: TCC consent dialogs ignore synthetic
+    # events by design, which is the whole point of them. So this is recorded
+    # and named rather than fought, and the attempt's own output is kept...
+    # discarding it is what made the first run look like an opaque
+    # "AppleEvent timed out" instead of a missing grant.
     *"wants access to control"*)
-      dialog_click "wants access to control" OK >/dev/null || true ;;
+      TCC_BLOCKED=1
+      printf '[%s] automation consent prompt; click attempt: %s\n' \
+        "$(vm_now)" "$(dialog_click "wants access to control" OK)" >> "$VM_RUN_DIR/logs/dialogs.log" ;;
   esac
   case "$SEEN" in
     *SecurityAgent*|*"trying to modify"*|*"Touch ID or Password"*)
@@ -248,6 +257,14 @@ fi
 wait "$COPY_PID" 2>/dev/null || true
 COPY_ERR=$(cat "$COPY_LOG" 2>/dev/null || true)
 if ! vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "test -d '$DEST_APP'"; then
+  # Named rather than left as the timeout it presents as. A missing Automation
+  # grant surfaces only as "AppleEvent timed out (-1712)" after two minutes,
+  # which reads as a slow or broken guest and sends the next person after the
+  # VM instead of the golden's TCC grants.
+  if [ "$TCC_BLOCKED" = 1 ]; then
+    vm_phase_end install fail "the guest asked for Automation consent for sshd-keygen-wrapper to control Finder and nothing can answer it: TCC prompts ignore synthetic clicks. This golden grants Apple Events to System Events only, and Automation is per client-target pair, so it has never been able to drive Finder unattended. Fix it in the golden (add Finder to build-golden.sh's manual grant step), not here."
+    exit 1
+  fi
   vm_phase_end install fail "Finder copy to $DEST failed: ${COPY_ERR:-unknown}. On a privilege error rerun with --dest /Users/$VM_TESTER_USER/Applications; do not work around it with ditto."
   exit 1
 fi

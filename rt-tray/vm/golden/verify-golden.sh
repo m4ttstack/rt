@@ -46,6 +46,13 @@ t "macOS major matches"                "[ \"\$(sw_vers -productVersion | cut -d.
 # The manual TCC grants: UI scripting from an ssh session must work as tester.
 t "UI scripting allowed (Accessibility + Automation for sshd-keygen-wrapper)" \
   'osascript -e "tell application \"System Events\" to get name of first process whose frontmost is true"'
+# Checked separately because the grant IS separate: Automation is per
+# client-target pair, so a golden can drive System Events perfectly and still
+# have no Finder access at all. That gap shipped once and only surfaced inside
+# gatekeeper-check, as a two-minute AppleEvent timeout that read as a broken
+# guest rather than a missing permission.
+t "Finder automation allowed (separate grant from System Events)" \
+  'osascript -e "tell application \"Finder\" to get name of home"'
 
 [ "$fails" -eq 0 ] && { vm_log "golden $VM verified"; exit 0; }
 vm_die "golden $VM: $fails check(s) failed"
