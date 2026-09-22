@@ -8,7 +8,9 @@ import { getSetting, setSetting } from '@mattstack/rt-client';
 /** The rule this console contributes so opening a gate raises a desktop
     notification that opens the gate in the console on click. `subjectPrefix:
     'run:'` is the rule's identity half that keeps it from colliding with the
-    board's `mr:` rule on the same `gate/opened/*` pattern. */
+    board's `mr:` rule on the same `gate/opened/*` pattern. `owner: 'human'`
+    keeps herd-owned worker gates silent: the shepherd answers those, so only
+    a run the human drives may notify. */
 export function consoleBridgeRule(consoleUrl: string): EventBridgeRule {
   return {
     pattern: 'gate/opened/*',
@@ -17,6 +19,7 @@ export function consoleBridgeRule(consoleUrl: string): EventBridgeRule {
     title: '{label}',
     message: '{question}',
     url: `${consoleUrl}/gates/{id}`,
+    owner: 'human',
   };
 }
 

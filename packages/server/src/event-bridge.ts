@@ -12,6 +12,10 @@ export interface EventBridgeRule {
   message: string;
   subjectPrefix?: string;
   url?: string;
+  /** Only `"human"` is valid: the daemon then skips events whose
+      payload.owner starts with `herd:`, keeping worker gates silent. */
+  owner?: 'human';
+  surface?: string;
 }
 
 /**

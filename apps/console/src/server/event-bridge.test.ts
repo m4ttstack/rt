@@ -33,7 +33,7 @@ function fakeIo(initial: EventBridgeRule[]): {
 }
 
 describe('consoleBridgeRule', () => {
-  it('matches the console contract: pattern, subjectPrefix, templates, and click-through url', () => {
+  it('matches the console contract: pattern, subjectPrefix, templates, click-through url, and human owner', () => {
     expect(consoleBridgeRule('https://console.mattstack')).toEqual({
       pattern: 'gate/opened/*',
       subjectPrefix: 'run:',
@@ -41,6 +41,7 @@ describe('consoleBridgeRule', () => {
       title: '{label}',
       message: '{question}',
       url: 'https://console.mattstack/gates/{id}',
+      owner: 'human',
     });
   });
 });
