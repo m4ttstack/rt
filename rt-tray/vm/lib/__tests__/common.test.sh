@@ -66,17 +66,24 @@ check "t()-style helper counts failures without exiting"  '
 # The benign prompt names malicious software in order to say none was found,
 # so it is the case a careless refusal pattern gets wrong... and getting it
 # wrong fails every correct run, which is what this classifier replaced.
-BENIGN='"Flock" is an app downloaded from the Internet. Are you sure you want to open it? / Safari downloaded this file today at 12:13 AM. Apple checked it for malicious software and none was detected. / Cancel / Open'
+BENIGN='“Flock” is an app downloaded from the Internet. Are you sure you want to open it? / Safari downloaded this file today at 12:13 AM. Apple checked it for malicious software and none was detected. / Cancel / Open'
 UNVERIFIED='"Flock" cannot be opened because the developer cannot be verified. / macOS cannot verify that this app is free from malware.'
 # The wording a guest actually shows moved between releases, and the list was
 # first written from memory of the old one: macOS 15/26 phrase a refusal as
 # "Apple could not verify ... is free of malware", which matched nothing.
 TAHOE='Apple could not verify "GatekeeperControl" is free of malware that may harm your Mac or compromise your privacy. / Done / Move to Trash'
-DAMAGED='"GatekeeperControl" is damaged and can'"'"'t be opened. You should move it to the Trash.'
+# Copied verbatim out of a run's dialogs.log, curly punctuation and all. An
+# ASCII paraphrase of this string passed while the real dialog went
+# unclassified, which is the whole reason these fixtures are now transcribed
+# rather than retyped.
+DAMAGED='CoreServicesUIAgent ||  || “GatekeeperControl” is damaged and can’t be opened. You should move it to the Trash. / Safari downloaded this file today at 2:41 PM.'
+CANTOPEN='CoreServicesUIAgent ||  || The application “GatekeeperControl” can’t be opened. / '
 check "benign prompt is a prompt"     '[ "$(vm_dialog_verdict "$BENIGN")" = prompt ]'
 check "unverified developer blocks"   '[ "$(vm_dialog_verdict "$UNVERIFIED")" = block ]'
 check "macOS 15/26 malware wording blocks" '[ "$(vm_dialog_verdict "$TAHOE")" = block ]'
-check "damaged bundle blocks"         '[ "$(vm_dialog_verdict "$DAMAGED")" = block ]'
+check "damaged bundle blocks (curly apostrophe)" '[ "$(vm_dialog_verdict "$DAMAGED")" = block ]'
+check "cant-be-opened blocks (curly apostrophe)"  '[ "$(vm_dialog_verdict "$CANTOPEN")" = block ]'
+check "ascii apostrophe still blocks" '[ "$(vm_dialog_verdict "it can'"'"'t be opened")" = block ]'
 # The benign prompt names malicious software in order to say none was found,
 # so a refusal pattern reaching for the word "malware" must not catch it.
 check "benign prompt survives the malware patterns" '[ "$(vm_dialog_verdict "$BENIGN")" != block ]'

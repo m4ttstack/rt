@@ -223,11 +223,19 @@ vm_trust_key() {
 # gatekeeper-check proves this list against a deliberately unsigned app in the
 # same run rather than trusting it.
 vm_dialog_verdict() {
-  case "$1" in
-    *"cannot be opened"*|*"can't be opened"*|*"developer cannot be verified"*|*"could not verify"*|*"free of malware"*|*"will damage your computer"*|*"unidentified developer"*|*"Malware Blocked"*|*"contains malware"*)
+  # macOS writes dialogs with typographic punctuation: U+2019 for apostrophes,
+  # U+201C/U+201D for quotes. ASCII patterns silently miss them, and this one
+  # missed the only dialog it was written for... "GatekeeperControl" is
+  # damaged and can’t be opened" went unclassified over a single curly
+  # apostrophe, while a unit test written in ASCII passed. Normalised first,
+  # so every pattern below can stay in plain ASCII.
+  local t
+  t=$(printf '%s' "$1" | LC_ALL=en_US.UTF-8 sed "s/[‘’]/'/g; s/[“”]/\"/g")
+  case "$t" in
+    *"cannot be opened"*|*"can't be opened"*|*"damaged and"*|*"developer cannot be verified"*|*"could not verify"*|*"free of malware"*|*"will damage your computer"*|*"unidentified developer"*|*"Malware Blocked"*|*"contains malware"*)
       printf block; return ;;
   esac
-  case "$1" in
+  case "$t" in
     *"downloaded from the Internet"*) printf prompt; return ;;
   esac
   printf none
