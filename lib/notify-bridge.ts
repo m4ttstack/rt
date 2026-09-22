@@ -122,6 +122,17 @@ function isEventFrame(data: unknown): data is BroadcastEventFrame {
 /** `payload.paneId` wins when it is a non-empty string; otherwise falls
     back to `payload.origin.paneId`, since an engine-opened gate carries the
     pane id only inside `origin`. */
+/** The opener's declared UI surface (`origin.surface`), or undefined. Only
+    UI surfaces set this at open time (the board today); pane-driven openers
+    (gate_ask, rt gate ask, herd verbs) have no way to, so its absence plus
+    a paneId is what marks a gate as pane-initiated. */
+function resolveUiSurface(payload: Record<string, unknown>): string | undefined {
+  const origin = payload.origin;
+  if (!origin || typeof origin !== "object") return undefined;
+  const surface = (origin as Record<string, unknown>).surface;
+  return typeof surface === "string" && surface !== "" ? surface : undefined;
+}
+
 function resolvePaneId(payload: Record<string, unknown>): string | undefined {
   if (typeof payload.paneId === "string" && payload.paneId !== "") return payload.paneId;
   const origin = payload.origin;
@@ -144,6 +155,9 @@ export function startNotifyBridge(deps: {
   const handleMatch = async (frame: BroadcastEventFrame, rule: EventBridgeRule): Promise<void> => {
     const payload = (frame.payload && typeof frame.payload === "object" ? frame.payload : {}) as Record<string, unknown>;
     const paneId = resolvePaneId(payload);
+    const category = rule.category === "gate" && paneId !== undefined && !resolveUiSurface(payload)
+      ? "gate_pane"
+      : rule.category;
 
     if (paneId !== undefined) {
       let focused = false;
@@ -161,7 +175,7 @@ export function startNotifyBridge(deps: {
       id: String(frame.id),
       title: interpolate(rule.title, payload),
       message: interpolate(rule.message, payload),
-      category: rule.category,
+      category,
       timestamp: Date.now(),
       paneId,
       ...(url !== "" ? { url } : {}),
