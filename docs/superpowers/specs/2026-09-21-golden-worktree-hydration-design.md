@@ -219,6 +219,13 @@ Golden create or freshen failures follow today's create-backoff path on the
 golden's own row. They never block member replenish, which cold-creates in
 the meantime.
 
+The volume check also gates whether the golden gets built at all, not only
+whether a member may hydrate from one that already exists: `ensureGolden`
+runs the same `cfg.root` vs golden-root `st_dev` probe before its cold create,
+and skips with a warn on a mismatch. A user-overridden pool root on another
+volume would otherwise pay a full donor build, and a freshen every time
+master moves, for zero hydrations ever performed.
+
 ### What does not change
 
 - `ReadyStep` shape, `resolveReadySteps`, the team ladder approval hash.

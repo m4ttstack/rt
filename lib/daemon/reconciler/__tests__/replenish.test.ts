@@ -406,6 +406,25 @@ describe("replenish.ts: golden lifecycle", () => {
     expect(backoff.get(`${repoName}#golden`)?.failures).toBe(1);
   });
 
+  test("a cross-volume pool root builds no golden, every pass, at zero cost", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    const backoff = new Map<string, { failures: number; nextRetryAt: string }>();
+
+    for (let i = 0; i < 2; i++) {
+      await replenishAndShrink({ ...deps(), backoff, sameVolume: () => false }, new Map(), fakeAppConfig());
+    }
+
+    const trees = loadRegistry(repoName);
+    expect(findGolden(trees)).toBeUndefined();
+    // The member loop is untouched: it still cold-creates fine, since the
+    // volume probe only gates ensureGolden, never chooseCreateMode's caller
+    // when there is no golden row to consult in the first place.
+    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+    // Refusing to build is a skip, not a failed attempt: nothing was tried,
+    // so nothing should be charged against the golden's own backoff.
+    expect(backoff.has(`${repoName}#golden`)).toBe(false);
+  });
+
   /**
    * A golden with something to clone, plus one member, as the second pass of
    * these fallback tests needs them. Without a git-ignored artifact in the

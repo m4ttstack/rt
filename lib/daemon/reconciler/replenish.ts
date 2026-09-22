@@ -339,7 +339,7 @@ export async function replenishAndShrink(
     counts = poolCounts(repoName);
   }
 
-  await ensureGolden(deps, backoff);
+  await ensureGolden(deps, backoff, cfg.root);
 }
 
 /**
@@ -351,14 +351,22 @@ export async function replenishAndShrink(
  * hydrate from the next pass on, which is the steady state either way.
  */
 async function ensureGolden(
-  deps: FreshenDeps & { backoff?: CreateBackoffMap },
+  deps: FreshenDeps & { backoff?: CreateBackoffMap; sameVolume?: (a: string, b: string) => boolean },
   backoff: CreateBackoffMap,
+  cfgRoot: string,
 ): Promise<void> {
   const { repoName, repoPath, emit, log } = deps;
   // Its own backoff key, so a broken donor build never holds off member
   // creates, which stay on the cold path meanwhile.
   const goldenKey = `${repoName}#golden`;
   if (findGolden(loadRegistry(repoName)) || createBlockedUntil(backoff, goldenKey)) return;
+  // A cross-volume pool root refuses every hydration anyway (clonefile is
+  // EXDEV across volumes), so building the donor at all would only pay a
+  // full cold build, and every freshen after it, for zero hydrations.
+  if (!(deps.sameVolume ?? sameDev)(goldenRoot(repoName), cfgRoot)) {
+    log.warn({ repo: repoName }, "replenish: golden skipped, pool root is on a different volume");
+    return;
+  }
   // nearestExisting: the golden root does not exist before the first build,
   // and statfs on a missing path degrades to "enough disk".
   if (!(await hasFreeDiskGb(nearestExisting(goldenRoot(repoName)), WORKTREE_MIN_FREE_DISK_GB))) {
