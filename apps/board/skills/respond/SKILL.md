@@ -30,6 +30,7 @@ MRs and report status back to the board through its status CLI. This wrapper car
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh run (optional; see "Steps") |
 | `--resumed-gate-kind <kind>` | the `kind` of the gate `--resumed-gate` names (e.g. `respond-post`). Present exactly when `--resumed-gate` is, and the only way to learn it: `--state` is an opaque handle and `gate wait` returns only the answer. |
+| `--round <n>` | the round an earlier pane on this MR last recorded (step 3's `--round` flag on `respond-status`). Present on a parked-gate resume when a prior pane got as far as recording one; absent means round 1, either because this is the MR's first round or because the pane that parked predates this flag. |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -100,6 +101,14 @@ old one. Instead:
   - `respond-post` → `<status-bin> respond-status <state> drafting`
     (corrects the wrong transient — a Gate 2 resume is finalized replies
     waiting to post, not code changes waiting to be written).
+- **Recover the round.** Read `--round <n>`; absent means round 1. This
+  pane's own conversation has no memory of the round an earlier pane was
+  on, so this flag is the only way to know it. Use it as the current round
+  for anything below that needs one: telling the domain skill the round
+  when handing it a resumed adjudication, and as the base for "the next
+  round number" on a further `revise` (step 5). If revising produces a new
+  round, record it the same way step 3 does, before that round's Gate 1
+  reopens: `<status-bin> respond-status <state> drafting --round <n+1>`.
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
@@ -140,7 +149,8 @@ conversation.
      - the MR url;
      - the `--report <path>`;
      - the round: `1` on this first delegation, one more for each `revise`
-       re-adjudication (step 5);
+       re-adjudication (step 5); step 3 records it via `--round` so a
+       parked-then-resumed pane can recover it (see "Parked-gate resume?");
      - that this wrapper owns both gates, so it opens neither: it hands
        back instead, including the path of each fitted open file it builds.
 
@@ -168,7 +178,9 @@ conversation.
    `fix:<threadId>` / `skip:<threadId>` option strings use — so a resumed
    pane can mechanically join the wait's answers back to the report's rows. (Whoever produces the adjudication — the domain
    skill or you — is responsible for this file existing before Gate 1
-   opens.) Then: `<status-bin> respond-status <state> drafting`
+   opens.) Then: `<status-bin> respond-status <state> drafting --round <n>`
+   (the round from step 2, so a pane that parks and later resumes can
+   recover it instead of guessing 1)
 4. **Gate 1 — plan.** **Handed a fitted open file?** Then that file IS
    this gate: `gate-ctx.sh fit` output whose `.questions` already have the
    shape below, each thread's structured context on its question and the
@@ -296,11 +308,13 @@ conversation.
    - **`code-changes: skip`** (the no-code-changes sentinel every surface
      submits while the question is hidden) **or `code-changes: revise`**:
      nothing gets implemented this round. On `revise`, let the domain skill
-     revise the proposal, telling it the next round number; if it reports a
+     revise the proposal, telling it the next round number (the current
+     round plus one; see "Recover the round" above when this pane is
+     resuming one); if it reports a
      fresh adjudication table, treat
      that as a new round of step 3-4 (a new `respond-plan` gate, same
      shape, opened from its fresh open file when it hands one back, and the
-     report update from step 3 applies again). On `skip`,
+     report update from step 3 applies again, recording the new round). On `skip`,
      go straight to Gate 2: reply and skip threads still get their drafted
      replies posted, there is just nothing to implement first. A thread
      answered `fix:` under `skip` stays unimplemented and has no finalized
