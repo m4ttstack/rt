@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
@@ -6,6 +9,17 @@ async function commit(sb: Awaited<ReturnType<typeof makeSandbox>>, file: string,
   await sb.write(file, content);
   await sb.commitAll(message);
   return (await sb.git(["rev-parse", "HEAD"])).trim();
+}
+
+// ssh-keygen ships on both macOS and stock Ubuntu; gpg does not, so signing
+// verification here goes through gpg.format=ssh rather than a GPG key.
+async function makeSshKey(): Promise<{ dir: string; pub: string }> {
+  const dir = await mkdtemp(join(tmpdir(), "git-core-sshkey-"));
+  const key = join(dir, "id_ed25519");
+  const proc = Bun.spawn(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", key, "-q"], { stdout: "pipe", stderr: "pipe" });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  if (code !== 0) throw new Error(`ssh-keygen exited ${code}: ${err}`);
+  return { dir, pub: `${key}.pub` };
 }
 
 describe("commits()", () => {
@@ -44,14 +58,34 @@ describe("commits()", () => {
     }
   });
 
-  it("ignores log.showSignature", async () => {
+  // With log.showSignature on and no override, `git log` prints a
+  // "No signature" verification line into stdout ahead of the -z formatted
+  // record, corrupting the sha field. getCommits' --no-show-signature is
+  // what suppresses it; without that flag this test goes red.
+  it("ignores log.showSignature, even for a signed commit", async () => {
     const sb = await makeSandbox();
+    const sshKey = await makeSshKey();
     try {
-      await commit(sb, "a.txt", "1\n", "first");
+      await sb.write("a.txt", "1\n");
+      await sb.git(["add", "-A"]);
+      await sb.git([
+        "-c", "gpg.format=ssh",
+        "-c", `user.signingkey=${sshKey.pub}`,
+        "-c", "commit.gpgsign=true",
+        "commit", "-m", "signed commit",
+      ]);
+      const sha = (await sb.git(["rev-parse", "HEAD"])).trim();
+      // Confirms the commit actually carries a signature, not just a config flag.
+      expect((await sb.git(["log", "-1", "--pretty=raw"]))).toContain("gpgsig ");
+
       await sb.git(["config", "log.showSignature", "true"]);
-      expect((await createGitClient(sb.dir).commits("HEAD", 100)).length).toBe(1);
+      const commits = await createGitClient(sb.dir).commits("HEAD", 100);
+      expect(commits.length).toBe(1);
+      expect(commits[0]!.sha).toBe(sha);
+      expect(commits[0]!.summary).toBe("signed commit");
     } finally {
       await sb.cleanup();
+      await rm(sshKey.dir, { recursive: true, force: true });
     }
   });
 
