@@ -21,6 +21,8 @@ import { readFileSync, realpathSync } from "fs";
 import { verbHelpRequested } from "../lib/cli-verb-help.ts";
 import { isDaemonRunning } from "../lib/daemon-client.ts";
 import { currentRepoIdentity, repoLabel, resolveRepoArg } from "../lib/repo-arg.ts";
+import { callerCswapAccount } from "../lib/cswap.ts";
+import { getSetting } from "../lib/settings/resolve.ts";
 import {
   agentGet, agentList, agentResume, agentStart,
   type AgentRecord, type AgentSurface,
@@ -132,6 +134,26 @@ function parseStartArgs(args: string[]): StartArgs {
   return out;
 }
 
+function defaultProvider(): string {
+  try {
+    return getSetting<string>("agent.provider").value ?? "claude";
+  } catch {
+    return "claude";
+  }
+}
+
+/** Mirrors agent:start's provider resolution, since codex rejects --account. */
+async function withCallerAccount(
+  parsed: StartArgs,
+  resolveProvider: () => string = defaultProvider,
+  resolveAccount: () => Promise<string | undefined> = () => callerCswapAccount(process.env),
+): Promise<StartArgs> {
+  if (parsed.account) return parsed;
+  if ((parsed.provider ?? resolveProvider()) !== "claude") return parsed;
+  const account = await resolveAccount();
+  return account ? { ...parsed, account } : parsed;
+}
+
 function parseResumeArgs(args: string[]): { id: string; prompt?: string; surface?: AgentSurface; workspace?: string; tab?: string } {
   const id = positional(args);
   if (!id) throw new Error("missing id: rt agent resume <id|session-uuid>");
@@ -189,7 +211,7 @@ async function runStart(args: string[]): Promise<void> {
     fail(err instanceof Error ? err.message : String(err));
   }
   const { repo, cwd } = await repoAndCwd(args);
-  const payload = { repo, cwd, ...parsed };
+  const payload = { repo, cwd, ...(await withCallerAccount(parsed)) };
   const data = unwrap(await dispatch("agent:start", payload, () => agentStart(payload)), "start");
   if (args.includes("--json")) {
     // Deliberately unannotated: a machine consumer needs the raw record, and
@@ -292,4 +314,4 @@ export async function agent(args: string[]): Promise<void> {
   await handler(rest);
 }
 
-export const __test__ = { parseStartArgs, parseResumeArgs };
+export const __test__ = { parseStartArgs, parseResumeArgs, withCallerAccount };

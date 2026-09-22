@@ -1497,7 +1497,7 @@ export const TREE: Record<string, CommandNode> = {
       { name: "Effort", flag: "--effort", type: "text", placeholder: "high", hint: "Override agent.<provider>.effort" },
       { name: "Yolo", flag: "--yolo", type: "boolean", hint: "Bypass permission prompts for this launch (override agent.<provider>.yolo; omitted falls back to the setting, not false)" },
       { name: "No yolo", flag: "--no-yolo", type: "boolean", hint: "Keep permission prompts for this launch even when agent.<provider>.yolo is true (omitted falls back to the setting, not false)" },
-      { name: "Account", flag: "--account", type: "text", placeholder: "me@example.com", hint: "cswap account, claude only (override agent.claude.account)" },
+      { name: "Account", flag: "--account", type: "text", placeholder: "me@example.com", hint: "cswap account, claude only; defaults to the account this session runs under, then agent.claude.account" },
       { name: "Label", flag: "--label", type: "text", placeholder: "job7", hint: "Caller's display label; used as the herdr tab name" },
       { name: "Caller", flag: "--caller", type: "text", placeholder: "board:review", hint: "Identifies what invoked this handoff" },
       { name: "Workspace", flag: "--workspace", type: "text", placeholder: "reviews", hint: "herdr workspace label (default: the repo label)" },
