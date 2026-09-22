@@ -1,0 +1,3 @@
+[test]
+# Applies only to a bare `bun test` at the repo root; see the preload's header.
+preload = ["./scripts/bun-test-guard.ts"]

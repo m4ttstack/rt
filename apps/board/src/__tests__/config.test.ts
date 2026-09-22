@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import type { getSetting } from '@mattstack/rt-client';
+import type { getSetting, setSetting } from '@mattstack/rt-client';
 import {
   daemonRepoField,
   loadConfigFrom,
@@ -14,6 +14,7 @@ import {
 } from '../config.ts';
 
 type GetSettingFn = typeof getSetting;
+type SetSettingFn = typeof setSetting;
 
 /** A resolve stand-in returning `values[key]` (or undefined for an absent
     key), matching getSetting's shape without touching any real store --
@@ -364,12 +365,25 @@ describe('saveSwitchboardUrl', () => {
     return p;
   }
 
+  // Both seams passed explicitly: the defaults are the real resolver and
+  // writer, and a machine whose store already owns board.switchboardUrl
+  // takes the store branch and overwrites the developer's real value.
   test('writes the block and reparses', () => {
     const p = tmpConfig();
-    const cfg = saveSwitchboardUrl('https://sb.example.app/', p);
+    const writes: unknown[] = [];
+    const write = ((...args: unknown[]) => {
+      writes.push(args);
+    }) as SetSettingFn;
+    const cfg = saveSwitchboardUrl(
+      'https://sb.example.app/',
+      p,
+      fakeResolve({}),
+      write
+    );
     expect(cfg.switchboard.url).toBe('https://sb.example.app');
     const onDisk = JSON.parse(readFileSync(p, 'utf8'));
     expect(onDisk.switchboard).toEqual({ url: 'https://sb.example.app/' });
+    expect(writes).toEqual([]);
   });
 });
 
