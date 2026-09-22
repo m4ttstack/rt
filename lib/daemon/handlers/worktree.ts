@@ -449,7 +449,19 @@ export function createWorktreeHandlers(
           checkout = await runGit(tree.path, ["checkout", "-b", branch, startPoint]);
           branchState = "tracking-remote";
         } else {
-          // (a) nowhere: cut it from the default branch.
+          // (a) nowhere: cut it from the default branch. The targeted fetch
+          // above only touched `branch`'s own ref, so a hydrated tree (which
+          // runs no fetch at all) can be carrying a default-branch tracking
+          // ref that is stale by however long the golden has sat on-deck.
+          // Cold create used to cover this for free (its own default-branch
+          // fetch ran moments earlier); refresh it here so a fresh branch is
+          // always cut from a current tip, not a silently stale one.
+          // Best-effort: a failed refresh falls back to the ref already on
+          // disk rather than failing the whole provision over a network blip.
+          const staleDefaultRef = await remoteDefaultRef(tree.path);
+          await runGit(tree.path, ["fetch", "origin", staleDefaultRef.replace(/^origin\//, "")], {
+            timeoutMs: PROVISION_FETCH_TIMEOUT_MS,
+          });
           const defaultRef = await remoteDefaultRef(tree.path);
           checkout = await runGit(tree.path, ["checkout", "-b", branch, defaultRef]);
           branchState = "new";
