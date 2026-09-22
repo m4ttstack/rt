@@ -120,8 +120,16 @@ function fakeAgeKeySeamLocked(): AgeKeySeam {
   };
 }
 
-function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): { seams: JoinRedeemSeams; calls: { readTeamSecret: unknown[][]; forgeLogin: unknown[][]; secretWrites: { key: string; value: string }[] } } {
-  const calls = { readTeamSecret: [] as unknown[][], forgeLogin: [] as unknown[][], secretWrites: [] as { key: string; value: string }[] };
+function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): {
+  seams: JoinRedeemSeams;
+  calls: { readTeamSecret: unknown[][]; forgeLogin: unknown[][]; secretWrites: { key: string; value: string }[]; settingWrites: { key: string; value: unknown }[] };
+} {
+  const calls = {
+    readTeamSecret: [] as unknown[][],
+    forgeLogin: [] as unknown[][],
+    secretWrites: [] as { key: string; value: string }[],
+    settingWrites: [] as { key: string; value: unknown }[],
+  };
   const seams: JoinRedeemSeams = {
     ageKeySeam: fakeAgeKeySeam(),
     read: fakeRead(),
@@ -136,6 +144,9 @@ function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): { seams:
     forgeToken: async () => null,
     writeLocalSecret: async (key, value) => {
       calls.secretWrites.push({ key, value });
+    },
+    writeMachineSetting: (key, value) => {
+      calls.settingWrites.push({ key, value });
     },
     warn: () => {},
     ...overrides,
@@ -680,6 +691,7 @@ describe("joinRedeem", () => {
     expect(fetchCalls[0]!.init?.headers?.Authorization).toBe("Bearer admin-token-xyz");
     expect(JSON.parse(fetchCalls[0]!.init?.body ?? "{}")).toEqual({ username: "zaphod" });
     expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-1" }]);
+    expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
   });
 
   test("a pointer carrying an embedded switchboard token: stored directly, peering applied, no switchboard call and no team-secret read", async () => {
@@ -699,6 +711,7 @@ describe("joinRedeem", () => {
 
     expect(result.peering).toBe("applied");
     expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-emb" }]);
+    expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
     expect(p.calls.fetch).toHaveLength(0);
     expect(secretReads).toEqual([]);
   });
@@ -716,6 +729,27 @@ describe("joinRedeem", () => {
 
     expect(result.peering).toBe("unavailable");
     expect(calls.secretWrites).toEqual([]);
+    expect(calls.settingWrites).toEqual([]);
+  });
+
+  test("a failing board.switchboardUrl write -> peering:unavailable, join still ok: a token the board cannot find a URL for peers nothing", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const warnings: string[] = [];
+    const { seams } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      writeMachineSetting: () => {
+        throw new Error("store is malformed");
+      },
+      warn: (m) => warnings.push(m),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(result.peering).toBe("unavailable");
+    expect(warnings.some((w) => w.includes("board.switchboardUrl") && w.includes("store is malformed"))).toBe(true);
   });
 
   test("an embedded token with no team-declared switchboard url is refused: nothing to aim it at, nothing stored", async () => {

@@ -61,6 +61,7 @@ function fakeJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): JoinRede
     forgeLogin: async () => "zaphod",
     forgeToken: async () => null,
     writeLocalSecret: async () => {},
+    writeMachineSetting: () => {},
     warn: () => {},
     ...overrides,
   };
