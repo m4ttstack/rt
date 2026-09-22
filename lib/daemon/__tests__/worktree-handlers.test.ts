@@ -18,6 +18,9 @@ import { goldenRoot, machineSettingsPath, repoDataDir, rtDir } from "../../rt-pa
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { GOLDEN_BRANCH, GOLDEN_NAME, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { createTree } from "../../worktree/create.ts";
+import type { CloneRunner } from "../../worktree/hydrate.ts";
+import { clonePath, cloneExitCode } from "../../worktree/clonefile.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { readyTaskFor } from "../../worktree/ready-async.ts";
 import { tryLockTree } from "../../worktree/locks.ts";
@@ -98,6 +101,7 @@ interface Harness {
 function makeHandlers(
   repos: Record<string, string>,
   entries: Record<string, any> = {},
+  clone?: CloneRunner,
 ): Harness {
   const events: Array<{ type: string; data: any }> = [];
   const state = { kicks: 0, cdCacheKicks: 0 };
@@ -113,6 +117,7 @@ function makeHandlers(
     creationInFlight: () => null,
     withReconcilerHeld: async (fn) => fn(),
     findRunningRunByWorktree: () => ({ kind: "none" }),
+    clone,
   });
   return {
     h,
@@ -572,6 +577,163 @@ describe("worktree:create", () => {
     const { h } = makeHandlers({ "acme-legacy": repo });
     const res: any = await h["worktree:create"]!({ repoName: "acme-legacy" });
     expect(res).toEqual({ ok: false, error: "repo-unknown" });
+  });
+});
+
+/** A real, ready golden built the same way the replenish golden-lifecycle tests do. */
+async function makeGolden(repo: string, name: string): Promise<TreeRecord> {
+  const g = await createTree({ repoName: name, repoPath: repo, emit: () => {}, log: fakeLog(), target: "golden" });
+  if (!g.ok) throw new Error("golden create failed in test setup");
+  return g.tree;
+}
+
+/** A golden with one git-ignored artifact, so a clone runner is actually invoked during hydrate. */
+async function makeGoldenWithArtifact(repo: string, name: string): Promise<TreeRecord> {
+  writeFileSync(join(repo, ".gitignore"), "node_modules/\n");
+  sh("git add .gitignore && git -c user.email=t@t -c user.name=t commit -qm ignore && git push -q origin HEAD", repo);
+  const golden = await makeGolden(repo, name);
+  mkdirSync(join(golden.path, "node_modules"), { recursive: true });
+  writeFileSync(join(golden.path, "node_modules", "a.js"), "module.exports = 1;\n");
+  return golden;
+}
+
+/** Real clonefile(2), in-process: exercises the actual clone step without spawning the compiled `rt` binary the default runner shells out to. */
+const inProcessClone: CloneRunner = async (src, dst) => {
+  const r = clonePath(src, dst);
+  return { exitCode: cloneExitCode(r), stderr: r.ok ? "" : `clonefile: ${r.message}` };
+};
+
+/**
+ * Pushes a new commit to `repo`'s own origin from a THIRD clone, never
+ * touching `repo`'s own checkout. Remote-tracking refs are shared across all
+ * of a repo's worktrees, so this is the only way to leave `repo`'s local
+ * `origin/<default>` genuinely stale (as a teammate's push would) rather
+ * than have it refreshed as a side effect of the push itself. Returns the
+ * new tip's sha.
+ */
+function advanceOriginWithoutLocalFetch(repo: string): string {
+  const originUrl = execSync("git config --get remote.origin.url", { cwd: repo, encoding: "utf8" }).trim();
+  const mirror = realpathSync(mkdtempSync(join(tmpdir(), "rtwh-mirror-")));
+  sh(`git clone -q ${originUrl} .`, mirror);
+  sh("git -c user.email=t@t -c user.name=t commit -q --allow-empty -m advance && git push -q origin HEAD:main", mirror);
+  return sh("git rev-parse HEAD", mirror).trim();
+}
+
+describe("worktree:provision hydration", () => {
+  test("hydrates from a ready golden when the pool is empty", async () => {
+    const repo = makeRepo();
+    const golden = await makeGoldenWithArtifact(repo, repoName);
+    const { h, events } = makeHandlers({ [repoName]: repo }, {}, inProcessClone);
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-10", ticketTitle: "Hydrate" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.wasOnDeck).toBe(false);
+    expect(res.data.hydratedFrom).toBe(golden.name);
+    // Proves the clone loop actually ran, not just that hydratedFrom was set:
+    // an ignored artifact only lands in the member if hydrateTree cloned it.
+    expect(readFileSync(join(res.data.path, "node_modules", "a.js"), "utf8")).toBe("module.exports = 1;\n");
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBe(golden.name);
+  });
+
+  test("cutting a new branch refreshes a hydrated tree's stale default ref first", async () => {
+    const repo = makeRepo();
+    const golden = await makeGolden(repo, repoName);
+    // A hydrated member inherits the golden's stamp and runs no fetch of its
+    // own, so its local origin/main tracking ref is exactly as stale as the
+    // golden's was at build time until something refreshes it.
+    const freshTip = advanceOriginWithoutLocalFetch(repo);
+    expect(golden.readyStamp).toBeTruthy();
+    expect(freshTip).not.toBe(golden.readyStamp!);
+    const { h } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-13", ticketTitle: "Stale ref" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBe(golden.name);
+    expect(res.data.branchState).toBe("new");
+    expect(await headSha(res.data.path)).toBe(freshTip);
+  });
+
+  test("no golden: cold-creates as before, with no hydratedFrom", async () => {
+    const repo = makeRepo();
+    // A tip the cold path must fetch for itself, not one that was already
+    // true when `makeRepo` ran: `hydratedFrom` stays undefined under a wide
+    // range of implementations, including a broken one that skips the
+    // create's own fetch and silently lands on a stale local ref. Only a
+    // commit-level check that requires the fresh tip proves the fetch ran.
+    const freshTip = advanceOriginWithoutLocalFetch(repo);
+    const { h, events } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-11", ticketTitle: "Cold" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBeUndefined();
+    expect(await headSha(res.data.path)).toBe(freshTip);
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBeUndefined();
+  });
+
+  test("a hydrate failure still returns a usable tree, via cold create", async () => {
+    const repo = makeRepo();
+    await makeGoldenWithArtifact(repo, repoName);
+    const failing: CloneRunner = async () => ({ exitCode: 1, stderr: "clonefile: Input/output error" });
+    const { h, events } = makeHandlers({ [repoName]: repo }, {}, failing);
+
+    const res: any = await h["worktree:provision"]!({ repoName, ticket: "RT-12", ticketTitle: "Fallback" });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBeUndefined();
+    expect(existsSync(res.data.path)).toBe(true);
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBeUndefined();
+    // The scrapped hydrate attempt must leave nothing behind: no orphaned
+    // "creating" row and no stray on-deck/<name> branch for a name nobody
+    // will ever pick up again.
+    expect(loadRegistry(repoName).some((t) => t.state === "creating")).toBe(false);
+    expect(sh("git branch --list 'on-deck/*'", repo).trim()).toBe("");
+  });
+});
+
+describe("worktree:create hydration", () => {
+  test("--on-deck hydrates from a ready golden", async () => {
+    const repo = makeRepo();
+    const golden = await makeGoldenWithArtifact(repo, repoName);
+    const { h, events } = makeHandlers({ [repoName]: repo }, {}, inProcessClone);
+
+    const res: any = await h["worktree:create"]!({ repoName, onDeck: true });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBe(golden.name);
+    // The direct check finding 1 needed: create --on-deck leaves the tree
+    // exactly where hydrateTree put it (no branch-resolution checkout runs
+    // for a pool entry), so its HEAD must be the golden's own readyStamp.
+    expect(golden.readyStamp).toBeTruthy();
+    expect(await headSha(res.data.path)).toBe(golden.readyStamp!);
+    expect(readFileSync(join(res.data.path, "node_modules", "a.js"), "utf8")).toBe("module.exports = 1;\n");
+    const created = events.find((e) => e.type === "worktree:created");
+    expect(created?.data.hydratedFrom).toBe(golden.name);
+  });
+
+  test("default create (no --on-deck) never hydrates, even with a ready golden", async () => {
+    const repo = makeRepo();
+    const golden = await makeGolden(repo, repoName);
+    // Advance the repo's default branch past the golden's own stamp: a tree
+    // wrongly hydrated from the golden would land on the OLD commit, so this
+    // is what makes the HEAD check below a real disproof rather than a
+    // coincidence of both paths landing on the same single commit.
+    sh("git -c user.email=t@t -c user.name=t commit -q --allow-empty -m advance && git push -q origin HEAD", repo);
+    const freshTip = sh("git rev-parse origin/main", repo).trim();
+    expect(golden.readyStamp).toBeTruthy();
+    expect(freshTip).not.toBe(golden.readyStamp!);
+    const { h } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:create"]!({ repoName });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.hydratedFrom).toBeUndefined();
+    expect(await headSha(res.data.path)).toBe(freshTip);
   });
 });
 

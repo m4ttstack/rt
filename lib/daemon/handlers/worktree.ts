@@ -44,7 +44,6 @@ import {
 } from "../../worktree/registry.ts";
 import { markHandoffDelivered, patchTree } from "../../worktree/patch.ts";
 import { disambiguate, slugifyTicketTitle } from "../../worktree/branch-name.ts";
-import { createTree } from "../../worktree/create.ts";
 import { classifyDirtyAsync, disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 import { restoreTree } from "../../worktree/restore.ts";
@@ -68,7 +67,9 @@ import {
 import { changedSince, stepsToRun } from "../../worktree/ready.ts";
 import { computeClaimReadySteps, readyTaskFor, startReadyTask } from "../../worktree/ready-async.ts";
 import type { ReadyStep } from "../../worktree/config.ts";
-import { freshenRepo, reconcileRepoRegistry, withCreateLock } from "../worktree-reconciler.ts";
+import { freshenRepo, reconcileRepoRegistry, withCreateLock, buildMember, sameDev } from "../worktree-reconciler.ts";
+import { createTree, type CreateResult } from "../../worktree/create.ts";
+import type { CloneRunner } from "../../worktree/hydrate.ts";
 import { repoDataDir, rtDir } from "../../rt-paths.ts";
 
 const PROVISION_FETCH_TIMEOUT_MS = 5 * 60_000;
@@ -99,6 +100,8 @@ export interface WorktreeHandlerOpts {
   withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Live-run lookup by worktree path, threaded into disposeTree's running-run guard; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
   findRunningRunByWorktree: (worktree: string) => RunningRunScan;
+  /** Test seam for the artifact-clone step of a provision/create hydrate; production omits it. */
+  clone?: CloneRunner;
 }
 
 // ─── Small shared helpers ────────────────────────────────────────────────────
@@ -333,9 +336,11 @@ export function createWorktreeHandlers(
       if (attached.length > 1) return { ok: false, error: "branch-duplicated" };
       if (attached.length === 1) return { ok: false, error: `branch-attached:${attached[0]!.name}` };
 
-      // ── 2. Selection, then the pool's own in-flight create, then cold create.
+      // ── 2. Selection, then the pool's own in-flight create, then build one
+      // (hydrated from a ready golden, or cold, same as replenish's own choice).
       let rec = selectOnDeck(repoName);
       let wasOnDeck = true;
+      let hydratedFrom: string | undefined;
       if (!rec) {
         const inFlight = opts.creationInFlight(repoName);
         if (inFlight) {
@@ -347,12 +352,13 @@ export function createWorktreeHandlers(
         }
       }
       if (!rec) {
-        // Serialized against the reconciler's own replenish createTree for
-        // this repo (S089): both `git fetch origin <branch>` against the
-        // same repoPath, and an unserialized race charges the loser's
-        // ref-lock failure to createBackoff for what was just contention.
-        const created = await withCreateLock(repoPath, () => createTree({
+        // Serialized against the reconciler's own replenish build for this
+        // repo (S089): both `git fetch origin <branch>` against the same
+        // repoPath, and an unserialized race charges the loser's ref-lock
+        // failure to createBackoff for what was just contention.
+        const created = await withCreateLock(repoPath, () => buildMember({
           repoName, repoPath, emit: opts.emit, log: ctx.log,
+          cfgRoot: cfg.root, sameVolume: sameDev, clone: opts.clone, via: "provision",
         }));
         if (!created.ok) {
           if (created.error === "busy") return { ok: false, error: "busy" };
@@ -363,6 +369,7 @@ export function createWorktreeHandlers(
         }
         rec = created.tree;
         wasOnDeck = false;
+        hydratedFrom = created.hydratedFrom;
       }
 
       const tree = rec;
@@ -442,7 +449,19 @@ export function createWorktreeHandlers(
           checkout = await runGit(tree.path, ["checkout", "-b", branch, startPoint]);
           branchState = "tracking-remote";
         } else {
-          // (a) nowhere: cut it from the default branch.
+          // (a) nowhere: cut it from the default branch. The targeted fetch
+          // above only touched `branch`'s own ref, so a hydrated tree (which
+          // runs no fetch at all) can be carrying a default-branch tracking
+          // ref that is stale by however long the golden has sat on-deck.
+          // Cold create used to cover this for free (its own default-branch
+          // fetch ran moments earlier); refresh it here so a fresh branch is
+          // always cut from a current tip, not a silently stale one.
+          // Best-effort: a failed refresh falls back to the ref already on
+          // disk rather than failing the whole provision over a network blip.
+          const staleDefaultRef = await remoteDefaultRef(tree.path);
+          await runGit(tree.path, ["fetch", "origin", staleDefaultRef.replace(/^origin\//, "")], {
+            timeoutMs: PROVISION_FETCH_TIMEOUT_MS,
+          });
           const defaultRef = await remoteDefaultRef(tree.path);
           checkout = await runGit(tree.path, ["checkout", "-b", branch, defaultRef]);
           branchState = "new";
@@ -497,6 +516,7 @@ export function createWorktreeHandlers(
             readyAt: queuedSteps ? null : final?.readyAt ?? null,
             branchState,
             readyHeld: held,
+            ...(hydratedFrom ? { hydratedFrom } : {}),
             ...(queuedSteps
               ? { readyPending: true as const, readySteps: queuedSteps.map((s) => s.run) }
               : {}),
@@ -558,7 +578,23 @@ export function createWorktreeHandlers(
       const repoPath = ctx.repoIndex()[repoName];
       if (!repoPath) return { ok: false, error: "repo-unknown" };
 
-      const created = await withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit: opts.emit, log: ctx.log }));
+      // Only a pool member (--on-deck) may hydrate: hydrateTree adds the tree
+      // at the golden's readyStamp, not the current default tip, and only an
+      // on-deck row is ever visited by freshen again (freshenCandidate admits
+      // state === "on-deck" only). A claimed create never re-enters that pass,
+      // so hydrating it would hand the caller a tree stuck at the golden's
+      // commit forever with no signal. A cold create always fetches and adds
+      // at the current default tip, which is what a plain create promises.
+      const created = await withCreateLock(repoPath, async (): Promise<CreateResult & { hydratedFrom?: string }> => {
+        if (payload?.onDeck !== true) {
+          return createTree({ repoName, repoPath, emit: opts.emit, log: ctx.log });
+        }
+        const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
+        return buildMember({
+          repoName, repoPath, emit: opts.emit, log: ctx.log,
+          cfgRoot: cfg.root, sameVolume: sameDev, clone: opts.clone, via: "create",
+        });
+      });
       if (!created.ok) {
         if (created.error === "busy") return { ok: false, error: "busy" };
         return { ok: false, error: createFailedError(created) };
@@ -574,7 +610,14 @@ export function createWorktreeHandlers(
         });
       }
 
-      return { ok: true, data: { tree: created.tree.name, path: created.tree.path } };
+      return {
+        ok: true,
+        data: {
+          tree: created.tree.name,
+          path: created.tree.path,
+          ...(created.hydratedFrom ? { hydratedFrom: created.hydratedFrom } : {}),
+        },
+      };
     },
 
     "worktree:dispose": async (payload: any) => {

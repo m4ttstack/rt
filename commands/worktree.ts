@@ -365,7 +365,7 @@ export async function worktreeProvision(args: string[], _ctx: unknown): Promise<
   const d = ok.data;
   console.log("");
   console.log(`  ${green}✓${reset} ${bold}${d.tree}${reset}  ${dim}${d.path}${reset}`);
-  console.log(`  branch ${cyan}${d.branch}${reset} ${dim}(${d.branchState}${d.wasOnDeck ? ", from the on-deck pool" : ""})${reset}`);
+  console.log(`  branch ${cyan}${d.branch}${reset} ${dim}(${d.branchState}${d.wasOnDeck ? ", from the on-deck pool" : ""}${d.hydratedFrom ? ", hydrated from the golden" : ""})${reset}`);
   if (d.readyHeld) {
     console.log(`  ${yellow}⚠${reset} team ready steps held pending approval — run ${cyan}rt worktree ready-approve${reset}`);
   }

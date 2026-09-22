@@ -15,7 +15,7 @@ import {
   type TreeRecord,
 } from "../../worktree/registry.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
-import { createTree, scrapTree, type CreateResult } from "../../worktree/create.ts";
+import { createTree, scrapTree, type CreateDeps, type CreateResult } from "../../worktree/create.ts";
 import { hydrateTree, type CloneRunner, type HydrateResult } from "../../worktree/hydrate.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeRepoConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
@@ -145,12 +145,53 @@ export function nearestExisting(p: string): string {
 // tells reconcile's isHeldByUnreadableMount (reconcile.ts) that the mount is
 // live, so materializing it here would make a genuinely vanished mount look
 // present, un-hold its rows, and let them accrue misses toward pruning.
-function sameDev(a: string, b: string): boolean {
+export function sameDev(a: string, b: string): boolean {
   try {
     return statSync(nearestExisting(a)).dev === statSync(nearestExisting(b)).dev;
   } catch {
     return false;
   }
+}
+
+/**
+ * Build one member tree: hydrate from a ready golden, falling back to a cold
+ * create on any hydrate failure. Shared by replenish and the provision/create
+ * handlers, all of which already hold the repo's create lock before calling
+ * this, so it must never take one itself... `hydrateTree` takes the member
+ * and donor tree locks in that order underneath it, and a second create-lock
+ * acquisition here would deadlock a caller that already holds it.
+ */
+export async function buildMember(
+  deps: CreateDeps & {
+    cfgRoot: string;
+    sameVolume: (a: string, b: string) => boolean;
+    clone?: CloneRunner;
+    via: "replenish" | "provision" | "create";
+    log: { debug?: (...args: unknown[]) => void };
+  },
+): Promise<CreateResult & { hydratedFrom?: string }> {
+  const { repoName, repoPath, emit, log, cfgRoot, sameVolume, clone, via } = deps;
+  const chosen = chooseCreateMode(loadRegistry(repoName), cfgRoot, Date.now(), sameVolume);
+  if (chosen.mode === "hydrate") {
+    const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone });
+    if (h.ok) return { ...h, hydratedFrom: chosen.golden.name };
+    if (h.error === "busy") return h;
+    // Every hydrate failure, not just the two clone exits that map to
+    // "unavailable": hydration is an optimization over cold create and
+    // never a replacement for it, so a donor rt cannot read (an older
+    // `rt` with no hydrate-clone verb, a path tracked at the golden's
+    // stamp but ignored at its HEAD, a clone that timed out) must leave
+    // the pool refilling the slow way rather than stop it refilling. At
+    // warn, so a hydrate that is persistently broken reads as broken
+    // rather than merely slow.
+    log.warn(
+      { repo: repoName, via, error: h.error, reason: h.error === "hydrate-unavailable" ? h.detail : h.failedStep },
+      "worktree build: hydrate failed; falling back to cold create",
+    );
+  } else {
+    log.debug?.({ repo: repoName, via, why: chosen.why }, "worktree build: cold create");
+  }
+  return createTree({ repoName, repoPath, emit, log });
 }
 
 /** On-deck / creating counts used to decide whether to grow or shrink the pool. */
@@ -250,28 +291,9 @@ export async function replenishAndShrink(
       break;
     }
     budget--;
-    const p: Promise<void> = withCreateLock(repoPath, async () => {
-      const chosen = chooseCreateMode(loadRegistry(repoName), cfg.root, Date.now(), sameVolumeForPass);
-      if (chosen.mode === "hydrate") {
-        const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone: deps.clone });
-        if (h.ok || h.error === "busy") return h;
-        // Every hydrate failure, not just the two clone exits that map to
-        // "unavailable": hydration is an optimization over cold create and
-        // never a replacement for it, so a donor rt cannot read (an older
-        // `rt` with no hydrate-clone verb, a path tracked at the golden's
-        // stamp but ignored at its HEAD, a clone that timed out) must leave
-        // the pool refilling the slow way rather than stop it refilling. At
-        // warn, so a hydrate that is persistently broken reads as broken
-        // rather than merely slow.
-        log.warn(
-          { repo: repoName, error: h.error, reason: h.error === "hydrate-unavailable" ? h.detail : h.failedStep },
-          "replenish: hydrate failed; falling back to cold create",
-        );
-      } else {
-        log.debug?.({ repo: repoName, why: chosen.why }, "replenish: cold create");
-      }
-      return createTree({ repoName, repoPath, emit, log });
-    })
+    const p: Promise<void> = withCreateLock(repoPath, () =>
+      buildMember({ repoName, repoPath, emit, log, cfgRoot: cfg.root, sameVolume: sameVolumeForPass, clone: deps.clone, via: "replenish" }),
+    )
       .then((result: CreateResult | HydrateResult) => {
         if (result.ok) {
           backoff.delete(repoName);
