@@ -207,10 +207,17 @@ if [ -n "$DMG" ]; then
 else
   SRC_IN_GUEST="$STAGED"
 fi
-# Finder does the copy, not ditto: a Finder copy marks the quarantine
-# user-approved, which is what keeps the launch out of App Translocation. A
-# privilege error here must not fall back to ditto, which would translocate the
-# launch and quietly answer a different question.
+# Finder does the copy, not ditto, so the path a real user takes is the path
+# under test.
+#
+# It does NOT prevent App Translocation, though the comment here used to claim
+# it did. A run proved otherwise: the app launched from
+# /private/var/.../AppTranslocation/<uuid>/d/ despite a successful Finder
+# copy. The user-approved quarantine bit is set by answering the open prompt,
+# which happens after that launch has already been translocated, and a Finder
+# duplicate driven over Apple Events is not the same gesture as a human drag.
+# So this harness cannot currently reproduce the untranslocated case; the
+# launch phase reports translocation rather than pretending it did not happen.
 # Backgrounded so the probe can run alongside it: a copy into /Applications by
 # a standard user raises an authorization prompt, and a foreground copy sits
 # there until someone answers it, with nothing in the record naming what asked.
@@ -387,7 +394,7 @@ vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
   "osascript -e 'tell application \"Finder\" to open POSIX file \"$DEST_APP\"'" \
   >>"$VM_RUN_DIR/logs/launch.log" 2>&1 || true
 
-BLOCK=""; APPROVED=""; RUNNING=0; i=0
+BLOCK=""; APPROVED=""; RUNNING=0; TRANSLOCATED=0; i=0
 # Bounded by wall clock, not iterations: one full window-and-text walk is a
 # round trip of seconds, so a fixed iteration count is not a known timeout.
 LAUNCH_DEADLINE=$(( $(date +%s) + 120 ))
@@ -404,13 +411,20 @@ while [ "$(date +%s)" -lt "$LAUNCH_DEADLINE" ]; do
       [ -n "$WHO" ] && APPROVED="$WHO"
       continue ;;
   esac
-  # Anchored to the installed bundle's own executable directory: pgrep -x on a
-  # guessed process name misses whenever CFBundleExecutable is not the bundle
-  # name, and a bare bundle-path match would catch unrelated processes. Logged
-  # every pass, because last time this probe's silence was indistinguishable
-  # from the app genuinely not running and cost a whole rerun to not answer.
-  if vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "pgrep -lf '$DEST_APP/Contents/MacOS/'" \
-      >>"$VM_RUN_DIR/logs/liveness.log" 2>&1; then
+  # Matched bundle-relative, NOT against the install path. A translocated
+  # launch runs from /private/var/.../AppTranslocation/<uuid>/d/<app>, so an
+  # install-path anchor reports a running app as never started... which it
+  # did, for two runs, while the app sat there with its window open.
+  #
+  # Still specific: the bundle name and CFBundleExecutable together, since
+  # pgrep -x on a guessed process name misses whenever the two differ, and a
+  # bare bundle-name match would catch unrelated processes. Logged every pass,
+  # because this probe's silence was previously indistinguishable from the app
+  # genuinely not running.
+  if RUN_PATH=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+      "pgrep -lf '$APP_NAME/Contents/MacOS/$APP_EXEC'" 2>/dev/null) && [ -n "$RUN_PATH" ]; then
+    printf '[%s] i=%s running: %s\n' "$(vm_now)" "$i" "$RUN_PATH" >> "$VM_RUN_DIR/logs/liveness.log"
+    case "$RUN_PATH" in *AppTranslocation*) TRANSLOCATED=1 ;; esac
     RUNNING=1; break
   fi
   printf '[%s] i=%s not running\n' "$(vm_now)" "$i" >> "$VM_RUN_DIR/logs/liveness.log"
@@ -422,12 +436,20 @@ flatten() { printf '%s' "$1" | tr '\n' ';' | cut -c1-280; }
 
 if [ -n "$BLOCK" ]; then
   vm_phase_end launch fail "Gatekeeper refused it: $(flatten "$BLOCK")" "04-settled.png"
-elif [ "$RUNNING" = 1 ] && [ -n "$APPROVED" ]; then
-  vm_phase_end launch pass "no refusal; the expected notarized prompt appeared (owner: $APPROVED), was approved, and $APP_EXEC is running" "04-settled.png"
-elif [ "$RUNNING" = 1 ]; then
-  vm_phase_end launch pass "no dialog of any kind; $APP_EXEC is running" "04-settled.png"
 else
-  vm_phase_end launch fail "$APP_EXEC never started and nothing refused it; logs/dialogs.log names every window that appeared and logs/liveness.log what the process probe saw each pass" "04-settled.png"
+  # Reported, not hidden: a translocated launch runs from a read-only copy
+  # under /private/var, which is a different thing to test than the app in
+  # /Applications, and anything that resolves its own bundle path behaves
+  # differently there.
+  TRANS_NOTE=""
+  [ "$TRANSLOCATED" = 1 ] && TRANS_NOTE="; NOTE: it launched App-Translocated, from a read-only copy rather than $DEST"
+  if [ "$RUNNING" = 1 ] && [ -n "$APPROVED" ]; then
+    vm_phase_end launch pass "no refusal; the expected notarized prompt appeared (owner: $APPROVED), was approved, and $APP_EXEC is running$TRANS_NOTE" "04-settled.png"
+  elif [ "$RUNNING" = 1 ]; then
+    vm_phase_end launch pass "no dialog of any kind; $APP_EXEC is running$TRANS_NOTE" "04-settled.png"
+  else
+    vm_phase_end launch fail "$APP_EXEC never started and nothing refused it; logs/dialogs.log names every window that appeared and logs/liveness.log what the process probe saw each pass" "04-settled.png"
+  fi
 fi
 
 vm_phase_begin assess
