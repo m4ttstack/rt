@@ -11,12 +11,12 @@ contrast gates.
 
 ## Kit contract lives upstream
 
-This app consumes `@mattstack/app-kit` and `@mattstack/app-server` as packages (vendored as the
-tarballs in `vendor/`, installed as `file:` dependencies — see `package.json`). The kit's own
-contract — the Mantine import walls, theme layering, facades (modals, notifications, forms), the
-icon registry, `MattstackShell`, and the server package's `serveMattstackApp` surface — is
-documented in `~/Documents/GitHub/app-kit/AGENTS.md`. Read that before touching anything that
-imports from `@mattstack/app-kit/*` or `@mattstack/app-server`.
+This app consumes `@mattstack/app-kit` and `@mattstack/app-server` as workspace packages
+(`workspace:*` in `package.json`; the packages live in `packages/` of this same repo). The kit's
+own contract — the Mantine import walls, theme layering, facades (modals, notifications, forms),
+the icon registry, `MattstackShell`, and the server package's `serveMattstackApp` surface — is
+documented in `AGENTS.md` at this repo's root. Read that before touching anything that imports
+from `@mattstack/app-kit/*` or `@mattstack/app-server`.
 
 This file covers only what's specific to console: its routes, its runs domain, the wiring map, and
 how it wires up the shell and server packages.
@@ -105,4 +105,4 @@ then.
 Same toolchain as any app built on the kit: `bun run format` / `format:check` (Prettier, import
 order via `@ianvs/prettier-plugin-sort-imports`), `bun run lint` (ESLint over `src`, including the
 kit's Mantine import wall), `bun run typecheck` (`tsc -p tsconfig.json`), `bun run test` (Vitest).
-See `~/Documents/GitHub/app-kit/AGENTS.md` for what each of those enforces and why.
+See `AGENTS.md` at this repo's root for what each of those enforces and why.

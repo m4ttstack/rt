@@ -7,10 +7,9 @@ shell, boot, icons, router glue) and `@mattstack/app-server` (the Hono/Bun
 server frame). The kit contract itself — the import walls, icon registry,
 theme override patterns, facade recipes (modals/notifications/forms), the
 `MattstackShell`/`mountMattstackApp` mattstack layer, and the server
-package's routes/relay/static contract — lives in the kit's own repo, not
-here:
+package's routes/relay/static contract — lives at this repo's root:
 
-**`~/Documents/GitHub/app-kit/AGENTS.md`**
+**`AGENTS.md` (repo root)**
 
 Read that first for anything touching `@mattstack/app-kit/*` or
 `@mattstack/app-server`. What follows here is only what's specific to how
@@ -59,11 +58,9 @@ augmentation contract" for the full mechanism.
 ## Dependencies
 
 `@mattstack/app-kit`, `@mattstack/app-server`, and `@mattstack/mantine-tokyo`
-are installed from packed tarballs in `vendor/*.tgz` (`package.json`'s
-`file:./vendor/...`), not bare `file:` directories into the source tree —
-see app-kit's AGENTS.md §10 for why a bare `file:` symlink install breaks
-peer resolution. Bumping the kit means re-packing (`bun pm pack` in
-`~/Documents/GitHub/app-kit`) and re-copying the tarball into `vendor/`.
+are workspace packages (`workspace:*` in `package.json`) since the fold-in;
+there is no `vendor/` and no tarball step. Kit changes land in
+`packages/{ui,server,tokyo}` in this same repo and are picked up directly.
 
 ## Mantine: look it up, don't recall it
 
