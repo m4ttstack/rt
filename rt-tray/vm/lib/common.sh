@@ -187,13 +187,43 @@ vm_trust_key() {
   [ -s "$pub" ] || { vm_warn "no usable public key at $pub"; return 1; }
   vm_ip "$vm" 90 >/dev/null || return 1
   local key; key=$(cat "$pub")
+  # Kept, not discarded: without it a wrong admin password and an unreachable
+  # guest produce the same silent non-zero, and the message that would name
+  # which one is the message this function exists to provide.
+  local log="${VM_RUN_DIR:-}/logs/trust.log"
+  [ -n "${VM_RUN_DIR:-}" ] || log=/dev/null
   local keyuser rc=0
   for keyuser in "$VM_TESTER_USER" "$VM_ADMIN_USER"; do
+    printf '== trust %s @ %s\n' "$keyuser" "$(vm_now)" >>"$log" 2>/dev/null
     vm_ssh_pw_try "$VM_ADMIN_USER" "$VM_ADMIN_PASS" "$vm" \
       "sudo install -d -m 700 -o $keyuser -g staff /Users/$keyuser/.ssh && echo '$key' | sudo tee /Users/$keyuser/.ssh/authorized_keys >/dev/null && sudo chown $keyuser:staff /Users/$keyuser/.ssh/authorized_keys && sudo chmod 600 /Users/$keyuser/.ssh/authorized_keys" \
-      >/dev/null 2>&1 || rc=1
+      >>"$log" 2>&1 || rc=1
   done
   return "$rc"
+}
+
+# What an on-screen dialog means for a first launch, from its wording:
+#   block   Gatekeeper refused the app
+#   prompt  the "downloaded from the Internet" confirmation a notarized app
+#           is expected to raise on a machine that has never seen it
+#   none    nothing on screen that bears on the launch
+#
+# Wording, not the owning process, because the two outcomes share an owner: a
+# probe keyed on the owner cannot tell an expected prompt from a refusal, and
+# would fail every correct run. Order matters... a refusal is decided before
+# anything is clicked, so approving the prompt can never mask a block.
+#
+# Lifted here so the run script and its gate classify with the same code; two
+# copies of the pattern list is a test that passes while the script drifts.
+vm_dialog_verdict() {
+  case "$1" in
+    *"cannot be opened"*|*"developer cannot be verified"*|*"will damage your computer"*|*"unidentified developer"*|*"Malware Blocked"*|*"contains malware"*)
+      printf block; return ;;
+  esac
+  case "$1" in
+    *"downloaded from the Internet"*) printf prompt; return ;;
+  esac
+  printf none
 }
 
 vm_wait_ssh() {

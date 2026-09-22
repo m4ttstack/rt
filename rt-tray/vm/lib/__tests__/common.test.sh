@@ -63,5 +63,19 @@ check "t()-style helper counts failures without exiting"  '
   [ "$out" = "2" ]
 '
 
+# The benign prompt names malicious software in order to say none was found,
+# so it is the case a careless refusal pattern gets wrong... and getting it
+# wrong fails every correct run, which is what this classifier replaced.
+BENIGN='"Flock" is an app downloaded from the Internet. Are you sure you want to open it? / Safari downloaded this file today at 12:13 AM. Apple checked it for malicious software and none was detected. / Cancel / Open'
+UNVERIFIED='"Flock" cannot be opened because the developer cannot be verified. / macOS cannot verify that this app is free from malware.'
+check "benign prompt is a prompt"     '[ "$(vm_dialog_verdict "$BENIGN")" = prompt ]'
+check "unverified developer blocks"   '[ "$(vm_dialog_verdict "$UNVERIFIED")" = block ]'
+check "damage warning blocks"         '[ "$(vm_dialog_verdict "x will damage your computer x")" = block ]'
+check "unidentified developer blocks" '[ "$(vm_dialog_verdict "from an unidentified developer")" = block ]'
+check "an ordinary window is none"    '[ "$(vm_dialog_verdict "Finder || Downloads || Name / Date Modified")" = none ]'
+check "an empty screen is none"       '[ "$(vm_dialog_verdict "")" = none ]'
+# A probe that could not reach the guest must never read as a clean screen.
+check "unreachable probe is not a pass" '[ "$(vm_dialog_verdict PROBE_UNREACHABLE)" != prompt ]'
+
 rm -rf "$VM_ARTIFACTS"
 [ "$fails" -eq 0 ] && echo "common.test.sh: all ok" || { echo "common.test.sh: $fails failed"; exit 1; }

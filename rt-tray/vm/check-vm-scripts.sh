@@ -37,6 +37,32 @@ t "second-user create"           bash run/second-user.sh create
 mkdir -p /tmp/vmcheck-ax/in /tmp/vmcheck-ax/logs
 printf '{"graphics":0}\n' > /tmp/vmcheck-ax/in/params.json
 t "ax.sh refuses when GUEST_RUN unmounted"        bash -c '! (env -u GUEST_RUN AX_APP=x bash run/guest/ax.sh >/dev/null 2>&1)'
+
+# dialogs.sh is never RUN here, only compiled. Its whole job is to enumerate
+# every window on screen, so executing it on the host would walk the
+# operator's own desktop: slow, and an assertion whose answer depends on which
+# apps happen to be open. Substituting an ax_osa that prints instead of
+# executes turns the same code path into a deterministic parse check, and
+# osascript exits 1 on a compile error and a runtime miss alike, so nothing
+# short of a real compile distinguishes an AppleScript that never parsed.
+mkdir -p /tmp/vmcheck-dlg/in/guest /tmp/vmcheck-dlg/logs
+printf '%s\n' 'ax_osa() { printf "%s" "$1"; }' 'ax_admin_auth_once() { return 1; }' > /tmp/vmcheck-dlg/in/guest/ax.sh
+t "dialogs.sh refuses when GUEST_RUN unmounted"   bash -c 'out=$(env -u GUEST_RUN bash run/guest/dialogs.sh dump 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "is not mounted"'
+t "dialogs.sh rejects an unknown subcommand"      bash -c '! (env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh bogus >/dev/null 2>&1)'
+t "dialogs.sh AppleScript compiles"               bash -c '
+  for sub in dump approve; do
+    env GUEST_RUN=/tmp/vmcheck-dlg bash run/guest/dialogs.sh "$sub" > "/tmp/vmcheck-dlg/$sub.applescript" || exit 1
+    osacompile -o "/tmp/vmcheck-dlg/$sub.scpt" "/tmp/vmcheck-dlg/$sub.applescript" || exit 1
+  done'
+t "dialogs.sh calls helpers ax.sh defines"        bash -c 'grep -q "^ax_osa()" run/guest/ax.sh && grep -q "^ax_admin_auth_once()" run/guest/ax.sh'
+
+t "gatekeeper-check usage (no artifact)"          bash -c \
+  'out=$(bash run/gatekeeper-check.sh 2>&1); rc=$?; [ "$rc" -ne 0 ] && printf "%s" "$out" | grep -q "usage: gatekeeper-check.sh"'
+t "gatekeeper-check --dmg and --app are exclusive" bash -c \
+  '! bash run/gatekeeper-check.sh --dmg /tmp/x.dmg --app /tmp/x.app >/dev/null 2>&1'
+t "gatekeeper-check --dry-run"                    env VM_ARTIFACTS=/tmp/vmcheck-art bash run/gatekeeper-check.sh --app ../mattstack.app --dry-run
+t "gatekeeper-check judges dialogs by text, not owner" bash -c \
+  '! grep -q "windows of process .CoreServicesUIAgent" run/gatekeeper-check.sh && grep -q "vm_dialog_verdict" run/gatekeeper-check.sh'
 # The "no syntax error" half of this assertion is load-bearing, not decoration: osascript exits 1
 # on both a clean "not found" runtime error and a broken-script compile error alike, so an
 # exit-code-only check can green-light a walk() AppleScript that never even compiles.

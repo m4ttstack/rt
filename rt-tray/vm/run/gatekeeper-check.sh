@@ -123,7 +123,21 @@ if [ "$DRY" = 1 ]; then
 fi
 
 STAGE="/Users/$VM_TESTER_USER/gk"
+GUEST_RUN="/Volumes/My Shared Files/run"
 QUAR_VALUE="0083;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)"
+
+# Every window on screen and the text inside it, appended under a label. The
+# run samples four screenshots, so a dialog raised and answered between two of
+# them leaves no trace at all; this leaves one the report can name.
+probe_dialogs() {
+  local label="$1" out
+  out=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+    "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' dump 2>&1" || printf 'PROBE_UNREACHABLE')
+  # An unreachable probe and an empty screen must not read alike: the old loop
+  # treated both as "no dialog", which is how a broken probe passes as a pass.
+  printf '[%s] %s\n%s\n' "$(vm_now)" "$label" "${out:-<no windows>}" >> "$VM_RUN_DIR/logs/dialogs.log"
+  printf '%s' "$out"
+}
 
 vm_phase_begin clone
 tart clone "$GOLDEN" "$RUN_VM" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 \
@@ -141,6 +155,8 @@ vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 300 \
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/00-booted.png" || true
 
 vm_phase_begin stage
+cp -R "$VM_ROOT/run/guest" "$VM_RUN_DIR/in/guest"
+chmod -R a+rX "$VM_RUN_DIR/in/guest"
 vm_ssh "$VM_TESTER_USER" "$RUN_VM" "rm -rf '$STAGE' && mkdir -p '$STAGE'"
 if [ -n "$DMG" ]; then
   vm_scp "$VM_TESTER_USER" "$RUN_VM" "$DMG" "$STAGE/"
@@ -187,8 +203,26 @@ fi
 # user-approved, which is what keeps the launch out of App Translocation. A
 # privilege error here must not fall back to ditto, which would translocate the
 # launch and quietly answer a different question.
-COPY_ERR=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
-  "osascript -e 'tell application \"Finder\" to duplicate POSIX file \"$SRC_IN_GUEST\" to POSIX file \"$DEST\" with replacing' 2>&1 >/dev/null" || true)
+# Backgrounded so the probe can run alongside it: a copy into /Applications by
+# a standard user raises an authorization prompt, and a foreground copy sits
+# there until someone answers it, with nothing in the record naming what asked.
+COPY_LOG="$VM_RUN_DIR/logs/finder-copy.log"
+vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+  "osascript -e 'tell application \"Finder\" to duplicate POSIX file \"$SRC_IN_GUEST\" to POSIX file \"$DEST\" with replacing' 2>&1 >/dev/null" \
+  >"$COPY_LOG" 2>&1 &
+COPY_PID=$!
+ci=0
+while kill -0 "$COPY_PID" 2>/dev/null && [ "$ci" -lt 45 ]; do
+  sleep 2; ci=$((ci+1))
+  case "$(probe_dialogs "install t=$((ci*2))s")" in
+    *SecurityAgent*|*"trying to modify"*|*"Touch ID or Password"*)
+      vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+        "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' admin" \
+        >>"$VM_RUN_DIR/logs/dialogs.log" 2>&1 || true ;;
+  esac
+done
+wait "$COPY_PID" 2>/dev/null || true
+COPY_ERR=$(cat "$COPY_LOG" 2>/dev/null || true)
 if ! vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "test -d '$DEST_APP'"; then
   vm_phase_end install fail "Finder copy to $DEST failed: ${COPY_ERR:-unknown}. On a privilege error rerun with --dest /Users/$VM_TESTER_USER/Applications; do not work around it with ditto."
   exit 1
@@ -201,9 +235,10 @@ fi
 vm_phase_end install pass "Finder-copied to $DEST_APP, quarantine intact"
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/01-installed.png" || true
 
-# ── launch: a Gatekeeper warning is a CoreServicesUIAgent window and an admin
-#    prompt is SecurityAgent, so the two are told apart by owning process
-#    rather than by reading pixels. Screenshots are evidence, not the test. ────
+# ── launch: dialogs are told apart by what they SAY, not by who owns them.
+#    A notarized app on a clean machine is expected to raise the "downloaded
+#    from the Internet" prompt; only a refusal is a failure, and the two share
+#    an owner. Screenshots are evidence, not the test. ─────────────────────────
 vm_phase_begin launch
 # Positive control before the assertion that matters: an absent dialog and an
 # unreachable System Events both read as "no windows", so without this the
@@ -218,28 +253,48 @@ vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
   "osascript -e 'tell application \"Finder\" to open POSIX file \"$DEST_APP\"'" \
   >>"$VM_RUN_DIR/logs/launch.log" 2>&1 || true
 
-GK_WINDOWS=""; RUNNING=0; i=0
-while [ "$i" -lt 12 ]; do
+BLOCK=""; APPROVED=""; RUNNING=0; i=0
+# Bounded by wall clock, not iterations: one full window-and-text walk is a
+# round trip of seconds, so a fixed iteration count is not a known timeout.
+LAUNCH_DEADLINE=$(( $(date +%s) + 120 ))
+while [ "$(date +%s)" -lt "$LAUNCH_DEADLINE" ]; do
   sleep 1; i=$((i+1))
   [ "$i" = 2 ] && "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/02-open-t2.png" >/dev/null 2>&1 || true
   [ "$i" = 5 ] && "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/03-open-t5.png" >/dev/null 2>&1 || true
-  GK_WINDOWS=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
-    "osascript -e 'tell application \"System Events\" to get name of windows of process \"CoreServicesUIAgent\"' 2>/dev/null" || true)
-  [ -n "$GK_WINDOWS" ] && break
+  SEEN=$(probe_dialogs "launch i=$i")
+  case "$(vm_dialog_verdict "$SEEN")" in
+    block)
+      BLOCK="$SEEN"; break ;;
+    prompt)
+      WHO=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
+        "GUEST_RUN='$GUEST_RUN' bash '$GUEST_RUN/in/guest/dialogs.sh' approve 2>/dev/null" || true)
+      [ -n "$WHO" ] && APPROVED="$WHO"
+      continue ;;
+  esac
   # Anchored to the installed bundle's own executable directory: pgrep -x on a
   # guessed process name misses whenever CFBundleExecutable is not the bundle
-  # name, and a bare bundle-path match would catch unrelated processes.
-  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "pgrep -f '$DEST_APP/Contents/MacOS/' >/dev/null" \
-    && { RUNNING=1; break; }
+  # name, and a bare bundle-path match would catch unrelated processes. Logged
+  # every pass, because last time this probe's silence was indistinguishable
+  # from the app genuinely not running and cost a whole rerun to not answer.
+  if vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "pgrep -lf '$DEST_APP/Contents/MacOS/'" \
+      >>"$VM_RUN_DIR/logs/liveness.log" 2>&1; then
+    RUNNING=1; break
+  fi
+  printf '[%s] i=%s not running\n' "$(vm_now)" "$i" >> "$VM_RUN_DIR/logs/liveness.log"
 done
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/04-settled.png" || true
 
-if [ -n "$GK_WINDOWS" ]; then
-  vm_phase_end launch fail "Gatekeeper warning shown: $GK_WINDOWS" "04-settled.png"
+# One line, so the ledger's reason column stays parseable.
+flatten() { printf '%s' "$1" | tr '\n' ';' | cut -c1-280; }
+
+if [ -n "$BLOCK" ]; then
+  vm_phase_end launch fail "Gatekeeper refused it: $(flatten "$BLOCK")" "04-settled.png"
+elif [ "$RUNNING" = 1 ] && [ -n "$APPROVED" ]; then
+  vm_phase_end launch pass "no refusal; the expected notarized prompt appeared (owner: $APPROVED), was approved, and $APP_EXEC is running" "04-settled.png"
 elif [ "$RUNNING" = 1 ]; then
-  vm_phase_end launch pass "no CoreServicesUIAgent window; $APP_EXEC is running" "04-settled.png"
+  vm_phase_end launch pass "no dialog of any kind; $APP_EXEC is running" "04-settled.png"
 else
-  vm_phase_end launch fail "$APP_EXEC never started and no warning appeared, so something else blocked it" "04-settled.png"
+  vm_phase_end launch fail "$APP_EXEC never started and nothing refused it; logs/dialogs.log names every window that appeared and logs/liveness.log what the process probe saw each pass" "04-settled.png"
 fi
 
 vm_phase_begin assess
