@@ -47,7 +47,12 @@ export class HistoryStore {
 
   /** Loads the first batch when nothing is loaded or HEAD moved; returns whether anything changed. */
   async syncTip(client: GitClient, branch: HistoryBranch): Promise<boolean> {
+    const entry = this.generation;
     const head = (await client.commits("HEAD", 1))[0]?.sha ?? null;
+    // A reset() (or another reload) during this probe already changed what
+    // loaded/tip mean; proceeding past it would apply this call's own
+    // (now unrelated) worktree/client data onto whatever state reset left.
+    if (this.generation !== entry) return false;
     if (this.loaded && head === this.tip) return false;
     const gen = ++this.generation;
     const [batch, local] = await Promise.all([client.commits("HEAD", COMMIT_BATCH_SIZE, 0), client.localCommits(branch)]);

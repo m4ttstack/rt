@@ -95,8 +95,7 @@ function oneHunkDiff(path = "a.txt"): StagingDiff {
 }
 
 // One hunk with `lineCount` add lines -- past OVERSIZED_LINE_CUTOFF (3000, see
-// model.ts) this is what a real oversized commit diff looks like, mirroring
-// model.test.ts's own bigStagingDiff.
+// model.ts) this is what a real oversized commit diff looks like.
 function bigHistoryDiff(path: string, lineCount: number): StagingDiff {
   const lines = [new DiffLine("@@ -1,1 +1,1 @@", DiffLineType.Hunk, 1, null, null)];
   for (let i = 0; i < lineCount - 1; i++) {
@@ -107,8 +106,8 @@ function bigHistoryDiff(path: string, lineCount: number): StagingDiff {
   return { path, kind: "text", untracked: false, hunks: [hunk] };
 }
 
-// Task 4's own history.test.ts fixtures, reused here so the History-tab
-// driver tests build commits/files the same way the store's own unit tests do.
+// A minimal Commit/CommittedFileChange pair -- just enough shape for
+// HistoryStore and buildHistoryModel to consume, without a real git log parse.
 function fakeCommit(sha: string, summary = sha): Commit {
   const id = { name: "Pat", email: "pat@example.com", date: new Date("2026-09-20T00:00:00Z"), tzOffset: 0 };
   return { sha, shortSha: sha.slice(0, 7), summary, body: "", author: id, committer: id, parentSHAs: [], trailers: [], tags: [], coAuthors: [], authoredByCommitter: true, isMergeCommit: false };
@@ -479,10 +478,9 @@ describe("MissionDriver: staging (selection-only, ratified 2026-09-21)", () => {
 });
 
 describe("MissionDriver: discard two-step confirm", () => {
-  // A mutable "now" the test steps forward at chosen points, not a
-  // call-count-indexed array: model()/push() reads deps.now() too (for the
-  // History tab's relative-time formatting), and that incidental read count
-  // is not part of what this test is verifying.
+  // A mutable "now" the test steps forward at chosen points: model()/push()
+  // reads deps.now() too (for the History tab's relative-time formatting),
+  // and that incidental read count is not part of what this test verifies.
   test("a second matching discard within the window executes discardSelection", async () => {
     const client = makeFakeClient();
     let now = 1_000;
@@ -494,19 +492,19 @@ describe("MissionDriver: discard two-step confirm", () => {
 
     session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
     await flushMicrotasks();
-    expect((session.pushed[0] as MissionModel).notice).toBe("press d again to discard");
 
     now = 2_000; // 1s later, inside the 5s window
     session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
     await flushMicrotasks();
 
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+
+    expect((session.pushed[0] as MissionModel).notice).toBe("press d again to discard");
     expect(client.calls.discardSelection).toHaveLength(1);
     const { selection } = client.calls.discardSelection[0]!;
     expect(selection.isSelected(3)).toBe(true); // the armed target is what gets discarded
     expect((session.pushed.at(-1) as MissionModel).notice).toBe("");
-
-    session.send({ t: "intent", name: "quit" });
-    await runPromise;
   });
 
   test("a late second discard past the window re-arms instead of executing", async () => {
@@ -525,11 +523,11 @@ describe("MissionDriver: discard two-step confirm", () => {
     session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
     await flushMicrotasks();
 
-    expect(client.calls.discardSelection).toHaveLength(0);
-    expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
-
     session.send({ t: "intent", name: "quit" });
     await runPromise;
+
+    expect(client.calls.discardSelection).toHaveLength(0);
+    expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
   });
 });
 
@@ -552,11 +550,11 @@ describe("MissionDriver: discard disarm", () => {
     session.send({ t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } });
     await flushMicrotasks();
 
-    expect(client.calls.discardSelection).toHaveLength(0);
-    expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
-
     session.send({ t: "intent", name: "quit" });
     await runPromise;
+
+    expect(client.calls.discardSelection).toHaveLength(0);
+    expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
   });
 });
 
@@ -2183,6 +2181,7 @@ describe("MissionDriver: History tab", () => {
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
     expect(last.history.header?.sha).toBe("h1");
+    expect(last.history.loading).toBe(false);
     expect(last.diff.readOnly).toBe(true);
     expect(last.diff.path).toBe("src/a.ts");
   });
@@ -2203,21 +2202,24 @@ describe("MissionDriver: History tab", () => {
     expect(last.history.header?.sha).toBe("h2");
   });
 
-  test("selecting a file loads its diff", async () => {
-    const client = makeFakeClient();
+  test("selecting a file moves the diff to the newly selected file", async () => {
+    const client = makeFakeClient({
+      changedFiles: async (sha) => ({ files: [historyFile("src/a.ts", sha), historyFile("src/b.ts", sha)], linesAdded: 1, linesDeleted: 0 }),
+    });
     const session = new FakeSession([
       { t: "intent", name: "mission:tab", payload: { tab: "history" } },
-      { t: "intent", name: "mission:history-file", payload: { path: "src/a.ts" } },
+      { t: "intent", name: "mission:history-file", payload: { path: "src/b.ts" } },
       { t: "intent", name: "quit" },
     ]);
     const deps = baseDeps({ session, client });
 
     await new MissionDriver(deps, START).run();
 
-    // One commitDiff call from the tab-open auto-select, a second from the
-    // explicit mission:history-file intent -- missing the second means the
-    // handler never re-ran selectFile.
-    expect(client.calls.commitDiff).toEqual(["h1:src/a.ts", "h1:src/a.ts"]);
+    // The tab-open auto-select picks the first file (src/a.ts); the explicit
+    // mission:history-file intent must move the diff onto the second one.
+    expect(client.calls.commitDiff).toEqual(["h1:src/a.ts", "h1:src/b.ts"]);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.diff.path).toBe("src/b.ts");
   });
 
   test("paging loads a second batch and grows the commit list", async () => {
@@ -2267,7 +2269,7 @@ describe("MissionDriver: History tab", () => {
     expect(client.calls.commits.filter((c) => c.limit === 100)).toHaveLength(1);
   });
 
-  test("a new tip while on History reloads and keeps the selection (Review Focus 4)", async () => {
+  test("a new tip while on History reloads and keeps the selection", async () => {
     let tipMoved = false;
     const client = makeFakeClient({
       commits: async (_range, limit) => {
@@ -2307,10 +2309,45 @@ describe("MissionDriver: History tab", () => {
     await runPromise;
   });
 
+  test("a tip that moves while on Changes reloads on the next History open and keeps a still-present selection", async () => {
+    let tipMoved = false;
+    const client = makeFakeClient({
+      commits: async (_range, limit) => {
+        const list = tipMoved ? [fakeCommit("h0"), fakeCommit("h1"), fakeCommit("h2")] : [fakeCommit("h1"), fakeCommit("h2")];
+        return limit === 1 ? list.slice(0, 1) : list;
+      },
+    });
+    const session = new QueueSession();
+    const deps = baseDeps({ session, client });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:history-select", payload: { shas: ["h2"] } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "changes" } });
+    await flushMicrotasks();
+
+    tipMoved = true; // a commit landed while the History tab wasn't even syncing
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["h0", "h1", "h2"]);
+    expect(last.history.header?.sha).toBe("h2");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
   test("a worktree switch resets history so the next History open loads a first batch again", async () => {
     const client = makeFakeClient();
     const session = new FakeSession([
       { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "mission:tab", payload: { tab: "changes" } },
       { t: "intent", name: "mission:worktree", payload: { path: "/repo2" } },
       { t: "intent", name: "mission:tab", payload: { tab: "history" } },
       { t: "intent", name: "quit" },
@@ -2346,6 +2383,78 @@ describe("MissionDriver: History tab", () => {
     expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
   });
 
+  test("a worktree switch during an in-flight badge sync's tip probe never lets the stale tree's reload land on the new one", async () => {
+    let oldProbeArmed = false;
+    let releaseOldProbe!: (sha: string) => void;
+    const oldClient = makeFakeClient({
+      commits: async (_range, limit) => {
+        if (limit === 1) {
+          if (!oldProbeArmed) return [fakeCommit("o1")];
+          return new Promise<Commit[]>((resolve) => {
+            releaseOldProbe = (sha) => resolve([fakeCommit(sha)]);
+          });
+        }
+        return [fakeCommit("o1"), fakeCommit("o2")];
+      },
+      localCommits: async () => [fakeCommit("o1")],
+    });
+    const newClient = makeFakeClient({
+      commits: async (_range, limit) => (limit === 1 ? [fakeCommit("n1")] : [fakeCommit("n1"), fakeCommit("n2")]),
+    });
+
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? {
+              ok: true,
+              data: {
+                trees: [
+                  { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+                  { path: "/repo2", name: "frodo", branch: "feature", state: "claimed" },
+                ],
+              },
+            }
+          : {
+              ok: true,
+              data: {
+                repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/repo2", branch: "feature" })] }],
+              },
+            },
+    });
+    deps.client = (dir: string) => (dir === "/repo2" ? newClient : oldClient);
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks(); // the old tree's instant load: commits [o1,o2], tip "o1"
+
+    oldProbeArmed = true;
+    expect(captured).not.toBeNull();
+    captured!({ type: "git-status", data: {} }); // a badge sync starts on the OLD tree, blocked on its deferred probe
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:worktree", payload: { path: "/repo2" } });
+    await flushMicrotasks(); // resets history and fully reloads it from the NEW tree
+
+    releaseOldProbe("o0"); // the stale badge sync's probe finally resolves
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["n1", "n2"]);
+    expect(last.history.commits.every((c) => !c.unpushed)).toBe(true);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
   test("oversized show-anyway flips the diff kind without a refetch", async () => {
     const client = makeFakeClient({
       commitDiff: async (file) => bigHistoryDiff(file.path, 3001),
@@ -2364,5 +2473,105 @@ describe("MissionDriver: History tab", () => {
 
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.diff.kind).toBe("text");
+    expect(client.calls.commitDiff).toHaveLength(1);
+  });
+
+  test("a failed history read surfaces an error notice and keeps the last good list", async () => {
+    let shouldThrow = false;
+    const client = makeFakeClient({
+      commits: async (_range, limit) => {
+        if (shouldThrow) throw new Error("git log failed");
+        const all = [fakeCommit("h1"), fakeCommit("h2")];
+        return limit === 1 ? all.slice(0, 1) : all;
+      },
+    });
+    const session = new QueueSession();
+    const deps = baseDeps({ session, client });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "changes" } });
+    await flushMicrotasks();
+
+    shouldThrow = true;
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("error: git log failed");
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a first load superseded by a concurrent sync never flashes an empty, not-loading state", async () => {
+    let probeCalls = 0;
+    let releaseProbeA!: (sha: string) => void;
+    let releaseProbeB!: (sha: string) => void;
+    let releaseBatchB!: () => void;
+    const client = makeFakeClient({
+      commits: async (_range, limit) => {
+        if (limit === 1) {
+          probeCalls++;
+          if (probeCalls === 1) {
+            return new Promise<Commit[]>((resolve) => {
+              releaseProbeA = (sha) => resolve([fakeCommit(sha)]);
+            });
+          }
+          return new Promise<Commit[]>((resolve) => {
+            releaseProbeB = (sha) => resolve([fakeCommit(sha)]);
+          });
+        }
+        // Only the badge sync (B) ever reaches the full batch fetch: the
+        // handleTab sync (A) is discarded by its generation check first.
+        return new Promise<Commit[]>((resolve) => {
+          releaseBatchB = () => resolve([fakeCommit("h1"), fakeCommit("h2")]);
+        });
+      },
+    });
+
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
+    await flushMicrotasks(); // handleTab's own sync (A) is blocked on its HEAD probe
+
+    captured!({ type: "git-status", data: {} }); // a concurrent badge sync (B) starts a second one
+    await flushMicrotasks(); // B is also blocked on its own HEAD probe
+
+    releaseProbeB("h1"); // B claims the reload and blocks on its batch fetch
+    await flushMicrotasks();
+
+    releaseProbeA("stale-head"); // A's probe resolves after B already claimed a newer generation
+    await flushMicrotasks();
+
+    const afterDiscard = session.pushed.at(-1) as MissionModel;
+    expect(afterDiscard.history.commits).toHaveLength(0);
+    expect(afterDiscard.history.loading).toBe(true); // B is still genuinely in flight
+
+    releaseBatchB();
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.history.commits.map((c) => c.sha)).toEqual(["h1", "h2"]);
+    expect(last.history.loading).toBe(false);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 });

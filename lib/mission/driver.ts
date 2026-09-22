@@ -245,8 +245,8 @@ export class MissionDriver {
    *  lingers. */
   private pendingSettledEvents: Map<string, boolean> = new Map();
   private readonly history = new HistoryStore();
-  /** True only while the initial batch for a freshly-opened History tab is in flight; distinct from HistoryStore.loaded so a background tip sync never flashes the loading state. */
-  private historyLoading = false;
+  /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
+  private historySyncs = 0;
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -333,7 +333,7 @@ export class MissionDriver {
   }
 
   private model(): MissionModel {
-    const history = buildHistoryModel(this.history, { now: this.deps.now(), loading: this.historyLoading });
+    const history = buildHistoryModel(this.history, { now: this.deps.now(), loading: this.historySyncs > 0 && !this.history.loaded });
     const selectedFile = this.history.selectedFile;
     return buildModel({
       state: this.state,
@@ -399,7 +399,12 @@ export class MissionDriver {
   /** A no-op off the History tab: the store never fetches anything a session that stays on Changes will never render. */
   private async syncHistory(): Promise<void> {
     if (this.state.tab !== "history") return;
-    await this.history.syncTip(this.deps.client(this.state.currentWorktree), this.historyBranch());
+    this.historySyncs++;
+    try {
+      await this.history.syncTip(this.deps.client(this.state.currentWorktree), this.historyBranch());
+    } finally {
+      this.historySyncs--;
+    }
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {
@@ -595,13 +600,9 @@ export class MissionDriver {
     if (payload?.tab !== "changes" && payload?.tab !== "history") return;
     this.state.tab = payload.tab;
     if (payload.tab === "history") {
-      this.historyLoading = !this.history.loaded;
+      const sync = this.syncHistory();
       this.push();
-      try {
-        await this.syncHistory();
-      } finally {
-        this.historyLoading = false;
-      }
+      await sync;
     }
     this.push();
   }

@@ -465,6 +465,22 @@ describe("HistoryStore", () => {
     expect(await store.syncTip(client, BRANCH)).toBe(true);
   });
 
+  test("a reset during the HEAD probe leaves that sync with nothing to apply", async () => {
+    const { client } = fakeClient({ history: shas("c", 3) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    let release!: (v: Commit[]) => void;
+    const slow = new Promise<Commit[]>((r) => { release = r; });
+    const original = client.commits;
+    client.commits = (range, limit, skip) => (limit === 1 ? slow : original(range, limit, skip));
+    const pending = store.syncTip(client, BRANCH);
+    store.reset();
+    release([fakeCommit("c000")]);
+    expect(await pending).toBe(false);
+    expect(store.loaded).toBe(false);
+    expect(store.commits).toEqual([]);
+  });
+
   test("the local set marks unpushed commits", async () => {
     const { client } = fakeClient({ history: shas("c", 3), local: ["c000"] });
     const store = new HistoryStore();
