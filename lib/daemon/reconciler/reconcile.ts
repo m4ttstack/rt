@@ -301,6 +301,12 @@ async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<Pass
         log.info({ repo: repoName, tree: rec.name, path: rec.path, misses }, "reconcile: worktree path missing, holding");
       } else {
         log.info({ repo: repoName, tree: rec.name, path: rec.path }, "reconcile: pruning registry entry after sustained absence");
+        // The row is gone either way; an rt-owned branch left behind here
+        // (a hand-removed golden or on-deck dir) otherwise wedges every
+        // later create at this name forever.
+        if (isRtOwnedBranch(rec.branch)) {
+          await runGit(repoPath, ["branch", "-D", rec.branch as string]);
+        }
         changed = true;
       }
     }

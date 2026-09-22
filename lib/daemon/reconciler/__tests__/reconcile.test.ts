@@ -10,6 +10,7 @@ import { healLegacyPoolRoots, releaseStrandedClaims, reconcileRepo, MISSING_PRUN
 import { tryLockTree } from "../../../worktree/locks.ts";
 import { markHandoffDelivered } from "../../../worktree/patch.ts";
 import { legacyWorktreePoolRoots, worktreePoolRoot } from "../../../rt-paths.ts";
+import { branchExistsLocalAsync } from "../../../worktree/git-async.ts";
 
 function fakeLog(): Logger {
   return { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as unknown as Logger;
@@ -58,6 +59,54 @@ describe("reconcile.ts: reconcileRepo", () => {
     }
 
     expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeUndefined();
+  });
+
+  test("prunes an rt-owned branch along with the row, so the name is free again", async () => {
+    execSync(`git -C ${repo} branch on-deck/ghost`, { cwd: repo, shell: "/bin/zsh" });
+    const ghost: TreeRecord = {
+      name: "ghost",
+      path: join(repo, ".worktrees", "ghost"),
+      kind: "ephemeral",
+      state: "on-deck",
+      branch: "on-deck/ghost",
+      createdAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [ghost]);
+
+    for (let i = 0; i < 3; i++) {
+      await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    }
+
+    expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeUndefined();
+    expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(false);
+
+    // The freed branch name must be usable again, which is the actual failure
+    // mode a leftover ref causes: a subsequent create at that name.
+    execSync(`git -C ${repo} worktree add -q -b on-deck/ghost ${join(repo, ".worktrees", "ghost")}`, {
+      cwd: repo,
+      shell: "/bin/zsh",
+    });
+    expect(await branchExistsLocalAsync(repo, "on-deck/ghost")).toBe(true);
+  });
+
+  test("prunes a registered tree's row but leaves a non-rt-owned branch alone", async () => {
+    execSync(`git -C ${repo} branch feat-ghost`, { cwd: repo, shell: "/bin/zsh" });
+    const ghost: TreeRecord = {
+      name: "ghost",
+      path: join(repo, ".worktrees", "ghost"),
+      kind: "ephemeral",
+      state: "on-deck",
+      branch: "feat-ghost",
+      createdAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [ghost]);
+
+    for (let i = 0; i < 3; i++) {
+      await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    }
+
+    expect(loadRegistry(repoName).find((t) => t.name === "ghost")).toBeUndefined();
+    expect(await branchExistsLocalAsync(repo, "feat-ghost")).toBe(true);
   });
 
   test("holds a tree whose pool root AND root-parent are both unreadable (mount blip), never pruning it", async () => {
