@@ -95,9 +95,9 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             options: []
         )
 
-        let openSurface = UNNotificationAction(
-            identifier: "OPEN_SURFACE",
-            title: "Open",
+        let focusPane = UNNotificationAction(
+            identifier: "FOCUS_PANE",
+            title: "Focus Pane",
             options: .foreground
         )
 
@@ -169,7 +169,7 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             ),
             UNNotificationCategory(
                 identifier: "gate",
-                actions: [openSurface],
+                actions: [focusPane],
                 intentIdentifiers: []
             ),
         ]
@@ -328,7 +328,7 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Held ready ladder (RT-98)
 
-    static let readyHeldCategory = "ready_held"
+    static let readyHeldCategory = NotificationClick.readyHeldCategory
 
     /// Fire the held-ladder alert.
     ///
@@ -384,6 +384,23 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         completionHandler([.banner])  // sound is played manually in fire()
     }
 
+    /// Maps a pure route onto its side effect. Focus is best-effort on
+    /// click; the outcome isn't surfaced.
+    private func follow(_ route: NotificationClick.Route) {
+        switch route {
+        case .showKeyboardConflict:
+            NotificationCenter.default.post(name: .showKeyboardConflict, object: nil)
+        case .showProcessPanel:
+            NotificationCenter.default.post(name: .showProcessPanel, object: nil)
+        case .openURL(let urlStr):
+            if let urlObj = URL(string: urlStr) { openURL(urlObj) }
+        case .focusPane(let paneId):
+            _ = HerdrBridge.shared.focusPaneById(paneId)
+        case .none:
+            break
+        }
+    }
+
     /// Handle notification click and action button presses.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -399,25 +416,18 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 openURL(urlObj)
             }
 
-        case "OPEN_SURFACE":
-            if let urlStr = url, let urlObj = URL(string: urlStr) {
-                openURL(urlObj)
-            } else if let paneId = userInfo["paneId"] as? String, !paneId.isEmpty {
-                _ = HerdrBridge.shared.focusPaneById(paneId)
-            }
+        case "FOCUS_PANE":
+            follow(NotificationClick.focusPaneRoute(
+                url: url,
+                paneId: userInfo["paneId"] as? String
+            ))
 
         case UNNotificationDefaultActionIdentifier:
-            let category = response.notification.request.content.categoryIdentifier
-            if category == "keyboard_conflict" {
-                NotificationCenter.default.post(name: .showKeyboardConflict, object: nil)
-            } else if category == Self.readyHeldCategory {
-                NotificationCenter.default.post(name: .showProcessPanel, object: nil)
-            } else if let paneId = userInfo["paneId"] as? String, !paneId.isEmpty {
-                // Focus is best-effort on click; the outcome isn't surfaced.
-                _ = HerdrBridge.shared.focusPaneById(paneId)
-            } else if let urlStr = url, let urlObj = URL(string: urlStr) {
-                openURL(urlObj)
-            }
+            follow(NotificationClick.bannerRoute(
+                category: response.notification.request.content.categoryIdentifier,
+                url: url,
+                paneId: userInfo["paneId"] as? String
+            ))
 
         case "COPY_APPROVE_COMMAND":
             if let command = userInfo["approveCommand"] as? String {
