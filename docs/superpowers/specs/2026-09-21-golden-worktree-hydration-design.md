@@ -7,12 +7,12 @@
 
 An on-deck member of a pooled repo is built by a cold create: `git worktree
 add`, then the ready ladder (`pnpm install` and whatever the team declares
-after it). On assured-dev that is 4 to 7 minutes per tree, serialized per
+after it). On a large pnpm monorepo that is 4 to 7 minutes per tree, serialized per
 repo behind `withCreateLock`. When an agent fires several provisions at once
 the pool drains after `onDeck` hits and every later caller waits its turn
 behind a full install.
 
-Measured on 2026-09-21, one assured-dev tree, machine at load 20 to 44 on 18
+Measured on 2026-09-21, one tree of a large pnpm monorepo, machine at load 20 to 44 on 18
 cores (so these are upper bounds; idle numbers should be 2x to 4x better):
 
 | Phase | Time |
@@ -240,7 +240,7 @@ master moves, for zero hydrations ever performed.
 
 ## Expected result
 
-On-deck top-up on assured-dev goes from ~7 minutes to the sum of `git
+On-deck top-up on that monorepo goes from ~7 minutes to the sum of `git
 worktree add` (10s) plus one `clonefile` per ignored path (68s for the root
 `node_modules`, 7s for the other 172 entries, all at load 20 to 40). Under
 30s is plausible on an idle machine. A lockfile bump costs one install (the
@@ -276,7 +276,7 @@ golden) plus per-member freshens as before.
 
 ## Source
 
-Spike run 2026-09-21 on `lupin` (assured-dev), scratch clones only; numbers
+Spike run 2026-09-21 on one pool tree of that monorepo, scratch clones only; numbers
 above. Design decisions ratified in session: inherit `readyStamp` rather than
 add step scoping; child process for the clone call; members freshen as today
 with hydration only on create; every `onDeck > 0` repo gets a golden.
