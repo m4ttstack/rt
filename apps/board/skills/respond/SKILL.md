@@ -30,7 +30,7 @@ MRs and report status back to the board through its status CLI. This wrapper car
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh run (optional; see "Steps") |
 | `--resumed-gate-kind <kind>` | the `kind` of the gate `--resumed-gate` names (e.g. `respond-post`). Present exactly when `--resumed-gate` is, and the only way to learn it: `--state` is an opaque handle and `gate wait` returns only the answer. |
-| `--round <n>` | the round an earlier pane on this MR last recorded (step 3's `--round` flag on `respond-status`). Present on a parked-gate resume when a prior pane got as far as recording one; absent means round 1, either because this is the MR's first round or because the pane that parked predates this flag. |
+| `--round <n>` | the round to delegate at, carried over from an earlier pane on this MR (step 3's `--round` flag on `respond-status`). Present on a parked-gate resume when a prior pane got as far as recording one, or on a fresh run when the board found a prior recorded round for this MR (a new run responding to a further round of review); absent means round 1, either because this is the MR's first round or because the prior pane predates this flag. |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -149,8 +149,12 @@ conversation.
      - the MR url;
      - the `--report <path>`;
      - the round: `1` on this first delegation, one more for each `revise`
-       re-adjudication (step 5); step 3 records it via `--round` so a
-       parked-then-resumed pane can recover it (see "Parked-gate resume?");
+       re-adjudication (step 5) -- unless this launch itself carries
+       `--round <n>` (a fresh run the board started for an MR with a prior
+       recorded round, e.g. responding to a further round of review), in
+       which case use that `<n>` as this run's round instead of defaulting
+       to 1; step 3 records the round via `--round` so a parked-then-resumed
+       pane can recover it (see "Parked-gate resume?");
      - that this wrapper owns both gates, so it opens neither: it hands
        back instead, including the path of each fitted open file it builds.
 
