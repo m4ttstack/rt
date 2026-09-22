@@ -107,7 +107,7 @@ The isolated-HOME wrapper in Step 4 was dropped: the probe reads no HOME state (
 - Test: `lib/worktree/__tests__/registry-critical.test.ts` (append), `lib/__tests__/rt-paths.test.ts` (append; create if absent)
 
 **Interfaces:**
-- Produces: `TreeKind` gains `"golden"`; `goldenRoot(serializedIdentity: string): string` in `lib/rt-paths.ts` returning `join(rtDir(), "golden", worktreePoolSegment(serializedIdentity))`; constants `GOLDEN_NAME = "golden"` and `GOLDEN_BRANCH = "golden"` exported from `lib/worktree/registry.ts`.
+- Produces: `TreeKind` gains `"golden"`; `goldenRoot(serializedIdentity: string): string` in `lib/rt-paths.ts` returning `join(rtDir(), "golden", worktreePoolSegment(serializedIdentity))`; constants `GOLDEN_NAME = "golden"` and `GOLDEN_BRANCH = "rt/golden"` exported from `lib/worktree/registry.ts` (namespaced so a user's own branch named `golden` is never rt's to delete).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -121,7 +121,7 @@ describe("golden kind", () => {
     const k: TreeKind = "golden";
     expect(k).toBe("golden");
     expect(GOLDEN_NAME).toBe("golden");
-    expect(GOLDEN_BRANCH).toBe("golden");
+    expect(GOLDEN_BRANCH).toBe("rt/golden");
   });
 
   test("a golden record beats a newer unmanaged challenger for the same path", () => {
@@ -161,7 +161,7 @@ Expected: FAIL (`GOLDEN_NAME` not exported; `goldenRoot` not exported; the dedup
 ```ts
 export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
 export const GOLDEN_NAME = "golden";
-export const GOLDEN_BRANCH = "golden";
+export const GOLDEN_BRANCH = "rt/golden";
 ```
 and update the now-stale field comment on `TreeRecord.state` (line 13) from `// ephemeral only` to `// ephemeral and golden only`.
 and
