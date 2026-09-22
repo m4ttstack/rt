@@ -75,7 +75,8 @@ test("restart succeeds only once a different pid answers, and names the turnover
   expect(output()).toContain("111 → 222");
 });
 
-test("restart of a down daemon succeeds when any live pid comes up", async () => {
+test("restart of a confidently-down daemon (no socket file) succeeds when any live pid comes up", async () => {
+  rmSync(DAEMON_SOCK_PATH, { force: true });
   let posted = false;
   fakeSockets({
     trayReply: () => { posted = true; return new Response(JSON.stringify({ ok: true })); },
@@ -85,6 +86,41 @@ test("restart of a down daemon succeeds when any live pid comes up", async () =>
   await restart();
 
   expect(output()).toContain("✓ daemon restarted");
+});
+
+test("a failed baseline probe never converts an unchanged daemon into a ✓", async () => {
+  // The daemon socket exists but the pre-restart probe keeps failing (load,
+  // timeout). The old daemon may still be alive, so a pid answering later
+  // proves nothing — the verdict must be unverified, not success.
+  let calls = 0;
+  fakeSockets({
+    trayReply: () => new Response(JSON.stringify({ ok: true })),
+    pid: () => { calls += 1; return calls <= 3 ? null : 111; },
+  });
+
+  await restart();
+
+  expect(output()).not.toContain("✓ daemon restarted");
+  expect(output().toLowerCase()).toContain("unverified");
+});
+
+test("restart ignores RT_APP_SOCKET when trayQuery's own socket gate said the tray is gone", async () => {
+  process.env.RT_APP_SOCKET = DAEMON_SOCK_PATH;
+  try {
+    rmSync(TRAY_SOCK_PATH, { force: true });
+    let calls = 0;
+    fakeSockets({
+      trayReply: () => new Response(JSON.stringify({ ok: true })),
+      pid: () => { calls += 1; return calls <= 1 ? 111 : 222; },
+    });
+
+    await restart();
+
+    expect(output()).toContain("is not running");
+    expect(output()).not.toContain("✓ daemon restarted");
+  } finally {
+    delete process.env.RT_APP_SOCKET;
+  }
 });
 
 test("a present-but-slow tray still gets a pid-verified verdict, not 'tray not running'", async () => {

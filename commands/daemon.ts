@@ -33,8 +33,10 @@ import {
   RT_DIR,
   LOG_DIR,
   LAUNCHD_PLIST_PATH,
+  DAEMON_SOCK_PATH,
+  TRAY_SOCK_PATH,
 } from "../lib/daemon-config.ts";
-import { daemonQuery, isDaemonRunning, pingDaemon, trayQuery, traySocketPath } from "../lib/daemon-client.ts";
+import { daemonQuery, isDaemonRunning, pingDaemon, trayQuery } from "../lib/daemon-client.ts";
 import { classifyDaemonStatus, type DaemonStatusVerdict } from "../lib/daemon-status.ts";
 import { resolveIntendedMode, currentMode, type IntendedMode } from "../lib/dev-mode.ts";
 import { probeSocketHolder } from "../lib/daemon/park.ts";
@@ -365,8 +367,16 @@ export async function restart(): Promise<void> {
   // The pid is the only honest restart signal: the OLD daemon answers a
   // liveness poll too, so "a daemon is up" proved nothing when the tray
   // silently dropped the op (2026-09-21: three restarts reported ✓ while
-  // the pid never changed).
-  const before = await probeSocketHolder();
+  // the pid never changed). A failed baseline probe with the socket file
+  // present is UNKNOWN, never "down" — the old daemon may just have missed
+  // one probe, and a pid seen later then proves nothing.
+  const sockPresent = existsSync(DAEMON_SOCK_PATH);
+  let before = sockPresent ? await probeSocketHolder() : null;
+  for (let i = 0; sockPresent && !before?.pid && i < 2; i++) {
+    await Bun.sleep(RESTART_POLL.intervalMs);
+    before = await probeSocketHolder();
+  }
+  const baselineUnknown = sockPresent && !before?.pid;
   const result = await trayQuery("/daemon/restart", "POST");
   if (result && !result.ok) {
     console.log(`\n  ${yellow}⚠ restart failed in the tray${reset}`);
@@ -375,8 +385,10 @@ export async function restart(): Promise<void> {
   }
   // The tray replies after the op completes, so a slow op can outlive the
   // request timeout. Its socket existing means the tray is there; the pid
-  // poll below still decides the truth. Only a missing socket means gone.
-  if (!result && !existsSync(traySocketPath())) {
+  // poll below still decides the truth. Only a missing socket means gone —
+  // the same TRAY_SOCK_PATH trayQuery itself gates on, so "no reply" and
+  // "no tray" can never disagree about which socket they mean.
+  if (!result && !existsSync(TRAY_SOCK_PATH)) {
     console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running${reset}`);
     console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(intended)}${reset}\n`);
     return;
@@ -387,6 +399,11 @@ export async function restart(): Promise<void> {
     const now = await probeSocketHolder();
     if (!now?.pid) continue;
     if (before?.pid && now.pid === before.pid) continue;
+    if (baselineUnknown) {
+      console.log(`\n  ${yellow}⚠ a daemon answers as pid ${now.pid}, but the pre-restart pid could not be read — restart unverified${reset}`);
+      console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
+      return;
+    }
     if (!(await warnIfWrongFlavor("restart", intended))) {
       console.log(`\n  ${green}✓ daemon restarted${reset} ${dim}(pid ${before?.pid ?? "down"} → ${now.pid})${reset}\n`);
     }

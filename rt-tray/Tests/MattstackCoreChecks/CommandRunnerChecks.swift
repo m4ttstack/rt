@@ -106,10 +106,13 @@ let commandRunnerChecks: [Check] = [
             await spinUntil(c, "the deadline to arm") { clock.armedDelays.contains(30) }
             clock.fire(30)
             await spinUntil(c, "the kill to land") { fake.killCount == 1 }
+            // The real backend's termination handler fires after SIGKILL with
+            // the signal status; it must not overwrite the timeout code.
+            fake.exit(9)
             clock.fire(2)
         }
         c.expect(!out.ok, "a killed child must not read as success")
-        c.expectEqual(out.exitCode, 124)
+        c.expectEqual(out.exitCode, 124, "the SIGKILL's own termination status must not mask the timeout")
         c.expect(out.stderr.contains("timed out"), "stderr must say the command timed out, got: \(out.stderr)")
         c.expectEqual(fake.killCount, 1)
     },

@@ -99,7 +99,7 @@ public enum SpawnDriver {
             schedule(timeout) {
                 if state.markTimedOut(), backend.isRunning {
                     state.appendErr(Data("command timed out after \(Int(timeout))s; killed\n".utf8))
-                    state.setExitCode(124)
+                    state.latchTimeoutCode()
                     backend.forceKill()
                 }
                 schedule(eofGrace) { settle() }
@@ -125,12 +125,25 @@ private final class SpawnState: @unchecked Sendable {
     private var code: Int32 = 127
     private var resumed = false
     private var timedOut = false
+    private var codeLatched = false
     /// stdout EOF + stderr EOF + exit; all three in means fully drained.
     private var pending = 3
 
     func appendOut(_ d: Data) { lock.lock(); outData.append(d); lock.unlock() }
     func appendErr(_ d: Data) { lock.lock(); errData.append(d); lock.unlock() }
-    func setExitCode(_ c: Int32) { lock.lock(); code = c; lock.unlock() }
+    func setExitCode(_ c: Int32) {
+        lock.lock(); defer { lock.unlock() }
+        // After a timeout kill, the SIGKILL's own termination status must not
+        // mask the 124 that says why the child died.
+        if codeLatched { return }
+        code = c
+    }
+    /// 124, held against the exit status the kill itself produces.
+    func latchTimeoutCode() {
+        lock.lock(); defer { lock.unlock() }
+        codeLatched = true
+        code = 124
+    }
     /// Returns true when this was the last outstanding leaf.
     func leave() -> Bool {
         lock.lock(); defer { lock.unlock() }

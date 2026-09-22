@@ -86,11 +86,13 @@ public actor DaemonLifecycleGate {
     private var holderLabel = ""
 
     /// A body still running this long past acquire is abandoned: the gate
-    /// logs it, reports failure, and frees the slot. Generous on purpose —
-    /// every spawn under it has its own tighter timeout, so only something
-    /// stuck beyond all inner bounds is ever abandoned, and an abandoned
-    /// body finishing late runs beside at most one live op instead of
-    /// wedging every restart forever (2026-09-21).
+    /// logs it, reports failure, and frees the slot. INVARIANT: this must
+    /// exceed the longest legitimate body — restart's fallback chains two
+    /// 60s-bounded kickstarts plus register/unregister — so only something
+    /// stuck beyond every inner bound is ever abandoned. Abandoning does
+    /// trade serialization for liveness (a late body may run beside one
+    /// live op), but holding the slot instead is how three restarts
+    /// vanished into a wedged gate forever (2026-09-21).
     private let deadline: TimeInterval
     private nonisolated let observer: DaemonGateObserver?
 
@@ -99,7 +101,7 @@ public actor DaemonLifecycleGate {
     public var startJoinerCount: Int { startJoiners.count }
     public var waiterCount: Int { waiters.count }
 
-    public init(deadline: TimeInterval = 120, observer: DaemonGateObserver? = nil) {
+    public init(deadline: TimeInterval = 300, observer: DaemonGateObserver? = nil) {
         self.deadline = deadline
         self.observer = observer
     }
