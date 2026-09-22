@@ -165,4 +165,68 @@ describe("freshen.ts: freshenRepo", () => {
     expect(after.find((t) => t.name === m.tree.name)?.readyStamp).toBe(newSha);
     expect(existsSync(join(g.tree.path, ".freshened"))).toBe(true);
   });
+
+  test("a fetch failure backs off but does not mark the tree inconsistent", async () => {
+    saveRegistry(repoName, [
+      { name: "golden", path: repo, kind: "golden", state: "on-deck", branch: "main", createdAt: new Date().toISOString(), readyStamp: (await headSha(repo))! },
+    ]);
+    execSync(`git -C ${repo} remote set-url origin /no/such/origin`, { shell: "/bin/zsh" });
+
+    const ran = await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    expect(ran).toEqual([]);
+    const rec = loadRegistry(repoName).find((t) => t.path === repo)!;
+    expect(rec.retryFailures).toBe(1);
+    expect(rec.nextRetryAt).toBeTruthy();
+    expect(rec.treeMayBeInconsistent).toBeUndefined();
+  });
+
+  test("a ready step failure marks the tree inconsistent", async () => {
+    const baseSha = await headSha(repo);
+    saveRegistry(repoName, [
+      { name: "golden", path: repo, kind: "golden", state: "on-deck", branch: "main", createdAt: new Date().toISOString(), readyStamp: baseSha! },
+    ]);
+    await declareWorktrees(repo, repoName, {
+      onDeck: 1,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: "exit 1", when: "changed:tracked.txt" }],
+    });
+    const clone = cloneOrigin(repo);
+    pushFile(clone, "tracked.txt", "bump\n");
+
+    const ran = await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    expect(ran).toEqual([]);
+    const rec = loadRegistry(repoName).find((t) => t.path === repo)!;
+    expect(rec.retryFailures).toBe(1);
+    expect(rec.treeMayBeInconsistent).toBe(true);
+  });
+
+  test("a successful freshen clears a prior inconsistency flag along with retryFailures and nextRetryAt", async () => {
+    const baseSha = await headSha(repo);
+    saveRegistry(repoName, [
+      {
+        name: "golden", path: repo, kind: "golden", state: "on-deck", branch: "main",
+        createdAt: new Date().toISOString(), readyStamp: baseSha!,
+        retryFailures: 2, nextRetryAt: new Date(Date.now() + 60_000).toISOString(), treeMayBeInconsistent: true,
+      },
+    ]);
+    await declareWorktrees(repo, repoName, {
+      onDeck: 1,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: "touch .freshened", when: "changed:tracked.txt" }],
+    });
+    const clone = cloneOrigin(repo);
+    pushFile(clone, "tracked.txt", "bump\n");
+
+    // An explicit `only` bypasses the nextRetryAt gate, same as a human
+    // asking for this one tree by name.
+    const ran = await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() }, { only: "golden" });
+
+    expect(ran).toEqual(["golden"]);
+    const rec = loadRegistry(repoName).find((t) => t.path === repo)!;
+    expect(rec.retryFailures).toBe(0);
+    expect(rec.nextRetryAt).toBeUndefined();
+    expect(rec.treeMayBeInconsistent).toBeUndefined();
+  });
 });

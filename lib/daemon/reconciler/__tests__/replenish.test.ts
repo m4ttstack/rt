@@ -23,6 +23,7 @@ import {
   findGolden,
   nearestExisting,
 } from "../replenish.ts";
+import { freshenRepo } from "../freshen.ts";
 
 function onDeckEntry(path: string, overrides: Partial<TreeRecord> = {}): TreeRecord {
   return {
@@ -259,14 +260,26 @@ describe("replenish.ts: chooseCreateMode", () => {
   test("creating golden is cold", () => {
     expect(chooseCreateMode([{ ...golden, state: "creating" }], "/pool", now, same).mode).toBe("cold");
   });
-  test("golden in backoff is cold", () => {
-    expect(chooseCreateMode([{ ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" }], "/pool", now, same).mode).toBe("cold");
-  });
   test("golden without readyStamp is cold", () => {
     expect(chooseCreateMode([{ ...golden, readyStamp: undefined }], "/pool", now, same).mode).toBe("cold");
   });
-  test("a golden with recorded failures is cold even with no live backoff deadline", () => {
-    expect(chooseCreateMode([{ ...golden, retryFailures: 1 }], "/pool", now, same).mode).toBe("cold");
+  test("a golden marked inconsistent by a freshen failure is cold", () => {
+    expect(chooseCreateMode([{ ...golden, treeMayBeInconsistent: true }], "/pool", now, same).mode).toBe("cold");
+  });
+  // A fetch failure (or any freshen failure that never touched the working
+  // tree) still bumps retryFailures/nextRetryAt for freshen's own retry
+  // schedule; neither field says anything about donor fitness on its own.
+  test("a golden with a future nextRetryAt but no inconsistency flag still hydrates", () => {
+    expect(chooseCreateMode([{ ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" }], "/pool", now, same)).toEqual({
+      mode: "hydrate",
+      golden: { ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" },
+    });
+  });
+  test("a golden with recorded retryFailures but no inconsistency flag still hydrates (the fetch-failure case)", () => {
+    expect(chooseCreateMode([{ ...golden, retryFailures: 3 }], "/pool", now, same)).toEqual({
+      mode: "hydrate",
+      golden: { ...golden, retryFailures: 3 },
+    });
   });
   test("different volume is cold", () => {
     expect(chooseCreateMode([golden], "/pool", now, () => false)).toEqual({ mode: "cold", why: "golden and pool root are on different volumes" });
@@ -504,6 +517,56 @@ describe("replenish.ts: golden lifecycle", () => {
     expect(backoff.get(repoName)?.failures).toBe(1);
     expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
     expect(findGolden(loadRegistry(repoName))?.path).toBe(golden.path);
+  });
+
+  test("a golden whose freshen failed at the fetch is still a donor: hydration survives an upstream outage", async () => {
+    // Reproduces the production incident: a rate-limited remote fails every
+    // fetch, so the golden's own freshen fails, and the pool must still
+    // refill by hydration, since that path needs no network at all.
+    const golden = await passOneWithArtifact();
+    execSync(`git -C ${repo} remote set-url origin /no/such/origin`, { shell: "/bin/zsh" });
+
+    await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    const afterFreshen = findGolden(loadRegistry(repoName))!;
+    expect(afterFreshen.retryFailures).toBeGreaterThan(0);
+    expect(afterFreshen.treeMayBeInconsistent).toBeUndefined();
+
+    const created: Created[] = [];
+    await replenishAndShrink(deps(inProcessClone, created), new Map(), fakeAppConfig());
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBe(golden.name);
+  });
+
+  test("a golden marked inconsistent by a prior freshen failure is refused as a donor; the caller cold-creates", async () => {
+    await passOneWithArtifact();
+    const trees = loadRegistry(repoName);
+    saveRegistry(repoName, trees.map((t) => (t.kind === "golden" ? { ...t, treeMayBeInconsistent: true } : t)));
+
+    const created: Created[] = [];
+    await replenishAndShrink(deps(inProcessClone, created), new Map(), fakeAppConfig());
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBeUndefined();
+  });
+
+  test("a golden that failed once and then freshened cleanly is a donor again", async () => {
+    const golden = await passOneWithArtifact();
+    const trees = loadRegistry(repoName);
+    saveRegistry(repoName, trees.map((t) => (t.kind === "golden"
+      ? { ...t, retryFailures: 2, nextRetryAt: new Date(Date.now() + 60_000).toISOString(), treeMayBeInconsistent: true }
+      : t)));
+
+    await freshenRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() }, { only: golden.name });
+    const afterFreshen = findGolden(loadRegistry(repoName))!;
+    expect(afterFreshen.retryFailures).toBe(0);
+    expect(afterFreshen.treeMayBeInconsistent).toBeUndefined();
+
+    const created: Created[] = [];
+    await replenishAndShrink(deps(inProcessClone, created), new Map(), fakeAppConfig());
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBe(golden.name);
   });
 
   test("onDeck 0 scraps the golden and nothing else", async () => {

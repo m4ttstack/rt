@@ -288,4 +288,15 @@ describe("hydrateTree", () => {
     expect(result).toEqual({ ok: false, error: "hydrate-unavailable", detail: "golden is gone or has no readyStamp" });
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
   });
+
+  test("a golden marked inconsistent between the caller's read and the donor lock is hydrate-unavailable", async () => {
+    const staleGolden = { ...golden };
+    saveRegistry(repoName, loadRegistry(repoName).map((t) =>
+      t.path === golden.path ? { ...t, treeMayBeInconsistent: true } : t,
+    ));
+
+    const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden: staleGolden, clone: inProcessClone });
+    expect(result).toEqual({ ok: false, error: "hydrate-unavailable", detail: "golden may be inconsistent with its readyStamp" });
+    expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
+  });
 });
