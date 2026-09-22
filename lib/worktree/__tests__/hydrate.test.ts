@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
 import { execSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -8,6 +8,7 @@ import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { loadRegistry, type TreeRecord } from "../registry.ts";
 import { listWorktreesAsync, branchExistsLocalAsync } from "../git-async.ts";
+import * as gitAsync from "../git-async.ts";
 import { createTree, type CreateDeps } from "../create.ts";
 import { isTreeLocked, tryLockTree } from "../locks.ts";
 import { hydrateTree, parseIgnoredPaths, listIgnoredPaths, type CloneRunner } from "../hydrate.ts";
@@ -202,6 +203,27 @@ describe("hydrateTree", () => {
     expect(result.ok).toBe(true);
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every(Boolean)).toBe(true);
+  });
+
+  test("the enumeration step itself runs under the donor lock, not just the clone loop after it", async () => {
+    // The prior test only watches the clone runner, so a lock scoped to just
+    // the clone loop (enumeration run before withTreeLock) would still pass
+    // it. Watch the enumeration's own git call (`status --ignored`) instead.
+    const realRunGit = gitAsync.runGit;
+    const observed: { enumerationWasLocked: boolean | null } = { enumerationWasLocked: null };
+    const spy = spyOn(gitAsync, "runGit").mockImplementation(async (cwd, args, opts) => {
+      if (args[0] === "status" && args.includes("--ignored")) {
+        observed.enumerationWasLocked = isTreeLocked(golden.path);
+      }
+      return realRunGit(cwd, args, opts);
+    });
+    try {
+      const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden, clone: inProcessClone });
+      expect(result.ok).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(observed.enumerationWasLocked).toBe(true);
   });
 
   test("a donor already locked by another pass is a hydrate failure, not a torn clone", async () => {
