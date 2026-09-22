@@ -271,7 +271,7 @@ history.
 ## Testing
 
 - `parseGateCtx` unit tests: every shape's valid form, prose, malformed
-  JSON, unknown shape tag, missing required fields, unknown extra keys
+  JSON, unknown shape tag, missing or wrong-typed required fields, unknown extra keys
   (accepted) -- everything non-conforming returns `null`.
 - Renderer tests per face: thread card for each severity and each
   `reply.kind`; header card for both kinds; respond-post join by thread
