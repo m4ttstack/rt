@@ -132,6 +132,9 @@ async function runHydrate(
     if (!freshGolden || freshGolden.kind !== "golden" || !freshGolden.readyStamp) {
       return { kind: "unavailable", detail: "golden is gone or has no readyStamp" };
     }
+    if (freshGolden.treeMayBeInconsistent) {
+      return { kind: "unavailable", detail: "golden may be inconsistent with its readyStamp" };
+    }
     const readyStamp = freshGolden.readyStamp;
 
     const add = await runGit(repoPath, ["worktree", "add", "-b", branch, path, readyStamp], { timeoutMs: ADD_TIMEOUT_MS });
