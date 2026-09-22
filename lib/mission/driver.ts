@@ -18,6 +18,7 @@ import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.t
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
+import { canon } from "../fs-canon.ts";
 import type { getPullRebase, getRemoteDefaultBranch } from "../git-ops.ts";
 import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
@@ -189,6 +190,8 @@ export class MissionDriver {
   private trees: WorktreeTreeRow[] = [];
   /** Cached by refresh(); null means git's own listing failed (see MissionDeps.listGitWorktrees). */
   private gitWorktrees: WorktreeEntry[] | null = null;
+  /** Registry path -> realpath, computed in refresh() so model() never touches the filesystem. */
+  private treeCanon = new Map<string, string>();
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
   private branches: BranchInfo[] = [];
   private stashCount = 0;
@@ -330,7 +333,7 @@ export class MissionDriver {
   }
 
   private worktreeRows(): WorktreeRow[] {
-    return joinWorktreeRows(mergeWorktreeTrees(this.trees, this.gitWorktrees, this.state.currentRepo), this.currentRepoBadges());
+    return joinWorktreeRows(mergeWorktreeTrees(this.trees, this.gitWorktrees, this.state.currentRepo, (path) => this.treeCanon.get(path) ?? path), this.currentRepoBadges());
   }
 
   private currentRepoBadges(): GitWorktreeBadge[] {
@@ -399,6 +402,7 @@ export class MissionDriver {
     ]);
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
+    this.treeCanon = new Map(this.trees.map((tree) => [tree.path, canon(tree.path)]));
     this.snapshot = snapshot;
     this.remoteName = remotes[0]?.name ?? null;
     this.guards = guards;
