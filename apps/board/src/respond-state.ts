@@ -147,6 +147,19 @@ export function respondResumeDispatchFields(
   return { round: state?.round };
 }
 
+/** The extra fields a FRESH respond launch's dispatch prompt carries: when a
+    prior run on this MR (e.g. an earlier round-2 pass) recorded a round, the
+    next fresh delegation is one more than that, not round 1 -- otherwise the
+    wrapper's own "1, then +1 per revise" rule (SKILL.md step 2) restarts at 1
+    on every new run and every gate header chip reads round 1 forever. Absent
+    prior round (no prior run, or one that predates this field) omits the
+    flag, same as respondResumeDispatchFields. */
+export function respondFreshDispatchFields(
+  state: Pick<RespondState, 'round'> | undefined
+): { round?: number } {
+  return { round: state?.round !== undefined ? state.round + 1 : undefined };
+}
+
 export function readRespondStates(
   db: Database = getStateDb()
 ): Map<string, RespondState> {

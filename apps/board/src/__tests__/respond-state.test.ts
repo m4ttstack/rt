@@ -9,6 +9,7 @@ import {
   readRespondReport,
   readRespondStates,
   respondFilePath,
+  respondFreshDispatchFields,
   respondReportPath,
   respondResumeDispatchFields,
   writeRespondState,
@@ -128,6 +129,24 @@ describe('respondResumeDispatchFields', () => {
 
   test('a state with no round on file (pre-upgrade) resumes with round omitted', () => {
     expect(respondResumeDispatchFields(undefined)).toEqual({
+      round: undefined,
+    });
+  });
+});
+
+describe('respondFreshDispatchFields', () => {
+  test('a prior round on file bumps to the next round for the fresh launch', () => {
+    expect(respondFreshDispatchFields({ round: 2 })).toEqual({ round: 3 });
+  });
+
+  test('no prior state (first-ever run on this MR) omits the flag', () => {
+    expect(respondFreshDispatchFields(undefined)).toEqual({
+      round: undefined,
+    });
+  });
+
+  test('a prior state with no round on file (pre-upgrade) omits the flag', () => {
+    expect(respondFreshDispatchFields({ round: undefined })).toEqual({
       round: undefined,
     });
   });
