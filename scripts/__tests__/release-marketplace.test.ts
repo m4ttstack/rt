@@ -319,8 +319,8 @@ describe("the catalog this repo actually publishes", () => {
     expect(doc.name).toBe("mattstack");
   });
 
-  test("carries every plugin plugins.install treats as baseline", () => {
-    const base = BASE_PLUGINS.map((entry) => entry.split("@")[0]);
+  test("carries every baseline plugin plugins.install takes from this catalog", () => {
+    const base = BASE_PLUGINS.filter((entry) => entry.endsWith("@mattstack")).map((entry) => entry.split("@")[0]);
     expect(base.length).toBeGreaterThan(0);
     const listed = doc.plugins.map((p: { name: string }) => p.name);
     for (const name of base) expect(listed).toContain(name);

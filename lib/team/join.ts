@@ -25,10 +25,12 @@ import { createRealSecretsExecSeam, validateSlug, writeSecret } from "../secrets
 import type { SecretsSeams } from "../secrets/store.ts";
 import { readTeamSecret } from "../secrets/team-store.ts";
 import { UserActionableError } from "../setup/errors.ts";
+import { isValidHttpsUrl } from "../setup/host-validate.ts";
 import { clearIntent, readIntent, writeIntent, type InvitePointer } from "../setup/intent.ts";
 import type { ExecResult, Probes } from "../setup/probes.ts";
 import { forgeFromRemote, parseOriginUrl, readTeamSnapshot, readUserIntegrationOverrides, stripUserinfo, type SettingsReader } from "../setup/team-settings.ts";
 import { getSetting } from "../settings/resolve.ts";
+import { setSetting } from "../settings/write.ts";
 import { forgeLogin } from "./forge.ts";
 import { gitWithToken } from "./git-credential.ts";
 import { decodeCode, open, sealReply } from "./invite-crypto.ts";
@@ -252,6 +254,8 @@ export interface JoinRedeemSeams {
   forgeToken: (p: Probes, remote: string) => Promise<string | null>;
   /** Stores a per-member secret in the LOCAL rt domain (never the team store): the switchboard board token belongs to this machine's member alone. */
   writeLocalSecret: (key: string, value: string) => Promise<void>;
+  /** Machine-scope settings write. The board reads its switchboard URL only from `board.switchboardUrl`, so a stored token with no URL there peers nothing. */
+  writeMachineSetting: (key: string, value: unknown) => void;
   warn: (message: string) => void;
 }
 
@@ -270,6 +274,17 @@ function defaultWarn(message: string): void {
   console.error(message);
 }
 
+/** Writes the URL the stored switchboard token belongs to where the board looks for it. False (with a warning) when the write fails, so peering is never reported applied for a board that cannot reach its switchboard. */
+function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
+  try {
+    seams.writeMachineSetting("board.switchboardUrl", url);
+    return true;
+  } catch (err) {
+    seams.warn(`board peering: stored the switchboard token but could not set board.switchboardUrl (${err instanceof Error ? err.message : String(err)})`);
+    return false;
+  }
+}
+
 export function realJoinRedeemSeams(): JoinRedeemSeams {
   const ageKeySeam = createRealAgeKeySeam();
   return {
@@ -279,6 +294,7 @@ export function realJoinRedeemSeams(): JoinRedeemSeams {
     forgeLogin,
     forgeToken: storedForgeToken,
     writeLocalSecret: (key, value) => writeSecret("rt", key, value, { ageKeySeam, execSeam: createRealSecretsExecSeam() }),
+    writeMachineSetting: (key, value) => setSetting(key, value, "machine"),
     warn: defaultWarn,
   };
 }
@@ -450,12 +466,19 @@ export async function joinRedeem(
   }
 
   let peering: JoinResult["peering"] = "idle";
+  let peeringFix = "ask the owner to re-invite your board from the board's members panel";
   // Only the team's OWN declared switchboard is ever trusted: the pointer is
   // invite-supplied, so its url must never receive the admin token (SSRF) and
   // its token must never be stored against a different switchboard than the
   // one the board will actually call.
   const declaredUrl = snapshot.integrations.switchboard?.url;
-  if (pointer.switchboard?.token) {
+  // Team-declared, so unverified: a non-https URL would carry the admin token
+  // in cleartext, and the board refuses to boot on one once it is stored.
+  if (declaredUrl && !isValidHttpsUrl(declaredUrl)) {
+    peering = "unavailable";
+    peeringFix = "the team's switchboard URL must be https, so the owner has to fix it in the team settings";
+    seams.warn(`board peering: the team declares switchboard "${declaredUrl}", which is not an https URL; skipping peering`);
+  } else if (pointer.switchboard?.token) {
     // The owner pre-minted this board's token at invite time (a fresh joiner
     // cannot decrypt team secrets yet, so the sealed pointer is the only
     // channel that works on a first join). Storing it is all peering needs.
@@ -463,7 +486,8 @@ export async function joinRedeem(
     if (declaredUrl && pointer.switchboard.url === declaredUrl) {
       try {
         await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
-        peering = "applied";
+        if (pointBoardAt(seams, declaredUrl)) peering = "applied";
+        else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
       } catch (err) {
         seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
       }
@@ -495,7 +519,8 @@ export async function joinRedeem(
           }
           if (typeof token === "string" && token) {
             await seams.writeLocalSecret("switchboardToken", token);
-            peering = "applied";
+            if (pointBoardAt(seams, declaredUrl)) peering = "applied";
+            else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
           }
         }
       }
@@ -532,7 +557,7 @@ export async function joinRedeem(
   clearIntent(p);
   const peeringHint =
     peering === "unavailable"
-      ? "; board peering could not be set up automatically... ask the owner to re-invite your board from the board's members panel"
+      ? `; board peering could not be set up automatically... ${peeringFix}`
       : "";
   return { team: teamRefFrom(pointer), access: "ok", peering, message: `Joined ${pointer.name} (owner ${pointer.owner})${peeringHint}`, intent: "written" };
 }
