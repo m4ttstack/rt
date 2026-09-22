@@ -34,7 +34,7 @@ import {
   LOG_DIR,
   LAUNCHD_PLIST_PATH,
 } from "../lib/daemon-config.ts";
-import { daemonQuery, isDaemonRunning, pingDaemon, trayQuery } from "../lib/daemon-client.ts";
+import { daemonQuery, isDaemonRunning, pingDaemon, trayQuery, traySocketPath } from "../lib/daemon-client.ts";
 import { classifyDaemonStatus, type DaemonStatusVerdict } from "../lib/daemon-status.ts";
 import { resolveIntendedMode, currentMode, type IntendedMode } from "../lib/dev-mode.ts";
 import { probeSocketHolder } from "../lib/daemon/park.ts";
@@ -347,23 +347,46 @@ export async function stop(): Promise<void> {
   console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running — nothing to stop${reset}\n`);
 }
 
+/** Test seam: the poll cadence for restart's pid-turnover wait. */
+export const RESTART_POLL = { intervalMs: 500, attempts: 16 };
+
 export async function restart(): Promise<void> {
   const intended = resolveIntendedMode();
+  // The pid is the only honest restart signal: the OLD daemon answers a
+  // liveness poll too, so "a daemon is up" proved nothing when the tray
+  // silently dropped the op (2026-09-21: three restarts reported ✓ while
+  // the pid never changed).
+  const before = await probeSocketHolder();
   const result = await trayQuery("/daemon/restart", "POST");
-  if (!result?.ok) {
+  if (result && !result.ok) {
+    console.log(`\n  ${yellow}⚠ restart failed in the tray${reset}`);
+    console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
+    return;
+  }
+  // The tray replies after the op completes, so a slow op can outlive the
+  // request timeout. Its socket existing means the tray is there; the pid
+  // poll below still decides the truth. Only a missing socket means gone.
+  if (!result && !existsSync(traySocketPath())) {
     console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running${reset}`);
     console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(intended)}${reset}\n`);
     return;
   }
   console.log(`  ${dim}restarting ${intended.mode} daemon via tray…${reset}`);
-  for (let i = 0; i < 16; i++) {
-    await Bun.sleep(500);
-    if (await isDaemonRunning()) {
-      if (!(await warnIfWrongFlavor("restart", intended))) {
-        console.log(`\n  ${green}✓ daemon restarted${reset}\n`);
-      }
-      return;
+  for (let i = 0; i < RESTART_POLL.attempts; i++) {
+    await Bun.sleep(RESTART_POLL.intervalMs);
+    const now = await probeSocketHolder();
+    if (!now?.pid) continue;
+    if (before?.pid && now.pid === before.pid) continue;
+    if (!(await warnIfWrongFlavor("restart", intended))) {
+      console.log(`\n  ${green}✓ daemon restarted${reset} ${dim}(pid ${before?.pid ?? "down"} → ${now.pid})${reset}\n`);
     }
+    return;
+  }
+  const still = await probeSocketHolder();
+  if (before?.pid && still?.pid === before.pid) {
+    console.log(`\n  ${yellow}⚠ restart did not happen — the daemon still answers as pid ${still.pid}${reset}`);
+    console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
+    return;
   }
   console.log(`\n  ${yellow}daemon restarting… check logs: rt daemon logs${reset}\n`);
 }
