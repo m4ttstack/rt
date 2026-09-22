@@ -7,7 +7,7 @@ import { machineSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { loadRegistry, type TreeRecord } from "../registry.ts";
-import { listWorktreesAsync } from "../git-async.ts";
+import { listWorktreesAsync, branchExistsLocalAsync } from "../git-async.ts";
 import { createTree, type CreateDeps } from "../create.ts";
 import { isTreeLocked, tryLockTree } from "../locks.ts";
 import { hydrateTree, parseIgnoredPaths, listIgnoredPaths, type CloneRunner } from "../hydrate.ts";
@@ -168,12 +168,18 @@ describe("hydrateTree", () => {
   });
 
   test("clone exit 3 reports hydrate-unavailable and scraps the half-built tree", async () => {
+    // A fixed namePool makes the branch name deterministic: `git worktree
+    // list` (used below) only shows branches still attached to a live
+    // worktree, so it cannot tell a deleted branch from one whose ref
+    // survived the scrap. Only a direct ref check can.
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "touch .ready-ran" }], namePool: ["fixedname"] });
     const exdev: CloneRunner = async () => ({ exitCode: 3, stderr: "clonefile: Cross-device link" });
     const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden, clone: exdev });
     expect(result).toEqual({ ok: false, error: "hydrate-unavailable", detail: "clonefile: Cross-device link" });
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
     const wts = (await listWorktreesAsync(repo))!;
     expect(wts.some((w) => w.branch?.startsWith("on-deck/"))).toBe(false);
+    expect(await branchExistsLocalAsync(repo, "on-deck/fixedname")).toBe(false);
   });
 
   test("clone exit 1 is create-failed with the step named and scraps", async () => {
@@ -199,6 +205,7 @@ describe("hydrateTree", () => {
   });
 
   test("a donor already locked by another pass is a hydrate failure, not a torn clone", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "touch .ready-ran" }], namePool: ["fixedname"] });
     const release = tryLockTree(golden.path);
     expect(release).not.toBeNull();
     let result;
@@ -212,6 +219,11 @@ describe("hydrateTree", () => {
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
     const wts = (await listWorktreesAsync(repo))!;
     expect(wts.some((w) => w.branch?.startsWith("on-deck/"))).toBe(false);
+    // `git worktree add -b` runs before the donor lock is even checked, so
+    // the branch really was created and then had to be deleted on the way
+    // out; `git worktree list` cannot see that ref once its worktree is
+    // gone, so only the direct check proves the delete happened.
+    expect(await branchExistsLocalAsync(repo, "on-deck/fixedname")).toBe(false);
   });
 
   test("a golden without readyStamp is refused before any git mutation", async () => {
