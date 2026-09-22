@@ -50,9 +50,22 @@ not a mystery.
 
 Hues: accent, ok, bad, warn, gold, purple, cyan (Mantine names:
 accent/ok/bad/warn/gold/purple/cyan; virtual aliases blue/green/red/
-yellow/violet map onto them).
+yellow/violet map onto them). "Amber-ish / attention" is `warn`; `gold`
+is a distinct hue, not warn's synonym.
 
-The four rules that prevent 90% of improvisation:
+Three consumption surfaces are sanctioned, all fed by the same values:
+
+- the `--tk-*` custom properties above (CSS and inline styles);
+- the app-kit scheme-colors hook (`useSchemeColors`) and the `--ui-*`
+  variables it wraps, for component code that wants named roles;
+- the Mantine virtual-colour variables (`--mantine-color-<hue>-light`,
+  `-filled`, `-text`, ...) and `color="<hue>"` props on Mantine
+  components.
+
+Pick whichever the surrounding file already uses; they agree with each
+other. Anything not in these three families is improvisation.
+
+The five rules that prevent 90% of improvisation:
 
 1. Text on a tint or surface: `--tk-text-*` by size band, never a fill
    token, never a step you picked yourself.
@@ -60,6 +73,16 @@ The four rules that prevent 90% of improvisation:
    "looks fine".
 3. A glyph that carries status: `-vivid`, judged at the 3.0 glyph bar.
 4. No raw colour values in app code, ever. The lint gate agrees.
+5. Never print a raw hex "equivalent" either -- not "for a design tool",
+   not "in case you need it", not as a commented alternative. Snippets
+   get pasted whole; an aside hex becomes shipped colour. Point at the
+   token name and, for design tools, at `values.ts` as the place to read
+   a current value.
+
+Mantine's own colour conveniences are off-system: `c="dimmed"`,
+`--mantine-color-dimmed`, and the stock gray scale do not track these
+ramps. Muted text is `--tk-text-3` / `--tk-text-4` (or the scheme-colors
+hook's muted role above), nothing else.
 
 ## The contrast gates
 
