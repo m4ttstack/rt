@@ -41,6 +41,8 @@ import {
 } from "./reconciler/freshen.ts";
 import {
   withCreateLock,
+  buildMember,
+  sameDev,
   replenishAndShrink,
   poolCounts,
   createBackoff,
@@ -54,7 +56,7 @@ import type { RunningRunScan } from "../runs/store.ts";
 export type { ReconcileDeps } from "./reconciler/reconcile.ts";
 export type { ReactorDeps } from "./reconciler/reactor.ts";
 export type { FreshenDeps } from "./reconciler/freshen.ts";
-export { reconcileRepo, reconcileRepoRegistry, detectTransitions, freshenRepo, withCreateLock };
+export { reconcileRepo, reconcileRepoRegistry, detectTransitions, freshenRepo, withCreateLock, buildMember, sameDev };
 
 export interface ReconcilerDeps {
   cache: { entries: Record<string, any> };
