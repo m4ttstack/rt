@@ -34,9 +34,21 @@ old gates keep rendering through the prose path. The contract lives in a
 typed parser on the consumer side, not in the transport.
 
 A context string parses as structured when it is a JSON object whose
-`"gate-ctx"` key equals `1`. Anything else -- old gates, other gate kinds,
-foreign senders -- renders exactly as today. The prose parser
-(`gate-context.ts`) stays for review gates; nothing about them changes.
+`"gate-ctx"` key names a known shape: `"plan@1"`, `"post@1"`,
+`"thread@1"`, or `"replies@1"`. The key is both the discriminant and the
+version; four payloads share a wire without structural sniffing. Anything
+else -- old gates, other gate kinds, foreign senders, unknown shapes --
+renders exactly as today. The prose parser (`gate-context.ts`) stays for
+review gates; nothing about them changes.
+
+Parsing rules, per shape:
+
+- Unknown keys are ignored. Additive fields never bump the version; a
+  version bumps only when an existing field changes meaning or type.
+- A missing or wrong-typed REQUIRED field fails the whole parse: the
+  context renders as prose. There are no partial parses.
+- `parseGateCtx(context)` returns a discriminated union tagged by shape,
+  or `null`. It has no size limit of its own; the transport owns size.
 
 ## The gate-ctx@1 contract
 
@@ -47,27 +59,34 @@ gate to its MR row by subject (`mr:<url>`), so MR title, branch, ticket,
 and author never appear in the payload.
 
 ```json
-{"gate-ctx": 1,
+{"gate-ctx": "plan@1",
  "reviewer": "renee",
  "round": 1,
  "threads": {"total": 2, "blocking": 1},
- "adjudication": "fresh-context (opus), all valid"}
+ "adjudication": "both valid · fresh-context adjudicated"}
 ```
 
 respond-post adds the posting state instead of `threads`:
 
 ```json
-{"gate-ctx": 1,
+{"gate-ctx": "post@1",
  "reviewer": "renee",
  "round": 1,
  "replies": 2,
  "fixes": [{"sha": "ab12cd3"}]}
 ```
 
+Required: `reviewer`; `threads.total` (plan) / `replies` (post). Optional:
+`round`, `adjudication`, `threads.blocking` (absent reads as 0), `fixes`.
+`adjudication` is a display string the header chip renders verbatim.
+
+```json
+```
+
 ### Per-thread question context (respond-plan)
 
 ```json
-{"gate-ctx": 1,
+{"gate-ctx": "thread@1",
  "author": "renee",
  "severity": "blocking",
  "claim": {
@@ -92,6 +111,13 @@ respond-post adds the posting state instead of `threads`:
   `"direction"` (the reply exists only as intent so far), or `"none"`
   (nothing will be posted -- e.g. a fix whose reply finalizes later, or a
   skip-recommended thread). `text` is required unless `kind` is `"none"`.
+- Required: `author`, `severity`, `claim.summary`, `verdict.call`,
+  `reply.kind`, and `reply.text` unless `reply.kind` is `"none"`.
+  Optional: `claim.points` (absent reads as empty), `verdict.note`.
+- The thread's `file:line` is NOT in this object: it is the question's
+  `label`, exactly as the prose path already assumes. The "thread N of M"
+  ordinal derives from the question's position among the gate's
+  `thread-*` questions, which are already positional by contract.
 - **The planned fix is not in this object.** It travels as the `fix`
   option's `description` -- an existing field of the gate contract -- so
   the plan renders exactly where the choice is made. The `reply` and
@@ -100,7 +126,7 @@ respond-post adds the posting state instead of `threads`:
 ### The replies question context (respond-post)
 
 ```json
-{"gate-ctx": 1,
+{"gate-ctx": "replies@1",
  "replies": [
    {"thread": "<threadId>", "file": "queue/enqueue.ts:88", "verb": "fix",
     "sha": "ab12cd3",
@@ -113,14 +139,30 @@ respond-post adds the posting state instead of `threads`:
 The board joins each entry to its checkbox option by `thread` ==
 option value. `verb` is `"reply" | "fix"`; `sha` appears only with
 `"fix"`. `text` is the verbatim reply -- full length, never truncated to
-fit an option description.
+fit an option description. Required per entry: `thread`, `file`, `verb`,
+`text`; `sha` is optional. Join fallbacks: an entry whose `thread`
+matches no option is not rendered (nothing selectable answers it); an
+option with no matching entry renders as today's plain checkbox option,
+label and description unchanged.
 
 ### Size rule
 
-The registry drops a gate-level context over 8192 bytes (loudly:
-`contextOmitted: true`). Question contexts have no daemon cap, but the
-emitter keeps each under 4KB; a claim that cannot fit has its `points`
-trimmed before its `summary`.
+The 8192-byte budget is SHARED: the gate context plus every question's
+context together (rt-client `commands.ts`, `contextOmitted`). On overflow
+the daemon opens the gate but drops the question contexts -- and the gate
+context too when it alone exceeds -- flagging `contextOmitted: true`.
+
+So the emitter pre-flights the whole open: gate-level payload plus all
+question payloads must total under 8192 bytes. When over, it trims
+`claim.points` from the longest threads first, then `verdict.note`; it
+NEVER trims `reply.text` -- the reply is the thing being approved. If the
+open still cannot fit, the emitter falls back to prose contexts for the
+whole gate: deterministic, no half-structured gate, nothing for the
+daemon to drop.
+
+The board must survive the dropped case anyway (a foreign emitter may
+not pre-flight): a question with no context renders its label and
+options, never blank.
 
 ## Board rendering
 
@@ -143,6 +185,18 @@ One card, hierarchy inverted so the purpose leads:
   "Posting replies to" (respond-post).
 - When the board has no MR row for the subject, the object line falls back
   to the subject's MR reference alone; the card never blocks on the join.
+- The action strip above the card (focus pane, skip gate) and its parked
+  and escalated chips are untouched: the header card replaces only the MR
+  row and the context pane. A parked respond gate parks exactly as today.
+- Chip derivation: the threads chip from `threads.total`; the blocking
+  chip from `threads.blocking` (0 renders grey as "all non-blocking");
+  the adjudication chip renders the `adjudication` string verbatim,
+  green; the round chip from `round` when present. respond-post: an
+  "N replies" chip, one green "fix pushed · <sha>" chip per `fixes`
+  entry (three or more collapse to "N fixes pushed"), then round.
+- Retiring the floor accepts per-gate height variation as the queue
+  advances; the fixed frame was the floor's whole purpose, and the canvas
+  approval trades it away knowingly.
 - The chips row is its own line under the text block.
 - The pane id is not shown; the focus-pane action already encodes it.
 - The gate-level prose card ("Decision context") does not render at all
@@ -171,8 +225,12 @@ VERDICT  valid  · note                     10px label, call coloured
 - All content text is ink (`--text-1`/`--text-2`), never `--text-3`.
   The dim colour on `.tui-gate-question-context` is corrected for the
   prose fallback too.
-- Choices render as the existing option cards; option descriptions (the
-  plan on `fix`) display under each label as today.
+- Choices render as the existing option cards. The plan lives in the
+  `fix` option's description, and that slot is `.tui-gate-choice-subtitle`
+  -- today a `--text-3` single-line ellipsis span. In the queue modal it
+  moves to `--text-2` and wraps; primary decision material does not
+  render muted or truncated. This is the third declared CSS change, and
+  like the other two it applies to every gate the modal shows.
 
 ### Replies card (respond-post)
 
@@ -209,9 +267,9 @@ history.
 
 ## Testing
 
-- `parseGateCtx` unit tests: valid v1 objects, prose, malformed JSON,
-  wrong version, oversized input -- everything non-conforming returns
-  `null`.
+- `parseGateCtx` unit tests: every shape's valid form, prose, malformed
+  JSON, unknown shape tag, missing required fields, unknown extra keys
+  (accepted) -- everything non-conforming returns `null`.
 - Renderer tests per face: thread card for each severity and each
   `reply.kind`; header card for both kinds; respond-post join by thread
   id; prose gate renders through the old path unchanged.
@@ -223,4 +281,8 @@ history.
 
 Board lands first: it renders old prose gates exactly as today, so it is
 safe alone. The skill lands second; from then on new respond gates render
-structured. Nothing needs to move in lockstep.
+structured. Nothing needs to move in lockstep. One skew case to own: a
+board tab left open from before the deploy shows a structured gate's
+context as raw JSON through Markdown until the tab reloads -- board
+deploys already require a reload, so this is the known cost of the known
+rule, not a new hazard.
