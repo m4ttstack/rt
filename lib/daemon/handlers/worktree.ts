@@ -565,7 +565,11 @@ export function createWorktreeHandlers(
       const repoPath = ctx.repoIndex()[repoName];
       if (!repoPath) return { ok: false, error: "repo-unknown" };
 
-      const created = await withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit: opts.emit, log: ctx.log }));
+      const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
+      const created = await withCreateLock(repoPath, () => buildMember({
+        repoName, repoPath, emit: opts.emit, log: ctx.log,
+        cfgRoot: cfg.root, sameVolume: sameDev, clone: opts.clone, via: "create",
+      }));
       if (!created.ok) {
         if (created.error === "busy") return { ok: false, error: "busy" };
         return { ok: false, error: createFailedError(created) };
@@ -581,7 +585,14 @@ export function createWorktreeHandlers(
         });
       }
 
-      return { ok: true, data: { tree: created.tree.name, path: created.tree.path } };
+      return {
+        ok: true,
+        data: {
+          tree: created.tree.name,
+          path: created.tree.path,
+          ...(created.hydratedFrom ? { hydratedFrom: created.hydratedFrom } : {}),
+        },
+      };
     },
 
     "worktree:dispose": async (payload: any) => {
