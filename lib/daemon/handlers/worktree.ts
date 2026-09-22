@@ -68,6 +68,7 @@ import { changedSince, stepsToRun } from "../../worktree/ready.ts";
 import { computeClaimReadySteps, readyTaskFor, startReadyTask } from "../../worktree/ready-async.ts";
 import type { ReadyStep } from "../../worktree/config.ts";
 import { freshenRepo, reconcileRepoRegistry, withCreateLock, buildMember, sameDev } from "../worktree-reconciler.ts";
+import { createTree, type CreateResult } from "../../worktree/create.ts";
 import type { CloneRunner } from "../../worktree/hydrate.ts";
 import { repoDataDir, rtDir } from "../../rt-paths.ts";
 
@@ -565,11 +566,23 @@ export function createWorktreeHandlers(
       const repoPath = ctx.repoIndex()[repoName];
       if (!repoPath) return { ok: false, error: "repo-unknown" };
 
-      const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
-      const created = await withCreateLock(repoPath, () => buildMember({
-        repoName, repoPath, emit: opts.emit, log: ctx.log,
-        cfgRoot: cfg.root, sameVolume: sameDev, clone: opts.clone, via: "create",
-      }));
+      // Only a pool member (--on-deck) may hydrate: hydrateTree adds the tree
+      // at the golden's readyStamp, not the current default tip, and only an
+      // on-deck row is ever visited by freshen again (freshenCandidate admits
+      // state === "on-deck" only). A claimed create never re-enters that pass,
+      // so hydrating it would hand the caller a tree stuck at the golden's
+      // commit forever with no signal. A cold create always fetches and adds
+      // at the current default tip, which is what a plain create promises.
+      const created = await withCreateLock(repoPath, async (): Promise<CreateResult & { hydratedFrom?: string }> => {
+        if (payload?.onDeck !== true) {
+          return createTree({ repoName, repoPath, emit: opts.emit, log: ctx.log });
+        }
+        const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
+        return buildMember({
+          repoName, repoPath, emit: opts.emit, log: ctx.log,
+          cfgRoot: cfg.root, sameVolume: sameDev, clone: opts.clone, via: "create",
+        });
+      });
       if (!created.ok) {
         if (created.error === "busy") return { ok: false, error: "busy" };
         return { ok: false, error: createFailedError(created) };
