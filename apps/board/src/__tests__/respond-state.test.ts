@@ -10,6 +10,7 @@ import {
   readRespondStates,
   respondFilePath,
   respondReportPath,
+  respondResumeDispatchFields,
   writeRespondState,
 } from '../respond-state.ts';
 import { setReportByHandle } from '../state/agent-states.ts';
@@ -87,6 +88,48 @@ describe('writeRespondState counts', () => {
     );
     expect(done.posted).toBeUndefined();
     expect(done.threads).toBeUndefined();
+  });
+
+  test('round-trips the round the wrapper recorded on delegation', () => {
+    const p = respondFilePath(URL_A);
+    writeRespondState(
+      p,
+      { mrUrl: URL_A, iid: 4821, status: 'drafting', round: 1 },
+      1000,
+      db
+    );
+    expect(readRespondStates(db).get(URL_A)?.round).toBe(1);
+    const revised = writeRespondState(
+      p,
+      { status: 'drafting', round: 2 },
+      2000,
+      db
+    );
+    expect(revised.round).toBe(2);
+  });
+
+  test('a later write without round preserves the one already on file, so a resumed pane can recover it', () => {
+    const p = respondFilePath(URL_A);
+    writeRespondState(
+      p,
+      { mrUrl: URL_A, iid: 4821, status: 'drafting', round: 1 },
+      1000,
+      db
+    );
+    const resumed = writeRespondState(p, { status: 'implementing' }, 2000, db);
+    expect(resumed.round).toBe(1);
+  });
+});
+
+describe('respondResumeDispatchFields', () => {
+  test('carries the round from state onto the resume dispatch', () => {
+    expect(respondResumeDispatchFields({ round: 2 })).toEqual({ round: 2 });
+  });
+
+  test('a state with no round on file (pre-upgrade) resumes with round omitted', () => {
+    expect(respondResumeDispatchFields(undefined)).toEqual({
+      round: undefined,
+    });
   });
 });
 

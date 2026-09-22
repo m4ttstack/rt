@@ -31,6 +31,12 @@ export interface RespondState {
   posted?: number;
   threads?: number;
   held?: number;
+  /** The round the wrapper is currently on (1 on its first delegation to the
+      domain skill, one more per `revise` re-adjudication) -- recorded via the
+      status CLI's `--round` flag so a resumed pane, whose own conversation is
+      gone, can recover it instead of guessing 1. Absent on a state written
+      before this field existed. */
+  round?: number;
   tabId?: string;
   workspaceId?: string;
   /** Claude Code session id, captured by the status CLI. Lets the board
@@ -112,6 +118,7 @@ export function writeRespondState(
     posted: patch.posted,
     threads: patch.threads,
     held: patch.held,
+    round: patch.round,
     tabId: patch.tabId,
     workspaceId: patch.workspaceId,
     sessionId: patch.sessionId,
@@ -127,6 +134,17 @@ export function writeRespondState(
   };
   insertAgentState('respond', patch.mrUrl, patch.iid, next, handle, db);
   return next;
+}
+
+/** The extra fields a respond resume's dispatch prompt carries beyond the
+    kind-generic ones (`--resumed-gate`/`--resumed-gate-kind`) -- mirrors
+    doctorResumeDispatchFields (doctor-state.ts). `round` rides the resume
+    prompt as `--round <n>` so the fresh pane's wrapper can recover the round
+    its own conversation would otherwise have known from delegating it. */
+export function respondResumeDispatchFields(
+  state: Pick<RespondState, 'round'> | undefined
+): { round?: number } {
+  return { round: state?.round };
 }
 
 export function readRespondStates(
