@@ -30,6 +30,7 @@ interface Parsed {
   posted?: string;
   threads?: string;
   held?: string;
+  round?: string;
   /** A recognized flag that arrived with no operand; a trailing `--held`
       must fail loudly rather than silently dropping the count. */
   missingOperand?: string;
@@ -39,7 +40,7 @@ interface Parsed {
     optional flags in either `--flag value` or `--flag=value` form. Backward
     compatible with existing invocations. */
 function parseArgs(argv: string[]): Parsed {
-  const NAMES = ['session', 'posted', 'threads', 'held'];
+  const NAMES = ['session', 'posted', 'threads', 'held', 'round'];
   const flags: Record<string, string | undefined> = {};
   const rest: string[] = [];
   let missingOperand: string | undefined;
@@ -65,6 +66,7 @@ function parseArgs(argv: string[]): Parsed {
     posted: flags.posted,
     threads: flags.threads,
     held: flags.held,
+    round: flags.round,
     missingOperand,
   };
 }
@@ -77,6 +79,14 @@ function parseCount(raw: string | undefined): number | undefined | null {
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
+/** Same undefined/null contract as parseCount, but a round is 1-based --
+    zero is never a valid round, unlike a count. */
+function parseRound(raw: string | undefined): number | undefined | null {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
 const parsed = parseArgs(process.argv.slice(2));
 if (
   !parsed.path ||
@@ -84,7 +94,7 @@ if (
   !VALID.includes(parsed.status as RespondStatus)
 ) {
   console.error(
-    `usage: respond-status <statePath> <${VALID.join('|')}> [message] [--posted <n>] [--threads <n>] [--held <n>] [--session <id>]`
+    `usage: respond-status <statePath> <${VALID.join('|')}> [message] [--posted <n>] [--threads <n>] [--held <n>] [--round <n>] [--session <id>]`
   );
   process.exit(1);
 }
@@ -99,6 +109,11 @@ const threads = parseCount(parsed.threads);
 const held = parseCount(parsed.held);
 if (posted === null || threads === null || held === null) {
   console.error('--posted, --threads and --held must be non-negative integers');
+  process.exit(1);
+}
+const round = parseRound(parsed.round);
+if (round === null) {
+  console.error('--round must be an integer of at least 1');
   process.exit(1);
 }
 // A numerator with no denominator is uninterpretable, so it fails rather than
@@ -129,6 +144,7 @@ const merged = updateByHandle(
     ...(posted !== undefined ? { posted } : {}),
     ...(threads !== undefined ? { threads } : {}),
     ...(held !== undefined ? { held } : {}),
+    ...(round !== undefined ? { round } : {}),
     ...(sessionId ? { sessionId } : {}),
   },
   Date.now(),

@@ -133,6 +133,55 @@ describe('respond-status CLI', () => {
     expect(await run(handle, 'done', '--held', '1')).toBe(1);
   });
 
+  test('records a round independent of the posted/threads pair', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(await run(handle, 'drafting', 'round 1 draft', '--round', '1')).toBe(
+      0
+    );
+    const state = readRespondStates(db).get(url);
+    expect(state?.round).toBe(1);
+  });
+
+  test('a later status write without --round leaves the recorded round in place', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(await run(handle, 'drafting', 'round 1 draft', '--round', '1')).toBe(
+      0
+    );
+    expect(await run(handle, 'implementing')).toBe(0);
+    const state = readRespondStates(db).get(url);
+    expect(state?.round).toBe(1);
+  });
+
+  test('a revise cycle bumps the recorded round', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(await run(handle, 'drafting', 'round 1', '--round', '1')).toBe(0);
+    expect(await run(handle, 'drafting', 'round 2', '--round', '2')).toBe(0);
+    const state = readRespondStates(db).get(url);
+    expect(state?.round).toBe(2);
+  });
+
+  test('rejects a round of zero, which is not a valid round number', async () => {
+    expect(await run(seedHandle(nextUrl()), 'drafting', '--round', '0')).toBe(
+      1
+    );
+  });
+
+  test('rejects a non-integer round', async () => {
+    expect(await run(seedHandle(nextUrl()), 'drafting', '--round', '1.5')).toBe(
+      1
+    );
+  });
+
+  test('rejects a round flag with no operand instead of dropping it', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(await run(handle, 'drafting', '--round')).toBe(1);
+    expect(readRespondStates(db).get(url)?.status).toBe('queued');
+  });
+
   test('rejects a count flag with no operand instead of dropping it', async () => {
     const url = nextUrl();
     const handle = seedHandle(url);
