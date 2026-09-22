@@ -164,6 +164,12 @@ function makeFakeClient(overrides: {
     createTag: async () => {},
     deleteTag: async () => {},
     pushTag: async () => {},
+    commits: async () => [],
+    localCommits: async () => [],
+    changedFiles: async () => ({ files: [], linesAdded: 0, linesDeleted: 0 }),
+    commitRangeChangedFiles: async () => ({ files: [], linesAdded: 0, linesDeleted: 0 }),
+    commitDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
+    commitRangeDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
   };
   return Object.assign(client, { calls });
 }
