@@ -121,12 +121,38 @@ func (m mouseView) View() tea.View {
 	return v
 }
 
+// noMouseView decorates a View so every frame it paints reports MouseModeNone,
+// regardless of what the inner view requests. This ensures Options.Mouse=false
+// is authoritative... even when the inner view (like mission) sets an explicit
+// mode. Without this, Options.Mouse would be a mere default that inner modes
+// could override, defeating the accessibility/preference contract.
+type noMouseView struct{ view View }
+
+func (n noMouseView) Init() tea.Cmd { return n.view.Init() }
+
+func (n noMouseView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := n.view.Update(msg)
+	if v, ok := updated.(View); ok {
+		n.view = v
+	}
+	return n, cmd
+}
+
+func (n noMouseView) SetModel(raw json.RawMessage) error { return n.view.SetModel(raw) }
+func (n noMouseView) Reason() Reason                     { return n.view.Reason() }
+
+func (n noMouseView) View() tea.View {
+	v := n.view.View()
+	v.MouseMode = tea.MouseModeNone
+	return v
+}
+
 // wireMouse is where Options.Mouse actually takes effect: it costs every
 // view that doesn't opt in a stolen text-selection drag, so it wraps only
 // when asked.
 func wireMouse(view View, opts Options) tea.Model {
 	if !opts.Mouse {
-		return view
+		return noMouseView{view: view}
 	}
 	return mouseView{view: view}
 }

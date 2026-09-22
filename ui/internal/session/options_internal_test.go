@@ -53,3 +53,17 @@ func TestMouseViewDefersToAnExplicitMouseMode(t *testing.T) {
 		t.Fatalf("inner unset: MouseMode = %v, want CellMotion default", got)
 	}
 }
+
+// TestWireMouseDisabledForcesNone ensures Options.Mouse=false is authoritative
+// even when the inner view sets an explicit mode: the disabled path forces
+// MouseModeNone to prevent views like mission that request AllMotion from
+// leaking through. This pins the contract that Options.Mouse is the final word,
+// not a default that inner modes can override.
+func TestWireMouseDisabledForcesNone(t *testing.T) {
+	if got := wireMouse(allMotionStubView{}, Options{}).View().MouseMode; got != tea.MouseModeNone {
+		t.Fatalf("Mouse false with inner AllMotion: MouseMode = %v, want None", got)
+	}
+	if got := wireMouse(stubView{}, Options{}).View().MouseMode; got != tea.MouseModeNone {
+		t.Fatalf("Mouse false with inner unset: MouseMode = %v, want None", got)
+	}
+}
