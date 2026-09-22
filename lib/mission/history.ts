@@ -26,9 +26,10 @@ export class HistoryStore {
   selectedFile: CommittedFileChange | null = null;
   diff: StagingDiff | null = null;
   private oversizedShown = new Set<string>();
-  /** Bumped only by a real reload (syncTip) or reset. Guards a page load or a slower sync in flight against a newer one that lands first. */
+  /** Bumped only by a real reload (syncTip) or reset. Guards a slower sync in flight against a newer one that lands first. */
   private generation = 0;
   private pendingBatch: Promise<void> | null = null;
+  private pendingBase: Commit[] | null = null;
 
   reset(): void {
     this.commits = [];
@@ -63,42 +64,61 @@ export class HistoryStore {
   private async updateOrSelectFirstCommit(client: GitClient): Promise<void> {
     const present = new Set(this.commits.map((c) => c.sha));
     if (this.selection.length > 0 && this.selection.every((sha) => present.has(sha))) {
-      if (this.selection.length > 1 && !this.isContiguous()) await this.select(client, this.selection);
+      // Always re-run for a kept multi-selection: a reload can make it contiguous
+      // (load the range) or break it (select() clears to the non-contiguous
+      // state) -- either way the previous changeset may no longer match reality.
+      if (this.selection.length > 1) await this.select(client, this.selection);
       return;
     }
     const first = this.commits[0];
     await this.select(client, first ? [first.sha] : []);
   }
 
-  /** One page load in flight at a time: a caller racing an existing load joins it instead of issuing a duplicate request. */
+  /**
+   * One page load in flight at a time. A caller joins the pending load only
+   * while it still targets the current list (`pendingBase === this.commits`);
+   * a reload swaps `commits` to a new array, so a stale pending load is left
+   * to resolve into a no-op (see fetchNextBatch) and this starts a fresh one
+   * rather than handing the caller a promise that can never grow the list.
+   */
   loadNextBatch(client: GitClient, branch: HistoryBranch): Promise<void> {
-    if (this.pendingBatch) return this.pendingBatch;
+    if (this.pendingBatch && this.pendingBase === this.commits) return this.pendingBatch;
     if (!this.hasMore) return Promise.resolve();
-    const gen = this.generation;
-    const promise = this.fetchNextBatch(client, branch, gen).finally(() => {
-      this.pendingBatch = null;
-    });
+    const base = this.commits;
+    const promise = this.fetchNextBatch(client, branch, base);
     this.pendingBatch = promise;
+    this.pendingBase = base;
+    promise.finally(() => {
+      if (this.pendingBatch === promise) {
+        this.pendingBatch = null;
+        this.pendingBase = null;
+      }
+    });
     return promise;
   }
 
-  private async fetchNextBatch(client: GitClient, branch: HistoryBranch, gen: number): Promise<void> {
-    const last = this.commits.at(-1);
+  private async fetchNextBatch(client: GitClient, branch: HistoryBranch, base: Commit[]): Promise<void> {
+    const last = base.at(-1);
     let newCommits: Commit[] = [];
     let localAdditions: Commit[] = [];
     if (last && this.localShas.has(last.sha)) {
-      const local = await client.localCommits(branch, this.commits.length);
+      const local = await client.localCommits(branch, base.length);
       localAdditions = local.filter((c) => !this.localShas.has(c.sha));
       newCommits = localAdditions;
     }
     if (newCommits.length === 0) {
-      newCommits = await client.commits("HEAD", COMMIT_BATCH_SIZE, this.commits.length);
+      newCommits = await client.commits("HEAD", COMMIT_BATCH_SIZE, base.length);
     }
-    if (gen !== this.generation) return;
+    // this.commits is only ever reassigned wholesale, never mutated: an identity
+    // mismatch here means a reload or reset replaced the list while this fetch
+    // awaited. Catches a load that started between a reload deciding to reload
+    // and it writing the new list, which comparing generation numbers alone
+    // would miss (the load would capture the already-bumped generation).
+    if (this.commits !== base) return;
     for (const c of localAdditions) this.localShas.add(c.sha);
-    const known = new Set(this.commits.map((c) => c.sha));
+    const known = new Set(base.map((c) => c.sha));
     const fresh = newCommits.filter((c) => !known.has(c.sha));
-    this.commits = [...this.commits, ...fresh];
+    this.commits = [...base, ...fresh];
     this.hasMore = fresh.length > 0;
   }
 
@@ -123,6 +143,10 @@ export class HistoryStore {
     const key = shas.join(",");
     const data = shas.length > 1 ? await client.commitRangeChangedFiles(this.orderedSelection()) : await client.changedFiles(shas[0]!);
     if (this.selection.join(",") !== key) return;
+    // The key can still match after a reload re-selects the same shas (they
+    // survived) yet a list change made them non-contiguous: the range result
+    // no longer describes an adjacent selection, so drop it too.
+    if (shas.length > 1 && !this.isContiguous()) return;
     this.changeset = data;
     const first = data.files[0];
     if (first) await this.selectFile(client, first.path);
