@@ -430,6 +430,39 @@ describe('launchReview / launchRespond / launchDoctor (rt agent)', () => {
     });
   });
 
+  test('launchRespond carries opts.round onto the dispatch prompt as --round, for a fresh launch that follows a prior recorded round', async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchRespond(
+      {
+        mrUrl: 'https://x/mr/1',
+        iid: 4821,
+        cwd: '/repo',
+        repo: 'acme/webapp',
+        workspaceLabel: 'responds',
+        statePath: '/s/1.json',
+        round: 3,
+      },
+      io
+    );
+    expect(startCalls[0]!.prompt).toContain('--round 3');
+  });
+
+  test('launchRespond omits --round when opts.round is absent (first-ever run on this MR)', async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchRespond(
+      {
+        mrUrl: 'https://x/mr/1',
+        iid: 4821,
+        cwd: '/repo',
+        repo: 'acme/webapp',
+        workspaceLabel: 'responds',
+        statePath: '/s/1.json',
+      },
+      io
+    );
+    expect(startCalls[0]!.prompt).not.toContain('--round');
+  });
+
   test('launchDoctor starts an rt agent with the doctor prompt and tier flag', async () => {
     const { io, startCalls } = fakeAgentIo();
     await launchDoctor(

@@ -364,6 +364,13 @@ export interface LaunchPaneOpts {
   fixClasses?: string[];
   /** Doctor only: absolute path to the board's draft-writer CLI. */
   draftBin?: string;
+  /** Respond only: this fresh launch follows a prior run that recorded a
+      round on this MR (see respond-state.ts's respondFreshDispatchFields) --
+      rides the dispatch prompt as `--round <n>` so the new run's wrapper
+      delegates at that round instead of defaulting to round 1. Absent on the
+      MR's first-ever respond run, or one whose prior state predates the
+      round field. */
+  round?: number;
 }
 
 /** Tab label for an MR pane: the MR id, the author beside it when known, and an
@@ -493,6 +500,7 @@ export async function launchRespond(
       reportPath: respondReportPath(opts.statePath),
       skill: opts.skill,
       note: opts.note,
+      round: opts.round,
     },
     resolvePath
   );
