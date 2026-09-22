@@ -81,7 +81,7 @@ function isGolden(b: WorktreeBinding): boolean {
 
 /**
  * Resolve the target bindings for a non-interactive mode. "pick" returns the
- * whole selectable list — the caller runs the picker over it.
+ * whole selectable list... the caller runs the picker over it.
  */
 export function filterTargets(bindings: WorktreeBinding[], mode: SelectionMode): WorktreeBinding[] {
   const selectable = bindings.filter((b) => !isGolden(b));

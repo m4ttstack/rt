@@ -197,7 +197,7 @@ async function runCreate(
  * (`deleteBranch`), delete that branch too. The default is to leave the ref
  * alone: this is the tolerant path, and a create that failed BECAUSE the
  * branch name was already taken would otherwise delete the user's own ref.
- * Tolerant of partial existence — the
+ * Tolerant of partial existence... the
  * worktree may not exist yet (git worktree add never ran or failed before
  * creating it), and the branch may not exist either — and, since it renames
  * rather than asking git to unlink, it returns instantly however far the

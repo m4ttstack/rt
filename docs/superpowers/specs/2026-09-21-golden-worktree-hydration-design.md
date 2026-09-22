@@ -45,7 +45,7 @@ freshened by the same freshen pass, and never claimable.
 |---|---|
 | `kind` | `"golden"` (new `TreeKind` member) |
 | `name` | `golden` (fixed; not drawn from `namePool`) |
-| `branch` | `golden` (one fixed branch per repo) |
+| `branch` | `rt/golden` (one fixed branch per repo; namespaced so it cannot be a ref the user already has) |
 | `path` | `goldenRoot(identity)`, a new `rt-paths.ts` helper beside `worktreePoolRoot`, resolving under `~/.mattstack/rt/golden/<pool segment>/` |
 | `state` | `creating` while building, `on-deck` once ready (reusing the existing readiness meaning; nothing reads it as claimable because `kind !== "ephemeral"`) |
 
@@ -105,7 +105,12 @@ Replenish's member create becomes: hydrate if a ready golden exists,
 otherwise cold create. Hydration runs inside the same `withCreateLock` and
 `withTreeLock` a cold create takes, writes its `creating` row registry-first
 exactly like `runCreate`, and on any failure scraps through the same
-`scrapTree`.
+`scrapTree`. The enumerate-and-clone phase additionally takes the DONOR's
+tree lock: freshen reinstalls the golden in place, and a reconciler pass
+released at its 30-minute deadline is only safe because every git mutation
+still running holds a per-tree lock. An unlocked donor read mid-reinstall
+would hand the member a torn `node_modules` under an inherited stamp that
+says it is fine.
 
 1. **Worktree at the golden's commit.** `git worktree add -b on-deck/<name>
    <path> <golden.readyStamp>`. Not `origin/<default>`: the new tree is born
@@ -187,7 +192,11 @@ Replenish cold-creates when:
 - the golden has no `readyStamp` (a held team ladder never stamped it);
 - `cfg.root` and the golden root resolve to different `st_dev` values
   (checked once per replenish pass with `statSync`);
-- a `hydrate-clone` call exits 3 or 4.
+- a hydrate attempt fails for ANY reason: a `hydrate-clone` call exits
+  non-zero (cross-volume, unsupported, EEXIST, a missing verb on an older
+  `rt`, a spawn failure or the clone timeout), the donor's own tree lock is
+  held by another pass, `git status --ignored` on the donor fails, or the
+  member's `git worktree add` fails.
 
 `retryFailures > 0` is deliberately redundant with the `nextRetryAt` check.
 Inside the reconciler pass, freshen always runs before replenish under one
@@ -197,11 +206,14 @@ property of hydration itself, and a direct caller would lose it, so the
 predicate refuses a golden with recorded failures on its own terms rather
 than trusting the pass order.
 
-A `hydrate-clone` exit of 1 or 5, or a `git worktree add` failure, scraps
-the half-built tree through `scrapTree` and counts against the member's
-create backoff, exactly as a failed ready step does today. The next attempt
-re-evaluates the conditions above; it does not disable hydration for the
-repo.
+Every hydrate failure scraps the half-built tree through `scrapTree` and is
+logged at `warn` with its reason, then the SAME attempt cold-creates. Only if
+that cold create also fails does anything count against the member's create
+backoff, exactly as a failed ready step does today. Otherwise a persistently
+broken hydrate would stop the pool refilling rather than merely slow it. The
+next attempt re-evaluates the conditions above; nothing disables hydration
+for the repo. A `busy` outcome (another holder of the member's own tree lock)
+stays what it is: neither a failure nor a backoff.
 
 Golden create or freshen failures follow today's create-backoff path on the
 golden's own row. They never block member replenish, which cold-creates in
