@@ -744,15 +744,141 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickHistoryTabShowsNotice clicks the tabs button's label row
+// TestMouseClickHistoryTabEmitsTabHistory clicks the tabs button's label row
 // (absolute y=5, one row into the sidebar after topH(4): the tabs button is
-// now a 2-row pad+label span, and either row hits the same target) right
-// half: Changes and History each occupy half of sidebarWidth(46), so any
-// x >= 23 resolves to History.
-func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
+// a 2-row pad+label span, and either row hits the same target) right half:
+// Changes and History each occupy half of sidebarWidth(46), so any x >= 23
+// resolves to History.
+func TestMouseClickHistoryTabEmitsTabHistory(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 30, 5))
-	s.WaitForPaint("History lands in v2")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("History tab click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// historyModel mirrors history_test.go's historyFixtureModel on the wire.
+const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"main"},` +
+	`"history":{"commits":[` +
+	`{"sha":"s1","shortSha":"s1","summary":"Fix pty paint predicate","byline":"Matt","when":"3 hours ago","tags":[],"unpushed":true,"selected":true},` +
+	`{"sha":"s2","shortSha":"s2","summary":"Guard badges","byline":"Matt","when":"5 hours ago","tags":["v0.9.1"],"unpushed":false,"selected":false},` +
+	`{"sha":"s3","shortSha":"s3","summary":"","byline":"Matt, Claude","when":"1 day ago","tags":[],"unpushed":false,"selected":false}],` +
+	`"hasMore":false,"loading":false,` +
+	`"header":{"summary":"Fix pty paint predicate","body":"","byline":"Matt","authors":["Matt <m@x>"],"sha":"s1full","shortSha":"s1","linesAdded":12,"linesDeleted":4,"tags":[],"rangeCount":1,"contiguous":true},` +
+	`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}],"selectedFile":"lib/mission/model.ts"},` +
+	`"diff":{"path":"lib/mission/model.ts","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"x","selected":false,"selIdx":-1}],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stashCount":0,"notice":""}`
+
+// historyRowY is the frame row of commit idx's summary line: topH(4), then
+// the History sidebar's tabs(3) + tabs-gap(1), then two rows per commit.
+func historyRowY(idx int) int { return 4 + 4 + 2*idx }
+
+func openHistory(t *testing.T) *testutil.Session {
+	t.Helper()
+	return openMission(t, historyModel, "Fix pty paint predicate")
+}
+
+func TestPressTwoEmitsTabHistory(t *testing.T) {
+	s := openMission(t, canCommitModel, "Commit 1 file to main")
+	s.Type("2")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("tab intent after 2: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryDownEmitsDebouncedSelect(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("history-select after down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryShiftDownEmitsRange(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[1;2B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s1","s2"]`) {
+		t.Fatalf("history-select after shift+down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryClickCommitRowEmitsImmediately(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 2, historyRowY(1)))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("history-select after a row click: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryShiftClickEmitsRange sends a left press with the SGR shift bit
+// (4) set.
+func TestHistoryShiftClickEmitsRange(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(4, 2, historyRowY(1)))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s1","s2"]`) {
+		t.Fatalf("history-select after a shift+click: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryPressOneEmitsTabChanges(t *testing.T) {
+	s := openHistory(t)
+	s.Type("1")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"changes"`) {
+		t.Fatalf("tab intent after 1: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryClickChangesTabEmitsTabChanges(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 5, 5))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"changes"`) {
+		t.Fatalf("Changes tab click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryHoverCommitRowPaintsHoverBg drives a bare motion report over
+// the third commit's summary row through the real renderer and waits for
+// that cell to repaint in HoverBg.
+func TestHistoryHoverCommitRowPaintsHoverBg(t *testing.T) {
+	s := openHistory(t)
+	y := historyRowY(2)
+	s.Type(sgrMotion(20, y))
+	hoverBg := color.RGBA{R: 0x2F, G: 0x2A, B: 0x4A, A: 0xff}
+	deadline := time.Now().Add(2 * time.Second)
+	for !sameRGB(testutil.CellBackground(s.TTY(), 20, y), hoverBg) {
+		if time.Now().After(deadline) {
+			t.Fatalf("hovered commit row never painted HoverBg, got %#v", testutil.CellBackground(s.TTY(), 20, y))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("hover must not emit: %q", l)
+	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
