@@ -162,6 +162,12 @@ export interface SkillPromptOpts {
       so a resumed pane that must branch on which gate woke it reads this
       flag. Present exactly when `resumedGate` is. */
   resumedGateKind?: string;
+  /** Respond only: the round the wrapper was on the last time its state was
+      written (see respond-state.ts's `round` field) -- rides a resume prompt
+      as `--round <n>` alongside `--resumed-gate` so the fresh pane's
+      conversation, having lost its own memory of the round, can recover it
+      instead of guessing 1. Absent on a normal (non-resume) launch. */
+  round?: number;
 }
 
 /** The trailing paragraph a launch note becomes. The framing tells the wrapper
@@ -215,6 +221,7 @@ function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
   flag('--skill', o.skill);
   flag('--resumed-gate', o.resumedGate);
   flag('--resumed-gate-kind', o.resumedGateKind);
+  flag('--round', o.round !== undefined ? String(o.round) : undefined);
   flag('--skill-path', skillPath);
   if (o.reReview) parts.push('--re-review');
   flag('--tier', o.tier);

@@ -212,6 +212,7 @@ import {
   readRespondStates,
   respondFilePath,
   respondReportPath,
+  respondResumeDispatchFields,
   writeRespondState,
   type RespondState,
   type RespondStatus,
@@ -3346,6 +3347,7 @@ function respondResumeIo(): KindResumeIo {
           skill,
           resumedGate,
           resumedGateKind,
+          ...respondResumeDispatchFields(readRespondStates().get(mrUrl)),
         },
         resolvePath
       ),
