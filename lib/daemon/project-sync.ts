@@ -34,6 +34,7 @@ import { getRepoContext, getSelfUsername, resolveSelfUsername } from "./freshnes
 import { getProjectMRs, freshnessOf, type ProjectMRs, type ProjectMRStore } from "./project-mrs-store.ts";
 import { loadRepoTracking, grants } from "../repo-tracking.ts";
 import { lazyChildLogger } from "../daemon-logger.ts";
+import { recordSyncFailure, recordSyncSuccess } from "./project-sync-health.ts";
 
 const log = lazyChildLogger("project-sync");
 
@@ -164,7 +165,15 @@ export function syncProjectMRs(
 ): Promise<void> {
   const existing = syncInFlight.get(repoName);
   if (existing) return existing;
-  const run = syncImpl(deps, repoName, overrides).finally(() => { syncInFlight.delete(repoName); });
+  const run = syncImpl(deps, repoName, overrides)
+    .then(
+      () => { recordSyncSuccess(repoName); },
+      (err: unknown) => {
+        recordSyncFailure(repoName, err, Date.now());
+        throw err;
+      },
+    )
+    .finally(() => { syncInFlight.delete(repoName); });
   syncInFlight.set(repoName, run);
   return run;
 }

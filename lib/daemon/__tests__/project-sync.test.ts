@@ -5,6 +5,7 @@ import { join } from "path";
 import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
+import { readSyncHealth } from "../project-sync-health.ts";
 import type { PullRequest } from "@mattstack/glance";
 
 function pr(iid: number, over: Partial<PullRequest> = {}): PullRequest {
@@ -1463,5 +1464,63 @@ describe("delta retag and keep-tagged-strangers", () => {
     );
     expect(store.read("r")!.mrs[9]!.codeownerSections).toBeUndefined();
     expect(events).toEqual([{ type: "project-mrs", data: { repoName: "r", iids: [9] } }]);
+  });
+});
+
+describe("sync health recording", () => {
+  const depsFor = (repo: string) => ({ repoIndex: () => ({ [repo]: "/tmp/repo" }), broadcast: () => {} });
+
+  test("a failed sync records the failure for the repo", async () => {
+    await expect(
+      syncProjectMRs(depsFor("health-fail"), "health-fail", {
+        store: tmpStore(),
+        fetchProject: async () => { throw new Error("GraphQL request failed: 500 Internal Server Error"); },
+      }),
+    ).rejects.toThrow("500");
+    expect(readSyncHealth("health-fail")).toMatchObject({ kind: "server-error" });
+  });
+
+  test("a successful sync clears an earlier failure", async () => {
+    const store = tmpStore();
+    await expect(
+      syncProjectMRs(depsFor("health-heal"), "health-heal", {
+        store,
+        fetchProject: async () => { throw new Error("GraphQL errors: Timeout on MergeRequest.id"); },
+      }),
+    ).rejects.toThrow();
+    expect(readSyncHealth("health-heal")?.kind).toBe("timeout");
+    await syncProjectMRs(depsFor("health-heal"), "health-heal", {
+      store,
+      fetchProject: async () => ({ projectPath: "g/p", prs: [pr(1)] }),
+    });
+    expect(readSyncHealth("health-heal")).toBeUndefined();
+  });
+
+  test("a failed deep that falls back to a working delta counts as success", async () => {
+    const store = tmpStore();
+    store.fullSync("health-fallback", "g/p", [pr(1)], Date.now() - (DEEP_RECONCILE_MS + 60_000));
+    await syncProjectMRs(depsFor("health-fallback"), "health-fallback", {
+      store,
+      fetchProject: async () => { throw new Error("GraphQL errors: Timeout on DiffStatsSummary.additions"); },
+      fetchDelta: async () => ({ projectPath: "g/p", prs: [] }),
+    });
+    expect(readSyncHealth("health-fallback")).toBeUndefined();
+  });
+
+  test("coalesced callers record the outcome once and both see the rejection", async () => {
+    const store = tmpStore();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const fetchProject = async () => {
+      await gate;
+      throw new Error("GraphQL request failed: 503 Service Unavailable");
+    };
+    const deps = depsFor("health-coalesce");
+    const p1 = syncProjectMRs(deps, "health-coalesce", { store, fetchProject });
+    const p2 = syncProjectMRs(deps, "health-coalesce", { store, fetchProject });
+    release();
+    await expect(p1).rejects.toThrow("503");
+    await expect(p2).rejects.toThrow("503");
+    expect(readSyncHealth("health-coalesce")).toMatchObject({ kind: "server-error" });
   });
 });
