@@ -1,3 +1,5 @@
+import { GOLDEN_NAME } from "./registry.ts";
+
 // Adjectives for neutral name generator
 const ADJECTIVES = [
   "amber",
@@ -45,7 +47,11 @@ const NOUNS = [
 export function pickName(pool: string[] | undefined, used: Set<string>): string {
   // Filter pool to unused names
   if (pool && pool.length > 0) {
-    const available = pool.filter((name) => !used.has(name));
+    // GOLDEN_NAME is reserved even when a custom pool names it explicitly:
+    // a member minted "golden" before the donor exists collides with it
+    // later, and name-keyed verbs (freshen --only, dispose by name) would
+    // then match two rows.
+    const available = pool.filter((name) => !used.has(name) && name !== GOLDEN_NAME);
     if (available.length > 0) {
       const randomIndex = Math.floor(Math.random() * available.length);
       return available[randomIndex]!;
