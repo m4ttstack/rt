@@ -2434,17 +2434,17 @@ describe("MissionDriver: History tab", () => {
     await flushMicrotasks();
 
     session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
-    await flushMicrotasks(); // the old tree's instant load: commits [o1,o2], tip "o1"
+    await flushMicrotasks();
 
     oldProbeArmed = true;
     expect(captured).not.toBeNull();
-    captured!({ type: "git-status", data: {} }); // a badge sync starts on the OLD tree, blocked on its deferred probe
+    captured!({ type: "git-status", data: {} }); // the badge sync's own probe is now blocked on releaseOldProbe
     await flushMicrotasks();
 
     session.send({ t: "intent", name: "mission:worktree", payload: { path: "/repo2" } });
-    await flushMicrotasks(); // resets history and fully reloads it from the NEW tree
+    await flushMicrotasks();
 
-    releaseOldProbe("o0"); // the stale badge sync's probe finally resolves
+    releaseOldProbe("o0");
     await flushMicrotasks();
 
     const last = session.pushed.at(-1) as MissionModel;
@@ -2508,6 +2508,25 @@ describe("MissionDriver: History tab", () => {
     await runPromise;
   });
 
+  test("a first History open that fails still clears the loading indicator", async () => {
+    const client = makeFakeClient({
+      commits: async () => {
+        throw new Error("git log failed");
+      },
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:tab", payload: { tab: "history" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("error: git log failed");
+    expect(last.history.loading).toBe(false);
+  });
+
   test("a first load superseded by a concurrent sync never flashes an empty, not-loading state", async () => {
     let probeCalls = 0;
     let releaseProbeA!: (sha: string) => void;
@@ -2549,15 +2568,15 @@ describe("MissionDriver: History tab", () => {
     await flushMicrotasks();
 
     session.send({ t: "intent", name: "mission:tab", payload: { tab: "history" } });
-    await flushMicrotasks(); // handleTab's own sync (A) is blocked on its HEAD probe
+    await flushMicrotasks(); // handleTab's own sync (A) is now blocked on releaseProbeA
 
-    captured!({ type: "git-status", data: {} }); // a concurrent badge sync (B) starts a second one
-    await flushMicrotasks(); // B is also blocked on its own HEAD probe
-
-    releaseProbeB("h1"); // B claims the reload and blocks on its batch fetch
+    captured!({ type: "git-status", data: {} });
     await flushMicrotasks();
 
-    releaseProbeA("stale-head"); // A's probe resolves after B already claimed a newer generation
+    releaseProbeB("h1");
+    await flushMicrotasks();
+
+    releaseProbeA("stale-head");
     await flushMicrotasks();
 
     const afterDiscard = session.pushed.at(-1) as MissionModel;
