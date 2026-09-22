@@ -219,35 +219,14 @@ export async function replenishAndShrink(
     return;
   }
 
-  // Lazy and memoized once per pass, not eagerly: the golden root does not
-  // exist on disk until the ensure block below has run, and `sameVolume`
-  // degrades to false on a missing path, so evaluating this before the
-  // golden exists would cold-create every member of a repo's first pass.
-  // `chooseCreateMode` only reaches this once it has a golden in hand, so
-  // the first call always lands after the ensure block.
+  // Lazy and memoized once per pass, not eagerly: `sameVolume` degrades to
+  // false on a missing path, and `chooseCreateMode` only reaches this once it
+  // holds a golden row, whose path therefore exists.
   let volumeOk: boolean | undefined;
   const sameVolumeForPass = (a: string, b: string): boolean => {
     volumeOk ??= (deps.sameVolume ?? sameDev)(a, b);
     return volumeOk;
   };
-
-  // The golden gets its own backoff key so a broken donor build never blocks
-  // member creates, which stay on the cold path for the rest of this pass.
-  const goldenKey = `${repoName}#golden`;
-  if (!findGolden(loadRegistry(repoName)) && !createBlockedUntil(backoff, goldenKey)) {
-    if (await hasFreeDiskGb(goldenRoot(repoName), WORKTREE_MIN_FREE_DISK_GB)) {
-      const g = await withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit, log, target: "golden" }));
-      if (g.ok) {
-        backoff.delete(goldenKey);
-      } else if (g.error !== "busy") {
-        const { failures, nextRetryAt } = noteCreateFailure(backoff, goldenKey);
-        log.warn(
-          { repo: repoName, error: g.error, failedStep: g.failedStep, failures, nextRetryAt },
-          "worktree reconciler: golden create failed",
-        );
-      }
-    }
-  }
 
   let { ready, totalUnclaimed } = poolCounts(repoName);
   let budget = Math.max(0, onDeck - totalUnclaimed);
@@ -276,8 +255,18 @@ export async function replenishAndShrink(
       if (chosen.mode === "hydrate") {
         const h = await hydrateTree({ repoName, repoPath, emit, log, golden: chosen.golden, clone: deps.clone });
         if (h.ok || h.error === "busy") return h;
-        if (h.error !== "hydrate-unavailable") return h;
-        log.warn({ repo: repoName, detail: h.detail }, "replenish: hydration unavailable; cold create");
+        // Every hydrate failure, not just the two clone exits that map to
+        // "unavailable": hydration is an optimization over cold create and
+        // never a replacement for it, so a donor rt cannot read (an older
+        // `rt` with no hydrate-clone verb, a path tracked at the golden's
+        // stamp but ignored at its HEAD, a clone that timed out) must leave
+        // the pool refilling the slow way rather than stop it refilling. At
+        // warn, so a hydrate that is persistently broken reads as broken
+        // rather than merely slow.
+        log.warn(
+          { repo: repoName, error: h.error, reason: h.error === "hydrate-unavailable" ? h.detail : h.failedStep },
+          "replenish: hydrate failed; falling back to cold create",
+        );
       } else {
         log.debug?.({ repo: repoName, why: chosen.why }, "replenish: cold create");
       }
@@ -349,6 +338,44 @@ export async function replenishAndShrink(
     });
     counts = poolCounts(repoName);
   }
+
+  await ensureGolden(deps, backoff);
+}
+
+/**
+ * Build the donor, once the pass has nothing else to do. Last, not first: this
+ * is a full cold create (minutes on a monorepo) and it runs under the repo's
+ * create lock, which `worktree:provision` queues on too. Ahead of member
+ * top-up it would push a provision past its own timeout on the very first
+ * pass after this lands. Members cold-create until a golden exists and
+ * hydrate from the next pass on, which is the steady state either way.
+ */
+async function ensureGolden(
+  deps: FreshenDeps & { backoff?: CreateBackoffMap },
+  backoff: CreateBackoffMap,
+): Promise<void> {
+  const { repoName, repoPath, emit, log } = deps;
+  // Its own backoff key, so a broken donor build never holds off member
+  // creates, which stay on the cold path meanwhile.
+  const goldenKey = `${repoName}#golden`;
+  if (findGolden(loadRegistry(repoName)) || createBlockedUntil(backoff, goldenKey)) return;
+  // nearestExisting: the golden root does not exist before the first build,
+  // and statfs on a missing path degrades to "enough disk".
+  if (!(await hasFreeDiskGb(nearestExisting(goldenRoot(repoName)), WORKTREE_MIN_FREE_DISK_GB))) {
+    log.warn({ repo: repoName }, "replenish: golden skipped, free disk below threshold");
+    return;
+  }
+  const g = await withCreateLock(repoPath, () => createTree({ repoName, repoPath, emit, log, target: "golden" }));
+  if (g.ok) {
+    backoff.delete(goldenKey);
+    return;
+  }
+  if (g.error === "busy") return;
+  const { failures, nextRetryAt } = noteCreateFailure(backoff, goldenKey);
+  log.warn(
+    { repo: repoName, error: g.error, failedStep: g.failedStep, failures, nextRetryAt },
+    "worktree reconciler: golden create failed",
+  );
 }
 
 export const __test__ = {

@@ -271,22 +271,58 @@ describe("replenish.ts: golden lifecycle", () => {
     if (priorHome !== undefined) process.env.HOME = priorHome;
   });
 
-  function deps(clone: CloneRunner = inProcessClone) {
-    return { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => ({ kind: "none" as const }), clone };
+  type Created = { tree: string; kind?: string; hydratedFrom?: string };
+
+  function deps(clone: CloneRunner = inProcessClone, created: Created[] = []) {
+    return {
+      repoName,
+      repoPath: repo,
+      emit: (type: string, data: unknown) => {
+        if (type === "worktree:created") created.push(data as Created);
+      },
+      log: fakeLog(),
+      findRunningRun: () => ({ kind: "none" as const }),
+      clone,
+    };
   }
 
-  test("first pass builds the golden, then fills onDeck by hydration", async () => {
+  test("the first pass tops members up before it builds the golden", async () => {
+    // Ordering, not timing: the golden's build is a full cold create holding
+    // the repo's create lock, and a provision queued on that same lock gives
+    // up at its own timeout. Anything the pass does after the golden waits
+    // behind it, so member top-up must come first.
     await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees"), ready: [] });
-    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    const created: Created[] = [];
+    await replenishAndShrink(deps(inProcessClone, created), new Map(), fakeAppConfig());
+
+    expect(created.map((c) => c.kind)).toEqual(["ephemeral", "ephemeral", "golden"]);
+    // No golden existed while the members were built, so both are cold.
+    expect(created.filter((c) => c.hydratedFrom)).toHaveLength(0);
+
     const trees = loadRegistry(repoName);
-    const golden = findGolden(trees);
-    expect(golden?.state).toBe("on-deck");
-    expect(golden?.readyStamp).toBeTruthy();
-    const members = trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck");
+    expect(findGolden(trees)?.state).toBe("on-deck");
+    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(2);
+  });
+
+  test("a later pass fills the pool by hydration from the golden", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    const golden = findGolden(loadRegistry(repoName))!;
+    expect(golden.readyStamp).toBeTruthy();
+
+    // `hydratedFrom` on the event, not the stamps on the row: with `ready: []`
+    // a cold create lands on the same commit and so the same readyStamp, and
+    // only the emitting call site tells the two builds apart.
+    await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees"), ready: [] });
+    const created: Created[] = [];
+    await replenishAndShrink(deps(inProcessClone, created), new Map(), fakeAppConfig());
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBe(golden.name);
+    const members = loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck");
     expect(members).toHaveLength(2);
     for (const m of members) {
-      expect(m.readyStamp).toBe(golden!.readyStamp);
-      expect(m.readyAt).toBe(golden!.readyAt);
+      expect(m.readyStamp).toBe(golden.readyStamp);
     }
   });
 
@@ -326,6 +362,11 @@ describe("replenish.ts: golden lifecycle", () => {
     // it runs for real against a healthy golden and picks hydrate.
     const release = tryLockTree(join(cfgRoot, "fixedname"));
     try {
+      // Two passes: the first has no golden yet, so it never consults the
+      // volume probe at all. The second does, against a real golden, which
+      // is the pass this test is about.
+      await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+      expect(findGolden(loadRegistry(repoName))?.readyStamp).toBeTruthy();
       await replenishAndShrink(deps(), new Map(), fakeAppConfig());
     } finally {
       release?.();
@@ -355,13 +396,75 @@ describe("replenish.ts: golden lifecycle", () => {
     expect(backoff.get(`${repoName}#golden`)?.failures).toBe(1);
   });
 
-  test("hydrate-unavailable falls back to cold create in the same pass", async () => {
+  /**
+   * A golden with something to clone, plus one member, as the second pass of
+   * these fallback tests needs them. Without a git-ignored artifact in the
+   * donor there is nothing for a clone runner to be asked about, and a
+   * failing runner would never be called at all.
+   */
+  async function passOneWithArtifact(): Promise<TreeRecord> {
+    writeFileSync(join(repo, ".gitignore"), "node_modules/\n");
+    execSync(
+      "git add .gitignore && git -c user.email=t@t -c user.name=t commit -qm ignore && git push -q origin HEAD",
+      { cwd: repo, shell: "/bin/zsh" },
+    );
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
-    const exdev: CloneRunner = async () => ({ exitCode: 3, stderr: "clonefile: Cross-device link" });
-    await replenishAndShrink(deps(exdev), new Map(), fakeAppConfig());
-    const trees = loadRegistry(repoName);
-    expect(findGolden(trees)?.state).toBe("on-deck");
-    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    const golden = findGolden(loadRegistry(repoName))!;
+    mkdirSync(join(golden.path, "node_modules"), { recursive: true });
+    writeFileSync(join(golden.path, "node_modules", "a.js"), "module.exports = 1;\n");
+    await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees"), ready: [] });
+    return golden;
+  }
+
+  test("a clone exit that maps to hydrate-unavailable falls back to cold create", async () => {
+    await passOneWithArtifact();
+    let calls = 0;
+    const exdev: CloneRunner = async () => { calls++; return { exitCode: 3, stderr: "clonefile: Cross-device link" }; };
+    const created: Created[] = [];
+    await replenishAndShrink(deps(exdev, created), new Map(), fakeAppConfig());
+
+    expect(calls).toBeGreaterThan(0);
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBeUndefined();
+    expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(2);
+  });
+
+  test("a hydrate failure that is not 'unavailable' falls back too, and charges no backoff", async () => {
+    // Exit 5 (EEXIST) is the reachable one: a path ignored at the golden's
+    // HEAD but tracked at its readyStamp is already on disk in the member.
+    await passOneWithArtifact();
+    const eexist: CloneRunner = async () => ({ exitCode: 5, stderr: "clonefile: File exists" });
+    const backoff = new Map<string, { failures: number; nextRetryAt: string }>();
+    const created: Created[] = [];
+    await replenishAndShrink({ ...deps(eexist, created), backoff }, new Map(), fakeAppConfig());
+
+    expect(created).toHaveLength(1);
+    expect(created[0]!.hydratedFrom).toBeUndefined();
+    expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(2);
+    expect(backoff.has(repoName)).toBe(false);
+  });
+
+  test("the member backoff is charged only when the cold-create fallback fails too", async () => {
+    const golden = await passOneWithArtifact();
+    // A ready step only a cold create ever runs: hydration inherits the
+    // golden's stamp and runs no ladder, so the sentinel is proof the
+    // fallback happened rather than the hydrate failure ending the attempt.
+    const sentinel = join(repo, "cold-create-ran");
+    await declareWorktrees(repo, repoName, {
+      onDeck: 2,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: `touch ${sentinel}; exit 1` }],
+    });
+    const boom: CloneRunner = async () => ({ exitCode: 1, stderr: "clonefile: Input/output error" });
+    const backoff = new Map<string, { failures: number; nextRetryAt: string }>();
+    await replenishAndShrink({ ...deps(boom), backoff }, new Map(), fakeAppConfig());
+
+    expect(existsSync(sentinel)).toBe(true);
+    // One charge for the attempt, not one per build it tried.
+    expect(backoff.get(repoName)?.failures).toBe(1);
+    expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+    expect(findGolden(loadRegistry(repoName))?.path).toBe(golden.path);
   });
 
   test("onDeck 0 scraps the golden and nothing else", async () => {

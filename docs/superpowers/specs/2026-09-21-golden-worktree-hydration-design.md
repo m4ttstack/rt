@@ -67,11 +67,14 @@ dirs, tool caches. Nothing else ever writes into it.
 
 ### Lifecycle
 
-**Create.** The replenish pass (`replenish.ts`) ensures the golden exists
-before it tops up on-deck members: if no `kind: "golden"` row exists for a
+**Create.** The replenish pass (`replenish.ts`) tops up on-deck members
+first and ensures the golden last: if no `kind: "golden"` row exists for a
 repo with `onDeck > 0`, it runs one `createTree` for the golden under the
-repo's create lock, with the same backoff a member create gets. Member top-up
-in the same pass proceeds regardless (cold create until the golden is ready).
+repo's create lock, with its own backoff key so a broken donor never holds
+member creates off. Last, not first, because the donor build is a full cold
+create holding the create lock that `worktree:provision` queues on, and a
+provision gives up at `PROVISION_TIMEOUT_MS`. Members cold-create on the
+first pass (no golden yet) and hydrate from the second pass on.
 
 **Freshen.** `freshenCandidate` admits `kind === "golden"` with the same
 `state === "on-deck"` rule as members. `freshenRepo` visits the golden first
@@ -226,7 +229,7 @@ golden) plus per-member freshens as before.
 
 ## Testing
 
-- `replenish`: golden ensured before member top-up; member path chooses
+- `replenish`: golden ensured after member top-up; member path chooses
   hydrate vs cold for each fallback condition above; hydrate runs under both
   locks; failure scraps and backs off.
 - `freshen`: golden is a candidate and visits first.
