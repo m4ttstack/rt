@@ -2451,6 +2451,27 @@ body {
 .tui-thread-reply[data-kind='direction'] .tui-thread-reply-k {
   color: var(--text-2);
 }
+/* A respond-post reply option carries the full reply text, so the box
+   tops its checkbox against the first line instead of centring it. */
+.tui-gate-question[data-gate-ctx='replies'] .tui-gate-choice {
+  align-items: flex-start;
+}
+.tui-reply-choice-file {
+  font-weight: 500;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-reply-choice-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.tui-reply-choice-text [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-reply-choice-text [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
 .tui-gate-quote {
   margin: 0;
   padding: 2px 0 2px 12px;

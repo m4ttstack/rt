@@ -26,7 +26,7 @@ import {
   type ContextSection,
 } from './gate-context.ts';
 import { parseGateCtx, type GateCtx } from './gate-ctx.ts';
-import { SeverityPill, ThreadCard } from './RespondCards.tsx';
+import { ReplyChoiceBody, SeverityPill, ThreadCard } from './RespondCards.tsx';
 
 function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
@@ -391,10 +391,12 @@ function GateForm({
         const picked = new Set(Array.isArray(current) ? current : []);
         const qctx = questionCtx.get(q.name) ?? null;
         const threadCtx = qctx?.shape === 'thread@1' ? qctx : null;
+        const repliesCtx = qctx?.shape === 'replies@1' ? qctx : null;
         const threadOrd = threadCtx ? threadIds.indexOf(q.name) : -1;
-        const section = threadCtx
-          ? undefined
-          : sectionFor(context, { id: q.name, label: q.prompt });
+        const section =
+          threadCtx || repliesCtx
+            ? undefined
+            : sectionFor(context, { id: q.name, label: q.prompt });
         const threadAt = section ? threadKeys.indexOf(section.key) : -1;
         return (
           <Questionnaire.Item
@@ -404,7 +406,9 @@ function GateForm({
             multiple={q.multiple}
             className="tui-gate-question"
             data-sectioned={section ? 'true' : undefined}
-            data-gate-ctx={threadCtx ? 'thread' : undefined}
+            data-gate-ctx={
+              threadCtx ? 'thread' : repliesCtx ? 'replies' : undefined
+            }
           >
             <div className="tui-gate-question-head">
               {threadAt >= 0 && (
@@ -452,7 +456,8 @@ function GateForm({
             {threadCtx ? (
               <ThreadCard ctx={threadCtx} />
             ) : (
-              q.context && (
+              q.context &&
+              !repliesCtx && (
                 <div className="tui-gate-question-context">
                   <Markdown unstyled linkTargetBlank>
                     {q.context}
@@ -467,6 +472,20 @@ function GateForm({
                   choice.recommended === true ||
                   (section?.recommendation !== undefined &&
                     choice.label.toLowerCase() === section.recommendation);
+                const entry = repliesCtx?.replies.find(
+                  r => r.thread === choice.value
+                );
+                const recommendedChip = recommended && (
+                  <Chip
+                    intent="ok"
+                    variant="outline"
+                    uppercase
+                    data-gate="recommended"
+                    className="tui-gate-recommended"
+                  >
+                    recommended
+                  </Chip>
+                );
                 return (
                   <Questionnaire.Choice
                     key={choice.value}
@@ -494,24 +513,24 @@ function GateForm({
                       )}
                     />
                     <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
-                      <span className="tui-gate-choice-label-row">
-                        <span title={choice.description}>{choice.label}</span>
-                        {recommended && (
-                          <Chip
-                            intent="ok"
-                            variant="outline"
-                            uppercase
-                            data-gate="recommended"
-                            className="tui-gate-recommended"
-                          >
-                            recommended
-                          </Chip>
-                        )}
-                      </span>
-                      {choice.subtitle && (
-                        <span className="tui-gate-choice-subtitle">
-                          {choice.subtitle}
-                        </span>
+                      {entry ? (
+                        <ReplyChoiceBody entry={entry}>
+                          {recommendedChip}
+                        </ReplyChoiceBody>
+                      ) : (
+                        <>
+                          <span className="tui-gate-choice-label-row">
+                            <span title={choice.description}>
+                              {choice.label}
+                            </span>
+                            {recommendedChip}
+                          </span>
+                          {choice.subtitle && (
+                            <span className="tui-gate-choice-subtitle">
+                              {choice.subtitle}
+                            </span>
+                          )}
+                        </>
                       )}
                     </Questionnaire.ChoiceLabel>
                     <Questionnaire.ChoiceShortcut className="tui-gate-key" />
