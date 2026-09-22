@@ -142,6 +142,9 @@ test('joined options show the file, the verb tag and the full reply text', async
   ).toEqual(['queue/enqueue.ts:88', 'queue/README.md:12']);
   const fix = item.querySelector('[data-verb="fix"]')!;
   expect(fix.textContent).toBe('fix · ab12cd3');
+  expect(fix.querySelector('.tui-respond-pill-sha')!.textContent).toBe(
+    'ab12cd3'
+  );
   expect(fix.getAttribute('data-hue')).toBe('green');
   const reply = item.querySelector('[data-verb="reply"]')!;
   expect(reply.textContent).toBe('reply');

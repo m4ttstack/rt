@@ -105,9 +105,14 @@ function ReplyChoiceBody({
           data-hue={entry.verb === 'fix' ? 'green' : 'grey'}
           data-verb={entry.verb}
         >
-          {entry.verb === 'fix' && entry.sha
-            ? `fix · ${entry.sha}`
-            : entry.verb}
+          {entry.verb === 'fix' && entry.sha ? (
+            <>
+              {'fix · '}
+              <span className="tui-respond-pill-sha">{entry.sha}</span>
+            </>
+          ) : (
+            entry.verb
+          )}
         </span>
         {children}
       </span>

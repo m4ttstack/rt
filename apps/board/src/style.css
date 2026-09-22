@@ -2357,6 +2357,9 @@ body {
   color: var(--text-accent-small);
   background: color-mix(in srgb, var(--fill-accent) 17%, transparent);
 }
+.tui-respond-pill-sha {
+  text-transform: none;
+}
 /* A structured thread's head: file:line and its severity lead, the
    ordinal and the step dots hold the right edge. */
 .tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-head {
