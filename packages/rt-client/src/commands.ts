@@ -464,8 +464,14 @@ export interface WorktreeProvisionData {
   tree: string; path: string; branch: string; wasOnDeck: boolean;
   readyAt: string | null; branchState: "new" | "tracking-remote" | "existing-clean" | "diverged" | "behind";
   readyFailed?: true; failedStep?: string;
+  /** Set only when the tree was built by hydrating from the repo's golden donor, not the on-deck pool or a cold create. */
+  hydratedFrom?: string;
 }
-export interface WorktreeCreateData { tree: string; path: string }
+export interface WorktreeCreateData {
+  tree: string; path: string;
+  /** Set only for `--on-deck`, and only when that tree hydrated from the golden rather than cold-creating. */
+  hydratedFrom?: string;
+}
 export interface WorktreeDisposeData {
   disposed: string[];
   /** `detail` is set only for a refusal whose bare `reason` code can't name
