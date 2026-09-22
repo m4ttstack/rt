@@ -1101,9 +1101,7 @@ describe('parseViewState', () => {
   });
 
   test('stored drafts filter is honoured', () => {
-    expect(parseViewState('', { drafts: 'hide' }, members).drafts).toBe(
-      'hide'
-    );
+    expect(parseViewState('', { drafts: 'hide' }, members).drafts).toBe('hide');
   });
 
   test('an unknown drafts filter value falls back to all', () => {

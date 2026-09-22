@@ -1255,7 +1255,12 @@ export function Board() {
         !data.fetchError &&
         !activeSection?.unknown ? (
           <p className="tui-empty">
-            {emptyQueueCopy(slackFilter, slackHidden, draftFilter, draftsHidden)}
+            {emptyQueueCopy(
+              slackFilter,
+              slackHidden,
+              draftFilter,
+              draftsHidden
+            )}
           </p>
         ) : (
           groups.map(g => (
