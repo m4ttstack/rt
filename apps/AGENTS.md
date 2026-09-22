@@ -8,7 +8,8 @@ component, touching `packages/server/src/**`, or consuming
 `mantine-kit`'s own `AGENTS.md` (mattstack apps absorbed `src/ui` from
 mantine-kit; see `docs/superpowers/specs/2026-08-26-app-kit-design.md`).
 "The mattstack layer", "The server package", and "Consumer requirements"
-are new to this repo.
+are new to this repo. Colour and type decisions are NOT made here:
+`docs/ui-authoring.md` owns them, for this package and every app.
 
 ## 1. Why the import walls exist, and how to satisfy them
 

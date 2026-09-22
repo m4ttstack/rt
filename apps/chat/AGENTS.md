@@ -16,6 +16,21 @@ Read that first for anything touching `@mattstack/app-kit/*` or
 `@mattstack/app-server`. What follows here is only what's specific to how
 chat consumes it.
 
+## UI colour and type
+
+Colour and type follow the repo-wide authoring guide: `docs/ui-authoring.md`
+at the repo root. Read it before writing any colour, contrast, or font
+decision; tokens are picked by role there, and raw values fail lint and the
+contrast gates.
+
+Chat-specific: the app has ONE type ladder (xs 12 / sm 13 / md 14 / lg 16 /
+xl 20), defined in `src/app/chat-font-theme.ts` and merged at the ROOT
+Mantine provider so portalled content resolves the same sizes. Never size
+text with a raw px or a Mantine size the ladder does not define.
+`design/spec.json` predates the Radix migration: its font sizes are historic
+reference, its colours are stale -- do not conform new work to its colour
+values.
+
 ## Product code lives in `src/app`, not a vendored kit
 
 There is no `src/ui/` in this repo and no `@ui/*` alias. Every Mantine-shaped
