@@ -37,7 +37,7 @@ public enum NotificationClick {
     /// does not parse must not win the route: the follower would no-op on
     /// it and swallow the pane fallback.
     public static func openRoute(url: String?, paneId: String?) -> Route {
-        if let url, URL(string: url) != nil { return .openURL(url) }
+        if let url, isOpenableURL(url) { return .openURL(url) }
         if let paneId, !paneId.isEmpty { return .focusPane(paneId) }
         return .none
     }
@@ -46,7 +46,15 @@ public enum NotificationClick {
     /// of the banner click, so both targets stay one click away.
     public static func focusPaneRoute(url: String?, paneId: String?) -> Route {
         if let paneId, !paneId.isEmpty { return .focusPane(paneId) }
-        if let url, URL(string: url) != nil { return .openURL(url) }
+        if let url, isOpenableURL(url) { return .openURL(url) }
         return .none
+    }
+
+    /// Only http(s) may reach NSWorkspace: the tray socket's /notify is
+    /// unauthenticated, so a URL from an event is untrusted input, and any
+    /// other scheme would hand a click to an arbitrary registered handler.
+    private static func isOpenableURL(_ url: String) -> Bool {
+        guard let scheme = URL(string: url)?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }

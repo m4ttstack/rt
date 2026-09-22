@@ -56,6 +56,16 @@ let notificationClickChecks: [Check] = [
     Check("open button falls back to pane focus on a malformed URL") { c in
         c.expectEqual(NotificationClick.openRoute(url: "https://[", paneId: "pane-7"), .focusPane("pane-7"))
     },
+    Check("a non-HTTP scheme never wins the open route") { c in
+        c.expectEqual(NotificationClick.openRoute(url: "mailto:a@b.c", paneId: "pane-7"), .focusPane("pane-7"))
+        c.expectEqual(NotificationClick.openRoute(url: "x-scheme://payload", paneId: nil), .none)
+    },
+    Check("a non-HTTP scheme never wins the focus-pane fallback either") { c in
+        c.expectEqual(NotificationClick.focusPaneRoute(url: "mailto:a@b.c", paneId: nil), .none)
+    },
+    Check("HTTP survives the scheme guard case-insensitively") { c in
+        c.expectEqual(NotificationClick.openRoute(url: "HTTP://x.test/a", paneId: nil), .openURL("HTTP://x.test/a"))
+    },
     Check("focus-pane button prefers the pane over the URL") { c in
         let r = NotificationClick.focusPaneRoute(
             url: "https://board.mattstack/?gate=g1", paneId: "pane-7")
