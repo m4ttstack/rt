@@ -104,6 +104,17 @@ type Mission struct {
 	lastClickPath string
 	lastClickAt   time.Time
 	nowFn         func() time.Time
+
+	// selectGen/selectPending/selectPendingBase debounce cursorSelectCmd's
+	// mission:select: the first movement of an otherwise-settled cursor
+	// freezes selectPendingBase at the path already showing and every
+	// movement after it (settled or not) bumps selectGen. A tick only
+	// settles selectPathCmd(selectPendingBase) if its own captured
+	// generation still matches, so a movement that arrives before the tick
+	// fires supersedes it into a no-op instead of a trailing emission.
+	selectGen         int
+	selectPending     bool
+	selectPendingBase string
 }
 
 func New(em *session.Emitter) *Mission {
@@ -242,6 +253,12 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.CloseRequest:
 		m.reason = session.ReasonClosed
 		return m, tea.Quit
+	case selectDebounceMsg:
+		if v.generation != m.selectGen {
+			return m, nil
+		}
+		m.selectPending = false
+		return m, m.selectPathCmd(m.selectPendingBase)
 	case tea.MouseClickMsg:
 		return m.mouseClick(v)
 	case tea.MouseMotionMsg:
@@ -380,18 +397,47 @@ func (m *Mission) emitCommit() (tea.Model, tea.Cmd) {
 	return m, m.em.Emit(protocol.Intent{Name: "mission:commit", Payload: mustPayload(payload)})
 }
 
-// cursorSelectCmd moves the Changes cursor by delta; landing on a different
-// row emits that row's mission:select so the driver loads its diff.
+// selectDebounceInterval is how long the Changes cursor must sit still
+// before its row's mission:select actually fires: passing through several
+// rows on a scroll must load none of their diffs, only the one it lands on.
+const selectDebounceInterval = 150 * time.Millisecond
+
+// selectTick indirects tea.Tick so tests can settle cursorSelectCmd's
+// debounce without a real sleep; production always schedules a real timer.
+var selectTick = tea.Tick
+
+// selectDebounceMsg is a settled-cursor tick from cursorSelectCmd. Its
+// generation is checked against Mission.selectGen before it is allowed to
+// select anything -- see the Mission struct's own comment on selectGen.
+type selectDebounceMsg struct {
+	generation int
+}
+
+// cursorSelectCmd moves the Changes cursor by delta instantly, then
+// schedules a debounced mission:select rather than emitting one directly --
+// a fast scroll must not fire one per row passed over.
 func (m *Mission) cursorSelectCmd(delta int) tea.Cmd {
-	prev := m.selected
+	if !m.selectPending {
+		m.selectPendingBase = m.selected
+		m.selectPending = true
+	}
 	m.moveCursor(delta)
-	return m.selectPathCmd(prev)
+	m.selectGen++
+	gen := m.selectGen
+	return selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
+		return selectDebounceMsg{generation: gen}
+	})
 }
 
 func (m *Mission) selectPathCmd(prev string) tea.Cmd {
 	if m.selected == prev || m.selected == "" {
 		return nil
 	}
+	// An emission -- whether an immediate click or a settled debounce --
+	// means the pane now shows m.selected, so any older pending tick must
+	// not fire a second, redundant select behind this one's back.
+	m.selectGen++
+	m.selectPending = false
 	return m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(pathSelectPayload{Path: m.selected})})
 }
 
@@ -444,12 +490,12 @@ func (m *Mission) filterDisplayText() string {
 }
 
 // sidebarFixedTopRows is the constant row count above the (scrollable)
-// Changes list: tabs(2) + the tabs-gap blank band row(1) + the filter
-// box(3) + the master row(1) (docs/design/mission/README.md's Terminal
-// geometry table). Unlike the old content-driven top block, this never
-// varies with the Changes count -- the list itself is now a fixed-height
-// scrolling region, not a block that grows the whole sidebar.
-const sidebarFixedTopRows = 7
+// Changes list: tabs(3, pad+label+underline) + the tabs-gap blank band
+// row(1) + the filter box(3) + the master row(1) (docs/design/mission/
+// README.md's Terminal geometry table). Unlike the old content-driven top
+// block, this never varies with the Changes count -- the list itself is now
+// a fixed-height scrolling region, not a block that grows the whole sidebar.
+const sidebarFixedTopRows = 8
 
 func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -765,10 +811,16 @@ func topbarHit(width, x int) zoneID {
 // list begins, scrolled or not.
 func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
+	// The pad and label rows are the tabs button; hover and click must cover
+	// exactly the same two rows (renderTabsRow's own invariant comment).
 	if y < row+2 {
 		return tabsHit(sidebarWidth, x)
 	}
 	row += 2
+	if y == row {
+		return hit{} // the underline row: an indicator, not part of the button
+	}
+	row++
 	if y == row {
 		return hit{} // the tabs-gap blank band row: no click target
 	}

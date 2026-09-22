@@ -13,12 +13,27 @@ import (
 var (
 	Bg       = lipgloss.Color("#161224")
 	BgSubtle = lipgloss.Color("#1C162C")
+	// TopBarBg is the mission top bar's own rest fill: LIGHTER than Bg.
+	// GitHub Desktop separates its toolbar from its content with a large
+	// contrast step, but it is a light app with a near-black toolbar, so its
+	// step runs down; rt's canvas already sits near-black, so the only
+	// direction with room to make the same kind of step is up (2026-09-22
+	// correction of an earlier attempt that went darker and merged with the
+	// canvas). Scoped to the top bar deliberately -- BgSubtle stays put for
+	// the picker's selected-panel strip, the diff staging hint, and the
+	// stash strip.
+	TopBarBg = lipgloss.Color("#262038")
 	Surface  = lipgloss.Color("#221A35")
 	HoverBg  = lipgloss.Color("#2F2A4A")
-	SelBg    = lipgloss.Color("#37284B")
-	WarnBg   = lipgloss.Color("#2A2033")
-	Rule     = lipgloss.Color("#2A2340")
-	Panel    = lipgloss.Color("#34304E")
+	// TopBarHoverBg is the top bar's own hover fill: HoverBg sits too close
+	// to the lightened TopBarBg rest fill to read as a clear step up, so the
+	// bar gets its own brighter hover token instead of raising the shared
+	// HoverBg other surfaces (picker rows, diff lines) depend on.
+	TopBarHoverBg = lipgloss.Color("#363058")
+	SelBg         = lipgloss.Color("#37284B")
+	WarnBg        = lipgloss.Color("#2A2033")
+	Rule          = lipgloss.Color("#2A2340")
+	Panel         = lipgloss.Color("#34304E")
 
 	Pink     = lipgloss.Color("#FF6B9D")
 	PinkSoft = lipgloss.Color("#FF9EC0")

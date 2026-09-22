@@ -215,18 +215,21 @@ func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickFileRowEmitsSelectWithPath clicks the third Changes row
-// (mission.go, absolute y=12 per the coordinate walk on
+// TestMouseClickFileRowEmitsSelectWithPath clicks the second Changes row
+// (model.go, absolute y=13 per the coordinate walk on
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
-// on the first: the click moves the cursor and emits that row's select.
-// Row 2 (0-indexed) is "topbar.go" under the Changes list's own
+// on the first: the click moves the cursor and emits that row's select. The
+// third row (topbar.go) is not used here: with the padding rows added above
+// the tabs and top bar, the fixture's fixed 30-row PTY only has room to show
+// two of its three Changes rows without scrolling.
+// Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go.
 func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 12))
+	s.Type(sgrClick(0, 20, 13))
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
 		t.Fatalf("file-row click select intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -595,10 +598,11 @@ const (
 
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath drives a left click at
 // the checkbox column of the fixture's second Changes row (topbar.go):
-// tabs(2)+tabs-gap(1)+filter(3)+master(1)=7 body rows ahead of the list
-// (docs/design/mission/README.md's Terminal geometry table: the tabs-gap
-// blank band row), +1 for row index 1 = bodyY 8; topH(3)+bodyY(8) = frame
-// y 11, checkbox at x=2 (the "  " prefix's own width).
+// tabs(3, pad+label+underline)+tabs-gap(1)+filter(3)+master(1)=8 body rows
+// ahead of the list (docs/design/mission/README.md's Terminal geometry
+// table: the tabs-gap blank band row), +1 for row index 1 = bodyY 9;
+// topH(4)+bodyY(9) = frame y 13, checkbox at x=2 (the "  " prefix's own
+// width).
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go -- not the fixture's initial cursor row, so clicking its
@@ -607,7 +611,7 @@ const (
 // guaranteed and both lines are checked as a set.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 2, 11))
+	s.Type(sgrClick(0, 2, 13))
 	l1, ok1 := s.ReadLine(2 * time.Second)
 	l2, ok2 := s.ReadLine(2 * time.Second)
 	if !ok1 || !ok2 {
@@ -632,11 +636,11 @@ func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 // TestMouseClickDiffGutterOnAddLineEmitsLineStage clicks the gutter column
 // (x=0 relative to the diff pane, absolute sidebarWidth+1) of the fixture's
 // third diff line (index 2, the first add line, selIdx 0): the diff pane
-// starts at topH(3), header@3, then one line per index (idx0 hunk@4, idx1
-// context@5, idx2 add@6).
+// starts at topH(4), header@4, then one line per index (idx0 hunk@5, idx1
+// context@6, idx2 add@7).
 func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+1, 6))
+	s.Type(sgrClick(0, sidebarWidthConst+1, 7))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
 		!strings.Contains(l, `"mode":"line"`) || !strings.Contains(l, `"selIdx":0`) {
@@ -647,12 +651,12 @@ func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 }
 
 // TestMouseClickHunkRowEmitsHunkStage clicks anywhere across the fixture's
-// hunk header (index 0, absolute y=4: the diff pane's header sits at
-// topH(3), the hunk line right after it): the whole row is the toggle, so
+// hunk header (index 0, absolute y=5: the diff pane's header sits at
+// topH(4), the hunk line right after it): the whole row is the toggle, so
 // any x within the diff pane's content resolves the same as a gutter click.
 func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+4, 4))
+	s.Type(sgrClick(0, sidebarWidthConst+4, 5))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
 		t.Fatalf("hunk row click stage intent: %q", l)
@@ -665,14 +669,18 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 // stash/rule/commit-box/undo block docks to the sidebar's bottom edge
 // (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
 // pane height, not just the row count above it: PTY is 30x100, topbar
-// height 3 (docs/design/mission/README.md's Terminal geometry table), keybar
-// 1, no notice, so bodyH=26; the fixed top rows (tabs 2 + tabs-gap 1 +
-// filter 3 + master 1 = 7) plus a 4-row list region (3 changes rows + 1
-// filler) plus the docked block (stash 1 + rule 1 + commit-box top pad 1 +
-// summary 3 + description 4 + gap 1 + button 3 (top half-block cap, label,
-// bottom half-block cap -- ratified 2026-09-20's sub-cell-height treatment)
-// + undo 1 = 15) exactly fill the 26-row body; undo sits at bodyY
-// 7+4+1+1+1+3+4+1+3=25, frame y = topH(3)+25 = 28.
+// height 4 (docs/design/mission/README.md's Terminal geometry table), keybar
+// 1, no notice, so bodyH=25; the fixed top rows (tabs 3 + tabs-gap 1 +
+// filter 3 + master 1 = 8) plus a 2-row list region (the fixture's 3 changes
+// rows no longer all fit without scrolling once the tabs and top bar each
+// gained a padding row) plus the docked block (stash 1 + rule 1 + commit-box
+// top pad 1 + summary 3 + description 4 + gap 1 + button 3 (top half-block
+// cap, label, bottom half-block cap -- ratified 2026-09-20's sub-cell-height
+// treatment) + undo 1 = 15) exactly fill the 25-row body; undo sits at bodyY
+// 8+2+1+1+1+3+4+1+3=24, frame y = topH(4)+24 = 28 -- unchanged from before,
+// since the extra rows above cancel exactly against the shrunk list region
+// (docked-block-start = topH + bodyH - dockedH, and topH+bodyH is constant
+// for a fixed pane height regardless of how topH's own row count moves).
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 28))
@@ -706,11 +714,11 @@ func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T
 	s.Type(sgrClick(0, 5, 0))
 	s.WaitForPaint("chat")
 	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case) and
-	// its own y at topH(3); its first content row sits after the filter
+	// its own y at topH(4); its first content row sits after the filter
 	// line, the top rule, and the fixture's own "local" group header (both
-	// repo rows share that group) -- li=3 within the box, frame y = topH(3)
-	// + li(3) + 1 (the box's own top border) = 7.
-	s.Type(sgrClick(0, 5, 7))
+	// repo rows share that group) -- li=3 within the box, frame y = topH(4)
+	// + li(3) + 1 (the box's own top border) = 8.
+	s.Type(sgrClick(0, 5, 8))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
 		t.Fatalf("repo modal row click intent: %q", l)
@@ -736,23 +744,25 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickHistoryTabShowsNotice clicks the tabs row's right half
-// (absolute y=3, the first sidebar row after topH(3)): Changes and History
-// each occupy half of sidebarWidth(46), so any x >= 23 resolves to History.
+// TestMouseClickHistoryTabShowsNotice clicks the tabs button's label row
+// (absolute y=5, one row into the sidebar after topH(4): the tabs button is
+// now a 2-row pad+label span, and either row hits the same target) right
+// half: Changes and History each occupy half of sidebarWidth(46), so any
+// x >= 23 resolves to History.
 func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 30, 3))
+	s.Type(sgrClick(0, 30, 5))
 	s.WaitForPaint("History lands in v2")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
 
 // TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
-// Changes row (absolute y=10: topH(3) + the 7-row tabs/tabs-gap/filter/
+// Changes row (absolute y=12: topH(4) + the 8-row tabs/tabs-gap/filter/
 // master prefix).
 func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(2, 10, 10))
+	s.Type(sgrClick(2, 10, 12))
 	s.WaitForPaint("menu lands with polish")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
