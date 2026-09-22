@@ -101,7 +101,9 @@ not "fix" a failure by picking a darker one-off colour.
 ## Type
 
 - Font weights follow radix-ui/themes: 400 regular, 500 medium, 700
-  bold. There is no 600. Headings are 700, control labels 500.
+  bold. There is no 600. Headings are 700, control labels 500. A
+  neighbouring `fw={600}` is a pre-Radix straggler, not precedent: new
+  code picks 500 or 700, and fixing the straggler in passing is welcome.
 - chat has its own four-step ladder (xs 12 / sm 13 / md 14 / lg 16 /
   xl 20, mounted at the root provider so portals agree) -- inside chat,
   never size text with a raw px or an off-ladder token; see
