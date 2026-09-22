@@ -9,6 +9,7 @@ import { closeStateDb } from "../../state/index.ts";
 import { loadRegistry, type TreeRecord } from "../registry.ts";
 import { listWorktreesAsync } from "../git-async.ts";
 import { createTree, type CreateDeps } from "../create.ts";
+import { isTreeLocked, tryLockTree } from "../locks.ts";
 import { hydrateTree, parseIgnoredPaths, listIgnoredPaths, type CloneRunner } from "../hydrate.ts";
 import { clonePath, cloneExitCode } from "../clonefile.ts";
 
@@ -183,6 +184,34 @@ describe("hydrateTree", () => {
     expect(result.failedStep).toBe("hydrate-clone generated");
     expect(result.output).toContain("Input/output error");
     expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
+  });
+
+  test("the donor is enumerated and cloned under the donor's own tree lock", async () => {
+    const seen: boolean[] = [];
+    const watching: CloneRunner = async (src, dst) => {
+      seen.push(isTreeLocked(golden.path));
+      return inProcessClone(src, dst);
+    };
+    const result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden, clone: watching });
+    expect(result.ok).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true);
+  });
+
+  test("a donor already locked by another pass is a hydrate failure, not a torn clone", async () => {
+    const release = tryLockTree(golden.path);
+    expect(release).not.toBeNull();
+    let result;
+    try {
+      result = await hydrateTree({ ...makeDeps(repoName, repo, events), golden, clone: inProcessClone });
+    } finally {
+      release!();
+    }
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error !== "hydrate-unavailable") throw new Error("expected hydrate-unavailable");
+    expect(loadRegistry(repoName).filter((r) => r.kind === "ephemeral")).toHaveLength(0);
+    const wts = (await listWorktreesAsync(repo))!;
+    expect(wts.some((w) => w.branch?.startsWith("on-deck/"))).toBe(false);
   });
 
   test("a golden without readyStamp is refused before any git mutation", async () => {

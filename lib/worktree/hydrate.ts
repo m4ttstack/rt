@@ -54,6 +54,11 @@ export async function listIgnoredPaths(treePath: string): Promise<string[] | nul
   return parseIgnoredPaths(r.stdout);
 }
 
+type CloneOutcome =
+  | { kind: "ok" }
+  | { kind: "unavailable"; detail: string }
+  | { kind: "failed"; step: string; output: string };
+
 export type HydrateResult =
   | { ok: true; tree: TreeRecord }
   | { ok: false; error: "busy" }
@@ -126,18 +131,30 @@ async function runHydrate(
     await reconcileForRepo({ repoIdentity: derived.kind === "remote" ? derived.id : null, worktreeRoots: gitEntries.map((w) => w.path) });
   }
 
-  const artifacts = await listIgnoredPaths(golden.path);
-  if (artifacts === null) return fail("git status --ignored -z (golden)", "git status failed on the golden tree");
-
-  for (const relPath of artifacts) {
-    const src = join(golden.path, relPath);
-    const dst = join(path, relPath);
-    mkdirSync(dirname(dst), { recursive: true });
-    const r = await clone(src, dst);
-    if (r.exitCode === 0) continue;
-    if (r.exitCode === 3 || r.exitCode === 4) return unavailable(r.stderr);
-    return fail(`hydrate-clone ${relPath}`, r.stderr);
-  }
+  // The donor's own lock, not just the member's: freshen reinstalls the
+  // golden in place, and a reconciler pass released at its deadline is only
+  // safe because every git mutation still running holds a per-tree lock.
+  // Enumerating and cloning an unlocked donor mid-reinstall would hand the
+  // member a torn node_modules under a readyStamp that says it is fine.
+  const cloned = await withTreeLock(golden.path, async (): Promise<CloneOutcome> => {
+    const artifacts = await listIgnoredPaths(golden.path);
+    if (artifacts === null) {
+      return { kind: "failed", step: "git status --ignored -z (golden)", output: "git status failed on the golden tree" };
+    }
+    for (const relPath of artifacts) {
+      const src = join(golden.path, relPath);
+      const dst = join(path, relPath);
+      mkdirSync(dirname(dst), { recursive: true });
+      const r = await clone(src, dst);
+      if (r.exitCode === 0) continue;
+      if (r.exitCode === 3 || r.exitCode === 4) return { kind: "unavailable", detail: r.stderr };
+      return { kind: "failed", step: `hydrate-clone ${relPath}`, output: r.stderr };
+    }
+    return { kind: "ok" };
+  });
+  if (cloned === "busy") return unavailable("golden tree lock is held");
+  if (cloned.kind === "unavailable") return unavailable(cloned.detail);
+  if (cloned.kind === "failed") return fail(cloned.step, cloned.output);
 
   const updated: TreeRecord = {
     ...rec,
