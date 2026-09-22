@@ -97,3 +97,29 @@ describe("parseResumeArgs", () => {
     expect(r).toMatchObject({ id: "ag-1", workspace: "reviews", tab: "⟲ !5", prompt: "go" });
   });
 });
+
+describe("withCallerAccount", () => {
+  const { withCallerAccount } = __test__;
+  const caller = async () => "alex@acme.test";
+
+  test("a claude launch with no --account takes the caller's cswap account", async () => {
+    expect(await withCallerAccount({}, () => "claude", caller)).toEqual({ account: "alex@acme.test" });
+    expect(await withCallerAccount({ provider: "claude" }, () => "codex", caller)).toEqual({ provider: "claude", account: "alex@acme.test" });
+  });
+
+  test("an explicit --account wins and cswap is never asked", async () => {
+    let asked = false;
+    const spy = async () => { asked = true; return "alex@acme.test"; };
+    expect(await withCallerAccount({ account: "other@example.com" }, () => "claude", spy)).toEqual({ account: "other@example.com" });
+    expect(asked).toBe(false);
+  });
+
+  test("codex, by flag or by default, never gets an account", async () => {
+    expect(await withCallerAccount({ provider: "codex" }, () => "claude", caller)).toEqual({ provider: "codex" });
+    expect(await withCallerAccount({}, () => "codex", caller)).toEqual({});
+  });
+
+  test("a default-profile caller leaves the account unset", async () => {
+    expect(await withCallerAccount({}, () => "claude", async () => undefined)).toEqual({});
+  });
+});

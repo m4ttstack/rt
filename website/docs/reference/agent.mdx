@@ -30,7 +30,7 @@ rt agent <verb> <id> [flags]
 | `--effort` | text |  | Override agent.&lt;provider&gt;.effort |
 | `--yolo` | boolean |  | Bypass permission prompts for this launch (override agent.&lt;provider&gt;.yolo; omitted falls back to the setting, not false) |
 | `--no-yolo` | boolean |  | Keep permission prompts for this launch even when agent.&lt;provider&gt;.yolo is true (omitted falls back to the setting, not false) |
-| `--account` | text |  | cswap account, claude only (override agent.claude.account) |
+| `--account` | text |  | cswap account, claude only; defaults to the account this session runs under, then agent.claude.account |
 | `--label` | text |  | Caller's display label; used as the herdr tab name |
 | `--caller` | text |  | Identifies what invoked this handoff |
 | `--workspace` | text |  | herdr workspace label (default: the repo label) |

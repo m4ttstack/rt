@@ -25,7 +25,7 @@ rt herd spawn [flags]
 | `--dir` | text |  | Existing directory to run in instead of a fresh worktree |
 | `--model` | text |  | Override agent.claude.model for this worker |
 | `--effort` | text |  | Override agent.claude.effort for this worker |
-| `--account` | text |  | cswap account for this worker |
+| `--account` | text |  | cswap account for this worker; defaults to the account this session runs under |
 | `--disposable` | boolean | `false` | Wrap-up may dispose this job's worktree |
 | [`--json`](/guides/common-flags) | boolean | `false` | Emit the spawn record as JSON |
 
