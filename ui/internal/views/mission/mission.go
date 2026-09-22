@@ -214,6 +214,9 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if err != nil {
 		return err
 	}
+	if historyReloaded(m.model.History.Commits, decoded.History.Commits) {
+		m.historyMoreFor = -1
+	}
 	m.model = decoded
 	m.clampSelection()
 	m.clampHistory()

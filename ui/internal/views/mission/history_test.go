@@ -328,6 +328,43 @@ func TestPagingRequestsMoreOncePerPage(t *testing.T) {
 	}
 }
 
+// TestPagingReArmsAfterReload: the driver reloads to one batch on a HEAD
+// move or a worktree switch and drops any page still in flight, so a list
+// that came back shorter or under a new tip must be able to page again even
+// at the length the last request went out for.
+func TestPagingReArmsAfterReload(t *testing.T) {
+	instantSelectTick(t)
+	m := pagingMission(t, pagingCommits(30))
+	m.historyCursor = "c24"
+	m.Update(downKey())
+	if m.historyMoreFor != 30 {
+		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
+	}
+	newTip := append([]HistoryCommitRow{{Sha: "tip", Summary: "new commit"}}, pagingCommits(29)...)
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: newTip, HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	m.historyCursor = "c23"
+	_, cmd := m.Update(downKey())
+	if m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+		t.Fatalf("a reload under a new tip must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
+	}
+
+	m = pagingMission(t, pagingCommits(30))
+	m.historyCursor = "c24"
+	m.Update(downKey())
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(40), HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	m.historyCursor = "c24"
+	if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 2 {
+		t.Fatal("a list that shrank back to one batch must re-arm paging")
+	}
+}
+
 func TestPagingSilentWithoutMoreOrWhileLoading(t *testing.T) {
 	instantSelectTick(t)
 	m := pagingMission(t, pagingCommits(30))

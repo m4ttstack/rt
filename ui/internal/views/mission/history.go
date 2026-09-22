@@ -155,6 +155,18 @@ func (m *Mission) maybeRequestMore() tea.Cmd {
 	return m.em.Emit(protocol.Intent{Name: "mission:history-more"})
 }
 
+// historyReloaded reports whether a push replaced the commit list instead of
+// appending a page to it. A page only grows the list under the same tip; a
+// shorter list or a new first commit is a reload, and the driver drops any
+// page that was in flight against the old list, so historyMoreFor must stop
+// blocking a request at that length.
+func historyReloaded(prev, next []HistoryCommitRow) bool {
+	if len(next) < len(prev) {
+		return true
+	}
+	return len(prev) > 0 && len(next) > 0 && prev[0].Sha != next[0].Sha
+}
+
 func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	commits := m.model.History.Commits
 	n := len(commits)
