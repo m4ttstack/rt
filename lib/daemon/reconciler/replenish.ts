@@ -131,7 +131,7 @@ export function chooseCreateMode(
 }
 
 /** The nearest ancestor of `p` that exists: a not-yet-created path always lands on this ancestor's device. */
-function nearestExisting(p: string): string {
+export function nearestExisting(p: string): string {
   let cur = resolve(p);
   while (!existsSync(cur)) {
     const up = dirname(cur);

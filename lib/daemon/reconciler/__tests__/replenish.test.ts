@@ -20,6 +20,7 @@ import {
   createBackoff,
   chooseCreateMode,
   findGolden,
+  nearestExisting,
 } from "../replenish.ts";
 
 function onDeckEntry(path: string, overrides: Partial<TreeRecord> = {}): TreeRecord {
@@ -167,6 +168,15 @@ describe("replenish.ts: poolCounts", () => {
 describe("replenish.ts: hasFreeDiskGb", () => {
   test("a probe failure on an unresolvable path degrades to true", async () => {
     expect(await hasFreeDiskGb("/no/such/path/at/all", 5)).toBe(true);
+  });
+
+  test("the golden root must be probed through nearestExisting, or the guard cannot say no", async () => {
+    // The golden root does not exist before the first build, and statfs on a
+    // missing path degrades to "enough disk", so probing it raw no-ops the
+    // guard for the largest write the pool ever makes.
+    const absurd = 1e9;
+    expect(await hasFreeDiskGb("/no/such/golden/root", absurd)).toBe(true);
+    expect(await hasFreeDiskGb(nearestExisting("/no/such/golden/root"), absurd)).toBe(false);
   });
 });
 
