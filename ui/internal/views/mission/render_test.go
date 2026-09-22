@@ -761,6 +761,19 @@ func newTestMission() *Mission {
 	return m
 }
 
+// TestViewReportsAllMotion pins the one thing standing between the whole
+// board's hover rendering and it ever firing: mouseMotion only sees a
+// MouseMotionMsg with no button pressed under MouseModeAllMotion (session's
+// wireMouse decorator defers to whatever MouseMode View() sets, see the
+// session package's own MouseMode test), so a regression here silently
+// turns every hover treatment in this package back into dead code.
+func TestViewReportsAllMotion(t *testing.T) {
+	m := newTestMission()
+	if got := m.View().MouseMode; got != tea.MouseModeAllMotion {
+		t.Fatalf("MouseMode = %v, want AllMotion", got)
+	}
+}
+
 // ─── modal width rule (owner's round-2 ruling, 2026-09-19): a foldout's
 // width is max(its anchor segment's width, its content's natural width) ──
 

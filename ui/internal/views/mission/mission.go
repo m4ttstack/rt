@@ -625,6 +625,12 @@ func (m *Mission) View() tea.View {
 
 	v := tea.NewView(out)
 	v.AltScreen = true
+	// The whole board is hover-driven (row/segment/diff-line/modal-row
+	// treatments all key off mouseMotion), and MouseModeCellMotion only
+	// reports movement while a button is held, so hover needs AllMotion
+	// explicitly -- session's wireMouse decorator defers to whatever mode
+	// is already set here rather than overwriting it.
+	v.MouseMode = tea.MouseModeAllMotion
 	// bubbletea's renderer optimizes trailing styled blanks by erasing to
 	// end-of-line rather than emitting every styled space, and an erased
 	// cell paints the TERMINAL's own default background, not whatever SGR

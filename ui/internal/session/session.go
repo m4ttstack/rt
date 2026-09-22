@@ -89,9 +89,15 @@ func programOptions(ctx context.Context, term *os.File) []tea.ProgramOption {
 	}
 }
 
-// mouseView decorates a View so every frame it paints reports
+// mouseView decorates a View so every frame it paints reports at least
 // MouseModeCellMotion, without requiring board- or echo-style views to know
-// anything about mouse mode themselves.
+// anything about mouse mode themselves. MouseModeNone is bubbletea's zero
+// value, so a view that never touches MouseMode is indistinguishable from
+// one that actively wants mouse off; since this decorator only ever wraps a
+// view that opted into Options.Mouse in the first place, that zero value is
+// read as "didn't ask" and defaulted to CellMotion, never as a real
+// request for none. A view that sets its own mode (mission's AllMotion, for
+// hover) is left alone.
 type mouseView struct{ view View }
 
 func (m mouseView) Init() tea.Cmd { return m.view.Init() }
@@ -109,7 +115,9 @@ func (m mouseView) Reason() Reason                     { return m.view.Reason() 
 
 func (m mouseView) View() tea.View {
 	v := m.view.View()
-	v.MouseMode = tea.MouseModeCellMotion
+	if v.MouseMode == tea.MouseModeNone {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 
