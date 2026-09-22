@@ -7,7 +7,8 @@ import type { Logger } from "pino";
 import { closeStateDb } from "../../../state/index.ts";
 import { machineSettingsPath, goldenRoot } from "../../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../../settings/identity.ts";
-import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
+import { loadRegistry, saveRegistry, GOLDEN_BRANCH, type TreeRecord } from "../../../worktree/registry.ts";
+import { branchExistsLocalAsync } from "../../../worktree/git-async.ts";
 import { tryLockTree } from "../../../worktree/locks.ts";
 import type { WorktreeAppConfig } from "../../../worktree/config.ts";
 import { clonePath, cloneExitCode } from "../../../worktree/clonefile.ts";
@@ -514,5 +515,9 @@ describe("replenish.ts: golden lifecycle", () => {
     const trees = loadRegistry(repoName);
     expect(findGolden(trees)).toBeUndefined();
     expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+    // The row alone is not enough: a leftover rt/golden ref makes every
+    // later golden create fail for as long as it exists (this is exactly
+    // the leftover a miss-pruned row would otherwise wedge on).
+    expect(await branchExistsLocalAsync(repo, GOLDEN_BRANCH)).toBe(false);
   });
 });
