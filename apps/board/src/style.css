@@ -1124,6 +1124,12 @@ body {
   color: var(--text-warn-small);
 }
 
+.tui-cd-panel {
+  color: var(--text-3);
+  font-size: 0.76rem;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
 .tui-cd-head {
   display: flex;
   justify-content: space-between;
@@ -1136,7 +1142,7 @@ body {
   z-index: 1;
 }
 .tui-cd-title {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.92rem;
   line-height: 1.4;
   min-width: 0;
@@ -1203,6 +1209,80 @@ body {
 .tui-cd-thread-open:hover {
   text-decoration: underline;
 }
+.tui-cd-thread-verbs {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.tui-cd-verb {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--text-accent-small);
+  cursor: pointer;
+}
+.tui-cd-verb:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.tui-cd-verb:disabled {
+  color: var(--text-4);
+  cursor: default;
+}
+.tui-cd-verb:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 2px;
+}
+.tui-cd-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.6rem;
+  border-top: 1px solid var(--border-soft);
+}
+.tui-cd-reply-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font: 400 0.74rem/1.5 var(--font-sans);
+  color: var(--text-1);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+.tui-cd-reply-input:focus {
+  outline: none;
+  border-color: var(--fill-accent);
+}
+.tui-cd-reply-input::placeholder {
+  color: var(--text-3);
+  opacity: 0.8;
+}
+.tui-cd-reply-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.tui-cd-reply-hint {
+  margin-right: auto;
+  font-size: 0.66rem;
+  color: var(--text-4);
+}
+.tui-cd-error {
+  margin: 0;
+  padding: 0 0.7rem 0.6rem;
+  font-size: 0.68rem;
+  color: var(--text-bad-small);
+}
 .tui-cd-note {
   padding: 0.55rem 0.7rem;
 }
@@ -1217,7 +1297,7 @@ body {
   margin-bottom: 0.25rem;
 }
 .tui-cd-note-author {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.72rem;
 }
 /* MR author (responding to feedback) vs reviewers/commenters (giving it). */
@@ -1240,6 +1320,22 @@ body {
   font: 400 0.74rem/1.5 var(--font-sans);
   color: var(--text-1);
   overflow-wrap: anywhere;
+}
+/* 18em is twelve lines at the body's 1.5 line-height. */
+.tui-cd-note-clamp[data-clamped='true'] {
+  max-height: 18em;
+  overflow: hidden;
+}
+.tui-cd-note-clamp[data-clamped='true'][data-overflow] {
+  mask-image: linear-gradient(
+    to bottom,
+    currentColor calc(100% - 3em),
+    transparent
+  );
+}
+.tui-cd-more {
+  display: inline-block;
+  margin-top: 0.35rem;
 }
 /* Rendered markdown inside a note. */
 /* Collapse the prose block's outer edges. These reach THROUGH the Markdown

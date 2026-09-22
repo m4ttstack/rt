@@ -264,6 +264,14 @@ import {
   sanitizeHeader,
   type MrFacts,
 } from './template.ts';
+import {
+  parseThreadReply,
+  parseThreadResolve,
+  replyToThread,
+  resolveThread,
+  type ThreadWriteResult,
+  type ThreadWriteSend,
+} from './thread-write.ts';
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
 import {
   attachStandDown,
@@ -657,6 +665,22 @@ async function readLatchDetail(mr: BoardMR): Promise<MRDetail | null> {
   const res = await readDiscussions(repoId, mr.iid);
   if (!res.ok || !res.data) return null;
   return { discussions: res.data.discussions } as MRDetail;
+}
+
+const sendThreadWrite: ThreadWriteSend = (verb, payload) =>
+  rtCommand(verb, payload, { timeoutMs: 30_000 });
+
+function threadWriteResponse(result: ThreadWriteResult): Response {
+  if (!result.ok) {
+    return new Response(JSON.stringify(result), {
+      status: 502,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const { threads, comments } = result;
+  return new Response(JSON.stringify({ threads, comments }), {
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 /** The tabId a signal's launched pane is running in, from whichever of the
@@ -1368,6 +1392,78 @@ const httpServer = Bun.serve({
         return new Response(JSON.stringify({ threads, comments }), {
           headers: { 'content-type': 'application/json' },
         });
+      }
+      case '/discussions/reply': {
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const reply = parseThreadReply(body);
+        if (!reply)
+          return new Response(
+            'expected { repo, iid, discussionId, author, body }',
+            { status: 400 }
+          );
+        const repoId = repoIdentityField(reply.repo);
+        if (!repoId)
+          return new Response(
+            `"${reply.repo}" is not a recognized repo identity`,
+            { status: 400 }
+          );
+        return threadWriteResponse(
+          await replyToThread(
+            sendThreadWrite,
+            repoId,
+            reply,
+            config.botUsernames
+          )
+        );
+      }
+      case '/discussions/resolve': {
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const change = parseThreadResolve(body);
+        if (!change)
+          return new Response(
+            'expected { repo, iid, discussionId, author, resolved }',
+            { status: 400 }
+          );
+        const repoId = repoIdentityField(change.repo);
+        if (!repoId)
+          return new Response(
+            `"${change.repo}" is not a recognized repo identity`,
+            { status: 400 }
+          );
+        return threadWriteResponse(
+          await resolveThread(
+            sendThreadWrite,
+            repoId,
+            change,
+            config.botUsernames
+          )
+        );
       }
       case '/review': {
         if (req.method !== 'POST')

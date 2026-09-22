@@ -241,6 +241,9 @@ export interface RowContext {
   onOpenReview: (mr: BoardMRWithReview) => void;
   onOpenRespond: (mr: BoardMRWithReview) => void;
   onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
+  /** Opens the comments drawer. Board mounts it outside every row, so its
+      events never reach a row's click or context-menu handler. */
+  onOpenComments: (mr: BoardMR) => void;
   draftResolved: ReadonlyMap<string, 'posted' | 'dismissed'>;
   onResumeRespond: (mr: BoardMR, note?: string) => void;
   /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
@@ -284,5 +287,9 @@ export type CommentNote = {
   at: string;
   body: string;
 };
-export type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
+export type CommentThread = {
+  discussionId: string;
+  status: ThreadStatus;
+  notes: CommentNote[];
+};
 export type GeneralComment = CommentNote;

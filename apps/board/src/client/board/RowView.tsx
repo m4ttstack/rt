@@ -133,10 +133,12 @@ function Rail({
   mr,
   now,
   self,
+  onOpenComments,
 }: {
   mr: BoardMR;
   now: number;
   self: string | null;
+  onOpenComments: (mr: BoardMR) => void;
 }) {
   const count = commentCount(mr);
   const seen = mr.webUrl ? seenCount(mr.webUrl) : null;
@@ -164,13 +166,15 @@ function Rail({
     <span className="tui-rail">
       {count > 0 && (
         <ThreadsLink
-          mr={mr}
           count={count}
           fresh={newness.fresh}
           grew={grew}
           awaitYou={awaitYou}
           replied={replied}
-          onOpen={() => mr.webUrl && markSeen(mr.webUrl, count)}
+          onOpen={() => {
+            if (mr.webUrl) markSeen(mr.webUrl, count);
+            onOpenComments(mr);
+          }}
         />
       )}
       <span className="tui-age" title="last updated">
@@ -291,7 +295,12 @@ function RowView({
                 <span className="tui-dels">−{mr.diff.deletions}</span>
               </span>
             )}
-            <Rail mr={mr} now={now} self={ctx.self} />
+            <Rail
+              mr={mr}
+              now={now}
+              self={ctx.self}
+              onOpenComments={ctx.onOpenComments}
+            />
           </div>
           <StatusLine
             mr={mr}

@@ -1,6 +1,7 @@
 {
   "threads": [
     {
+      "discussionId": "fx-thread-1",
       "status": "replied",
       "notes": [
         {
@@ -20,6 +21,7 @@
       ]
     },
     {
+      "discussionId": "fx-thread-2",
       "status": "replied",
       "notes": [
         {
@@ -39,6 +41,7 @@
       ]
     },
     {
+      "discussionId": "fx-thread-3",
       "status": "replied",
       "notes": [
         {
@@ -58,6 +61,7 @@
       ]
     },
     {
+      "discussionId": "fx-thread-4",
       "status": "replied",
       "notes": [
         {
@@ -77,6 +81,7 @@
       ]
     },
     {
+      "discussionId": "fx-thread-5",
       "status": "replied",
       "notes": [
         {

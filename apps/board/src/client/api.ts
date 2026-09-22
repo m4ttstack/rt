@@ -71,6 +71,36 @@ export function getMember(
   );
 }
 
+export type ThreadWriteOutcome =
+  | { ok: true; threads: CommentThread[]; comments: GeneralComment[] }
+  | { ok: false; error: string };
+
+/** One drawer thread write (reply or resolve), answered with the MR's
+    refreshed threads. Never throws: every failure carries the text to show. */
+export async function postThreadWrite(
+  path: '/discussions/reply' | '/discussions/resolve',
+  payload: Record<string, unknown>,
+  fetcher: typeof fetch = fetch
+): Promise<ThreadWriteOutcome> {
+  const r = await postAction(path, payload, fetcher);
+  if (!r.ok) {
+    const error =
+      (r.body as { error?: unknown } | null)?.error ??
+      (r.text ||
+        (r.status ? `failed (${r.status})` : "couldn't reach the board"));
+    return { ok: false, error: String(error) };
+  }
+  try {
+    const d = JSON.parse(r.text) as {
+      threads: CommentThread[];
+      comments?: GeneralComment[];
+    };
+    return { ok: true, threads: d.threads, comments: d.comments ?? [] };
+  } catch {
+    return { ok: false, error: 'unreadable response from the board' };
+  }
+}
+
 /** An MR's review threads plus general (non-thread) comments, for the
     comments drawer. `comments` defaults to `[]` for older servers that don't
     send it. */

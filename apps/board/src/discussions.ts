@@ -12,6 +12,8 @@ export interface CommentNote {
 }
 
 export interface CommentThread {
+  /** GitLab's discussion id: the address the reply and resolve verbs take. */
+  discussionId: string;
   status: ThreadStatus;
   notes: CommentNote[];
 }
@@ -118,7 +120,7 @@ export function summarizeDiscussions(
       : author && last.author?.username === author
         ? 'replied'
         : 'awaiting';
-    threads.push({ status, notes: notes.map(toNote) });
+    threads.push({ discussionId: d.id, status, notes: notes.map(toNote) });
   }
   // "Author replied elsewhere": the latest general comment the author left. Any
   // awaiting thread whose last note predates it counts as replied.

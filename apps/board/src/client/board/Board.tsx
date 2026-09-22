@@ -54,6 +54,7 @@ import {
 import { ActionMenu } from './ActionMenu.tsx';
 import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
+import { CommentsDrawer } from './CommentsDrawer.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls, ThemeToggle } from './Controls.tsx';
 import type { QueueEntry } from './decision-queue.ts';
@@ -356,6 +357,7 @@ export function Board() {
     (mr: BoardMRWithReview, draft: DraftInfo) => setDraftModal({ mr, draft }),
     []
   );
+  const [commentsFor, setCommentsFor] = useState<BoardMR | null>(null);
   const { toasts, addToast } = useToasts();
 
   // A drawer action succeeded: swap the chip to its resolved state, close the
@@ -1038,6 +1040,7 @@ export function Board() {
     onOpenReview: setReviewModal,
     onOpenRespond: setRespondModal,
     onOpenDraft: openDraft,
+    onOpenComments: setCommentsFor,
     draftResolved,
     onResumeRespond: handleResumeRespond,
     onFocusPane: handleFocusPane,
@@ -1442,6 +1445,17 @@ export function Board() {
           local={data.local}
           onResolved={handleDraftResolved}
           onClose={() => setDraftModal(null)}
+        />
+      )}
+
+      {commentsFor && (
+        <CommentsDrawer
+          mr={
+            data.mrs.find(m => !!m.webUrl && m.webUrl === commentsFor.webUrl) ??
+            commentsFor
+          }
+          local={data.local}
+          onClose={() => setCommentsFor(null)}
         />
       )}
 

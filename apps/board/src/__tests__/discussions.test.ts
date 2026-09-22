@@ -80,6 +80,19 @@ describe('summarizeThreads', () => {
     expect(summarizeThreads(d, AUTHOR)[0]!.status).toBe('resolved');
   });
 
+  test('each thread carries its own discussion id through the actionable-first sort', () => {
+    const d = detail([
+      { notes: [note('reviewer', { resolved: true })] },
+      { notes: [note('reviewer')] },
+    ]);
+    expect(
+      summarizeThreads(d, AUTHOR).map(t => [t.status, t.discussionId])
+    ).toEqual([
+      ['awaiting', 'd1'],
+      ['resolved', 'd0'],
+    ]);
+  });
+
   test('skips system notes and non-resolvable (bot) threads', () => {
     const d = detail([
       { notes: [note('bot', { resolvable: false, body: 'linear linkback' })] },

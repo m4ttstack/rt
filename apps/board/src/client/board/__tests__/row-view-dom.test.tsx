@@ -19,21 +19,12 @@ let RowView: typeof import('../RowView.tsx').RowView;
 type RowContext = import('../../types.ts').RowContext;
 type BoardMRWithReview = import('../../types.ts').BoardMRWithReview;
 
-// The comments drawer fetches its threads on mount; the stub keeps that off
-// the network so opening it from the thread link is a pure DOM assertion.
-const realFetch = globalThis.fetch;
-
 beforeAll(async () => {
-  globalThis.fetch = (async (_input: RequestInfo | URL) =>
-    new Response(JSON.stringify({ threads: [], comments: [] }), {
-      status: 200,
-    })) as typeof fetch;
   React = await import('react');
   ({ createRoot } = await import('react-dom/client'));
   ({ RowView } = await import('../RowView.tsx'));
 });
 afterAll(async () => {
-  globalThis.fetch = realFetch;
   await GlobalRegistrator.unregister();
 });
 
@@ -77,6 +68,7 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
     onOpenReview: noop,
     onOpenRespond: noop,
     onOpenDraft: noop,
+    onOpenComments: noop,
     draftResolved: new Map(),
     onResumeRespond: noop,
     onFocusPane: noop,
@@ -210,20 +202,20 @@ test('thread newness: the first sighting records a baseline, growth lights the l
   ).toBeNull();
   expect(localStorage.getItem(`board.threads.seen:${URL}`)).toBe('3');
 
-  await render([
-    mr({ threadSummary: { awaiting: 5, replied: 0, resolved: 0 } }),
-  ]);
+  const opened: number[] = [];
+  const c = ctx({ onOpenComments: m => opened.push(m.iid) });
+  await render(
+    [mr({ threadSummary: { awaiting: 5, replied: 0, resolved: 0 } })],
+    c
+  );
   const link = container.querySelector<HTMLButtonElement>('.tui-threads')!;
   expect(link.getAttribute('data-new')).toBe('true');
   expect(link.getAttribute('title')).toBe('2 new since you last looked');
 
   await React.act(async () => link.click());
   expect(localStorage.getItem(`board.threads.seen:${URL}`)).toBe('5');
-  expect(
-    container.querySelector(
-      '[data-part="sidedrawer"][aria-label="comment threads"]'
-    )
-  ).not.toBeNull();
+  expect(opened).toEqual([1418]);
+  expect(container.querySelector('[data-part="sidedrawer"]')).toBeNull();
   // Settles on the click itself, before any board render carries the new
   // baseline back into `fresh`.
   const settled = container.querySelector<HTMLButtonElement>('.tui-threads')!;
