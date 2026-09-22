@@ -28,6 +28,7 @@ import type { Commands, HerdListRow, HerdStatusData, RtResponse } from "../packa
 import { resolveRepoArg, currentRepoIdentity } from "../lib/repo-arg.ts";
 import { assembleBrief, type BriefInputs } from "../lib/herd-brief.ts";
 import { selfPaneRef } from "../lib/self-pane.ts";
+import { callerCswapAccount } from "../lib/cswap.ts";
 
 function fail(msg: string): never {
   console.error(`rt herd: ${msg}`);
@@ -122,6 +123,15 @@ export function buildSpawnPayload(args: string[]): Commands["herd:spawn"]["paylo
   return p;
 }
 
+export async function withCallerAccount(
+  p: Commands["herd:spawn"]["payload"],
+  resolveAccount: () => Promise<string | undefined> = () => callerCswapAccount(process.env),
+): Promise<Commands["herd:spawn"]["payload"]> {
+  if (p.account) return p;
+  const account = await resolveAccount();
+  return account ? { ...p, account } : p;
+}
+
 export function buildWrapUpPayload(args: string[]): Commands["herd:wrap-up"]["payload"] {
   const herd = positional(args);
   if (!herd) throw new Error("usage: rt herd wrap-up <id> [--close-panes] [--dispose <job>...] [--delete-job-dirs] [--archive-room]");
@@ -176,7 +186,7 @@ export async function spawn(args: string[]): Promise<void> {
   } catch (e) {
     fail((e as Error).message);
   }
-  const data = unwrap(await herdSpawn(payload), "spawn");
+  const data = unwrap(await herdSpawn(await withCallerAccount(payload)), "spawn");
   const trustNote = data.trust === "stuck" ? " (STUCK AT TRUST MODAL)" : data.trust === "accepted" ? " (trust dialog accepted)" : "";
   emit(json, data, `${data.job} pane ${data.pane} worktree ${data.worktree} session ${data.sessionId}${data.wasOnDeck === false ? " (cold provision)" : ""}${trustNote}`);
 }

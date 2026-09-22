@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildAskPayload, buildBriefInputs, buildSpawnPayload, buildWrapUpPayload, brief, jobEnv, renderAnswer, renderHerdRow, renderStatus, soleHerdId, workerEnv } from "../../commands/herd.ts";
+import { buildAskPayload, buildBriefInputs, buildSpawnPayload, buildWrapUpPayload, brief, jobEnv, renderAnswer, renderHerdRow, renderStatus, soleHerdId, withCallerAccount, workerEnv } from "../../commands/herd.ts";
 import type { Commands, HerdListRow, HerdStatusData } from "../../packages/rt-client/src/index.ts";
 
 async function run(fn: (args: string[]) => Promise<void>, args: string[]) {
@@ -42,6 +42,22 @@ describe("rt herd payload builders", () => {
     require("fs").writeFileSync(file, "# brief");
     const p = buildSpawnPayload(["--herd", "h", "--job", "job-a", "--brief", file, "--model", "opus"]);
     expect(p).toMatchObject({ herd: "h", job: "job-a", brief: "# brief", model: "opus" });
+  });
+
+  test("withCallerAccount fills a missing account from the caller's cswap account", async () => {
+    const resolve = async () => "alex@acme.test";
+    expect(await withCallerAccount({ herd: "h", job: "j" }, resolve)).toEqual({ herd: "h", job: "j", account: "alex@acme.test" });
+  });
+
+  test("withCallerAccount keeps an explicit --account and never asks cswap", async () => {
+    let asked = false;
+    const resolve = async () => { asked = true; return "alex@acme.test"; };
+    expect(await withCallerAccount({ herd: "h", job: "j", account: "other@example.com" }, resolve)).toEqual({ herd: "h", job: "j", account: "other@example.com" });
+    expect(asked).toBe(false);
+  });
+
+  test("withCallerAccount leaves the payload alone when the caller has no cswap account", async () => {
+    expect(await withCallerAccount({ herd: "h", job: "j" }, async () => undefined)).toEqual({ herd: "h", job: "j" });
   });
 
   test("buildWrapUpPayload collects repeated --dispose values and booleans", () => {

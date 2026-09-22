@@ -29,6 +29,26 @@ export function cswapBin(): string {
   return Bun.which("cswap") ?? join(homedir(), ".local", "bin", "cswap");
 }
 
+/** The account a `cswap run` caller is actually running as. Only the caller's
+    env knows it: `cswap run` sets CLAUDE_CONFIG_DIR per terminal, while a
+    bare `claude` launched by the daemon falls back to the global default
+    profile, which can be a different account. Undefined for a default-profile
+    caller, whose spawns already land on the same account. */
+export async function callerCswapAccount(
+  env: Record<string, string | undefined>,
+  exec: typeof runCapture = runCapture,
+): Promise<string | undefined> {
+  if (!env.CLAUDE_CONFIG_DIR) return undefined;
+  const res = await exec([cswapBin(), "list", "--json"], { timeoutMs: 5_000, env });
+  if (res.exitCode !== 0) return undefined;
+  try {
+    const parsed = JSON.parse(res.stdout) as { activeAccountNumber?: number | null; accounts?: Array<{ number: number; email: string }> };
+    return parsed.accounts?.find((a) => a.number === parsed.activeAccountNumber)?.email;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function listCswapAccounts(exec: typeof runCapture = runCapture): Promise<PaneAccount[]> {
   const res = await exec([cswapBin(), "list"], { timeoutMs: 5_000 });
   if (res.exitCode !== 0) return [];

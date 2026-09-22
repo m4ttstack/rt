@@ -253,7 +253,7 @@ const herdSubcommands: Record<string, CommandNode> = {
       { name: "Dir", flag: "--dir", type: "text", placeholder: "~/Documents/GitHub/x", hint: "Existing directory to run in instead of a fresh worktree" },
       { name: "Model", flag: "--model", type: "text", placeholder: "opus", hint: "Override agent.claude.model for this worker" },
       { name: "Effort", flag: "--effort", type: "text", placeholder: "high", hint: "Override agent.claude.effort for this worker" },
-      { name: "Account", flag: "--account", type: "text", placeholder: "me@example.com", hint: "cswap account for this worker" },
+      { name: "Account", flag: "--account", type: "text", placeholder: "me@example.com", hint: "cswap account for this worker; defaults to the account this session runs under" },
       { name: "Disposable", flag: "--disposable", type: "boolean", default: false, hint: "Wrap-up may dispose this job's worktree" },
       { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the spawn record as JSON" },
     ],
