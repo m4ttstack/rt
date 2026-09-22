@@ -363,15 +363,18 @@ function respondDoneLine(
   const r = mr.respond!;
   const threads = r.threads ?? 0;
   const posted = Math.min(r.posted ?? 0, threads);
+  const held = Math.min(r.held ?? 0, threads);
   const read: Verb[] = r.reportReady
     ? [{ kind: 'read-respond', label: 'read ↗' }]
     : [];
-  switch (respondOutcome(r.posted, r.threads)) {
+  switch (respondOutcome(r.posted, r.threads, r.held)) {
     case 'posted': {
       // awaiting, not the changes-requested badge: the badge outlives the
       // posted replies until the reviewer re-reviews, but a thread only
-      // re-awaits the author when the reviewer's note is last again.
-      const cameBack = (mr.threadSummary?.awaiting ?? 0) > 0;
+      // re-awaits the author when the reviewer's note is last again. A held
+      // thread never got a reply, so it stays awaiting on GitLab for as long
+      // as it stays open -- only awaiting beyond the held count is news.
+      const cameBack = (mr.threadSummary?.awaiting ?? 0) > held;
       if (cameBack) {
         return {
           tone: 'warn',
@@ -383,20 +386,30 @@ function respondDoneLine(
       return {
         tone: 'go',
         word: 'replies posted',
-        detail: `${threads} of ${threads}`,
+        detail:
+          held > 0
+            ? `${posted} posted, ${held} held`
+            : `${threads} of ${threads}`,
         verbs: canMerge(mr, self) ? [MERGE, ...read] : read,
       };
     }
-    case 'partial':
+    case 'held':
+      return {
+        tone: 'go',
+        word: 'replies held',
+        detail: `${held} of ${threads} held`,
+        verbs: canMerge(mr, self) ? [MERGE, ...read] : read,
+      };
+    case 'partial': {
+      const waiting = threads - posted - held;
       return {
         tone: 'warn',
         word: `${posted} of ${threads} posted`,
         detail:
-          threads - posted === 1
-            ? 'one thread waiting'
-            : `${threads - posted} threads waiting`,
+          waiting === 1 ? 'one thread waiting' : `${waiting} threads waiting`,
         verbs: [{ kind: 'resume-respond', label: 'resume ↗' }],
       };
+    }
     case 'drafted':
       return {
         tone: 'warn',

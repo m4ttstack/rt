@@ -106,6 +106,57 @@ describe('respond-status CLI', () => {
     expect(await run(handle, 'done', '--posted', '2')).toBe(1);
   });
 
+  test('records a held count next to the pair', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(
+      await run(
+        handle,
+        'done',
+        '1 posted, 1 held per gate',
+        '--posted',
+        '1',
+        '--threads',
+        '2',
+        '--held',
+        '1'
+      )
+    ).toBe(0);
+    const state = readRespondStates(db).get(url);
+    expect(state?.posted).toBe(1);
+    expect(state?.threads).toBe(2);
+    expect(state?.held).toBe(1);
+  });
+
+  test('rejects a held count with no denominator', async () => {
+    const handle = seedHandle(nextUrl());
+    expect(await run(handle, 'done', '--held', '1')).toBe(1);
+  });
+
+  test('rejects a count flag with no operand instead of dropping it', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    expect(
+      await run(handle, 'done', '--posted', '1', '--threads', '2', '--held')
+    ).toBe(1);
+    expect(readRespondStates(db).get(url)?.status).toBe('queued');
+  });
+
+  test('rejects a held count that is not a non-negative integer', async () => {
+    expect(
+      await run(
+        seedHandle(nextUrl()),
+        'done',
+        '--posted',
+        '1',
+        '--threads',
+        '2',
+        '--held',
+        '-1'
+      )
+    ).toBe(1);
+  });
+
   test('rejects counts that are not non-negative integers', async () => {
     expect(
       await run(

@@ -41,6 +41,30 @@ describe('respondOutcome', () => {
     expect(respondOutcome(2, -3)).toBe('unknown');
     expect(respondOutcome(Number.NaN, 3)).toBe('unknown');
   });
+
+  test('a held reply accounts for its thread, so the run reads finished', () => {
+    expect(respondOutcome(1, 2, 1)).toBe('posted');
+    expect(respondOutcome(4, 5, 1)).toBe('posted');
+  });
+
+  test('every reply held per gate is held, not drafted', () => {
+    expect(respondOutcome(0, 2, 2)).toBe('held');
+  });
+
+  test('held threads do not finish a run that still has waiting threads', () => {
+    expect(respondOutcome(1, 3, 1)).toBe('partial');
+    expect(respondOutcome(0, 3, 1)).toBe('drafted');
+  });
+
+  test('a miscounted held clamps rather than exceeding the total', () => {
+    expect(respondOutcome(2, 3, 5)).toBe('posted');
+  });
+
+  test('an invalid held count is ignored, never poisoning the pair', () => {
+    expect(respondOutcome(2, 3, Number.NaN)).toBe('partial');
+    expect(respondOutcome(2, 3, -1)).toBe('partial');
+    expect(respondOutcome(3, 3, undefined)).toBe('posted');
+  });
 });
 
 describe('respondDoneLabel', () => {
@@ -61,6 +85,12 @@ describe('respondDoneLabel', () => {
   test('falls back to a claim-free label when counts are missing', () => {
     expect(respondDoneLabel(undefined, undefined)).toBe('responded');
   });
+
+  test('names the held replies alongside the posted ones', () => {
+    expect(respondDoneLabel(1, 2, 1)).toBe('replies posted, 1 held');
+    expect(respondDoneLabel(0, 2, 2)).toBe('replies held, none posted');
+    expect(respondDoneLabel(2, 5, 1)).toBe('2 of 5 posted, 1 held');
+  });
 });
 
 describe('respondNeedsAttention', () => {
@@ -68,6 +98,7 @@ describe('respondNeedsAttention', () => {
     expect(respondNeedsAttention('partial')).toBe(true);
     expect(respondNeedsAttention('drafted')).toBe(true);
     expect(respondNeedsAttention('posted')).toBe(false);
+    expect(respondNeedsAttention('held')).toBe(false);
     expect(respondNeedsAttention('none')).toBe(false);
     expect(respondNeedsAttention('unknown')).toBe(false);
   });

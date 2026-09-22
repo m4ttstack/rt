@@ -787,6 +787,98 @@ describe('rowStatus: respond lane', () => {
     });
   });
 
+  test('a held reply finishes the run: go tone, no resume', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: {
+          status: 'done',
+          posted: 1,
+          threads: 2,
+          held: 1,
+          reportReady: true,
+        },
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'go',
+      word: 'replies posted',
+      detail: '1 posted, 1 held',
+    });
+    expect(line!.verbs[0]).toEqual({ kind: 'read-respond', label: 'read ↗' });
+  });
+
+  test('a held thread still awaiting on GitLab is not the reviewer coming back', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: { status: 'done', posted: 1, threads: 2, held: 1 },
+        threadSummary: { awaiting: 1, replied: 1, resolved: 0 },
+      } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({ tone: 'go', word: 'replies posted' });
+  });
+
+  test('awaiting beyond the held threads is the reviewer coming back', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: { status: 'done', posted: 1, threads: 2, held: 1 },
+        threadSummary: { awaiting: 2, replied: 1, resolved: 0 },
+      } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'warn',
+      word: 'replies posted',
+      detail: 'reviewer came back',
+    });
+  });
+
+  test('every reply held per gate is a clean finish, not a drafted nag', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: { status: 'done', posted: 0, threads: 2, held: 2 },
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'go',
+      word: 'replies held',
+      detail: '2 of 2 held',
+    });
+    expect(line!.verbs.some(v => v.kind === 'resume-respond')).toBe(false);
+  });
+
+  test('a held thread shrinks the waiting count on a partial finish', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: {
+          status: 'done',
+          posted: 1,
+          threads: 4,
+          held: 1,
+          sessionId: 's',
+        },
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'warn',
+      word: '1 of 4 posted',
+      detail: '2 threads waiting',
+    });
+  });
+
   test('drafted but not posted is warn with resume', () => {
     const [line] = candidateLines(
       mr({

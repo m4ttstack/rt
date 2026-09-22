@@ -23,11 +23,14 @@ export interface RespondState {
   iid: number;
   status: RespondStatus;
   message?: string;
-  /** Unresolved human threads the run set out to answer, and how many of those
-      actually got a reply posted. The board derives the terminal outcome from
-      the pair (see respondOutcome); absent means a run that never reported. */
+  /** Unresolved human threads the run set out to answer, how many of those
+      actually got a reply posted, and how many had their reply deliberately
+      withheld at the posting gate. The board derives the terminal outcome
+      from the trio (see respondOutcome); absent counts mean a run that never
+      reported them. */
   posted?: number;
   threads?: number;
+  held?: number;
   tabId?: string;
   workspaceId?: string;
   /** Claude Code session id, captured by the status CLI. Lets the board
@@ -108,6 +111,7 @@ export function writeRespondState(
     message: patch.message,
     posted: patch.posted,
     threads: patch.threads,
+    held: patch.held,
     tabId: patch.tabId,
     workspaceId: patch.workspaceId,
     sessionId: patch.sessionId,

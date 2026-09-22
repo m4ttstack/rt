@@ -35,7 +35,7 @@ Write status **only** by running the injected `--status-bin`:
 
 ```
 <status-bin> respond-status <state> <status> [message]
-<status-bin> respond-status <state> done <message> --posted <n> --threads <n>
+<status-bin> respond-status <state> done <message> --posted <n> --threads <n> [--held <n>]
 ```
 
 The board tracks five in-flight statuses; emit each as you cross the milestone:
@@ -45,7 +45,7 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 | `triaging` | Immediately, before fetching threads. |
 | `implementing` | Only after Gate 1's `code-changes` question comes back `approve`, before touching code. Skip when no threads need code changes. |
 | `drafting` | When presenting the verdict table + drafted replies (before Gate 1), and again once implementation is finished and finalized replies are ready to post (before Gate 2). |
-| `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>` (see step 7). |
+| `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>`, plus `--held <n>` whenever a gate decision kept any reply from posting (see step 7). |
 | `error` | Anything unrecoverable (bad MR, no threads to process, delegated skill failed). |
 
 ## Operator note
@@ -122,7 +122,8 @@ old one. Instead:
     the wait's `{post: <answers>, by: <by>}`, never re-adjudicating or
     re-implementing.
     Hand both to the domain skill exactly as step 6 would have.
-- `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`
+- `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
+  (the counts follow step 7's definitions, `--held` included)
 
 Every other step below (delegating to the domain skill for adjudication,
 opening a gate, `gate open`) that precedes the resumed gate is skipped. This
@@ -327,17 +328,26 @@ conversation.
      decided instead of guessing.
 7. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
-   `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`
+   `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
    - `--threads` is the number of unresolved human threads the run set out to
      answer, i.e. the rows in the verdict table.
    - `--posted` is how many of those actually received a posted reply, per
      Gate 2's replies selection (the union of every `replies-*` answer).
+   - `--held` is how many of those deliberately got NO posted reply because
+     a gate decided so: a reply deselected at Gate 2, a `skip:` thread with
+     nothing worth posting, or a `fix:` thread held out of Gate 2 under
+     `code-changes: skip`. Count a thread here only when a gate answer
+     settled it without a reply going up; a thread the run simply never got
+     to is neither posted nor held.
 
-   The board derives the badge from this pair, so a wrong count is a wrong
-   badge: `3/3` reads "replies posted", `2/3` reads "2 of 3 posted", `0/3`
-   reads "replies drafted, not posted". Keep the message short, e.g.
-   `"3 threads: 2 fixed, 1 pushback"` or
-   `"no valid threads... replied with technical pushback"`.
+   The board derives the badge from these counts, so a wrong count is a
+   wrong badge: `3/3` reads "replies posted", `2/3` reads "2 of 3 posted"
+   and nags with a resume offer, `2/3 + 1 held` reads "replies posted,
+   1 held" and finishes clean, `0/3` reads "replies drafted, not posted".
+   Omitting `--held` for a gate-held reply leaves the board offering a
+   pointless resume forever on a thread the human already settled. Keep the
+   message short, e.g. `"3 threads: 2 fixed, 1 pushback"` or
+   `"2 threads: 1 fixed, 1 reply held per gate"`.
 8. **On failure.** `<status-bin> respond-status <state> error "<what went wrong>"`,
    then stop and report to the human in the pane.
 
@@ -405,7 +415,8 @@ describes. When the daemon is down the hook allows the native form
 - Both gates are non-negotiable. Never implement fixes or post replies
   without the human's explicit answer at the relevant gate, even to hurry
   the badge to `done`. `done` follows the human's Gate 2 pick, not your own
-  call, and `--posted` counts what actually went up, never what you drafted.
+  call: `--posted` counts what actually went up, never what you drafted, and
+  `--held` counts only what a gate answer kept down.
 - After marking done, stay in the pane so the human can act on leftover drafts.
 - If there are zero unresolved human threads, mark
   `done "no unresolved threads" --posted 0 --threads 0`. That is not an

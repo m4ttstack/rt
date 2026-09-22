@@ -61,6 +61,7 @@ export interface RespondInfo {
   sessionId?: string;
   posted?: number;
   threads?: number;
+  held?: number;
   tabId?: string;
   startedAt?: number;
   /** Clock of the lane's last write, and of an operator dismissing its line
