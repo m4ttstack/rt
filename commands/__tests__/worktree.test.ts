@@ -9,7 +9,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
-import { repoLabel, worktreeAwaitReady, worktreeDispose, worktreeList, worktreeProvision } from "../worktree.ts";
+import { repoLabel, worktreeAwaitReady, worktreeDispose, worktreeFreshen, worktreeList, worktreeProvision } from "../worktree.ts";
 import { getRepoIdentity } from "../../lib/repo.ts";
 import { closeStateDb } from "../../lib/state/index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../lib/settings/identity.ts";
@@ -301,6 +301,58 @@ describe("worktree CLI identity plumbing", () => {
       l.includes("running-run") &&
       l.includes("running run run-1 at implement; rt runs abandon run-1"),
     )).toBe(true);
+  });
+
+  test("list labels the golden row by kind, not its on-deck state", async () => {
+    installFakeDaemon({
+      ok: true,
+      data: {
+        trees: [
+          { name: "golden", path: "/nonexistent/golden", kind: "golden", state: "on-deck", branch: null, repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+        ],
+      },
+    });
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+    try {
+      await worktreeList([], {});
+    } finally {
+      console.log = origLog;
+    }
+    const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+    const row = plain.find((l) => l.includes("/golden "));
+    expect(row).toBeDefined();
+    expect(row).toMatch(/\/golden\s+golden\s+\(detached\)/);
+    expect(row).not.toContain("on-deck");
+  });
+
+  test("freshen's picker offers the golden alongside on-deck members", async () => {
+    const { installFakePick } = await import("../../lib/ui/pick-fake.ts");
+    const origIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    installFakeDaemon({
+      ok: true,
+      data: {
+        trees: [
+          { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "lupin", path: "/l", kind: "ephemeral", state: "on-deck", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "hedwig", path: "/h", kind: "ephemeral", state: "claimed", branch: null, repoName: "r1", createdAt: "2026-09-21T00:00:00.000Z" },
+        ],
+      },
+    });
+    const fake = installFakePick([{ kind: "result", result: { action: "cancel", value: null, query: "" } }]);
+    try {
+      await worktreeFreshen([], {});
+    } finally {
+      fake.restore();
+      Object.defineProperty(process.stdin, "isTTY", { value: origIsTTY, configurable: true });
+    }
+    expect(fake.calls).toHaveLength(1);
+    const values = fake.calls[0]!.request.rows.map((r) => r.value);
+    expect(values).toContain("/g");
+    expect(values).toContain("/l");
+    expect(values).not.toContain("/h");
   });
 });
 

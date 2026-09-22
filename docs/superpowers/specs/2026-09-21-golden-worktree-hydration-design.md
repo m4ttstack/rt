@@ -1,0 +1,282 @@
+# Golden worktree: hydrate on-deck members by APFS clone
+
+**Date:** 2026-09-21
+**Status:** Design, pre-implementation
+
+## Problem
+
+An on-deck member of a pooled repo is built by a cold create: `git worktree
+add`, then the ready ladder (`pnpm install` and whatever the team declares
+after it). On a large pnpm monorepo that is 4 to 7 minutes per tree, serialized per
+repo behind `withCreateLock`. When an agent fires several provisions at once
+the pool drains after `onDeck` hits and every later caller waits its turn
+behind a full install.
+
+Measured on 2026-09-21, one tree of a large pnpm monorepo, machine at load 20 to 44 on 18
+cores (so these are upper bounds; idle numbers should be 2x to 4x better):
+
+| Phase | Time |
+|---|---|
+| `git worktree add` (42k tracked files) | 10s |
+| `pnpm install`, fresh, link phase only (580k inodes, all from the store) | 210s |
+| pnpm lifecycle scripts (root genTypes, backend prisma generate, two package builds) | ~185s |
+| `deploy-db`, nothing pending | 9s |
+| **Cold create** | **~7 min** |
+
+Almost none of that is bytes. pnpm already links from a content-addressable
+store, so a second tree's `node_modules` is the same files as the first
+tree's. The cost is the per-inode walk (580k of them) plus rerunning
+generators and builds whose output is identical for the same commit.
+
+The same measurement also showed that `pnpm install` on a tree that is
+already up to date still takes 193s, because pnpm reruns every root and
+workspace lifecycle script on every invocation. `--ignore-scripts` on the
+same up-to-date tree is 8s.
+
+## Design
+
+### The golden tree
+
+Every repo with `onDeck > 0` gets one extra tree, the golden. It is a normal
+git worktree of the repo, built by the same `createTree` a cold create uses,
+freshened by the same freshen pass, and never claimable.
+
+| | |
+|---|---|
+| `kind` | `"golden"` (new `TreeKind` member) |
+| `name` | `golden` (fixed; not drawn from `namePool`) |
+| `branch` | `rt/golden` (one fixed branch per repo; namespaced so it cannot be a ref the user already has) |
+| `path` | `goldenRoot(identity)`, a new `rt-paths.ts` helper beside `worktreePoolRoot`, resolving under `~/.mattstack/rt/golden/<pool segment>/` |
+| `state` | `creating` while building, `on-deck` once ready (reusing the existing readiness meaning; nothing reads it as claimable because `kind !== "ephemeral"`) |
+
+The golden lives outside the pool root so it is never mistaken for a member
+by anything listing that directory. It must stay on the same APFS volume as
+the pool root: `clonefile(2)` fails across volumes with `EXDEV`. Both default
+locations are under `~/.mattstack/rt`, so that holds unless a user override
+moves `root` elsewhere, in which case hydration is skipped (see fallbacks).
+
+`isClaimable`, `selectOnDeck`, and `provision` all already require
+`kind === "ephemeral"`, so the golden is unclaimable with no new guard. The
+reconciler's adopt step (`reconcile.ts` step b) checks `known` paths first,
+so a registered golden is never re-adopted as `unmanaged`.
+
+Because the golden only ever runs the ready ladder, its git-ignored paths are
+exactly the post-install artifact set for its commit: `node_modules` at the
+root and in every workspace package, generated sources, package `build/`
+dirs, tool caches. Nothing else ever writes into it.
+
+### Lifecycle
+
+**Create.** The replenish pass (`replenish.ts`) tops up on-deck members
+first and ensures the golden last: if no `kind: "golden"` row exists for a
+repo with `onDeck > 0`, it runs one `createTree` for the golden under the
+repo's create lock, with its own backoff key so a broken donor never holds
+member creates off. Last, not first, because the donor build is a full cold
+create holding the create lock that `worktree:provision` queues on, and a
+provision gives up at `PROVISION_TIMEOUT_MS`. Members cold-create on the
+first pass (no golden yet) and hydrate from the second pass on.
+
+**Freshen.** `freshenCandidate` admits `kind === "golden"` with the same
+`state === "on-deck"` rule as members. `freshenRepo` visits the golden first
+in each pass, so a master bump reaches the donor before any member that
+might be hydrated from it. Members freshen exactly as today.
+
+**Never provisioned, never disposed.** Provision cannot reach it:
+`selectOnDeck` and `isClaimable` both require `kind === "ephemeral"`.
+`rt worktree dispose` by name is refused by dispose's existing guard 1
+(`kind !== "ephemeral"`), which returns `kind-golden`; no new guard is
+needed there.
+
+One handler does have to change. `worktree:adopt` skips only `main` and
+`ephemeral` rows; everything else is rewritten to `ephemeral` + `claimed`
+(with `--claim`) or parked and disposed. A golden would be handed to a
+caller as an ordinary claimed tree and then become eligible for
+merge-reactor disposal, so the adopt loop gains `golden` to its
+managed-kind skip.
+
+The only way to remove a golden is to set `onDeck` to 0: replenish, which
+today returns immediately at `onDeck <= 0`, first scraps any
+`kind: "golden"` row through `scrapTree`. Existing members are left alone at
+`onDeck: 0`, as today.
+
+### Hydration
+
+Replenish's member create becomes: hydrate if a ready golden exists,
+otherwise cold create. Hydration runs inside the same `withCreateLock` and
+`withTreeLock` a cold create takes, writes its `creating` row registry-first
+exactly like `runCreate`, and on any failure scraps through the same
+`scrapTree`. The enumerate-and-clone phase additionally takes the DONOR's
+tree lock: freshen reinstalls the golden in place, and a reconciler pass
+released at its 30-minute deadline is only safe because every git mutation
+still running holds a per-tree lock. An unlocked donor read mid-reinstall
+would hand the member a torn `node_modules` under an inherited stamp that
+says it is fine.
+
+1. **Worktree at the golden's commit.** `git worktree add -b on-deck/<name>
+   <path> <golden.readyStamp>`. Not `origin/<default>`: the new tree is born
+   identical to the golden, and the existing freshen pass moves it forward
+   on its next visit, running `changed:` steps only if the lockfile or
+   migrations moved between the golden's stamp and master. This removes any
+   "is the golden current" check from the hot path.
+
+2. **Enumerate the donor's artifacts.** `git -C <golden> status --ignored
+   --porcelain -z`, records prefixed `!!`, minus `*.log` and anything under
+   `.git`. Each entry is a top-level ignored path (a directory like
+   `node_modules/` or `apps/backend/generated/`, or a file like
+   `packages/collision-iq/tsconfig.tsbuildinfo`). `-z` rather than plain
+   `--porcelain`: v1 C-quotes any path containing a space or a special byte,
+   and a quoted path would be cloned to the wrong destination and fail every
+   hydrate for that repo into permanent backoff.
+
+3. **Clone each path with one `clonefile(2)` call.** Through the child
+   process `rt worktree hydrate-clone <src> <dst>` (below), invoked via
+   `runCapture` like every ready step. The source is the golden's path
+   joined with the entry, the destination the new tree's. Parent directories
+   are created first; an existing destination is a failure, not a merge.
+
+4. **Inherit readiness.** The new row gets the golden's `readyStamp` and
+   `readyAt`, flips to `state: "on-deck"`, and emits `worktree:created`. No
+   ready step runs. `pnpm install` is never invoked on a hydrated tree; the
+   next freshen decides whether anything changed.
+
+`clonefile` is copy-on-write: the clone shares physical blocks with the
+donor and consumes only metadata until a side is written. Verified in the
+spike by `fcntl(F_LOG2PHYS)` returning identical device offsets for the
+donor file and its clone.
+
+pnpm's `node_modules/.modules.yaml` carries one absolute path, the global
+`storeDir`, which is the same on every tree on the machine. `virtualStoreDir`
+and every symlink pnpm writes are relative, so the clone needs no rewriting.
+
+### The `hydrate-clone` verb
+
+`rt worktree hydrate-clone <src> <dst>`, hidden in the command tree (same
+pattern as `intercept run`), registered in `lib/module-registry.ts`, exempt
+from `omitBehavior` as agent-facing by contract.
+
+It calls `clonefile(2)` once, on the directory or file at `src`, through
+`bun:ffi` against `libSystem.B.dylib`:
+
+```
+clonefile(const char *src, const char *dst, uint32_t flags) -> int
+```
+
+Exit codes: `0` cloned; `2` usage; `3` `EXDEV` (cross-volume); `4`
+`ENOTSUP` (filesystem does not support clones); `5` `EEXIST`; `1` any other
+errno. Stderr carries `clonefile: <strerror>`. The daemon maps 3 and 4 to
+"hydration unavailable for this repo" and everything else to a failed
+create.
+
+Why a child process and not an in-daemon call: `clonefile` on 580k inodes is
+a single synchronous syscall that took 68s under load. On the daemon thread
+that is a 68s event-loop stall, the exact degraded state this work started
+from. A Bun `Worker` would move the block off the loop but keep an FFI fault
+inside the daemon process. A Go helper is a spawn anyway plus a new build
+target and bundle entry. The process boundary is the isolation unit the
+daemon already uses for every ready step.
+
+`bun:ffi` generates its trampolines at runtime. rt ships signed; Bun's own
+JIT already requires the JIT entitlement so this is expected to pass, but it
+is unverified. The first implementation task is to call `clonefile` through
+`bun:ffi` from a compiled, signed `rt` under an isolated HOME. If that fails,
+the verb's body becomes a small Go helper using `x/sys/unix.Clonefile`; the
+daemon-side contract (argv, exit codes, stderr) does not change.
+
+### Fallbacks
+
+Hydration is an optimization over cold create, never a replacement for it.
+Replenish cold-creates when:
+
+- no `kind: "golden"` row exists, or it is `creating`, or it carries a
+  `nextRetryAt` in the future, or it carries `retryFailures > 0`;
+- the golden has no `readyStamp` (a held team ladder never stamped it);
+- `cfg.root` and the golden root resolve to different `st_dev` values
+  (checked once per replenish pass with `statSync`);
+- a hydrate attempt fails for ANY reason: a `hydrate-clone` call exits
+  non-zero (cross-volume, unsupported, EEXIST, a missing verb on an older
+  `rt`, a spawn failure or the clone timeout), the donor's own tree lock is
+  held by another pass, `git status --ignored` on the donor fails, or the
+  member's `git worktree add` fails.
+
+`retryFailures > 0` is deliberately redundant with the `nextRetryAt` check.
+Inside the reconciler pass, freshen always runs before replenish under one
+hold, so a golden whose ready ladder just died is guaranteed to carry a live
+deadline by the time replenish reads it. Nothing makes that ordering a
+property of hydration itself, and a direct caller would lose it, so the
+predicate refuses a golden with recorded failures on its own terms rather
+than trusting the pass order.
+
+Every hydrate failure scraps the half-built tree through `scrapTree` and is
+logged at `warn` with its reason, then the SAME attempt cold-creates. Only if
+that cold create also fails does anything count against the member's create
+backoff, exactly as a failed ready step does today. Otherwise a persistently
+broken hydrate would stop the pool refilling rather than merely slow it. The
+next attempt re-evaluates the conditions above; nothing disables hydration
+for the repo. A `busy` outcome (another holder of the member's own tree lock)
+stays what it is: neither a failure nor a backoff.
+
+Golden create or freshen failures follow today's create-backoff path on the
+golden's own row. They never block member replenish, which cold-creates in
+the meantime.
+
+The volume check also gates whether the golden gets built at all, not only
+whether a member may hydrate from one that already exists: `ensureGolden`
+runs the same `cfg.root` vs golden-root `st_dev` probe before its cold create,
+and skips with a warn on a mismatch. A user-overridden pool root on another
+volume would otherwise pay a full donor build, and a freshen every time
+master moves, for zero hydrations ever performed.
+
+### What does not change
+
+- `ReadyStep` shape, `resolveReadySteps`, the team ladder approval hash.
+  The team's `ready` array is untouched; a hydrated tree simply inherits a
+  stamp that makes every `changed:` step a no-op until master moves.
+- The provision handler. It selects from on-deck members as before; the
+  golden is invisible to it.
+- Member freshen. A lockfile bump still costs each existing member one
+  install, as today. Scrapping and re-hydrating members instead is a
+  possible follow-up, deliberately out of scope.
+- Disposal, trash, stale-claim sweeps.
+
+## Expected result
+
+On-deck top-up on that monorepo goes from ~7 minutes to the sum of `git
+worktree add` (10s) plus one `clonefile` per ignored path (68s for the root
+`node_modules`, 7s for the other 172 entries, all at load 20 to 40). Under
+30s is plausible on an idle machine. A lockfile bump costs one install (the
+golden) plus per-member freshens as before.
+
+## Testing
+
+- `replenish`: golden ensured after member top-up; member path chooses
+  hydrate vs cold for each fallback condition above; hydrate runs under both
+  locks; failure scraps and backs off.
+- `freshen`: golden is a candidate and visits first.
+- `handlers/worktree` and `dispose`: golden is not selectable, not
+  claimable, and dispose refuses it with `kind-golden`.
+- `commands/worktree`: `list` prints `golden` (the kind) for the golden row
+  instead of its `on-deck` state; `freshen`'s candidate filter includes it.
+- `reconcile`: a registered golden is not re-adopted; `replenish` at
+  `onDeck: 0` scraps it and nothing else.
+- `worktree:adopt`: with `--claim`, a golden row keeps its kind and state and
+  appears in none of `claimed`, `unmanaged`, `disposed`.
+- `parseIgnoredPaths`: a path containing a space survives verbatim (the case
+  porcelain v1 would C-quote).
+- Hydration unit: ignored-path enumeration from porcelain output (drops
+  `*.log`, keeps files and dirs), `readyStamp`/`readyAt` inheritance,
+  exit-code mapping.
+- `clonefile` wrapper real-FS test on a temp dir: clones a nested tree,
+  asserts contents match, inodes differ, and a write to the clone does not
+  reach the donor (copy-on-write), plus the exit codes for `EEXIST` and a
+  missing source. Block sharing itself was proven once in the spike via
+  `fcntl(F_LOG2PHYS)` and is not re-proven per test run.
+- e2e: the hidden verb's usage exit code and stderr on bad argv.
+- Signed-binary `bun:ffi` check as the first implementation task, recorded
+  in the plan with its outcome.
+
+## Source
+
+Spike run 2026-09-21 on one pool tree of that monorepo, scratch clones only; numbers
+above. Design decisions ratified in session: inherit `readyStamp` rather than
+add step scoping; child process for the clone call; members freshen as today
+with hydration only on create; every `onDeck > 0` repo gets a golden.

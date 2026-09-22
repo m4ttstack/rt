@@ -12,11 +12,15 @@
 import { existsSync } from "fs";
 import { isAbsolute, join, relative } from "path";
 import {
+  GOLDEN_BRANCH,
+  GOLDEN_NAME,
   loadRegistry,
   saveRegistry,
   usedNames,
+  type TreeKind,
   type TreeRecord,
 } from "./registry.ts";
+import { goldenRoot } from "../rt-paths.ts";
 import {
   runGit,
   remoteDefaultRef,
@@ -40,6 +44,8 @@ export interface CreateDeps {
   repoPath: string;
   emit: (type: string, data: unknown) => void;
   log: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  /** "golden" builds the hydration donor at goldenRoot with a fixed name; default is a pool member. */
+  target?: "member" | "golden";
 }
 
 export type CreateResult =
@@ -51,8 +57,9 @@ export async function createTree(deps: CreateDeps): Promise<CreateResult> {
   const { repoName, repoPath } = deps;
   const cfg = await loadWorktreeRepoConfig(repoName, repoPath);
   const existing = loadRegistry(repoName);
-  const name = pickName(cfg.namePool, usedNames(existing));
-  const path = join(cfg.root, name);
+  const golden = deps.target === "golden";
+  const name = golden ? GOLDEN_NAME : pickName(cfg.namePool, usedNames(existing));
+  const path = golden ? goldenRoot(repoName) : join(cfg.root, name);
 
   // The default pool root (RT-52) lives outside the clone, so info/exclude is
   // only needed when a user override points root back inside the repo.
@@ -76,12 +83,14 @@ async function runCreate(
   path: string,
 ): Promise<CreateResult> {
   const { repoName, repoPath, emit, log } = deps;
-  const branch = `on-deck/${name}`;
+  const golden = deps.target === "golden";
+  const branch = golden ? GOLDEN_BRANCH : `on-deck/${name}`;
+  const kind: TreeKind = golden ? "golden" : "ephemeral";
 
   const rec: TreeRecord = {
     name,
     path,
-    kind: "ephemeral",
+    kind,
     state: "creating",
     branch,
     createdAt: new Date().toISOString(),
@@ -90,7 +99,14 @@ async function runCreate(
   // Registry-first: this write must land before any git mutation below.
   const trees = loadRegistry(repoName);
   trees.push(rec);
-  saveRegistry(repoName, trees);
+  if (!saveRegistry(repoName, trees)) {
+    log.warn({ repo: repoName, tree: name, path }, "worktree create: registry-first write dropped; no git mutation attempted");
+    return { ok: false, error: "create-failed", failedStep: "registry-write" };
+  }
+
+  // Only a branch this attempt's own `git worktree add -b` brought into being
+  // may be deleted on the way out.
+  let branchCreated = false;
 
   const fail = async (failedStep: string, output: string): Promise<CreateResult> => {
     // The output is the whole diagnosis (which install died, and why); without
@@ -99,7 +115,7 @@ async function runCreate(
       { repo: repoName, tree: name, failedStep, output: outputTail(output, MAX_LOGGED_OUTPUT) },
       "worktree create failed",
     );
-    await scrapTree(deps, rec);
+    await scrapTree(deps, rec, { deleteBranch: branchCreated });
     return { ok: false, error: "create-failed", failedStep, output };
   };
 
@@ -121,6 +137,7 @@ async function runCreate(
   if (addResult.exitCode !== 0) {
     return fail(`git worktree add -b ${branch} ${path} ${defaultRef}`, addResult.stdout + addResult.stderr);
   }
+  branchCreated = true;
 
   // Scopes before ready steps: a step may shell out to `doppler`, which resolves
   // its project from this tree's path and fails "must specify a project" until
@@ -167,7 +184,7 @@ async function runCreate(
     return { ok: false, error: "create-failed", failedStep: "registry-flip" };
   }
 
-  emit("worktree:created", { repo: repoName, tree: name, path });
+  emit("worktree:created", { repo: repoName, tree: name, path, kind });
   log.info({ repo: repoName, tree: name, path }, "worktree created");
 
   return { ok: true, tree: updated };
@@ -175,8 +192,12 @@ async function runCreate(
 
 /**
  * Get rid of a half-built tree: rename it into trash (see trash.ts) with a
- * detached reap behind it, prune the registration, delete its on-deck/<name>
- * branch, and drop the registry entry. Tolerant of partial existence — the
+ * detached reap behind it, prune the registration, drop the registry entry,
+ * and, only when the caller says the branch is one it created
+ * (`deleteBranch`), delete that branch too. The default is to leave the ref
+ * alone: this is the tolerant path, and a create that failed BECAUSE the
+ * branch name was already taken would otherwise delete the user's own ref.
+ * Tolerant of partial existence... the
  * worktree may not exist yet (git worktree add never ran or failed before
  * creating it), and the branch may not exist either — and, since it renames
  * rather than asking git to unlink, it returns instantly however far the
@@ -187,7 +208,11 @@ function looksLikeWorktreeDir(path: string): boolean {
   return existsSync(join(path, ".git"));
 }
 
-export async function scrapTree(deps: CreateDeps, rec: TreeRecord): Promise<void> {
+export async function scrapTree(
+  deps: CreateDeps,
+  rec: TreeRecord,
+  opts: { deleteBranch?: boolean } = {},
+): Promise<void> {
   if (existsSync(rec.path) && !looksLikeWorktreeDir(rec.path)) {
     deps.log.warn(
       { repo: deps.repoName, tree: rec.name, path: rec.path },
@@ -214,7 +239,7 @@ export async function scrapTree(deps: CreateDeps, rec: TreeRecord): Promise<void
   // Collects the registration whose directory just went missing. Unconditional:
   // scrap is the tolerant path, and every step below runs on best effort.
   await runGit(deps.repoPath, ["worktree", "prune"]);
-  if (rec.branch) {
+  if (rec.branch && opts.deleteBranch) {
     await runGit(deps.repoPath, ["branch", "-D", rec.branch]);
   }
   const trees = loadRegistry(deps.repoName).filter((t) => t.path !== rec.path);

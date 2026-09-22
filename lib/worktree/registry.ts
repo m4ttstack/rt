@@ -2,7 +2,23 @@ import { canon } from "../fs-canon.ts";
 import { legacyRepoFile } from "../legacy-repo-data.ts";
 import { deleteKvValue, getKvValue, hasKvValue, importLegacyJsonFile, listKvValues, setKvValue, setKvValueCritical } from "../state/index.ts";
 
-export type TreeKind = "main" | "ephemeral" | "unmanaged";
+export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
+export const GOLDEN_NAME = "golden";
+/**
+ * Namespaced, not a bare `golden`: a top-level name can collide with a branch
+ * the user already has, and every path that gets rid of a half-built tree
+ * deletes the branch it believes it owns.
+ */
+export const GOLDEN_BRANCH = "rt/golden";
+
+/**
+ * Whether `branch` sits in a namespace rt creates and therefore may delete.
+ * A tolerant cleanup path (scrapTree) has no other way to tell a ref it made
+ * from one the user made at the same name.
+ */
+export function isRtOwnedBranch(branch: string | null | undefined): boolean {
+  return typeof branch === "string" && (branch.startsWith("on-deck/") || branch === GOLDEN_BRANCH);
+}
 export type TreeState = "creating" | "on-deck" | "claimed" | "disposable";
 export type DisposalMode = "merge" | "job";
 
@@ -10,7 +26,7 @@ export interface TreeRecord {
   name: string;
   path: string; // absolute
   kind: TreeKind;
-  state?: TreeState; // ephemeral only
+  state?: TreeState; // ephemeral and golden only
   branch: string | null; // git ground truth, reconciled every pass
   owner?: string;
   disposal?: DisposalMode;
@@ -183,7 +199,7 @@ export function usedNames(trees: TreeRecord[]): Set<string> {
   return new Set(trees.map((t) => t.name));
 }
 
-const MANAGED_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(["main", "ephemeral"]);
+const MANAGED_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(["main", "ephemeral", "golden"]);
 
 /**
  * Total order for two records of the same canonical path: a managed record

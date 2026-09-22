@@ -66,8 +66,27 @@ describe("filterTargets", () => {
   test("on-deck → only on-deck", () => {
     expect(filterTargets(bindings, "on-deck").map(b => b.path)).toEqual(["/repo/wt1", "/repo/wt2"]);
   });
-  test("pick → returned unchanged (picker selects later)", () => {
+  test("pick → the selectable list (picker selects later)", () => {
     expect(filterTargets(bindings, "pick")).toHaveLength(3);
+  });
+
+  // The golden is the hydration donor: it carries state "on-deck" like a
+  // member, so nothing but its kind keeps a mutating command out of it.
+  test("the golden is not a target in any mode", () => {
+    const withGolden = [...bindings, { path: "/golden/acme", branch: "rt/golden", state: "on-deck", kind: "golden" }];
+    for (const mode of ["all", "on-deck", "pick"] as const) {
+      expect(filterTargets(withGolden, mode).map((b) => b.path)).not.toContain("/golden/acme");
+    }
+    expect(filterTargets(withGolden, "on-deck").map((b) => b.path)).toEqual(["/repo/wt1", "/repo/wt2"]);
+  });
+
+  // The daemon-down git fallback (bindingsFromGit) carries branch but never
+  // kind: this is the shape it actually produces for the golden.
+  test("the golden is not a target when the binding carries branch but no kind (daemon-down fallback)", () => {
+    const withGolden = [...bindings, { path: "/golden/acme", branch: "rt/golden" }];
+    for (const mode of ["all", "on-deck", "pick"] as const) {
+      expect(filterTargets(withGolden, mode).map((b) => b.path)).not.toContain("/golden/acme");
+    }
   });
 });
 

@@ -26,6 +26,7 @@ import { maybeOfferClaudeHook } from "./worktree-hook.ts";
 import { writeReadyApproval } from "../lib/worktree/ready-approval.ts";
 import { daemonQuery, lastQueryTimedOut, type DaemonResponse } from "../lib/daemon-client.ts";
 import { listWorktrees } from "../lib/git-worktrees.ts";
+import { clonePath, cloneExitCode, CLONE_EXIT } from "../lib/worktree/clonefile.ts";
 import {
   parseEachArgs,
   filterTargets,
@@ -253,6 +254,11 @@ interface TreeRow {
   duplicateBranch?: boolean;
 }
 
+/** The golden's state is readiness bookkeeping; its kind is what a human needs to see. */
+function rowLabel(r: { kind: string; state?: string }): string {
+  return r.kind === "golden" ? "golden" : (r.state ?? r.kind);
+}
+
 async function fetchTreeRows(json: boolean, repoName?: string): Promise<TreeRow[]> {
   const res = await daemonQuery("worktree:list", repoName ? { repoName } : undefined);
   const ok = requireQueryResult(json, res);
@@ -311,7 +317,7 @@ async function pickOneTree(rows: TreeRow[], message: string, breadcrumb: string[
   const trailingByPath = await enrichTrailingByPath(rows);
   const nameWidth = Math.max(...rows.map((r) => r.name.length));
   const options = rows.map((r) => {
-    const state = r.state ?? r.kind;
+    const state = rowLabel(r);
     const base =
       state === "disposable"
         ? r.disposableReason
@@ -618,7 +624,7 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
     const dupPart = r.duplicateBranch ? `  ${yellow}duplicate branch${reset}` : "";
     const ownerPart = r.owner ? `  ${dim}${r.owner}${reset}` : "";
     console.log(
-      `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${r.state ?? r.kind}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}`,
+      `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${rowLabel(r)}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}`,
     );
   }
   console.log("");
@@ -722,10 +728,11 @@ export async function worktreeFreshen(args: string[], _ctx: unknown): Promise<vo
 
   if (!treeName && process.stdin.isTTY) {
     // Mirrors freshenCandidate (lib/daemon/worktree-reconciler.ts): only
-    // on-deck ephemeral trees and the main clone are ever freshened — a
-    // claimed tree is someone's active work and always comes back ran:[].
+    // on-deck ephemeral or golden trees and the main clone are ever
+    // freshened... a claimed tree is someone's active work and always comes
+    // back ran:[].
     const rows = (await fetchTreeRows(parsed.json, repoName))
-      .filter((r) => (r.kind === "ephemeral" && r.state === "on-deck") || r.kind === "main")
+      .filter((r) => ((r.kind === "ephemeral" || r.kind === "golden") && r.state === "on-deck") || r.kind === "main")
       .sort((a, b) => a.name.localeCompare(b.name));
     const picked = await pickOneTree(rows, "Freshen which worktree?", ["rt", "worktree", "freshen"]);
     if (!picked) { console.log(`\n  ${dim}nothing selected${reset}\n`); return; }
@@ -799,7 +806,7 @@ async function bindingsFromDaemon(repoName: string): Promise<WorktreeBinding[] |
   const res = await daemonQuery("worktree:list", { repoName });
   if (res === null || !res.ok) return null;
   const rows = (res.data?.trees ?? []) as TreeRow[];
-  return rows.map((r) => ({ path: r.path, branch: r.branch, state: r.state }));
+  return rows.map((r) => ({ path: r.path, branch: r.branch, state: r.state, kind: r.kind }));
 }
 
 /** Read-only git fallback — each is the one lifecycle command allowed this, since it never mutates. */
@@ -829,8 +836,13 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
     if (!process.stdin.isTTY) {
       fail("no --all/--on-deck flag and no TTY for the picker — pass --all or --on-deck");
     }
-    const widest  = Math.max(...bindings.map(b => relWorktreeName(repoPath, b.path).length));
-    const options = bindings.map(b => ({
+    const pickable = filterTargets(bindings, "pick");
+    if (pickable.length === 0) {
+      console.log(`\n  ${dim}no worktrees to run in${reset}\n`);
+      return;
+    }
+    const widest  = Math.max(...pickable.map(b => relWorktreeName(repoPath, b.path).length));
+    const options = pickable.map(b => ({
       value: b.path,
       label: relWorktreeName(repoPath, b.path).padEnd(widest),
       hint:  b.branch ?? "(detached)",
@@ -845,7 +857,7 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
       return;
     }
     const set = new Set(selected);
-    targets = bindings.filter(b => set.has(b.path));
+    targets = pickable.filter(b => set.has(b.path));
   } else {
     targets = filterTargets(bindings, parsed.mode);
     if (targets.length === 0) {
@@ -879,4 +891,16 @@ export async function worktreeEach(args: string[], _ctx: unknown): Promise<void>
   const summary = formatSummary(results);
   console.log(`  ${hasFailures(results) ? red : green}${summary}${reset}\n`);
   if (hasFailures(results)) process.exit(1);
+}
+
+/** Child-process body for hydration: one clonefile(2) of <src> at <dst>. Exit codes are the daemon's contract; see lib/worktree/clonefile.ts. */
+export async function worktreeHydrateClone(args: string[], _ctx: unknown): Promise<void> {
+  const [src, dst] = args.filter((a) => !a.startsWith("--"));
+  if (!src || !dst || src === dst) {
+    console.error("usage: rt worktree hydrate-clone <src> <dst>");
+    process.exit(CLONE_EXIT.usage);
+  }
+  const r = clonePath(src, dst);
+  if (!r.ok) console.error(`clonefile: ${r.message}`);
+  process.exit(cloneExitCode(r));
 }
