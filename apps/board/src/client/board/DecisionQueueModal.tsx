@@ -458,11 +458,10 @@ function DecisionQueueModal({
             />
           );
         // The modal exists to give context room: unlike the row card's
-        // collapsed disclosure, context renders open, above the form. One
-        // frame size regardless, so the modal never resizes as the queue
-        // advances across gates with and without context. A context the
-        // form has already split onto its questions (B7) collapses to a
-        // one-line strip instead; the disclosure brings the pane back.
+        // collapsed disclosure, context renders open, above the form. A
+        // context the form has already split onto its questions (B7)
+        // collapses to a one-line strip instead; the disclosure brings the
+        // pane back.
         return (
           <div className="tui-triage-body">
             {gate.context && sectioned && (

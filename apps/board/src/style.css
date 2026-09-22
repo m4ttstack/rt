@@ -2153,14 +2153,15 @@ body {
   align-items: center;
   gap: 6px;
 }
-/* BOARD-36: an option's own `description`, one muted line under its label
-   -- matching the pane's AskUserQuestion layout (label line, dim one-liner
-   beneath). Absent on options with no description, so the row above stays
-   the whole label exactly as before. */
+/* An option's own `description`, one line under its label -- matching the
+   pane's AskUserQuestion layout (label line, one-liner beneath). It reads
+   in --text-2, not the muted step: on a respond gate's fix option it is the
+   planned change, the thing being chosen. Absent on options with no
+   description, so the row above stays the whole label. */
 .tui-gate-choice-subtitle {
   font-size: var(--gate-font-meta);
   line-height: 1.4;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 /* No `display` here on purpose: the primitive hides the hint with the
    `hidden` attribute when an option has no key. */
@@ -2313,13 +2314,12 @@ body {
   gap: var(--gate-gap-row);
   min-width: 0;
 }
-/* BOARD-36: a question's own `context` field, rendered with its card above
-   its choices -- structured-field twin of the gate-level blob's sectioned
-   `.tui-gate-context`/`.tui-gate-lead`, so it takes the same muted look. */
+/* A question's own `context` field, rendered with its card above its
+   choices. It is the material the choice is made on, so it reads in ink. */
 .tui-gate-question-context {
   font-size: var(--gate-font-meta);
   line-height: 1.45;
-  color: var(--text-3);
+  color: var(--text-1);
   overflow-wrap: anywhere;
 }
 .tui-gate-question-context [data-part='markdown'] > * {
@@ -2567,16 +2567,14 @@ body {
 .tui-triage-overview-toggle:hover {
   text-decoration: underline;
 }
-/* One frame size for every gate: the pane is the point of hosting gates in
-   a modal at all, so the frame is sized for it whether or not this gate's
-   asker supplied context, and never resizes as the queue advances. */
 /* Context sits ABOVE the form, the way a real pane reads: transcript on
-   top, prompt below. The pane takes whatever height the form leaves under
-   the modal's cap and scrolls on its own past that, but never yields below
-   --gate-context-floor; when the floor plus the form outgrow the cap, the
-   body scrolls to the form under the pinned head and footer. `min-height:
-   0` lets the body shrink to the cap; `overflow-y: auto` is what turns
-   the floor's overflow into that scroll instead of a clipped form. */
+   top, prompt below. The pane is as tall as its text up to the ScrollPane's
+   46vh cap and scrolls on its own past that. It never shrinks: the kit
+   pane's own `min-height: 0` would let a flexed pane collapse to its header
+   at laptop heights, so when the pane plus the form outgrow the modal's cap
+   the body scrolls to the form under the pinned head and footer instead.
+   `min-height: 0` lets the body shrink to the cap; `overflow-y: auto` is
+   what turns the overflow into that scroll instead of a clipped form. */
 .tui-triage-body {
   display: flex;
   flex-direction: column;
@@ -2584,11 +2582,9 @@ body {
   gap: var(--gate-gap);
   min-height: 0;
   overflow-y: auto;
-  --gate-context-floor: 13rem;
 }
 .tui-triage-body > [data-part='scrollpane'] {
-  flex: 1 1 auto;
-  min-height: var(--gate-context-floor);
+  flex: 0 0 auto;
 }
 .tui-triage-body > .tui-triage-form-col {
   flex: 0 0 auto;
