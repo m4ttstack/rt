@@ -39,6 +39,13 @@ shadows, no radii).
   new-branch action row.
 - `WorktreeModal.png`: the worktree foldout (no GitHub Desktop analog): the
   current worktree, per-tree badges, on-deck pool rows, provision action.
+- `History.png`: the History tab (GitHub Desktop's app/src/ui/history):
+  the two-line commit list with cursor, hover, tag pills, and unpushed ↑;
+  the collapsed commit header; the changed-file column; the read-only diff
+  with no stage gutter; the History keybar.
+- `HistoryStates.png`: the expanded commit header, a contiguous range
+  selection and its "Showing changes from N commits" header, and the four
+  blank slates (unborn repo, first load, nothing selected, non-contiguous).
 - `Mouse.png`: every mouse affordance by zone; hover always previews.
 - `DiffStates.png`: expand up / down / all handles, binary and oversized
   messages.
@@ -58,7 +65,15 @@ shadows, no radii).
   bare arrows.
 - A worktree segment and foldout exist; GitHub Desktop has no worktree
   surface.
-- The History tab is deferred; the tab renders dimmed.
+- `1` and `2` switch between Changes and History. GitHub Desktop binds
+  ⌘1 and ⌘2, which a terminal cannot receive.
+- `e` toggles the History commit header's expanded state. GitHub
+  Desktop's expander is a button reached by tabbing; a terminal needs a
+  key.
+- Shift+click extends a History range only where the terminal forwards
+  shift-modified clicks: Ghostty and Terminal.app keep shift+click for
+  their own text selection while mouse reporting is on. Shift+↑/↓ always
+  works.
 
 ## Deferred to v2
 
@@ -69,8 +84,14 @@ only there because the repo is public and the purity gate rejects them
 in source. Adding a "lands in v2" notice to the code means adding a
 line here and a ticket there; removing one means removing all three.
 
-- **History tab.** Renders dimmed with a "v2" marker; a click answers
-  "History lands in v2". No commit data reaches the wire model.
+- **Branch compare.** GitHub Desktop's "Select Branch to Compare" box
+  atop History, with ahead/behind against another branch and the merge
+  call-to-action. Not built.
+- **Hide whitespace.** GitHub Desktop's `-w` diff option. glitter has no
+  diff options on either tab yet.
+- **Commit actions.** Revert, cherry-pick, reset to commit, create a
+  branch or tag from a commit, copy sha. They arrive with row context
+  menus.
 - **Stash foldout.** The strip shows a count and a chevron; a click
   answers "Stash foldout lands in v2". No restore, apply, or drop.
 - **Publish repository.** The action segment renders the state for

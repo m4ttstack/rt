@@ -97,9 +97,10 @@ Ported from `lib/stores/app-store.ts`:
 - **File selection** (`_changeFileSelection`): one sha loads `commitDiff`,
   a contiguous range loads `commitRangeDiff`.
 - **Stale guard.** Both loads compare the selection before and after the
-  await and drop a result whose selection moved, exactly as GHD does. Both
-  also ride the existing selection debounce (`selectGen`), so holding an
-  arrow key does not run git per row.
+  await and drop a result whose selection moved, exactly as GHD does. The
+  view debounces the cursor before it emits (the Go-side `selectTick`
+  debounce the Changes cursor already uses), so holding an arrow key does
+  not run git per row.
 - **Tip change.** A new tip (a commit made on the Changes tab, a pull, a
   checkout) reloads the first batch on the next History render and runs
   `updateOrSelectFirstCommit`.
@@ -161,7 +162,12 @@ diff message, as GHD suppresses the double empty state.
   ⌘1 and ⌘2, which a terminal cannot receive.
 - ↑/↓ move within the focused region; shift+↑/↓ extend a contiguous range.
 - Enter steps focus commit list → file column → diff; Esc steps back.
-- The keybar shows the keys for the focused region, as on Changes.
+- `e` toggles the header's expanded state. Ratified deviation: GHD's
+  expander is a tabbable button.
+- The keybar is per tab: History gets its own strip, as Changes has one.
+- Shift+click reaches the view only in terminals that forward
+  shift-modified clicks (not Ghostty or Terminal.app by default);
+  shift+↑/↓ is the dependable range gesture.
 
 **Mouse.** Hover on every commit row, file row, tab, and the expander. Click
 selects; shift+click extends the range. The wheel scrolls the region under
@@ -175,12 +181,14 @@ is added beside them rather than inline.
 - `MissionModel.tab: "changes" | "history"`.
 - `MissionModel.history`: `commits` (rows of sha, shortSha, summary,
   byline, when, tags, unpushed, selected), `hasMore`, `loading`, `header`
-  (summary, body, authors, sha, shortSha, linesAdded, linesDeleted, tags,
-  rangeCount, contiguous) or null, `files` (path, origPath, status), and
-  `selectedFile`.
+  (summary, body, byline, authors as "Name <email>", sha, shortSha,
+  linesAdded, linesDeleted, tags, rangeCount, contiguous) or null, `files`
+  (path, origPath, status), and `selectedFile`.
 - `MissionDiffModel.readOnly: boolean`.
-- Intents: `mission:tab`, `mission:history-select` (sha, extend),
-  `mission:history-file` (path), `mission:history-more`.
+- Intents: `mission:tab` (tab), `mission:history-select` (shas, newest
+  first: the view owns the cursor and range anchor, so it sends the whole
+  selection), `mission:history-file` (path, showOversized),
+  `mission:history-more`.
 
 Hover, cursor position within a region, focus, and header expansion stay in
 the Go model, like every other view-only state.
