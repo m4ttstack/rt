@@ -12,6 +12,7 @@ import { basename } from "path";
 import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
+import type { WorktreeEntry } from "../worktree/git-async.ts";
 import type { ActionState } from "./git-actions.ts";
 import type {
   MissionActionModel,
@@ -153,6 +154,52 @@ function toMissionBadge(badge: GitWorktreeBadge): MissionBadge {
     clean: badge.clean,
     lastFetchedAt: badge.lastFetchedAt ?? "",
   };
+}
+
+/**
+ * Unions `worktree:list`'s registry rows with git's own `worktree list`
+ * truth by path -- a plain `git worktree add` never touches rt's registry,
+ * so the registry alone misses trees git already knows about, including the
+ * very tree the user is standing in. The registry wins on a shared path,
+ * since only it carries the rt-assigned name and on-deck state; a git-only
+ * path is synthesized with its directory basename as the name, never
+ * on-deck (rt has no opinion on a tree it never provisioned) -- deliberately
+ * no separate "unmanaged" marker on the wire model, since the basename
+ * itself (as opposed to an rt-assigned name) already reads as different. A
+ * null `gitWorktrees` (git's own listing failed) degrades to the registry
+ * rows alone, never to an empty list.
+ */
+export function mergeWorktreeTrees(trees: WorktreeTreeRow[], gitWorktrees: WorktreeEntry[] | null, repoName: string): WorktreeTreeRow[] {
+  if (gitWorktrees === null) return trees;
+
+  const byPath = new Map(trees.map((tree) => [tree.path, tree]));
+  const seen = new Set<string>();
+  const merged: WorktreeTreeRow[] = [];
+
+  for (const entry of gitWorktrees) {
+    if (entry.isBare) continue;
+    seen.add(entry.path);
+    merged.push(
+      byPath.get(entry.path) ?? {
+        name: basename(entry.path),
+        kind: "external",
+        state: "unmanaged",
+        path: entry.path,
+        branch: entry.branch,
+        repoName,
+        mr: null,
+      },
+    );
+  }
+
+  // A registry row git's listing didn't report (a reconciliation gap, or a
+  // race between the two reads) still surfaces -- git truth only ADDS rows
+  // here, it never removes one the registry already knows about.
+  for (const tree of trees) {
+    if (!seen.has(tree.path)) merged.push(tree);
+  }
+
+  return merged;
 }
 
 /** Joins `worktree:list` trees to `repos:status` badges by path -- no wire shape carries both. */

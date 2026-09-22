@@ -24,8 +24,9 @@ import { repoLabel } from "../repo-label.ts";
 import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
+import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts";
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
-import { buildModel, joinWorktreeRows, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import { buildModel, joinWorktreeRows, mergeWorktreeTrees, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import { SessionDied } from "../runner/runner.ts";
 
 // The alias types below exist only so MissionDeps can spell `typeof <fn>`
@@ -41,6 +42,7 @@ type GuardFn = typeof checkBranchGuard;
 type ResolveDefaultBranchFn = typeof getRemoteDefaultBranch;
 type ReadPullRebaseFn = typeof getPullRebase;
 type BuildGuardsFn = typeof buildWorktreeGuardMap;
+type ListGitWorktreesFn = typeof listWorktreesAsync;
 
 export interface MissionDeps {
   openSession: OpenSessionFn;
@@ -66,6 +68,15 @@ export interface MissionDeps {
   readPullRebase: ReadPullRebaseFn;
   /** Batch worktree-ownership lookup for the branch modal's lock badges (display only; checkBranchGuard remains the enforcement point). */
   buildGuards: BuildGuardsFn;
+  /**
+   * Async twin of resolveDefaultBranch/readPullRebase's caching contract:
+   * read once per refresh(), never from model()/push(). Lists git's own
+   * worktree truth so the foldout shows a tree a plain `git worktree add`
+   * created outside rt's registry (see mergeWorktreeTrees). Null means
+   * git's own listing failed; worktreeRows() then falls back to the
+   * registry rows alone rather than emptying the list.
+   */
+  listGitWorktrees: ListGitWorktreesFn;
 }
 
 interface StagePayload {
@@ -176,6 +187,8 @@ export class MissionDriver {
   private session: SessionHandle | null = null;
   private rows: RepoStatusRow[] = [];
   private trees: WorktreeTreeRow[] = [];
+  /** Cached by refresh(); null means git's own listing failed (see MissionDeps.listGitWorktrees). */
+  private gitWorktrees: WorktreeEntry[] | null = null;
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
   private branches: BranchInfo[] = [];
   private stashCount = 0;
@@ -317,7 +330,7 @@ export class MissionDriver {
   }
 
   private worktreeRows(): WorktreeRow[] {
-    return joinWorktreeRows(this.trees, this.currentRepoBadges());
+    return joinWorktreeRows(mergeWorktreeTrees(this.trees, this.gitWorktrees, this.state.currentRepo), this.currentRepoBadges());
   }
 
   private currentRepoBadges(): GitWorktreeBadge[] {
@@ -373,13 +386,14 @@ export class MissionDriver {
     // instead of calling this themselves.
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
-    const [statusRes, treesRes, snapshot, branches, remotes, guards, stashes, log] = await Promise.all([
+    const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
       client.snapshot(),
       client.branches(),
       client.remotes(),
       this.deps.buildGuards(this.state.currentWorktree),
+      this.deps.listGitWorktrees(this.state.currentWorktree),
       client.stashes(),
       client.log({ maxCount: 1 }),
     ]);
@@ -388,6 +402,7 @@ export class MissionDriver {
     this.snapshot = snapshot;
     this.remoteName = remotes[0]?.name ?? null;
     this.guards = guards;
+    this.gitWorktrees = gitWorktrees;
     this.reconcileSelections();
     // Seed the diff pane on open (and after a checkout/worktree/repo switch
     // cleared it): the first change is what the view's cursor starts on.
