@@ -247,42 +247,41 @@ const inProcessClone: CloneRunner = async (src, dst) => {
 };
 
 describe("replenish.ts: chooseCreateMode", () => {
-  const now = Date.parse("2026-09-21T12:00:00.000Z");
   const same = () => true;
   const golden: TreeRecord = { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: "golden", createdAt: "2026-09-01T00:00:00.000Z", readyStamp: "abc", readyAt: "2026-09-01T00:10:00.000Z" };
 
   test("ready golden on the same volume hydrates", () => {
-    expect(chooseCreateMode([golden], "/pool", now, same)).toEqual({ mode: "hydrate", golden });
+    expect(chooseCreateMode([golden], "/pool", same)).toEqual({ mode: "hydrate", golden });
   });
   test("no golden is cold", () => {
-    expect(chooseCreateMode([], "/pool", now, same)).toEqual({ mode: "cold", why: "no golden" });
+    expect(chooseCreateMode([], "/pool", same)).toEqual({ mode: "cold", why: "no golden" });
   });
   test("creating golden is cold", () => {
-    expect(chooseCreateMode([{ ...golden, state: "creating" }], "/pool", now, same).mode).toBe("cold");
+    expect(chooseCreateMode([{ ...golden, state: "creating" }], "/pool", same).mode).toBe("cold");
   });
   test("golden without readyStamp is cold", () => {
-    expect(chooseCreateMode([{ ...golden, readyStamp: undefined }], "/pool", now, same).mode).toBe("cold");
+    expect(chooseCreateMode([{ ...golden, readyStamp: undefined }], "/pool", same).mode).toBe("cold");
   });
   test("a golden marked inconsistent by a freshen failure is cold", () => {
-    expect(chooseCreateMode([{ ...golden, treeMayBeInconsistent: true }], "/pool", now, same).mode).toBe("cold");
+    expect(chooseCreateMode([{ ...golden, treeMayBeInconsistent: true }], "/pool", same).mode).toBe("cold");
   });
   // A fetch failure (or any freshen failure that never touched the working
   // tree) still bumps retryFailures/nextRetryAt for freshen's own retry
   // schedule; neither field says anything about donor fitness on its own.
   test("a golden with a future nextRetryAt but no inconsistency flag still hydrates", () => {
-    expect(chooseCreateMode([{ ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" }], "/pool", now, same)).toEqual({
+    expect(chooseCreateMode([{ ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" }], "/pool", same)).toEqual({
       mode: "hydrate",
       golden: { ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" },
     });
   });
   test("a golden with recorded retryFailures but no inconsistency flag still hydrates (the fetch-failure case)", () => {
-    expect(chooseCreateMode([{ ...golden, retryFailures: 3 }], "/pool", now, same)).toEqual({
+    expect(chooseCreateMode([{ ...golden, retryFailures: 3 }], "/pool", same)).toEqual({
       mode: "hydrate",
       golden: { ...golden, retryFailures: 3 },
     });
   });
   test("different volume is cold", () => {
-    expect(chooseCreateMode([golden], "/pool", now, () => false)).toEqual({ mode: "cold", why: "golden and pool root are on different volumes" });
+    expect(chooseCreateMode([golden], "/pool", () => false)).toEqual({ mode: "cold", why: "golden and pool root are on different volumes" });
   });
 });
 
