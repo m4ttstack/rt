@@ -5,7 +5,7 @@ import { join } from "path";
 import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
-import { readSyncHealth } from "../project-sync-health.ts";
+import { readSyncHealth, recordSyncFailure } from "../project-sync-health.ts";
 import type { PullRequest } from "@mattstack/glance";
 
 function pr(iid: number, over: Partial<PullRequest> = {}): PullRequest {
@@ -557,6 +557,47 @@ describe("project-mrs:read handler", async () => {
 
     const byBranch = await h["mr:by-branch"]!({ repoName: "repo", branches: ["feat-a"] });
     expect(byBranch).toEqual({ ok: true, data: { byBranch: {}, syncedAt: 0 } });
+  });
+
+  const sickHandler = (repo: string, store = tmpStore()) =>
+    createProjectMRsHandlers(
+      { repoIndex: () => ({ [repo]: "/tmp/repo" }), log: { warn: () => {} } } as any,
+      () => {},
+      {
+        store,
+        sync: async () => {},
+        tracking: () => ({ [repo]: { mode: "live" as const, caches: ["branches", "project-mrs"] as any } }),
+      },
+    );
+
+  test("a repo whose last sync failed reports syncError", async () => {
+    const repo = "remote:sick";
+    recordSyncFailure(repo, new Error("GraphQL request failed: 500 Internal Server Error"), 1_000);
+    const store = tmpStore();
+    store.fullSync(repo, "g/p", [pr(1)], Date.now());
+    const data = dataOf(await sickHandler(repo, store)["project-mrs:read"]!({ repoName: repo }));
+    expect(data.syncError).toEqual({
+      since: 1_000,
+      lastAt: 1_000,
+      kind: "server-error",
+      message: "GraphQL request failed: 500 Internal Server Error",
+    });
+  });
+
+  test("a cold repo (no store record yet) still reports syncError", async () => {
+    const repo = "remote:cold-sick";
+    recordSyncFailure(repo, new Error("GraphQL errors: Timeout on MergeRequest.id"), 2_000);
+    const data = dataOf(await sickHandler(repo)["project-mrs:read"]!({ repoName: repo }));
+    expect(data.syncedAt).toBe(0);
+    expect(data.syncError?.kind).toBe("timeout");
+  });
+
+  test("a healthy repo omits the syncError key", async () => {
+    const repo = "remote:healthy";
+    const store = tmpStore();
+    store.fullSync(repo, "g/p", [pr(1)], Date.now());
+    const data = dataOf(await sickHandler(repo, store)["project-mrs:read"]!({ repoName: repo }));
+    expect("syncError" in data).toBe(false);
   });
 });
 

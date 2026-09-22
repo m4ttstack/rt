@@ -21,6 +21,7 @@ import { decodeRepo } from "../identity-decoder.ts";
 import { loadRepoTracking, grants, type RepoTracking } from "../../repo-tracking.ts";
 import { getProjectMRs, freshnessOf, type ProjectMRs } from "../project-mrs-store.ts";
 import { syncProjectMRs, backfillAuthors, backfillSections } from "../project-sync.ts";
+import { readSyncHealth } from "../project-sync-health.ts";
 import { getRepoContext } from "../freshness.ts";
 import type { HandlerContext } from "./types.ts";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
@@ -183,7 +184,9 @@ export function createProjectMRsHandlers(
         }
       }
 
-      if (!record) return { ok: true, data: { mrs: {}, listSyncedAt: 0, source: "poll", syncedAt: 0 } };
+      const syncError = readSyncHealth(repoName);
+      const health = syncError ? { syncError } : {};
+      if (!record) return { ok: true, data: { mrs: {}, listSyncedAt: 0, source: "poll", syncedAt: 0, ...health } };
       return {
         ok: true,
         data: {
@@ -196,6 +199,7 @@ export function createProjectMRsHandlers(
             ...(demandedSections.length > 0 || record.scope.sections
               ? { sections: record.scope.sections ?? [], uncoveredSections } : {}),
           } : undefined,
+          ...health,
         },
       };
     },
