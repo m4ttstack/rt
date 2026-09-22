@@ -6,6 +6,8 @@
  * git fallback when the daemon is down), the picker, and process execution.
  */
 
+import { GOLDEN_BRANCH } from "./worktree/registry.ts";
+
 export type SelectionMode = "all" | "on-deck" | "pick";
 
 export interface ParsedEachArgs {
@@ -73,10 +75,12 @@ export function isOnDeck(b: WorktreeBinding): boolean {
 /**
  * The golden's state is "on-deck" like a member's, so state alone admits the
  * hydration donor. A mutating command run in it contaminates every member
- * hydrated from it afterwards, so it is never an `each` target.
+ * hydrated from it afterwards, so it is never an `each` target. The git-only
+ * fallback (daemon down) carries no `kind`, so `branch` is the second check:
+ * it survives that path unlike `kind`.
  */
 function isGolden(b: WorktreeBinding): boolean {
-  return b.kind === "golden";
+  return b.kind === "golden" || b.branch === GOLDEN_BRANCH;
 }
 
 /**
