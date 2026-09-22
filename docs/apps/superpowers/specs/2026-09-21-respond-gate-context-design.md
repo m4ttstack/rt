@@ -80,9 +80,6 @@ Required: `reviewer`; `threads.total` (plan) / `replies` (post). Optional:
 `round`, `adjudication`, `threads.blocking` (absent reads as 0), `fixes`.
 `adjudication` is a display string the header chip renders verbatim.
 
-```json
-```
-
 ### Per-thread question context (respond-plan)
 
 ```json
@@ -185,9 +182,10 @@ One card, hierarchy inverted so the purpose leads:
   "Posting replies to" (respond-post).
 - When the board has no MR row for the subject, the object line falls back
   to the subject's MR reference alone; the card never blocks on the join.
-- The action strip above the card (focus pane, skip gate) and its parked
-  and escalated chips are untouched: the header card replaces only the MR
-  row and the context pane. A parked respond gate parks exactly as today.
+- The action strip above the card (focus pane, skip gate) is untouched.
+  The parked and escalated chips render today inside the MR strip this
+  card replaces, so they MOVE: onto the action strip, beside skip gate.
+  A parked respond gate parks exactly as today.
 - Chip derivation: the threads chip from `threads.total`; the blocking
   chip from `threads.blocking` (0 renders grey as "all non-blocking");
   the adjudication chip renders the `adjudication` string verbatim,
@@ -199,6 +197,9 @@ One card, hierarchy inverted so the purpose leads:
   approval trades it away knowingly.
 - The chips row is its own line under the text block.
 - The pane id is not shown; the focus-pane action already encodes it.
+  The origin worktree basename is dropped with it, deliberately and for
+  the same reason: operator plumbing, still in the gate registry when
+  debugging needs it.
 - The gate-level prose card ("Decision context") does not render at all
   when the gate parses as gate-ctx -- the header card replaces it, so the
   13rem floor question disappears for these gates. For prose gates the
@@ -227,10 +228,10 @@ VERDICT  valid  · note                     10px label, call coloured
   prose fallback too.
 - Choices render as the existing option cards. The plan lives in the
   `fix` option's description, and that slot is `.tui-gate-choice-subtitle`
-  -- today a `--text-3` single-line ellipsis span. In the queue modal it
-  moves to `--text-2` and wraps; primary decision material does not
-  render muted or truncated. This is the third declared CSS change, and
-  like the other two it applies to every gate the modal shows.
+  -- which already wraps, so the change is colour only: `--text-3` to
+  `--text-2`, so primary decision material does not render muted. This is
+  the third declared CSS change, and like the other two it applies to
+  every gate the modal shows.
 
 ### Replies card (respond-post)
 
@@ -263,7 +264,9 @@ history.
 - No rt daemon, rt-client, or registry schema change.
 - Review gates and their prose parser are untouched.
 - No other gate kind adopts gate-ctx in this pass.
-- No board server change; this is client rendering plus one CSS fix.
+- No board server change; this is client rendering plus three CSS
+  fixes (question-context colour, the context floor, the choice-subtitle
+  colour).
 
 ## Testing
 
