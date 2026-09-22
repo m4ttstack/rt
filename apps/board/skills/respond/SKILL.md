@@ -8,7 +8,7 @@ description: >-
   <path> [--report <path>] [--skill <name>]". When no --skill is given, the domain skill is
   resolved from the respond slot binding in .mattstack/skills.jsonc. Not for
   manual use.
-allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*), Bash(${CLAUDE_SKILL_DIR}/scripts/open-gate.sh:*)
 metadata:
   slots: "respond"
   slot-respond: "required mr-respond@2 -- owns processing review feedback on one MR: fetching threads, adjudicating, drafting, implementing decided fixes, and executing posting once handed the decisions. Never presents decision gates or decides what posts."
@@ -135,13 +135,22 @@ conversation.
 1. **Mark triaging.** `<status-bin> respond-status <state> triaging`
 2. **Adjudicate.**
    - **If a domain skill resolved** (explicit `--skill`, else the `respond`
-     slot per "Resolving the domain skill"): delegate to that skill with the
-     MR url and the `--report <path>`. It owns the real work — resolving the
+     slot per "Resolving the domain skill"): delegate to that skill, telling
+     it exactly these four things:
+     - the MR url;
+     - the `--report <path>`;
+     - the round: `1` on this first delegation, one more for each `revise`
+       re-adjudication (step 5);
+     - that this wrapper owns both gates, so it opens neither: it hands
+       back instead, including the path of each fitted open file it builds.
+
+     It owns the real work — resolving the
      MR/ticket, fetching unresolved human threads, adjudicating each one, and
      drafting replies and proposed fixes — then reports back to you the
      adjudication: a
      verdict table (one row per thread, with its recommended reply/fix/skip)
-     plus whether it is proposing code changes. It never presents a gate or decides what gets implemented or
+     plus whether it is proposing code changes, and the absolute path of a
+     fitted Gate 1 open file when it built one. It never presents a gate or decides what gets implemented or
      posted; this wrapper owns both facility gates (steps 4 and 6) and hands
      the domain skill `{plan: ...}` and later `{post: ...}` to act on once a
      human has answered.
@@ -160,7 +169,23 @@ conversation.
    pane can mechanically join the wait's answers back to the report's rows. (Whoever produces the adjudication — the domain
    skill or you — is responsible for this file existing before Gate 1
    opens.) Then: `<status-bin> respond-status <state> drafting`
-4. **Gate 1 — plan.** Build ONE single-select question per unresolved
+4. **Gate 1 — plan.** **Handed a fitted open file?** Then that file IS
+   this gate: `gate-ctx.sh fit` output whose `.questions` already have the
+   shape below, each thread's structured context on its question and the
+   planned fix on its `fix` option. Open it with:
+
+   ```bash
+   "${CLAUDE_SKILL_DIR}/scripts/open-gate.sh" <status-bin> <state> respond-plan <open-file>
+   ```
+
+   It prints the same one-line `{"gateId": ..., "presentation": ...}` as
+   `gate open` and exits with its status. A `fits: false` file is still
+   over the shared context budget; the script drops whole question
+   contexts, largest first, until it fits, so the file goes in untouched:
+   never rebuilt, re-ordered, trimmed, or hand-edited. Then skip to the
+   presentation branches below.
+
+   **Otherwise, build the gate yourself.** Build ONE single-select question per unresolved
    thread, in verdict-table order, plus one `code-changes` question, per
    the shape below. A thread question's id is `thread-<n>` by 1-based
    position, its label is that thread's `<file>:<line>`, and its three
@@ -237,6 +262,16 @@ conversation.
      <state> --answers <json> --by pane` after the LAST call, carrying
      every thread question's answer plus `code-changes`; never one per
      chunk.
+
+     Each thread's form question: header `Thread <n>`; question text its
+     label, a newline, its prose context, then `Reply, fix, or skip?`;
+     options with the gate's labels and descriptions. A gate opened from
+     a fitted file never shows its JSON in the form: run the
+     `gate-ctx.sh` the domain skill fitted it with in `prose` mode on the
+     source file beside it (`sh <gate-ctx.sh> prose <
+     <dir>/respond-plan.source.json`), take each thread's prose `context`
+     from that output, and print its `.context` as one pane line before
+     the first form call.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
      for the background-wait mechanics, unchanged; the gate to name in
@@ -261,14 +296,33 @@ conversation.
    - **`code-changes: skip`** (the no-code-changes sentinel every surface
      submits while the question is hidden) **or `code-changes: revise`**:
      nothing gets implemented this round. On `revise`, let the domain skill
-     revise the proposal; if it reports a fresh adjudication table, treat
+     revise the proposal, telling it the next round number; if it reports a
+     fresh adjudication table, treat
      that as a new round of step 3-4 (a new `respond-plan` gate, same
-     shape, and the report update from step 3 applies again). On `skip`,
+     shape, opened from its fresh open file when it hands one back, and the
+     report update from step 3 applies again). On `skip`,
      go straight to Gate 2: reply and skip threads still get their drafted
      replies posted, there is just nothing to implement first. A thread
      answered `fix:` under `skip` stays unimplemented and has no finalized
      reply, so it is held out of Gate 2 rather than posted as a draft.
-6. **Gate 2 — post.** Build the post questions from the finalized replies:
+6. **Gate 2 — post.** **Handed a fitted open file?** (the domain skill
+   hands one back with its finalized replies when it builds one.) Open it
+   exactly as Gate 1's file, with kind `respond-post`:
+
+   ```bash
+   "${CLAUDE_SKILL_DIR}/scripts/open-gate.sh" <status-bin> <state> respond-post <open-file>
+   ```
+
+   Its questions end with a pane-only `next` navigation question this
+   wrapper does not ask; the script drops it, and applies the same budget
+   rule. In the form branch, flatten the source beside it the same way
+   (`respond-post.source.json`), leave `next` out, print the prose
+   `.context` as one pane line, and make each reply option's description
+   that thread's line from the prose `replies` context
+   (`<file> FIX · <sha>: <text>` or `<file> REPLY: <text>`), so the whole
+   reply shows at its checkbox. Then skip to the presentation branches below.
+
+   **Otherwise, build the gate yourself** from the finalized replies:
 
    ```json
    [
