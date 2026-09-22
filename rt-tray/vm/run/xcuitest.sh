@@ -23,7 +23,9 @@ trap cleanup EXIT
 vm_phase_begin clone; tart clone "$GOLDEN" "$RUN_VM" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 && vm_phase_end clone pass || { vm_phase_end clone fail "tart clone"; exit 1; }
 vm_phase_begin boot
 tart run "$RUN_VM" --no-audio "--dir=run:$VM_RUN_DIR" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 & TART_PID=$!
-vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 420 && vm_phase_end boot pass || { vm_phase_end boot fail "ssh"; exit 1; }
+TRUSTED=1; vm_trust_key "$RUN_VM" || TRUSTED=0
+vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 420 && vm_phase_end boot pass \
+  || { vm_phase_end boot fail "ssh$([ "$TRUSTED" = 0 ] && echo "; the key re-trust step failed first, so this is auth, not boot")"; exit 1; }
 
 vm_phase_begin stage
 cp "$DMG" "$VM_RUN_DIR/in/mattstack.dmg"; cp -R "$VM_ROOT/run/guest" "$VM_RUN_DIR/in/guest"

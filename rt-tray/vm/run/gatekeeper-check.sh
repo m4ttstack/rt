@@ -134,22 +134,10 @@ vm_phase_begin boot
 # headless run cannot show. The Tart window takes host keyboard focus while up.
 tart run "$RUN_VM" --no-audio "--dir=run:$VM_RUN_DIR" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 &
 TART_PID=$!
-# The tester key baked into a golden can drift from .cache (a rebuilt cache
-# regenerates the pair; goldens are never re-provisioned), so key auth can
-# fail against a perfectly healthy guest. The admin password is the same
-# bootstrap credential build-golden used, so re-trust the current key in the
-# CLONE. walkthrough.sh does this for the same reason; without it
-# vm_wait_ssh below times out and reports a boot failure for what is really
-# an auth failure. Goldens stay unbooted and immutable either way.
-if vm_ip "$RUN_VM" 90 >/dev/null; then
-  for keyuser in "$VM_TESTER_USER" "$VM_ADMIN_USER"; do
-    vm_ssh_pw_try "$VM_ADMIN_USER" "$VM_ADMIN_PASS" "$RUN_VM" \
-      "sudo install -d -m 700 -o $keyuser -g staff /Users/$keyuser/.ssh && echo '$(cat "$VM_SSH_KEY.pub")' | sudo tee /Users/$keyuser/.ssh/authorized_keys >/dev/null && sudo chown $keyuser:staff /Users/$keyuser/.ssh/authorized_keys && sudo chmod 600 /Users/$keyuser/.ssh/authorized_keys" \
-      >>"$VM_RUN_DIR/logs/tart.log" 2>&1 || true
-  done
-fi
+TRUSTED=1; vm_trust_key "$RUN_VM" || TRUSTED=0
 vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 300 \
-  && vm_phase_end boot pass || { vm_phase_end boot fail "guest never answered ssh"; exit 1; }
+  && vm_phase_end boot pass \
+  || { vm_phase_end boot fail "guest never answered ssh$([ "$TRUSTED" = 0 ] && echo "; the key re-trust step failed first, so this is auth, not boot")"; exit 1; }
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/00-booted.png" || true
 
 vm_phase_begin stage

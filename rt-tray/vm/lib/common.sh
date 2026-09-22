@@ -168,6 +168,34 @@ vm_ssh_pw_try() {
     "$user@$ip" "$@"
 }
 
+# Re-trusts this host's key in a booted CLONE, so key auth can work at all.
+#
+# The tester key baked into a golden drifts from .cache whenever a rebuilt
+# cache regenerates the pair, and goldens are never re-provisioned. The admin
+# password is the same bootstrap credential build-golden used, so the clone
+# can be told the current key. Goldens stay unbooted and immutable.
+#
+# Returns non-zero rather than dying, and the caller says so in its own
+# failure detail: a silent best-effort here is what makes `vm_wait_ssh` time
+# out afterwards and report "guest never answered ssh" for an auth problem,
+# which is the misdiagnosis this whole function exists to remove.
+vm_trust_key() {
+  local vm="$1" pub="$VM_SSH_KEY.pub"
+  # Asserted, not assumed. An unreadable or empty pub file writes an empty
+  # authorized_keys, which fails later as a boot timeout: the same
+  # misdiagnosis, produced by the cure.
+  [ -s "$pub" ] || { vm_warn "no usable public key at $pub"; return 1; }
+  vm_ip "$vm" 90 >/dev/null || return 1
+  local key; key=$(cat "$pub")
+  local keyuser rc=0
+  for keyuser in "$VM_TESTER_USER" "$VM_ADMIN_USER"; do
+    vm_ssh_pw_try "$VM_ADMIN_USER" "$VM_ADMIN_PASS" "$vm" \
+      "sudo install -d -m 700 -o $keyuser -g staff /Users/$keyuser/.ssh && echo '$key' | sudo tee /Users/$keyuser/.ssh/authorized_keys >/dev/null && sudo chown $keyuser:staff /Users/$keyuser/.ssh/authorized_keys && sudo chmod 600 /Users/$keyuser/.ssh/authorized_keys" \
+      >/dev/null 2>&1 || rc=1
+  done
+  return "$rc"
+}
+
 vm_wait_ssh() {
   local user="$1" vm="$2" timeout="${3:-300}" start; start=$(date +%s)
   while :; do

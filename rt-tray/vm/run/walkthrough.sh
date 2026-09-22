@@ -162,22 +162,12 @@ vm_phase_begin boot
 RUN_ARGS=(--no-audio "--dir=run:$VM_RUN_DIR"); [ "$GRAPHICS" = 0 ] && RUN_ARGS+=(--no-graphics)
 tart run "$RUN_VM" "${RUN_ARGS[@]}" >>"$VM_RUN_DIR/logs/tart.log" 2>&1 &
 TART_PID=$!
-# The tester key baked into a golden can drift from .cache (a rebuilt cache
-# regenerates the pair; goldens are never re-provisioned). The admin
-# password is the same bootstrap credential build-golden used, so re-trust
-# the current key in the CLONE — goldens stay unbooted and immutable.
-if vm_ip "$RUN_VM" 90 >/dev/null; then
-  for keyuser in "$VM_TESTER_USER" "$VM_ADMIN_USER"; do
-    vm_ssh_pw_try "$VM_ADMIN_USER" "$VM_ADMIN_PASS" "$RUN_VM" \
-      "sudo install -d -m 700 -o $keyuser -g staff /Users/$keyuser/.ssh && echo '$(cat "$VM_SSH_KEY.pub")' | sudo tee /Users/$keyuser/.ssh/authorized_keys >/dev/null && sudo chown $keyuser:staff /Users/$keyuser/.ssh/authorized_keys && sudo chmod 600 /Users/$keyuser/.ssh/authorized_keys" \
-      >>"$VM_RUN_DIR/logs/tart.log" 2>&1 || true
-  done
-fi
+TRUSTED=1; vm_trust_key "$RUN_VM" || TRUSTED=0
 if vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 420; then
   [ "$GRAPHICS" = 1 ] && { shot_watcher & SHOT_PID=$!; }
   if [ "$VERIFY_GOLDEN" = 1 ]; then "$VM_ROOT/golden/verify-golden.sh" "$VER" "$RUN_VM" >>"$VM_RUN_DIR/logs/verify-golden.log" 2>&1 || { vm_phase_end boot fail "golden verification failed in the clone"; exit 1; }; fi
   vm_phase_end boot pass
-else vm_phase_end boot fail "ssh as tester never came up"; exit 1; fi
+else vm_phase_end boot fail "ssh as tester never came up$([ "$TRUSTED" = 0 ] && echo "; the key re-trust step failed first, so this is auth, not boot")"; exit 1; fi
 
 # ── stage ────────────────────────────────────────────────────────────────────
 vm_phase_begin stage
