@@ -2405,7 +2405,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .tui-thread-verdict-call {
   font-weight: 700;

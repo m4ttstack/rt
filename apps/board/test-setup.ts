@@ -20,6 +20,7 @@
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 import { guardTestDaemonEnv } from '@mattstack/rt-client';
 
@@ -41,3 +42,21 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'mr-board-test-home-'));
  * own state/ must now say so explicitly.
  */
 process.env.BOARD_APP_ROOT = mkdtempSync(join(tmpdir(), 'mr-board-test-root-'));
+
+/**
+ * Third hazard, same shape: react-dom decides once, at first import, whether
+ * the DOM it sees supports the native `input` event -- `canUseDOM` and
+ * `isInputEventSupported` are computed at module top level and cached for
+ * the process, never re-checked. A DOM test file that imports `react-dom`
+ * (even transitively, through a component import) before calling its own
+ * `GlobalRegistrator.register()` makes that first check run with no
+ * `document` at all, latching `isInputEventSupported` to false for every
+ * later file: typed input then only reaches React on the next unrelated
+ * event (focus/keyup polling), landing state updates a whole render behind
+ * a same-tick keydown. Importing `react-dom/client` here, inside a
+ * register/unregister bracket, forces the real check to run once against a
+ * genuine `document` before any test file's own import order can race it.
+ */
+GlobalRegistrator.register({ url: 'http://localhost/' });
+await import('react-dom/client');
+await GlobalRegistrator.unregister();
