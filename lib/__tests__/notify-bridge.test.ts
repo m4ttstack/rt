@@ -60,9 +60,81 @@ describe("startNotifyBridge", () => {
     const e = enqueued[0]!;
     expect(e.title).toBe("review gate: !7");
     expect(e.message).toBe("https://gitlab.com/acme/web/-/merge_requests/7");
-    expect(e.category).toBe("gate");
+    expect(e.category).toBe("gate_pane");
     expect(e.paneId).toBe("w1:p1");
     expect(paneFocusedCalls).toEqual(["w1:p1"]);
+  });
+
+  test("a pane-initiated gate event (paneId, no origin.surface) specializes to gate_pane", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [GATE_RULE],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", {
+      id: 2,
+      topic: "board/gate/opened/g2",
+      payload: { iid: 8, paneId: "w1:p2", mrUrl: "u" },
+      emittedAt: Date.now(),
+    });
+    expect(enqueued[0]!.category).toBe("gate_pane");
+  });
+
+  test("a UI-initiated gate event (origin.surface set) keeps the gate category", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [GATE_RULE],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", {
+      id: 3,
+      topic: "board/gate/opened/g3",
+      payload: { iid: 9, paneId: "w1:p3", mrUrl: "u", origin: { surface: "board", paneId: "w1:p3" } },
+      emittedAt: Date.now(),
+    });
+    expect(enqueued[0]!.category).toBe("gate");
+  });
+
+  test("a pane-less gate event keeps the gate category", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [GATE_RULE],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", {
+      id: 4,
+      topic: "board/gate/opened/g4",
+      payload: { iid: 10, mrUrl: "u" },
+      emittedAt: Date.now(),
+    });
+    expect(enqueued[0]!.category).toBe("gate");
+  });
+
+  test("a non-gate category rule is never specialized, pane or not", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ ...GATE_RULE, category: "herd-watchdog" }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", {
+      id: 5,
+      topic: "board/gate/opened/g5",
+      payload: { iid: 11, paneId: "w1:p4", mrUrl: "u" },
+      emittedAt: Date.now(),
+    });
+    expect(enqueued[0]!.category).toBe("herd-watchdog");
   });
 
   test("{question} resolves to the first question's label", async () => {
