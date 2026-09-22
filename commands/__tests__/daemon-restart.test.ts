@@ -1,9 +1,9 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
-import { dirname } from "path";
-import { TRAY_SOCK_PATH, DAEMON_SOCK_PATH } from "../../lib/daemon-config.ts";
+import { dirname, join } from "path";
+import { TRAY_SOCK_PATH, DAEMON_SOCK_PATH, markDaemonInstalled } from "../../lib/daemon-config.ts";
 import { resolveIntendedMode } from "../../lib/dev-mode.ts";
-import { restart, RESTART_POLL } from "../daemon.ts";
+import { restart, start, stop, RESTART_POLL } from "../daemon.ts";
 
 const realFetch = globalThis.fetch;
 const realLog = console.log;
@@ -24,6 +24,7 @@ afterEach(() => {
   console.log = realLog;
   rmSync(TRAY_SOCK_PATH, { force: true });
   rmSync(DAEMON_SOCK_PATH, { force: true });
+  rmSync(join(dirname(DAEMON_SOCK_PATH), "daemon.json"), { force: true });
   RESTART_POLL.intervalMs = 500;
 });
 
@@ -37,7 +38,7 @@ function output(): string {
  */
 function fakeSockets(opts: { trayReply: () => Response | Promise<Response>; pid: () => number | null }): void {
   const flavor = resolveIntendedMode().mode;
-  globalThis.fetch = (async (url: string, init: any) => {
+  globalThis.fetch = (async (_url: string, init: any) => {
     if (init?.unix === TRAY_SOCK_PATH) return opts.trayReply();
     const pid = opts.pid();
     if (pid === null) throw new Error("connection refused");
@@ -114,4 +115,30 @@ test("a tray that reports the op failed is surfaced as failure, not as 'tray not
   expect(output()).not.toContain("✓ daemon restarted");
   expect(output().toLowerCase()).toContain("failed");
   expect(output()).not.toContain("is not running");
+});
+
+test("start of a down daemon surfaces a failed op instead of claiming the tray is not running", async () => {
+  markDaemonInstalled();
+  fakeSockets({
+    trayReply: () => new Response(JSON.stringify({ ok: false }), { status: 500 }),
+    pid: () => null,
+  });
+
+  await start();
+
+  expect(output()).not.toContain("is not running");
+  expect(output().toLowerCase()).toContain("failed");
+});
+
+test("stop surfaces a failed unregister instead of claiming there was nothing to stop", async () => {
+  fakeSockets({
+    trayReply: () => new Response(JSON.stringify({ ok: false }), { status: 500 }),
+    pid: () => 111,
+  });
+
+  await stop();
+
+  expect(output()).not.toContain("nothing to stop");
+  expect(output()).not.toContain("✓");
+  expect(output().toLowerCase()).toContain("failed");
 });

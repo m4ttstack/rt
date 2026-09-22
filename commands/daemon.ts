@@ -288,7 +288,12 @@ export async function start(): Promise<void> {
   }
 
   const result = await trayQuery("/daemon/start", "POST");
-  if (!result?.ok) {
+  if (result && !result.ok) {
+    console.log(`\n  ${yellow}⚠ start failed in the tray${reset}`);
+    console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
+    return;
+  }
+  if (!result) {
     console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running${reset}`);
     console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(intended)}${reset}\n`);
     return;
@@ -325,6 +330,11 @@ async function pollForDaemonUp(intended: IntendedMode): Promise<boolean> {
 export async function stop(): Promise<void> {
   const intended = resolveIntendedMode();
   const result = await trayQuery("/daemon/stop", "POST");
+  if (result && !result.ok) {
+    console.log(`\n  ${yellow}⚠ stop failed in the tray — the daemon may still be registered${reset}`);
+    console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
+    return;
+  }
   if (result?.ok) {
     await Bun.sleep(500);
     // The ack only proves the reached tray's OWN flavor was told to stop —
