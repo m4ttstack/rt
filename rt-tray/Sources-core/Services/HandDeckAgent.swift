@@ -45,6 +45,12 @@ public struct HandDeckFS: Sendable {
         move: { try FileManager.default.moveItem(atPath: $0, toPath: $1) })
 }
 
+public struct HandDeckBlockedNotice: Equatable, Sendable {
+    public let summary: String
+    public let reason: String
+    public let fixCommand: String
+}
+
 public enum HandDeckAgent {
     public static let label = "com.mattstack.deck"
     static let launchctlPath = "/bin/launchctl"
@@ -59,6 +65,19 @@ public enum HandDeckAgent {
                                   fs: HandDeckFS, now: () -> Date = Date.init) async -> HandDeckRetireOutcome? {
         guard helperLabels.contains(label) else { return nil }
         return await retire(home: home, uid: uid, runner: runner, fs: fs, now: now)
+    }
+
+    public static func blockedNotice(for outcome: HandDeckRetireOutcome, home: String, uid: uid_t) -> HandDeckBlockedNotice? {
+        guard case .failed(let reason) = outcome else { return nil }
+        let retired = retiredPath(home: home)
+        let dir = (retired as NSString).deletingLastPathComponent
+        return HandDeckBlockedNotice(
+            summary: "A hand-installed deck agent is blocking the deck helper.",
+            reason: reason,
+            fixCommand: """
+                launchctl bootout gui/\(uid)/\(label)
+                mkdir -p '\(dir)' && mv -n '\(plistPath(home: home))' '\(retired)'
+                """)
     }
 
     public static func retire(home: String, uid: uid_t, runner: CommandRunner, fs: HandDeckFS,

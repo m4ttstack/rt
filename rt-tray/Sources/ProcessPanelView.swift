@@ -25,6 +25,9 @@ struct ProcessPanelView: View {
             if !trayState.readyHeldRepos.isEmpty {
                 readyHeldRow
             }
+            if let notice = trayState.handDeckBlocked {
+                handDeckBlockedRow(notice)
+            }
             Divider()
             headerBar
             Divider()
@@ -216,6 +219,25 @@ struct ProcessPanelView: View {
                 .font(.caption)
             Spacer()
             PanelButton(label: "Copy Command", icon: nil, action: copyReadyHeldCommands)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.orange.opacity(0.08))
+    }
+
+    private func handDeckBlockedRow(_ notice: HandDeckBlockedNotice) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundColor(.orange)
+            Text(notice.summary)
+                .font(.caption)
+                .help(notice.reason)
+            Spacer()
+            PanelButton(label: "Copy Command", icon: nil, action: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(notice.fixCommand, forType: .string)
+            })
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

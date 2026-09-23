@@ -18,6 +18,9 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     private let scanned: [AgentPlist]
     private let runner: CommandRunner
     private let uid: uid_t
+    /// Called on the main actor after every hand-agent preflight, with nil
+    /// once nothing blocks the deck helper.
+    var onHandDeckBlocked: (@MainActor (HandDeckBlockedNotice?) -> Void)?
 
     init(bundlePath: String, runner: CommandRunner, uid: uid_t = getuid()) {
         self.bundlePath = bundlePath
@@ -48,10 +51,12 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     /// running. It has to go before the helper registers, never after.
     private func clearHandDeckLabel(before plists: [String]) async -> Bool {
         let labels = scanned.filter { plists.contains($0.fileName) }.map(\.label)
-        guard let outcome = await HandDeckAgent.clearLabel(
-            forHelpers: labels, home: FileManager.default.homeDirectoryForCurrentUser.path,
-            uid: uid, runner: runner, fs: .system) else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard let outcome = await HandDeckAgent.clearLabel(forHelpers: labels, home: home, uid: uid,
+                                                           runner: runner, fs: .system) else { return false }
         TrayServer.logHandDeckOutcome(outcome)
+        let notice = HandDeckAgent.blockedNotice(for: outcome, home: home, uid: uid)
+        await MainActor.run { onHandDeckBlocked?(notice) }
         return outcome.freedLoadedLabel
     }
 

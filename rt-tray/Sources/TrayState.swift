@@ -48,6 +48,10 @@ class TrayState: ObservableObject {
     /// cannot be dismissed.
     @Published var readyHeldRepos: [ReadyHeldRepo] = []
 
+    /// A hand-installed deck agent the tray could not remove before
+    /// registering the deck helper, so deck may be running unowned or not at all.
+    @Published var handDeckBlocked: HandDeckBlockedNotice? = nil
+
     var healthColor: Color {
         switch health {
         case .healthy:  return .green

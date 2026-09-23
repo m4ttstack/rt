@@ -439,6 +439,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                                                 runner: SystemCommandRunner())
         servicesRegistrar = ServicesRegistrar(bundlePath: Bundle.main.bundlePath, runner: SystemCommandRunner())
         daemonLifecycle.services = servicesRegistrar
+        servicesRegistrar.onHandDeckBlocked = { TrayState.shared.handDeckBlocked = $0 }
         let privileged = PrivilegedInstaller(bundlePath: Bundle.main.bundlePath, escalator: AuthorizationServicesEscalator())
         // Stub mode never lets a real provider reach a mutating/probing call.
         #if DEBUG

@@ -126,4 +126,19 @@ let handDeckAgentChecks: [Check] = [
         c.expect(!HandDeckRetireOutcome.absent.freedLoadedLabel)
         c.expect(!HandDeckRetireOutcome.failed("x").freedLoadedLabel)
     },
+    Check("hand deck notice: nothing to surface unless removal failed") { c in
+        c.expectEqual(HandDeckAgent.blockedNotice(for: .absent, home: home, uid: 501), nil)
+        c.expectEqual(HandDeckAgent.blockedNotice(for: .retired(bootedOut: true, archivedTo: retired), home: home, uid: 501), nil)
+    },
+    Check("hand deck notice: a failed removal names the reason and a fix that never clobbers an archive") { c in
+        guard let notice = HandDeckAgent.blockedNotice(for: .failed("bootout exited 5: Input/output error"), home: home, uid: 501) else {
+            c.fail("expected a notice"); return
+        }
+        c.expectEqual(notice.summary, "A hand-installed deck agent is blocking the deck helper.")
+        c.expectEqual(notice.reason, "bootout exited 5: Input/output error")
+        let lines = notice.fixCommand.split(separator: "\n").map(String.init)
+        c.expectEqual(lines.count, 2)
+        c.expect(lines.first?.hasSuffix("ctl bootout gui/501/com.mattstack.deck") == true)
+        c.expectEqual(lines.last, "mkdir -p '/Users/tester/.mattstack/deck' && mv -n '\(plist)' '\(retired)'")
+    },
 ]
