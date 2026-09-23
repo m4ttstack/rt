@@ -89,7 +89,8 @@ Ported from `lib/stores/app-store.ts`:
 - **Next batch** (`_loadNextCommitBatch`): if the last loaded commit is in
   the local set, page `localCommits` first; when that yields nothing, page
   `commits("HEAD", 100, <loaded count>)`. Triggered when the cursor comes
-  within 10 rows of the end.
+  within 10 rows of the end. Superseded: paging is now an explicit "Load
+  100 more commits" row (docs/design/mission/README.md, Ratified deviations).
 - **Commit selection** (`_loadChangedFilesForCurrentSelection`): one sha
   loads `changedFiles`, a contiguous range loads `commitRangeChangedFiles`
   in history order, a non-contiguous range loads nothing. The first file is
@@ -129,7 +130,9 @@ Mockup of the intent (not the board):
 
 **Sidebar (History active).** The tab row with the underline under History,
 then the commit list to the bottom of the body. No filter row, commit box,
-or last-commit strip: GHD's History sidebar has none of them. Rows are two
+or last-commit strip: GHD's History sidebar has none of them. (Superseded
+for the filter: History now has a `/` filter box and date headers, per
+docs/design/mission/README.md, Ratified deviations.) Rows are two
 lines (`ui/history/commit-list-item.tsx`): the summary, or "Empty commit
 message" dimmed; then byline · relative time. The right edge carries the
 first tag as a pill, with a "more" marker when there are others, and the
