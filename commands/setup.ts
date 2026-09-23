@@ -96,7 +96,12 @@ export function renderPlanHuman(plan: Plan): string[] {
   const lines: string[] = [];
   for (const group of plan.groups) {
     lines.push(group.title);
-    for (const r of group.rows) lines.push(`  ${GLYPH_COLOR[r.status]}${GLYPH[r.status]}${reset} ${r.title}  ${r.detail}`);
+    for (const r of group.rows) {
+      lines.push(`  ${GLYPH_COLOR[r.status]}${GLYPH[r.status]}${reset} ${r.title}  ${r.detail}`);
+      // The row's own detail stays one line; the choose sheet's terminal alternative is
+      // the only thing a --json-less, no-app user has for reaching that action's verb.
+      if (r.action?.type === "choose" && r.action.footnote) lines.push(`  ${dim}${r.action.footnote}${reset}`);
+    }
   }
   lines.push(plan.canInstall ? "Install: ready" : `Install: blocked by: ${plan.requiredMissing.join(", ")}`);
   return lines;
