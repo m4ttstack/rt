@@ -998,8 +998,8 @@ func TestMenuOnAnActionRowListsOnlyGlobals(t *testing.T) {
 	}
 	ids := []string{}
 	for _, r := range m.modal.rows {
-		if r.actionID != "" {
-			ids = append(ids, r.actionID)
+		if r.id != "" {
+			ids = append(ids, r.id)
 		}
 	}
 	if len(ids) != 1 || ids[0] != "refresh" {
@@ -1026,8 +1026,8 @@ func TestMenuOnAnActionRowListsOnlyGlobals(t *testing.T) {
 	m = next.(*Model)
 	ids = ids[:0]
 	for _, r := range m.modal.rows {
-		if r.actionID != "" {
-			ids = append(ids, r.actionID)
+		if r.id != "" {
+			ids = append(ids, r.id)
 		}
 	}
 	if len(ids) != 3 {
@@ -1786,7 +1786,7 @@ func TestCtrlKMenuShowsOnlyDeclaredActionsNeverInjectedDefaults(t *testing.T) {
 
 	var ids []string
 	for _, r := range m.modal.rows {
-		ids = append(ids, r.actionID)
+		ids = append(ids, r.id)
 	}
 	if len(ids) != 1 || ids[0] != "editor" {
 		t.Fatalf("menu must show only the declared action, got %+v", ids)
@@ -1912,7 +1912,7 @@ func TestCtrlKMenuExcludesInjectedDefaultsDeclaredOnTheWire(t *testing.T) {
 	if m.modal != nil {
 		var ids []string
 		for _, r := range m.modal.rows {
-			ids = append(ids, r.actionID)
+			ids = append(ids, r.id)
 		}
 		t.Fatalf("a registry of nothing but injected defaults must open no menu, got %+v", ids)
 	}
@@ -1928,7 +1928,7 @@ func TestCtrlKMenuExcludesInjectedDefaultsDeclaredOnTheWire(t *testing.T) {
 	}
 	var ids []string
 	for _, r := range m.modal.rows {
-		ids = append(ids, r.actionID)
+		ids = append(ids, r.id)
 	}
 	if len(ids) != 1 || ids[0] != "editor" {
 		t.Fatalf("only the caller-declared action may appear, never the injected defaults: %+v", ids)
@@ -2063,8 +2063,8 @@ func TestGroupHeadersRespectPaneBudgetWhenWindowed(t *testing.T) {
 const surfaceBgSGR = "48;2;34;26;53"
 
 // TestModalMessageDimsTheParentAndPaintsASurfaceOverlay is the golden for
-// the composite itself: dimForeground steps the parent's Text tone down to
-// Dim (the same transform renderModal runs over the parent before
+// the composite itself: DimForeground steps the parent's Text tone down to
+// Dim (the same transform Menu.Render runs over the parent before
 // compositing), and the composited frame carries the overlay's Surface
 // background -- present only once a modal is actually open, per the base
 // goldens elsewhere in this file staying unchanged with m.modal nil.
@@ -2092,12 +2092,12 @@ func TestModalMessageDimsTheParentAndPaintsASurfaceOverlay(t *testing.T) {
 		t.Fatal("a modal message should open the overlay")
 	}
 
-	dimmed := dimForeground(base)
+	dimmed := DimForeground(base)
 	if strings.Contains(dimmed, textSGR) {
-		t.Fatalf("dimForeground must remove every undimmed Text fragment: %q", dimmed)
+		t.Fatalf("DimForeground must remove every undimmed Text fragment: %q", dimmed)
 	}
 	if !strings.Contains(dimmed, dimSGR) {
-		t.Fatalf("dimForeground should step the cursor row's Text down to Dim: %q", dimmed)
+		t.Fatalf("DimForeground should step the cursor row's Text down to Dim: %q", dimmed)
 	}
 
 	composited := renderView(m)
@@ -2381,7 +2381,7 @@ func TestCtrlKMenuEventActionEmitsEventAndStaysOpen(t *testing.T) {
 	if m.modal == nil {
 		t.Fatal("ctrl-k should open the registry menu")
 	}
-	if m.modal.rows[m.modal.matches[m.modal.cursor].Index].actionID != "dispose" {
+	if m.modal.rows[m.modal.matches[m.modal.cursor].Index].id != "dispose" {
 		t.Fatalf("expected the declared item action first, got %+v", m.modal.rows)
 	}
 
@@ -2434,7 +2434,7 @@ func TestCtrlKMenuNonEventActionYieldsTerminalResult(t *testing.T) {
 
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(*Model)
-	if got := m.modal.rows[m.modal.matches[m.modal.cursor].Index].actionID; got != "editor" {
+	if got := m.modal.rows[m.modal.matches[m.modal.cursor].Index].id; got != "editor" {
 		t.Fatalf("setup: cursor should sit on the second declared item action, got %q", got)
 	}
 
@@ -2890,7 +2890,7 @@ func TestCtrlKMenuHidesBuiltinMultiMarkActionsButKeepsCallerActions(t *testing.T
 
 	var ids []string
 	for _, r := range m.modal.rows {
-		ids = append(ids, r.actionID)
+		ids = append(ids, r.id)
 	}
 	for _, hidden := range []string{"toggle", "toggle-next", "toggle-all", "select", "cancel", "back"} {
 		for _, id := range ids {
@@ -2909,7 +2909,7 @@ func TestCtrlKMenuHidesBuiltinMultiMarkActionsButKeepsCallerActions(t *testing.T
 		t.Fatalf("caller-declared item/global actions must still appear in the menu, got %+v", ids)
 	}
 
-	if m.modal.rows[m.modal.matches[m.modal.cursor].Index].actionID != "dispose" {
+	if m.modal.rows[m.modal.matches[m.modal.cursor].Index].id != "dispose" {
 		t.Fatalf("setup: expected dispose (the declared item action) first, got %+v", m.modal.rows)
 	}
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -3262,33 +3262,33 @@ func TestRightClickMenuAnchorsToThePointer(t *testing.T) {
 
 	// Plenty of room: the box's corner is the click cell.
 	m := open(30, 5)
-	if m.modalBox.x0 != 30 || m.modalBox.y0 != 5 {
-		t.Fatalf("box should anchor at the pointer, got x0=%d y0=%d", m.modalBox.x0, m.modalBox.y0)
+	if m.modal.box.x0 != 30 || m.modal.box.y0 != 5 {
+		t.Fatalf("box should anchor at the pointer, got x0=%d y0=%d", m.modal.box.x0, m.modal.box.y0)
 	}
 	// The recorded row zones sit inside the anchored box, not at the center.
 	firstY := -1
-	for y := range m.modalZones.byY {
+	for y := range m.modal.zones.byY {
 		if firstY < 0 || y < firstY {
 			firstY = y
 		}
 	}
-	if firstY < 5 || firstY >= m.modalBox.y1 {
-		t.Fatalf("menu row zones should sit inside the anchored box (y0=5, y1=%d), first at %d", m.modalBox.y1, firstY)
+	if firstY < 5 || firstY >= m.modal.box.y1 {
+		t.Fatalf("menu row zones should sit inside the anchored box (y0=5, y1=%d), first at %d", m.modal.box.y1, firstY)
 	}
-	if _, ok := m.modalZones.at(31, firstY); !ok {
+	if _, ok := m.modal.zones.at(31, firstY); !ok {
 		t.Fatalf("a menu row should be clickable one column inside the anchored box's left border")
 	}
 
 	// At the right edge the box slides left just enough to fit; it still
 	// opens downward from the pointer's row while there is room.
 	m = open(98, 10)
-	if m.modalBox.x1 != 100 || m.modalBox.y0 != 10 || m.modalBox.y1 > 24 {
-		t.Fatalf("box should hug the right edge and keep the pointer row: x1=%d y0=%d y1=%d", m.modalBox.x1, m.modalBox.y0, m.modalBox.y1)
+	if m.modal.box.x1 != 100 || m.modal.box.y0 != 10 || m.modal.box.y1 > 24 {
+		t.Fatalf("box should hug the right edge and keep the pointer row: x1=%d y0=%d y1=%d", m.modal.box.x1, m.modal.box.y0, m.modal.box.y1)
 	}
 	// On the last visible row it slides up to the frame's bottom edge instead.
 	m = open(98, 21)
-	if m.modalBox.y1 != 24 || m.modalBox.y0 >= 21 {
-		t.Fatalf("box should hug the bottom edge: y0=%d y1=%d", m.modalBox.y0, m.modalBox.y1)
+	if m.modal.box.y1 != 24 || m.modal.box.y0 >= 21 {
+		t.Fatalf("box should hug the bottom edge: y0=%d y1=%d", m.modal.box.y0, m.modal.box.y1)
 	}
 
 	// ctrl-k: centered, as before.
@@ -3298,9 +3298,9 @@ func TestRightClickMenuAnchorsToThePointer(t *testing.T) {
 	next, _ = c.Update(tea.KeyPressMsg{Mod: tea.ModCtrl, Code: 'k'})
 	c = next.(*Model)
 	renderView(c)
-	w := c.modalBox.x1 - c.modalBox.x0
-	if want := (100 - w) / 2; c.modalBox.x0 != want {
-		t.Fatalf("ctrl-k menu should stay centered: x0=%d want %d", c.modalBox.x0, want)
+	w := c.modal.box.x1 - c.modal.box.x0
+	if want := (100 - w) / 2; c.modal.box.x0 != want {
+		t.Fatalf("ctrl-k menu should stay centered: x0=%d want %d", c.modal.box.x0, want)
 	}
 }
 
@@ -3331,11 +3331,11 @@ func TestMouseRightClickOpensMenuAtRow(t *testing.T) {
 
 // modalRowCell returns a frame cell (x,y) inside the recorded hit-zone of
 // modal match `index`, for driving a mouse event straight at that overlay
-// row. It reads the zones recordModalZones laid down on the last render, so
+// row. It reads the zones Menu.recordZones laid down on the last render, so
 // a test never has to re-derive the compositor's centering offset by hand --
 // exactly the offset math the code under test owns.
 func modalRowCell(m *Model, index int) (x, y int, ok bool) {
-	for yy, zs := range m.modalZones.byY {
+	for yy, zs := range m.modal.zones.byY {
 		for _, z := range zs {
 			if z.kind == zoneModalRow && z.row == index {
 				return z.xStart + 1, yy, true
@@ -3346,7 +3346,7 @@ func modalRowCell(m *Model, index int) (x, y int, ok bool) {
 }
 
 // TestModalMouseMotionHoversAndRendersHoverBg pins mouse hover inside the
-// overlay: motion over a non-cursor menu row sets modalHover and paints that
+// overlay: motion over a non-cursor menu row sets the menu's hover and paints that
 // row with HoverBg, the same token the base list hover uses. Fails on the
 // pre-fix mouse-inert modal (motion early-returned, modalRowLine had no hover
 // tone at all).
@@ -3374,8 +3374,8 @@ func TestModalMouseMotionHoversAndRendersHoverBg(t *testing.T) {
 
 	next, _ := m.Update(tea.MouseMotionMsg{X: x, Y: y})
 	m = next.(*Model)
-	if m.modalHover != 1 {
-		t.Fatalf("motion over modal row 1 should set modalHover=1, got %d", m.modalHover)
+	if m.modal.hover != 1 {
+		t.Fatalf("motion over modal row 1 should set hover=1, got %d", m.modal.hover)
 	}
 	if m.modal.cursor != 0 {
 		t.Fatalf("modal hover must never move the overlay's keyboard cursor, got %d", m.modal.cursor)
@@ -3463,7 +3463,7 @@ func TestModalMouseClickOutsideDismissesLikeEsc(t *testing.T) {
 	})
 	renderView(m)
 
-	if m.modalBox.contains(0, 0) {
+	if m.modal.box.contains(0, 0) {
 		t.Fatal("setup: the frame's top-left corner should be outside the centered modal box")
 	}
 
@@ -3506,11 +3506,11 @@ func TestModalMouseClickInsideOffRowIsInert(t *testing.T) {
 	renderView(m)
 
 	// The header line sits one row below the box's top border, inside it.
-	headerX, headerY := m.modalBox.x0+2, m.modalBox.y0+1
-	if _, ok := m.modalZones.at(headerX, headerY); ok {
+	headerX, headerY := m.modal.box.x0+2, m.modal.box.y0+1
+	if _, ok := m.modal.zones.at(headerX, headerY); ok {
 		t.Fatalf("setup: the header cell (%d,%d) should carry no row hit-zone", headerX, headerY)
 	}
-	if !m.modalBox.contains(headerX, headerY) {
+	if !m.modal.box.contains(headerX, headerY) {
 		t.Fatalf("setup: the header cell (%d,%d) should be inside the box", headerX, headerY)
 	}
 
@@ -3841,7 +3841,7 @@ func TestCtrlKIsReservedForTheMenu(t *testing.T) {
 	}
 	found := false
 	for _, r := range m.modal.rows {
-		if r.actionID == "kill" {
+		if r.id == "kill" {
 			found = true
 			if strings.Contains(r.hint, "ctrl-k") {
 				t.Fatalf("the menu must not show ctrl-k as the caller action's key: %+v", r)

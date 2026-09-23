@@ -18,11 +18,11 @@ import type { GitWorktreeBadge } from "../../../packages/rt-client/src/commands.
 import type { BranchGuardVerdict } from "../../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription } from "../../daemon-client.ts";
 import type { WorktreeEntry } from "../../worktree/git-async.ts";
-import type { SessionIntent } from "../../ui/protocol.ts";
-import type { SessionEnd, SessionHandle } from "../../ui/spawn.ts";
+import type { SessionHandle } from "../../ui/spawn.ts";
 import { SessionDied } from "../../runner/runner.ts";
 import { MissionDriver, resolveCompactedSelIdx, type MissionDeps } from "../driver.ts";
 import type { MissionModel } from "../model.ts";
+import { FakeSession, flushMicrotasks, QueueSession } from "./fake-sessions.ts";
 
 // ─── translation helper fixtures ────────────────────────────────────────────
 
@@ -235,74 +235,11 @@ function makeFakeClient(overrides: {
       return oneHunkDiff(file.path);
     },
     commitRangeDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
+    appendIgnoreRule: async () => {},
+    appendIgnoreFile: async () => {},
+    discardChanges: async () => {},
   };
   return Object.assign(client, { calls });
-}
-
-// ─── fake session harness (mirrors lib/runner/__tests__/runner.test.ts) ────
-
-class FakeSession implements SessionHandle {
-  pushed: MissionModel[] = [];
-  private queue: SessionIntent[];
-  exited: Promise<number>;
-  private finish!: (code: number) => void;
-  constructor(intents: SessionIntent[], private endResult: SessionEnd = { reason: "closed", code: 0 }) {
-    this.queue = [...intents];
-    this.exited = new Promise((r) => { this.finish = r; });
-  }
-  get intents(): AsyncIterable<SessionIntent> {
-    const self = this;
-    return { [Symbol.asyncIterator]() { return { next: () => self.next() }; } };
-  }
-  private next(): Promise<IteratorResult<SessionIntent>> {
-    const it = this.queue.shift();
-    if (it) return Promise.resolve({ value: it, done: false });
-    return Promise.resolve({ value: undefined as never, done: true });
-  }
-  push(m: unknown): void { this.pushed.push(m as MissionModel); }
-  async close(): Promise<SessionEnd> {
-    this.finish(this.endResult.code);
-    return this.endResult;
-  }
-}
-
-/** Intents arrive on demand via `send`, so a test can drive the driver mid-session. */
-class QueueSession implements SessionHandle {
-  pushed: MissionModel[] = [];
-  private queue: SessionIntent[] = [];
-  private waiter: ((v: IteratorResult<SessionIntent>) => void) | null = null;
-  exited: Promise<number>;
-  private finish!: (code: number) => void;
-  constructor(private endResult: SessionEnd = { reason: "closed", code: 0 }) {
-    this.exited = new Promise((r) => { this.finish = r; });
-  }
-  get intents(): AsyncIterable<SessionIntent> {
-    const self = this;
-    return { [Symbol.asyncIterator]() { return { next: () => self.next() }; } };
-  }
-  private next(): Promise<IteratorResult<SessionIntent>> {
-    const it = this.queue.shift();
-    if (it) return Promise.resolve({ value: it, done: false });
-    return new Promise((resolve) => { this.waiter = resolve; });
-  }
-  send(i: SessionIntent): void {
-    const w = this.waiter;
-    if (w) {
-      this.waiter = null;
-      w({ value: i, done: false });
-    } else {
-      this.queue.push(i);
-    }
-  }
-  push(m: unknown): void { this.pushed.push(m as MissionModel); }
-  async close(): Promise<SessionEnd> {
-    this.finish(this.endResult.code);
-    return this.endResult;
-  }
-}
-
-async function flushMicrotasks(times = 30): Promise<void> {
-  for (let i = 0; i < times; i++) await Promise.resolve();
 }
 
 function badge(overrides: Partial<GitWorktreeBadge> = {}): GitWorktreeBadge {
@@ -343,6 +280,10 @@ function baseDeps(over: {
   readPullRebase?: MissionDeps["readPullRebase"];
   buildGuards?: MissionDeps["buildGuards"];
   listGitWorktrees?: MissionDeps["listGitWorktrees"];
+  fileActions?: MissionDeps["fileActions"];
+  resolveEditor?: MissionDeps["resolveEditor"];
+  launchEditor?: MissionDeps["launchEditor"];
+  pathExists?: MissionDeps["pathExists"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -374,6 +315,10 @@ function baseDeps(over: {
     // path by default rather than a happy path every other test would have to
     // opt out of.
     listGitWorktrees: over.listGitWorktrees ?? (async () => null),
+    fileActions: over.fileActions ?? { copy: () => true, reveal: () => true, open: () => true },
+    resolveEditor: over.resolveEditor ?? (() => null),
+    launchEditor: over.launchEditor ?? (async () => false),
+    pathExists: over.pathExists ?? (() => false),
   };
 }
 

@@ -1593,7 +1593,7 @@ func TestModalShortListFillerIsSurface(t *testing.T) {
 
 // TestFullFrameWithShortModalOpenEveryRowFullyPaintsBackground and its
 // long-list sibling re-assert the whole-frame bg-coverage loop test with a
-// modal open, per Addendum C: dimForeground only touches foreground SGR, so
+// modal open, per Addendum C: picker.DimForeground only touches foreground SGR, so
 // every background underneath the dim -- and the modal's own Surface fill,
 // including its filler and thumb column -- must still resolve.
 func TestFullFrameWithShortModalOpenEveryRowFullyPaintsBackground(t *testing.T) {

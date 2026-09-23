@@ -10,6 +10,8 @@ import { undoLastCommit, resetToCommit } from "./commits.ts";
 import { checkoutBranch, createBranch } from "./branch-ops.ts";
 import { scrubGitEnv } from "./exec.ts";
 import { getCommits, getLocalCommits, getChangedFiles, getCommitRangeChangedFiles, getCommitDiff, getCommitRangeDiff } from "./history.ts";
+import { appendIgnoreRule, appendIgnoreFile } from "./gitignore.ts";
+import { discardChanges } from "./discard.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -77,5 +79,8 @@ export function createGitClient(dir: string): GitClient {
     commitRangeChangedFiles: (shas) => getCommitRangeChangedFiles(ctx, shas),
     commitDiff: (file, sha) => getCommitDiff(ctx, file, sha),
     commitRangeDiff: (file, shas) => getCommitRangeDiff(ctx, file, shas),
+    appendIgnoreRule: (patterns) => appendIgnoreRule(ctx, patterns),
+    appendIgnoreFile: (paths) => appendIgnoreFile(ctx, paths),
+    discardChanges: (files, opts) => discardChanges(ctx, files, opts),
   };
 }

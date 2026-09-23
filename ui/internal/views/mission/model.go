@@ -99,6 +99,7 @@ type HistoryFileRow struct {
 	Path     string `json:"path"`
 	OrigPath string `json:"origPath"`
 	Status   string `json:"status"`
+	OnDisk   bool   `json:"onDisk"` // the path exists in the current worktree, not just in the commit
 }
 
 type HistoryModel struct {
@@ -162,6 +163,7 @@ type Model struct {
 	Notice       string        `json:"notice"` // one-line transient notice (guard refusals, not-yet-wired)
 	Tab          string        `json:"tab"`    // "changes"|"history"
 	History      HistoryModel  `json:"history"`
+	EditorLabel  string        `json:"editorLabel"` // rt code's resolved editor ("Zed"), "" when none resolves
 }
 
 // decode tolerates unknown fields: the wire model is a shared contract with

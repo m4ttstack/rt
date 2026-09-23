@@ -15,6 +15,9 @@ describe("createGitClient", () => {
       expect(typeof client.log).toBe("function");
       expect(typeof client.stashes).toBe("function");
       expect(typeof client.fetchState).toBe("function");
+      expect(typeof client.appendIgnoreRule).toBe("function");
+      expect(typeof client.appendIgnoreFile).toBe("function");
+      expect(typeof client.discardChanges).toBe("function");
     } finally {
       await sb.cleanup();
     }

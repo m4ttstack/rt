@@ -17,6 +17,7 @@
  * toggled off entirely is excluded from the commit and stays untouched.
  */
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -164,6 +165,10 @@ function realDeps(sandbox: Sandbox, session: LiveSession, opened: (model: Missio
     readPullRebase: getPullRebase,
     buildGuards: async () => new Map(),
     listGitWorktrees: listWorktreesAsync,
+    fileActions: { copy: () => true, reveal: () => true, open: () => true },
+    resolveEditor: () => null,
+    launchEditor: async () => false,
+    pathExists: existsSync,
   };
 }
 

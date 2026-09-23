@@ -30,6 +30,7 @@ const (
 	focusDescription
 	focusModal
 	focusHistoryFiles
+	focusMenu
 )
 
 // diffScroll is one tab's diff pane position, stashed while the other tab
@@ -72,6 +73,14 @@ type Mission struct {
 
 	// modal is the open repo/branch/worktree foldout, nil when none is open.
 	modal *modalState
+	// menu is the open context menu, nil when none is open. menuTarget is the
+	// row it opened for and menuOnHistory the tab it opened on, both held
+	// fixed while it is open: a push never retargets it. menuPrevFocus is
+	// where closing it returns.
+	menu          *picker.Menu
+	menuTarget    menuTarget
+	menuOnHistory bool
+	menuPrevFocus focusKind
 	// localNotice is a client-only refusal cue (the detached-HEAD branch
 	// guard), kept separate from the wire model's own Notice field: that one
 	// carries the driver's own guard refusals, this one covers a refusal the
@@ -271,7 +280,10 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		// The pointer that hovered the old inactive half now rests on the
 		// active one, and no motion arrives to clear it.
 		m.hoverTab = false
-		if m.modal == nil {
+		switch {
+		case m.menu != nil:
+			m.menuPrevFocus = focusList
+		case m.modal == nil:
 			m.focus = focusList
 		}
 	}
@@ -377,6 +389,9 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.String() == "ctrl+c" {
 			return m.quit()
 		}
+		if m.focus == focusMenu {
+			return m.runMenuOutcome(m.menu.Key(v))
+		}
 		switch m.focus {
 		case focusModal:
 			return m.modalKey(v)
@@ -434,6 +449,8 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openRepoModal()
 	case "2":
 		return m, m.emitTab("history")
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
 	case "q":
 		return m.quit()
 	}
@@ -699,6 +716,11 @@ func (m *Mission) renderSidebar(width, height int) string {
 		return m.renderHistorySidebar(width, height)
 	}
 	listRegionH := m.listRegionHeight(width, height)
+	// JoinVertical counts an empty block as one line, which would push the
+	// docked block a row below where sidebarHit finds it.
+	if listRegionH == 0 {
+		return lipgloss.JoinVertical(lipgloss.Left, m.sidebarFixedTop(width), m.sidebarDocked(width))
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.sidebarFixedTop(width),
 		m.renderChangesList(width, listRegionH),
@@ -800,6 +822,9 @@ func (m *Mission) View() tea.View {
 	}
 	if m.modal != nil {
 		out = renderMissionModal(out, m.modal, m.width, m.height, lipgloss.Height(top))
+	}
+	if m.menu != nil {
+		out = m.menu.Render(out, m.width)
 	}
 
 	v := tea.NewView(out)
@@ -1135,19 +1160,20 @@ func (m *Mission) modalHitTest(x, y int) hit {
 }
 
 // mouseClick dispatches a button press against whatever hitTest resolves it
-// to. The right button only ever opens the file-row context notice; every
-// other kind is a left-click's concern.
+// to. An open menu takes every press: its own rows, or a close from outside
+// it. The right button opens a row's menu at the pointer; every other kind
+// is a left-click's concern.
 func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	mouse := msg.Mouse()
+	if m.menu != nil {
+		return m.runMenuOutcome(m.menu.Click(mouse.X, mouse.Y))
+	}
 	// The notice strip shortens the body, so the hit resolves against the
 	// frame that painted it before clearing it changes the geometry.
 	h := m.hitTest(mouse.X, mouse.Y)
 	m.localNotice = ""
 	if mouse.Button == tea.MouseRight {
-		if h.kind == hitFileRow || h.kind == hitFileCheckbox {
-			m.localNotice = "menu lands with polish"
-		}
-		return m, nil
+		return m.rightClick(h, &picker.MenuAnchor{X: mouse.X, Y: mouse.Y})
 	}
 	if mouse.Button != tea.MouseLeft {
 		return m, nil
@@ -1204,6 +1230,39 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// rightClick moves the cursor to the row first, as a left-click would, then
+// opens that row's menu at the pointer. A right-click with a foldout open only
+// closes it; inside a range selection it keeps the range and opens the
+// board-wide section alone.
+func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.Cmd) {
+	if m.modal != nil {
+		m.closeModal()
+		return m, nil
+	}
+	switch h.kind {
+	case hitFileRow, hitFileCheckbox:
+		// A right-click neither completes a pending double click nor starts
+		// one: it drops the last click and selects without recording itself.
+		m.lastClickPath, m.lastClickAt = "", time.Time{}
+		cmd := m.selectFileRow(h.idx)
+		m.openMenu(m.changeTarget(m.selected), anchor)
+		return m, cmd
+	case hitCommitRow:
+		if m.historyRange() && m.historyInSelection(h.idx) {
+			m.openMenu(menuTarget{}, anchor)
+			return m, nil
+		}
+		model, cmd := m.clickCommitRow(h.idx, false)
+		m.openMenu(m.commitTarget(h.idx), anchor)
+		return model, cmd
+	case hitHistoryFile:
+		model, cmd := m.clickHistoryFile(h.idx)
+		m.openMenu(m.historyFileTarget(m.model.History.Files[h.idx].Path), anchor)
+		return model, cmd
+	}
+	return m, nil
+}
+
 func (m *Mission) clickTopbar(zone zoneID) (tea.Model, tea.Cmd) {
 	switch zone {
 	case zoneRepo:
@@ -1230,18 +1289,28 @@ func (m *Mission) clickFileRow(idx int) (tea.Model, tea.Cmd) {
 	now := m.now()
 	isDouble := path == m.lastClickPath && !m.lastClickAt.IsZero() && now.Sub(m.lastClickAt) <= doubleClickWindow
 
-	prev := m.selected
-	m.selected = path
-	m.focus = focusList
+	cmd := m.selectFileRow(idx)
 	if isDouble {
 		m.lastClickPath = ""
 		m.lastClickAt = time.Time{}
 		m.focus = focusDiff
-		return m, m.selectPathCmd(prev)
+		return m, cmd
 	}
 	m.lastClickPath = path
 	m.lastClickAt = now
-	return m, m.selectPathCmd(prev)
+	return m, cmd
+}
+
+// selectFileRow moves the Changes cursor to idx's row and loads its diff,
+// with no part in pairing clicks into a double click.
+func (m *Mission) selectFileRow(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(m.model.Changes) {
+		return nil
+	}
+	prev := m.selected
+	m.selected = m.model.Changes[idx].Path
+	m.focus = focusList
+	return m.selectPathCmd(prev)
 }
 
 // clickCheckbox always emits the row's stage intent; when the click also
@@ -1299,6 +1368,10 @@ func (m *Mission) clickModalRow(h hit) (tea.Model, tea.Cmd) {
 // established (mouse.go).
 func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	mouse := msg.Mouse()
+	if m.menu != nil {
+		m.menu.Motion(mouse.X, mouse.Y)
+		return m, nil
+	}
 	m.setHover(mouse.X, mouse.Y)
 	return m, nil
 }
@@ -1368,7 +1441,9 @@ func (m *Mission) setHover(x, y int) {
 // cursor (skipping a guarded row, like its keyboard up/down), the diff
 // pane's line cursor, or the Changes list's row cursor, each moving the same
 // cursor the arrow keys do. The History commit list is the exception: the
-// wheel scrolls its view and never its selection (historyScroll). A modal
+// wheel scrolls its view and never its selection (historyScroll). An open
+// menu takes every tick: over its box they scroll a row region too tall to
+// fit, and nowhere do they reach the board beneath it. A modal
 // claims every row like hitTest's own first check; otherwise the tick must
 // land inside the body's Y range (between the topbar and the keybar/notice
 // strip) -- mirroring hitTest's bodyY bound -- or a tick over the
@@ -1383,6 +1458,10 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelDown:
 		delta = wheelStep
 	default:
+		return m, nil
+	}
+	if m.menu != nil {
+		m.menu.Wheel(mouse.X, mouse.Y, delta)
 		return m, nil
 	}
 	if m.modal != nil {

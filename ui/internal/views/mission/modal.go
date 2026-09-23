@@ -2,7 +2,7 @@
 // top bar's segments. One engine (ranked rows, an optional trailing action
 // row, a query and a cursor) drives all three; only the row set, the
 // emitted intent, and the action row differ per kind. Composition mirrors
-// the picker's own overlay convention (ui/internal/views/picker/modal.go):
+// the picker's own overlay convention (ui/internal/views/picker/menu.go):
 // the parent dims in place and the box composites over it as a lipgloss
 // layer, anchored under the segment that opened it.
 package mission
@@ -10,9 +10,6 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
-	"image/color"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -439,6 +436,19 @@ func (m *Mission) selectModalAction() (tea.Model, tea.Cmd) {
 	ms.naming = true
 	ms.nameInput = newTextInput(ms.namePlaceholder, modalNameWidth(ms, m.width))
 	return m, ms.nameInput.Focus()
+}
+
+// openBranchModalFrom is Create Branch from Commit: the branch foldout opens
+// already naming, its new branch starting at sha. It skips openBranchModal's
+// detached-HEAD refusal, since a commit is a starting point either way.
+func (m *Mission) openBranchModalFrom(sha, short string) (tea.Model, tea.Cmd) {
+	m.modal = newBranchModal(m.model)
+	m.focus = focusModal
+	m.modal.action.label = "New branch from " + short + "…"
+	m.modal.action.buildPayload = func(name string) json.RawMessage {
+		return mustPayload(checkoutNewPayload{New: true, From: sha, Name: name})
+	}
+	return m.selectModalAction()
 }
 
 // commitModalName emits the action row's intent with the typed name. A blank
@@ -983,17 +993,16 @@ func clampX(x, boxW, parentW int) int {
 }
 
 // renderMissionModal composites ms's box over parent: the parent dims in
-// place (dimForeground), the box lands as a layer anchored under its
+// place (picker.DimForeground), the box lands as a layer anchored under its
 // segment, clamped so it never runs past the pane -- the picker's own
-// overlay idiom (ui/internal/views/picker/modal.go's renderModal),
-// mirrored locally since dimForeground and its ramp are unexported there.
+// overlay idiom (picker.Menu's Render).
 // renderMissionModal composites ms's box at FULL frame height: its top edge
 // sits on the anchor row below the top bar (as before), its bottom edge is
 // the frame's own last row -- GitHub Desktop's dropdowns run to the window
 // bottom and own that space, covering whatever sits below them (the main
 // keybar) for as long as they're open. That is intended, not a bug.
 func renderMissionModal(parent string, ms *modalState, width, height, topBarHeight int) string {
-	dimmed := dimForeground(parent)
+	dimmed := picker.DimForeground(parent)
 	inner := modalInnerWidth(ms, width)
 	boxInnerHeight := height - topBarHeight - 2 // -2 for the box's own top/bottom border
 	if boxInnerHeight < 1 {
@@ -1028,60 +1037,4 @@ func renderNoticeStrip(text string, width int) string {
 	// exceeded width and could wrap (CodeRabbit, PR #353).
 	left := fg.Render(clip(theme.GlyphWarn+" "+text, width-1))
 	return on.Width(width).Render(" " + left)
-}
-
-// The rest of this file mirrors the picker's parent-dim transform
-// (ui/internal/views/picker/modal.go's dimForeground/dimRamp/dimBlend)
-// locally: those helpers are unexported there, so reuse is by idiom, not
-// import.
-
-var modalDimRamp = map[string]string{
-	rgbKeyOf(theme.Text):     rgbKeyOf(theme.Dim),
-	rgbKeyOf(theme.TextSoft): rgbKeyOf(theme.Dimmer),
-	rgbKeyOf(theme.Dim):      rgbKeyOf(theme.Dimmer),
-	rgbKeyOf(theme.Dimmer):   rgbKeyOf(theme.Faint),
-	rgbKeyOf(theme.Faint):    rgbKeyOf(theme.Faint),
-}
-
-func rgbKeyOf(c color.Color) string {
-	r, g, b, _ := c.RGBA()
-	return fmt.Sprintf("%d;%d;%d", r>>8, g>>8, b>>8)
-}
-
-const modalDimBlend = 0.4
-
-func modalBlendChannel(v, target int) int {
-	return v + int(float64(target-v)*modalDimBlend)
-}
-
-func modalBlendTowardBg(r, g, b int) (int, int, int) {
-	br, bgc, bb, _ := theme.Bg.RGBA()
-	return modalBlendChannel(r, int(br>>8)), modalBlendChannel(g, int(bgc>>8)), modalBlendChannel(b, int(bb>>8))
-}
-
-var modalFgSGR = regexp.MustCompile(`38;2;(\d{1,3});(\d{1,3});(\d{1,3})`)
-
-func dimForeground(s string) string {
-	idxs := modalFgSGR.FindAllStringSubmatchIndex(s, -1)
-	if idxs == nil {
-		return s
-	}
-	var out strings.Builder
-	last := 0
-	for _, loc := range idxs {
-		out.WriteString(s[last:loc[0]])
-		r, _ := strconv.Atoi(s[loc[2]:loc[3]])
-		g, _ := strconv.Atoi(s[loc[4]:loc[5]])
-		b, _ := strconv.Atoi(s[loc[6]:loc[7]])
-		key := fmt.Sprintf("%d;%d;%d", r, g, b)
-		dimmed, ok := modalDimRamp[key]
-		if !ok {
-			nr, ng, nb := modalBlendTowardBg(r, g, b)
-			dimmed = fmt.Sprintf("%d;%d;%d", nr, ng, nb)
-		}
-		out.WriteString("38;2;" + dimmed)
-		last = loc[1]
-	}
-	out.WriteString(s[last:])
-	return out.String()
 }

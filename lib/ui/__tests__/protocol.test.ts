@@ -89,6 +89,15 @@ test("a mission intent fixture parses with its payload passed through untouched"
   });
 });
 
+test("a mission:menu-action intent parses with its payload passed through untouched", () => {
+  const payload = { action: "create-tag", sha: "abc123", name: "v1" };
+  expect(parseSessionLine(JSON.stringify({ t: "intent", name: "mission:menu-action", payload }))).toEqual({
+    t: "intent",
+    name: "mission:menu-action",
+    payload,
+  });
+});
+
 test("the mission open fixture matches its view", () => {
   const open = fixture("session-open-mission.json") as { t: string; view: string };
   expect(open.t).toBe("open");
@@ -142,6 +151,7 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.commit.lastCommit?.undoable).toBe(true);
   expect(model.stashCount).toBe(1);
   expect(model.notice).toBe("");
+  expect(model.editorLabel).toBe("Zed");
 });
 
 // open and close are TS-to-Go messages, not parseSessionLine input; these

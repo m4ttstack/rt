@@ -280,6 +280,7 @@ describe("buildModel golden fixture handshake", () => {
       action: baseAction({ kind: "pull", title: "Pull origin", meta: "2 commits behind", ahead: 3, behind: 2 }),
       defaultBranch: "origin/main",
       now: new Date("2026-09-18T15:00:00Z"),
+      editorLabel: "Zed",
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
@@ -341,7 +342,7 @@ describe("buildModel history tab golden fixture", () => {
     store.changeset = { files: [file], linesAdded: 1, linesDeleted: 1 };
     store.selectedFile = file;
 
-    const history = buildHistoryModel(store, { now, loading: false });
+    const history = buildHistoryModel(store, { now, loading: false, onDisk: () => true });
 
     const model = buildModel({
       ...baseInput({ now }),
@@ -423,6 +424,16 @@ describe("current.worktreeName falls back to the checkout directory's basename",
   test("a real rt worktree name is unaffected", () => {
     const model = buildModel(baseInput());
     expect(model.current.worktreeName).toBe("repo");
+  });
+});
+
+describe("editorLabel", () => {
+  test("carries the label it is given", () => {
+    expect(buildModel({ ...baseInput(), editorLabel: "Zed" }).editorLabel).toBe("Zed");
+  });
+
+  test("is empty when none is given", () => {
+    expect(buildModel(baseInput()).editorLabel).toBe("");
   });
 });
 

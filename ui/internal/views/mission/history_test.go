@@ -2630,7 +2630,7 @@ func TestClickAfterLocalNoticeHitsThePaintedRow(t *testing.T) {
 // box painted above it.
 func TestChangesClickAfterLocalNoticeHitsThePaintedRow(t *testing.T) {
 	m := newMouseTestMission()
-	m.localNotice = "menu lands with polish"
+	m.localNotice = "Stash foldout lands in v2"
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	y := -1
 	for i, line := range lines {

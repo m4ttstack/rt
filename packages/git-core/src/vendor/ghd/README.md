@@ -32,3 +32,34 @@ License: MIT (see LICENSE)
 | `patch-formatter.ts` | Line 2: split imports (AppFileStatusKind value import, PatchTarget/TextDiffLike type-only imports) for verbatimModuleSyntax; Line 67: `assertNever(file.status.kind, ...)` instead of `assertNever(file.status, ...)` for type safety; Deleted line 225 log.debug call | Imports: consolidate paths to ./types, ./diff-line, ./diff-selection, ./fatal-error; Signature narrowing: WorkingDirectoryFileChange -> PatchTarget, ITextDiff \| ILargeTextDiff -> TextDiffLike; Type narrowing in assertNever call |
 | `log-parse.ts` | Classes (`CommitIdentity`, `GitAuthor`, `CommittedFileChange`) become plain records; `createLogParser` takes strings only (no Buffer path); `!`/`forceUnwrap` added for noUncheckedIndexedAccess | rt reads git output as strings; repo compiler settings |
 | `fatal-error.ts` | Added `forceUnwrap`, throwing a plain Error instead of calling `fatalError` | Needed by `parseRawLogWithNumstat`; no Electron fatal-error machinery |
+
+## Ported (not file-vendored) Modules
+
+These live under `packages/git-core/src/` rather than here, since they are
+behavioral ports (GHD's `repository: Repository` becomes `ctx: ClientContext`,
+GHD's `git()` wrapper becomes `rawGit`) rather than copied files, but they are
+verbatim ports of the same commit above.
+
+| Module | Upstream source | GHD functions ported |
+|---|---|---|
+| `../../gitignore.ts` | `app/src/lib/git/gitignore.ts` | `ensureGitIgnoreIsNotSymbolicLink`, `openExistingGitIgnore`, `readGitIgnoreAtRoot`, `saveGitIgnore`, `appendIgnoreRule`, `appendIgnoreFile`, `escapeGitSpecialCharacters`, `formatGitIgnoreContents` (plus `getConfigValue` from `app/src/lib/git/config.ts`, narrowed to a single key lookup) |
+| `../../discard.ts` | `app/src/lib/stores/git-store.ts` (`GitStore.discardChanges`, lines 1545-1650) | `discardChanges`, and its helpers from `app/src/lib/git/diff-index.ts` (`getIndexChanges`, `IndexStatus`, `getNoRenameIndexStatus`), `reset.ts` (`resetPaths`, narrowed to Mixed mode), `checkout-index.ts` (`checkoutIndex`), `submodule.ts` (`listSubmodules`, `resetSubmodulePaths`) |
+
+Deviations from GHD in `discard.ts`:
+
+- `moveToTrash` is always on with no permanent-delete fallback: GHD catches
+  a Trash failure and falls back to `rm` for an untracked file, or silently
+  leaves a tracked one. This port instead finishes the reset/checkout-index
+  steps for every file already moved to the Trash before the failing one
+  (excluding any path a not-yet-trashed file still owns, including a
+  rename's `originalPath`), then rethrows the original Trash error -- a
+  failure in that recovery step attaches to it as `.cause` rather than
+  replacing it.
+- The exit-128 gate in `getIndexChanges` and `listSubmodules` (GHD reads
+  `result.exitCode` off its `git()` wrapper) is exact, not approximated:
+  `exec.ts`'s `rawGit` sets a real `exitCode` on the error it throws, and
+  one shared helper (`rawGitOr128`) checks it for both call sites.
+- `listSubmodules` spawns `git rev-parse --absolute-git-dir` to resolve the
+  git directory, where GHD reads the already-known `repository.resolvedGitDir`
+  off its `Repository` model -- this port has no equivalent pre-resolved
+  value to read, so it asks git directly instead.

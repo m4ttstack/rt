@@ -19,6 +19,10 @@ import (
 	"rt-ui/internal/views/picker"
 )
 
+// emptyCommitSummary stands in for a commit with no message wherever one is
+// named: its list row, its header, and its menu's title.
+const emptyCommitSummary = "Empty commit message"
+
 const (
 	// tabs(3, pad+label+underline) + the tabs-gap blank band row(1), then the
 	// filter box(3) from historyFilterTopRow.
@@ -374,6 +378,9 @@ func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.historyMove(-1, true)
 	case "shift+down":
 		return m, m.historyMove(1, true)
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
+		return m, nil
 	case "enter":
 		if m.historyOnMoreRow() {
 			return m, m.requestMore()
@@ -705,7 +712,7 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 	summaryStyle := on.Foreground(theme.Text).Bold(true)
 	summary := c.Summary
 	if summary == "" {
-		summary = "Empty commit message"
+		summary = emptyCommitSummary
 		summaryStyle = on.Foreground(theme.Faint)
 	}
 	line1 := prefix + summaryStyle.Width(summaryW).Render(clip(summary, summaryW))
@@ -835,7 +842,7 @@ func historyHeaderLines(h HistoryHeader, expanded, hover bool, width int) []stri
 	}
 	summary, summaryCol := h.Summary, theme.Text
 	if summary == "" {
-		summary, summaryCol = "Empty commit message", theme.Faint
+		summary, summaryCol = emptyCommitSummary, theme.Faint
 	}
 	summaryW := max(width-4, 0)
 	lines := []string{row(title, title.Render(" ")+title.Foreground(summaryCol).Bold(true).Width(summaryW).Render(clip(summary, summaryW))+title.Foreground(theme.Dimmer).Render(" "+glyph))}
@@ -1084,6 +1091,9 @@ func (m *Mission) historyFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.historyFileMove(-1)
 	case "down":
 		return m, m.historyFileMove(1)
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
+		return m, nil
 	case "enter":
 		m.focus = focusDiff
 		return m, nil

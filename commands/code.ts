@@ -16,7 +16,7 @@
 
 import { execSync } from "child_process";
 import { existsSync, readdirSync } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { homedir } from "os";
 import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
@@ -63,7 +63,7 @@ function savePrefs(prefs: Prefs): void {
   }
 }
 
-export const __test__ = { loadPrefs, savePrefs, savedEditor };
+export const __test__ = { loadPrefs, savePrefs, savedEditor, editorLabelFor };
 
 // ─── Editor detection ────────────────────────────────────────────────────────
 
@@ -296,7 +296,16 @@ async function resolveWorkspaceTarget(dirPath: string, prefs: Prefs): Promise<st
 function editorLabelFor(command: string): string {
   return KNOWN_EDITORS.find(e => e.command === command)?.label
     || KNOWN_APPS.find(a => a.command === command)?.label
+    || appNameOf(command)
     || command;
+}
+
+/** The app a bare `open -a App` launch opens, quoted or not, a bundle path collapsed to its name; null for any other command. */
+function appNameOf(command: string): string | null {
+  const m = command.trim().match(/^open\s+-a\s+(?:"([^"]+)"|'([^']+)'|(\S+))$/);
+  if (!m) return null;
+  const target = (m[1] ?? m[2] ?? m[3])!;
+  return target.endsWith(".app") ? basename(target, ".app") : target;
 }
 
 /**
@@ -341,6 +350,40 @@ function launchEditor(editor: string, target: string): string | null {
       return null;
     }
   }
+}
+
+export interface ResolvedEditor {
+  command: string;
+  label: string;
+}
+
+export function resolveEditorForDir(dir: string): ResolvedEditor | null {
+  const prefs = loadPrefs();
+  const basename = dir.split("/").pop() || "unknown";
+  const command = resolveEditorSync(prefs, editorPrefKey(dir), [basename]);
+  return command ? { command, label: editorLabelFor(command) } : null;
+}
+
+// glitter owns the terminal, so the launch must neither inherit stdio nor
+// block the driver the way launchEditor's execSync does. The target goes in
+// as "$1", never spliced into the command string.
+async function spawnEditor(command: string, target: string): Promise<boolean> {
+  const proc = Bun.spawn(["/bin/sh", "-c", `${command} "$1"`, "sh", target], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return (await proc.exited) === 0;
+}
+
+export async function launchEditorDetached(
+  command: string,
+  target: string,
+  fallback: (command: string) => string | null = appBundleFallback,
+): Promise<boolean> {
+  if (await spawnEditor(command, target)) return true;
+  const alternate = fallback(command);
+  return alternate ? spawnEditor(alternate, target) : false;
 }
 
 // ─── Shared opener (used by rt nav) ─────────────────────────────────────────

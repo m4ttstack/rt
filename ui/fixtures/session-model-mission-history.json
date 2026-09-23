@@ -148,10 +148,12 @@
         {
           "path": "src/parser.ts",
           "origPath": "",
-          "status": "modified"
+          "status": "modified",
+          "onDisk": true
         }
       ],
       "selectedFile": "src/parser.ts"
-    }
+    },
+    "editorLabel": ""
   }
 }
