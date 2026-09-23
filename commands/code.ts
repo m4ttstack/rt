@@ -16,7 +16,7 @@
 
 import { execSync } from "child_process";
 import { existsSync, readdirSync } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { homedir } from "os";
 import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
@@ -300,10 +300,12 @@ function editorLabelFor(command: string): string {
     || command;
 }
 
-/** The app a bare `open -a App` launch opens, quoted or not; null for any other command. */
+/** The app a bare `open -a App` launch opens, quoted or not, a bundle path collapsed to its name; null for any other command. */
 function appNameOf(command: string): string | null {
   const m = command.trim().match(/^open\s+-a\s+(?:"([^"]+)"|'([^']+)'|(\S+))$/);
-  return m ? (m[1] ?? m[2] ?? m[3])! : null;
+  if (!m) return null;
+  const target = (m[1] ?? m[2] ?? m[3])!;
+  return target.endsWith(".app") ? basename(target, ".app") : target;
 }
 
 /**

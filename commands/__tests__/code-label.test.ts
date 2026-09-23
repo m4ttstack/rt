@@ -15,6 +15,11 @@ describe("editorLabelFor", () => {
     expect(editorLabelFor("  open  -a   'Sublime Merge'  ")).toBe("Sublime Merge");
   });
 
+  test("an app launch by full path reads as the app's name, not the path", () => {
+    expect(editorLabelFor("open -a /Applications/Foo.app")).toBe("Foo");
+    expect(editorLabelFor('open -a "/Applications/Foo Bar.app"')).toBe("Foo Bar");
+  });
+
   test("any other command reads as itself", () => {
     expect(editorLabelFor("nvim")).toBe("nvim");
     expect(editorLabelFor('open -a "Zed" --args -n')).toBe('open -a "Zed" --args -n');
