@@ -21,6 +21,7 @@ export { updateRepoIndex, getKnownRepos, getKnownReposCached, findKnownRepo, rep
 import { getRepoRoot, getRemoteUrl } from "./git.ts";
 import { updateRepoIndex, getKnownRepos, findKnownRepo, repoOption, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo-index.ts";
 import { repoLabel } from "./repo-label.ts";
+import { groupWorktrees } from "./worktree-groups.ts";
 import type { PickRow } from "./ui/protocol.ts";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -348,15 +349,17 @@ export async function pickWorktreeFromRepo(
     }).trim();
   } catch { /* no remote */ }
 
+  const { worktrees, groupOf } = groupWorktrees(repo.repoName, pickerWorktrees(repo));
   const enriched = await enrichBranches(
-    pickerWorktrees(repo).map(wt => ({ path: wt.path, branch: wt.branch })),
+    worktrees.map(wt => ({ path: wt.path, branch: wt.branch })),
     remoteUrl,
   );
 
   const options = enriched.map(eb => ({ value: eb.path, label: eb.branch || eb.dirName, hint: "" }));
   const rows: PickRow[] = enriched.map(eb => {
     const { left, right, match } = formatBranchSegments(eb);
-    return { value: eb.path, left, right, match };
+    const group = groupOf.get(eb.path);
+    return { value: eb.path, left, right, match, ...(group ? { group } : {}) };
   });
 
   return filterableSelect({

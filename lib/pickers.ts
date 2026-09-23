@@ -8,6 +8,7 @@
 import { execSync } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { groupWorktrees } from "./worktree-groups.ts";
 import { pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
 import { enrichBranches, formatBranchSegments, type EnrichedBranch } from "./enrich.ts";
 import { repoLabel } from "./repo-label.ts";
@@ -44,7 +45,7 @@ function annotateCurrent(right: PickSegment[], isCurrent: boolean): PickSegment[
  * enrichment resolves — same branch-leads/dirName-leads split as
  * formatBranchSegments, so enrichment doesn't reorder rows' leading text.
  */
-function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: string): PickRow {
+function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: string, group?: string): PickRow {
   const dirName = dirNameOf(wt.path);
   const left: PickSegment[] = !wt.branch
     ? [{ text: dirName, bold: true, column: true }]
@@ -53,12 +54,12 @@ function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: str
         { text: "  ", tone: "faint" },
         { text: wt.branch, tone: "dim" },
       ];
-  return { value: wt.path, left, right: annotateCurrent([], wt.path === currentPath) };
+  return { value: wt.path, left, right: annotateCurrent([], wt.path === currentPath), ...(group ? { group } : {}) };
 }
 
-function enrichedWorktreeRow(eb: EnrichedBranch, currentPath: string): PickRow {
+function enrichedWorktreeRow(eb: EnrichedBranch, currentPath: string, group?: string): PickRow {
   const { left, right, match } = formatBranchSegments(eb);
-  return { value: eb.path, left, right: annotateCurrent(right, eb.path === currentPath), match };
+  return { value: eb.path, left, right: annotateCurrent(right, eb.path === currentPath), match, ...(group ? { group } : {}) };
 }
 
 function repoOptionsFromList(repos: KnownRepo[]) {
@@ -110,7 +111,7 @@ export async function pickWorktreeWithSwitch(
   if (repo.worktrees.length === 0) return SWITCH_REPO;
 
   let liveHandle: PickHandle | undefined;
-  const worktrees = pickerWorktrees(repo);
+  const { worktrees, groupOf } = groupWorktrees(repo.repoName, pickerWorktrees(repo));
   const options = worktrees.map((wt) => ({ value: wt.path, label: wt.branch || dirNameOf(wt.path) }));
 
   const resultPromise = filterableSelect(
@@ -122,7 +123,7 @@ export async function pickWorktreeWithSwitch(
       ...(opts?.breadcrumb ? { breadcrumb: opts.breadcrumb, crumbSuffix: ` · ${repoLabel(repo.repoName)} worktrees` } : {}),
     },
     {
-      rows: worktrees.map((wt) => cheapWorktreeRow(wt, currentPath)),
+      rows: worktrees.map((wt) => cheapWorktreeRow(wt, currentPath, groupOf.get(wt.path))),
       onOpen: (h) => { liveHandle = h; },
     },
   );
@@ -133,7 +134,7 @@ export async function pickWorktreeWithSwitch(
   void (async () => {
     const remoteUrl = await getRemoteUrl(repo.worktrees[0]?.path || currentPath);
     const enriched = await enrichBranches(worktrees, remoteUrl, { silent: true });
-    liveHandle?.update({ rows: enriched.map((eb) => enrichedWorktreeRow(eb, currentPath)) });
+    liveHandle?.update({ rows: enriched.map((eb) => enrichedWorktreeRow(eb, currentPath, groupOf.get(eb.path))) });
   })().catch(() => {
     // Best-effort enrichment; the cheap rows already on screen stand as-is.
   });
