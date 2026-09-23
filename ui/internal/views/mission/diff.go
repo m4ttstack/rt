@@ -41,6 +41,10 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "q":
 		return m.quit()
+	case "e":
+		if m.historyTab() {
+			m.historyExpanded = !m.historyExpanded
+		}
 	case "up":
 		m.moveDiffCursor(-1)
 	case "down":
@@ -267,8 +271,16 @@ func renderDiffHeader(d DiffModel, width int) string {
 	return justify(on, width, left, right)
 }
 
+// centeredMessage wraps text to width and centers it in a width x height
+// box. Height pads but never truncates, so wrapped rows past the box are
+// dropped here rather than growing the frame.
 func centeredMessage(width, height int, col color.Color, text string) string {
-	return lipgloss.NewStyle().Width(width).Height(height).Background(theme.Bg).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+	style := lipgloss.NewStyle().Width(width).Background(theme.Bg)
+	rows := strings.Split(style.Align(lipgloss.Center).Foreground(col).Render(text), "\n")
+	if len(rows) > height {
+		rows = rows[:max(height, 0)]
+	}
+	return style.Height(height).AlignVertical(lipgloss.Center).Render(strings.Join(rows, "\n"))
 }
 
 // renderEmptyStateCard is the clean-worktree diff pane (docs/design/mission/
@@ -412,7 +424,8 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 	if line.Kind != "del" && d.Lang != "" && !hover {
 		rendered = highlightLine(d.Lang, text, base, theme.Bg)
 	}
-	return rowBg.Width(width).Render(gutter + rowBg.Foreground(base).Render(mark) + rendered)
+	// A pane narrower than the gutter would otherwise wrap the row.
+	return rowBg.Width(width).Render(clipOn(gutter+rowBg.Foreground(base).Render(mark)+rendered, width, rowBg))
 }
 
 func numCell(bg lipgloss.Style, n int) string {

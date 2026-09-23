@@ -26,6 +26,8 @@ const (
 	historyPageThreshold = 10
 	historyFilesMin      = 24
 	historyFilesMax      = 40
+	historyFilesNarrow   = 12
+	historyDiffMin       = 30
 )
 
 type historyDebounceKind int
@@ -75,10 +77,14 @@ func (m *Mission) historyIndex(sha string) int {
 // clampHistory runs on every SetModel: the view's cursor survives a push
 // while its sha is still listed; once it falls off (a reload, a worktree
 // switch) the cursor adopts the driver's own selection and drops any move
-// still pending against the old list. The file cursor follows the driver's
-// file except while a file move is pending: the driver's commit select
-// resets its file to the first one, which may share a path with the file
-// the view last showed.
+// still pending against the old list.
+//
+// The driver's selection and file are adopted only when they change from one
+// push to the next: a push sent before the driver handled the view's last
+// select still carries the old values and must not undo it. A new commit
+// selection replaces the file list, so it also resets the file cursor to the
+// driver's file; the driver's own file change leaves a pending file move
+// alone.
 func (m *Mission) clampHistory() {
 	commits := m.model.History.Commits
 	if len(commits) == 0 {
@@ -92,20 +98,45 @@ func (m *Mission) clampHistory() {
 			}
 		}
 		m.historyAnchor = ""
-		m.historyPending = false
 		m.historyGen++
 	}
 	if m.historyAnchor != "" && m.historyIndex(m.historyAnchor) < 0 {
 		m.historyAnchor = ""
 	}
-	if m.historyFilePending && m.historyFileIndex() >= 0 {
-		return
+
+	driverKey := m.driverSelectionKey()
+	selectionChanged := driverKey != m.historyDriverKey
+	if selectionChanged {
+		m.historyDriverKey, m.historyShown = driverKey, driverKey
 	}
-	m.historyFile = m.model.History.SelectedFile
-	if m.historyFilePending {
-		m.historyFilePending = false
-		m.historyFileGen++
+	file := m.model.History.SelectedFile
+	fileChanged := file != m.historyDriverFile
+	m.historyDriverFile = file
+	switch {
+	case selectionChanged || m.historyFileIndex() < 0:
+		m.historyFile, m.historyFileShown = file, file
+		if m.historyFilePending {
+			m.historyFilePending = false
+			m.historyFileGen++
+		}
+	case fileChanged:
+		m.historyFileShown = file
+		if !m.historyFilePending {
+			m.historyFile = file
+		}
 	}
+}
+
+// driverSelectionKey is the selection the driver reports through the rows'
+// Selected flags, in list order.
+func (m *Mission) driverSelectionKey() string {
+	var shas []string
+	for _, c := range m.model.History.Commits {
+		if c.Selected {
+			shas = append(shas, c.Sha)
+		}
+	}
+	return strings.Join(shas, ",")
 }
 
 // historySelectionShas is the anchor..cursor span in list order (newest
@@ -147,26 +178,10 @@ func (m *Mission) historyInSelection(idx int) bool {
 // select with a new file list, so a pending file move belongs to the old one.
 func (m *Mission) emitHistorySelect() tea.Cmd {
 	m.historyGen++
-	m.historyPending = false
+	m.historyShown = m.historySelectionKey()
 	m.historyFileGen++
 	m.historyFilePending = false
 	return m.em.Emit(protocol.Intent{Name: "mission:history-select", Payload: mustPayload(historySelectPayload{Shas: m.historySelectionShas()})})
-}
-
-// shownSelectionKey is the selection the driver is showing: the base a
-// pending move started from, else the current selection.
-func (m *Mission) shownSelectionKey() string {
-	if m.historyPending {
-		return m.historyPendingBase
-	}
-	return m.historySelectionKey()
-}
-
-func (m *Mission) shownHistoryFile() string {
-	if m.historyFilePending {
-		return m.historyFileBase
-	}
-	return m.historyFile
 }
 
 // settleHistory answers a debounce tick. The driver's select resets its file
@@ -178,8 +193,7 @@ func (m *Mission) settleHistory(v historyDebounceMsg) tea.Cmd {
 		if v.generation != m.historyGen {
 			return nil
 		}
-		m.historyPending = false
-		if key := m.historySelectionKey(); key == "" || key == m.historyPendingBase {
+		if key := m.historySelectionKey(); key == "" || key == m.historyShown {
 			return nil
 		}
 		return m.emitHistorySelect()
@@ -188,7 +202,7 @@ func (m *Mission) settleHistory(v historyDebounceMsg) tea.Cmd {
 			return nil
 		}
 		m.historyFilePending = false
-		if m.historyFile == "" || m.historyFile == m.historyFileBase {
+		if m.historyFile == "" || m.historyFile == m.historyFileShown {
 			return nil
 		}
 		return m.emitHistoryFile()
@@ -245,9 +259,6 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	if m.historySelectionKey() == before {
 		return m.maybeRequestMore()
 	}
-	if !m.historyPending {
-		m.historyPending, m.historyPendingBase = true, before
-	}
 	m.historyGen++
 	gen := m.historyGen
 	tick := selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
@@ -270,6 +281,15 @@ func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.model.History.Files) > 0 {
 			m.focus = focusHistoryFiles
 		}
+		return m, nil
+	}
+	return m.historyTabKey(v)
+}
+
+// historyTabKey is the History keybar's tab-wide keys, the same from the
+// commit list and the file column.
+func (m *Mission) historyTabKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch v.String() {
 	case "e":
 		m.historyExpanded = !m.historyExpanded
 	case "1":
@@ -430,7 +450,6 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(commits) {
 		return m, nil
 	}
-	shown := m.shownSelectionKey()
 	if shift {
 		if m.historyAnchor == "" {
 			m.historyAnchor = m.historyCursor
@@ -440,18 +459,33 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	m.historyCursor = commits[idx].Sha
 	m.focus = focusList
-	// A pending tick left in flight settles against the same base and finds
-	// nothing to emit either.
-	if m.historySelectionKey() == shown {
+	// A pending tick left in flight settles against the same shown selection
+	// and finds nothing to emit either.
+	if m.historySelectionKey() == m.historyShown {
 		return m, m.maybeRequestMore()
 	}
 	return m, tea.Batch(m.emitHistorySelect(), m.maybeRequestMore())
 }
 
-// historyFilesWidth is a third of the pane clamped to [24, 40], never so
-// wide that the column divider falls off a narrow pane.
+// historyFilesWidth is a third of the pane clamped to [24, 40]. Where that
+// would leave the diff under historyDiffMin cells the column gives way down
+// to historyFilesNarrow, and it never pushes the divider off the pane.
 func historyFilesWidth(paneW int) int {
-	return min(max(historyFilesMin, min(historyFilesMax, paneW/3)), max(paneW-1, 0))
+	w := max(historyFilesMin, min(historyFilesMax, paneW/3))
+	if paneW-w-1 < historyDiffMin {
+		w = max(paneW/3, historyFilesNarrow)
+	}
+	return min(w, max(paneW-1, 0))
+}
+
+// headerRow keeps one cell of right margin and is exactly width cells.
+func headerRow(on lipgloss.Style, content string, width int) string {
+	return on.Width(width).Render(clipOn(content, max(width-1, 0), on))
+}
+
+func headerTextRow(col color.Color, text string, width int) string {
+	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+	return headerRow(on, on.Render(" ")+on.Foreground(col).Render(clip(text, max(width-2, 0))), width)
 }
 
 // historyHeaderLines is GHD's expandable-commit-summary as terminal rows,
@@ -460,15 +494,14 @@ func historyFilesWidth(paneW int) int {
 func historyHeaderLines(h HistoryHeader, expanded, hover bool, width int) []string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	row := func(on lipgloss.Style, content string) string {
-		return on.Width(width).Render(clipOn(content, max(width-1, 0), on))
+		return headerRow(on, content, width)
 	}
-	textW := max(width-2, 0)
 	plain := func(col color.Color, text string) string {
-		return row(on, on.Render(" ")+on.Foreground(col).Render(clip(text, textW)))
+		return headerTextRow(col, text, width)
 	}
 
 	if h.RangeCount > 1 {
-		return []string{row(on, on.Render(" ")+on.Foreground(theme.Text).Bold(true).Render(clip(fmt.Sprintf("Showing changes from %d commits", h.RangeCount), textW)))}
+		return []string{row(on, on.Render(" ")+on.Foreground(theme.Text).Bold(true).Render(clip(fmt.Sprintf("Showing changes from %d commits", h.RangeCount), max(width-2, 0))))}
 	}
 
 	title := on
@@ -520,9 +553,10 @@ func historyHeaderLines(h HistoryHeader, expanded, hover bool, width int) []stri
 }
 
 // historyHeader is the header as the pane paints it: an expanded
-// description taller than half the pane keeps its title and meta line and
-// drops the rows between, so the file column and diff stay on screen.
-// historyPaneHit measures this same slice.
+// description taller than half the pane keeps its title and meta line, and
+// a marker counting the dropped rows stands in for the rows between, so the
+// file column and diff stay on screen. historyPaneHit measures this same
+// slice.
 func (m *Mission) historyHeader(width, height int) []string {
 	lines := historyHeaderLines(*m.model.History.Header, m.historyExpanded, m.hoverExpander, width)
 	limit := max(height/2, 1)
@@ -531,8 +565,19 @@ func (m *Mission) historyHeader(width, height int) []string {
 		return lines
 	case limit == 1:
 		return lines[:1]
+	case limit == 2:
+		return []string{lines[0], moreLinesRow(len(lines)-1, width)}
 	}
-	return append(lines[:limit-1:limit-1], lines[len(lines)-1])
+	kept := append(lines[:limit-2:limit-2], moreLinesRow(len(lines)-limit+1, width))
+	return append(kept, lines[len(lines)-1])
+}
+
+func moreLinesRow(n, width int) string {
+	noun := "lines"
+	if n == 1 {
+		noun = "line"
+	}
+	return headerTextRow(theme.Faint, fmt.Sprintf("… %d more %s", n, noun), width)
 }
 
 // historySlate is the single message the pane shows when there is nothing
@@ -556,7 +601,7 @@ func (m *Mission) historySlate() string {
 // the file column beside the read-only diff.
 func (m *Mission) renderHistoryPane(width, height int) string {
 	if slate := m.historySlate(); slate != "" {
-		return centeredMessage(width, height, theme.Faint, clip(slate, width))
+		return centeredMessage(width, height, theme.Faint, slate)
 	}
 	header := m.historyHeader(width, height)
 	filesW := historyFilesWidth(width)
@@ -619,6 +664,13 @@ func renderHistoryFileRow(f HistoryFileRow, width int, cursor, hover, focused bo
 	return on.Width(width).Render(clipOn(line, width, on))
 }
 
+// historyPaneLayout is renderHistoryPane's geometry at the frame's pane
+// size, shared by the hit test and the wheel.
+func (m *Mission) historyPaneLayout() (headerH, filesW, paneW int) {
+	paneW = m.diffWidth()
+	return len(m.historyHeader(paneW, m.layout().bodyH)), historyFilesWidth(paneW), paneW
+}
+
 // historyPaneHit walks renderHistoryPane's rows in lockstep: the header
 // (its title row is the expander), the rule, then the file column, the
 // divider, and the diff pane.
@@ -626,8 +678,7 @@ func (m *Mission) historyPaneHit(x, y int) hit {
 	if m.historySlate() != "" {
 		return hit{}
 	}
-	paneW := m.diffWidth()
-	headerH := len(m.historyHeader(paneW, m.layout().bodyH))
+	headerH, filesW, paneW := m.historyPaneLayout()
 	if y < headerH {
 		if y == 0 && m.model.History.Header.RangeCount <= 1 {
 			return hit{kind: hitHistoryExpander}
@@ -638,7 +689,6 @@ func (m *Mission) historyPaneHit(x, y int) hit {
 		return hit{}
 	}
 	bodyY := y - headerH - 1
-	filesW := historyFilesWidth(paneW)
 	switch {
 	case x < filesW:
 		if bodyY == 0 {
@@ -655,6 +705,23 @@ func (m *Mission) historyPaneHit(x, y int) hit {
 	}
 }
 
+// historyWheel scrolls the file column or the diff under the pointer; the
+// header, the rule, and the divider scroll nothing.
+func (m *Mission) historyWheel(x, y, delta int) tea.Cmd {
+	if x < 0 || m.historySlate() != "" {
+		return nil
+	}
+	headerH, filesW, _ := m.historyPaneLayout()
+	switch {
+	case y <= headerH || x == filesW:
+		return nil
+	case x < filesW:
+		return m.historyFileMove(delta)
+	}
+	m.moveDiffCursor(delta)
+	return nil
+}
+
 func (m *Mission) historyFileIndex() int {
 	for i, f := range m.model.History.Files {
 		if f.Path == m.historyFile {
@@ -667,6 +734,7 @@ func (m *Mission) historyFileIndex() int {
 func (m *Mission) emitHistoryFile() tea.Cmd {
 	m.historyFileGen++
 	m.historyFilePending = false
+	m.historyFileShown = m.historyFile
 	return m.em.Emit(protocol.Intent{Name: "mission:history-file", Payload: mustPayload(historyFilePayload{Path: m.historyFile})})
 }
 
@@ -681,9 +749,7 @@ func (m *Mission) historyFileMove(delta int) tea.Cmd {
 	if m.historyFile == before {
 		return nil
 	}
-	if !m.historyFilePending {
-		m.historyFilePending, m.historyFileBase = true, before
-	}
+	m.historyFilePending = true
 	m.historyFileGen++
 	gen := m.historyFileGen
 	return selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
@@ -699,16 +765,12 @@ func (m *Mission) historyFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.historyFileMove(1)
 	case "enter":
 		m.focus = focusDiff
+		return m, nil
 	case "esc":
 		m.focus = focusList
-	case "e":
-		m.historyExpanded = !m.historyExpanded
-	case "1":
-		return m, m.emitTab("changes")
-	case "q":
-		return m.quit()
+		return m, nil
 	}
-	return m, nil
+	return m.historyTabKey(v)
 }
 
 func (m *Mission) clickHistoryFile(idx int) (tea.Model, tea.Cmd) {
@@ -716,10 +778,9 @@ func (m *Mission) clickHistoryFile(idx int) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(files) {
 		return m, nil
 	}
-	shown := m.shownHistoryFile()
 	m.historyFile = files[idx].Path
 	m.focus = focusHistoryFiles
-	if m.historyFile == shown {
+	if m.historyFile == m.historyFileShown {
 		return m, nil
 	}
 	return m, m.emitHistoryFile()

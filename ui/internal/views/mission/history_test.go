@@ -867,14 +867,16 @@ func TestHeaderLinesNeverWrap(t *testing.T) {
 	h.Tags = []string{"v0.9.1", "v0.9.0", "v0.8.9", "release-candidate-long-name", "v0.8.7", "v0.8.6"}
 	h.Authors = []string{strings.Repeat("Author ", 20) + "<a@x>"}
 	h.Byline = strings.Repeat("Author ", 20)
-	for _, expanded := range []bool{false, true} {
-		for _, hover := range []bool{false, true} {
-			for i, line := range historyHeaderLines(h, expanded, hover, 80) {
-				if strings.Contains(line, "\n") {
-					t.Fatalf("expanded=%v line %d wrapped: %q", expanded, i, line)
-				}
-				if w := lipgloss.Width(line); w != 80 {
-					t.Fatalf("expanded=%v line %d: width %d, want 80: %q", expanded, i, w, line)
+	for _, width := range []int{30, 50, 80, 120} {
+		for _, expanded := range []bool{false, true} {
+			for _, hover := range []bool{false, true} {
+				for i, line := range historyHeaderLines(h, expanded, hover, width) {
+					if strings.Contains(line, "\n") {
+						t.Fatalf("width %d expanded=%v line %d wrapped: %q", width, expanded, i, line)
+					}
+					if w := lipgloss.Width(line); w != width {
+						t.Fatalf("width %d expanded=%v line %d: width %d: %q", width, expanded, i, w, line)
+					}
 				}
 			}
 		}
@@ -932,6 +934,11 @@ func TestHistoryFilesWidthClamps(t *testing.T) {
 	for _, c := range [][2]int{{60, 24}, {90, 30}, {200, 40}} {
 		if got := historyFilesWidth(c[0]); got != c[1] {
 			t.Fatalf("historyFilesWidth(%d) = %d, want %d", c[0], got, c[1])
+		}
+	}
+	for _, c := range [][2]int{{55, 24}, {54, 18}, {33, 12}, {26, 12}, {14, 12}, {10, 9}} {
+		if got := historyFilesWidth(c[0]); got != c[1] {
+			t.Fatalf("where the diff would drop under 30 cells historyFilesWidth(%d) = %d, want %d", c[0], got, c[1])
 		}
 	}
 }
@@ -994,6 +1001,15 @@ func TestHistoryPaneHitMapsHeaderFilesAndDiff(t *testing.T) {
 	}
 	if h := m.hitTest(historyPaneX(3), fileY-1); h.kind != hitNone {
 		t.Fatalf("the \"N changed files\" row must be inert, got %+v", h)
+	}
+	headerH := len(m.historyHeader(m.diffWidth(), l.bodyH))
+	if !strings.Contains(lines[l.topH+headerH], "┬") {
+		t.Fatalf("setup: frame row %d should be the rule: %q", l.topH+headerH, lines[l.topH+headerH])
+	}
+	for _, px := range []int{3, filesW, filesW + 5} {
+		if h := m.hitTest(historyPaneX(px), l.topH+headerH); h.kind != hitNone {
+			t.Fatalf("the rule row must be inert at pane x=%d, got %+v", px, h)
+		}
 	}
 	if h := m.hitTest(historyPaneX(3), fileY+1); h.kind != hitNone {
 		t.Fatalf("the filler row below the last file must be inert, got %+v", h)
@@ -1163,19 +1179,60 @@ func TestFileCursorFollowsDriverSelection(t *testing.T) {
 	instantSelectTick(t)
 	m := twoFileHistoryMission()
 	m.historyFile = "lib/mission/driver.ts"
-	if err := m.setModelValue(twoFileHistoryModel()); err != nil {
+	reselected := twoFileHistoryModel()
+	reselected.History.Commits[0].Selected = false
+	reselected.History.Commits[1].Selected = true
+	if err := m.setModelValue(reselected); err != nil {
 		t.Fatal(err)
 	}
 	if m.historyFile != "lib/mission/model.ts" {
-		t.Fatalf("with no move pending the cursor should follow the driver's file, got %q", m.historyFile)
+		t.Fatalf("a new commit selection should adopt the driver's first file, got %q", m.historyFile)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.Update(downKey())
+	moved := reselected
+	moved.History.SelectedFile = "lib/mission/driver.ts"
+	moved.History.Files = twoFileHistoryModel().History.Files
+	m.Update(upKey())
+	if err := m.setModelValue(moved); err != nil {
+		t.Fatal(err)
+	}
+	if m.historyFile != "lib/mission/model.ts" {
+		t.Fatalf("a push during a pending move must keep the view's cursor, got %q", m.historyFile)
+	}
+}
+
+// TestFileCursorIgnoresStalePush: a push that still carries the driver's old
+// file (sent before the driver handled the view's file select) must not snap
+// the cursor back; the driver's file is adopted only once it changes.
+func TestFileCursorIgnoresStalePush(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	m.View()
+	y, _ := findHitY(m, historyPaneX(3), hitHistoryFile)
+	if _, cmd := m.Update(tea.MouseClickMsg{X: historyPaneX(3), Y: y + 1, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("setup: clicking the second file should emit")
+	}
 	if err := m.setModelValue(twoFileHistoryModel()); err != nil {
 		t.Fatal(err)
 	}
 	if m.historyFile != "lib/mission/driver.ts" {
-		t.Fatalf("a push during a pending move must keep the view's cursor, got %q", m.historyFile)
+		t.Fatalf("a stale push must not snap the cursor back to the driver's old file, got %q", m.historyFile)
+	}
+	_, up := m.Update(upKey())
+	if up == nil || m.historyFile != "lib/mission/model.ts" {
+		t.Fatalf("a move after the stale push should start from the clicked file, got %q", m.historyFile)
+	}
+	if _, emit := m.Update(up()); emit == nil {
+		t.Fatal("setup: the settled move back to the first file should emit")
+	}
+	adopted := twoFileHistoryModel()
+	adopted.History.SelectedFile = "lib/mission/driver.ts"
+	if err := m.setModelValue(adopted); err != nil {
+		t.Fatal(err)
+	}
+	if m.historyFile != "lib/mission/driver.ts" {
+		t.Fatalf("a driver file that changed since the last push should be adopted, got %q", m.historyFile)
 	}
 }
 
@@ -1209,6 +1266,194 @@ func TestExpandedLongBodyKeepsPaneHeight(t *testing.T) {
 	}
 	if !strings.Contains(out, "s1full") {
 		t.Fatal("a capped expanded header still keeps its meta line")
+	}
+}
+
+func sweepHistoryModel() Model {
+	model := twoFileHistoryModel()
+	model.History.Files = append(model.History.Files, HistoryFileRow{Path: "ui/internal/views/mission/a-rather-long-file-name_test.go", Status: "deleted"})
+	model.History.Header.Body = "first line of the description that runs well past a narrow pane\nsecond\nthird\nfourth"
+	model.History.Header.Authors = []string{"Matt <m@x>", "Claude <c@x>"}
+	model.History.Header.Tags = []string{"v0.9.1"}
+	model.Diff = DiffModel{Path: "ui/internal/views/mission/history.go", Kind: "text", Stats: "+349 -16", ReadOnly: true, Lines: []DiffLine{
+		{Kind: "hunk", Text: "@@ -5,6 +5,8 @@ func (m *Mission) historyIndex(sha string) int {", SelIdx: -1},
+		{Kind: "context", Text: "package mission", OldNo: 5, NewNo: 5, SelIdx: -1},
+		{Kind: "del", Text: "\tswitch v.String() { // a deleted line long enough to overflow a narrow diff column", OldNo: 6, SelIdx: -1},
+		{Kind: "add", Text: "\tkey := v.String() // an added line long enough to overflow a narrow diff column", NewNo: 6, SelIdx: -1},
+	}}
+	return model
+}
+
+// TestHistoryFrameFitsEveryWidth: a frame taller or wider than the terminal
+// scrolls or wraps the whole board, so every History frame must be exactly
+// m.height lines of exactly m.width cells.
+func TestHistoryFrameFitsEveryWidth(t *testing.T) {
+	for _, height := range []int{24, 38} {
+		for width := 61; width <= 200; width++ {
+			for _, expanded := range []bool{false, true} {
+				m := New(nil)
+				m.width, m.height = width, height
+				if err := m.setModelValue(sweepHistoryModel()); err != nil {
+					t.Fatal(err)
+				}
+				m.historyExpanded = expanded
+				lines := strings.Split(m.View().Content, "\n")
+				if len(lines) != height {
+					t.Fatalf("%dx%d expanded=%v: frame has %d lines", width, height, expanded, len(lines))
+				}
+				for y, line := range lines {
+					if w := lipgloss.Width(line); w != width {
+						t.Fatalf("%dx%d expanded=%v row %d: %d cells: %q", width, height, expanded, y, w, ansi.Strip(line))
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestExpandedHeaderCapMarksDroppedRows(t *testing.T) {
+	m := newHistoryTestMission()
+	model := historyFixtureModel()
+	model.History.Header.Body = strings.Repeat("line\n", 60) + "last"
+	model.History.Header.Authors = []string{"Matt <m@x>", "Claude <c@x>"}
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	m.historyExpanded = true
+	l := m.layout()
+	limit := l.bodyH / 2
+	header := m.historyHeader(m.diffWidth(), l.bodyH)
+	if len(header) != limit {
+		t.Fatalf("the capped header should be %d rows, got %d", limit, len(header))
+	}
+	full := len(historyHeaderLines(*model.History.Header, true, false, m.diffWidth()))
+	marker := ansi.Strip(header[limit-2])
+	if want := fmt.Sprintf("… %d more lines", full-limit+1); !strings.Contains(marker, want) {
+		t.Fatalf("the row above the meta line should read %q, got %q", want, marker)
+	}
+	if !strings.Contains(header[limit-2], fgSGR(theme.Faint)) {
+		t.Fatalf("the marker should be Faint: %q", header[limit-2])
+	}
+	if !strings.Contains(ansi.Strip(header[limit-1]), "s1full") || !strings.Contains(ansi.Strip(header[0]), "Fix pty paint predicate") {
+		t.Fatal("the capped header keeps its title and meta rows")
+	}
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if !strings.Contains(lines[l.topH+limit-2], "more lines") {
+		t.Fatalf("the frame should paint the marker at row %d: %q", l.topH+limit-2, lines[l.topH+limit-2])
+	}
+	if h := m.hitTest(historyPaneX(3), l.topH+limit+2); h.kind != hitHistoryFile || !strings.Contains(lines[l.topH+limit+2], "lib/mission/model.ts") {
+		t.Fatalf("the file row under a capped header must hit where it paints, got %+v", h)
+	}
+}
+
+func TestNonContiguousSlateWrapsInsteadOfClipping(t *testing.T) {
+	model := historyFixtureModel()
+	model.History.Header.RangeCount, model.History.Header.Contiguous = 2, false
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	out := m.renderHistoryPane(60, 20)
+	plain := ansi.Strip(out)
+	for _, want := range []string{"Unable to display diff", "are selected."} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("a 60-cell slate should wrap, not clip, and still show %q:\n%s", want, plain)
+		}
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) != 20 {
+		t.Fatalf("the wrapped slate must stay 20 rows, got %d", len(lines))
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != 60 {
+			t.Fatalf("slate row %d: %d cells, want 60", i, w)
+		}
+	}
+	if got := strings.Split(centeredMessage(10, 2, theme.Faint, "one two three four five six"), "\n"); len(got) != 2 {
+		t.Fatalf("a message taller than its box must not grow past the height, got %d rows", len(got))
+	}
+}
+
+// TestIdleBaseIsTheDriversSelection: the driver re-selects the first commit
+// on a reload while the view's cursor stays on a listed commit, so a
+// settled move back to the cursor, or a click on it, must still select it.
+func TestIdleBaseIsTheDriversSelection(t *testing.T) {
+	instantSelectTick(t)
+	diverged := func() *Mission {
+		m := newHistoryTestMission()
+		m.historyCursor = "s3"
+		return m
+	}
+	m := diverged()
+	_, up := m.Update(upKey())
+	_, down := m.Update(downKey())
+	if _, emit := m.Update(up()); emit != nil {
+		t.Fatal("the superseded tick must not emit")
+	}
+	if _, emit := m.Update(down()); emit == nil {
+		t.Fatal("settling on s3 while the driver shows s1 must select s3")
+	}
+	m = diverged()
+	m.Update(upKey())
+	_, up = m.Update(upKey())
+	if _, emit := m.Update(up()); emit != nil || m.historyCursor != "s1" {
+		t.Fatalf("settling on s1, the commit the driver shows, must select nothing (cursor %q)", m.historyCursor)
+	}
+	m = diverged()
+	y := m.layout().topH + historyFixedTopRows + 2*historyRowHeight
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("clicking the cursor row while the driver shows another commit must select it")
+	}
+}
+
+func TestHistoryKeysWorkInEveryFocus(t *testing.T) {
+	m := newHistoryTestMission()
+	m.focus = focusDiff
+	m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if !m.historyExpanded {
+		t.Fatal("e should expand the header from the History diff")
+	}
+	c := newMouseTestMission()
+	c.focus = focusDiff
+	c.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if c.historyExpanded {
+		t.Fatal("e in the Changes diff must not touch the History header")
+	}
+	m.focus = focusHistoryFiles
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"}); cmd == nil {
+		t.Fatal("f in the file column should run the action")
+	}
+	for _, k := range []rune{'b', 'w', 'r'} {
+		m.modal = nil
+		m.focus = focusHistoryFiles
+		m.Update(tea.KeyPressMsg{Code: k, Text: string(k)})
+		if m.modal == nil || m.focus != focusModal {
+			t.Fatalf("%c in the file column should open its foldout", k)
+		}
+	}
+}
+
+func TestHistoryWheelIgnoresHeaderRuleAndDivider(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	m.model.Diff.Lines = append(m.model.Diff.Lines, DiffLine{Kind: "context", Text: "y"}, DiffLine{Kind: "context", Text: "z"}, DiffLine{Kind: "context", Text: "w"})
+	m.View()
+	l := m.layout()
+	headerH := len(m.historyHeader(m.diffWidth(), l.bodyH))
+	filesW := historyFilesWidth(m.diffWidth())
+	fileY, _ := findHitY(m, historyPaneX(3), hitHistoryFile)
+	points := [][2]int{
+		{historyPaneX(3), l.topH},
+		{historyPaneX(filesW + 5), l.topH},
+		{historyPaneX(3), l.topH + headerH},
+		{historyPaneX(filesW + 5), l.topH + headerH},
+		{historyPaneX(filesW), fileY},
+	}
+	for _, p := range points {
+		if _, cmd := m.Update(tea.MouseWheelMsg{X: p[0], Y: p[1], Button: tea.MouseWheelDown}); cmd != nil || m.historyFile != "lib/mission/model.ts" || m.diffCursor != 0 {
+			t.Fatalf("a wheel tick at (%d,%d) must be inert, got file=%q diffCursor=%d", p[0], p[1], m.historyFile, m.diffCursor)
+		}
 	}
 }
 

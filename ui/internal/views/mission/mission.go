@@ -110,24 +110,27 @@ type Mission struct {
 	// shift gesture opened a range. historyMoreFor is the list length the
 	// last mission:history-more went out for, -1 before any.
 	//
-	// The commit and file debounces each mirror selectGen/selectPending/
-	// selectPendingBase: the first move of a settled cursor freezes the base
-	// at what the driver shows, and a tick emits only if its generation is
-	// still current and the cursor no longer matches that base. They keep
+	// The commit and file debounces are selectGen's counterparts:
+	// historyShown/historyFileShown are what the driver shows or was last
+	// sent (taken from a push only when the driver's own value changed, and
+	// from every emit), and a tick emits only if its generation is still
+	// current and the cursor differs from the shown value. They keep
 	// separate generations so a file click cannot supersede a pending
-	// commit select.
+	// commit select. historyDriverKey/historyDriverFile are the driver's
+	// values at the previous push.
 	historyCursor      string
 	historyAnchor      string
 	historyTop         int
 	historyGen         int
-	historyPending     bool
-	historyPendingBase string
+	historyShown       string
+	historyDriverKey   string
 	historyMoreFor     int
 	hoverCommit        int
 	historyFile        string
 	historyFileGen     int
 	historyFilePending bool
-	historyFileBase    string
+	historyFileShown   string
+	historyDriverFile  string
 	historyFilesTop    int
 	hoverHistoryFile   int
 	historyExpanded    bool
@@ -1350,8 +1353,8 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if mouse.X >= sidebarWidth {
-		if m.historyTab() && mouse.X-sidebarWidth-1 < historyFilesWidth(m.diffWidth()) {
-			return m, m.historyFileMove(delta)
+		if m.historyTab() {
+			return m, m.historyWheel(mouse.X-sidebarWidth-1, bodyY, delta)
 		}
 		m.moveDiffCursor(delta)
 		return m, nil

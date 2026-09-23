@@ -388,7 +388,12 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 	if avail < 0 {
 		avail = 0
 	}
-	return on.Render("  ") + left + lipgloss.PlaceHorizontal(avail, lipgloss.Right, right, lipgloss.WithWhitespaceStyle(on)) + on.Render(" ")
+	out := on.Render("  ") + left + lipgloss.PlaceHorizontal(avail, lipgloss.Right, right, lipgloss.WithWhitespaceStyle(on)) + on.Render(" ")
+	// Narrower than the 3-cell padding plus right, the parts alone overflow.
+	if lipgloss.Width(out) > width {
+		return clipOn(out, width, on)
+	}
+	return out
 }
 
 // middleTruncate keeps a path's head and tail and drops its middle behind
