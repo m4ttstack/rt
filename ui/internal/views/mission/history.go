@@ -435,8 +435,8 @@ type historyLine struct {
 }
 
 // historyMatchCache holds historyVisible for one filter over one pushed
-// commit slice: every push decodes a fresh slice, so its first element's
-// address changes whenever the list can have.
+// commit slice. Every push decodes a fresh slice, so a slice with the same
+// first-element address and length is the same list.
 type historyMatchCache struct {
 	filter  string
 	commits []HistoryCommitRow

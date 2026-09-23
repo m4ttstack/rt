@@ -331,7 +331,8 @@ func pagingMission(t *testing.T, commits []HistoryCommitRow) *Mission {
 
 // batchSize reports how many commands a returned cmd carries: a lone
 // debounce tick resolves (under instantSelectTick) to a historyDebounceMsg;
-// a tick plus a page request resolves to a two-command tea.BatchMsg.
+// a tick batched with anything else, a page request say, resolves to a
+// tea.BatchMsg.
 func batchSize(t *testing.T, cmd tea.Cmd) int {
 	t.Helper()
 	if cmd == nil {

@@ -1356,11 +1356,12 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 // cursor (skipping a guarded row, like its keyboard up/down), the diff
 // pane's line cursor, or the Changes list's row cursor, each moving the same
 // cursor the arrow keys do. The History commit list is the exception: the
-// wheel scrolls its view and never its selection (historyScroll). A modal claims every
-// row like hitTest's own first check; otherwise the tick must land inside
-// the body's Y range (between the topbar and the keybar/notice strip) --
-// mirroring hitTest's bodyY bound -- or a tick over the keybar/notice row
-// would otherwise nudge a cursor nothing under the pointer owns.
+// wheel scrolls its view and never its selection (historyScroll). A modal
+// claims every row like hitTest's own first check; otherwise the tick must
+// land inside the body's Y range (between the topbar and the keybar/notice
+// strip) -- mirroring hitTest's bodyY bound -- or a tick over the
+// keybar/notice row would otherwise nudge a cursor nothing under the pointer
+// owns.
 func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	mouse := msg.Mouse()
 	var delta int
