@@ -1,12 +1,16 @@
 {
   "name": "@mattstack/settings-kit",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Embeddable mattstack settings surface: a framework-neutral server handler over @mattstack/rt-client plus headless React hooks \u2014 callers bring their own UI.",
   "type": "module",
   "exports": {
     "./server": {
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
+    },
+    "./shapes": {
+      "types": "./dist/shapes.d.ts",
+      "default": "./dist/shapes.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",
@@ -20,7 +24,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build src/server.ts --outdir dist --target node --format esm --packages external && bun build src/react.ts --outdir dist --target browser --format esm --packages external && tsc -p tsconfig.json",
+    "build": "bun build src/server.ts --outdir dist --target node --format esm --packages external && bun build src/react.ts --outdir dist --target browser --format esm --packages external && bun build src/shapes.ts --outdir dist --target browser --format esm --packages external && tsc -p tsconfig.json",
     "check-types": "tsc --noEmit -p tsconfig.json",
     "prepack": "bun run build"
   },

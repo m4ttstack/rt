@@ -24,6 +24,8 @@ import {
   type SettingDef,
   type SettingScope,
 } from "@mattstack/rt-client";
+import { overlay } from "./overlay.ts";
+import { matchesShape, SHAPES } from "./shapes.ts";
 
 export interface SettingDefWire {
   key: string;
@@ -33,8 +35,9 @@ export interface SettingDefWire {
   secret: boolean;
   teamLocked: boolean;
   repoScoped: boolean;
-  /** Computed once, server-side: migrated AND not secret AND not composite.
-      Every client edit affordance keys off this instead of re-deriving it. */
+  /** Computed once, server-side: migrated AND not secret AND (not composite,
+      or composite writes admitted by `allowComposite`). Every client edit
+      affordance keys off this instead of re-deriving it. */
   writable: boolean;
   description: string;
   hasDefault: boolean;
@@ -50,11 +53,20 @@ export type ExplainRowWire = Pick<
 /** The winning layer, precomputed server-side so a list view renders and
     patches rows without a per-key explain round trip. `scope` is the winning
     layer's scope, "default" when the registry default wins, null when
-    nothing is set and there is no default. `value` is omitted for secrets
-    and when scope is null. */
+    nothing is set and there is no default. `value` is the winning layer's
+    value, except for a `merge: "deep"` object key, where it is the merged
+    value (registry default, then each live valid layer overlaid in order).
+    `value` is absent for secrets, for an invalid winning layer, and when
+    scope is null. A leaf edit of a deep-merged key must start from the
+    target layer's own authored value (its explain row), never from this
+    `value`, or it bakes the default and weaker layers into that store. */
 export interface EffectiveWire {
   scope: string | null;
   value?: unknown;
+  /** For a `merge: "deep"` object key, the overlay of every present, valid,
+      non-default layer, weakest to strongest (arrays replace). Omitted when
+      no store layer sets the key; never set for secrets. */
+  authored?: unknown;
   file: string | null;
   invalid?: string;
 }
@@ -75,11 +87,10 @@ export interface RtSettingsApi {
 export interface SettingsHandlerOptions {
   /** Route prefix the handler answers under. Default "/api/settings". */
   basePath?: string;
-  /** Admit composite (object/array) keys to the write path. Off by default:
-      comment-preserving jsonc edits of nested values are the risk the guard
-      exists for — a host opting in accepts JSON-shaped replacement of the
-      whole value. */
-  allowComposite?: boolean;
+  /** Admit composite (object/array) keys to the write path. `true` admits
+      every composite as a whole-JSON replacement. `"shaped"` admits only a
+      key SHAPES declares (never `external`), and only a value matching it. */
+  allowComposite?: boolean | "shaped";
   /** Override the rt-client functions (tests, instrumentation). */
   rt?: Partial<RtSettingsApi>;
   /**
@@ -99,11 +110,25 @@ function isComposite(def: SettingDef): boolean {
   return def.type === "object" || def.type === "array";
 }
 
-function isWritable(def: SettingDef, migrated: (def: SettingDef) => boolean = isMigrated, composites = false): boolean {
-  return migrated(def) && def.secret !== true && (composites || !isComposite(def));
+type CompositeMode = boolean | "shaped";
+
+function compositeAllowed(def: SettingDef, mode: CompositeMode): boolean {
+  if (!isComposite(def) || mode === true) return true;
+  if (mode !== "shaped") return false;
+  const shape = SHAPES[def.key];
+  return shape !== undefined && shape.kind !== "external";
 }
 
-export function defToWire(def: SettingDef, migrated: ((def: SettingDef) => boolean) | undefined, effective: EffectiveWire, composites = false): SettingDefWire {
+function isWritable(def: SettingDef, migrated: (def: SettingDef) => boolean = isMigrated, mode: CompositeMode = false): boolean {
+  return migrated(def) && def.secret !== true && compositeAllowed(def, mode);
+}
+
+function isJsonBody(req: Request): boolean {
+  const type = req.headers.get("content-type");
+  return type !== null && type.split(";", 1)[0]!.trim().toLowerCase() === "application/json";
+}
+
+export function defToWire(def: SettingDef, migrated: ((def: SettingDef) => boolean) | undefined, effective: EffectiveWire, composites: CompositeMode = false): SettingDefWire {
   return {
     key: def.key,
     type: def.type,
@@ -140,23 +165,37 @@ export function sanitizeRows(def: SettingDef, rows: ExplainRow[]): ExplainRowWir
 }
 
 
-/** Winning layer from the explain rows (first present, un-shadowed, valid row
-    in resolution order), else the registry default, else null. Secrets omit
-    the value — same rule as sanitizeRows. */
+/** Winning layer from explain rows, which arrive weakest-first: the last
+    present, un-shadowed row wins. A deep-merged object reports the merged
+    value, not the winning layer's slice. Secrets omit the value. */
 export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): EffectiveWire {
-  for (const row of rows) {
-    if (!row.present || row.shadowed) continue;
-    if (row.invalid) return { scope: row.scope, file: row.file, invalid: row.invalid };
-    const wire: EffectiveWire = { scope: row.scope, file: row.file };
-    if (def.secret !== true && "value" in row) wire.value = row.value;
-    return wire;
+  const live = rows.filter((r) => r.present && !r.shadowed);
+  const top = live.at(-1);
+  if (!top) {
+    if ("default" in def) {
+      const wire: EffectiveWire = { scope: "default", file: null };
+      if (def.secret !== true) wire.value = def.default;
+      return wire;
+    }
+    return { scope: null, file: null };
   }
-  if ("default" in def) {
-    const wire: EffectiveWire = { scope: "default", file: null };
-    if (def.secret !== true) wire.value = def.default;
-    return wire;
+  const wire: EffectiveWire = { scope: top.scope, file: top.file };
+  if (top.invalid) wire.invalid = top.invalid;
+  if (def.secret === true) return wire;
+  if (def.merge === "deep" && def.type === "object") {
+    let merged: unknown = undefined;
+    let authored: unknown = undefined;
+    for (const r of live) {
+      if (r.invalid || !("value" in r)) continue;
+      merged = merged === undefined ? r.value : overlay(merged, r.value);
+      if (r.scope !== "default") authored = authored === undefined ? r.value : overlay(authored, r.value);
+    }
+    if (!top.invalid) wire.value = merged;
+    if (authored !== undefined) wire.authored = authored;
+  } else if (!top.invalid && "value" in top) {
+    wire.value = top.value;
   }
-  return { scope: null, file: null };
+  return wire;
 }
 
 function defaultAllowWrite(req: Request): boolean {
@@ -209,7 +248,7 @@ export async function settingsHandler(
     const prefix = url.searchParams.get("prefix") ?? "";
     const defs = rt.allDefs()
       .filter((d) => d.key.startsWith(prefix))
-      .map((d) => defToWire(d, rt.isMigrated, effectiveFromRows(d, rt.explainSetting(d.key)), opts.allowComposite === true));
+      .map((d) => defToWire(d, rt.isMigrated, effectiveFromRows(d, rt.explainSetting(d.key)), opts.allowComposite ?? false));
     return json({ defs });
   }
 
@@ -219,7 +258,7 @@ export async function settingsHandler(
     if (!def) return json({ error: `unknown setting "${key}"` }, 404);
     const rows = rt.explainSetting(key);
     return json({
-      def: defToWire(def, rt.isMigrated, effectiveFromRows(def, rows), opts.allowComposite === true),
+      def: defToWire(def, rt.isMigrated, effectiveFromRows(def, rows), opts.allowComposite ?? false),
       rows: sanitizeRows(def, rows),
     });
   }
@@ -227,6 +266,7 @@ export async function settingsHandler(
   if (path === `${base}/set` && req.method === "POST") {
     const allow = opts.allowWrite ?? defaultAllowWrite;
     if (!allow(req)) return json({ error: "settings writes are local-only" }, 403);
+    if (!isJsonBody(req)) return json({ error: "expected application/json" }, 415);
 
     let body: Record<string, unknown>;
     try {
@@ -242,18 +282,25 @@ export async function settingsHandler(
     const def = rt.getDef(key);
     if (!def) return json({ error: `unknown setting "${key}"` }, 404);
     if (def.secret === true) return json({ error: "secret keys are not writable here" }, 400);
-    if (isComposite(def) && opts.allowComposite !== true) return json({ error: COMPOSITE_COPY }, 400);
+    const mode = opts.allowComposite ?? false;
+    if (!compositeAllowed(def, mode)) {
+      return json({ error: mode === "shaped" ? `"${key}" has no editable shape` : COMPOSITE_COPY }, 400);
+    }
     if (!def.scopes.includes(scope)) {
       return json(
         { error: `"${key}" cannot be set in the ${scope} store (allowed: ${def.scopes.join(", ")})` },
         400,
       );
     }
-    if (!isWritable(def, rt.isMigrated, opts.allowComposite === true)) {
+    if (!isWritable(def, rt.isMigrated, mode)) {
       return json({ error: `"${key}" is not writable through the resolver yet` }, 400);
     }
     const check = rt.validateValue(def, value);
     if (!check.ok) return json({ error: check.reason }, 400);
+    const shape = SHAPES[key];
+    if (mode === "shaped" && isComposite(def) && shape && !matchesShape(shape, value)) {
+      return json({ error: `value does not match ${key}'s shape` }, 400);
+    }
 
     try {
       rt.setSetting(key, value, scope, team ? { team } : {});
@@ -267,6 +314,7 @@ export async function settingsHandler(
   if (path === `${base}/unset` && req.method === "POST") {
     const allow = opts.allowWrite ?? defaultAllowWrite;
     if (!allow(req)) return json({ error: "settings writes are local-only" }, 403);
+    if (!isJsonBody(req)) return json({ error: "expected application/json" }, 415);
 
     let body: Record<string, unknown>;
     try {
@@ -284,14 +332,17 @@ export async function settingsHandler(
     const def = rt.getDef(key);
     if (!def) return json({ error: `unknown setting "${key}"` }, 404);
     if (def.secret === true) return json({ error: "secret keys are not writable here" }, 400);
-    if (isComposite(def) && opts.allowComposite !== true) return json({ error: COMPOSITE_COPY }, 400);
+    const mode = opts.allowComposite ?? false;
+    if (!compositeAllowed(def, mode)) {
+      return json({ error: mode === "shaped" ? `"${key}" has no editable shape` : COMPOSITE_COPY }, 400);
+    }
     if (!def.scopes.includes(scope)) {
       return json(
         { error: `"${key}" cannot be unset in the ${scope} store (allowed: ${def.scopes.join(", ")})` },
         400,
       );
     }
-    if (!isWritable(def, rt.isMigrated, opts.allowComposite === true)) {
+    if (!isWritable(def, rt.isMigrated, mode)) {
       return json({ error: `"${key}" is not writable through the resolver yet` }, 400);
     }
 

@@ -18,6 +18,9 @@ const DEFS: Record<string, FakeDef> = {
   "board.rtRepos": { key: "board.rtRepos", type: "array", scopes: ["machine"], merge: "replace", description: "Project map" },
   "rt.secretThing": { key: "rt.secretThing", type: "string", scopes: ["user"], merge: "replace", description: "A secret", secret: true },
   "rt.legacyThing": { key: "rt.legacyThing", type: "string", scopes: ["user"], merge: "replace", description: "Unmigrated" },
+  "rt.repoRoots": { key: "rt.repoRoots", type: "array", scopes: ["machine"], merge: "replace", description: "Scan roots" },
+  "board.members": { key: "board.members", type: "array", scopes: ["team"], merge: "replace", description: "Roster" },
+  "board.slack": { key: "board.slack", type: "object", scopes: ["team"], merge: "deep", description: "Slack posting" },
 };
 
 const setCalls: unknown[][] = [];
@@ -92,7 +95,7 @@ describe("settingsHandler routing", () => {
   test("defs?prefix= filters to one app's namespace", async () => {
     const res = await handle(get("/api/settings/defs?prefix=board."));
     const body = (await res!.json()) as { defs: Array<{ key: string }> };
-    expect(body.defs.map((d) => d.key).sort()).toEqual(["board.rtRepos", "board.title"]);
+    expect(body.defs.map((d) => d.key).sort()).toEqual(["board.members", "board.rtRepos", "board.slack", "board.title"]);
   });
 
   test("a custom basePath relocates every route", async () => {
@@ -269,5 +272,95 @@ describe("unset (0.1.2)", () => {
     const res = await handle(post("/api/settings/unset", { key: "board.title", scope: "user" }, "board.example.com"));
     expect(res!.status).toBe(403);
     expect(unsetCalls).toHaveLength(0);
+  });
+});
+
+describe("allowComposite: 'shaped'", () => {
+  const opts = { allowComposite: "shaped" as const };
+
+  test("defs mark a shaped composite writable and an unshaped one not", async () => {
+    const res = await handle(get("/api/settings/defs"), opts);
+    const { defs } = (await res!.json()) as { defs: { key: string; writable: boolean }[] };
+    const w = Object.fromEntries(defs.map((d) => [d.key, d.writable]));
+    expect(w["rt.repoRoots"]).toBe(true);
+    expect(w["board.rtRepos"]).toBe(false);
+    expect(w["board.members"]).toBe(false);
+  });
+
+  test("writes a shaped composite whose value matches", async () => {
+    const res = await handle(post("/api/settings/set", { key: "rt.repoRoots", scope: "machine", value: ["~/src"] }), opts);
+    expect(res!.status).toBe(200);
+    expect(setCalls).toHaveLength(1);
+  });
+
+  test("refuses a value that does not match the shape", async () => {
+    const res = await handle(post("/api/settings/set", { key: "rt.repoRoots", scope: "machine", value: [1] }), opts);
+    expect(res!.status).toBe(400);
+    expect(await res!.json()).toEqual({ error: "value does not match rt.repoRoots's shape" });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  test("refuses a leaves value whose dotted-path parent is not a plain object", async () => {
+    const res = await handle(post("/api/settings/set", { key: "board.slack", scope: "team", value: { emoji: 5 } }), opts);
+    expect(res!.status).toBe(400);
+    expect(await res!.json()).toEqual({ error: "value does not match board.slack's shape" });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  test("refuses an unshaped composite and an external one", async () => {
+    const a = await handle(post("/api/settings/set", { key: "board.rtRepos", scope: "machine", value: [] }), opts);
+    expect(await a!.json()).toEqual({ error: '"board.rtRepos" has no editable shape' });
+    const b = await handle(post("/api/settings/set", { key: "board.members", scope: "team", value: [] }), opts);
+    expect(await b!.json()).toEqual({ error: '"board.members" has no editable shape' });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  test("unset refuses an unshaped composite and an external one", async () => {
+    const a = await handle(post("/api/settings/unset", { key: "board.rtRepos", scope: "machine" }), opts);
+    expect(a!.status).toBe(400);
+    expect(await a!.json()).toEqual({ error: '"board.rtRepos" has no editable shape' });
+    const b = await handle(post("/api/settings/unset", { key: "board.members", scope: "team" }), opts);
+    expect(b!.status).toBe(400);
+    expect(await b!.json()).toEqual({ error: '"board.members" has no editable shape' });
+    expect(unsetCalls).toHaveLength(0);
+  });
+
+  test("unset admits a shaped composite", async () => {
+    const res = await handle(post("/api/settings/unset", { key: "rt.repoRoots", scope: "machine" }), opts);
+    expect(res!.status).toBe(200);
+    expect(unsetCalls).toEqual([["rt.repoRoots", "machine", {}]]);
+  });
+
+  test("allowComposite: true still admits every composite", async () => {
+    const res = await handle(post("/api/settings/set", { key: "board.rtRepos", scope: "machine", value: [] }), { allowComposite: true });
+    expect(res!.status).toBe(200);
+  });
+});
+
+describe("JSON-only writes", () => {
+  test("a non-JSON media type is 415 on set and unset, and nothing is written", async () => {
+    for (const path of ["/api/settings/set", "/api/settings/unset"]) {
+      const res = await handle(
+        new Request(`http://console.mattstack${path}`, {
+          method: "POST",
+          headers: { "content-type": "text/plain;x=application/json" },
+          body: JSON.stringify({ key: "board.title", scope: "user", value: "x" }),
+        }),
+      );
+      expect(res!.status).toBe(415);
+    }
+    expect(setCalls).toHaveLength(0);
+    expect(unsetCalls).toHaveLength(0);
+  });
+
+  test("a charset parameter on application/json is fine", async () => {
+    const res = await handle(
+      new Request("http://console.mattstack/api/settings/set", {
+        method: "POST",
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ key: "board.title", scope: "user", value: "x" }),
+      }),
+    );
+    expect(res!.status).toBe(200);
   });
 });
