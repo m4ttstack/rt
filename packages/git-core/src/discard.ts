@@ -61,8 +61,8 @@ function getNoRenameIndexStatus(status: string): NoRenameIndexStatus {
  * Runs `rawGit`, treating exit 128 (git's generic fatal code) as an absent
  * result rather than a value: GHD's own `getIndexChanges` and
  * `listSubmodules` each retry or give up on exactly this code, and only
- * this code -- anything else (a spawn failure, a signal, a real git error)
- * must reach the caller instead of being read as "nothing here."
+ * this code -- anything else (a spawn failure, a signal, or a different git
+ * exit code) must reach the caller instead of being read as "nothing here."
  */
 export async function rawGitOr128(dir: string, args: string[]): Promise<string | null> {
   try {
@@ -204,7 +204,9 @@ function unprocessedPaths(files: ReadonlyArray<ChangedFile>, fromIndex: number):
  * excluding any path a not-yet-trashed file still owns -- then rethrows the
  * original Trash error (a failure in that recovery step attaches as its
  * `cause` rather than replacing it). Each already-trashed file ends fully
- * discarded; every other file is left exactly as it was.
+ * discarded, except when its path overlaps one an unprocessed file still
+ * owns, which leaves it only partly reverted; every other file is left
+ * exactly as it was.
  */
 export async function discardChanges(
   ctx: ClientContext,

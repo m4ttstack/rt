@@ -1160,7 +1160,7 @@ export class MissionDriver {
         case "discard-file": {
           if (!rel) break;
           // The cached snapshot can lag the tree (a file deleted then
-          // recreated keeps kind "deleted" until a sweep notices), and
+          // recreated keeps kind "deleted" until the next full refresh), and
           // discardChanges picks Trash versus checkout from the kind.
           this.snapshot = await client.snapshot();
           // Set before the lookup: the fresh read can differ from what the

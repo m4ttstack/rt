@@ -266,11 +266,10 @@ describe("rawGitOr128 (shared exit-128 gate for getIndexChanges / listSubmodules
 
 describe("listSubmodules exit-code gate", () => {
   // git refuses `submodule status` outside a working tree ("cannot be used
-  // without a working tree", exit 1) -- a real, reachable non-128 failure at
-  // the exact call a catch-all previously swallowed. Pointing ctx.dir at the
-  // repo's own .git directory (with a .gitmodules file placed there so the
-  // pathExists check skips straight to the gated call, never touching
-  // rev-parse) reaches it directly.
+  // without a working tree", exit 1) -- a real, reachable non-128 failure.
+  // Pointing ctx.dir at the repo's own .git directory (with a .gitmodules
+  // file placed there so the pathExists check skips straight to the gated
+  // call, never touching rev-parse) reaches it directly.
   it("rethrows submodule status's real non-128 exit instead of returning no submodules", async () => {
     const sb = await makeSandbox();
     try {
