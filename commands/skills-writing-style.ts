@@ -78,9 +78,16 @@ export async function writingStyleList(args: string[], _ctx: CommandContext = {}
     deps.print(JSON.stringify(envelope(listing, deps.now())));
     return;
   }
-  for (const o of listing.options) {
+  const printRow = (o: { id: string; detail: string; installed: boolean; kind: string }) => {
     const mark = o.id === listing.current.skill ? "*" : " ";
     deps.print(`${mark} ${o.id.padEnd(40)} ${o.detail}${o.installed || o.kind === "preset" ? "" : " (not installed here)"}`);
+  };
+  for (const o of listing.options) printRow(o);
+  const known = new Set([...listing.options, ...listing.suggestions].map((o) => o.id));
+  if (!known.has(listing.current.skill)) deps.print(`* ${listing.current.skill} (current)`);
+  if (listing.suggestions.length > 0) {
+    deps.print("Also available (type the id):");
+    for (const o of listing.suggestions) printRow(o);
   }
 }
 
@@ -113,10 +120,11 @@ export async function writingStyleUse(args: string[], _ctx: CommandContext = {},
   const inv = await inventory(deps);
   const listing = listWritingStyles(inv, deps.resolve());
 
+  const choosable = [...listing.options, ...listing.suggestions];
   let id = given;
   if (id === undefined) {
     if (deps.isTTY() && !json && !process.env.RT_BATCH) {
-      id = (await deps.pick("Which writing style?", listing.options.map((o) => ({ value: o.id, label: o.label, hint: o.detail })))) ?? undefined;
+      id = (await deps.pick("Which writing style?", choosable.map((o) => ({ value: o.id, label: o.label, hint: o.detail })))) ?? undefined;
       if (!id) return deps.exit(0);
     } else {
       return refuse(new UserActionableError("usage", "usage: rt skills writing-style use <skill-id> [--scope user|team] [--json]"), json, "use", deps);
@@ -125,7 +133,7 @@ export async function writingStyleUse(args: string[], _ctx: CommandContext = {},
 
   if (!isValidSkillId(id)) return refuse(new UserActionableError("bad-id", `"${id}" is not a skill id`), json, "use", deps);
   if (!isStyleUsable(id, inv)) {
-    const choices = listing.options.filter((o) => o.kind === "preset" || o.installed).map((o) => o.id).join(", ");
+    const choices = choosable.filter((o) => o.kind === "preset" || o.installed).map((o) => o.id).join(", ");
     return refuse(new UserActionableError("unknown-skill", `${id} is not installed here. Choose one of: ${choices}`), json, "use", deps);
   }
 

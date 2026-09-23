@@ -2210,7 +2210,7 @@ export const TREE: Record<string, CommandNode> = {
             args: [SETUP_JSON_ARG],
           },
           list: {
-            description: "Writing styles you can choose: the presets, your own, and installed ones",
+            description: "The three presets, plus your own and installed styles you can type as suggestions",
             module: "./commands/skills-writing-style.ts",
             fn: "writingStyleList",
             args: [SETUP_JSON_ARG],

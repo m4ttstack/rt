@@ -65,19 +65,19 @@ describe("isStyleUsable and listWritingStyles", () => {
     expect(isStyleUsable("nobody:writing-style-x", readSkillInventory(home, null))).toBe(false);
   });
 
-  test("lists presets, personal and installed styles once each, with current", () => {
+  test("options are exactly the three presets; suggestions carry personal and installed writing-style skills once each", () => {
     const mattstack = plugin("mattstack@mattstack", true, ["writing-style-sparse"]);
     skill(join(home, ".claude", "skills", "acme:team-writing-style"), "acme:team-writing-style");
     skill(join(personalSkillsDir(home), "team-voice"), "team-voice");
     const inv = readSkillInventory(home, [mattstack]);
     const out = listWritingStyles(inv, { skill: "acme:team-writing-style", source: "user" });
     expect(out.current).toEqual({ skill: "acme:team-writing-style", source: "user" });
-    const ids = out.options.map((o) => o.id);
-    expect(ids.slice(0, 3)).toEqual(["mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
-    expect(ids.filter((id) => id === "mattstack:writing-style-sparse")).toHaveLength(1);
-    expect(out.options.find((o) => o.id === "mattstack:writing-style-sparse")?.kind).toBe("preset");
-    expect(out.options.find((o) => o.id === "team-voice")?.kind).toBe("personal");
-    expect(out.options.find((o) => o.id === "acme:team-writing-style")?.kind).toBe("installed");
+    expect(out.options.map((o) => o.id)).toEqual(["mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
+    expect(out.options.every((o) => o.kind === "preset")).toBe(true);
+    expect(out.options.find((o) => o.id === "mattstack:writing-style-sparse")?.installed).toBe(true);
+    expect(out.suggestions.find((o) => o.id === "team-voice")?.kind).toBe("personal");
+    expect(out.suggestions.find((o) => o.id === "acme:team-writing-style")?.kind).toBe("installed");
+    expect(out.suggestions.map((o) => o.id)).not.toContain("mattstack:writing-style-sparse");
   });
 });
 

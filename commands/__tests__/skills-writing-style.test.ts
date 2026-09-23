@@ -40,13 +40,35 @@ describe("show", () => {
 });
 
 describe("list", () => {
-  test("--json carries current and the presets first", async () => {
+  const teamVoice = () => {
+    const dir = join(home, ".mattstack", "user", "skills", "team-voice");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+  };
+
+  test("--json carries current, presets-only options, and suggestions for personal/installed writing-style skills", async () => {
+    teamVoice();
     await writingStyleList(["--json"], {}, fakeDeps());
     const body = JSON.parse(out[0]!);
     expect(body.current).toEqual({ skill: "mattstack:writing-style-conversational", source: "fallback" });
-    expect(body.options.slice(0, 3).map((o: { id: string }) => o.id)).toEqual([
+    expect(body.options.map((o: { id: string }) => o.id)).toEqual([
       "mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured",
     ]);
+    expect(body.options.every((o: { kind: string }) => o.kind === "preset")).toBe(true);
+    expect(body.suggestions.map((o: { id: string }) => o.id)).toEqual(["team-voice"]);
+  });
+
+  test("plain output lists the presets, then Also available for suggestions, marking the current with *", async () => {
+    teamVoice();
+    await writingStyleList([], {}, fakeDeps({ resolve: () => ({ skill: "team-voice", source: "user" }) }));
+    expect(out[0]).toContain("mattstack:writing-style-sparse");
+    expect(out).toContain("Also available (type the id):");
+    expect(out.some((l) => l.startsWith("*") && l.includes("team-voice"))).toBe(true);
+  });
+
+  test("a current value in neither list prints after the presets as current", async () => {
+    await writingStyleList([], {}, fakeDeps({ resolve: () => ({ skill: "x:custom-note", source: "user" }) }));
+    expect(out).toContain("* x:custom-note (current)");
   });
 });
 
@@ -111,6 +133,22 @@ describe("use", () => {
     out.length = 0;
     await writingStyleUse([], {}, fakeDeps({ isTTY: () => true, pick: async () => "mattstack:writing-style-conversational" }));
     expect(writes[0]!.value).toBe("mattstack:writing-style-conversational");
+  });
+
+  test("no id with a TTY: the picker offers the presets and then the suggestion entries", async () => {
+    homeRepo();
+    const dir = join(home, ".mattstack", "user", "skills", "team-voice");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+    let seen: { value: string }[] = [];
+    await writingStyleUse([], {}, fakeDeps({
+      isTTY: () => true,
+      pick: async (_message, options) => { seen = options; return "team-voice"; },
+    }));
+    expect(seen.slice(0, 3).map((o) => o.value)).toEqual([
+      "mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured",
+    ]);
+    expect(seen.map((o) => o.value)).toContain("team-voice");
   });
 });
 

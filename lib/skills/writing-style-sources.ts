@@ -123,22 +123,25 @@ export interface WritingStyleOption {
   installed: boolean;
 }
 
-export function listWritingStyles(inv: SkillInventory, current: ResolvedWritingStyle): { current: ResolvedWritingStyle; options: WritingStyleOption[] } {
+// options are always the three catalog presets; every personal style and every installed
+// skill with "writing-style" in its id is a suggestion to type instead, never an option.
+export function listWritingStyles(inv: SkillInventory, current: ResolvedWritingStyle): { current: ResolvedWritingStyle; options: WritingStyleOption[]; suggestions: WritingStyleOption[] } {
   const options: WritingStyleOption[] = WRITING_STYLE_PRESETS.map((p) => ({
     id: p.id, label: p.label, detail: p.detail, sample: p.sample, kind: "preset", installed: inv.installed.has(p.id),
   }));
   const seen = new Set(options.map((o) => o.id));
+  const suggestions: WritingStyleOption[] = [];
   for (const s of inv.personal) {
     if (seen.has(s.name)) continue;
     seen.add(s.name);
-    options.push({ id: s.name, label: s.name, detail: "Your own style, in your home repo", kind: "personal", installed: inv.installed.has(s.name) });
+    suggestions.push({ id: s.name, label: s.name, detail: "Your own style, in your home repo", kind: "personal", installed: inv.installed.has(s.name) });
   }
   for (const id of [...inv.installed].sort()) {
     if (seen.has(id) || !id.includes("writing-style")) continue;
     seen.add(id);
-    options.push({ id, label: id, detail: "An installed skill", kind: "installed", installed: true });
+    suggestions.push({ id, label: id, detail: "An installed skill", kind: "installed", installed: true });
   }
-  return { current, options };
+  return { current, options, suggestions };
 }
 
 /** Links only into ~/.claude/skills and only prunes links pointing into the personal directory. */
