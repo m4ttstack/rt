@@ -85,11 +85,11 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
         forwarded.push(arg);
         continue;
       }
-      // A value flag with nothing after it, or another flag after it, must not
-      // silently forward as absent: the child's own parser then drops it and
-      // widens the request's scope instead of erroring.
+      // A value flag with nothing after it, another flag after it, or an empty
+      // string must not silently forward: the child's own parser treats each
+      // as absent and widens the request's scope instead of erroring.
       const value = leaf.rest[i + 1];
-      if (value === undefined || value.startsWith("-")) return fail(`${name} needs a value`);
+      if (value === undefined || value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
       forwarded.push(name, value);
       i++;
       continue;
@@ -97,7 +97,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     // Some verbs parse only `--name value` and silently ignore `--name=value`, so it is split here.
     if (type === "boolean") return fail(`${name} is a switch and takes no value; pass it as ${name}`);
     const value = arg.slice(eq + 1);
-    if (value.startsWith("-")) return fail(`the value of ${name} must not start with "-"`);
+    if (value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
     forwarded.push(name, value);
   }
 

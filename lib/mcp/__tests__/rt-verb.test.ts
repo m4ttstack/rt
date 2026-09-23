@@ -79,7 +79,7 @@ describe("runRtVerb", () => {
   });
 
   test("refuses a declared text flag with no following value, rather than silently widening scope", async () => {
-    for (const args of [["worktree", "list", "--repo"], ["worktree", "list", "--repo", "--json"]]) {
+    for (const args of [["worktree", "list", "--repo"], ["worktree", "list", "--repo", "--json"], ["worktree", "list", "--repo", ""], ["worktree", "list", "--repo="]]) {
       const r = await refused({ args });
       expect(r.ok, args.join(" ")).toBe(false);
     }
