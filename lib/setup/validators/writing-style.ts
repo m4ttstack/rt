@@ -18,8 +18,11 @@ const BASE = {
   recheck: "on-change" as const,
 };
 
+// The sheet's cards are the presets only; every personal or installed style, including
+// one with "writing-style" in its id, stays reachable by typing it into the own-skill field.
 function chooseAction(options: WritingStyleOption[], inventory: SkillInventory, selected?: string): Action {
-  const optionIds = new Set(options.map((o) => o.id));
+  const presets = options.filter((o) => o.kind === "preset");
+  const optionIds = new Set(presets.map((o) => o.id));
   const suggestions = [...new Set([...inventory.installed, ...inventory.personal.map((p) => p.name)])].filter((id) => !optionIds.has(id)).sort();
   return {
     type: "choose",
@@ -27,7 +30,7 @@ function chooseAction(options: WritingStyleOption[], inventory: SkillInventory, 
     verb: ["skills", "writing-style", "use"],
     subtitle: "The voice agents use for reviews, replies and PR descriptions posted under your name.",
     footnote: "You can also choose from a terminal: rt skills writing-style use",
-    options: options.map(({ id, label, detail, sample }) => ({ id, label, detail, ...(sample ? { sample } : {}) })),
+    options: presets.map(({ id, label, detail, sample }) => ({ id, label, detail, ...(sample ? { sample } : {}) })),
     ...(selected ? { selected } : {}),
     other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.", suggestions },
   };

@@ -69,14 +69,18 @@ const WRITING_STYLE_PRESETS = [
     detail: "Labelled lines and short bullets for teams that like formal write-ups.",
     sample: "**issue:** Settings leak across tenants. Why: the cache key omits the tenant. Suggestion: key on (tenant, id)." },
 ];
+// Rows the operator's real picker demoted to suggestions: an installed writing-style
+// skill and a personal style, carried here only for the ready-detail label lookup.
 const WRITING_STYLE_OPTION_ROWS = [
   { id: "team-voice", label: "team-voice", detail: "Your own style, in your home repo" },
   { id: "acme:team-writing-style", label: "acme:team-writing-style", detail: "An installed skill" },
 ];
-const WRITING_STYLE_SUGGESTIONS = ["acme:review-voice", "superpowers:brainstorming", "superpowers:writing-plans", "team:team-writing-style"];
+const WRITING_STYLE_SUGGESTIONS = [
+  "acme:review-voice", "acme:team-writing-style", "superpowers:brainstorming", "superpowers:writing-plans", "team-voice", "team:team-writing-style",
+];
 const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
 const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
-const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_OPTION_ROWS.map((o) => o.id), ...WRITING_STYLE_SUGGESTIONS];
+const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_SUGGESTIONS];
 // RT_STUB_REAL_WRITING_STYLE=1 judges the picker against the operator's own
 // skills, read through the same code the app ships with, and never writes
 // there: the resolved style stays stub state, and no linkPersonalSkills or
@@ -128,15 +132,15 @@ function writingStyleRow() {
   const chosen = stateGet("style") > 0;
   const idPath = join(stateDir, "style-id");
   const selected = chosen ? (existsSync(idPath) ? readFileSync(idPath, "utf8") : WRITING_STYLE_PRESETS[0]!.id) : undefined;
-  const options = [...WRITING_STYLE_PRESETS, ...WRITING_STYLE_OPTION_ROWS];
-  const label = options.find((o) => o.id === selected)?.label ?? selected;
+  const lookup = [...WRITING_STYLE_PRESETS, ...WRITING_STYLE_OPTION_ROWS];
+  const label = lookup.find((o) => o.id === selected)?.label ?? selected;
   return {
     ...row(WRITING_STYLE_ID, "tool", "Writing style",
            "How the reviews, replies and PR descriptions agents post under your name read. Without one they read like an AI assistant.", false,
            chosen ? "ready" : "needs-you",
            chosen ? `${label} (yours)` : "Not chosen yet",
            { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"],
-             subtitle: CHOOSE_SUBTITLE, footnote: CHOOSE_FOOTNOTE, options,
+             subtitle: CHOOSE_SUBTITLE, footnote: CHOOSE_FOOTNOTE, options: WRITING_STYLE_PRESETS,
              ...(selected ? { selected } : {}),
              other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.", suggestions: WRITING_STYLE_SUGGESTIONS } }),
     finishGated: true,

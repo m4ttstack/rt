@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { DONE_ACTION_TYPES, FINISH_GATED_ROW_IDS, WAIVABLE_ROW_IDS, finishBlockers } from "../contract.ts";
 import { unwaiveRow } from "../finish-gate.ts";
 import { writingStyleRow, writingStyleRowFor } from "../validators/writing-style.ts";
-import type { SkillInventory } from "../../skills/writing-style-sources.ts";
+import { listWritingStyles, type SkillInventory } from "../../skills/writing-style-sources.ts";
 
 const inv = (installed: string[] = [], disabled: [string, string][] = []): SkillInventory => ({
   installed: new Set(installed), disabledPluginFor: new Map(disabled), personal: [],
@@ -71,6 +71,33 @@ describe("writingStyleRow", () => {
   test("a ready row preselects the current style in its choose action", () => {
     const r = writingStyleRow({ homeReady: true, resolved: { skill: "mattstack:writing-style-sparse", source: "user" }, inventory: inv(), options: opts });
     expect((r.action as { selected?: string }).selected).toBe("mattstack:writing-style-sparse");
+  });
+
+  test("choose options are exactly the three presets; every other style is a suggestion to type", () => {
+    const inventory: SkillInventory = {
+      installed: new Set(["acme:team-writing-style", "acme:review-helper", "mattstack:writing-style-sparse"]),
+      disabledPluginFor: new Map(),
+      personal: [{ name: "team-voice", dir: "/home/.mattstack/user/skills/team-voice" }],
+    };
+    const listing = listWritingStyles(inventory, { skill: "x", source: "fallback" });
+    const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory, options: listing.options });
+    const action = r.action as { options: { id: string }[]; other?: { suggestions?: string[] } };
+    expect(action.options.map((o) => o.id)).toEqual([
+      "mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured",
+    ]);
+    expect(action.other?.suggestions).toEqual(["acme:review-helper", "acme:team-writing-style", "team-voice"]);
+  });
+
+  test("suggestions include an installed acme: id that is not a preset, mirroring the operator's own check", () => {
+    const inventory: SkillInventory = {
+      installed: new Set(["acme:team-writing-style", "acme:another-skill", "mattstack:writing-style-sparse"]),
+      disabledPluginFor: new Map(),
+      personal: [],
+    };
+    const listing = listWritingStyles(inventory, { skill: "x", source: "fallback" });
+    const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory, options: listing.options });
+    const suggestions = (r.action as { other?: { suggestions?: string[] } }).other?.suggestions ?? [];
+    expect(suggestions.filter((id) => id.startsWith("acme:"))).toContain("acme:team-writing-style");
   });
 });
 

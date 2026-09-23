@@ -209,15 +209,11 @@ test("writing-style: the row blocks Finish with a choose action until use picks 
   expect(action.selected).toBeUndefined();
   expect(action.subtitle).toBe(CHOOSE_SUBTITLE);
   expect(action.footnote).toBe(CHOOSE_FOOTNOTE);
-  expect(action.options.map((o) => o.id)).toEqual([
-    SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured", "team-voice", "acme:team-writing-style",
-  ]);
+  expect(action.options.map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
   expect(action.options.filter((o) => o.sample).map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
-  expect(action.options.find((o) => o.id === "team-voice")).toEqual({ id: "team-voice", label: "team-voice", detail: "Your own style, in your home repo" });
-  expect(action.options.find((o) => o.id === "acme:team-writing-style")).toEqual({ id: "acme:team-writing-style", label: "acme:team-writing-style", detail: "An installed skill" });
   expect(action.other).toEqual({
     label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.",
-    suggestions: ["acme:review-voice", "superpowers:brainstorming", "superpowers:writing-plans", "team:team-writing-style"],
+    suggestions: ["acme:review-voice", "acme:team-writing-style", "superpowers:brainstorming", "superpowers:writing-plans", "team-voice", "team:team-writing-style"],
   });
 
   const used = await run("writing-style", ["skills", "writing-style", "use", SPARSE, "--json"], "", state);
@@ -313,11 +309,10 @@ test("writing-style real-data mode: options and suggestions come from the fixtur
   expect(row).toMatchObject({ status: "needs-you", detail: "Not chosen yet", finishGated: true, waivable: false });
   const action = row.action as ChooseAction;
   const ids = action.options.map((o) => o.id);
-  expect(ids.slice(0, 3)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
-  expect(ids[3]).toBe("team-voice");
-  expect(ids).toContain("acme:team-writing-style");
+  expect(ids).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
   expect(action.other.suggestions).toContain("x:custom-note");
-  expect(action.other.suggestions).not.toContain("acme:team-writing-style");
+  expect(action.other.suggestions).toContain("acme:team-writing-style");
+  expect(action.other.suggestions).toContain("team-voice");
 
   const badShape = await run("writing-style", ["skills", "writing-style", "use", "-rf", "--json"], "", state, extraEnv);
   expect(badShape.code).toBe(2);
