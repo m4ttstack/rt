@@ -57,6 +57,9 @@ export const skillsMaterializeStep: StepDef = {
 
 async function skillsLinkRun(ctx: ApplyContext): Promise<StepOutcome> {
   const personal = linkPersonalSkills(ctx.p.home);
+  for (const a of personal?.actions ?? []) {
+    if (a.kind === "conflict" || a.kind === "skip") ctx.log("skills.link", `personal ${a.name}: ${a.detail ?? a.kind}`);
+  }
   const personalCount = personal?.actions.filter((a) => a.kind === "create" || a.kind === "relink" || a.kind === "ok").length ?? 0;
   const personalNote = personal ? `, ${personalCount} personal` : "";
 

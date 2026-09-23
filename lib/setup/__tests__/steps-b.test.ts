@@ -839,6 +839,22 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       const outcome = await skillsLinkStep.run(ctx);
       expect(outcome).toEqual({ state: "skipped", detail: "not running from an app bundle" });
     });
+
+    test("a personal skill link conflict is logged, not silently dropped", async () => {
+      const dir = join(personalSkillsDir(home), "team-voice");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+      // A real (non-symlink) directory already occupies the link name, so
+      // linkPersonalSkills reports a conflict instead of linking it.
+      mkdirSync(join(home, ".claude", "skills", "team-voice"), { recursive: true });
+
+      const p = fakeProbes({ home });
+      const { ctx, logs } = makeCtx(p);
+      const outcome = await skillsLinkStep.run(ctx);
+
+      expect(outcome.state).toBe("done");
+      expect(logs.some((l) => l.id === "skills.link" && l.line.includes("team-voice"))).toBe(true);
+    });
   });
 
   // ─── skills.materialize ─────────────────────────────────────────────────
