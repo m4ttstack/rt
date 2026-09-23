@@ -140,23 +140,46 @@ export function sanitizeRows(def: SettingDef, rows: ExplainRow[]): ExplainRowWir
 }
 
 
-/** Winning layer from the explain rows (first present, un-shadowed, valid row
-    in resolution order), else the registry default, else null. Secrets omit
-    the value — same rule as sanitizeRows. */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Field-by-field overlay; arrays and scalars replace, matching rt's deep merge. */
+function overlay(base: unknown, top: unknown): unknown {
+  if (!isPlainObject(base) || !isPlainObject(top)) return top;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(top)) out[k] = overlay(base[k], v);
+  return out;
+}
+
+/** Winning layer from explain rows, which arrive weakest-first: the last
+    present, un-shadowed row wins. A deep-merged object reports the merged
+    value, not the winning layer's slice. Secrets omit the value. */
 export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): EffectiveWire {
-  for (const row of rows) {
-    if (!row.present || row.shadowed) continue;
-    if (row.invalid) return { scope: row.scope, file: row.file, invalid: row.invalid };
-    const wire: EffectiveWire = { scope: row.scope, file: row.file };
-    if (def.secret !== true && "value" in row) wire.value = row.value;
-    return wire;
+  const live = rows.filter((r) => r.present && !r.shadowed);
+  const top = live.at(-1);
+  if (!top) {
+    if ("default" in def) {
+      const wire: EffectiveWire = { scope: "default", file: null };
+      if (def.secret !== true) wire.value = def.default;
+      return wire;
+    }
+    return { scope: null, file: null };
   }
-  if ("default" in def) {
-    const wire: EffectiveWire = { scope: "default", file: null };
-    if (def.secret !== true) wire.value = def.default;
-    return wire;
+  if (top.invalid) return { scope: top.scope, file: top.file, invalid: top.invalid };
+  const wire: EffectiveWire = { scope: top.scope, file: top.file };
+  if (def.secret === true) return wire;
+  if (def.merge === "deep" && def.type === "object") {
+    let merged: unknown = undefined;
+    for (const r of live) {
+      if (r.invalid || !("value" in r)) continue;
+      merged = merged === undefined ? r.value : overlay(merged, r.value);
+    }
+    wire.value = merged;
+  } else if ("value" in top) {
+    wire.value = top.value;
   }
-  return { scope: null, file: null };
+  return wire;
 }
 
 function defaultAllowWrite(req: Request): boolean {
