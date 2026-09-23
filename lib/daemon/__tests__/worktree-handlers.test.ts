@@ -926,7 +926,19 @@ describe("worktree:list", () => {
 
     const res: any = await h["worktree:list"]!({ repoName });
 
-    expect(res.data.mergeCleanupOff).toEqual([{ repo: repoName, path: repo, reason: "untracked", forge: "github" }]);
+    expect(res.data.mergeCleanupOff).toEqual([{ repo: repoName, path: repo, reason: "no-branches-grant", forge: "github", mode: "off", caches: [] }]);
+  });
+
+  test("a repo tracked without the branches cache reports its current grant so the fix can keep it", async () => {
+    const repo = makeRepo();
+    sh("git remote set-url origin https://github.com/o/r.git", repo);
+    claimOne(repo);
+    setSetting("rt.repoTracking", { [repoName]: { mode: "live", caches: ["project-mrs"] } }, "machine");
+    const { h } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:list"]!({ repoName });
+
+    expect(res.data.mergeCleanupOff).toEqual([{ repo: repoName, path: repo, reason: "no-branches-grant", forge: "github", mode: "live", caches: ["project-mrs"] }]);
   });
 
   test("a tracked GitHub repo with no token reports merge cleanup off as no-token", async () => {

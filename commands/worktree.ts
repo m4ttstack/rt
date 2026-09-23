@@ -23,6 +23,7 @@ import { currentRepoIdentity, repoLabel, resolveRepoArg } from "../lib/repo-arg.
 import { loadWorktreeRepoConfig, inspectReadyGate } from "../lib/worktree/config.ts";
 import { explainError } from "../lib/explain-error.ts";
 import type { MergeCleanupGap } from "../lib/worktree/merge-cleanup-gap.ts";
+import { shellQuote } from "../lib/herdr-launch.ts";
 import { maybeOfferClaudeHook } from "./worktree-hook.ts";
 import { writeReadyApproval } from "../lib/worktree/ready-approval.ts";
 import { daemonQuery, lastQueryTimedOut, type DaemonResponse } from "../lib/daemon-client.ts";
@@ -258,8 +259,8 @@ interface TreeRow {
 type MergeCleanupOffRow = { repo: string; path: string } & MergeCleanupGap;
 
 function mergeCleanupOffLine(gap: MergeCleanupOffRow): string {
-  const why = gap.reason === "untracked"
-    ? `not tracked ... run \`rt repos register ${gap.path} --track poll\``
+  const why = gap.reason === "no-branches-grant"
+    ? `${gap.mode === "off" ? "not tracked" : "tracked without branch PR checks"} ... run \`rt repos register ${shellQuote(gap.path)} --track ${gap.mode === "off" ? "poll" : gap.mode} --caches ${[...gap.caches, "branches"].join(",")}\``
     : gap.forge === "github"
       ? "no GitHub token ... run `rt setup github connect --use-gh`"
       : "no GitLab token ... run `rt setup gitlab connect`";

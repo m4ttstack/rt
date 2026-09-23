@@ -39,6 +39,7 @@ function runRt(args: string[], home: string) {
       HOME: home,
       PATH: `${join(RT_BINARY, "..")}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
       TERM: "xterm-256color",
+      RT_GH_TOKEN_FALLBACK: "off",
       RT_SKIP_SETUP: "1",
       CI: "true",
       RT_API_PORT: String(apiPort),

@@ -683,9 +683,9 @@ export function createWorktreeHandlers(
       const dormantRepos: string[] = [];
       const readyHeldRepos: string[] = [];
       const mergeCleanupOff: Array<{ repo: string; path: string } & MergeCleanupGap> = [];
-      // Read once per call, and only if some repo has claims; a failed secrets
-      // read skips the check rather than reporting every repo as tokenless.
-      let gapInputs: { tracking: RepoTracking; secrets: Awaited<ReturnType<typeof loadSecrets>> } | null | undefined;
+      // Read once per call, and only if some repo has claims. A failed read
+      // skips just the check that needs it rather than reporting every repo.
+      let gapInputs: { tracking: RepoTracking | null; secrets: Awaited<ReturnType<typeof loadSecrets>> | null } | undefined;
 
       for (const [repoName, repoPath] of repos) {
         if (await worktreePoolDormant(repoName, repoPath)) dormantRepos.push(repoName);
@@ -693,9 +693,11 @@ export function createWorktreeHandlers(
         const trees = loadRegistry(repoName);
         if (trees.some((t) => t.kind === "ephemeral" && t.state === "claimed")) {
           if (gapInputs === undefined) {
-            gapInputs = await loadSecrets().then((secrets) => ({ tracking: loadRepoTracking(), secrets }), () => null);
+            let tracking: RepoTracking | null = null;
+            try { tracking = loadRepoTracking(); } catch (err) { ctx.log.warn({ err }, "worktree:list: repo tracking unreadable"); }
+            gapInputs = { tracking, secrets: await loadSecrets().catch(() => null) };
           }
-          const gap = gapInputs && await mergeCleanupGap(repoName, repoPath, gapInputs.tracking, gapInputs.secrets);
+          const gap = await mergeCleanupGap(repoName, repoPath, gapInputs.tracking, gapInputs.secrets);
           if (gap) mergeCleanupOff.push({ repo: repoName, path: repoPath, ...gap });
         }
         const branchCounts = new Map<string, number>();
