@@ -15,9 +15,8 @@ struct RowView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(row.title).fontWeight(.medium)
-                    // A finish-gated row reads required:false in plan mode yet still blocks Finish.
-                    if !row.required && !(row.finishGated && !row.waived) {
-                        Text("optional").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                    if let badge = row.badge {
+                        Text(badge.rawValue).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                             .background(Capsule().fill(Color.secondary.opacity(0.15)))
                     }
                 }

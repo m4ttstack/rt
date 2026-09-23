@@ -63,21 +63,30 @@ const WRITING_STYLE_PRESETS = [
     detail: "Labelled lines and short bullets for teams that like formal write-ups.",
     sample: "**issue:** Settings leak across tenants. Why: the cache key omits the tenant. Suggestion: key on (tenant, id)." },
 ];
-const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), "my-voice"];
+const WRITING_STYLE_OPTION_ROWS = [
+  { id: "my-voice", label: "my-voice", detail: "Your own style, in your home repo" },
+  { id: "matt:matts-writing-style", label: "matt:matts-writing-style", detail: "An installed skill" },
+];
+const WRITING_STYLE_SUGGESTIONS = ["team:team-writing-style"];
+const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
+const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
+const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_OPTION_ROWS.map((o) => o.id), ...WRITING_STYLE_SUGGESTIONS];
 const SKILL_ID_RE = /^[a-z0-9][a-z0-9._-]*(:[a-z0-9._-]+)?$/;
 function writingStyleRow() {
   const chosen = stateGet("style") > 0;
   const idPath = join(stateDir, "style-id");
   const selected = chosen ? (existsSync(idPath) ? readFileSync(idPath, "utf8") : WRITING_STYLE_PRESETS[0]!.id) : undefined;
-  const label = WRITING_STYLE_PRESETS.find((p) => p.id === selected)?.label ?? selected;
+  const options = [...WRITING_STYLE_PRESETS, ...WRITING_STYLE_OPTION_ROWS];
+  const label = options.find((o) => o.id === selected)?.label ?? selected;
   return {
     ...row(WRITING_STYLE_ID, "tool", "Writing style",
            "How the reviews, replies and PR descriptions agents post under your name read. Without one they read like an AI assistant.", false,
            chosen ? "ready" : "needs-you",
-           chosen ? `${label} (yours)` : "Choose how your reviews and replies read (or run rt skills writing-style use)",
-           { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"], options: WRITING_STYLE_PRESETS,
+           chosen ? `${label} (yours)` : "Not chosen yet",
+           { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"],
+             subtitle: CHOOSE_SUBTITLE, footnote: CHOOSE_FOOTNOTE, options,
              ...(selected ? { selected } : {}),
-             other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." } }),
+             other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.", suggestions: WRITING_STYLE_SUGGESTIONS } }),
     finishGated: true,
     waivable: false,
   };

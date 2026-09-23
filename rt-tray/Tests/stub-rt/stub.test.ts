@@ -186,7 +186,13 @@ test("every other scenario keeps an open gate and no extension row", async () =>
 const WRITING_STYLE = "skills.writing-style";
 const SPARSE = "mattstack:writing-style-sparse";
 const writingStyleRow = (plan: { groups: { rows: Record<string, unknown>[] }[] }) => plan.groups.flatMap((g) => g.rows).find((r) => r.id === WRITING_STYLE);
-type ChooseAction = { type: string; verb: string[]; selected?: string; options: { id: string; label: string; detail: string; sample?: string }[]; other: { label: string; hint: string } };
+type ChooseAction = {
+  type: string; verb: string[]; selected?: string; subtitle: string; footnote: string;
+  options: { id: string; label: string; detail: string; sample?: string }[];
+  other: { label: string; hint: string; suggestions: string[] };
+};
+const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
+const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
 
 test("writing-style: the row blocks Finish with a choose action until use picks a style", async () => {
   const state = mkdtempSync(join(tmpdir(), "stub-"));
@@ -195,14 +201,23 @@ test("writing-style: the row blocks Finish with a choose action until use picks 
   expect(first.lines[0].canInstall).toBe(true);
   expect(first.lines[0].finishBlockedBy).toEqual([WRITING_STYLE]);
   const row = writingStyleRow(first.lines[0])!;
-  expect(row).toMatchObject({ kind: "tool", status: "needs-you", required: false, finishGated: true, waivable: false });
+  expect(row).toMatchObject({ kind: "tool", status: "needs-you", detail: "Not chosen yet", required: false, finishGated: true, waivable: false });
   const action = row.action as ChooseAction;
   expect(action.type).toBe("choose");
   expect(action.verb).toEqual(["skills", "writing-style", "use"]);
   expect(action.selected).toBeUndefined();
-  expect(action.options.map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
-  expect(action.options.every((o) => o.label && o.detail && o.sample)).toBe(true);
-  expect(action.other).toEqual({ label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." });
+  expect(action.subtitle).toBe(CHOOSE_SUBTITLE);
+  expect(action.footnote).toBe(CHOOSE_FOOTNOTE);
+  expect(action.options.map((o) => o.id)).toEqual([
+    SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured", "my-voice", "matt:matts-writing-style",
+  ]);
+  expect(action.options.filter((o) => o.sample).map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
+  expect(action.options.find((o) => o.id === "my-voice")).toEqual({ id: "my-voice", label: "my-voice", detail: "Your own style, in your home repo" });
+  expect(action.options.find((o) => o.id === "matt:matts-writing-style")).toEqual({ id: "matt:matts-writing-style", label: "matt:matts-writing-style", detail: "An installed skill" });
+  expect(action.other).toEqual({
+    label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.",
+    suggestions: ["team:team-writing-style"],
+  });
 
   const used = await run("writing-style", ["skills", "writing-style", "use", SPARSE, "--json"], "", state);
   expect(used.code).toBe(0);

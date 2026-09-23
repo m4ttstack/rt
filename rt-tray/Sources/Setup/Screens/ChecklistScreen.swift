@@ -77,9 +77,8 @@ struct ChecklistScreen: View {
 
     private var footerText: String {
         if model.groups.isEmpty { return model.lastError == nil ? "Checking…" : "" }
-        if model.canInstall { return "Everything required is ready." }
-        let n = model.requiredMissing.count
-        return n == 1 ? "1 required item left." : "\(n) required items left."
+        return ChecklistFooter.text(canInstall: model.canInstall, requiredMissingCount: model.requiredMissing.count,
+                                    owedBeforeFinish: ChecklistFooter.owedBeforeFinish(model.allRows))
     }
 
     private func perform(_ row: PlanRow) {

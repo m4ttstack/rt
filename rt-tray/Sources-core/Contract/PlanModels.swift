@@ -75,7 +75,11 @@ public struct ChooseOption: Codable, Equatable, Sendable {
 public struct ChooseOther: Codable, Equatable, Sendable {
     public var label: String
     public var hint: String
-    public init(label: String, hint: String) { self.label = label; self.hint = hint }
+    /// The app's only source of completions for a typed id; it never scans the filesystem for skills.
+    public var suggestions: [String]?
+    public init(label: String, hint: String, suggestions: [String]? = nil) {
+        self.label = label; self.hint = hint; self.suggestions = suggestions
+    }
 }
 
 public struct ActionField: Codable, Equatable, Sendable {
@@ -125,15 +129,21 @@ public struct RowAction: Codable, Equatable, Sendable {
     public var options: [ChooseOption]?
     public var selected: String?
     public var other: ChooseOther?
+    /// One line under the sheet title saying what the choice is for.
+    public var subtitle: String?
+    /// A line at the foot of the sheet (the CLI alternative).
+    public var footnote: String?
     public init(type: ActionType, label: String, target: String? = nil, which: String? = nil,
                 integration: String? = nil, fields: [ActionField]? = nil,
                 alternatives: [ActionAlternative]? = nil, verb: [String]? = nil, tool: String? = nil,
                 via: String? = nil, steps: [String]? = nil, url: String? = nil, startAt: String? = nil,
-                options: [ChooseOption]? = nil, selected: String? = nil, other: ChooseOther? = nil) {
+                options: [ChooseOption]? = nil, selected: String? = nil, other: ChooseOther? = nil,
+                subtitle: String? = nil, footnote: String? = nil) {
         self.type = type; self.label = label; self.target = target; self.which = which
         self.integration = integration; self.fields = fields; self.alternatives = alternatives
         self.verb = verb; self.tool = tool; self.via = via; self.steps = steps; self.url = url
         self.startAt = startAt; self.options = options; self.selected = selected; self.other = other
+        self.subtitle = subtitle; self.footnote = footnote
     }
 }
 
@@ -185,6 +195,18 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
         waived = try c.decodeIfPresent(Bool.self, forKey: .waived) ?? false
         // An rt that predates `waivable` offered Skip on every finish-gated row.
         waivable = try c.decodeIfPresent(Bool.self, forKey: .waivable) ?? finishGated
+    }
+}
+
+public enum RowBadge: String, Equatable, Sendable { case required, optional }
+
+public extension PlanRow {
+    /// Finish-gated rows that cannot be skipped are required even though Install does not wait on them;
+    /// a skippable finish gate reads required:false in plan mode yet still blocks Finish until skipped.
+    var badge: RowBadge? {
+        if finishGated && !waivable { return .required }
+        if required || (finishGated && !waived) { return nil }
+        return .optional
     }
 }
 

@@ -97,8 +97,37 @@ let planModelsChecks: [Check] = [
         c.expectEqual(a.options?.first?.id, "mattstack:writing-style-sparse")
         c.expectEqual(a.options?.first?.sample, "**issue:** x")
         c.expectEqual(a.other?.label, "Use my own skill…")
+        c.expectEqual(a.subtitle, nil)
+        c.expectEqual(a.footnote, nil)
+        c.expectEqual(a.other?.suggestions, nil)
         let u = try JSONDecoder().decode(RowAction.self, from: Data(#"{"type":"future-thing","label":"?"}"#.utf8))
         c.expectEqual(u.type, .unknown)
+    },
+    Check("choose action decodes subtitle, footnote and other.suggestions when present") { c in
+        let json = """
+        {"type":"choose","label":"Choose style…","verb":["skills","writing-style","use"],
+         "subtitle":"The voice agents use for reviews, replies and PR descriptions posted under your name.",
+         "footnote":"You can also choose from a terminal: rt skills writing-style use",
+         "options":[{"id":"mattstack:writing-style-sparse","label":"Sparse","detail":"Terse."}],
+         "other":{"label":"Use my own skill…","hint":"Any installed skill id.","suggestions":["x:y","my-voice"]}}
+        """
+        let a = try JSONDecoder().decode(RowAction.self, from: Data(json.utf8))
+        c.expectEqual(a.subtitle, "The voice agents use for reviews, replies and PR descriptions posted under your name.")
+        c.expectEqual(a.footnote, "You can also choose from a terminal: rt skills writing-style use")
+        c.expectEqual(a.other?.suggestions, ["x:y", "my-voice"])
+        let again = try JSONDecoder().decode(RowAction.self, from: JSONEncoder().encode(a))
+        c.expectEqual(again, a)
+    },
+    Check("badge: an unskippable finish gate reads required; a skippable one reads optional only once skipped; otherwise optional or nil by `required`") { c in
+        func row(finishGated: Bool, waivable: Bool, waived: Bool = false, required: Bool) -> PlanRow {
+            PlanRow(id: "r", kind: .tool, title: "t", why: "w", required: required, status: .needsYou,
+                    recheck: .onChange, finishGated: finishGated, waived: waived, waivable: waivable)
+        }
+        c.expectEqual(row(finishGated: true, waivable: false, required: false).badge, .required)
+        c.expectEqual(row(finishGated: true, waivable: true, required: false).badge, nil)
+        c.expectEqual(row(finishGated: true, waivable: true, waived: true, required: false).badge, .optional)
+        c.expectEqual(row(finishGated: false, waivable: false, required: false).badge, .optional)
+        c.expectEqual(row(finishGated: false, waivable: false, required: true).badge, nil)
     },
     Check("waivable: absent on a finish-gated row reads true; present is honored") { c in
         func row(_ extra: String) -> String {
