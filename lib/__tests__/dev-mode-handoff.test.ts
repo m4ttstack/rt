@@ -62,6 +62,8 @@ const FAKE_DEV_APP = join(HOME, "Applications", DEV_TRAY_APP_BUNDLE);
 // WRAPPER_PATH into whatever it points at.
 const FAKE_INSTALLED_BUNDLE_DIR = join(HOME, "fake-installed-app");
 const FAKE_INSTALLED_BUNDLE_BINARY = join(FAKE_INSTALLED_BUNDLE_DIR, "Contents", "MacOS", "rt");
+const HAND_DECK_PLIST = join(HOME, "Library", "LaunchAgents", "com.mattstack.deck.plist");
+const UID = process.getuid?.() ?? 501;
 
 let fakeBinDir = "";
 let logPath = "";
@@ -188,7 +190,7 @@ afterEach(() => {
   for (const p of [WRAPPER_PATH, DEV_MODE_PRELOAD, DEV_MODE_CONFIG]) {
     try { rmSync(p); } catch { /* absent */ }
   }
-  for (const p of [FAKE_PROD_APP, FAKE_DEV_APP, FAKE_INSTALLED_BUNDLE_DIR]) {
+  for (const p of [FAKE_PROD_APP, FAKE_DEV_APP, FAKE_INSTALLED_BUNDLE_DIR, dirname(HAND_DECK_PLIST), join(HOME, ".mattstack", "deck")]) {
     try { rmSync(p, { recursive: true, force: true }); } catch { /* absent */ }
   }
   // enableDevMode() (RT-48/MAT-383 §9) now writes the dev-mode config into
@@ -312,5 +314,45 @@ describe("toggleDevMode — flavor handoff", () => {
     const openLine = log.find((l) => l.startsWith("open "))!;
     expect(openLine).toContain(FAKE_DEV_APP); // launches the INCOMING (dev) bundle
     expect(getSetting<string>("mattstack.mode").value).toBe("dev");
+  }, 15_000);
+
+  test("a loaded hand-installed deck agent is booted out and archived before the incoming app launches", async () => {
+    mkdirSync(FAKE_DEV_APP, { recursive: true });
+    mkdirSync(dirname(HAND_DECK_PLIST), { recursive: true });
+    writeFileSync(HAND_DECK_PLIST, "<plist/>");
+    setUpFakes();
+    writeFake(
+      "launchctl",
+      [
+        "#!/bin/sh",
+        `echo "launchctl $*" >> "${logPath}"`,
+        `if [ "$1" = "print" ] && [ "$2" = "gui/${UID}/com.mattstack.deck" ]; then`,
+        `  printf '\\tpath = %s\\n' "${HAND_DECK_PLIST}"`,
+        `  exit 0`,
+        `fi`,
+        `if [ "$1" = "bootout" ]; then exit 0; fi`,
+        `if [ -f "${goneMarker}" ]; then echo "Could not find service" 1>&2; exit 1; fi`,
+        `echo '{ "PID" = 1; };'`,
+        "",
+      ].join("\n"),
+    );
+
+    await toggleDevMode(["dev"], {}, isolatedExists);
+
+    const log = readLog();
+    const bootout = log.indexOf(`launchctl bootout gui/${UID}/com.mattstack.deck`);
+    expect(bootout).toBeGreaterThan(-1);
+    expect(bootout).toBeLessThan(log.findIndex((l) => l.startsWith("open ")));
+    expect(existsSync(HAND_DECK_PLIST)).toBe(false);
+    expect(existsSync(join(HOME, ".mattstack", "deck", "com.mattstack.deck.plist.retired"))).toBe(true);
+  }, 15_000);
+
+  test("no hand-installed deck plist: the deck label is never printed or booted out", async () => {
+    mkdirSync(FAKE_DEV_APP, { recursive: true });
+    setUpFakes();
+
+    await toggleDevMode(["dev"], {}, isolatedExists);
+
+    expect(readLog().some((l) => l.includes(`gui/${UID}/com.mattstack.deck`) && !l.includes("com.mattstack.deck."))).toBe(false);
   }, 15_000);
 });

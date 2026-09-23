@@ -576,7 +576,8 @@ function disableDevMode(exists: (path: string) => boolean = existsSync): void {
 // registered tray apps (mattstack.app / mattstack-dev.app), not a binary
 // swap: (0) the incoming flavor's bundle must exist on disk BEFORE the
 // running flavor is touched at all; (1) the outgoing tray gives up its own
-// daemon LaunchAgent + login-item registrations via POST /flavor/retire;
+// daemon LaunchAgent + login-item registrations via POST /flavor/retire,
+// and a hand-installed deck LaunchAgent is retired (lib/deck-hand-agent.ts);
 // (2) the outgoing tray is quit by ITS OWN flavor names (never the incoming
 // flavor's); (3) we poll until it is actually gone — a CONNECT-probe of the
 // shared tray socket (a pkill'd tray leaks the socket file, so existence
@@ -665,6 +666,13 @@ async function handoffToFlavor(outgoing: FlavorInfo, incoming: FlavorInfo, targe
     spawnSync("launchctl", ["bootout", `gui/${process.getuid?.() ?? 501}/${outgoingLabel}`], { stdio: "pipe", env: process.env });
     console.log(`  ${yellow}⚠${reset} booted out ${outgoingLabel} directly`);
   }
+
+  // A hand-installed deck agent would hold deck's ports against the incoming
+  // flavor's SMAppService deck helper, so it goes before the launch.
+  const { describeHandDeckRetire, realHandDeckAgentSeams, retireHandInstalledDeckAgent } = await import("../lib/deck-hand-agent.ts");
+  const handDeck = retireHandInstalledDeckAgent(realHandDeckAgentSeams());
+  const handDeckLine = describeHandDeckRetire(handDeck);
+  if (handDeckLine) console.log(`  ${handDeck.kind === "failed" ? `${yellow}⚠` : `${green}✓`}${reset} ${handDeckLine}`);
 
   // 2. Quit the outgoing tray by ITS OWN flavor's names. env forwarded
   // explicitly for the same reason as launchdStillRegistered above.

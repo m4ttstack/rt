@@ -53,6 +53,12 @@ export function servicePlists(mode: "dev" | "prod", p: Pick<Probes, "exists" | "
   return { plists, deckOmitted: !deckBundled };
 }
 
+/** The launchd label of the deck helper the app registers for `mode`, or null when deck isn't bundled (nothing but a hand install can supervise deck then). */
+export function deckHelperLabel(mode: "dev" | "prod", p: Pick<Probes, "exists" | "home">): string | null {
+  if (servicePlists(mode, p).deckOmitted) return null;
+  return devFlavor(SERVICE_PLISTS[1], mode).replace(/\.plist$/, "");
+}
+
 export interface NeedReply {
   ok: boolean;
   detail?: string;
