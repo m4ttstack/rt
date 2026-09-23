@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
 	"rt-ui/internal/views/picker"
 )
@@ -2325,6 +2326,60 @@ func TestHistoryFilteredRangeSpansRealHistory(t *testing.T) {
 	}
 	if got := strings.Join(m.historySelectionShas(), ","); got != "a,b,c,d" {
 		t.Fatalf("stepping onto the Search row leaves the range as it is, got %s", got)
+	}
+}
+
+// pushModel delivers model the way the driver does, as a session
+// ModelUpdate through Update, and returns the cmd Update answers with.
+func pushModel(t *testing.T, m *Mission, model Model) tea.Cmd {
+	t.Helper()
+	raw, err := json.Marshal(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := m.Update(session.ModelUpdate{Raw: raw})
+	return cmd
+}
+
+// TestSearchThatLandsMatchesReHomesTheCursor: "Search 100 more commits"
+// exists for this flow. When the page it asked for lands with matches, the
+// cursor moves onto the first one through the ordinary debounce instead of
+// staying on a commit the filter hides.
+func TestSearchThatLandsMatchesReHomesTheCursor(t *testing.T) {
+	instantSelectTick(t)
+	model := Model{Tab: "history", History: HistoryModel{
+		Commits: pagingCommits(10), HasMore: true,
+		Files:  []HistoryFileRow{{Path: "a.go", Status: "modified"}},
+		Header: &HistoryHeader{Summary: "subject-00", RangeCount: 1, Contiguous: true},
+	}}
+	model.History.Commits[0].Selected = true
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if cmd := pushModel(t, m, model); cmd != nil {
+		t.Fatal("setup: a push with no filter re-homes nothing")
+	}
+	typeKeys(m, "/zebra")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+		t.Fatal("setup: enter on the Search row requests a page")
+	}
+	model.History.Commits = append(pagingCommits(10), HistoryCommitRow{Sha: "z1", ShortSha: "z1", Summary: "zebra crossing", Byline: "author-z"})
+	model.History.Commits[0].Selected = true
+	tick := pushModel(t, m, model)
+	if m.historyCursor != "z1" {
+		t.Fatalf("the landed match should take the cursor, got %q", m.historyCursor)
+	}
+	if row := sidebarLine(t, m.View().Content, "zebra crossing"); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the cursor bar should be painted on the first match: %q", row)
+	}
+	if tick == nil {
+		t.Fatal("the re-home should schedule the debounced select")
+	}
+	if _, emit := m.Update(tick()); emit == nil {
+		t.Fatal("the settled tick selects the match")
+	}
+	if cmd := pushModel(t, m, model); cmd != nil {
+		t.Fatal("a later push with the cursor already on a match re-homes nothing")
 	}
 }
 

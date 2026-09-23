@@ -337,11 +337,18 @@ func (m *Mission) historyFilterKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, m.historyFilterEdited()
 }
 
-// historyFilterEdited returns the view to following the cursor, and moves a
-// cursor the filter hid to the first match through the ordinary debounce,
-// so fast typing settles into one select.
+// historyFilterEdited returns the view to following the cursor and re-homes
+// a cursor the edit hid.
 func (m *Mission) historyFilterEdited() tea.Cmd {
 	m.historyFreeScroll = false
+	return m.historyReHome()
+}
+
+// historyReHome moves a cursor the filter hides to the first match through
+// the ordinary debounce, so fast typing settles into one select. A push can
+// hide it too: a Search page landing matches, or a reload adopting a
+// selection the filter excludes.
+func (m *Mission) historyReHome() tea.Cmd {
 	visible := m.historyVisible()
 	if len(visible) == 0 || slices.Contains(visible, m.historyIndex(m.historyCursor)) {
 		return nil

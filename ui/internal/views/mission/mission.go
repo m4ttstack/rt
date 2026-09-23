@@ -351,6 +351,9 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.SetModel(v.Raw); err != nil {
 			return m, nil
 		}
+		if m.historyTab() && m.historyFilter != "" {
+			return m, m.historyReHome()
+		}
 	case session.CloseRequest:
 		m.reason = session.ReasonClosed
 		return m, tea.Quit
