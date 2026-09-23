@@ -8,6 +8,7 @@ import { execWithTimeout, type ExecResult } from "../setup/probes.ts";
 
 export const RT_VERB_TIMEOUT_MS = 30_000;
 const TAIL_BYTES = 400;
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
 
 export interface RtVerbDeps {
   tree: Record<string, CommandNode>;
@@ -55,6 +56,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   if (!Array.isArray(args) || args.length === 0 || !args.every((a) => typeof a === "string")) {
     return fail("args must be a non-empty array of strings, without the leading rt");
   }
+  if (args.some((a) => CONTROL_CHAR.test(a))) return fail("args must not contain a control character");
   const allowed = `Agent-safe verbs: ${listAgentSafe(deps.tree).map((e) => e.path.join(" ")).join(", ")}`;
   // cli.ts matches --daemon, --post-install, --grant-fda and --version only at args[0].
   if (args[0]!.startsWith("-")) return fail(`args[0] must name a verb, not a flag. ${allowed}`);

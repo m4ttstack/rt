@@ -27,6 +27,13 @@ function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [
 }
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
 
+async function refused(input: { args?: unknown; cwd?: unknown }) {
+  const calls: { argv: string[]; opts: unknown }[] = [];
+  const r = await runRtVerb(input, deps(ok("{}"), calls));
+  expect(calls).toEqual([]);
+  return r;
+}
+
 describe("runRtVerb", () => {
   test("runs an agent-safe leaf with the full argv, cwd, env and timeout", async () => {
     const calls: { argv: string[]; opts: unknown }[] = [];
@@ -44,40 +51,45 @@ describe("runRtVerb", () => {
 
   test("refuses --name=value on a boolean flag and a dash-leading value after =", async () => {
     for (const args of [["worktree", "list", "--repo=-x"], ["worktree", "list", "--json=false"]]) {
-      const calls: { argv: string[]; opts: unknown }[] = [];
-      const r = await runRtVerb({ args }, deps(ok("{}"), calls));
+      const r = await refused({ args });
       expect(r.ok, args.join(" ")).toBe(false);
-      expect(calls).toEqual([]);
     }
   });
 
   test("refuses a leading flag before any lookup", async () => {
     for (const args of [["--post-install", "worktree", "list"], ["--daemon"], ["-V"]]) {
-      const r = await runRtVerb({ args }, deps(ok("{}")));
-      expect(r.ok).toBe(false);
+      const r = await refused({ args });
+      expect(r.ok ? "" : r.error).toContain("must name a verb, not a flag");
       expect(r.ok ? "" : r.error).toContain("worktree list");
     }
   });
 
   test("refuses a non-agent-safe leaf, a branch and an unknown verb, naming the allowed set", async () => {
-    for (const args of [["worktree", "dispose"], ["worktree"], ["nope"]]) {
-      const r = await runRtVerb({ args }, deps(ok("{}")));
+    for (const args of [["worktree", "dispose"], ["worktree"], ["nope"], ["worktree", "--json", "list"]]) {
+      const r = await refused({ args });
       expect(r.ok ? "" : r.error).toContain("Agent-safe verbs: worktree list");
     }
   });
 
   test("refuses an undeclared flag, including a value that starts with a dash", async () => {
-    for (const args of [["worktree", "list", "--prune"], ["worktree", "list", "--repo", "-x"]]) {
-      const r = await runRtVerb({ args }, deps(ok("{}")));
-      expect(r.ok).toBe(false);
+    for (const args of [["worktree", "list", "--prune"], ["worktree", "list", "--repo", "-x"], ["worktree", "list", "--"], ["worktree", "list", "-rj"]]) {
+      const r = await refused({ args });
+      expect(r.ok, args.join(" ")).toBe(false);
+    }
+  });
+
+  test("refuses an arg carrying a control character before the walk", async () => {
+    for (const args of [["worktree", "list", "--repo", "a\u0000b"], ["worktree\u0000", "list"], ["worktree", "list", "--repo", "a\nb"], ["worktree", "list", "--repo", "a\u007fb"]]) {
+      const r = await refused({ args });
+      expect(r.ok ? "" : r.error, JSON.stringify(args)).toContain("control character");
     }
   });
 
   test("refuses a bad cwd and bad args", async () => {
-    expect((await runRtVerb({ args: ["worktree", "list"], cwd: "rel" }, deps(ok("{}")))).ok).toBe(false);
-    expect((await runRtVerb({ args: ["worktree", "list"], cwd: "/missing" }, deps(ok("{}")))).ok).toBe(false);
-    expect((await runRtVerb({ args: [] }, deps(ok("{}")))).ok).toBe(false);
-    expect((await runRtVerb({ args: "worktree list" }, deps(ok("{}")))).ok).toBe(false);
+    expect((await refused({ args: ["worktree", "list"], cwd: "rel" })).ok).toBe(false);
+    expect((await refused({ args: ["worktree", "list"], cwd: "/missing" })).ok).toBe(false);
+    expect((await refused({ args: [] })).ok).toBe(false);
+    expect((await refused({ args: "worktree list" })).ok).toBe(false);
   });
 
   test("exit 2 surfaces the user-error envelope's message", async () => {
