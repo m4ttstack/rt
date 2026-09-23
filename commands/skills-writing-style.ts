@@ -3,7 +3,7 @@
  * prose posted under your name (MR descriptions, commit messages, replies).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import { homeGitDir } from "../lib/setup/steps/home.ts";
@@ -154,10 +154,10 @@ function stripCompilerComments(text: string): string {
 }
 
 /** Normalizes CRLF to LF, then renames the frontmatter `name` and preset id so the copy is a skill of its own. */
-function retarget(text: string, presetId: string, name: string): string {
+function retarget(text: string, presetId: string, name: string): string | null {
   const normalized = text.replace(/\r\n/g, "\n");
   const end = normalized.indexOf("\n---", 4);
-  if (!normalized.startsWith("---\n") || end === -1) return null as never;
+  if (!normalized.startsWith("---\n") || end === -1) return null;
   const frontmatter = normalized
     .slice(0, end)
     .replace(/^name:.*$/m, `name: ${name}`)
@@ -200,8 +200,7 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     return refuse(new UserActionableError("no-plugin", "the mattstack plugin with the writing-style presets is not installed; run rt setup"), json, "new", deps);
   }
 
-  // Read and transform both files fully before creating target directory
-  let skillContent: string;
+  let skillContent: string | null;
   let prDescContent: string | undefined;
   try {
     const rawSkill = readFileSync(join(source, "SKILL.md"), "utf8");
@@ -224,11 +223,9 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     linkPersonalSkills(deps.home());
   } catch (err) {
     try {
-      // Clean up on failure: name passed NAME_RE, target sits under personalSkillsDir, exists check proved we created it
-      const { rmSync } = await import("fs");
+      // The exists check ran before this call, and name passed NAME_RE, so target is a directory this call just created.
       rmSync(target, { recursive: true, force: true });
     } catch {
-      // Ignore cleanup errors
     }
     throw err;
   }
