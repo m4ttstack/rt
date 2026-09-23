@@ -1045,6 +1045,25 @@ func TestWheelKeepsHoverUnderThePointer(t *testing.T) {
 	}
 }
 
+// TestFirstLoadEndsFreeScroll: a wheel tick while "Loading history…" shows
+// must not strand the first list off the driver's selection.
+func TestFirstLoadEndsFreeScroll(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Loading: true}}); err != nil {
+		t.Fatal(err)
+	}
+	wheelOverList(m, tea.MouseWheelDown)
+	commits := groupedCommits(30)
+	commits[20].Selected = true
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: commits}}); err != nil {
+		t.Fatal(err)
+	}
+	if row := sidebarLine(t, m.View().Content, "subject-20"); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the first list should open on the driver's selection: %q", row)
+	}
+}
+
 // TestLandedPageDropsActionRowHover: the page grows the list and moves the
 // action row away from the pointer that hovered it.
 func TestLandedPageDropsActionRowHover(t *testing.T) {

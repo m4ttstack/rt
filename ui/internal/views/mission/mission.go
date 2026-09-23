@@ -249,7 +249,7 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if reloaded || (decoded.Notice != "" && len(decoded.History.Commits) == m.historyMoreFor) {
 		m.historyMoreFor = -1
 	}
-	if reloaded {
+	if reloaded || len(m.model.History.Commits) == 0 && len(decoded.History.Commits) > 0 {
 		m.historyFreeScroll = false
 	}
 	// A landed page puts the cursor back on the last commit it followed, so
