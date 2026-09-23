@@ -12,10 +12,8 @@ struct ConnectSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Connect \(title)").font(.headline)
-            // Not a grouped Form: its rows put the label left and leave the input a borderless strip on the right.
             ForEach(fields, id: \.name) { f in
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(f.label).font(.callout.weight(.medium))
+                SetupField(label: f.label, note: f.hint) {
                     Group {
                         if f.secret {
                             SecureField("", text: binding(f.name))
@@ -27,7 +25,6 @@ struct ConnectSheet: View {
                     .accessibilityLabel(f.label)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier(AXID.connectField(f.name))
-                    if let h = f.hint { Text(h).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 }
             }
             HStack {

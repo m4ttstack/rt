@@ -50,14 +50,6 @@ struct TeamScreen: View {
         switch c { case .create: return AXID.teamCardCreate; case .join: return AXID.teamCardJoin; case .restore: return AXID.teamCardRestore }
     }
 
-    private func field<Content: View>(_ label: String, note: String? = nil, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.callout.weight(.medium))
-            content()
-            if let note { Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-        }
-    }
-
     private func switchRow(_ label: String, isOn: Binding<Bool>, id: String) -> some View {
         HStack {
             Text(label)
@@ -68,14 +60,14 @@ struct TeamScreen: View {
 
     private var createFields: some View {
         Group {
-            field("Team name", note: model.slugPreview.isEmpty ? nil : "Slug: \(model.slugPreview)") {
+            SetupField(label: "Team name", note: model.slugPreview.isEmpty ? nil : "Slug: \(model.slugPreview)") {
                 TextField("Team name", text: $model.teamName, prompt: Text("Acme")).labelsHidden().accessibilityIdentifier(AXID.teamCreateName)
             }
             switchRow("Others will join later", isOn: $model.othersWillJoin, id: AXID.teamCreateOthers)
             if model.ghHandle != nil {
                 switchRow("Create a private GitHub repo \(model.ghRepoPreview)", isOn: $model.useGhRepo, id: AXID.teamCreateUseGh)
                 if model.useGhRepo {
-                    field("Owner") {
+                    SetupField(label: "Owner") {
                         Picker("Owner", selection: Binding(get: { model.ghOwner ?? "" }, set: { model.ghOwner = $0 })) {
                             ForEach(model.ghOwners, id: \.self) { Text($0).tag($0) }
                         }
@@ -85,7 +77,7 @@ struct TeamScreen: View {
                 }
             }
             if !model.useGhRepo {
-                field("Repository URL", note: TeamChoiceModel.explainer) {
+                SetupField(label: "Repository URL", note: TeamChoiceModel.explainer) {
                     TextField("Repository URL", text: $model.remoteURL, prompt: Text("An empty repo: GitHub, GitLab, anything git can push to"))
                         .labelsHidden().accessibilityIdentifier(AXID.teamCreateRemote)
                 }
@@ -96,7 +88,7 @@ struct TeamScreen: View {
 
     private var joinFields: some View {
         Group {
-            field("Invite code", note: "Paste the whole code or the mattstack://join link you were sent. macOS may ask to read your clipboard.") {
+            SetupField(label: "Invite code", note: "Paste the whole code or the mattstack://join link you were sent. macOS may ask to read your clipboard.") {
                 HStack(alignment: .top, spacing: 8) {
                     // .roundedBorder never wraps on macOS, and a 77-character code must stay readable whole.
                     TextField("Invite code", text: $model.inviteCode, prompt: Text("XXXX-XXXX-…"), axis: .vertical)
@@ -120,10 +112,10 @@ struct TeamScreen: View {
 
     private var restoreFields: some View {
         Group {
-            field("Home repo") {
+            SetupField(label: "Home repo") {
                 TextField("Home repo", text: $model.restoreRepo, prompt: Text("<org>/<repo>")).labelsHidden().accessibilityIdentifier(AXID.teamRestoreRepo)
             }
-            field("Age key", note: "Clones your settings to ~/.mattstack, installs the key in the Keychain, and replays your teams and packs during Install.") {
+            SetupField(label: "Age key", note: "Clones your settings to ~/.mattstack, installs the key in the Keychain, and replays your teams and packs during Install.") {
                 SecureField("Age key", text: $model.restoreAgeKey, prompt: Text("From your password manager")).labelsHidden().accessibilityIdentifier(AXID.teamRestoreKey)
             }
             if model.isChecking { checkingRow }
