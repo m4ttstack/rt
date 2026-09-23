@@ -892,6 +892,66 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
   });
 });
 
+describe('gateOpen relays contextOmitted', () => {
+  const QS = JSON.stringify([
+    {
+      id: 'outcome',
+      label: 'Outcome?',
+      multi: false,
+      options: ['comment', 'approve'],
+    },
+  ]);
+
+  async function openWith(data: Record<string, unknown>) {
+    const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-omitted-'));
+    const db = openStateDb(dbPathForRoot(dir), 'cli');
+    const handle = mintHandle('respond', MR_URL, dir);
+    insertAgentState(
+      'respond',
+      MR_URL,
+      IID,
+      {
+        mrUrl: MR_URL,
+        iid: IID,
+        status: 'triaging',
+        startedAt: 1,
+        updatedAt: 1,
+      },
+      handle,
+      db
+    );
+    const { io } = fakeIo({
+      openResult: {
+        ok: true,
+        data: {
+          id: 'g-om',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+          ...data,
+        },
+      },
+    });
+    const result = await gateOpen(handle, 'respond-plan', QS, io);
+    rmSync(dir, { recursive: true, force: true });
+    return result;
+  }
+
+  test('a daemon that dropped the contexts says so in the printed result', async () => {
+    const result = await openWith({ contextOmitted: true });
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"g-om","presentation":"form","contextOmitted":true}'
+    );
+  });
+
+  test('a daemon that kept the contexts adds nothing', async () => {
+    const result = await openWith({});
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"g-om","presentation":"form"}'
+    );
+  });
+});
+
 describe('bin/gate.ts malformed --questions', () => {
   test('exits nonzero with a stderr message, without ever reaching the facility', async () => {
     const proc = Bun.spawn(

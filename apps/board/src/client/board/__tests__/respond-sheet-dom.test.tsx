@@ -248,7 +248,7 @@ test('submit stays disabled until every thread is decided', async () => {
   expect(submit().disabled).toBe(true);
   await pick('reply:t2');
   expect(submit().disabled).toBe(false);
-  expect(submit().textContent).toBe('submit · 2 reply');
+  expect(submit().textContent).toBe('submit · 2 replies');
 });
 
 test('with no fix picked, code-changes stays out of the rail and posts its sentinel', async () => {
@@ -571,9 +571,39 @@ function perThreadPostGate(): GateRow {
   };
 }
 
-const withFixPlan = () => {
+const directionThread = (summary: string) =>
+  JSON.stringify({
+    'gate-ctx': 'thread@1',
+    author: 'renee',
+    severity: 'blocking',
+    claim: { summary },
+    verdict: { call: 'valid' },
+    reply: { kind: 'direction', text: 'say the delay is by design.' },
+  });
+
+/** The plan the per-thread post step follows: a fix (r1); a reply override
+    (r2, whose card showed only a direction, so Gate 2 offers its redraft);
+    a skip (r3); and a reply-only thread (r4) Gate 2 does not offer, which
+    posts as Gate 1 decided it, edited there when `text` is given. */
+const withFixPlan = (text?: string) => {
   const plan = answeredPlan();
-  plan.answers = { ...plan.answers, 'thread-1': 'fix:r1' };
+  plan.questions = [
+    plan.questions[0]!,
+    { ...plan.questions[1]!, context: directionThread('claim r2') },
+    plan.questions[2]!,
+    {
+      id: 'thread-4',
+      label: 'd.ts:4',
+      multi: false,
+      context: thread('claim r4'),
+      options: ['reply:r4', 'fix:r4', 'skip:r4'],
+    },
+  ];
+  plan.answers = {
+    ...plan.answers,
+    'thread-1': 'fix:r1',
+    'thread-4': text ? { value: 'reply:r4', text } : 'reply:r4',
+  };
   return { ...MR, gates: [plan] } as unknown as BoardMRWithReview;
 };
 
@@ -590,6 +620,7 @@ test('per-thread post step: a card per plan thread, each reply with post/hold an
     'a.ts:1',
     'b.ts:2',
     'c.ts:3',
+    'd.ts:4',
   ]);
   for (const card of cards.slice(0, 2)) {
     expect(control(card, 'post')?.type).toBe('radio');
@@ -598,6 +629,7 @@ test('per-thread post step: a card per plan thread, each reply with post/hold an
   }
   expect(cards[2]!.textContent).toContain('Nothing to post for this thread.');
   expect(control(cards[2]!, 'resolve')).toBeNull();
+  expect(control(cards[3]!, 'resolve')).toBeNull();
   // A post card approves the reply as shown; it takes no note.
   expect(
     document.body.querySelector('[data-step="post"] .tui-gate-note')
@@ -611,8 +643,8 @@ test('per-thread post step starts from the recommended picks: post everywhere, r
   expect(control(fix!, 'resolve')!.checked).toBe(true);
   expect(control(reply!, 'post')!.checked).toBe(true);
   expect(control(reply!, 'resolve')!.checked).toBe(false);
-  expect($('.tui-sheet-list-tally')!.textContent).toBe('2 of 2 posting');
-  expect(submit().textContent).toBe('post 2 · resolve 1');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('3 of 3 posting');
+  expect(submit().textContent).toBe('post 3 · resolve 1');
 });
 
 test('hold plus resolve resolves the thread without posting its reply', async () => {
@@ -620,7 +652,7 @@ test('hold plus resolve resolves the thread without posting its reply', async ()
   const reply = postCards()[1]!;
   await React.act(async () => control(reply, 'hold')!.click());
   await React.act(async () => control(reply, 'resolve')!.click());
-  expect(submit().textContent).toBe('post 1 · resolve 2');
+  expect(submit().textContent).toBe('post 2 · resolve 2');
   await clickSubmit();
   expect(answer()).toEqual({
     gateId: 'g-post-threads',
@@ -631,13 +663,14 @@ test('hold plus resolve resolves the thread without posting its reply', async ()
   });
 });
 
-test('holding everything with nothing resolved submits empty picks', async () => {
+test('holding every offered thread with nothing resolved submits empty picks; the reply-only thread still posts', async () => {
   await render(perThreadPostGate(), withFixPlan());
   const [fix, reply] = postCards();
   await React.act(async () => control(fix!, 'hold')!.click());
   await React.act(async () => control(fix!, 'resolve')!.click());
   await React.act(async () => control(reply!, 'hold')!.click());
-  expect(submit().textContent).toBe('hold all');
+  expect(submit().textContent).toBe('post 1');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('1 of 3 posting');
   await clickSubmit();
   expect(answer()).toEqual({
     gateId: 'g-post-threads',
@@ -653,7 +686,7 @@ test('reset on the per-thread post step restores the recommended picks', async (
   const [fix, again] = postCards();
   expect(control(again!, 'post')!.checked).toBe(true);
   expect(control(fix!, 'resolve')!.checked).toBe(true);
-  expect(submit().textContent).toBe('post 2 · resolve 1');
+  expect(submit().textContent).toBe('post 3 · resolve 1');
 });
 
 test('the dock lists each thread with what the submit does to it', async () => {
@@ -663,7 +696,7 @@ test('the dock lists each thread with what the submit does to it', async () => {
       '[data-card="responses"] .tui-sheet-card-row'
     ),
   ].map(r => r.textContent);
-  expect(rows).toEqual(['postresolvea.ts:1', 'postb.ts:2']);
+  expect(rows).toEqual(['postresolvea.ts:1', 'postb.ts:2', 'postd.ts:4']);
 });
 
 test('without its plan gate, each per-thread question still draws its reply and its controls', async () => {
@@ -766,7 +799,7 @@ test('a dock question on a per-thread gate joins the submit label once picked', 
   await render(gate, withFixPlan());
   expect(submit().disabled).toBe(true);
   await pick('proceed');
-  expect(submit().textContent).toBe('post 2 · resolve 1 · proceed');
+  expect(submit().textContent).toBe('post 3 · resolve 1 · proceed');
   expect(submit().disabled).toBe(false);
 });
 
@@ -774,12 +807,12 @@ test('a held thread stays held after leaving the per-thread post step and coming
   await render(perThreadPostGate(), withFixPlan());
   const reply = postCards()[1]!;
   await React.act(async () => control(reply, 'hold')!.click());
-  expect(submit().textContent).toBe('post 1 · resolve 1');
+  expect(submit().textContent).toBe('post 2 · resolve 1');
   await React.act(async () => root.unmount());
   root = createRoot(container);
   await render(perThreadPostGate(), withFixPlan());
   expect(control(postCards()[1]!, 'hold')!.checked).toBe(true);
-  expect(submit().textContent).toBe('post 1 · resolve 1');
+  expect(submit().textContent).toBe('post 2 · resolve 1');
 });
 
 const seedTexts = (
@@ -1007,4 +1040,525 @@ test('without its plan gate, an edited reply still carries its chip', async () =
   expect(
     reply.querySelector('.tui-gate-question-head [data-chip="edited"]')
   ).not.toBeNull();
+});
+
+const planCards = () => [
+  ...document.body.querySelectorAll<HTMLElement>(
+    'section[data-gate-ctx="thread"]'
+  ),
+];
+
+test('a reply pick on the plan sheet can be edited and answers with its text', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  expect(card.querySelector('[data-chip="edited"]')).not.toBeNull();
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-plan',
+    answers: {
+      'thread-1': {
+        value: 'reply:t1',
+        text: 'fixed in the next push, with a test.',
+      },
+      'thread-2': 'reply:t2',
+      'code-changes': 'skip',
+    },
+  });
+});
+
+test('a fix or skip pick offers no edit, and an edit made under reply is not sent after switching to fix', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('skip:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'an edit');
+  await pick('fix:t1');
+  expect(editButton(card)).toBeNull();
+  expect(editButton(planCards()[1]!)).toBeNull();
+  await clickSubmit();
+  expect(
+    (answer() as { answers: Record<string, unknown> }).answers['thread-1']
+  ).toBe('fix:t1');
+});
+
+test('the dock says what happens next on the plan sheet', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  expect($('.tui-sheet-dock-next')!.textContent).toBe('Next, 2 replies post.');
+  await pick('fix:t1');
+  expect($('.tui-sheet-dock-next')!.textContent).toBe(
+    'Next, 1 fix gets implemented, then you approve 1 reply before anything posts.'
+  );
+  await pick('skip:t1');
+  await pick('skip:t2');
+  expect($('.tui-sheet-dock-next')!.textContent).toBe('Next, nothing posts.');
+  expect(submit().textContent).toBe('submit · 2 skips');
+  await pick('fix:t1');
+  await pick('fix:t2');
+  expect(submit().textContent).toBe('submit · 2 fixes');
+});
+
+test('the plan dock waits for every thread to be picked before saying what comes next', async () => {
+  await render(planGate());
+  expect($('.tui-sheet-dock-next')).toBeNull();
+  await pick('reply:t1');
+  expect($('.tui-sheet-dock-next')).toBeNull();
+  await pick('reply:t2');
+  expect($('.tui-sheet-dock-next')!.textContent).toBe('Next, 2 replies post.');
+});
+
+const caption = (card: HTMLElement) =>
+  card.querySelector('.tui-thread-reply-k')!.textContent;
+
+test('a plan card shows only what will post: a fix pick shows the draft, and reply brings the edit back', async () => {
+  await render(planGate());
+  const card = planCards()[0]!;
+  expect(caption(card)).toBe('drafted reply');
+  await pick('reply:t1');
+  await pick('reply:t2');
+  expect(caption(card)).toBe('will post as reply');
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  await React.act(async () => button(card, 'done')!.click());
+  await pick('fix:t1');
+  expect(caption(card)).toBe('drafted reply');
+  expect(card.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'fixed, with a test.'
+  );
+  expect(card.querySelector('[data-chip="edited"]')).toBeNull();
+  await pick('reply:t1');
+  expect(caption(card)).toBe('will post as reply');
+  expect(card.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'fixed in the next push, with a test.'
+  );
+  expect(card.querySelector('[data-chip="edited"]')).not.toBeNull();
+});
+
+test('a held post-step reply is captioned as a draft, not as posting', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  expect(caption(reply)).toBe('will post as reply');
+  await React.act(async () => control(reply, 'hold')!.click());
+  expect(caption(reply)).toBe('drafted reply');
+});
+
+test('a fix pick beside an edited reply approves bare and wraps the reply', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('fix:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-plan',
+    answers: {
+      'thread-1': {
+        value: 'reply:t1',
+        text: 'fixed in the next push, with a test.',
+      },
+      'thread-2': 'fix:t2',
+      'code-changes': 'approve',
+    },
+  });
+});
+
+test('sending the plan back carries no edited text and stays live', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  await click($('.tui-sheet-revise'));
+  await typeArea('What should the new plan change?', 'split the fix');
+  expect(submit().disabled).toBe(false);
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-plan',
+    answers: {
+      'thread-1': 'reply:t1',
+      'thread-2': 'reply:t2',
+      'code-changes': { value: 'revise', note: 'split the fix' },
+    },
+  });
+});
+
+test('a revise answered in the dock sends no edited text and is not blocked by an emptied reply', async () => {
+  const gate = planGate();
+  gate.questions[2] = { ...gate.questions[2]!, options: ['approve', 'revise'] };
+  await render(gate);
+  await pick('reply:t1');
+  await pick('reply:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, '   ');
+  await pick('approve');
+  expect(submit().disabled).toBe(true);
+  expect(document.body.textContent).toContain(
+    'a reply is empty: write it or skip the thread'
+  );
+  await pick('revise');
+  expect(submit().disabled).toBe(false);
+  expect(document.body.textContent).not.toContain('a reply is empty:');
+  expect($('.tui-sheet-dock-next')).toBeNull();
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-plan',
+    answers: {
+      'thread-1': 'reply:t1',
+      'thread-2': 'reply:t2',
+      'code-changes': 'revise',
+    },
+  });
+});
+
+test('an emptied reply pick blocks submit with a reason; send-back mode ignores edits', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, '   ');
+  expect(submit().disabled).toBe(true);
+  expect(document.body.textContent).toContain(
+    'a reply is empty: write it or skip the thread'
+  );
+  await click($('.tui-sheet-revise'));
+  expect(document.body.textContent).not.toContain('a reply is empty');
+});
+
+async function editThenHold(card: HTMLElement) {
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'Kept on purpose.');
+  await React.act(async () => button(card, 'done')!.click());
+  await React.act(async () => control(card, 'hold')!.click());
+}
+
+test('a held post card shows the draft without the chip; post brings the edit back', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await editThenHold(reply);
+  expect(caption(reply)).toBe('drafted reply');
+  expect(reply.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'The delay is fixed by design.'
+  );
+  expect(reply.querySelector('[data-chip="edited"]')).toBeNull();
+  await React.act(async () => control(reply, 'post')!.click());
+  expect(caption(reply)).toBe('will post as reply');
+  expect(reply.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'Kept on purpose.'
+  );
+  expect(reply.querySelector('[data-chip="edited"]')).not.toBeNull();
+});
+
+test('without its plan gate, a held post card also shows the draft without the chip', async () => {
+  await render(perThreadPostGate());
+  const reply = postCards()[1]!;
+  await editThenHold(reply);
+  expect(reply.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'The delay is fixed by design.'
+  );
+  expect(reply.querySelector('[data-chip="edited"]')).toBeNull();
+  await React.act(async () => control(reply, 'post')!.click());
+  expect(reply.querySelector('[data-chip="edited"]')).not.toBeNull();
+});
+
+const dockNext = () => $('.tui-sheet-dock-next')!.textContent;
+
+test('a reply pick with a note is an override: you approve it at gate 2', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  await type('Note for queue/enqueue.ts:10', '  say which test  ');
+  expect(dockNext()).toBe('Next, you approve 1 reply before anything posts.');
+});
+
+test('a reply pick with an edit and a note posts its edit: a plain reply', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('skip:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  await type('Note for queue/enqueue.ts:10', 'say which test');
+  expect(dockNext()).toBe('Next, 1 reply posts.');
+});
+
+test('a reply pick on a thread with only a reply direction is an override', async () => {
+  const gate = planGate();
+  gate.questions[1] = {
+    ...gate.questions[1]!,
+    context: JSON.stringify({
+      'gate-ctx': 'thread@1',
+      author: 'renee',
+      severity: 'blocking',
+      claim: { summary: 'claim 2' },
+      verdict: { call: 'valid' },
+      reply: { kind: 'direction', text: 'say the retry is bounded now.' },
+    }),
+  };
+  await render(gate);
+  await pick('reply:t1');
+  await pick('reply:t2');
+  expect(dockNext()).toBe('Next, you approve 1 reply before anything posts.');
+  await pick('fix:t1');
+  expect(dockNext()).toBe(
+    'Next, 1 fix gets implemented, then you approve 2 replies before anything posts.'
+  );
+});
+
+const outcomeOf = (card: HTMLElement) =>
+  card.querySelector('[data-outcome]')!.textContent;
+
+test('a reply-only thread Gate 2 does not offer posts with this step: its draft, no controls', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const card = postCards()[3]!;
+  expect(outcomeOf(card)).toBe('reply · posts with this step');
+  expect(caption(card)).toBe('will post as reply');
+  expect(card.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'fixed, with a test.'
+  );
+  expect(card.querySelector('input')).toBeNull();
+  expect(card.querySelector('[data-chip="edited"]')).toBeNull();
+  expect(card.textContent).not.toContain('Nothing to post');
+});
+
+test('a reply-only thread edited at Gate 1 shows its edit and the edited chip', async () => {
+  await render(
+    perThreadPostGate(),
+    withFixPlan('fixed in the next push, with a test.')
+  );
+  const card = postCards()[3]!;
+  expect(outcomeOf(card)).toBe('reply · posts with this step');
+  expect(card.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'fixed in the next push, with a test.'
+  );
+  expect(
+    card.querySelector('[data-chip="edited"]')!.getAttribute('data-hue')
+  ).toBe('grey');
+});
+
+test('a reply override is offered at Gate 2 with its redraft and its controls', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const card = postCards()[1]!;
+  expect(outcomeOf(card)).toBe('reply only');
+  expect(card.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'The delay is fixed by design.'
+  );
+  expect(control(card, 'post')!.checked).toBe(true);
+  expect(control(card, 'resolve')!.checked).toBe(false);
+});
+
+test('holding everything with no reply-only thread still reads hold all', async () => {
+  await render(perThreadPostGate());
+  const [fix, reply] = postCards();
+  await React.act(async () => control(fix!, 'hold')!.click());
+  await React.act(async () => control(fix!, 'resolve')!.click());
+  await React.act(async () => control(reply!, 'hold')!.click());
+  expect(submit().textContent).toBe('hold all');
+});
+
+test('the plan dock says nothing about what comes next while a reply is empty', async () => {
+  await render(planGate());
+  await pick('reply:t1');
+  await pick('reply:t2');
+  const card = planCards()[0]!;
+  await React.act(async () => editButton(card)!.click());
+  await typeInto(replyBox(card)!, '   ');
+  await type('Note for queue/enqueue.ts:10', 'say which test');
+  expect($('.tui-sheet-dock-next')).toBeNull();
+  await typeInto(replyBox(card)!, 'fixed in the next push, with a test.');
+  expect(dockNext()).toBe('Next, 2 replies post.');
+});
+
+const repliesChip = () => $('[data-chip="replies"]')!.textContent;
+
+test('on a per-thread post sheet the rail counts the replies this submit posts', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  expect(repliesChip()).toBe('3 replies');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('3 of 3 posting');
+  await React.act(async () => control(postCards()[1]!, 'hold')!.click());
+  expect(repliesChip()).toBe('2 replies');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('2 of 3 posting');
+  expect(submit().textContent).toBe('post 2 · resolve 1');
+});
+
+test('a post sheet flattened to prose counts the replies its submit posts in the rail', async () => {
+  await render(prosePostGate());
+  expect(repliesChip()).toBe('2 replies');
+  await React.act(async () => control(postCards()[1]!, 'hold')!.click());
+  expect(repliesChip()).toBe('1 reply');
+  expect(submit().textContent).toBe('post 1 · resolve 1');
+});
+
+test('a prose-flattened post gate still counts the plan reply-only thread: holding the fix reads post 1', async () => {
+  const gate = prosePostGate();
+  gate.questions = [gate.questions[0]!];
+  const plan = answeredPlan();
+  plan.answers = {
+    'thread-1': 'fix:r1',
+    'thread-2': 'reply:r2',
+    'thread-3': 'skip:r3',
+  };
+  await render(gate, { ...MR, gates: [plan] } as unknown as BoardMRWithReview);
+  expect(repliesChip()).toBe('2 replies');
+  const fix = postCards()[0]!;
+  await React.act(async () => control(fix, 'hold')!.click());
+  await React.act(async () => control(fix, 'resolve')!.click());
+  expect(submit().textContent).toBe('post 1');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('1 of 2 posting');
+  expect(repliesChip()).toBe('1 reply');
+});
+
+test('a replies checklist joined to its plan counts a reply-only thread in the rail, the tally and the submit', async () => {
+  const plan = answeredPlan();
+  plan.answers = { ...plan.answers, 'thread-3': 'reply:r3' };
+  await render(postGate(), {
+    ...MR,
+    gates: [plan],
+  } as unknown as BoardMRWithReview);
+  expect(repliesChip()).toBe('3 replies');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('3 of 3 posting');
+  expect(submit().textContent).toBe('post 3');
+  await holdAll();
+  expect(repliesChip()).toBe('1 reply');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('1 of 3 posting');
+  expect(submit().textContent).toBe('post 1');
+});
+
+test('a newer plan gate still open is never the one a post gate follows', async () => {
+  const gate = prosePostGate();
+  gate.questions = [gate.questions[0]!];
+  const answered = answeredPlan();
+  answered.openedAt = Date.now() - 180_000;
+  answered.answers = {
+    'thread-1': 'fix:r1',
+    'thread-2': 'reply:r2',
+    'thread-3': 'skip:r3',
+  };
+  await render(gate, {
+    ...MR,
+    gates: [answered, { ...planGate(), gateId: 'g-plan-next' }],
+  } as unknown as BoardMRWithReview);
+  expect(repliesChip()).toBe('2 replies');
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('2 of 2 posting');
+});
+
+/** A prose-flattened Gate 2 offering only the fix, after a plan whose
+    Gate 1 reply-only thread (r2) posts with this step. */
+async function renderProseWithReplyOnly(
+  thread2: Partial<GateRow['questions'][number]> = {},
+  answer2: NonNullable<GateRow['answers']>[string] = 'reply:r2'
+) {
+  const gate = prosePostGate();
+  gate.questions = [gate.questions[0]!];
+  const plan = answeredPlan();
+  plan.questions = [
+    plan.questions[0]!,
+    { ...plan.questions[1]!, ...thread2 },
+    plan.questions[2]!,
+  ];
+  plan.answers = {
+    'thread-1': 'fix:r1',
+    'thread-2': answer2,
+    'thread-3': 'skip:r3',
+  };
+  await render(gate, { ...MR, gates: [plan] } as unknown as BoardMRWithReview);
+}
+
+const dockRows = () =>
+  [
+    ...document.body.querySelectorAll(
+      '[data-card="responses"] .tui-sheet-card-row'
+    ),
+  ].map(r => r.textContent);
+
+test('a prose-flattened post sheet shows the Gate 1 reply-only thread as a card, a dock row and in its title', async () => {
+  await renderProseWithReplyOnly();
+  expect($('.tui-sheet-list-title')!.textContent).toBe(
+    'Post replies on 2 threads'
+  );
+  const cards = postCards();
+  expect(cards.map(c => c.getAttribute('aria-label'))).toEqual([
+    'a.ts:1',
+    'b.ts:2',
+  ]);
+  const replyOnly = cards[1]!;
+  expect(outcomeOf(replyOnly)).toBe('reply · posts with this step');
+  expect(replyOnly.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'fixed, with a test.'
+  );
+  expect(replyOnly.querySelector('input')).toBeNull();
+  expect(dockRows()).toEqual(['postresolvea.ts:1', 'postb.ts:2']);
+  const fix = cards[0]!;
+  await React.act(async () => control(fix, 'hold')!.click());
+  await React.act(async () => control(fix, 'resolve')!.click());
+  expect(dockRows()).toEqual(['holda.ts:1', 'postb.ts:2']);
+  expect($('.tui-sheet-list-tally')!.textContent).toBe('1 of 2 posting');
+  expect(submit().textContent).toBe('post 1');
+  expect(repliesChip()).toBe('1 reply');
+});
+
+test('with the plan context flattened too, the reply-only card shows the Gate 1 edit, or says it was approved there', async () => {
+  await renderProseWithReplyOnly(
+    { context: 'b.ts:2 REPLY: fixed, with a test.' },
+    { value: 'reply:r2', text: 'kept on purpose.' }
+  );
+  const edited = postCards()[1]!;
+  expect(outcomeOf(edited)).toBe('reply · posts with this step');
+  expect(edited.querySelector('.tui-thread-reply-text')!.textContent).toBe(
+    'kept on purpose.'
+  );
+  expect(edited.querySelector('[data-chip="edited"]')).not.toBeNull();
+  await React.act(async () => root.unmount());
+  root = createRoot(container);
+  await renderProseWithReplyOnly({
+    context: 'b.ts:2 REPLY: fixed, with a test.',
+  });
+  const bare = postCards()[1]!;
+  expect(bare.textContent).toContain(
+    'Approved at Gate 1; posts with this step.'
+  );
+  expect(bare.querySelector('[data-chip="edited"]')).toBeNull();
+  expect(bare.querySelector('input')).toBeNull();
+});
+
+test('an unjoined replies checklist counts its ticked replies in the rail, as its submit does', async () => {
+  await render(postGate());
+  await pick('r1');
+  await pick('r2');
+  expect(repliesChip()).toBe('2 replies');
+  expect(submit().textContent).toBe('post 2');
+  await pick('r1');
+  expect(repliesChip()).toBe('1 reply');
+  expect(submit().textContent).toBe('post 1');
+});
+
+test('on a prose-flattened post sheet, a reply-only thread keeps its plan place before a later fix', async () => {
+  const gate = perThreadPostGate();
+  gate.context = "Posting replies to renee's review · 1 reply";
+  gate.questions = [
+    { ...gate.questions[1]!, context: 'b.ts:2 FIX · ab12cd3: Fixed.' },
+  ];
+  const plan = answeredPlan();
+  plan.answers = {
+    'thread-1': 'reply:r1',
+    'thread-2': 'fix:r2',
+    'thread-3': 'skip:r3',
+  };
+  await render(gate, { ...MR, gates: [plan] } as unknown as BoardMRWithReview);
+  expect(postCards().map(c => c.getAttribute('aria-label'))).toEqual([
+    'a.ts:1',
+    'b.ts:2',
+  ]);
+  expect(outcomeOf(postCards()[0]!)).toBe('reply · posts with this step');
+  expect(dockRows()).toEqual(['posta.ts:1', 'postb.ts:2']);
 });

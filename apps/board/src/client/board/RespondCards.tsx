@@ -105,10 +105,10 @@ function ThreadCard({
   );
 }
 
-/** A post-step reply the developer may rewrite before it posts: the draft
-    at rest, an auto-growing box while editing. `value` is the edit, absent
-    when there is none; `canEdit` is false while the thread is held, which
-    also closes an open box. */
+/** A reply the developer may rewrite before it posts: the draft at rest,
+    an auto-growing box while editing. `value` is the edit, absent when
+    there is none; `canEdit` is false while the thread will not post this
+    reply (held, or picked fix or skip), which also closes an open box. */
 function EditableReply({
   label,
   draft,
@@ -154,7 +154,9 @@ function EditableReply({
   }, [open, ref]);
   return (
     <div className="tui-thread-reply" data-kind="verbatim">
-      <span className="tui-thread-reply-k">will post as reply</span>
+      <span className="tui-thread-reply-k">
+        {canEdit ? 'will post as reply' : 'drafted reply'}
+      </span>
       {open ? (
         <textarea
           ref={ref}
@@ -226,7 +228,7 @@ function EditableReply({
   );
 }
 
-/** A post-step card head's mark that its reply no longer reads as drafted. */
+/** A thread card head's mark that its reply no longer reads as drafted. */
 function EditedChip() {
   return (
     <span
@@ -252,11 +254,24 @@ const OUTCOME_TEXT = {
 function ThreadOutcome({
   verb,
   held = false,
+  withStep = false,
 }: {
   verb: 'reply' | 'fix' | 'skip';
   /** The plan picked a reply or fix, but this gate has nothing to post. */
   held?: boolean;
+  /** A Gate 1 reply this gate does not offer, which posts once it proceeds. */
+  withStep?: boolean;
 }) {
+  if (withStep)
+    return (
+      <span
+        className="tui-respond-chip tui-thread-outcome"
+        data-hue={OUTCOME_HUE.reply}
+        data-outcome="reply-with-step"
+      >
+        reply · posts with this step
+      </span>
+    );
   const heldBack = held && verb !== 'skip';
   return (
     <span
@@ -311,6 +326,7 @@ function ReplyChoiceBody({
 export {
   EditableReply,
   EditedChip,
+  ReplyBlock,
   ReplyChoiceBody,
   SeverityPill,
   ThreadCard,

@@ -917,6 +917,108 @@
           ]
         },
         {
+          "gateId": "gate-respond-plan-1235-r1",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-plan",
+          "label": "respond gate !1235",
+          "status": "answered",
+          "openedAt": 1755603300000,
+          "answeredAt": 1755603360000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":1,\"threads\":{\"total\":3,\"blocking\":1},\"adjudication\":\"all valid · fresh-context adjudicated\"}",
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"blocking\",\"claim\":{\"summary\":\"The temperature factor is applied twice when the panel re-renders with a cached score.\",\"points\":[\"`scoreFor()` already multiplies by the factor, and the panel multiplies again\",\"a cached score of 0.8 renders as 0.64 after one refresh\"]},\"verdict\":{\"call\":\"valid\",\"note\":\"reproduced against the checkout with a cached score\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}}",
+              "options": [
+                {
+                  "value": "reply:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "reply",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "fix (recommended)",
+                  "description": "drop the second multiply in panel.tsx and add a cached-score render test"
+                },
+                {
+                  "value": "skip:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"non-blocking\",\"claim\":{\"summary\":\"Could the factor's default live in settings instead of a constant?\"},\"verdict\":{\"call\":\"valid-low-value\",\"note\":\"reasonable, but no second caller needs it yet\"},\"reply\":{\"kind\":\"direction\",\"text\":\"Agree it could; keep the constant until a second caller appears, and say so.\"}}",
+              "options": [
+                {
+                  "value": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "reply (recommended)",
+                  "description": "answer with the direction above, no code change"
+                },
+                {
+                  "value": "fix:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "fix",
+                  "description": "move the default into settings now"
+                },
+                {
+                  "value": "skip:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-3",
+              "label": "highlights/legend.tsx:31",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"question\",\"claim\":{\"summary\":\"Is the legend meant to say \\\"score\\\" while the panel shows the factored value?\"},\"verdict\":{\"call\":\"valid\",\"note\":\"a naming question, no code change needed\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Yes: the legend names the metric, and the tooltip beside it explains the factor.\"}}",
+              "options": [
+                {
+                  "value": "reply:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "reply (recommended)",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "fix",
+                  "description": "rename the legend to match the panel"
+                },
+                {
+                  "value": "skip:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ],
+          "answers": {
+            "thread-1": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+            "thread-2": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+            "thread-3": {
+              "value": "reply:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+              "text": "Yes, on purpose: the legend names the metric, and the tooltip beside it explains the factor."
+            },
+            "code-changes": "approve"
+          }
+        },
+        {
           "gateId": "gate-respond-plan-1235",
           "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
           "kind": "respond-plan",
@@ -929,7 +1031,7 @@
             "tabId": "w18:t1",
             "worktree": "webapp"
           },
-          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":1,\"threads\":{\"total\":2,\"blocking\":1},\"adjudication\":\"both valid · fresh-context adjudicated\"}",
+          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":2,\"threads\":{\"total\":2,\"blocking\":1},\"adjudication\":\"both valid · fresh-context adjudicated\"}",
           "questions": [
             {
               "id": "thread-1",

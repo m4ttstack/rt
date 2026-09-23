@@ -26,9 +26,18 @@ import { AnsweredChip, type GateFormState } from './GateForm.tsx';
 import { MrCard } from './MrCard.tsx';
 import { forgeNoun } from './MrLinks.tsx';
 import { PersonLead, PersonTag } from './PersonLead.tsx';
-import { joinPlan, type JoinedThread } from './respond-join.ts';
 import {
+  joinPlan,
+  planThreadOrder,
+  replyOnlyThreads,
+  type JoinedThread,
+  type StepReply,
+} from './respond-join.ts';
+import {
+  editedText,
   isEdited,
+  planReplies,
+  planTexts,
   postPicks,
   postTally,
   postTexts,
@@ -37,6 +46,7 @@ import {
 import {
   EditableReply,
   EditedChip,
+  ReplyBlock,
   ReplyChoiceBody,
   SeverityPill,
   ThreadCard,
@@ -53,8 +63,8 @@ import {
     `answersFromForm` builds it from a form: only a displayed single-select
     counts (a hidden code-changes pick is stale and yields to the
     sentinel), every multi submits an array, a trimmed note wraps its
-    question's value, and an edited posting thread's trimmed text rides
-    alongside as `text`. Null while any required question is unanswered. */
+    question's value, and an edited reply's trimmed text rides alongside as
+    `text`. Null while any required question is unanswered. */
 function sheetAnswers(
   gate: GateRow,
   shown: Set<string>,
@@ -258,7 +268,9 @@ function PostChoice({
 
 /** A post-step thread drawn with its plan-step card; `children` are the
     controls for what this gate does with its reply. `reply`, when given,
-    draws the reply in place of the card's read-only one. */
+    draws the reply in place of the card's read-only one. A reply-only
+    thread takes no controls: Gate 1 decided it, and it posts with this
+    step. */
 function PostStepCard({
   j,
   edited = false,
@@ -280,10 +292,14 @@ function PostStepCard({
       <div className="tui-gate-question-head">
         <span className="tui-gate-question-label">{j.label}</span>
         <SeverityPill severity={j.thread.severity} />
-        {(j.reply ?? j.decided) && (
-          <ThreadOutcome verb={j.reply?.verb ?? j.decided!} held={!j.reply} />
+        {j.replyOnly ? (
+          <ThreadOutcome verb="reply" withStep />
+        ) : (
+          (j.reply ?? j.decided) && (
+            <ThreadOutcome verb={j.reply?.verb ?? j.decided!} held={!j.reply} />
+          )
         )}
-        {edited && <EditedChip />}
+        {(edited || j.replyOnly?.edited) && <EditedChip />}
       </div>
       <ThreadCard
         ctx={{
@@ -291,16 +307,64 @@ function PostStepCard({
           reply:
             j.reply && !reply
               ? { kind: 'verbatim', text: j.reply.text }
-              : { kind: 'none' },
+              : j.replyOnly
+                ? { kind: 'verbatim', text: j.replyOnly.text }
+                : { kind: 'none' },
         }}
       >
         {reply}
       </ThreadCard>
-      {j.reply ? (
-        children
-      ) : (
-        <p className="tui-thread-nothing">Nothing to post for this thread.</p>
-      )}
+      {j.reply
+        ? children
+        : !j.replyOnly && (
+            <p className="tui-thread-nothing">
+              Nothing to post for this thread.
+            </p>
+          )}
+    </section>
+  );
+}
+
+/** A Gate 1 reply-only thread on a post sheet that could not be joined to
+    its plan card by card: the joined card when the plan card still parses
+    and the text is known, else a plain card with the text or a line saying
+    Gate 1 approved it. No controls either way. */
+function StepReplyCard({ s }: { s: StepReply }) {
+  if (s.thread && s.text !== undefined)
+    return (
+      <PostStepCard
+        j={{
+          threadId: s.threadId,
+          label: s.label,
+          thread: s.thread,
+          decided: 'reply',
+          replyOnly: { text: s.text, edited: s.edited },
+        }}
+      >
+        {null}
+      </PostStepCard>
+    );
+  return (
+    <section
+      className="tui-gate-question"
+      data-gate-ctx="thread"
+      data-step="post"
+      aria-label={s.label}
+    >
+      <div className="tui-gate-question-head">
+        <span className="tui-gate-question-label">{s.label}</span>
+        <ThreadOutcome verb="reply" withStep />
+        {s.edited && <EditedChip />}
+      </div>
+      <div className="tui-thread-card">
+        {s.text !== undefined ? (
+          <ReplyBlock text={s.text} />
+        ) : (
+          <p className="tui-thread-nothing">
+            Approved at Gate 1; posts with this step.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -391,6 +455,8 @@ function PostResolveChoice({
 
 const VERB_ORDER = ['fix', 'reply', 'skip'] as const;
 
+const VERB_PLURAL = { fix: 'fixes', reply: 'replies', skip: 'skips' } as const;
+
 const VERB_INTENT = {
   fix: 'accent',
   reply: 'ok',
@@ -434,19 +500,28 @@ function reviseAnswers(
 
 type RowChip = { text: string; intent: 'ok' | 'muted' | 'accent' } | null;
 
-/** One line per thread (or reply) with what the submit will do with it,
-    filled in as picks are made; it sits in the dock above the submit. */
+type ResponseRow = { key: string; text: string; chips: RowChip[] };
 
+/** A thread in plan order for the dock rows: one this gate offers, or one
+    that posts with this step on Gate 1's word. */
+type RowThread = { threadId: string; label: string; postsWithStep: boolean };
+
+/** One line per thread (or reply) with what the submit will do with it,
+    filled in as picks are made; it sits in the dock above the submit. Given
+    `plan`, rows follow that plan order and a reply-only thread gets its own
+    `post` row, since it posts with this step. */
 function ResponseRows({
   mainQs,
   picks,
   form,
+  plan,
 }: {
   mainQs: GateItemDisplay[];
   picks: PostPick[];
   form: GateFormState;
+  plan?: RowThread[] | null;
 }) {
-  const rows = mainQs.flatMap(q => {
+  const offered: ResponseRow[] = mainQs.flatMap(q => {
     const v = form.selections[q.name];
     const pick = picks.find(p => p.name === q.name);
     if (pick) {
@@ -488,6 +563,28 @@ function ResponseRows({
       },
     ];
   });
+  const checklist = mainQs.find(
+    q => q.multiple && !picks.some(p => p.name === q.name)
+  );
+  const rows = plan
+    ? plan.flatMap((j): ResponseRow[] => {
+        const pick = picks.find(p => p.threadId === j.threadId);
+        const key = pick
+          ? pick.name
+          : checklist && `${checklist.name}:${j.threadId}`;
+        const row = key ? offered.find(r => r.key === key) : undefined;
+        if (row) return [row];
+        if (!j.postsWithStep) return [];
+        const post: RowChip = { text: 'post', intent: 'ok' };
+        return [
+          {
+            key: `with-step:${j.threadId}`,
+            text: j.label,
+            chips: picks.length > 0 ? [post, null] : [post],
+          },
+        ];
+      })
+    : offered;
   return (
     <div className="tui-sheet-card-list" data-card="responses">
       {rows.map(r => (
@@ -639,6 +736,10 @@ function RespondSheetBody({
     [ctx.shape, gate.questions]
   );
   const perThread = picks.length > 0;
+  const planReplyList = useMemo(
+    () => (plan ? planReplies(gate.questions) : []),
+    [plan, gate.questions]
+  );
   const codeChanges = gate.questions.find(
     q => q.id === CODE_CHANGES_QUESTION_ID
   );
@@ -666,7 +767,14 @@ function RespondSheetBody({
     else delete submitSelections[CODE_CHANGES_QUESTION_ID];
   }
   const shown = new Set(form.display.map(q => q.name));
-  const edits = postTexts(picks, form.selections, form.texts);
+  // A revise answered in the dock re-plans: no reply posts, so no edit rides
+  // and an emptied one cannot block it.
+  const dockRevise = submitSelections[CODE_CHANGES_QUESTION_ID] === 'revise';
+  const edits = dockRevise
+    ? {}
+    : plan
+      ? planTexts(planReplyList, form.selections, form.texts)
+      : postTexts(picks, form.selections, form.texts);
   const payload = revising
     ? reason.trim()
       ? reviseAnswers(gate, form.selections, form.notes, reason)
@@ -675,15 +783,31 @@ function RespondSheetBody({
       ? null
       : sheetAnswers(gate, shown, submitSelections, form.notes, edits);
 
+  const replyPicks = mainQs.filter(q => {
+    const v = form.selections[q.name];
+    return !q.multiple && typeof v === 'string' && v.startsWith('reply:');
+  });
+  // A reply the developer has not read word for word (no verbatim draft), or
+  // whose note may change it, is redrafted and approved at gate 2 like a fix;
+  // an edited reply posts its text as written.
+  const sentTexts = edits ?? {};
+  const overrides = replyPicks.filter(
+    q =>
+      sentTexts[q.name] === undefined &&
+      (!planReplyList.some(r => r.name === q.name) ||
+        (form.notes[q.name] ?? '').trim() !== '')
+  ).length;
+  const replyCount = replyPicks.length - overrides;
   const threadsDecided = mainQs.filter(
     q => !q.multiple && typeof form.selections[q.name] === 'string'
   ).length;
+  const allDecided = threadsDecided === mainQs.filter(q => !q.multiple).length;
   const tally = VERB_ORDER.map(verb => {
     const n = mainQs.filter(q => {
       const v = form.selections[q.name];
       return typeof v === 'string' && v.startsWith(`${verb}:`);
     }).length;
-    return n > 0 ? `${n} ${verb}` : null;
+    return n > 0 ? `${n} ${n === 1 ? verb : VERB_PLURAL[verb]}` : null;
   }).filter(Boolean);
   const repliesQ = perThread ? undefined : mainQs.find(q => q.multiple);
   const repliesPicked = repliesQ
@@ -737,14 +861,20 @@ function RespondSheetBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gate.gateId, picks.length]);
   const { posting, resolving } = postTally(picks, form.selections);
-  const editableReply = (p: PostPick) => {
+  // A held thread keeps its edit in the form but shows the draft, so the card
+  // shows only what will post.
+  const postingPick = (p: PostPick) => {
     const v = form.selections[p.name];
+    return Array.isArray(v) && v.includes(p.post);
+  };
+  const editableReply = (p: PostPick) => {
+    const live = postingPick(p);
     return (
       <EditableReply
         label={p.label}
         draft={p.reply!.text}
-        value={form.texts[p.name]}
-        canEdit={Array.isArray(v) && v.includes(p.post)}
+        value={live ? form.texts[p.name] : undefined}
+        canEdit={live}
         onChange={text => form.setText(p.name, text)}
         onReset={() => form.clearText(p.name)}
       />
@@ -753,17 +883,80 @@ function RespondSheetBody({
   const pickNames = new Set(picks.map(p => p.name));
   const displayOf = (name: string) => form.display.find(q => q.name === name);
   const postThreads = joined ?? threadJoin;
+  const stepThreads =
+    !postThreads && ctx.shape === 'post@1' && perThread
+      ? replyOnlyThreads(
+          ctx,
+          picks.map(p => p.threadId),
+          mr
+        )
+      : [];
+  const withStep = postThreads
+    ? postThreads.filter(j => j.replyOnly).length
+    : stepThreads.length;
+  const planRank = new Map(
+    (stepThreads.length > 0 && ctx.shape === 'post@1'
+      ? planThreadOrder(ctx, mr)
+      : []
+    ).map((id, i) => [id, i])
+  );
+  const rank = (id: string) => planRank.get(id) ?? planRank.size;
+  // Offered and reply-only threads interleave in plan question order; with
+  // no reply-only thread every rank ties and the offered order stands.
+  const proseItems: Array<
+    { threadId: string; label: string } & (
+      { pick: PostPick } | { step: StepReply }
+    )
+  > = [
+    ...picks.map(pick => ({
+      threadId: pick.threadId,
+      label: pick.label,
+      pick,
+    })),
+    ...stepThreads.map(step => ({
+      threadId: step.threadId,
+      label: step.label,
+      step,
+    })),
+  ].sort((a, b) => rank(a.threadId) - rank(b.threadId));
+  const rowThreads: RowThread[] | null = postThreads
+    ? postThreads.map(j => ({
+        threadId: j.threadId,
+        label: j.label,
+        postsWithStep: !!j.replyOnly,
+      }))
+    : stepThreads.length > 0
+      ? proseItems.map(item => ({
+          threadId: item.threadId,
+          label: item.label,
+          postsWithStep: 'step' in item,
+        }))
+      : null;
+  const listCount = postThreads?.length ?? picks.length + stepThreads.length;
   const dockPick = dockQs
     .map(q => {
       const v = form.selections[q.name];
       return q.choices.find(c => c.value === v)?.label;
     })
     .find(Boolean);
-  const nextStep = !plan
-    ? null
-    : fixes > 0
-      ? `Next, ${fixes} ${fixes === 1 ? 'fix gets' : 'fixes get'} implemented, then you approve the replies before anything posts.`
-      : 'Next, you approve the replies before anything posts.';
+  const replyNoun = (n: number) => (n === 1 ? '1 reply' : `${n} replies`);
+  const nextStep =
+    !plan || !allDecided || dockRevise || edits === null
+      ? null
+      : fixes > 0
+        ? `Next, ${fixes} ${fixes === 1 ? 'fix gets' : 'fixes get'} implemented, then you approve ${replyNoun(fixes + overrides)} before anything posts.`
+        : overrides > 0
+          ? `Next, you approve ${replyNoun(overrides)} before anything posts.`
+          : replyCount > 0
+            ? `Next, ${replyCount} ${replyCount === 1 ? 'reply posts' : 'replies post'}.`
+            : 'Next, nothing posts.';
+  // The rail's reply count is the submit's own on every post sheet, so the
+  // two never disagree.
+  const railPosting = perThread
+    ? posting + withStep
+    : repliesQ
+      ? repliesPicked + withStep
+      : undefined;
   const submitLabel = form.busy
     ? 'submitting…'
     : revising
@@ -773,7 +966,7 @@ function RespondSheetBody({
         : perThread
           ? [
               [
-                posting > 0 ? `post ${posting}` : null,
+                posting + withStep > 0 ? `post ${posting + withStep}` : null,
                 resolving > 0 ? `resolve ${resolving}` : null,
               ]
                 .filter(Boolean)
@@ -782,7 +975,9 @@ function RespondSheetBody({
             ]
               .filter(Boolean)
               .join(' · ')
-          : [`post ${repliesPicked}`, dockPick].filter(Boolean).join(' · ');
+          : [`post ${repliesPicked + withStep}`, dockPick]
+              .filter(Boolean)
+              .join(' · ');
 
   return (
     <div className="tui-sheet-body">
@@ -791,10 +986,8 @@ function RespondSheetBody({
           <span className="tui-sheet-list-title">
             {postThreads || perThread ? (
               <>
-                Post replies on {postThreads?.length ?? picks.length}{' '}
-                {(postThreads?.length ?? picks.length) === 1
-                  ? 'thread'
-                  : 'threads'}
+                Post replies on {listCount}{' '}
+                {listCount === 1 ? 'thread' : 'threads'}
                 {frame === undefined && (
                   <>
                     {' '}
@@ -821,9 +1014,9 @@ function RespondSheetBody({
           </span>
           <span className="tui-sheet-list-tally">
             {perThread
-              ? `${posting} of ${picks.length} posting`
+              ? `${posting + withStep} of ${picks.length + withStep} posting`
               : joined
-                ? `${repliesPicked} of ${postable.length} posting`
+                ? `${repliesPicked + withStep} of ${postable.length + withStep} posting`
                 : repliesQ
                   ? `${repliesPicked} of ${repliesQ.choices.length} selected`
                   : `${threadsDecided} of ${mainQs.length} decided`}
@@ -837,14 +1030,26 @@ function RespondSheetBody({
                   <PostStepCard
                     key={j.threadId}
                     j={j}
-                    edited={pick ? isEdited(pick, form.texts) : false}
+                    edited={
+                      pick
+                        ? postingPick(pick) && isEdited(pick, form.texts)
+                        : false
+                    }
                     reply={pick?.reply ? editableReply(pick) : undefined}
                   >
                     {pick && <PostResolveChoice pick={pick} form={form} />}
                   </PostStepCard>
                 );
               })
-            : picks.map(p => {
+            : proseItems.map(item => {
+                if ('step' in item)
+                  return (
+                    <StepReplyCard
+                      key={`with-step:${item.threadId}`}
+                      s={item.step}
+                    />
+                  );
+                const p = item.pick;
                 const display = displayOf(p.name);
                 return (
                   <section
@@ -857,7 +1062,9 @@ function RespondSheetBody({
                     <div className="tui-gate-question-head">
                       <span className="tui-gate-question-label">{p.label}</span>
                       {p.reply && <ThreadOutcome verb={p.reply.verb} />}
-                      {isEdited(p, form.texts) && <EditedChip />}
+                      {postingPick(p) && isEdited(p, form.texts) && (
+                        <EditedChip />
+                      )}
                     </div>
                     {p.reply ? (
                       <div className="tui-thread-card">{editableReply(p)}</div>
@@ -877,6 +1084,8 @@ function RespondSheetBody({
             .filter(q => !pickNames.has(q.name))
             .map(q => {
               const qctx = questionCtx.get(q.name);
+              const pr = planReplyList.find(r => r.name === q.name);
+              const replying = !!pr && form.selections[q.name] === pr.value;
               if (!q.multiple)
                 return (
                   <section
@@ -894,8 +1103,24 @@ function RespondSheetBody({
                       {qctx?.shape === 'thread@1' && (
                         <SeverityPill severity={qctx.severity} />
                       )}
+                      {pr &&
+                        replying &&
+                        editedText(q.name, pr.draft, form.texts) && (
+                          <EditedChip />
+                        )}
                     </div>
-                    {qctx?.shape === 'thread@1' ? (
+                    {qctx?.shape === 'thread@1' && pr ? (
+                      <ThreadCard ctx={{ ...qctx, reply: { kind: 'none' } }}>
+                        <EditableReply
+                          label={q.prompt}
+                          draft={pr.draft}
+                          value={replying ? form.texts[q.name] : undefined}
+                          canEdit={replying}
+                          onChange={t => form.setText(q.name, t)}
+                          onReset={() => form.clearText(q.name)}
+                        />
+                      </ThreadCard>
+                    ) : qctx?.shape === 'thread@1' ? (
                       <ThreadCard ctx={qctx} />
                     ) : (
                       <ProseContext q={q} structured={qctx != null} />
@@ -989,7 +1214,7 @@ function RespondSheetBody({
                   </p>
                 )}
                 <div className="tui-respond-chips">
-                  {headerChips(ctx).map(chip => (
+                  {headerChips(ctx, railPosting).map(chip => (
                     <span
                       key={chip.key}
                       className="tui-respond-chip"
@@ -1038,7 +1263,12 @@ function RespondSheetBody({
                 />
               ) : (
                 <>
-                  <ResponseRows mainQs={mainQs} picks={picks} form={form} />
+                  <ResponseRows
+                    mainQs={mainQs}
+                    picks={picks}
+                    form={form}
+                    plan={rowThreads}
+                  />
                   {nextStep && (
                     <p className="tui-sheet-dock-next">{nextStep}</p>
                   )}
@@ -1076,9 +1306,11 @@ function RespondSheetBody({
                   send the plan back for revision
                 </button>
               )}
-              {edits === null && (
+              {!revising && edits === null && (
                 <span className="tui-gate-error">
-                  a reply is empty: write it or hold the thread
+                  {plan
+                    ? 'a reply is empty: write it or skip the thread'
+                    : 'a reply is empty: write it or hold the thread'}
                 </span>
               )}
               {form.failed && (

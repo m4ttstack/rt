@@ -54,8 +54,10 @@ const VERB_PLURALS: Record<string, string> = {
 
 /** "1 fix" / "2 replies" per verb for an all-verb-shaped multi answer, with
     skips left unsaid unless nothing else was chosen; null when any value is
-    not verb-shaped (the caller then lists labels instead). */
-function verbCounts(values: string[]): string | null {
+    not verb-shaped (the caller then lists labels instead). `edited` appends
+    " (N edited)" to the reply part only, for callers that count edited
+    single-select reply answers; the chip's own callers pass none. */
+function verbCounts(values: string[], edited = 0): string | null {
   const counts = new Map<string, number>();
   for (const v of values) {
     const m = VERB_VALUE.exec(v);
@@ -65,8 +67,12 @@ function verbCounts(values: string[]): string | null {
   const parts: string[] = [];
   for (const [verb, count] of counts) {
     if (verb === 'skip') continue;
+    const label =
+      count === 1
+        ? `1 ${verb}`
+        : `${count} ${VERB_PLURALS[verb] ?? `${verb}s`}`;
     parts.push(
-      count === 1 ? `1 ${verb}` : `${count} ${VERB_PLURALS[verb] ?? `${verb}s`}`
+      verb === 'reply' && edited > 0 ? `${label} (${edited} edited)` : label
     );
   }
   return parts.length > 0 ? parts.join(', ') : 'all skipped';
@@ -140,18 +146,25 @@ function compactOutcome(
   const slots: OutcomeSlot[] =
     pairSummary === null ? [] : [{ text: pairSummary }];
   const verbs: string[] = [];
+  let editedReplies = 0;
   const nouns = new Map<string, number>();
   for (const q of questions) {
     if (pairs.includes(q)) continue;
     const raw = answers?.[q.id];
     if (raw === undefined && !(q.multi && q.options.length === 0)) continue;
-    const value = raw === undefined ? [] : unwrapGateAnswer(raw).value;
+    const unwrapped = raw === undefined ? null : unwrapGateAnswer(raw);
+    const value = unwrapped === null ? [] : unwrapped.value;
     const values = Array.isArray(value) ? value : [value];
     const picked = values.filter(v => VERB_VALUE.test(v));
     const plain = values.filter(v => !VERB_VALUE.test(v));
     if (picked.length > 0 && verbs.length === 0) slots.push({ verbs: true });
     verbs.push(...picked);
     if (!q.multi) {
+      if (
+        unwrapped?.text !== undefined &&
+        picked.some(v => v.startsWith('reply:'))
+      )
+        editedReplies++;
       for (const v of plain)
         slots.push({ text: displayForValue(v, q.options).text });
       continue;
@@ -167,7 +180,8 @@ function compactOutcome(
   let nothingPosted = false;
   for (const slot of slots) {
     if ('text' in slot) parts.push(slot.text);
-    else if ('verbs' in slot) parts.push(verbCounts(verbs) ?? 'all skipped');
+    else if ('verbs' in slot)
+      parts.push(verbCounts(verbs, editedReplies) ?? 'all skipped');
     else {
       const n = nouns.get(slot.noun) ?? 0;
       if (n > 0) parts.push(nounCount(slot.noun, n));

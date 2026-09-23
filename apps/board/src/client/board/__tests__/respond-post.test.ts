@@ -3,6 +3,8 @@ import { expect, test } from 'bun:test';
 import type { GateQuestion } from '@mattstack/gate-kit';
 import {
   isEdited,
+  planReplies,
+  planTexts,
   postPicks,
   postTally,
   postTexts,
@@ -160,4 +162,66 @@ test('isEdited ignores surrounding whitespace', () => {
   expect(isEdited(p, {})).toBe(false);
   expect(isEdited(p, { 'thread-1': ' draft\n' })).toBe(false);
   expect(isEdited(p, { 'thread-1': 'draft, edited' })).toBe(true);
+});
+
+const planQ = (
+  n: number,
+  id: string,
+  kind: 'verbatim' | 'direction',
+  text: string
+) => ({
+  id: `thread-${n}`,
+  label: `${id}.ts:1`,
+  multi: false,
+  context: JSON.stringify({
+    'gate-ctx': 'thread@1',
+    author: 'renee',
+    severity: 'question',
+    claim: { summary: 'a claim' },
+    verdict: { call: 'pushback' },
+    reply: { kind, text },
+  }),
+  options: [
+    { value: `reply:${id}`, label: 'reply' },
+    { value: `fix:${id}`, label: 'fix' },
+    { value: `skip:${id}`, label: 'skip' },
+  ],
+});
+
+test('planReplies lists only verbatim replies, with their reply option', () => {
+  const qs = [
+    planQ(1, 'T1', 'verbatim', 'draft one'),
+    planQ(2, 'T2', 'direction', 'intent'),
+  ];
+  expect(planReplies(qs)).toEqual([
+    {
+      name: 'thread-1',
+      label: 'T1.ts:1',
+      draft: 'draft one',
+      value: 'reply:T1',
+    },
+  ]);
+});
+
+test('planTexts sends a trimmed edit only for a reply pick whose edit differs', () => {
+  const replies = planReplies([
+    planQ(1, 'T1', 'verbatim', 'one'),
+    planQ(2, 'T2', 'verbatim', 'two'),
+  ]);
+  expect(
+    planTexts(
+      replies,
+      { 'thread-1': 'reply:T1', 'thread-2': 'fix:T2' },
+      { 'thread-1': ' one, edited ', 'thread-2': 'kept for later' }
+    )
+  ).toEqual({ 'thread-1': 'one, edited' });
+  expect(
+    planTexts(replies, { 'thread-1': 'reply:T1' }, { 'thread-1': ' one ' })
+  ).toEqual({});
+  expect(
+    planTexts(replies, { 'thread-1': 'reply:T1' }, { 'thread-1': '  ' })
+  ).toBeNull();
+  expect(
+    planTexts(replies, { 'thread-1': 'skip:T1' }, { 'thread-1': '  ' })
+  ).toEqual({});
 });

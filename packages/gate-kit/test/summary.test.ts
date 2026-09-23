@@ -451,6 +451,54 @@ describe('answeredGateSummary outcome', () => {
     expect(outcome).toBe('1 fix, approved');
   });
 
+  test('a plan gate outcome counts edited replies; the chip does not change', () => {
+    const thread = (n: number, t: string): GateQuestion => ({
+      id: `thread-${n}`,
+      label: `${t}.ts:1`,
+      multi: false,
+      options: [
+        { value: `reply:${t}`, label: 'Reply' },
+        { value: `fix:${t}`, label: 'Fix' },
+        { value: `skip:${t}`, label: 'Skip' },
+      ],
+    });
+    const row = {
+      subject:
+        'mr:https://gitlab.example.invalid/group/proj/-/merge_requests/87',
+      kind: 'respond-plan',
+      status: 'answered',
+      questions: [
+        thread(1, 'T1'),
+        thread(2, 'T2'),
+        {
+          id: 'code-changes',
+          label: 'Approve?',
+          multi: false,
+          options: ['approve', 'revise', 'skip'],
+        },
+      ],
+      answer: {
+        answers: {
+          'thread-1': { value: 'reply:T1', text: 'edited reply' },
+          'thread-2': 'reply:T2',
+          'code-changes': 'skip',
+        },
+        by: 'board',
+        answeredAt: 1,
+      },
+    };
+    const before = answeredGateSummary({
+      ...row,
+      answer: {
+        ...row.answer,
+        answers: { ...row.answer.answers, 'thread-1': 'reply:T1' },
+      },
+    });
+    const { outcome, chip } = answeredGateSummary(row);
+    expect(outcome).toBe('2 replies (1 edited), skip');
+    expect(chip).toBe(before.chip);
+  });
+
   test('a closed row reads its closed reason', () => {
     const { outcome } = answeredGateSummary({
       subject: MR_SUBJECT,

@@ -51,34 +51,95 @@ export function postPicks(questions: GateQuestion[]): PostPick[] {
   });
 }
 
-/** A thread's edit counts only when it differs from the drafted reply once
-    surrounding whitespace is ignored. */
+/** An edit counts only when it differs from the draft once surrounding
+    whitespace is ignored. */
+export function editedText(
+  name: string,
+  draft: string,
+  texts: Record<string, string>
+): boolean {
+  const edit = texts[name];
+  return edit !== undefined && edit.trim() !== draft.trim();
+}
+
 export function isEdited(
   pick: PostPick,
   texts: Record<string, string>
 ): boolean {
-  const edit = texts[pick.name];
-  return edit !== undefined && edit.trim() !== (pick.reply?.text ?? '').trim();
+  return editedText(pick.name, pick.reply?.text ?? '', texts);
 }
 
-/** The trimmed edit each posting thread sends, keyed by question id. Null
-    when a posting thread's edit is empty: an empty reply cannot post, and
-    holding the thread is how nothing posts. */
+/** The trimmed edit each active item sends, keyed by question id. Null when
+    an active item's edit is empty: an empty reply cannot post. */
+function sendableTexts(
+  items: Array<{ name: string; draft: string; active: boolean }>,
+  texts: Record<string, string>
+): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  for (const it of items) {
+    if (!it.active) continue;
+    const edit = texts[it.name];
+    if (edit === undefined) continue;
+    if (edit.trim() === '') return null;
+    if (editedText(it.name, it.draft, texts)) out[it.name] = edit.trim();
+  }
+  return out;
+}
+
+/** A posting thread is active; holding the thread is how nothing posts. */
 export function postTexts(
   picks: PostPick[],
   selections: GateSelections,
   texts: Record<string, string>
 ): Record<string, string> | null {
-  const out: Record<string, string> = {};
-  for (const p of picks) {
-    const v = selections[p.name];
-    if (!Array.isArray(v) || !v.includes(p.post)) continue;
-    const edit = texts[p.name];
-    if (edit === undefined) continue;
-    if (edit.trim() === '') return null;
-    if (isEdited(p, texts)) out[p.name] = edit.trim();
-  }
-  return out;
+  return sendableTexts(
+    picks.map(p => {
+      const v = selections[p.name];
+      return {
+        name: p.name,
+        draft: p.reply?.text ?? '',
+        active: Array.isArray(v) && v.includes(p.post),
+      };
+    }),
+    texts
+  );
+}
+
+/** A respond-plan thread whose reply is shown verbatim: the only kind the
+    developer can edit before it posts. */
+export interface PlanReply {
+  name: string;
+  label: string;
+  draft: string;
+  value: string;
+}
+
+export function planReplies(questions: GateQuestion[]): PlanReply[] {
+  return questions.flatMap(q => {
+    if (q.multi) return [];
+    const ctx = parseGateCtx(q.context);
+    if (ctx?.shape !== 'thread@1' || ctx.reply.kind !== 'verbatim') return [];
+    const value = q.options.map(optionValue).find(v => v.startsWith('reply:'));
+    return value
+      ? [{ name: q.id, label: q.label, draft: ctx.reply.text, value }]
+      : [];
+  });
+}
+
+/** A thread picked `reply:` is active; a fix or skip keeps its edit unsent. */
+export function planTexts(
+  replies: PlanReply[],
+  selections: GateSelections,
+  texts: Record<string, string>
+): Record<string, string> | null {
+  return sendableTexts(
+    replies.map(r => ({
+      name: r.name,
+      draft: r.draft,
+      active: selections[r.name] === r.value,
+    })),
+    texts
+  );
 }
 
 export function postTally(

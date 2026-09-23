@@ -103,6 +103,10 @@ export type GatePresentation = 'form' | 'wait';
 export interface GateOpenResult {
   gateId: string;
   presentation: GatePresentation;
+  /** Present only when the daemon dropped the question contexts (and the
+      gate context, when that alone was over budget) to fit its byte budget:
+      the human sees the gate without them. */
+  contextOmitted?: true;
 }
 
 /** Opens the facility gate for one wrapper round and persists the returned
@@ -198,7 +202,11 @@ export async function gateOpen(
     );
   }
 
-  return { gateId: res.data.id, presentation: res.data.presentation };
+  return {
+    gateId: res.data.id,
+    presentation: res.data.presentation,
+    ...(res.data.contextOmitted ? { contextOmitted: true as const } : {}),
+  };
 }
 
 export type GateWaitResult =

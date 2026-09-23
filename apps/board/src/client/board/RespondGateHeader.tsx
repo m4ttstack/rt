@@ -15,7 +15,12 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export function headerChips(ctx: PlanCtx | PostCtx): HeaderChip[] {
+/** `posting`, when given, replaces a post gate's offered reply count with
+    the number its submit will post, so the rail agrees with the sheet. */
+export function headerChips(
+  ctx: PlanCtx | PostCtx,
+  posting?: number
+): HeaderChip[] {
   const chips: HeaderChip[] = [];
   if (ctx.shape === 'plan@1') {
     const { total, blocking } = ctx.threads;
@@ -32,7 +37,7 @@ export function headerChips(ctx: PlanCtx | PostCtx): HeaderChip[] {
   } else {
     chips.push({
       key: 'replies',
-      text: plural(ctx.replies, 'reply', 'replies'),
+      text: plural(posting ?? ctx.replies, 'reply', 'replies'),
       hue: 'grey',
     });
     if (ctx.fixes.length >= 3)
