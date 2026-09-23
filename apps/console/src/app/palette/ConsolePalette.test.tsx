@@ -4,10 +4,9 @@ import type { RunSummary } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const runsGet = vi.fn();
-const useSettingsDefs = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -15,10 +14,6 @@ vi.mock('../api', () => ({
       runs: { $get: (...args: unknown[]) => runsGet(...args) },
     },
   },
-}));
-
-vi.mock('../config/useSettings', () => ({
-  useSettingsDefs: (...args: unknown[]) => useSettingsDefs(...args),
 }));
 
 const { ConsolePalette } = await import('./ConsolePalette');
@@ -59,12 +54,9 @@ function renderPalette() {
 
 const originalClipboard = navigator.clipboard;
 
-beforeEach(() => {
-  useSettingsDefs.mockReturnValue({ data: undefined });
-});
-
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
   Object.defineProperty(navigator, 'clipboard', {
     value: originalClipboard,
     configurable: true,
@@ -117,29 +109,39 @@ describe('ConsolePalette', () => {
     expect(window.location.pathname).toBe(before);
   });
 
-  it('adds a config action per setting def, labeled "<key> — <description>", navigating to /config/:key', async () => {
+  it('offers no settings keys: typing "config" finds nothing', async () => {
     runsGet.mockResolvedValue(ok({ runs: [] }));
-    useSettingsDefs.mockReturnValue({
-      data: {
-        defs: [
-          { key: 'rt.runsPruneDays', description: 'Days before pruning.' },
-          { key: 'rt.otherKey', description: 'Some other setting.' },
-        ],
-      },
-    });
-
+    // A palette that indexed settings again would find this def by "config".
+    vi.stubGlobal('fetch', async (url: string) =>
+      url.startsWith('/api/settings/defs')
+        ? ok({
+            defs: [
+              {
+                key: 'rt.runsPruneDays',
+                type: 'number',
+                scopes: ['user', 'machine'],
+                merge: 'replace',
+                secret: false,
+                teamLocked: false,
+                repoScoped: false,
+                writable: true,
+                description: 'Days before pruning.',
+                hasDefault: true,
+                defaultValue: 30,
+                effective: { scope: null, file: null },
+              },
+            ],
+          })
+        : { ok: false, status: 404, json: async () => ({ error: 'not found' }) }
+    );
     renderPalette();
     Spotlight.open();
-
-    const action = await screen.findByText(
-      'rt.runsPruneDays — Days before pruning.'
+    await userEvent.type(
+      await screen.findByPlaceholderText('Search runs, or jump to a page…'),
+      'config'
     );
     expect(
-      screen.getByText('rt.otherKey — Some other setting.')
+      await screen.findByText('No matching runs or actions.')
     ).toBeInTheDocument();
-
-    await userEvent.click(action);
-
-    expect(window.location.pathname).toBe('/config/rt.runsPruneDays');
   });
 });

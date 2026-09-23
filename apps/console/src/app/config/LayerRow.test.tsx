@@ -1,9 +1,11 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+import type {
+  ExplainRowWire,
+  SettingDefWire,
+} from '@mattstack/settings-kit/react';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, test, vi } from 'vitest';
-
-import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
 
 /** The real hook needs a QueryClient; these tests are about the row, so it
     is pinned to the vscode fallback the unfetched hook resolves to anyway. */
@@ -25,6 +27,7 @@ const NUMBER_DEF: SettingDefWire = {
   description: 'Days before pruning.',
   hasDefault: true,
   defaultValue: 30,
+  effective: { scope: null, file: null },
 };
 
 const USER_ROW: ExplainRowWire = {
@@ -46,6 +49,7 @@ const COMPOSITE_DEF: SettingDefWire = {
   description: 'Role map.',
   hasDefault: false,
   defaultValue: null,
+  effective: { scope: null, file: null },
 };
 
 const COMPOSITE_ROW: ExplainRowWire = {
@@ -67,6 +71,7 @@ const SECRET_DEF: SettingDefWire = {
   description: 'Forge API token.',
   hasDefault: false,
   defaultValue: null,
+  effective: { scope: null, file: null },
 };
 
 async function stageChange(newValue: string) {
@@ -206,17 +211,59 @@ describe('LayerRow: staged edit-at-layer', () => {
     ).toBeInTheDocument();
   });
 
-  test('a composite def renders the file-edit copy, never an edit affordance', () => {
+  test('an unshaped composite def renders the file-edit copy, never an edit affordance', () => {
     renderWithProviders(
       <LayerRow def={COMPOSITE_DEF} row={COMPOSITE_ROW} role="contributor" />
     );
 
     expect(
-      screen.getByText('composite value — edit the file')
+      screen.getByText('composite value: edit the file')
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /edit/i })
     ).not.toBeInTheDocument();
+  });
+
+  test('a composite the settings page can edit links there instead', () => {
+    renderWithProviders(
+      <LayerRow
+        def={{
+          ...COMPOSITE_DEF,
+          key: 'rt.repoRoots',
+          type: 'array',
+          merge: 'replace',
+          writable: true,
+        }}
+        row={{ ...COMPOSITE_ROW, value: ['~/src'] }}
+        role="winner"
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'edit in Settings' })
+    ).toHaveAttribute('href', '/settings?q=rt.repoRoots');
+    expect(screen.queryByText(/edit the file/)).not.toBeInTheDocument();
+  });
+
+  test('a composite layer that does not win points at its file, not Settings', () => {
+    renderWithProviders(
+      <LayerRow
+        def={{
+          ...COMPOSITE_DEF,
+          key: 'rt.repoRoots',
+          type: 'array',
+          merge: 'replace',
+          writable: true,
+        }}
+        row={{ ...COMPOSITE_ROW, value: ['~/src'] }}
+        role="overridden"
+      />
+    );
+
+    expect(
+      screen.queryByRole('link', { name: 'edit in Settings' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/edit the file/)).toBeInTheDocument();
   });
 
   test('a failed apply renders applyError inside the staged block', async () => {

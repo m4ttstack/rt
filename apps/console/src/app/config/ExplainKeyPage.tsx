@@ -104,8 +104,9 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
 
 /**
  * Why is this value this? The plain sentence first, then the stack —
- * weakest-first, exactly as the resolver reads it. Reached from the palette
- * only: config is a lens, not a surface, so no rail entry points here.
+ * weakest-first, exactly as the resolver reads it. Reached from each
+ * /settings row: config is a lens, not a surface, so no rail entry points
+ * here.
  */
 export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
   return (

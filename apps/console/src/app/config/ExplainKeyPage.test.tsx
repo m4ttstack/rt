@@ -7,19 +7,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const explainGet = vi.fn();
 const setPost = vi.fn();
 
-vi.mock('../api', () => ({
-  client: {
-    api: {
-      settings: {
-        defs: { $get: vi.fn() },
-        explain: {
-          ':key': { $get: (...args: unknown[]) => explainGet(...args) },
-        },
-        set: { $post: (...args: unknown[]) => setPost(...args) },
-      },
-    },
-  },
-}));
+vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+  if (url.startsWith('/api/settings/explain/')) return explainGet(url);
+  if (url === '/api/settings/set') return setPost(url, init);
+  // LayerRow's useEditorHref reads /api/settings/default-editor; it must not
+  // reach setPost, whose call counts the tests assert.
+  return Promise.resolve({
+    ok: false,
+    status: 404,
+    json: async () => ({ error: 'not found' }),
+  });
+});
 
 const { ExplainKeyPage } = await import('./ExplainKeyPage');
 

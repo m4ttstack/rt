@@ -82,6 +82,23 @@ test('the collapse trigger toggles the sidebar rail closed and open', () => {
   expect(rail().style.width).toContain('15rem');
 });
 
+test('a narrow load never saves the forced close for desktop', () => {
+  const desktopWidth = window.innerWidth;
+  window.innerWidth = 500;
+  const { unmount } = renderWithProviders(
+    <CompoundShell drawerStateKey="narrow-shell-sidebar" />
+  );
+  expect(window.localStorage.getItem('narrow-shell-sidebar')).not.toBe('false');
+  unmount();
+
+  window.innerWidth = desktopWidth;
+  const { container } = renderWithProviders(
+    <CompoundShell drawerStateKey="narrow-shell-sidebar" />
+  );
+  const rail = container.querySelector('#page-shell-sidebar') as HTMLElement;
+  expect(rail.style.width).toContain('15rem');
+});
+
 test('drawerStateKey persists the sidebar state and restores it on mount', () => {
   const { unmount } = renderWithProviders(
     <CompoundShell drawerStateKey="test-shell-sidebar" />
@@ -604,4 +621,47 @@ test("TabBar's title is the same row-scale title a compact header renders", () =
   const heading = screen.getByRole('heading', { level: 2, name: 'Wiring' });
   expect(heading.style.getPropertyValue('--title-fz')).toContain('h5');
   expect(heading.style.fontWeight).toBe('700');
+});
+
+test('Content marks an explicit surface so a theme can leave it alone', () => {
+  const { unmount } = renderWithProviders(
+    <PageShell>
+      <PageShell.Main>
+        <PageShell.Content>
+          <div>kit surface</div>
+        </PageShell.Content>
+      </PageShell.Main>
+    </PageShell>
+  );
+  expect(document.getElementById('page-shell-content')).not.toHaveAttribute(
+    'data-own-surface'
+  );
+  unmount();
+  renderWithProviders(
+    <PageShell>
+      <PageShell.Main>
+        <PageShell.Content bg="var(--ui-bg-3)">
+          <div>own surface</div>
+        </PageShell.Content>
+      </PageShell.Main>
+    </PageShell>
+  );
+  expect(document.getElementById('page-shell-content')).toHaveAttribute(
+    'data-own-surface'
+  );
+});
+
+test('a surface passed through scrollAreaProps marks the frame too', () => {
+  renderWithProviders(
+    <PageShell>
+      <PageShell.Main>
+        <PageShell.Content scrollAreaProps={{ bg: 'var(--ui-bg-3)' }}>
+          <div>scroll-area surface</div>
+        </PageShell.Content>
+      </PageShell.Main>
+    </PageShell>
+  );
+  expect(document.getElementById('page-shell-content')).toHaveAttribute(
+    'data-own-surface'
+  );
 });

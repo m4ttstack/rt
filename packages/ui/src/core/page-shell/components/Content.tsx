@@ -40,7 +40,12 @@ const Wrapper = ({
 export interface PageShellContentProps {
   /** Content, or a render prop receiving the computed available height. */
   children: React.ReactNode | ((height: string) => React.ReactNode);
-  /** Surface override. @default bg.level3 */
+  /**
+   * Surface override. @default bg.level3
+   *
+   * An explicit surface marks the frame `data-own-surface`, which a theme
+   * that paints every content frame (Tokyo's grid) reads as "leave it".
+   */
   bg?: FlexProps['bg'];
   /**
    * Extra props for the outer ScrollArea (scroll mode only).
@@ -168,6 +173,7 @@ export const Content = ({
     return (
       <Flex
         id="page-shell-content"
+        data-own-surface={bg !== undefined || undefined}
         bg={bg ?? schemeBg.level3}
         direction="column"
         flex={1}
@@ -191,6 +197,9 @@ export const Content = ({
   return (
     <ScrollArea.Autosize
       id="page-shell-content"
+      data-own-surface={
+        bg !== undefined || scrollAreaProps?.bg !== undefined || undefined
+      }
       mah={height}
       bg={bg ?? schemeBg.level3}
       flex={1}

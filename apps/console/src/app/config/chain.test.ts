@@ -1,6 +1,9 @@
+import type {
+  ExplainRowWire,
+  SettingDefWire,
+} from '@mattstack/settings-kit/react';
 import { describe, expect, it } from 'vitest';
 
-import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
 import { analyzeChain, shortValue } from './chain';
 
 function def(over: Partial<SettingDefWire>): SettingDefWire {
@@ -16,6 +19,7 @@ function def(over: Partial<SettingDefWire>): SettingDefWire {
     description: 'Example.',
     hasDefault: true,
     defaultValue: 30,
+    effective: { scope: null, file: null },
     ...over,
   };
 }

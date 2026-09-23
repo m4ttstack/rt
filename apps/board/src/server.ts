@@ -997,7 +997,7 @@ const httpServer = Bun.serve({
     if (pathname.startsWith('/api/settings/')) {
       const settingsRes = await settingsHandler(req, {
         allowWrite: r => isLocalRequest(r, server),
-        allowComposite: true,
+        allowComposite: 'shaped',
       });
       if (settingsRes) {
         // Board's config is a snapshot resolved once at boot (see `config`

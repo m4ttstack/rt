@@ -1,4 +1,7 @@
-import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
+import type {
+  ExplainRowWire,
+  SettingDefWire,
+} from '@mattstack/settings-kit/react';
 
 export type ChainVerdict =
   | {

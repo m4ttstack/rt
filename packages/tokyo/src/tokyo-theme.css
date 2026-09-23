@@ -480,8 +480,11 @@ body {
  * this element's own scroll box, even though this element -- not
  * `body` -- is what actually scrolls (confirmed by loading the app: the
  * grid holds still while the list scrolls past it).
+ *
+ * A Content given its own `bg` carries `data-own-surface` and keeps that
+ * surface: a page that sets rows on the card opts out of the paper.
  */
-#page-shell-content {
+#page-shell-content:not([data-own-surface]) {
   background-color: var(--tk-bg) !important;
   background-image:
     linear-gradient(var(--tk-grid-line) 1px, transparent 1px),

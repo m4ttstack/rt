@@ -178,21 +178,22 @@ function PageShellRoot({
   const railHeaderHeight = useRailShellHeaderHeight();
   const resolvedTopOffset = topOffset ?? railHeaderHeight ?? 0;
 
-  const [sidebarOpen, setSidebarOpen] = useSideDrawerState({
+  // Only the desktop rail's state persists. The mobile overlay drawer keeps
+  // its own unpersisted state: persisting the close it is forced into would
+  // strand a page that hides the rail's collapse control with a closed rail
+  // on its next desktop visit.
+  const [railOpen, setRailOpen] = useSideDrawerState({
     drawerStateKey,
-    initialValue: !isMobile,
+    initialValue: true,
   });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarOpen = isMobile ? drawerOpen : railOpen;
+  const setSidebarOpen = isMobile ? setDrawerOpen : setRailOpen;
 
-  // Entering mobile always closes the sidebar (it becomes an overlay
-  // drawer, which should never start open over the page).
+  // Entering mobile always closes the overlay drawer, which should never
+  // start open over the page.
   useEffect(() => {
-    if (isMobile && sidebarOpen) {
-      setSidebarOpen(false);
-    }
-    // Deliberately keyed on the mobile transition only -- re-running when
-    // sidebarOpen changes would instantly re-close a drawer the user just
-    // opened on mobile.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (isMobile) setDrawerOpen(false);
   }, [isMobile]);
 
   const toggleSidebar = useCallback(() => {

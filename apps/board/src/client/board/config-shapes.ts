@@ -1,85 +1,48 @@
 import type { SettingDefWire } from '@mattstack/settings-kit/react';
-import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
+import {
+  matchesShape as matchesKitShape,
+  SHAPES,
+  type CompositeShape as KitShape,
+} from '@mattstack/settings-kit/shapes';
+
+export {
+  addToList,
+  filterDefs,
+  formatValue,
+  getLeaf,
+  isSet,
+  parseScalar,
+  setLeaf,
+  type LeafType,
+} from '@mattstack/settings-kit/shapes';
 
 export type ConfigDef = SettingDefWire;
 
-export type LeafType =
-  'string' | 'number' | 'boolean' | { enum: readonly string[] };
-
 export type CompositeShape =
-  | { kind: 'stringList' }
-  | { kind: 'pairList'; fields: readonly [string, string] }
-  | {
-      kind: 'leaves';
-      fields: Record<string, LeafType>;
-      /** What the reader applies when a leaf is unset, shown as the empty
-          control's placeholder so a default in effect never reads "unset". */
-      fallbacks?: Record<string, string>;
-    }
+  | Exclude<KitShape, { kind: 'external' }>
   | { kind: 'roster' }
   | { kind: 'tabs' };
 
-/** What the board knows about its own composite keys that the registry does
-    not: rt validates only the top-level type, and `parseConfig` rejects a
-    wrong leaf on the next reload, so every control here is typed to make a
-    rejected write unproducible. `board.triage` deliberately omits
-    doctorSkill and maxConcurrent — those live in sibling flat keys the
-    reader overlays on top, so a nested copy would be silently ignored. */
-export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
-  'board.projects': { kind: 'stringList' },
-  'board.botUsernames': { kind: 'stringList' },
-  'board.ticketPrefixes': { kind: 'stringList' },
-  'board.workspaces': {
-    kind: 'leaves',
-    fields: { reviews: 'string', responds: 'string', doctors: 'string' },
-  },
-  'board.cwds': {
-    kind: 'leaves',
-    fields: { review: 'string', respond: 'string', doctor: 'string' },
-  },
-  'board.slack': {
-    kind: 'leaves',
-    fields: {
-      channel: 'string',
-      singleTemplate: 'string',
-      multiHeader: 'string',
-      multiItem: 'string',
-      autoResolveIntervalMinutes: 'number',
-      'emoji.looking': 'string',
-      'emoji.commented': 'string',
-      'emoji.approved': 'string',
-    },
-    fallbacks: {
-      'emoji.looking': DEFAULT_SLACK_EMOJI.looking,
-      'emoji.commented': DEFAULT_SLACK_EMOJI.commented,
-      'emoji.approved': DEFAULT_SLACK_EMOJI.approved,
-    },
-  },
-  'board.triage': {
-    kind: 'leaves',
-    fields: {
-      enabled: 'boolean',
-      cooldownMinutes: 'number',
-      dailyAttemptBudget: 'number',
-      notify: { enum: ['rt', 'badge-only'] },
-      tier: { enum: ['api', 'checkout'] },
-      'fixClasses.retryFlake': 'boolean',
-      'fixClasses.inheritedNoteDraft': 'boolean',
-      'fixClasses.cleanApiRebase': 'boolean',
-      'fixClasses.mechanicalLint': 'boolean',
-      'fixClasses.codeFix': 'boolean',
-    },
-  },
-  'board.reReview': {
-    kind: 'leaves',
-    fields: {
-      enabled: 'boolean',
-    },
-  },
+/** settings-kit marks these `external`; the board owns their editors. */
+const BOARD_EDITORS: Record<string, CompositeShape> = {
   'board.tabs': { kind: 'tabs' },
   'board.members': { kind: 'roster' },
   'board.hiddenMembers': { kind: 'roster' },
 };
+
+/** The board's composite keys: settings-kit's declarations, with the three
+    keys whose editors live here mapped back to their board kinds. rt
+    validates only the top-level type, so these shapes are what keep a
+    written value readable by `parseConfig`. */
+export const COMPOSITE_SHAPES: Record<string, CompositeShape> =
+  Object.fromEntries(
+    Object.entries(SHAPES)
+      .filter(([key]) => key.startsWith('board.'))
+      .map(([key, shape]) => [
+        key,
+        BOARD_EDITORS[key] ?? (shape as CompositeShape),
+      ])
+  );
 
 export type RowKind = 'scalar' | CompositeShape['kind'] | 'readonly';
 
@@ -93,11 +56,6 @@ export function rowKind(def: ConfigDef): RowKind {
   return 'scalar';
 }
 
-export function isSet(def: ConfigDef): boolean {
-  const scope = def.effective.scope;
-  return scope != null && scope !== 'default';
-}
-
 export function scopeLabel(scope: string): string {
   return scope === 'machine' ? 'machine' : `${scope} · local until pushed`;
 }
@@ -106,40 +64,16 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function matchesLeaf(type: LeafType, v: unknown): boolean {
-  if (typeof type === 'string') return typeof v === type;
-  return typeof v === 'string' && type.enum.includes(v);
-}
-
 export function matchesShape(shape: CompositeShape, value: unknown): boolean {
-  switch (shape.kind) {
-    case 'stringList':
-      return Array.isArray(value) && value.every(x => typeof x === 'string');
-    case 'pairList':
-      return (
-        Array.isArray(value) &&
-        value.every(
-          x => isRecord(x) && shape.fields.every(f => typeof x[f] === 'string')
-        )
-      );
-    case 'leaves':
-      return (
-        isRecord(value) &&
-        Object.entries(shape.fields).every(([path, type]) => {
-          const v = getLeaf(value, path);
-          return v === undefined || matchesLeaf(type, v);
-        })
-      );
-    case 'roster':
-      return Array.isArray(value);
-    case 'tabs':
-      return (
-        Array.isArray(value) &&
-        value.length > 0 &&
-        value.every(isTabLike) &&
-        new Set(value.map(t => (t as { id: string }).id)).size === value.length
-      );
-  }
+  if (shape.kind === 'roster') return Array.isArray(value);
+  if (shape.kind === 'tabs')
+    return (
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every(isTabLike) &&
+      new Set(value.map(t => (t as { id: string }).id)).size === value.length
+    );
+  return matchesKitShape(shape, value);
 }
 
 /** Mirrors the server's parseTabs closely enough that the editor never
@@ -182,60 +116,6 @@ export function slugTabId(label: string, taken: Iterable<string>): string {
   return `${base}-${n}`;
 }
 
-export function getLeaf(obj: unknown, path: string): unknown {
-  let cur: unknown = obj;
-  for (const part of path.split('.')) {
-    if (!isRecord(cur)) return undefined;
-    cur = cur[part];
-  }
-  return cur;
-}
-
-export function setLeaf(
-  obj: unknown,
-  path: string,
-  value: unknown
-): Record<string, unknown> {
-  const [head, ...rest] = path.split('.');
-  const base = isRecord(obj) ? { ...obj } : {};
-  if (rest.length === 0) {
-    if (value === undefined) delete base[head!];
-    else base[head!] = value;
-    return base;
-  }
-  base[head!] = setLeaf(base[head!], rest.join('.'), value);
-  return base;
-}
-
-export function parseScalar(
-  type: 'string' | 'number',
-  text: string
-): { ok: true; value: string | number } | { ok: false; error: string } {
-  if (type === 'string') return { ok: true, value: text };
-  const trimmed = text.trim();
-  if (trimmed === '') return { ok: false, error: 'enter a number' };
-  const n = Number(trimmed);
-  return Number.isFinite(n)
-    ? { ok: true, value: n }
-    : { ok: false, error: 'not a number' };
-}
-
-/** The next list after adding `entry`, or null when there is nothing to add. */
-export function addToList(list: string[], entry: string): string[] | null {
-  const trimmed = entry.trim();
-  if (trimmed === '' || list.includes(trimmed)) return null;
-  return [...list, trimmed];
-}
-
-export function filterDefs(defs: ConfigDef[], query: string): ConfigDef[] {
-  const q = query.trim().toLowerCase();
-  if (q === '') return defs;
-  return defs.filter(
-    d =>
-      d.key.toLowerCase().includes(q) || d.description.toLowerCase().includes(q)
-  );
-}
-
 const SCOPE_ORDER = ['team', 'user', 'machine'] as const;
 
 export function groupByScope(
@@ -269,8 +149,4 @@ export function rosterSummary(members: unknown, hidden: unknown): string {
   );
   const head = `${roster.length} member${roster.length === 1 ? '' : 's'}`;
   return hiddenNames.size > 0 ? `${head}, ${hiddenNames.size} hidden` : head;
-}
-
-export function formatValue(value: unknown): string {
-  return value === undefined ? '' : JSON.stringify(value);
 }

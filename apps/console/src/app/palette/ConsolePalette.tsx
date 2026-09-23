@@ -5,7 +5,6 @@ import { Spotlight } from '@mattstack/app-kit/spotlight';
 import type { SpotlightActionData } from '@mattstack/app-kit/spotlight';
 import { navigate } from 'wouter/use-browser-location';
 
-import { useSettingsDefs } from '../config/useSettings';
 import {
   BRANCH_CHECKOUT_LABEL,
   branchCheckoutCommand,
@@ -69,21 +68,11 @@ const STATIC_ACTIONS: SpotlightActionData[] = [
  */
 export function ConsolePalette() {
   const runsQuery = useRunList();
-  const defsQuery = useSettingsDefs();
 
   const actions: SpotlightActionData[] = useMemo(() => {
     const runs = runsQuery.data?.runs ?? [];
-    const configActions: SpotlightActionData[] = (
-      defsQuery.data?.defs ?? []
-    ).map(def => ({
-      id: `config-${def.key}`,
-      label: `${def.key} — ${def.description}`,
-      keywords: [def.key, ...def.key.split('.'), 'config', 'setting'],
-      onClick: () => go(`/config/${def.key}`),
-      leftSection: <Icons.settings size={16} />,
-    }));
-    return [...runs.map(runAction), ...configActions, ...STATIC_ACTIONS];
-  }, [runsQuery.data, defsQuery.data]);
+    return [...runs.map(runAction), ...STATIC_ACTIONS];
+  }, [runsQuery.data]);
 
   return (
     <Spotlight

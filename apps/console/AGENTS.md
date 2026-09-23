@@ -32,7 +32,9 @@ to `rt`, and nothing proxied through to another service. The dev server defaults
 ## Routes and chrome (`src/app/App.tsx`, `src/app/routes.ts`)
 
 Routing is `wouter`, via `useAppRoute()` (`src/app/routes.ts`), which maps the current location to
-a structured `AppRoute` union: `board`, `run`, `search`, `wiring`, `config`, `not-found`. The
+a structured `AppRoute` union: `board`, `run`, `search`, `wiring`, `settings`, `config`, `not-found`.
+`/settings` is the grouped, filterable page over every registered key (`src/app/settings/`);
+`/config/:key` is its per-key explain drill-in. The
 `/runs/:repo/:runId` route carries a percent-encoded, possibly `remote:`/`path:`-prefixed repo
 identity in the `repo` segment; `canonicalRepo()` decodes and re-serializes it back to the exact
 wire form `@mattstack/rt-client`'s `serializeIdentity` produces, because a repo identity containing
@@ -47,7 +49,7 @@ navigating away — Mantine has no error boundary of its own, and the run-detail
 throws on failure).
 
 `ConsolePalette` (`src/app/palette/ConsolePalette.tsx`) is a single global `Spotlight` instance
-(from `@mattstack/app-kit/spotlight`), mounted once in `App`, indexing runs, config keys, and the
+(from `@mattstack/app-kit/spotlight`), mounted once in `App`, indexing runs and the
 two static nav actions under `mod+K`.
 
 ## Runs domain (`src/app/runs/`, `src/server/runs.ts`)

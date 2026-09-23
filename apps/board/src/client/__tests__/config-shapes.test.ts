@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { allDefs } from '@mattstack/rt-client';
+import { DEFAULT_SLACK_EMOJI as KIT_SLACK_EMOJI } from '@mattstack/settings-kit/shapes';
+import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
 import {
   addToList,
   COMPOSITE_SHAPES,
@@ -354,5 +356,11 @@ describe('slugTabId', () => {
     expect(slugTabId('  Team!  ', ['team'])).toBe('team-2');
     expect(slugTabId('Team', ['team', 'team-2'])).toBe('team-3');
     expect(slugTabId('???', [])).toBe('tab');
+  });
+});
+
+describe('shared shapes', () => {
+  test("settings-kit's slack emoji fallbacks match the board's", () => {
+    expect(DEFAULT_SLACK_EMOJI).toEqual(KIT_SLACK_EMOJI);
   });
 });

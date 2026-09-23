@@ -14,7 +14,7 @@ import { useAppRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
-import { AgentDefaultsPage } from './settings/AgentDefaultsPage';
+import { SettingsPage } from './settings/SettingsPage';
 import { WiringMap } from './wiring/WiringMap';
 import { WiringRailEntry } from './wiring/WiringRailEntry';
 
@@ -73,7 +73,7 @@ function RouteContent({ route }: { route: AppRoute }) {
     case 'wiring':
       return <WiringMap />;
     case 'settings':
-      return <AgentDefaultsPage />;
+      return <SettingsPage />;
     case 'config':
       return <ExplainKeyPage settingKey={route.key} />;
     case 'not-found':

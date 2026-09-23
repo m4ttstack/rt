@@ -23,7 +23,7 @@
     "@mattstack/glance": "catalog:",
     "@mattstack/mantine-tokyo": "workspace:*",
     "@mattstack/rt-client": "catalog:",
-    "@mattstack/settings-kit": "^0.1.3",
+    "@mattstack/settings-kit": "catalog:",
     "@tanstack/react-query": "catalog:",
     "hono": "catalog:",
     "react": "catalog:",
