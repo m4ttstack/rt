@@ -134,25 +134,29 @@ struct ChooseSheet: View {
             Text(other.label).font(.headline)
         } content: {
             if selected {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("", text: $ownId, prompt: Text("plugin:skill-name"))
+                SetupField(label: "Skill id", note: other.hint) {
+                    TextField(other.label, text: $ownId, prompt: Text("plugin:skill-name"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
                         .focused($ownFocused)
                         .onSubmit(submit)
+                        .accessibilityLabel(other.label)
                         .accessibilityIdentifier(AXID.chooseOther)
                     let matches = ChooseSuggestions.matching(ownId, in: other.suggestions ?? [])
                     if !matches.isEmpty {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(matches, id: \.self) { s in
-                                SuggestionRow(id: s) { ownId = s }
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(matches, id: \.self) { s in
+                                    SuggestionRow(id: s) { ownId = s }
+                                }
                             }
+                            .padding(4)
                         }
-                        .padding(4)
+                        // Every match stays reachable: short lists size to fit, long ones scroll past about six rows.
+                        .frame(height: min(CGFloat(matches.count) * SuggestionRow.height + 8, 6.5 * SuggestionRow.height + 8))
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
                     }
-                    Text(other.hint).font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -216,6 +220,7 @@ struct ChooseSheet: View {
 }
 
 private struct SuggestionRow: View {
+    static let height: CGFloat = 24
     let id: String
     let pick: () -> Void
     @State private var hovering = false
@@ -223,8 +228,8 @@ private struct SuggestionRow: View {
     var body: some View {
         Button(action: pick) {
             Text(id).font(.system(.callout, design: .monospaced))
-                .padding(.horizontal, 6).padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 5).fill(hovering ? Color.secondary.opacity(0.3) : Color.clear))
                 .contentShape(Rectangle())
         }
