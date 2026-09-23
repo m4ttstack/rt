@@ -7,11 +7,18 @@
  */
 
 import type { GitLabProvider, PullRequest } from "@mattstack/glance";
+import type { DaemonLoggerHandle } from "../daemon-logger.ts";
 import { getSetting, type ResolveOpts } from "../settings/resolve.ts";
 import { parseIdentity } from "../settings/identity.ts";
-import { lazyChildLogger } from "../daemon-logger.ts";
 
-const log = lazyChildLogger("ignored-mrs");
+// Imported on first warning, never at module load: project-mrs-store imports
+// this module and the lib/state barrel imports the store, and importing that
+// barrel must create no file (lib/state/__tests__/barrel.test.ts).
+let logHandle: Promise<DaemonLoggerHandle> | undefined;
+function warn(context: Record<string, unknown>, message: string): void {
+  logHandle ??= import("../daemon-logger.ts").then((m) => m.getDaemonLogger());
+  void logHandle.then((h) => h.childLogger("ignored-mrs").warn(context, message));
+}
 
 export const IGNORED_MRS_KEY = "rt.ignoredMrs";
 
@@ -38,7 +45,7 @@ export function readIgnoredMrs(repoName: string, read: SettingReader = getSettin
     const v = value as Record<string, unknown>;
     return { targetBranches: strings(v.targetBranches), authors: strings(v.authors) };
   } catch (err) {
-    log.warn({ err, repo: repoName }, `unreadable ${IGNORED_MRS_KEY}; ignoring nothing`);
+    warn({ err, repo: repoName }, `unreadable ${IGNORED_MRS_KEY}; ignoring nothing`);
     return NONE;
   }
 }
@@ -114,7 +121,7 @@ export function createExcludedTargetsCache(opts: { ttlMs: number; now?: () => nu
         entries.set(repoName, { key, at: now(), names });
         return names;
       } catch (err) {
-        log.warn({ err, repo: repoName }, "target-branch expansion failed; excluding nothing on the request this cycle");
+        warn({ err, repo: repoName }, "target-branch expansion failed; excluding nothing on the request this cycle");
         return [];
       }
     },
