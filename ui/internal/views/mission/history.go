@@ -24,12 +24,10 @@ const (
 	// filter box(3) from historyFilterTopRow.
 	historyFilterTopRow = 4
 	historyFixedTopRows = 7
-	// summary, byline, then the separator rule (GHD's row border).
-	historyRowHeight   = 3
-	historyFilesMin    = 24
-	historyFilesMax      = 40
-	historyFilesNarrow   = 12
-	historyDiffMin       = 30
+	historyFilesMin     = 24
+	historyFilesMax     = 40
+	historyFilesNarrow  = 12
+	historyDiffMin      = 30
 )
 
 type historyDebounceKind int

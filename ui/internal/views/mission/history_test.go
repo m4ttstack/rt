@@ -13,6 +13,9 @@ import (
 	"rt-ui/internal/theme"
 )
 
+// historyRowHeight is a commit's painted rows: summary, byline, rule.
+const historyRowHeight = 3
+
 func historyFixtureModel() Model {
 	return Model{
 		Tab:     "history",

@@ -89,7 +89,11 @@ const (
 func openMission(t *testing.T, model, wantPaint string) *testutil.Session {
 	t.Helper()
 	s := testutil.StartSession(t, []string{testutil.Binary(t), "session", "--view", "mission"}, nil)
-	s.ReadLine(2 * time.Second)
+	// A binary slow to start under load must not leave hello for the test's
+	// own first read.
+	if l, ok := s.ReadLine(10 * time.Second); !ok || !strings.Contains(l, `"t":"hello"`) {
+		t.Fatalf("hello: %q ok=%v", l, ok)
+	}
 	s.Send(`{"t":"open","view":"mission","model":` + model + `}`)
 	s.WaitForPaint(wantPaint)
 	return s
@@ -810,14 +814,10 @@ const listTopY = 4 + 7
 // moves the view three lines and sends nothing to the driver.
 func TestHistoryWheelScrollsTheListWithoutEmitting(t *testing.T) {
 	s := openMission(t, longHistoryModel(20, true), "subject-00")
-	if row := screenRow(s, listTopY); !strings.HasPrefix(row, "  Today") {
-		t.Fatalf("setup: the list should open on its header: %q", row)
-	}
+	waitRow(t, s, listTopY, "  Today")
 	s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
 	s.WaitForGone("subject-00")
-	if row := screenRow(s, listTopY+1); !strings.Contains(row, "subject-01") {
-		t.Fatalf("one tick should scroll three lines, putting subject-01 on the list's second row: %q", row)
-	}
+	waitRow(t, s, listTopY+1, "subject-01")
 	for range 20 {
 		s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
 	}
@@ -855,9 +855,7 @@ func TestHistoryActionRowEnterEmitsOneMore(t *testing.T) {
 
 func TestHistoryActionRowClickEmitsOneMore(t *testing.T) {
 	s := openMission(t, longHistoryModel(1, true), "Load 100 more commits")
-	if row := screenRow(s, moreRowY); !strings.Contains(row, "Load 100 more commits") {
-		t.Fatalf("setup: frame row %d should be the action row: %q", moreRowY, row)
-	}
+	waitRow(t, s, moreRowY, "Load 100 more commits")
 	s.Type(sgrClick(0, 5, moreRowY))
 	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-more"`) {
 		t.Fatalf("a click on the action row should emit mission:history-more: %q", l)
@@ -871,9 +869,27 @@ func TestHistoryActionRowClickEmitsOneMore(t *testing.T) {
 	s.Wait()
 }
 
-// screenRow is one row of the session's screen as plain text.
+// waitRow waits for screen row y to contain want: a frame can land in more
+// than one read, so the row a test checks may paint after the text it waited
+// on.
+func waitRow(t *testing.T, s *testutil.Session, y int, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(screenRow(s, y), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("screen row %d never showed %q: %q", y, want, screenRow(s, y))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// screenRow is one row of the session's screen as plain text, "" past the
+// last painted row.
 func screenRow(s *testutil.Session, y int) string {
-	return strings.Split(s.Screen(), "\n")[y]
+	if rows := strings.Split(s.Screen(), "\n"); y < len(rows) {
+		return rows[y]
+	}
+	return ""
 }
 
 // TestHistoryDateHeadersPaintAndStayInert drives the real binary: each run
@@ -881,14 +897,14 @@ func screenRow(s *testutil.Session, y int) string {
 // nothing.
 func TestHistoryDateHeadersPaintAndStayInert(t *testing.T) {
 	s := openHistory(t)
+	s.WaitForPaint("Yesterday")
 	for y, want := range map[int]string{historyRowY(0) - 1: "Today", historyRowY(2) - 1: "Yesterday"} {
+		waitRow(t, s, y, want)
 		if row := screenRow(s, y); !strings.HasPrefix(row, "  "+want) {
 			t.Fatalf("screen row %d should open with the %q header: %q", y, want, row)
 		}
 	}
-	if row := screenRow(s, historyRowY(0)); !strings.Contains(row, "Fix pty paint predicate") {
-		t.Fatalf("setup: historyRowY(0) should be s1's summary: %q", row)
-	}
+	waitRow(t, s, historyRowY(0), "Fix pty paint predicate")
 	s.Type(sgrClick(0, 2, historyRowY(2)-1))
 	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
 		t.Fatalf("clicking a date header must not emit: %q", l)
