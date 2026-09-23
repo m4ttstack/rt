@@ -31,6 +31,13 @@ import type { WorktreeRepoConfig } from "../../worktree/config.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Per repo: tree path -> the refusal last logged at info. Rebuilt each pass
+ * from the trees still refused, so a tree that leaves the refused set (freshly
+ * active, disposed by any path) logs again if it comes back.
+ */
+const reportedRefusals = new Map<string, Map<string, string>>();
+
 export interface StaleClaimSweepDeps extends DisposeDeps {
   /** Injectable for tests; defaults to one lsof snapshot of every process cwd. */
   liveCwds?: () => Promise<Set<string>>;
@@ -125,7 +132,12 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
   const now = deps.now ?? Date.now();
 
   const candidates = staleClaims(deps.repoName, deps.cacheEntries, days, now);
-  if (candidates.length === 0) return;
+  const prevRefusals = reportedRefusals.get(deps.repoName) ?? new Map<string, string>();
+  const nextRefusals = new Map<string, string>();
+  if (candidates.length === 0) {
+    reportedRefusals.delete(deps.repoName);
+    return;
+  }
 
   let cwds: Set<string>;
   try {
@@ -137,8 +149,14 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
     return;
   }
 
+  // A tree skipped this pass keeps its entry: skipping is not a verdict.
+  const carry = (path: string) => {
+    const prev = prevRefusals.get(path);
+    if (prev !== undefined) nextRefusals.set(path, prev);
+  };
   for (const rec of candidates) {
     if (hasLiveCwdInside(cwds, rec.path)) {
+      carry(rec.path);
       deps.log.debug?.(
         { repo: deps.repoName, tree: rec.name },
         "stale-claim sweep: live process cwd inside the tree, skipping",
@@ -150,18 +168,31 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
     const mrState = mrStateFor(deps.cacheEntries, rec.branch);
     try {
       const outcome = await withTreeLock(rec.path, () => disposeTree(deps, rec, { auto: true }));
-      if (outcome === "busy") continue;
+      if (outcome === "busy") {
+        carry(rec.path);
+        continue;
+      }
       if (outcome.disposed) {
         deps.log.info(
           { repo: deps.repoName, tree: rec.name, branch: rec.branch, ageDays, inactiveDays, mrState },
           "stale claim disposed",
         );
+      } else {
+        // A refusal (dirty/unpushed/attended/…) leaves the tree claimed on
+        // purpose: an old claim holding real work is live work. It repeats
+        // every pass, so only a new reason for a tree reaches info.
+        nextRefusals.set(rec.path, outcome.refusal);
+        if (prevRefusals.get(rec.path) !== outcome.refusal) {
+          deps.log.info(
+            { repo: deps.repoName, tree: rec.name, branch: rec.branch, refusal: outcome.refusal, ...(outcome.detail ? { detail: outcome.detail } : {}), inactiveDays, mrState },
+            "stale claim kept: dispose refused",
+          );
+        }
       }
-      // A refusal (dirty/unpushed/attended/…) leaves the tree claimed on
-      // purpose: an old claim holding real work is live work. disposeTree
-      // already logged the reason at debug.
     } catch (err) {
+      carry(rec.path);
       deps.log.warn({ err, repo: deps.repoName, tree: rec.name }, "stale-claim sweep: dispose failed");
     }
   }
+  reportedRefusals.set(deps.repoName, nextRefusals);
 }

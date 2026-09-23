@@ -74,7 +74,7 @@ describe("stale-claim sweep", () => {
 
   function sweep(
     cfg: WorktreeRepoConfig,
-    opts: { liveCwds?: () => Promise<Set<string>>; cacheEntries?: Record<string, { mr: { iid?: number; state?: string | null } | null }> } = {},
+    opts: { liveCwds?: () => Promise<Set<string>>; cacheEntries?: Record<string, { mr: { iid?: number; state?: string | null } | null }>; log?: Logger } = {},
   ): Promise<void> {
     return sweepStaleClaims(
       {
@@ -82,7 +82,7 @@ describe("stale-claim sweep", () => {
         repoPath: repo,
         cacheEntries: opts.cacheEntries ?? {},
         emit: () => {},
-        log: fakeLog(),
+        log: opts.log ?? fakeLog(),
         killProcesses: false,
         findRunningRun: () => ({ kind: "none" as const }),
         ...(opts.liveCwds ? { liveCwds: opts.liveCwds } : {}),
@@ -128,6 +128,36 @@ describe("stale-claim sweep", () => {
     await sweep(cfgWith(7), { liveCwds: async () => new Set([join(rec.path, "src")]) });
 
     expect(loadRegistry(repoName).find((t) => t.path === linkedPath)?.state).toBe("claimed");
+  });
+
+  test("a refusal logs at info on the first sweep that hits it, then stays quiet", async () => {
+    const rec = claimedTree(repo, repoName, "echo2", "feat-echo2", { claimedAgoMs: 8 * DAY_MS, push: false });
+    const infos: Array<{ fields: Record<string, unknown>; msg: string }> = [];
+    const log = { ...fakeLog(), info: (fields: Record<string, unknown>, msg: string) => infos.push({ fields, msg }) } as unknown as Logger;
+
+    await sweep(cfgWith(7), { log });
+    await sweep(cfgWith(7), { log });
+
+    const kept = infos.filter((l) => l.msg === "stale claim kept: dispose refused");
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.fields).toMatchObject({ repo: repoName, tree: rec.name, branch: "feat-echo2" });
+    expect(typeof kept[0]!.fields.refusal).toBe("string");
+  });
+
+  test("a tree that stops being stale and later comes back logs its refusal again", async () => {
+    const rec = claimedTree(repo, repoName, "foxtrot2", "feat-foxtrot2", { claimedAgoMs: 8 * DAY_MS, push: false });
+    const infos: string[] = [];
+    const log = { ...fakeLog(), info: (_f: unknown, msg: string) => infos.push(msg) } as unknown as Logger;
+    const setActive = (agoMs: number) =>
+      saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, lastActiveAt: new Date(Date.now() - agoMs).toISOString() } : t)));
+
+    await sweep(cfgWith(7), { log });
+    setActive(0);
+    await sweep(cfgWith(7), { log });
+    setActive(8 * DAY_MS);
+    await sweep(cfgWith(7), { log });
+
+    expect(infos.filter((m) => m === "stale claim kept: dispose refused")).toHaveLength(2);
   });
 
   test("a stale claim with unpushed commits is refused and stays claimed", async () => {

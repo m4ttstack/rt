@@ -19,4 +19,8 @@ import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
 // whole run, including children spawned with a process.env spread.
 guardTestDaemonEnv();
 
+// `gh auth token` honors GH_TOKEN and the macOS keyring regardless of HOME, so
+// the GitHub token fallback (lib/github-token.ts) needs its own off switch.
+process.env.RT_GH_TOKEN_FALLBACK = "off";
+
 process.env.HOME = mkdtempSync(join(tmpdir(), "rt-test-home-"));

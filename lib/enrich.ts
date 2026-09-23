@@ -34,6 +34,8 @@ import {
   type MRDashboardProps,
 } from "@mattstack/glance";
 import { green, blue, red, reset, dim, yellow, cyan } from "./tui.ts";
+import { resolveGithubToken } from "./github-token.ts";
+import { remoteDefaultRef, runGit } from "./worktree/git-async.ts";
 import {
   loadSecrets,
   extractLinearId,
@@ -76,6 +78,39 @@ export function isGitHubRemote(url: string | undefined): boolean {
   if (!url) return false;
   const parsed = parseRemoteUrl(url);
   return parsed?.host === "https://github.com";
+}
+
+export type Forge = "github" | "gitlab";
+
+/** The forge a remote points at and the token rt would call it with; null for a remote on neither. */
+export async function forgeTokenFor(
+  remoteUrl: string | undefined,
+  secrets: { gitlabToken?: string; githubToken?: string },
+): Promise<{ forge: Forge; token: string | null } | null> {
+  if (isGitLabRemote(remoteUrl)) return { forge: "gitlab", token: secrets.gitlabToken ?? null };
+  if (isGitHubRemote(remoteUrl)) return { forge: "github", token: (await resolveGithubToken(secrets.githubToken))?.token ?? null };
+  return null;
+}
+
+/**
+ * The default branch is never sent as a head ref (same rule as the daemon's
+ * selectEnrichmentBranches): it has no MR of its own, a GitHub head-ref match
+ * picks up fork PRs opened from their own default branch, and on GitLab it ran
+ * the all-states query past the LB limit.
+ */
+export async function defaultBranchOf(cwd: string | undefined): Promise<string | undefined> {
+  if (!cwd) return undefined;
+  const head = await runGit(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  const ref = head.exitCode === 0 ? head.stdout.trim() : await remoteDefaultRef(cwd);
+  return ref.replace(/^origin\//, "") || undefined;
+}
+
+/** loadSecrets with githubToken filled from the gh session, asked only for a GitHub remote so other repos never pay the spawn. */
+async function loadSecretsForRemote(remoteUrl: string | undefined): Promise<Awaited<ReturnType<typeof loadSecrets>>> {
+  const secrets = await loadSecrets();
+  if (secrets.githubToken || !isGitHubRemote(remoteUrl)) return secrets;
+  const gh = await resolveGithubToken(undefined);
+  return gh ? { ...secrets, githubToken: gh.token } : secrets;
 }
 
 /**
@@ -420,7 +455,7 @@ async function enrichRealBranches(
   }
 
   // ── Existing logic (state.db cache + fetch) ──
-  const secrets = await loadSecrets();
+  const secrets = await loadSecretsForRemote(remoteUrl);
   const willFetch = !!(secrets.linearApiKey || secrets.gitlabToken || secrets.githubToken);
   const store = getBranchCacheStore();
   const identity = identityForRemote(remoteUrl);
@@ -457,7 +492,7 @@ async function fetchAndCache(
   store: BranchCacheStore,
   silent: boolean,
 ): Promise<EnrichedBranch[]> {
-  const secrets = await loadSecrets();
+  const secrets = await loadSecretsForRemote(remoteUrl);
   const hasForgeToken = !!(secrets.gitlabToken || secrets.githubToken);
   const willFetch = !!(secrets.linearApiKey || hasForgeToken);
   const identity = identityForRemote(remoteUrl);
@@ -474,16 +509,17 @@ async function fetchAndCache(
 
   const remote = remoteUrl ? parseRemoteUrl(remoteUrl) : null;
   if (remote) {
-    const branchNames = branches.map(b => b.branch).filter(b => b !== "");
+    const defaultBranch = await defaultBranchOf(branches[0]?.path);
+    const branchNames = branches.map(b => b.branch).filter(b => b !== "" && b !== defaultBranch);
     if (branchNames.length > 0) {
       try {
         if (secrets.gitlabToken && isGitLabRemote(remoteUrl)) {
           const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
-          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
+          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, "all");
           mrFetchSucceeded = true;
         } else if (secrets.githubToken && isGitHubRemote(remoteUrl)) {
           const provider = new GitHubProvider(remote.host, secrets.githubToken);
-          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
+          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, "all");
           mrFetchSucceeded = true;
         }
       } catch { /* forge fetch failed, continue without MR data */ }
@@ -585,7 +621,7 @@ export async function refreshAllMRs(
   // discard the result once the deadline (cache-refresh.ts) has passed.
   if (signal?.aborted) return;
 
-  const secrets = await loadSecrets();
+  const secrets = await loadSecretsForRemote(remoteUrl);
   // In the daemon this is the SAME singleton the handler context serves from
   // (spec "Store-by-store" item 1) — writes below land in the live map and
   // in state.db together, so the two can never diverge in one process.

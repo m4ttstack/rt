@@ -216,6 +216,7 @@ function runRt(args: string[], homeDir: string, extraEnv: Record<string, string>
       HOME: homeDir,
       PATH: daemonPath,
       TERM: "xterm-256color",
+      RT_GH_TOKEN_FALLBACK: "off",
       RT_SKIP_SETUP: "1",
       CI: "true",
       RT_API_PORT: String(apiPort),

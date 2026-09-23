@@ -22,6 +22,8 @@ import { loadRepoIndex } from "../lib/repo-index.ts";
 import { currentRepoIdentity, repoLabel, resolveRepoArg } from "../lib/repo-arg.ts";
 import { loadWorktreeRepoConfig, inspectReadyGate } from "../lib/worktree/config.ts";
 import { explainError } from "../lib/explain-error.ts";
+import type { MergeCleanupGap } from "../lib/worktree/merge-cleanup-gap.ts";
+import { shellQuote } from "../lib/herdr-launch.ts";
 import { maybeOfferClaudeHook } from "./worktree-hook.ts";
 import { writeReadyApproval } from "../lib/worktree/ready-approval.ts";
 import { daemonQuery, lastQueryTimedOut, type DaemonResponse } from "../lib/daemon-client.ts";
@@ -252,6 +254,17 @@ interface TreeRow {
   repoName: string;
   mr?: { iid: number; state: string; title: string } | null;
   duplicateBranch?: boolean;
+}
+
+type MergeCleanupOffRow = { repo: string; path: string } & MergeCleanupGap;
+
+function mergeCleanupOffLine(gap: MergeCleanupOffRow): string {
+  const why = gap.reason === "no-branches-grant"
+    ? `${gap.mode === "off" ? "not tracked" : "tracked without branch PR checks"} ... run \`rt repos register ${shellQuote(gap.path)} --track ${gap.mode === "off" ? "poll" : gap.mode} --caches ${[...gap.caches, "branches"].join(",")}\``
+    : gap.forge === "github"
+      ? "no GitHub token ... run `rt setup github connect --use-gh`"
+      : "no GitLab token ... run `rt setup gitlab connect`";
+  return `  ${yellow}merged worktrees are not cleaned up in ${repoLabel(gap.repo)}${reset}  ${dim}${why}${reset}`;
 }
 
 /** The golden's state is readiness bookkeeping; its kind is what a human needs to see. */
@@ -598,8 +611,9 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
   const ok = requireQueryResult(parsed.json, res);
   const rows = (ok.data?.trees ?? []) as TreeRow[];
   const readyHeldRepos = (ok.data?.readyHeldRepos ?? []) as string[];
+  const mergeCleanupOff = (ok.data?.mergeCleanupOff ?? []) as MergeCleanupOffRow[];
 
-  if (parsed.json) { console.log(JSON.stringify({ trees: rows, readyHeldRepos }, null, 2)); return; }
+  if (parsed.json) { console.log(JSON.stringify({ trees: rows, readyHeldRepos, mergeCleanupOff }, null, 2)); return; }
 
   if (rows.length === 0) {
     if (readyHeldRepos.length > 0) {
@@ -614,6 +628,7 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
   if (readyHeldRepos.length > 0) {
     console.log(`  ${yellow}team \`ready\` steps held pending approval${reset}  ${dim}${readyHeldRepos.map(repoLabel).join(", ")} ... run \`rt worktree ready-approve <repo>\`${reset}`);
   }
+  for (const gap of mergeCleanupOff) console.log(mergeCleanupOffLine(gap));
   for (const r of rows) {
     const trailing = trailingByPath.get(r.path);
     const mrPart = trailing
