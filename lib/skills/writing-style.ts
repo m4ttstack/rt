@@ -40,6 +40,14 @@ export interface ResolvedWritingStyle {
   source: WritingStyleSource;
 }
 
+/** The one wording for a resolved style's source, shared by `rt skills writing-style show` and the setup row's `ready`/`invalid` detail so the two can never drift apart. */
+export const WRITING_STYLE_SOURCE_LABEL: Record<WritingStyleSource, string> = {
+  user: "yours",
+  team: "team default",
+  preferences: "from preferences.md",
+  fallback: "not chosen; conversational fallback",
+};
+
 const SKILL_ID_RE = /^[a-z0-9][a-z0-9._-]*(:[a-z0-9._-]+)?$/;
 
 export function isValidSkillId(id: string): boolean {

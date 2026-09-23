@@ -11,7 +11,7 @@ import { envelope } from "../lib/setup/contract.ts";
 import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
 import { execWithTimeout } from "../lib/setup/probes.ts";
 import { setSetting } from "../lib/settings/write.ts";
-import { isValidSkillId, presetById, resolveWritingStyle, WRITING_STYLE_KEY, type ResolvedWritingStyle } from "../lib/skills/writing-style.ts";
+import { isValidSkillId, presetById, resolveWritingStyle, WRITING_STYLE_KEY, WRITING_STYLE_SOURCE_LABEL, type ResolvedWritingStyle } from "../lib/skills/writing-style.ts";
 import { isStyleUsable, linkPersonalSkills, listWritingStyles, parsePluginEntries, personalSkillsDir, readSkillInventory } from "../lib/skills/writing-style-sources.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
@@ -53,13 +53,6 @@ export function realWritingStyleDeps(): WritingStyleDeps {
   };
 }
 
-const SOURCE_LABEL: Record<ResolvedWritingStyle["source"], string> = {
-  user: "yours",
-  team: "team default",
-  preferences: "from preferences.md",
-  fallback: "not chosen; conversational fallback",
-};
-
 function refuse(err: UserActionableError, json: boolean, verb: string, deps: WritingStyleDeps): never {
   deps.print(json ? JSON.stringify(userErrorPayload(err, deps.now())) : `rt skills writing-style ${verb}: ${err.message}`);
   return deps.exit(2);
@@ -76,7 +69,7 @@ export async function writingStyleShow(args: string[], _ctx: CommandContext = {}
     deps.print(JSON.stringify(envelope({ skill: resolved.skill, source: resolved.source }, deps.now())));
     return;
   }
-  deps.print(`${resolved.skill} (${SOURCE_LABEL[resolved.source]})`);
+  deps.print(`${resolved.skill} (${WRITING_STYLE_SOURCE_LABEL[resolved.source]})`);
 }
 
 export async function writingStyleList(args: string[], _ctx: CommandContext = {}, deps: WritingStyleDeps = realWritingStyleDeps()): Promise<void> {

@@ -1,7 +1,7 @@
 import { row, type Action, type Row } from "../contract.ts";
 import type { ExecResult, Probes } from "../probes.ts";
 import { homeGitDir } from "../steps/home.ts";
-import { presetById, resolveWritingStyle, type ResolvedWritingStyle } from "../../skills/writing-style.ts";
+import { presetById, resolveWritingStyle, WRITING_STYLE_SOURCE_LABEL, type ResolvedWritingStyle } from "../../skills/writing-style.ts";
 import {
   isStyleUsable, listWritingStyles, parsePluginEntries, readSkillInventory, type SkillInventory, type WritingStyleOption,
 } from "../../skills/writing-style-sources.ts";
@@ -16,12 +16,6 @@ const BASE = {
   required: false,
   finishGated: true,
   recheck: "on-change" as const,
-};
-
-const SOURCE_LABEL: Record<Exclude<ResolvedWritingStyle["source"], "fallback">, string> = {
-  user: "yours",
-  team: "team default",
-  preferences: "from preferences.md",
 };
 
 function chooseAction(options: WritingStyleOption[], selected?: string): Action {
@@ -49,7 +43,7 @@ export function writingStyleRow(input: { homeReady: boolean; resolved: ResolvedW
     return row({ ...BASE, status: "invalid", detail: plugin ? `${resolved.skill} is in a disabled plugin: enable ${plugin}` : `${resolved.skill} is not installed here`, action });
   }
   const label = presetById(resolved.skill)?.label ?? resolved.skill;
-  return row({ ...BASE, status: "ready", detail: `${label} (${SOURCE_LABEL[resolved.source]})`, action });
+  return row({ ...BASE, status: "ready", detail: `${label} (${WRITING_STYLE_SOURCE_LABEL[resolved.source]})`, action });
 }
 
 /**
