@@ -572,10 +572,9 @@ before the engine one group down, and fail on its missing
 - [ ] **Step 4: Compile and read the output in full**
 
 Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-sparse --dry-run --json`
-Expected: the row for `writing-style-sparse` lists files
-`skills/writing-style-sparse/SKILL.md` and
-`skills/writing-style-sparse/pr-description.md` (text-mode dry-run prints
-only `would write 2 files`). If `pr-description.md` is not listed, the
+Expected: the row for `writing-style-sparse` has `side: "skills"` and lists
+files `SKILL.md` and `pr-description.md` (paths are relative to the verb's
+directory; text-mode dry-run prints only `would write 2 files`). If `pr-description.md` is not listed, the
 step-file vendoring did not pick it up: stop and report rather than
 hand-copying it. If the files land under `attachments/`, the surface entry
 above is missing.

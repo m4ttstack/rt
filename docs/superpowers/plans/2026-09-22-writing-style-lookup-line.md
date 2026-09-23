@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Start only after** an rt release carrying both `rt skills writing-style show` (agent-safe) and the `rt_verb` tool has shipped, and after the presets are in the mattstack plugin.
-- The instruction text is exactly the block in Task 1 Step 1; the board copy in Task 3 is the same words.
+- The instruction text is exactly the block in Task 1 Step 2; the board copy in Task 3 is the same words.
 - The team pack is visible to the operator's employer: no mattstack ticket ids (`RT-`, `SKILLS-`, `BOARD-`, `MAT-`) in its files or its commit messages. Its path is `~/.mattstack/teams/<team>/mattstack/packs/<pack>/`; get `<team>` and `<pack>` from the operator.
 - Other sections of `preferences.md` (dev process runner, standing rules) are untouched, and so are the skills that read them.
 - No em or en dashes. mattstack-skills is public: `tests/repo-purity.sh` and `tests/certify.sh` stay green.

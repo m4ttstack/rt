@@ -1568,10 +1568,19 @@ export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-exten
 - [ ] **Step 4: Run tests**
 
 Run: `bun test lib/setup commands/__tests__/setup*.test.ts`
-Expected: PASS after these deliberate updates, and no others:
+Expected: PASS after these deliberate updates. The rule: any assertion on a
+plan built by `composePlan` over the real tools group, whether on
+`finishBlockedBy` or on the tools row list, gains `skills.writing-style`,
+because the fake probes' home (`/fake-home`) has no home repo, so the row
+reads `needs-you` before Install and blocks Finish. Known sites:
 - `validators-tools.test.ts` (around line 465): the finish-gated tool rows now equal both ids, matching `FINISH_GATED_ROW_IDS`.
 - `plan.test.ts` (around line 280, "exactly one finish-gated row today"): now two.
+- `plan.test.ts` (around line 230): `finishBlockedBy` becomes `["tool.fast-browser-extension", "skills.writing-style"]`.
+- `plan.test.ts` (around line 349): after waiving the extension, `finishBlockedBy` becomes `["skills.writing-style"]`, which also shows a waiver cannot clear this row.
 - Tests that assert the exact tools row list gain `skills.writing-style` right after `tool.plugins`.
+
+Do not weaken or delete any other assertion to get green; a failure outside
+this rule is a real finding to report.
 
 - [ ] **Step 5: Commit**
 
