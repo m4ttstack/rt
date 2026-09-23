@@ -321,10 +321,11 @@ func (mn *Menu) Wheel(x, y, delta int) {
 // cursorIntoWindow puts the cursor on the first enabled row the window shows
 // (fromTop) or the last one; a window of only disabled rows leaves it.
 func (mn *Menu) cursorIntoWindow(region []menuLine, fromTop bool) {
-	for n := 0; n < mn.winH; n++ {
+	winH := min(mn.winH, len(region)-mn.top)
+	for n := 0; n < winH; n++ {
 		i := mn.top + n
 		if !fromTop {
-			i = mn.top + mn.winH - 1 - n
+			i = mn.top + winH - 1 - n
 		}
 		if l := region[i]; !l.rule && !mn.matchDisabled(l.match) {
 			mn.cursor = l.match

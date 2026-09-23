@@ -463,6 +463,26 @@ func TestAFittedMenuScrollsToKeepTheCursorInView(t *testing.T) {
 	}
 }
 
+// TestCursorIntoWindowIsSafeWhenTheWindowOutgrowsTheRegion exercises
+// cursorIntoWindow directly with a stale winH wider than the region it
+// is handed, the shape a refilter between Wheel calls can produce.
+func TestCursorIntoWindowIsSafeWhenTheWindowOutgrowsTheRegion(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(2), nil)
+	mn.winH = 5
+	mn.top = 0
+	region := mn.regionLines()
+
+	mn.cursorIntoWindow(region, true)
+	if mn.cursor != 0 {
+		t.Fatalf("fromTop cursor = %d, want 0", mn.cursor)
+	}
+
+	mn.cursorIntoWindow(region, false)
+	if mn.cursor != 1 {
+		t.Fatalf("fromBottom cursor = %d, want 1", mn.cursor)
+	}
+}
+
 func TestAFittedMenuWheelScrollsTheRows(t *testing.T) {
 	mn := NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 0})
 	mn.FitParentHeight()
