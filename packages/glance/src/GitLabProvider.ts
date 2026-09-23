@@ -704,6 +704,22 @@ const MR_INDEX_FIELDS = `
  * null `state` argument as a filter, so a request for several states must
  * omit the variable entirely.
  */
+/**
+ * `query` with a negated target-branch filter on its mergeRequests field.
+ * Applied only when a caller excludes something, so every other request stays
+ * the exact query GitLab always received (an older self-managed instance may
+ * not accept the argument). GitLab reads a null or empty list as no filter.
+ */
+function excludingTargets(query: string): string {
+  return query
+    .replace(/query (\w+)\(/, (_m, name: string) => `query ${name}($notTarget: [String!], `)
+    .replace('mergeRequests(', () => 'mergeRequests(not: { targetBranches: $notTarget }, ');
+}
+
+function targetsToExclude(branches: string[] | undefined): string[] | null {
+  return branches && branches.length > 0 ? branches : null;
+}
+
 function mrIndexQuery(root: 'group' | 'project', withState: boolean): string {
   const scopeArg = root === 'group' ? 'includeSubgroups: true, ' : '';
   const stateVar = withState ? ', $state: MergeRequestState' : '';
@@ -1073,14 +1089,18 @@ export class GitLabProvider implements GitProvider {
     // Author batch path — one query per author, deduped by MR global ID.
     // Fetches full dashboard fields directly, so callers building a team board
     // need no separate REST discovery pass.
+    const exclude = targetsToExclude(options?.excludeTargetBranches);
+
     if (options?.authorUsernames) {
       const projectPath = requireProjectPath(options.projectPath, 'authorUsernames');
+      const query = exclude ? excludingTargets(MR_BY_AUTHOR_QUERY) : MR_BY_AUTHOR_QUERY;
       const perAuthor = await Promise.all(
         options.authorUsernames.map((author) =>
-          this.runQuery<MRBatchResponse>('fetchPullRequests.byAuthor', MR_BY_AUTHOR_QUERY, {
+          this.runQuery<MRBatchResponse>('fetchPullRequests.byAuthor', query, {
             projectPath,
             author,
             state: apiState,
+            ...(exclude && { notTarget: exclude }),
           }),
         ),
       );
@@ -1101,18 +1121,20 @@ export class GitLabProvider implements GitProvider {
     if (options?.projectPath) {
       const projectPath = options.projectPath;
       const useStateFilter = !needsAllStates;
-      const query = options.listWeight
+      const base = options.listWeight
         ? useStateFilter
           ? MR_PROJECT_LIST_QUERY
           : MR_PROJECT_LIST_QUERY_NO_STATE
         : useStateFilter
           ? MR_PROJECT_QUERY
           : MR_PROJECT_QUERY_NO_STATE;
+      const query = exclude ? excludingTargets(base) : base;
       const out: PullRequest[] = [];
       let after: string | null = null;
       do {
         const vars: Record<string, unknown> = { projectPath, after, ua: options.updatedAfter ?? null };
         if (useStateFilter) vars.state = apiState;
+        if (exclude) vars.notTarget = exclude;
         const resp: MRProjectResponse = await this.runQuery<MRProjectResponse>('fetchPullRequests.project', query, vars);
         const conn = resp.project?.mergeRequests;
         for (const gql of conn?.nodes ?? []) {
@@ -1216,12 +1238,14 @@ export class GitLabProvider implements GitProvider {
       }
     }
     const first = options.pageSize ?? 100;
+    const exclude = targetsToExclude(options.excludeTargetBranches);
+    const query = exclude ? excludingTargets(MR_APPROVAL_RULES_QUERY) : MR_APPROVAL_RULES_QUERY;
     const out: MRApprovalRules[] = [];
     let after: string | null = null;
     do {
       const resp: ApprovalRulesResponse = await this.runQuery<ApprovalRulesResponse>(
-        'fetchApprovalRules.project', MR_APPROVAL_RULES_QUERY,
-        { projectPath, ua: options.updatedAfter ?? null, first, after },
+        'fetchApprovalRules.project', query,
+        { projectPath, ua: options.updatedAfter ?? null, first, after, ...(exclude && { notTarget: exclude }) },
       );
       out.push(...mapNodes(resp));
       const conn = resp.project?.mergeRequests;
@@ -1279,12 +1303,15 @@ export class GitLabProvider implements GitProvider {
       : options.projectPaths!.map((fullPath) => ({ root: 'project' as const, fullPath }));
 
     const out: MergeRequestIndexRow[] = [];
+    const exclude = targetsToExclude(options.excludeTargetBranches);
     for (const scope of scopes) {
-      const query = mrIndexQuery(scope.root, apiState !== null);
+      const base = mrIndexQuery(scope.root, apiState !== null);
+      const query = exclude ? excludingTargets(base) : base;
       let after: string | null = null;
       do {
         const vars: Record<string, unknown> = { fullPath: scope.fullPath, ua: options.updatedAfter, after };
         if (apiState !== null) vars.state = apiState;
+        if (exclude) vars.notTarget = exclude;
         const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars, io);
         const conn = resp[scope.root]?.mergeRequests;
         if (!conn) throw new Error(`fetchMergeRequestIndex: no ${scope.root} at ${scope.fullPath}`);

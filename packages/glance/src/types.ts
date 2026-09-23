@@ -733,6 +733,8 @@ export interface FetchApprovalRulesOptions {
   iids?: number[];
   /** Page size, default 100. */
   pageSize?: number;
+  /** Windowed mode only: leave out MRs whose target branch is one of these exact names, server-side. */
+  excludeTargetBranches?: string[];
 }
 
 /** Feed event emitted as `feed_event` (incremental) or inside `feed_snapshot` (initial batch). */

@@ -138,6 +138,14 @@ export interface FetchPullRequestsOptions {
   listWeight?: boolean;
 
   /**
+   * Leave out MRs whose target branch is one of these exact names. Honored by
+   * the projectPath-alone and authorUsernames modes. GitLab applies it
+   * server-side (`not: { targetBranches }`), so it never resolves those MRs'
+   * fields; GitHub drops them after fetching. Empty or absent excludes nothing.
+   */
+  excludeTargetBranches?: string[];
+
+  /**
    * Called once per way the result fell short: a page cap reached with matches
    * outstanding, a search page that failed, or a per-PR fetch that failed and
    * either dropped that PR from the result or left one of its fields at its
@@ -207,6 +215,8 @@ export interface FetchMergeRequestIndexOptions {
   updatedAfter: string;
   /** Any state when omitted. */
   states?: MRState[];
+  /** Leave out MRs whose target branch is one of these exact names, server-side. Empty or absent excludes nothing. */
+  excludeTargetBranches?: string[];
   /** Called after each page with the rows collected so far. */
   onPage?: (rowsSoFar: number) => void;
   /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */

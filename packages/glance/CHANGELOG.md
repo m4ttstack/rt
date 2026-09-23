@@ -1,5 +1,19 @@
 # @mattstack/glance
 
+## 0.26.0
+
+### Minor Changes
+
+- `excludeTargetBranches?: string[]` on `FetchPullRequestsOptions` (the
+  `projectPath`-alone and `authorUsernames` modes),
+  `FetchMergeRequestIndexOptions`, and `FetchApprovalRulesOptions` (windowed
+  mode). Leaves out MRs whose target branch is one of these exact names.
+  GitLab applies it server-side as `not: { targetBranches }`, so an excluded
+  MR's fields (approval state included) are never resolved; the clause is only
+  added when the list is non-empty, so every other request is unchanged.
+  GitHub drops matching PRs after fetching. Names are exact: GitLab ignores
+  wildcards here, so a caller with a pattern expands it first.
+
 ## 0.25.0
 
 ### Minor Changes

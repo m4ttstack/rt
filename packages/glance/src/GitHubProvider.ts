@@ -817,6 +817,11 @@ export class GitHubProvider implements GitProvider {
       }));
     }
 
+    const excluded = new Set(options?.excludeTargetBranches ?? []);
+    if (excluded.size > 0 && options?.projectPath && !options.iids) {
+      candidates = candidates.filter(({ pr }) => !excluded.has(pr.base.ref));
+    }
+
     const results = await this.enrich(
       candidates,
       options?.listWeight ?? false,

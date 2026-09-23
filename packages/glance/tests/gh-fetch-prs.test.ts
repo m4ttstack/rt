@@ -340,6 +340,33 @@ describe('GitHubProvider.fetchPullRequests: repository modes', () => {
       'state=all'
     );
   });
+
+  test('excludeTargetBranches drops PRs into the listed base branches', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const deploy = { ref: 'deployments/qa', repo: { id: 1, full_name: 'acme/repo', default_branch: 'main' } };
+    install(provider, [ghPR(1), ghPR(2, { base: deploy })]);
+
+    const prs = await provider.fetchPullRequests({
+      projectPath: 'acme/repo',
+      excludeTargetBranches: ['deployments/qa']
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1]);
+  });
+
+  test('excludeTargetBranches applies to the author mode too', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const deploy = { ref: 'deployments/qa', repo: { id: 1, full_name: 'acme/repo', default_branch: 'main' } };
+    install(provider, [ghPR(1), ghPR(2, { base: deploy })]);
+
+    const prs = await provider.fetchPullRequests({
+      projectPath: 'acme/repo',
+      authorUsernames: ['octocat'],
+      excludeTargetBranches: ['deployments/qa']
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1]);
+  });
 });
 
 describe('GitHubProvider.fetchPullRequests: updatedAfter and listWeight', () => {
