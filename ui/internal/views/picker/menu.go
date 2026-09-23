@@ -100,15 +100,18 @@ func (mn *Menu) SetAnchor(a *MenuAnchor) { mn.anchor = a }
 
 // refilter re-ranks the menu's rows against its own query, reusing the same
 // fzf-backed Rank the main list filters with so a menu with many rows
-// narrows the same way. The rule between sections is derived at render time
-// from each row's section, not tracked here, so refilter never has to
-// reason about where it moved.
+// narrows the same way. Each section stays one contiguous block, in the
+// order sections first appear in the items, with rank order kept inside it:
+// a filtered box then paints at most one rule per section boundary and is
+// never taller than the unfiltered BoxHeight a caller reserved.
 func (mn *Menu) refilter() {
 	targets := make([]string, len(mn.rows))
+	sections := make([]string, len(mn.rows))
 	for i, r := range mn.rows {
 		targets[i] = r.text
+		sections[i] = strconv.Itoa(r.section)
 	}
-	mn.matches = Rank(mn.query, targets, false)
+	mn.matches = GroupContiguous(Rank(mn.query, targets, false), sections)
 	mn.cursor = 0
 }
 
@@ -410,11 +413,10 @@ func modalJustify(width int, bg lipgloss.Style, left, right string) string {
 // modalHeaderLine clips mn.title to what's actually left of width once the
 // margin, the "esc dismiss" hint, and a gap column ahead of it are spoken
 // for. modalContentWidth already sizes the box for the title in the common
-// case, but caps at maxInner -- a title long enough to hit that cap (a
-// registry menu's title is a row's own label, always short, but a
-// TS-driven modal's title is caller-supplied free text with no such bound)
-// would otherwise render past width uncapped, the one line in the box
-// modalRowLine's own clipping convention didn't already cover.
+// case, but caps at maxInner, and the title is caller-supplied text with no
+// length bound -- one long enough to hit that cap would otherwise render
+// past width uncapped, the one line in the box modalRowLine's own clipping
+// convention didn't already cover.
 func modalHeaderLine(mn *Menu, width int) string {
 	const rightText = "esc dismiss"
 	titleBudget := width - 1 - 1 - lipgloss.Width(rightText)

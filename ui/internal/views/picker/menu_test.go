@@ -79,14 +79,49 @@ func TestMenuClickChoosesThePaintedRowAndOutsideCloses(t *testing.T) {
 	mn := NewMenu("x.go", menuItems(), &MenuAnchor{X: 10, Y: 5})
 	frame := ansi.Strip(mn.Render(parent, 80))
 	lines := strings.Split(frame, "\n")
+	found := false
 	for y, line := range lines {
 		if x := strings.Index(line, "Reveal in Finder"); x >= 0 {
+			found = true
 			if out := mn.Click(lipgloss.Width(line[:x]), y); out.Kind != MenuChosen || out.Item.ID != "b" {
 				t.Fatalf("click on the painted row = %+v", out)
 			}
 		}
 	}
+	if !found {
+		t.Fatal("Reveal in Finder never painted")
+	}
 	if out := mn.Click(0, 0); out.Kind != MenuClosed {
 		t.Fatalf("click outside = %+v, want MenuClosed", out)
+	}
+}
+
+func TestMenuFilterKeepsEachSectionContiguous(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{
+		{ID: "file", Label: "open file", Section: 0},
+		{ID: "editor", Label: "open in editor", Section: 0},
+		{ID: "open", Label: "open", Section: 1, Quiet: true},
+		{ID: "tabs", Label: "open all tabs", Section: 1, Quiet: true},
+	}, nil)
+	for _, r := range "open" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	var order []string
+	for _, mt := range mn.matches {
+		order = append(order, mn.rows[mt.Index].id)
+	}
+	if got := strings.Join(order, ","); got != "file,editor,open,tabs" {
+		t.Fatalf("filtered order = %s, want item matches first, then globals", got)
+	}
+	parent := strings.TrimSuffix(strings.Repeat(strings.Repeat(" ", 80)+"\n", 24), "\n")
+	rules := 0
+	for _, line := range strings.Split(ansi.Strip(mn.Render(parent, 80)), "\n") {
+		if strings.Contains(line, "│─") {
+			rules++
+		}
+	}
+	// The filter line's own rule plus exactly one section rule.
+	if rules != 2 {
+		t.Fatalf("painted %d rules inside the box, want 2", rules)
 	}
 }
