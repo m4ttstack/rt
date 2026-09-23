@@ -7,7 +7,7 @@
 
 import { getSetting } from "../settings/resolve.ts";
 import { setSetting } from "../settings/write.ts";
-import { FINISH_GATED_ROW_IDS, type Group } from "./contract.ts";
+import { FINISH_GATED_ROW_IDS, WAIVABLE_ROW_IDS, type Group } from "./contract.ts";
 import { UserActionableError } from "./errors.ts";
 import type { SettingsReader } from "./team-settings.ts";
 
@@ -33,16 +33,20 @@ export function readWaived(opts: { read?: SettingsReader; warn?: (message: strin
  * post-install view names it as owed; a `skipped` one keeps its shape, since
  * there is nothing to load into. Plan mode leaves the validator's shape
  * alone, so Install stays reachable. A waived row reads optional with the
- * note that states the cost, in either mode.
+ * note that states the cost, in either mode. A stored waiver is honored only
+ * for a waivable id; every finish-gated row carries `waivable` so the app
+ * knows whether Skip for now applies.
  */
 export function applyFinishGate(groups: Group[], mode: "plan" | "status", waived: readonly string[] = []): Group[] {
+  const honored = waived.filter((id) => WAIVABLE_ROW_IDS.includes(id));
   return groups.map((g) => ({
     ...g,
     rows: g.rows.map((r) => {
       if (!r.finishGated) return r;
-      if (waived.includes(r.id)) return { ...r, required: false, waived: true, optionalNote: WAIVED_NOTE };
-      if (mode === "status" && r.status !== "skipped") return { ...r, required: true, optionalNote: null };
-      return r;
+      const gated = { ...r, waivable: WAIVABLE_ROW_IDS.includes(r.id) };
+      if (honored.includes(r.id)) return { ...gated, required: false, waived: true, optionalNote: WAIVED_NOTE };
+      if (mode === "status" && r.status !== "skipped") return { ...gated, required: true, optionalNote: null };
+      return gated;
     }),
   }));
 }
@@ -62,6 +66,11 @@ function assertFinishGated(id: string): void {
   throw new UserActionableError("not-finish-gated", `${id} is not a finish-gated row; finish-gated rows: ${FINISH_GATED_ROW_IDS.join(", ")}`);
 }
 
+function assertWaivable(id: string): void {
+  if (WAIVABLE_ROW_IDS.includes(id)) return;
+  throw new UserActionableError("not-waivable", `${id} cannot be skipped; waivable rows: ${WAIVABLE_ROW_IDS.join(", ")}`);
+}
+
 export interface WaiverChange {
   /** The stored list after the call. */
   waived: string[];
@@ -71,7 +80,7 @@ export interface WaiverChange {
 
 /** Records `id` as skipped on this Mac; a second call writes nothing and says so. */
 export function waiveRow(id: string, store: WaiverStore): WaiverChange {
-  assertFinishGated(id);
+  assertWaivable(id);
   const current = store.read();
   if (current.includes(id)) return { waived: current, changed: false };
   const next = [...current, id];

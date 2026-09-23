@@ -13,6 +13,13 @@ export interface ConnectField {
   hint?: string;
 }
 
+export interface ChooseOption {
+  id: string;
+  label: string;
+  detail: string;
+  sample?: string;
+}
+
 export type Action =
   | { type: "open-settings"; label: string; target: "fda" | "login-items" | "notifications" | "keyboard" }
   | { type: "request-permission"; label: string; which: "notifications" }
@@ -25,7 +32,9 @@ export type Action =
   | { type: "open-url"; label: string; url: string }
   | { type: "run"; label: string; verb: string[] }
   // startAt is where the panel opens, never a value rt writes.
-  | { type: "choose-folder"; label: string; startAt: string | null };
+  | { type: "choose-folder"; label: string; startAt: string | null }
+  // The app appends the picked id and --json to verb; "other" collects a free-text id for the same verb.
+  | { type: "choose"; label: string; verb: string[]; options: ChooseOption[]; selected?: string; other?: { label: string; hint: string } };
 
 export interface Row {
   id: string;
@@ -42,6 +51,8 @@ export interface Row {
   finishGated?: boolean;
   /** Set on a finish-gated row the user skipped on this Mac; the app's Un-skip affordance keys on this, never on the note's wording. */
   waived?: boolean;
+  /** Emitted on every finish-gated row: whether Skip for now is offered. An app reading a row without it treats a finish-gated row as waivable. */
+  waivable?: boolean;
 }
 
 export interface Group {
@@ -72,6 +83,12 @@ export const GROUP_TITLES: Record<GroupId, string> = { mac: "Your Mac", accounts
 
 /** The rows that gate Finish. Enumerated here so `rt setup waive` can refuse anything else and offer a picker over the set. */
 export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];
+
+/** The finish-gated rows `rt setup waive` may skip; the gate honors a stored waiver only for these. */
+export const WAIVABLE_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];
+
+/** Action types the app's Done screen can act on; a finish-gated row must only carry these (parity with DoneActions in rt-tray). */
+export const DONE_ACTION_TYPES = ["open-url", "steps", "run", "choose"] as const;
 
 export type StepKind = "rt" | "app" | "privileged";
 export type StepState = "pending" | "running" | "done" | "failed" | "skipped";
@@ -131,10 +148,11 @@ export function row(r: Omit<Row, "optionalNote" | "action" | "recheck"> & Partia
   return { optionalNote: null, action: null, recheck: "on-change", ...r };
 }
 
-/** A finish-gated row that is neither ready nor skipped, and not waived on this Mac, blocks Finish. `skipped` means there is nothing to load into, or another row already reports the fault. */
+/** A finish-gated row that is neither ready nor skipped, and not waived on this Mac, blocks Finish. `skipped` means there is nothing to load into, or another row already reports the fault. A stored waiver is honored only for a waivable id. */
 export function finishBlockers(groups: Group[], waived: readonly string[] = []): string[] {
+  const honored = waived.filter((id) => WAIVABLE_ROW_IDS.includes(id));
   return groups.flatMap((g) =>
-    g.rows.filter((r) => r.finishGated === true && r.status !== "ready" && r.status !== "skipped" && !waived.includes(r.id)).map((r) => r.id),
+    g.rows.filter((r) => r.finishGated === true && r.status !== "ready" && r.status !== "skipped" && !honored.includes(r.id)).map((r) => r.id),
   );
 }
 
