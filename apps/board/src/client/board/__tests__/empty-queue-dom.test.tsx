@@ -254,3 +254,34 @@ test('a list the drafts chip trimmed says how many drafts it hid', async () => {
     container.remove();
   }
 });
+
+test('a list both chips trimmed names each count on one line', async () => {
+  servedData = {
+    ...BOARD_DATA,
+    members: [{ username: 'matt', name: 'Matthew Goodwin', count: 3 }],
+    allMembers: [
+      { username: 'matt', name: 'Matthew Goodwin', hidden: false, count: 3 },
+    ],
+    mrs: [
+      { ...needsMeMr(1), slack: { posted: true, reactions: [] } },
+      needsMeMr(2),
+      {
+        ...needsMeMr(3),
+        isDraft: true,
+        slack: { posted: true, reactions: [] },
+      },
+    ],
+  };
+  history.replaceState(null, '', '?slack=posted&drafts=hide');
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = await renderBoard(container);
+  try {
+    expect(
+      container.querySelector('.tui-hidden-note')?.textContent?.trim()
+    ).toBe('1 item hidden · 1 draft hidden');
+  } finally {
+    await React.act(async () => root.unmount());
+    container.remove();
+  }
+});
