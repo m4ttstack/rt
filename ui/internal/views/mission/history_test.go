@@ -3,6 +3,7 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1014,6 +1015,76 @@ func TestWheelOverHistoryListScrollsTheView(t *testing.T) {
 	}
 	if cmd := wheelOverList(m, tea.MouseWheelUp); cmd != nil || listTexts(m)[0] != "Today" {
 		t.Fatal("a tick up at the top stays at the top")
+	}
+}
+
+// wholeBlockPainted reports whether commit i's summary, byline, and rule
+// are painted as consecutive list rows.
+func wholeBlockPainted(texts []string, i int) bool {
+	for r := 0; r+2 < len(texts); r++ {
+		if texts[r] == fmt.Sprintf("subject-%02d", i) && strings.HasPrefix(texts[r+1], fmt.Sprintf("author-%02d", i)) && strings.HasPrefix(texts[r+2], "───") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestHistoryViewportKeepsTwoWholeCommitsEachSide is the History margin's
+// definition: wherever the cursor rests, the whole blocks of the two
+// visible commits above it and the two below it stay painted (headers
+// between them included), or the list's end when fewer remain; on the
+// action row, the two commits above it. It walks down onto the action row
+// and back up, since each direction leans on the other margin.
+func TestHistoryViewportKeepsTwoWholeCommitsEachSide(t *testing.T) {
+	instantSelectTick(t)
+	const n = 30
+	m := groupedMission(t, n, true)
+	check := func(dir string) {
+		t.Helper()
+		texts := listTexts(m)
+		k := m.historyIndex(m.historyCursor)
+		lo, hi := k-2, k+2
+		if m.historyOnMoreRow() {
+			lo, hi = n-2, n-1
+			if !slices.Contains(texts, "Load 100 more commits") {
+				t.Fatalf("%s: the action row holding the cursor is not painted", dir)
+			}
+		}
+		for i := max(lo, 0); i <= min(hi, n-1); i++ {
+			if !wholeBlockPainted(texts, i) {
+				t.Fatalf("%s with the cursor on %q (onMore=%v): commit %d's whole block is not painted:\n%s", dir, m.historyCursor, m.historyOnMoreRow(), i, strings.Join(texts, "\n"))
+			}
+		}
+	}
+	for range n + 1 {
+		m.Update(downKey())
+		check("down")
+	}
+	if !m.historyOnMoreRow() {
+		t.Fatal("setup: the walk down should end on the action row")
+	}
+	for range n + 1 {
+		m.Update(upKey())
+		check("up")
+	}
+}
+
+// TestHistoryViewportShrinksMarginsOnAShortList: a list too short for two
+// commits each side still keeps the cursor's own block painted.
+func TestHistoryViewportShrinksMarginsOnAShortList(t *testing.T) {
+	instantSelectTick(t)
+	m := groupedMission(t, 30, false)
+	m.height = 21
+	if h := m.layout().listRegionH; h != 9 {
+		t.Fatalf("setup: the list should be 9 rows, got %d", h)
+	}
+	for _, key := range []tea.KeyPressMsg{downKey(), upKey()} {
+		for range 30 {
+			m.Update(key)
+			if k := m.historyIndex(m.historyCursor); !wholeBlockPainted(listTexts(m), k) {
+				t.Fatalf("the cursor's own block must stay painted on a short list, cursor %q:\n%s", m.historyCursor, strings.Join(listTexts(m), "\n"))
+			}
+		}
 	}
 }
 

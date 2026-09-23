@@ -528,6 +528,32 @@ func (m *Mission) historyCursorLine(lines []historyLine) int {
 	return 0
 }
 
+// historyCursorMargins is the lines the viewport keeps above and below the
+// cursor line so two whole commits of context show on each side: up to the
+// summary of the second visible commit above, and down to the rule of the
+// second visible commit below the cursor's own block, headers between
+// included. Where fewer commits remain, the margin runs to the list's edge.
+func historyCursorMargins(lines []historyLine, cursor int) (before, after int) {
+	before, after = cursor, len(lines)-1-cursor
+	for i, summaries := cursor-1, 0; i >= 0; i-- {
+		if lines[i].kind == historyLineSummary {
+			if summaries++; summaries == 2 {
+				before = cursor - i
+				break
+			}
+		}
+	}
+	for i, rules := cursor+1, 0; i < len(lines); i++ {
+		if lines[i].kind == historyLineRule {
+			if rules++; rules == 3 {
+				after = i - cursor
+				break
+			}
+		}
+	}
+	return before, after
+}
+
 // historyWindow is the part of historyLines a height-row list paints, from
 // line top for vis rows. renderCommitList and historySidebarHit both take
 // their rows from here, so a hit always names the row the frame painted.
@@ -537,7 +563,9 @@ func (m *Mission) historyWindow(height int) (lines []historyLine, top, vis int) 
 		vis = max(min(len(lines), height), 0)
 		top = max(0, min(m.historyTop, len(lines)-vis))
 	} else {
-		top, vis = picker.Viewport(m.historyCursorLine(lines), m.historyTop, len(lines), height, height, 0)
+		cursor := m.historyCursorLine(lines)
+		before, after := historyCursorMargins(lines, cursor)
+		top, vis = picker.ViewportAround(cursor, m.historyTop, len(lines), height, height, 0, before, after)
 	}
 	m.historyTop = top
 	return lines, top, vis
