@@ -166,4 +166,50 @@ describe("new", () => {
     expect(await code(["taken"], { pluginListStdout: async () => list })).toBe("exists");
     expect(await code([])).toBe("usage");
   });
+
+  test("CRLF preset SKILL.md yields a copy with normalized LF and retargeted frontmatter", async () => {
+    homeRepo();
+    const installPath = join(home, "cache", "mattstack");
+    const dir = join(installPath, "skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    const crlfContent = "---\r\nname: writing-style-sparse\r\ndescription: \"Use only mattstack:writing-style-sparse\"\r\n---\r\n\r\n# Sparse\r\n";
+    writeFileSync(join(dir, "SKILL.md"), crlfContent);
+    const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
+    await writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
+    const text = readFileSync(join(home, ".mattstack", "user", "skills", "my-voice", "SKILL.md"), "utf8");
+    expect(text).toContain("name: my-voice");
+    expect(text).not.toContain("\r\n");
+  });
+
+  test("preset SKILL.md with no frontmatter refuses no-plugin and leaves no directory", async () => {
+    homeRepo();
+    const installPath = join(home, "cache", "mattstack");
+    const dir = join(installPath, "skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "# No frontmatter\nJust content\n");
+    const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
+    out.length = 0;
+    await expect(writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("no-plugin");
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "my-voice"))).toBe(false);
+  });
+
+  test("unreadable pr-description.md (directory) fails without leaving skills directory behind", async () => {
+    homeRepo();
+    const installPath = join(home, "cache", "mattstack");
+    const dir = join(installPath, "skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), [
+      "---",
+      "name: writing-style-sparse",
+      'description: "mattstack:writing-style-sparse"',
+      "---",
+      "# Sparse",
+    ].join("\n"));
+    mkdirSync(join(dir, "pr-description.md"));
+    const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
+    out.length = 0;
+    await expect(writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow();
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "my-voice"))).toBe(false);
+  });
 });

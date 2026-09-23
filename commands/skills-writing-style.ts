@@ -150,16 +150,17 @@ function stripCompilerComments(text: string): string {
     .join("\n");
 }
 
-/** Renames the frontmatter `name` and the preset id the description gates on, so the copy is a skill of its own. */
+/** Normalizes CRLF to LF, then renames the frontmatter `name` and preset id so the copy is a skill of its own. */
 function retarget(text: string, presetId: string, name: string): string {
-  const end = text.indexOf("\n---", 4);
-  if (!text.startsWith("---\n") || end === -1) return text;
-  const frontmatter = text
+  const normalized = text.replace(/\r\n/g, "\n");
+  const end = normalized.indexOf("\n---", 4);
+  if (!normalized.startsWith("---\n") || end === -1) return null as never;
+  const frontmatter = normalized
     .slice(0, end)
     .replace(/^name:.*$/m, `name: ${name}`)
     .split(presetId)
     .join(name);
-  return frontmatter + text.slice(end);
+  return frontmatter + normalized.slice(end);
 }
 
 export async function writingStyleNew(args: string[], _ctx: CommandContext = {}, deps: WritingStyleDeps = realWritingStyleDeps()): Promise<void> {
@@ -196,10 +197,38 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     return refuse(new UserActionableError("no-plugin", "the mattstack plugin with the writing-style presets is not installed; run rt setup"), json, "new", deps);
   }
 
-  mkdirSync(target, { recursive: true });
-  writeFileSync(join(target, "SKILL.md"), retarget(stripCompilerComments(readFileSync(join(source, "SKILL.md"), "utf8")), presetId, name));
-  if (existsSync(join(source, "pr-description.md"))) writeFileSync(join(target, "pr-description.md"), readFileSync(join(source, "pr-description.md"), "utf8"));
-  linkPersonalSkills(deps.home());
+  // Read and transform both files fully before creating target directory
+  let skillContent: string;
+  let prDescContent: string | undefined;
+  try {
+    const rawSkill = readFileSync(join(source, "SKILL.md"), "utf8");
+    skillContent = retarget(stripCompilerComments(rawSkill), presetId, name);
+    if (existsSync(join(source, "pr-description.md"))) {
+      prDescContent = readFileSync(join(source, "pr-description.md"), "utf8");
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return refuse(new UserActionableError("no-plugin", `the installed preset ${presetId} is unreadable; reinstall the mattstack plugin (${msg})`), json, "new", deps);
+  }
+  if (skillContent === null) {
+    return refuse(new UserActionableError("no-plugin", `the installed preset ${presetId} is unreadable; reinstall the mattstack plugin`), json, "new", deps);
+  }
+
+  try {
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "SKILL.md"), skillContent);
+    if (prDescContent !== undefined) writeFileSync(join(target, "pr-description.md"), prDescContent);
+    linkPersonalSkills(deps.home());
+  } catch (err) {
+    try {
+      // Clean up on failure: name passed NAME_RE, target sits under personalSkillsDir, exists check proved we created it
+      const { rmSync } = await import("fs");
+      rmSync(target, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw err;
+  }
 
   deps.print(json
     ? JSON.stringify(envelope({ name, path: target, from: presetId }, deps.now()))
