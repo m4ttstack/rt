@@ -139,7 +139,7 @@ const ANSWER_VALUE_SCHEMA = {
       properties: {
         value: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
         note: { type: "string" },
-        text: { type: "string" },
+        text: { type: "string", pattern: "\\S", description: "Replacement for text the gate offered (an edited reply), used in its place. Comments go in note, never here." },
       },
       required: ["value"],
       additionalProperties: false,
@@ -181,7 +181,7 @@ export function mcpTools(): McpToolDef[] {
   return [
     {
       name: "gate_answer",
-      description: "Answer an open gate's questions as this pane. Answer values must be option VALUES verbatim; nuance goes in {value, note}.",
+      description: "Answer an open gate's questions as this pane. Answer values must be option VALUES verbatim; nuance goes in {value, note}, and replacement text for something the gate offered goes in {value, text}.",
       inputSchema: {
         type: "object",
         properties: {

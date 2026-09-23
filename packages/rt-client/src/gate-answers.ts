@@ -5,7 +5,7 @@ export type GateAnswerWire = GateAnswer["answers"][string];
 
 /** Both wire shapes carry the same value underneath: bare, or {value,
     note?, text?} when a panel attaches free text or a replacement for text
-    the gate offered. Validation reads only the value. */
+    the gate offered. Unwrapping keeps only the value. */
 export function unwrapGateAnswerValue(raw: unknown): unknown {
   if (raw && typeof raw === "object" && !Array.isArray(raw) && "value" in (raw as Record<string, unknown>)) {
     return (raw as { value: unknown }).value;

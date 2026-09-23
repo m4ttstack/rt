@@ -56,4 +56,10 @@ describe("validateGateAnswers", () => {
   test("whitespace-only text is empty", () => {
     expect(validateGateAnswers([single], { verdict: { value: "yes", text: "  \n" } })).toBe("question verdict text must not be empty");
   });
+  test("wrapper field errors win over value errors", () => {
+    expect(validateGateAnswers([single], { verdict: { value: "bogus", text: " " } })).toBe("question verdict text must not be empty");
+  });
+  test("note is checked before text", () => {
+    expect(validateGateAnswers([single], { verdict: { value: "yes", note: 5, text: 5 } })).toBe("question verdict note must be a string");
+  });
 });

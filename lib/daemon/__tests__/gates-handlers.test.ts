@@ -239,7 +239,7 @@ describe("gate:answer", () => {
     if (l.ok) { expect(l.data.conflict).toBe(true); expect(l.data.row.answer?.by).toBe("console"); }
   });
 
-  test("note-carrying answer values round-trip (the spec's one free-text channel)", async () => {
+  test("note-carrying answer values round-trip", async () => {
     const { handlers, store } = harness();
     const id = (await openTwoQuestions(handlers)).id;
     const r = await handlers["gate:answer"]({
@@ -250,6 +250,16 @@ describe("gate:answer", () => {
     expect(r.ok).toBe(true);
     const row = store.get(id)!;
     expect((row.answer!.answers.q as any).note).toBe("context");
+  });
+
+  test("a text-carrying answer round-trips, and a blank text is rejected", async () => {
+    const { handlers, store } = harness();
+    const id = (await openTwoQuestions(handlers)).id;
+    const blank = await handlers["gate:answer"]({ id, answers: { q: { value: "a", text: "  " }, m: ["a"] }, by: "pane" });
+    expect(blank.ok).toBe(false);
+    const r = await handlers["gate:answer"]({ id, answers: { q: { value: "a", text: "edited" }, m: ["a"] }, by: "pane" });
+    expect(r.ok).toBe(true);
+    expect((store.get(id)!.answer!.answers.q as any).text).toBe("edited");
   });
 
   test("validates question ids; a single-select non-member value is rejected (SKILLS-58)", async () => {

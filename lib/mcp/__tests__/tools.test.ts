@@ -89,6 +89,7 @@ describe("mcpTools", () => {
     };
     const objectForm = schema.properties.answers.additionalProperties.oneOf.find((b) => b.type === "object")!;
     expect(Object.keys(objectForm.properties!)).toEqual(["value", "note", "text"]);
+    expect(objectForm.properties!.text).toMatchObject({ type: "string", pattern: "\\S" });
   });
 
   describe("gate_ask", () => {
