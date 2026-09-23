@@ -24,6 +24,18 @@ describe("SHAPES", () => {
     }
   });
 
+  test("each shape kind matches its key's registered type", () => {
+    const byKey = new Map(allDefs().map((d) => [d.key, d]));
+    const expected: Record<string, string> = {
+      stringList: "array", pairList: "array", leaves: "object", stringMap: "object",
+    };
+    for (const [key, shape] of Object.entries(SHAPES)) {
+      const want = expected[shape.kind];
+      if (want === undefined) continue;
+      expect(`${key}: ${byKey.get(key)?.type}`).toBe(`${key}: ${want}`);
+    }
+  });
+
   test("every ENUMS key is a registered string", () => {
     const byKey = new Map(allDefs().map((d) => [d.key, d]));
     for (const key of Object.keys(ENUMS)) expect(byKey.get(key)?.type, key).toBe("string");
@@ -77,6 +89,13 @@ describe("matchesShape", () => {
     expect(matchesShape(s, { notify: "loud" })).toBe(false);
     expect(matchesShape(s, { doctorSkill: "x" })).toBe(true);
     expect(matchesShape(s, [])).toBe(false);
+  });
+
+  test("rt.worktreeApp claudeHook admits only the answers rt records", () => {
+    const s = SHAPES["rt.worktreeApp"]!;
+    expect(matchesShape(s, { claudeHook: "installed" })).toBe(true);
+    expect(matchesShape(s, { claudeHook: "declined" })).toBe(true);
+    expect(matchesShape(s, { claudeHook: "yes" })).toBe(false);
   });
 
   test("leaves refuses a present parent of a dotted path that is not a plain object", () => {

@@ -52,8 +52,13 @@ export type ExplainRowWire = Pick<
 /** The winning layer, precomputed server-side so a list view renders and
     patches rows without a per-key explain round trip. `scope` is the winning
     layer's scope, "default" when the registry default wins, null when
-    nothing is set and there is no default. `value` is omitted for secrets
-    and when scope is null. */
+    nothing is set and there is no default. `value` is the winning layer's
+    value, except for a `merge: "deep"` object key, where it is the merged
+    value (registry default, then each live valid layer overlaid in order).
+    `value` is absent for secrets, for an invalid winning layer, and when
+    scope is null. A leaf edit of a deep-merged key must start from the
+    target layer's own authored value (its explain row), never from this
+    `value`, or it bakes the default and weaker layers into that store. */
 export interface EffectiveWire {
   scope: string | null;
   value?: unknown;

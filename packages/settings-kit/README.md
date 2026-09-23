@@ -58,7 +58,13 @@ winning layer when allowed, else the key's first scope).
 Pass `allowComposite: "shaped"` to `settingsHandler` to admit composite
 writes only for keys `SHAPES` declares, and only with a matching value;
 `external` keys are never admitted. `allowComposite: true` admits every
-composite as a whole-JSON replacement. Writes also require an `application/json` body (415 otherwise).
+composite as a whole-JSON replacement. Writes also require an
+`application/json` body (415 otherwise).
+
+For a deep-merged key, `effective.value` is the merged view, not any one
+store's contents. Build a leaf edit from the target scope's authored row
+from `explain`, as `move` does, never from `effective.value`, or the write
+bakes the default and weaker layers into the target store.
 
 `useSettingsScope(...).move(key, from, to)` moves the source layer's
 authored value to another scope, then clears the source.

@@ -71,7 +71,10 @@ export const SHAPES: Record<string, CompositeShape> = {
   "rt.homeSnapshot": { kind: "leaves", fields: { ...SNAPSHOT_FIELDS } },
   "rt.teamSnapshot": { kind: "leaves", fields: { ...SNAPSHOT_FIELDS, pullIntervalSec: "number" } },
   "rt.gitStatus": { kind: "leaves", fields: { sweep: "boolean", sweepIntervalSec: "number", fetchIntervalSec: "number" } },
-  "rt.worktreeApp": { kind: "leaves", fields: { enabled: "boolean", killProcesses: "boolean", claudeHook: "string" } },
+  "rt.worktreeApp": {
+    kind: "leaves",
+    fields: { enabled: "boolean", killProcesses: "boolean", claudeHook: { enum: ["installed", "declined"] } },
+  },
   "rt.notifications": {
     kind: "leaves",
     fields: Object.fromEntries(NOTIFICATION_EVENTS.map((k) => [k, "boolean" as const])),
