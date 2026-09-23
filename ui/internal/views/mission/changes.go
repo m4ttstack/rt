@@ -363,7 +363,7 @@ func renderKeybar(width int, tab string) string {
 	}
 	if tab == "history" {
 		pairs = [][2]string{
-			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"e", "expand"},
+			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"/", "filter"}, {"e", "expand"},
 			{"1", "changes"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
 		}
 	}

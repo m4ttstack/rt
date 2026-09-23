@@ -113,6 +113,8 @@ type Mission struct {
 	// wheel moved the view) it holds as the wheel left it instead of
 	// following the cursor. historyOnMore puts the cursor on the "Load 100
 	// more commits" row; historyCursor keeps the commit selection meanwhile.
+	// historyFilter is the History "/" filter: view-local, never sent to the
+	// driver, sharing focusFilter with the Changes filter by tab.
 	//
 	// The commit and file debounces are selectGen's counterparts:
 	// historyShown/historyFileShown are what the driver shows or was last
@@ -128,6 +130,8 @@ type Mission struct {
 	historyFreeScroll  bool
 	historyOnMore      bool
 	hoverHistoryMore   bool
+	historyFilter      string
+	historyMatches     historyMatchCache
 	historyGen         int
 	historyShown       string
 	historyDriverKey   string
@@ -373,6 +377,9 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case focusModal:
 			return m.modalKey(v)
 		case focusFilter:
+			if m.historyTab() {
+				return m.historyFilterKey(v)
+			}
 			return m.filterKey(v)
 		case focusSummary, focusDescription:
 			return m.commitKey(v)
@@ -741,7 +748,7 @@ func (m *Mission) layout() frameLayout {
 		l.sidebarTopH = historyFixedTopRows
 		l.bodyH = max(l.bodyH, historyFixedTopRows)
 		l.listRegionH = l.bodyH - historyFixedTopRows
-		l.sidebarFillerH = max(l.listRegionH-len(m.historyLines()), 0)
+		l.sidebarFillerH = max(l.listRegionH-len(m.historyLines(l.listRegionH)), 0)
 		return l
 	}
 	l.sidebarTopH = sidebarFixedTopRows
@@ -1156,11 +1163,10 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	case hitHistoryExpander:
 		m.historyExpanded = !m.historyExpanded
 	case hitFilterRow:
-		if m.historyTab() {
-			return m, nil
-		}
 		m.focus = focusFilter
-		m.filterText = m.model.Filter
+		if !m.historyTab() {
+			m.filterText = m.model.Filter
+		}
 	case hitFileCheckbox:
 		return m.clickCheckbox(h.idx)
 	case hitFileRow:

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // historyRowHeight is a commit's painted rows: summary, byline, rule.
@@ -1078,10 +1079,16 @@ func TestKeyClickAndReloadEndFreeScroll(t *testing.T) {
 
 func TestKeybarPerTab(t *testing.T) {
 	history := ansi.Strip(renderKeybar(130, "history"))
-	for _, want := range []string{"1 changes", "⇧↑↓ range", "↑↓ commits", "enter files", "e expand", "q quit"} {
+	for _, want := range []string{"1 changes", "⇧↑↓ range", "↑↓ commits", "enter files", "/ filter", "e expand", "q quit"} {
 		if !strings.Contains(history, want) {
 			t.Fatalf("History keybar missing %q:\n%s", want, history)
 		}
+	}
+	if !strings.Contains(history, "enter files · / filter · e expand") {
+		t.Fatalf("\"/ filter\" sits right after \"enter files\" so it survives a narrow terminal:\n%s", history)
+	}
+	if narrow := ansi.Strip(renderKeybar(80, "history")); !strings.Contains(narrow, "/ filter") || !strings.HasSuffix(strings.TrimRight(narrow, " "), "q quit") {
+		t.Fatalf("at 80 columns the History keybar keeps \"/ filter\" and \"q quit\" flush right:\n%s", narrow)
 	}
 	if strings.Contains(history, "space stage") {
 		t.Fatalf("History keybar must not offer staging:\n%s", history)
@@ -1650,22 +1657,29 @@ func sweepHistoryModel() Model {
 // scrolls or wraps the whole board, so every History frame must be exactly
 // m.height lines of exactly m.width cells.
 func TestHistoryFrameFitsEveryWidth(t *testing.T) {
+	model := sweepHistoryModel()
+	model.History.HasMore = true
 	for _, height := range []int{24, 38} {
 		for width := 61; width <= 200; width++ {
 			for _, expanded := range []bool{false, true} {
-				m := New(nil)
-				m.width, m.height = width, height
-				if err := m.setModelValue(sweepHistoryModel()); err != nil {
-					t.Fatal(err)
-				}
-				m.historyExpanded = expanded
-				lines := strings.Split(m.View().Content, "\n")
-				if len(lines) != height {
-					t.Fatalf("%dx%d expanded=%v: frame has %d lines", width, height, expanded, len(lines))
-				}
-				for y, line := range lines {
-					if w := lipgloss.Width(line); w != width {
-						t.Fatalf("%dx%d expanded=%v row %d: %d cells: %q", width, height, expanded, y, w, ansi.Strip(line))
+				for _, filter := range []string{"", "guard", "zzz"} {
+					m := New(nil)
+					m.width, m.height = width, height
+					if err := m.setModelValue(model); err != nil {
+						t.Fatal(err)
+					}
+					m.historyExpanded = expanded
+					if filter != "" {
+						typeKeys(m, "/"+filter)
+					}
+					lines := strings.Split(m.View().Content, "\n")
+					if len(lines) != height {
+						t.Fatalf("%dx%d expanded=%v filter=%q: frame has %d lines", width, height, expanded, filter, len(lines))
+					}
+					for y, line := range lines {
+						if w := lipgloss.Width(line); w != width {
+							t.Fatalf("%dx%d expanded=%v filter=%q row %d: %d cells: %q", width, height, expanded, filter, y, w, ansi.Strip(line))
+						}
 					}
 				}
 			}
@@ -1786,6 +1800,11 @@ func TestHistoryKeysWorkInEveryFocus(t *testing.T) {
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"}); cmd == nil {
 		t.Fatal("f in the file column should run the action")
 	}
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	if m.focus != focusFilter {
+		t.Fatalf("/ in the file column should focus the History filter, got %v", m.focus)
+	}
+	m.focus = focusHistoryFiles
 	for _, k := range []rune{'b', 'w', 'r'} {
 		m.modal = nil
 		m.focus = focusHistoryFiles
@@ -2039,6 +2058,273 @@ func TestHistoryWindowKeepsTheCursorBlockAcrossHeaders(t *testing.T) {
 		t.Fatal("setup: the list should have scrolled past the first commit")
 	}
 	assertHistoryHitMatchesPaint(t, m, "scrolled")
+}
+
+// typeKeys sends text one printable key at a time and returns the last
+// key's cmd.
+func typeKeys(m *Mission, text string) tea.Cmd {
+	var cmd tea.Cmd
+	for _, r := range text {
+		_, cmd = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	return cmd
+}
+
+// listSummaries is the commit summaries the list paints, top to bottom.
+func listSummaries(m *Mission) []string {
+	var out []string
+	for _, text := range listTexts(m) {
+		if strings.HasPrefix(text, "subject-") || strings.HasPrefix(text, "fix ") {
+			out = append(out, strings.Fields(text)[0])
+		}
+	}
+	return out
+}
+
+// filterMission is groupedMission with a fruit after each summary. Every
+// fixed part of a commit's filter target ("subject-", "author-", "sh",
+// digits) avoids the letters i, k, w, and z, so "i" matches exactly fig
+// (05), iris (08), and kiwi (10), "iw" only kiwi, and "zzz" nothing.
+func filterMission(t *testing.T, hasMore bool) *Mission {
+	t.Helper()
+	fruit := []string{"apple", "banana", "cherry", "damson", "elder", "fig", "grape", "hazel", "iris", "jujube", "kiwi", "lemon"}
+	commits := groupedCommits(len(fruit))
+	for i := range commits {
+		commits[i].Summary += " " + fruit[i]
+	}
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: commits, HasMore: hasMore}}); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestHistoryFilterNarrowsLiveAsYouType(t *testing.T) {
+	instantSelectTick(t)
+	m := filterMission(t, false)
+	typeKeys(m, "/")
+	if m.focus != focusFilter {
+		t.Fatalf("/ on the History list should focus its filter, got %v", m.focus)
+	}
+	typeKeys(m, "i")
+	if got := strings.Join(listSummaries(m), ","); got != "subject-05,subject-08,subject-10" {
+		t.Fatalf("one keystroke should narrow the list with no enter, got %s", got)
+	}
+	if row := sidebarLine(t, m.View().Content, "❯ i"); !strings.Contains(row, fgSGR(theme.Pink)) {
+		t.Fatalf("the focused History filter box shows the typed text in a Pink border: %q", row)
+	}
+	typeKeys(m, "w")
+	if got := strings.Join(listSummaries(m), ","); got != "subject-10" {
+		t.Fatalf("a second keystroke narrows again, got %s", got)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if got := strings.Join(listSummaries(m), ","); got != "subject-05,subject-08,subject-10" {
+		t.Fatalf("backspace widens the list again, got %s", got)
+	}
+	if m.filterText != "" || m.model.Filter != "" {
+		t.Fatalf("the History filter never touches the Changes filter, got %q", m.filterText)
+	}
+	assertHistoryHitMatchesPaint(t, m, "filtered")
+}
+
+// TestHistoryFilterKeepsMatchesChronological: fzf ranks the tighter match
+// first, but the list keeps history order.
+func TestHistoryFilterKeepsMatchesChronological(t *testing.T) {
+	commits := []HistoryCommitRow{
+		{Sha: "a", ShortSha: "a", Summary: "fix the whole pipeline around a parser", Byline: "Pat"},
+		{Sha: "b", ShortSha: "b", Summary: "fix parser", Byline: "Sam"},
+	}
+	targets := []string{commits[0].Summary + " Pat a a", commits[1].Summary + " Sam b b"}
+	if ranked := picker.Rank("fixparser", targets, false); len(ranked) != 2 || ranked[0].Index != 1 {
+		t.Fatalf("setup: fzf should rank the tighter match first, got %+v", ranked)
+	}
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: commits}}); err != nil {
+		t.Fatal(err)
+	}
+	typeKeys(m, "/fixparser")
+	if got := strings.Join(listSummaries(m), ","); got != "fix,fix" {
+		t.Fatalf("both commits should match, got %s", got)
+	}
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	first, second := -1, -1
+	for y, line := range lines {
+		part := sidebarPart(line)
+		if strings.Contains(part, "fix the whole pipeline") && first < 0 {
+			first = y
+		}
+		if strings.Contains(part, "fix parser") && second < 0 {
+			second = y
+		}
+	}
+	if first < 0 || second < 0 || first > second {
+		t.Fatalf("the older-listed commit must stay first, rows %d and %d", first, second)
+	}
+}
+
+// TestHistoryFilterReHomesTheCursorWithOneSelect: a keystroke that hides
+// the cursor's commit moves the cursor to the first match through the
+// ordinary debounce, so fast typing settles into one select.
+func TestHistoryFilterReHomesTheCursorWithOneSelect(t *testing.T) {
+	instantSelectTick(t)
+	m := filterMission(t, false)
+	typeKeys(m, "/")
+	first := typeKeys(m, "i")
+	if m.historyCursor != "sha05" {
+		t.Fatalf("hiding sha00 should re-home the cursor to the first match sha05, got %q", m.historyCursor)
+	}
+	second := typeKeys(m, "w")
+	if m.historyCursor != "sha10" {
+		t.Fatalf("hiding sha05 should re-home the cursor to sha10, got %q", m.historyCursor)
+	}
+	if first == nil || second == nil {
+		t.Fatal("each re-home schedules the debounced select")
+	}
+	if _, emit := m.Update(first()); emit != nil {
+		t.Fatal("the superseded tick must not emit")
+	}
+	if _, emit := m.Update(second()); emit == nil {
+		t.Fatal("the settled tick selects the re-homed cursor")
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}); cmd != nil {
+		t.Fatal("an edit that keeps the cursor's commit visible schedules nothing")
+	}
+	if row := sidebarLine(t, m.View().Content, "subject-10"); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the cursor bar stays on the re-homed commit: %q", row)
+	}
+}
+
+func TestHistoryFilterEnterKeepsEscClears(t *testing.T) {
+	instantSelectTick(t)
+	m := filterMission(t, false)
+	typeKeys(m, "/iw")
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.focus != focusList {
+		t.Fatalf("enter returns focus to the list without emitting, focus %v", m.focus)
+	}
+	if got := strings.Join(listSummaries(m), ","); got != "subject-10" {
+		t.Fatalf("enter keeps the filter, got %s", got)
+	}
+	if row := sidebarLine(t, m.View().Content, "❯ iw"); strings.Contains(row, fgSGR(theme.Pink)) {
+		t.Fatalf("the unfocused box still shows the kept filter, without the focus border: %q", row)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown}); cmd != nil || m.historyCursor != "sha10" {
+		t.Fatalf("with one match, down has nowhere to go, cursor %q", m.historyCursor)
+	}
+	typeKeys(m, "/")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.focus != focusList || len(listSummaries(m)) < 7 {
+		t.Fatalf("esc clears the filter and returns to the list, focus %v, %d rows", m.focus, len(listSummaries(m)))
+	}
+	if !strings.Contains(m.View().Content, "Filter history") {
+		t.Fatal("a cleared filter box shows its placeholder again")
+	}
+	if row := sidebarLine(t, m.View().Content, "subject-10"); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("clearing the filter keeps the cursor where it was: %q", row)
+	}
+}
+
+func TestHistoryFilterBoxClickFocuses(t *testing.T) {
+	m := newHistoryTestMission()
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: m.layout().topH + 5, Button: tea.MouseLeft}); cmd != nil || m.focus != focusFilter {
+		t.Fatalf("a click on the History filter box focuses it, focus %v", m.focus)
+	}
+	typeKeys(m, "guard")
+	if got := listTexts(m); !strings.HasPrefix(got[0], "Guard badges") {
+		t.Fatalf("typing after the click filters the list, first row %q", got[0])
+	}
+}
+
+// TestChangesFilterUnaffectedByHistoryFilter: the Changes filter still
+// commits through the driver on enter and never reads the History filter.
+func TestChangesFilterUnaffectedByHistoryFilter(t *testing.T) {
+	m := newMouseTestMission()
+	typeKeys(m, "/xy")
+	if m.focus != focusFilter || m.filterText != "xy" {
+		t.Fatalf("the Changes filter still takes the typed text, got %q", m.filterText)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+		t.Fatal("enter on the Changes filter still emits mission:select")
+	}
+	if !strings.Contains(ansi.Strip(renderFilterRow("", "Filter changes", false, false, sidebarWidth)), "Filter changes") {
+		t.Fatal("the Changes placeholder is unchanged")
+	}
+}
+
+func TestHistoryFilterNoMatches(t *testing.T) {
+	m := groupedMission(t, 12, false)
+	typeKeys(m, "/zzz")
+	texts := listTexts(m)
+	notice := -1
+	for i, text := range texts {
+		if text == "No matching commits" {
+			notice = i
+		}
+	}
+	if notice < 0 || notice < len(texts)/2-2 || notice > len(texts)/2+1 {
+		t.Fatalf("a centered \"No matching commits\" should fill the empty list:\n%s", strings.Join(texts, "\n"))
+	}
+	y := m.layout().topH + historyFixedTopRows + notice
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[y]); !strings.Contains(row, fgSGR(theme.Faint)) {
+		t.Fatalf("the notice is Faint: %q", row)
+	}
+	if strings.Contains(strings.Join(texts, "\n"), "more commits") {
+		t.Fatal("no action row without hasMore")
+	}
+	assertHistoryHitMatchesPaint(t, m, "no matches")
+	assertFullyBgFilled(t, "no matches", m.View().Content, m.width)
+
+	m = groupedMission(t, 12, true)
+	typeKeys(m, "/zzz")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	moreY := historyRowFrameY(t, m, "Search 100 more commits")
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[moreY]); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("with nothing to match, the Search row holds the cursor: %q", row)
+	}
+	assertHistoryHitMatchesPaint(t, m, "no matches, more")
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.historyMoreFor != 12 {
+		t.Fatalf("enter on the Search row requests the next page, historyMoreFor=%d", m.historyMoreFor)
+	}
+}
+
+// TestHistoryFilteredRangeSpansRealHistory: navigation steps over the
+// visible matches, but a shift range still selects every commit between
+// anchor and cursor, hidden ones included.
+func TestHistoryFilteredRangeSpansRealHistory(t *testing.T) {
+	instantSelectTick(t)
+	commits := []HistoryCommitRow{
+		{Sha: "a", ShortSha: "a", Summary: "alpha one", Byline: "Pat", Selected: true},
+		{Sha: "b", ShortSha: "b", Summary: "beta", Byline: "Pat"},
+		{Sha: "c", ShortSha: "c", Summary: "gamma", Byline: "Pat"},
+		{Sha: "d", ShortSha: "d", Summary: "alpha two", Byline: "Pat"},
+	}
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: commits, HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	typeKeys(m, "/alpha")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	historyRowFrameY(t, m, "Search 100 more commits")
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}); cmd == nil || m.historyCursor != "d" {
+		t.Fatalf("shift+down steps over hidden commits to the next match, cursor %q", m.historyCursor)
+	}
+	if got := strings.Join(m.historySelectionShas(), ","); got != "a,b,c,d" {
+		t.Fatalf("the range is the contiguous span in real history, got %s", got)
+	}
+	out := m.View().Content
+	for _, summary := range []string{"alpha one", "alpha two"} {
+		if row := sidebarLine(t, out, summary); !strings.Contains(row, bgSGR(theme.SelBg)) {
+			t.Fatalf("visible commits in the range wear SelBg: %q", row)
+		}
+	}
+	if _, cmd := m.Update(downKey()); cmd != nil || !m.historyOnMoreRow() {
+		t.Fatalf("a plain down from the last match steps onto the Search row, onMore=%v", m.historyOnMore)
+	}
+	if got := strings.Join(m.historySelectionShas(), ","); got != "a,b,c,d" {
+		t.Fatalf("stepping onto the Search row leaves the range as it is, got %s", got)
+	}
 }
 
 func TestFullFrameHistoryPaneStatesFullyPaintBackground(t *testing.T) {

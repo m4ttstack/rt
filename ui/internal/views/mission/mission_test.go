@@ -869,6 +869,35 @@ func TestHistoryActionRowClickEmitsOneMore(t *testing.T) {
 	s.Wait()
 }
 
+// TestHistoryFilterNarrowsLiveAndReHomesWithOneSelect: typing into the
+// History filter narrows the list on every keystroke and never goes to the
+// driver; the one intent is the debounced select for the re-homed cursor,
+// and esc brings every commit back without another.
+func TestHistoryFilterNarrowsLiveAndReHomesWithOneSelect(t *testing.T) {
+	s := openHistory(t)
+	waitRow(t, s, listTopY-2, "Filter history")
+	s.Type("/")
+	s.Type("g", "u", "a", "r", "d")
+	waitRow(t, s, listTopY+1, "Guard badges")
+	if row := screenRow(s, historyRowY(1)); strings.Contains(row, "Empty commit message") {
+		t.Fatalf("the filter should hide the other commits: %q", row)
+	}
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("hiding s1 should re-home the cursor to s2 and select it once: %q", l)
+	}
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("the filter itself never reaches the driver: %q", l)
+	}
+	s.Type(keyEsc)
+	waitRow(t, s, listTopY+1, "Fix pty paint predicate")
+	waitRow(t, s, listTopY-2, "Filter history")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("esc clears the filter without emitting: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // waitRow waits for screen row y to contain want: a frame can land in more
 // than one read, so the row a test checks may paint after the text it waited
 // on.

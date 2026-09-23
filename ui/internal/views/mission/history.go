@@ -229,13 +229,18 @@ func (m *Mission) requestMore() tea.Cmd {
 	return m.em.Emit(protocol.Intent{Name: "mission:history-more"})
 }
 
+// historyOnMoreRow is whether the action row holds the cursor: after a move
+// onto it, or whenever a filter leaves no commit to hold it.
 func (m *Mission) historyOnMoreRow() bool {
-	return m.historyOnMore && m.model.History.HasMore
+	return m.model.History.HasMore && (m.historyOnMore || len(m.historyVisible()) == 0)
 }
 
 func (m *Mission) historyMoreLabel() string {
-	if m.historyMoreInFlight() {
+	switch {
+	case m.historyMoreInFlight():
 		return "Loading…"
+	case m.historyFilter != "":
+		return "Search 100 more commits"
 	}
 	return "Load 100 more commits"
 }
@@ -290,11 +295,63 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	if m.historySelectionKey() == before {
 		return nil
 	}
+	return m.historySelectTick()
+}
+
+// historySelectTick schedules the debounced mission:history-select; a later
+// tick supersedes it.
+func (m *Mission) historySelectTick() tea.Cmd {
 	m.historyGen++
 	gen := m.historyGen
 	return selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
 		return historyDebounceMsg{generation: gen, kind: historyDebounceCommit}
 	})
+}
+
+// historyFilterKey edits the History filter live: every keystroke refilters
+// the loaded commits. Enter keeps the filter, esc clears it; both return
+// focus to the list.
+func (m *Mission) historyFilterKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch v.String() {
+	case "enter":
+		m.focus = focusList
+		return m, nil
+	case "esc":
+		m.focus = focusList
+		if m.historyFilter == "" {
+			return m, nil
+		}
+		m.historyFilter = ""
+	case "backspace":
+		r := []rune(m.historyFilter)
+		if len(r) == 0 {
+			return m, nil
+		}
+		m.historyFilter = string(r[:len(r)-1])
+	default:
+		if v.Text == "" {
+			return m, nil
+		}
+		m.historyFilter += v.Text
+	}
+	return m, m.historyFilterEdited()
+}
+
+// historyFilterEdited returns the view to following the cursor, and moves a
+// cursor the filter hid to the first match through the ordinary debounce,
+// so fast typing settles into one select.
+func (m *Mission) historyFilterEdited() tea.Cmd {
+	m.historyFreeScroll = false
+	visible := m.historyVisible()
+	if len(visible) == 0 || slices.Contains(visible, m.historyIndex(m.historyCursor)) {
+		return nil
+	}
+	before := m.historySelectionKey()
+	m.historyCursor, m.historyAnchor, m.historyOnMore = m.model.History.Commits[visible[0]].Sha, "", false
+	if m.historySelectionKey() == before {
+		return nil
+	}
+	return m.historySelectTick()
 }
 
 func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -323,6 +380,8 @@ func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // commit list and the file column.
 func (m *Mission) historyTabKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch v.String() {
+	case "/":
+		m.focus = focusFilter
 	case "e":
 		m.historyExpanded = !m.historyExpanded
 	case "1":
@@ -349,7 +408,7 @@ func (m *Mission) renderHistorySidebar(width, height int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, "history", m.hoverTab, width),
 		blankRows(width, 1),
-		renderFilterRow("", "Filter history", false, m.hoverFilterRow, width),
+		renderFilterRow(m.historyFilter, "Filter history", m.focus == focusFilter, m.hoverFilterRow, width),
 		m.renderCommitList(width, listH),
 	)
 }
@@ -362,32 +421,73 @@ const (
 	historyLineByline
 	historyLineRule
 	historyLineMore
+	historyLineNotice
+	historyLineBlank
 )
 
 // historyLine is one painted row of the commit list: a date header (label),
-// one of a commit's three rows (idx is its model index), or the action row.
+// one of a commit's three rows (idx is its model index), the action row, or
+// the "No matching commits" notice and the blank rows around it.
 type historyLine struct {
 	kind  historyLineKind
 	idx   int
 	label string
 }
 
-// historyVisible is the model indices the list shows, in list order.
+// historyMatchCache holds historyVisible for one filter over one pushed
+// commit slice: every push decodes a fresh slice, so its first element's
+// address changes whenever the list can have.
+type historyMatchCache struct {
+	filter  string
+	commits []HistoryCommitRow
+	idx     []int
+}
+
+func (c historyMatchCache) holds(filter string, commits []HistoryCommitRow) bool {
+	return c.filter == filter && len(c.commits) == len(commits) && (len(commits) == 0 || &c.commits[0] == &commits[0])
+}
+
+// historyVisible is the model indices the list shows, in list order: every
+// commit, or the History filter's fzf matches over summary, byline, and
+// both shas, kept in history order rather than score order.
 func (m *Mission) historyVisible() []int {
-	idx := make([]int, len(m.model.History.Commits))
-	for i := range idx {
-		idx[i] = i
+	commits := m.model.History.Commits
+	if m.historyMatches.holds(m.historyFilter, commits) {
+		return m.historyMatches.idx
 	}
+	targets := make([]string, len(commits))
+	for i, c := range commits {
+		targets[i] = c.Summary + " " + c.Byline + " " + c.ShortSha + " " + c.Sha
+	}
+	matches := picker.Rank(m.historyFilter, targets, false)
+	idx := make([]int, len(matches))
+	for i, mt := range matches {
+		idx[i] = mt.Index
+	}
+	slices.Sort(idx)
+	m.historyMatches = historyMatchCache{filter: m.historyFilter, commits: commits, idx: idx}
 	return idx
 }
 
-// historyLines is the commit list top to bottom, one entry per painted row:
-// a header opens each run of equal Group, then every commit's summary,
-// byline, and rule, then the action row while there is more to load.
-func (m *Mission) historyLines() []historyLine {
+// historyLines is the commit list top to bottom for a height-row list, one
+// entry per painted row: a header opens each run of equal Group, then every
+// commit's summary, byline, and rule, then the action row while there is
+// more to load. A filter that matches nothing centers its notice (and the
+// action row) in the list instead.
+func (m *Mission) historyLines(height int) []historyLine {
 	commits := m.model.History.Commits
 	visible := m.historyVisible()
 	var lines []historyLine
+	if len(visible) == 0 && len(commits) > 0 {
+		block := []historyLine{{kind: historyLineNotice}}
+		if m.model.History.HasMore {
+			block = append(block, historyLine{kind: historyLineBlank}, historyLine{kind: historyLineMore})
+		}
+		for range max((height-len(block))/2, 0) {
+			lines = append(lines, historyLine{kind: historyLineBlank})
+		}
+		return append(lines, block...)
+	}
 	for i, idx := range visible {
 		c := commits[idx]
 		if c.Group != "" && (i == 0 || commits[visible[i-1]].Group != c.Group) {
@@ -422,7 +522,7 @@ func (m *Mission) historyCursorLine(lines []historyLine) int {
 // line top for vis rows. renderCommitList and historySidebarHit both take
 // their rows from here, so a hit always names the row the frame painted.
 func (m *Mission) historyWindow(height int) (lines []historyLine, top, vis int) {
-	lines = m.historyLines()
+	lines = m.historyLines(height)
 	if m.historyFreeScroll {
 		vis = max(min(len(lines), height), 0)
 		top = max(0, min(m.historyTop, len(lines)-vis))
@@ -459,6 +559,10 @@ func (m *Mission) renderCommitList(width, height int) string {
 	}
 	lines, top, vis := m.historyWindow(height)
 	thumbTop, thumbH := picker.ThumbSpan(top, vis, len(lines))
+	if len(m.historyVisible()) == 0 {
+		thumbTop, thumbH = 0, 0
+	}
+	onMore := m.historyOnMoreRow()
 	rowIdx := -1
 	var rows [3]string
 	for i := range out {
@@ -468,11 +572,13 @@ func (m *Mission) renderCommitList(width, height int) string {
 			case historyLineHeader:
 				row = renderHistoryGroupHeader(l.label, rowWidth)
 			case historyLineMore:
-				row = renderHistoryMoreRow(m.historyMoreLabel(), rowWidth, m.historyOnMoreRow(), m.hoverHistoryMore, m.historyMoreInFlight())
-			default:
+				row = renderHistoryMoreRow(m.historyMoreLabel(), rowWidth, onMore, m.hoverHistoryMore, m.historyMoreInFlight())
+			case historyLineNotice:
+				row = on.Width(rowWidth).Align(lipgloss.Center).Foreground(theme.Faint).Render(clip("No matching commits", rowWidth))
+			case historyLineSummary, historyLineByline, historyLineRule:
 				if l.idx != rowIdx {
 					c := commits[l.idx]
-					cursor := c.Sha == m.historyCursor && !m.historyOnMoreRow()
+					cursor := c.Sha == m.historyCursor && !onMore
 					rows[0], rows[1], rows[2] = renderCommitRow(c, rowWidth, cursor, m.historyInSelection(l.idx), l.idx == m.hoverCommit)
 					rowIdx = l.idx
 				}
