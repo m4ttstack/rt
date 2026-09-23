@@ -117,8 +117,16 @@ remembered in the conversation.
      the posting once the human has answered. Under `--re-review`,
      also pass it the re-review framing (prior review + "check what the
      author addressed, else fall back").
-   - **If no domain skill resolved:** review the MR yourself. Fetch the diff, read it
-     critically, and produce findings (severity, `file:line`, what to change).
+   - **If no domain skill resolved:** Before drafting, call
+     `mcp__plugin_mattstack_mattstack__rt_verb` with
+     `{"args": ["skills", "writing-style", "show"]}` and load the skill its `skill`
+     names. That load is step one: compose in that voice from the first word, never as
+     a pass over a finished draft. If the tool is unavailable, refused, or fails, load
+     the skill named on the `writing-style:` line of
+     `~/.mattstack/user/skills/preferences.md` if there is one. If that is missing
+     too, or the skill will not load, load `mattstack:writing-style-conversational`.
+     Then review the MR yourself. Fetch the diff, read it critically, and produce
+     findings (severity, `file:line`, what to change).
 3. **Save the review** to `--report <path>` as Markdown (a short summary line,
    then the findings). Write it **before** the gate below, so the board makes
    the "reviewing…" badge clickable to open the review modal while you hold at

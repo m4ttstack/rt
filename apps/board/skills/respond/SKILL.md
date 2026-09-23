@@ -175,9 +175,17 @@ conversation.
      posted; this wrapper owns both facility gates (steps 4 and 6) and hands
      the domain skill `{plan: ...}` to act on once a human has answered, and
      `{post: ...}` only when Gate 2 opened.
-   - **If no domain skill resolved:** fetch the MR's unresolved review threads
-     yourself, adjudicate each on its merits, and draft replies and any
-     proposed fixes. Build your own verdict table for the gates below.
+   - **If no domain skill resolved:** Before drafting, call
+     `mcp__plugin_mattstack_mattstack__rt_verb` with
+     `{"args": ["skills", "writing-style", "show"]}` and load the skill its `skill`
+     names. That load is step one: compose in that voice from the first word, never as
+     a pass over a finished draft. If the tool is unavailable, refused, or fails, load
+     the skill named on the `writing-style:` line of
+     `~/.mattstack/user/skills/preferences.md` if there is one. If that is missing
+     too, or the skill will not load, load `mattstack:writing-style-conversational`.
+     Then fetch the MR's unresolved review threads yourself, adjudicate each on its
+     merits, and draft replies and any proposed fixes. Build your own verdict table
+     for the gates below.
    - **Zero unresolved threads?** Skip straight to step 7:
      `done "no unresolved threads" --posted 0 --threads 0`. That is not an
      error condition, and neither gate opens.
