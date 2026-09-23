@@ -49,6 +49,7 @@ async function run(
     HOME: home,
     PATH: `${join(RT_BINARY, "..")}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
     TERM: "xterm-256color",
+    RT_GH_TOKEN_FALLBACK: "off",
     ...opts.env,
   };
 
