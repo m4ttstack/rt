@@ -144,22 +144,35 @@ func TestTabHoverOnlyOnInactiveHalf(t *testing.T) {
 	half := sidebarWidth / 2
 	hover := bgSGR(theme.HoverBg)
 	lines := strings.Split(renderTabsRow(3, "history", true, sidebarWidth), "\n")
-	for _, row := range []int{0, 1} {
-		cells := cellBackgrounds(lines[row])
-		if len(cells) != sidebarWidth {
-			t.Fatalf("row %d should be %d cells, got %d", row, sidebarWidth, len(cells))
+	cells := cellBackgrounds(lines[1])
+	if len(cells) != sidebarWidth {
+		t.Fatalf("label row should be %d cells, got %d", sidebarWidth, len(cells))
+	}
+	for x, bg := range cells {
+		if x < half && bg != hover {
+			t.Fatalf("label col %d: the inactive Changes half must hover, got %q", x, bg)
 		}
-		for x, bg := range cells {
-			if x < half && bg != hover {
-				t.Fatalf("row %d col %d: the inactive Changes half must hover, got %q", row, x, bg)
-			}
-			if x >= half && bg == hover {
-				t.Fatalf("row %d col %d: the active History half must never hover", row, x)
-			}
+		if x >= half && bg == hover {
+			t.Fatalf("label col %d: the active History half must never hover", x)
 		}
 	}
-	if strings.Contains(lines[2], hover) {
-		t.Fatalf("the underline row must never take hover: %q", lines[2])
+	for row, glyph := range map[int]string{0: "▄", 2: "▀"} {
+		plain := []rune(ansi.Strip(lines[row]))
+		if len(plain) != sidebarWidth {
+			t.Fatalf("row %d should be %d cells, got %d", row, sidebarWidth, len(plain))
+		}
+		if string(plain[:half]) != strings.Repeat(glyph, half) {
+			t.Fatalf("row %d: the hovered Changes half should be a %s half-block edge: %q", row, glyph, string(plain))
+		}
+		if strings.Contains(string(plain[half:]), glyph) {
+			t.Fatalf("row %d: the active History half must never hover: %q", row, string(plain))
+		}
+		if !strings.Contains(lines[row], fgSGR(theme.HoverBg)) {
+			t.Fatalf("row %d: the half-block edge should wear HoverBg: %q", row, lines[row])
+		}
+	}
+	if !strings.Contains(ansi.Strip(lines[2]), strings.Repeat("─", sidebarWidth-half)) || !strings.Contains(lines[2], fgSGR(theme.Pink)) {
+		t.Fatalf("the active History half keeps its Pink underline: %q", lines[2])
 	}
 }
 
@@ -507,8 +520,11 @@ func TestHitTestResolvesCommitRowsAndTab(t *testing.T) {
 	if h := m.hitTest(sidebarWidth-2, l.topH+1); h.kind != hitNone {
 		t.Fatalf("the active History half must be inert, got %+v", h)
 	}
-	if h := m.hitTest(2, l.topH+2); h.kind != hitNone {
-		t.Fatalf("the underline row must be inert, got %+v", h)
+	if h := m.hitTest(2, l.topH+2); h.kind != hitTab || h.idx != 0 {
+		t.Fatalf("the inactive half's underline row is part of its button, got %+v", h)
+	}
+	if h := m.hitTest(sidebarWidth-2, l.topH+2); h.kind != hitNone {
+		t.Fatalf("the active half's underline must stay inert, got %+v", h)
 	}
 	if h := m.hitTest(2, l.topH+3); h.kind != hitNone {
 		t.Fatalf("the tabs-gap row must be inert, got %+v", h)

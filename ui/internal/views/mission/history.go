@@ -436,7 +436,7 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 
 // historySidebarHit walks renderHistorySidebar's row sequence in lockstep.
 func (m *Mission) historySidebarHit(x, y, listRegionH int) hit {
-	if y < 2 {
+	if y < 3 {
 		if x < sidebarWidth/2 {
 			return hit{kind: hitTab, idx: 0}
 		}

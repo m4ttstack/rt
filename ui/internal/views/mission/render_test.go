@@ -2335,14 +2335,13 @@ func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	}
 }
 
-// TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline pins the button's
-// own invariant: hovering the History tab paints HoverBg behind its half of
-// BOTH the pad row and the label row -- the two rows sidebarHit resolves to
-// hitTab -- and never the underline row, which is an indicator, not
-// part of the button. The Changes half and the underline's Pink/Rule split
-// are both untouched, and the half widths (hence the row's overall width)
-// never move.
-func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
+// TestRenderTabsRowHoverCentersOnTheLabel pins the button's own invariant:
+// hovering the History tab paints a lower half-block edge in the pad row,
+// HoverBg behind the label row, and an upper half-block edge in place of
+// its underline, so the fill is centered on the label. The Changes half
+// and its Pink underline are untouched, and the half widths (hence the
+// row's overall width) never move.
+func TestRenderTabsRowHoverCentersOnTheLabel(t *testing.T) {
 	const width = 46
 	half := width / 2
 	rest := renderTabsRow(3, "changes", false, width)
@@ -2354,12 +2353,18 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 		t.Fatalf("tabs row should stay exactly 3 rows in both states: rest=%d hovered=%d", len(restLines), len(hoveredLines))
 	}
 
-	for _, row := range []int{0, 1} { // pad, label
-		if strings.Contains(restLines[row], bgSGR(theme.HoverBg)) {
+	for row := range restLines {
+		if strings.Contains(restLines[row], bgSGR(theme.HoverBg)) || strings.Contains(restLines[row], fgSGR(theme.HoverBg)) {
 			t.Fatalf("un-hovered row %d must not wear HoverBg: %q", row, restLines[row])
 		}
-		if !strings.Contains(hoveredLines[row], bgSGR(theme.HoverBg)) {
-			t.Fatalf("hovering History should paint HoverBg somewhere in row %d: %q", row, hoveredLines[row])
+	}
+	if !strings.Contains(hoveredLines[1], bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovering History should paint HoverBg behind the label row: %q", hoveredLines[1])
+	}
+	for row, glyph := range map[int]string{0: "▄", 2: "▀"} {
+		plain := []rune(ansi.Strip(hoveredLines[row]))
+		if string(plain[half:]) != strings.Repeat(glyph, width-half) || !strings.Contains(hoveredLines[row], fgSGR(theme.HoverBg)) {
+			t.Fatalf("hovering History should draw a HoverBg %s edge across its half of row %d: %q", glyph, row, hoveredLines[row])
 		}
 	}
 
@@ -2372,13 +2377,9 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 		t.Fatalf("setup: left-half slice should not contain History: %q", leftPlain)
 	}
 
-	// The underline (row 2) must keep its exact Pink/Rule split regardless
-	// of hover, and never wear HoverBg.
-	if hoveredLines[2] != restLines[2] {
-		t.Fatalf("hover must not alter the underline row:\nrest   =%q\nhovered=%q", restLines[2], hoveredLines[2])
-	}
-	if strings.Contains(hoveredLines[2], bgSGR(theme.HoverBg)) {
-		t.Fatalf("the underline row must never wear HoverBg: %q", hoveredLines[2])
+	// The active Changes half keeps its Pink underline under hover.
+	if !strings.HasPrefix(ansi.Strip(hoveredLines[2]), strings.Repeat("─", half)) || !strings.Contains(hoveredLines[2], fgSGR(theme.Pink)) {
+		t.Fatalf("the active tab's Pink underline must survive hover: %q", hoveredLines[2])
 	}
 
 	for i := range restLines {
@@ -2392,8 +2393,8 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 
 // TestTabsButtonHoverAndClickRowsAgree is the invariant the owner called out
 // by name: every row sidebarHit resolves to hitTab must be a row that
-// renders HoverBg when hovered, and no other row may. A hover-only row (the
-// old underline, clickable but unpainted) or a click-only row is exactly the
+// renders HoverBg (as a background or as a half-block edge) when hovered,
+// and no other row may. A hover-only row or a click-only row is exactly the
 // bug this button exists to rule out.
 func TestTabsButtonHoverAndClickRowsAgree(t *testing.T) {
 	const width = sidebarWidth
@@ -2404,7 +2405,7 @@ func TestTabsButtonHoverAndClickRowsAgree(t *testing.T) {
 	m := &Mission{}
 	for row := 0; row < len(lines); row++ {
 		clicks := m.sidebarHit(x, row, 0).kind == hitTab
-		paintsHover := strings.Contains(lines[row], bgSGR(theme.HoverBg))
+		paintsHover := strings.Contains(lines[row], bgSGR(theme.HoverBg)) || strings.Contains(lines[row], fgSGR(theme.HoverBg))
 		if clicks != paintsHover {
 			t.Fatalf("row %d: sidebarHit resolves to hitTab=%v but renders HoverBg=%v -- they must agree", row, clicks, paintsHover)
 		}

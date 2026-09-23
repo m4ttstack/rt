@@ -926,16 +926,12 @@ func topbarHit(width, x int) zoneID {
 // list begins, scrolled or not.
 func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
-	// The pad and label rows are the tabs button; hover and click must cover
-	// exactly the same two rows (renderTabsRow's own invariant comment).
-	if y < row+2 {
+	// All three tab-strip rows are the tabs button; hover and click must cover
+	// exactly the same rows (renderTabsRow's own invariant comment).
+	if y < row+3 {
 		return tabsHit(sidebarWidth, x)
 	}
-	row += 2
-	if y == row {
-		return hit{} // the underline row: an indicator, not part of the button
-	}
-	row++
+	row += 3
 	if y == row {
 		return hit{} // the tabs-gap blank band row: no click target
 	}
