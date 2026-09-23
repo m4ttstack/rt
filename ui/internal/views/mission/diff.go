@@ -41,6 +41,8 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "q":
 		return m.quit()
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
 	case "e":
 		if m.historyTab() {
 			m.historyExpanded = !m.historyExpanded

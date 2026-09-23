@@ -374,6 +374,9 @@ func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.historyMove(-1, true)
 	case "shift+down":
 		return m, m.historyMove(1, true)
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
+		return m, nil
 	case "enter":
 		if m.historyOnMoreRow() {
 			return m, m.requestMore()
@@ -1084,6 +1087,9 @@ func (m *Mission) historyFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.historyFileMove(-1)
 	case "down":
 		return m, m.historyFileMove(1)
+	case "ctrl+k":
+		m.openMenu(m.focusedTarget(), nil)
+		return m, nil
 	case "enter":
 		m.focus = focusDiff
 		return m, nil

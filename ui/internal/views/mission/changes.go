@@ -358,13 +358,13 @@ func renderKeybar(width int, tab string) string {
 	// justify clips from the right, so the tab switch sits early enough to
 	// survive a narrow terminal.
 	pairs := [][2]string{
-		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"c", "commit"}, {"f", "action"},
+		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"⌃k", "menu"}, {"c", "commit"}, {"f", "action"},
 		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
 	}
 	if tab == "history" {
 		pairs = [][2]string{
 			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"/", "filter"}, {"e", "expand"},
-			{"1", "changes"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
+			{"1", "changes"}, {"⌃k", "menu"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
 		}
 	}
 	parts := make([]string, len(pairs))

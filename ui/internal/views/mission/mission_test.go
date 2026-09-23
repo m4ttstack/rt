@@ -1117,13 +1117,18 @@ func TestHistoryOversizedEnterEmitsShowOversized(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
+// TestMouseRightClickFileRowOpensItsMenu right-clicks the fixture's first
 // Changes row (absolute y=12: topH(4) + the 8-row tabs/tabs-gap/filter/
-// master prefix).
-func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
+// master prefix); esc closes the menu without emitting.
+func TestMouseRightClickFileRowOpensItsMenu(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(2, 10, 12))
-	s.WaitForPaint("menu lands with polish")
+	s.WaitForPaint("Discard Changes…")
+	s.Type(keyEsc)
+	s.WaitForGone("Discard Changes…")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("opening and closing the menu must not emit: %q", l)
+	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
@@ -1250,4 +1255,70 @@ const sidebarWidthConst = 46
 func s5open(t *testing.T) *testutil.Session {
 	t.Helper()
 	return openMission(t, fixtureModelJSON(t, "session-model-mission.json"), "model.go")
+}
+
+const (
+	keyCtrlK = "\x0b"
+	keyDown  = "\x1b[B"
+)
+
+// waitIntent reads emitted lines until one is the named intent; a select a
+// right-click fires first is not the line under test.
+func waitIntent(t *testing.T, s *testutil.Session, name string) string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		l, ok := s.ReadLine(time.Until(deadline))
+		if !ok {
+			t.Fatalf("no %s intent arrived", name)
+		}
+		if strings.Contains(l, `"name":"`+name+`"`) {
+			return l
+		}
+	}
+}
+
+// TestRightClickCopyFilePathEmitsTheRowsPath right-clicks model.go (frame
+// row 13, see TestMouseClickCheckboxCellEmitsToggleFileWithPath), steps down
+// past Discard and the three Ignore rows, and chooses Copy File Path.
+func TestRightClickCopyFilePathEmitsTheRowsPath(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(2, 12, 13))
+	s.WaitForPaint("Copy File Path")
+	s.Type(keyDown, keyDown, keyDown, keyDown, keyEnter)
+	l := waitIntent(t, s, "mission:menu-action")
+	if !strings.Contains(l, `"action":"copy-path"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
+		t.Fatalf("copy-path intent: %q", l)
+	}
+	s.WaitForGone("Copy File Path")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestCtrlKOnTheHistoryListCopiesTheCursorSha(t *testing.T) {
+	s := openHistory(t)
+	s.Type(keyCtrlK)
+	s.WaitForPaint("Copy SHA")
+	s.Type(keyDown, keyDown, keyEnter)
+	l := waitIntent(t, s, "mission:menu-action")
+	if !strings.Contains(l, `"action":"copy-sha"`) || !strings.Contains(l, `"sha":"s1"`) {
+		t.Fatalf("copy-sha intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestCreateTagEmitsTheTypedNameAndSha(t *testing.T) {
+	s := openHistory(t)
+	s.Type(keyCtrlK)
+	s.WaitForPaint("Create Tag…")
+	s.Type(keyDown, keyEnter)
+	s.WaitForPaint("Create a Tag")
+	s.Type("v", "9", keyEnter)
+	l := waitIntent(t, s, "mission:menu-action")
+	if !strings.Contains(l, `"action":"create-tag"`) || !strings.Contains(l, `"name":"v9"`) || !strings.Contains(l, `"sha":"s1"`) {
+		t.Fatalf("create-tag intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
 }

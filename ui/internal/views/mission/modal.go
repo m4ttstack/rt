@@ -438,6 +438,19 @@ func (m *Mission) selectModalAction() (tea.Model, tea.Cmd) {
 	return m, ms.nameInput.Focus()
 }
 
+// openBranchModalFrom is Create Branch from Commit: the branch foldout opens
+// already naming, its new branch starting at sha. It skips openBranchModal's
+// detached-HEAD refusal, since a commit is a starting point either way.
+func (m *Mission) openBranchModalFrom(sha, short string) (tea.Model, tea.Cmd) {
+	m.modal = newBranchModal(m.model)
+	m.focus = focusModal
+	m.modal.action.label = "New branch from " + short + "…"
+	m.modal.action.buildPayload = func(name string) json.RawMessage {
+		return mustPayload(checkoutNewPayload{New: true, From: sha, Name: name})
+	}
+	return m.selectModalAction()
+}
+
 // commitModalName emits the action row's intent with the typed name. A blank
 // or whitespace-only name is inert, the same gate the commit button applies
 // to its summary.
