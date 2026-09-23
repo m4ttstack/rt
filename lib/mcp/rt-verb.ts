@@ -70,7 +70,8 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   flagTypes.set("--json", "boolean");
   const declared = `Declared flags: ${[...flagTypes.keys()].join(", ")}`;
   const forwarded: string[] = [];
-  for (const arg of leaf.rest) {
+  for (let i = 0; i < leaf.rest.length; i++) {
+    const arg = leaf.rest[i]!;
     if (!arg.startsWith("-")) {
       forwarded.push(arg);
       continue;
@@ -80,7 +81,17 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     const type = flagTypes.get(name);
     if (!type) return fail(`${verb} does not declare ${name}. ${declared}`);
     if (eq < 0) {
-      forwarded.push(arg);
+      if (type === "boolean") {
+        forwarded.push(arg);
+        continue;
+      }
+      // A value flag with nothing after it, or another flag after it, must not
+      // silently forward as absent: the child's own parser then drops it and
+      // widens the request's scope instead of erroring.
+      const value = leaf.rest[i + 1];
+      if (value === undefined || value.startsWith("-")) return fail(`${name} needs a value`);
+      forwarded.push(name, value);
+      i++;
       continue;
     }
     // Some verbs parse only `--name value` and silently ignore `--name=value`, so it is split here.
