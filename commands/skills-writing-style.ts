@@ -216,11 +216,12 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     return refuse(new UserActionableError("no-plugin", `the installed preset ${presetId} is unreadable; reinstall the mattstack plugin`), json, "new", deps);
   }
 
+  let linkResult: ReturnType<typeof linkPersonalSkills> = null;
   try {
     mkdirSync(target, { recursive: true });
     writeFileSync(join(target, "SKILL.md"), skillContent);
     if (prDescContent !== undefined) writeFileSync(join(target, "pr-description.md"), prDescContent);
-    linkPersonalSkills(deps.home());
+    linkResult = linkPersonalSkills(deps.home());
   } catch (err) {
     try {
       // The exists check ran before this call, and name passed NAME_RE, so target is a directory this call just created.
@@ -228,6 +229,12 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     } catch {
     }
     throw err;
+  }
+
+  const conflict = linkResult?.actions.find((a) => a.name === name && a.kind === "conflict");
+  if (conflict) {
+    rmSync(target, { recursive: true, force: true });
+    return refuse(new UserActionableError("exists", `${conflict.link} already exists`), json, "new", deps);
   }
 
   deps.print(json

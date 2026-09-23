@@ -238,6 +238,18 @@ describe("new", () => {
     expect(existsSync(join(home, ".mattstack", "user", "skills", "team-voice"))).toBe(false);
   });
 
+  test("a link conflict at ~/.claude/skills/<name> refuses exists and removes the directory it just created", async () => {
+    homeRepo();
+    const list = mattstackPlugin();
+    mkdirSync(join(home, ".claude", "skills", "team-voice"), { recursive: true });
+    out.length = 0;
+    await expect(writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow("exit 2");
+    const err = JSON.parse(out[0]!).error;
+    expect(err.code).toBe("exists");
+    expect(err.message).toContain(join(home, ".claude", "skills", "team-voice"));
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "team-voice"))).toBe(false);
+  });
+
   test("unreadable pr-description.md (directory) fails without leaving skills directory behind", async () => {
     homeRepo();
     const installPath = join(home, "cache", "mattstack");
