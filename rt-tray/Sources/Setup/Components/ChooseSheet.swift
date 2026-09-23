@@ -67,6 +67,10 @@ struct ChooseSheet: View {
                 .onChange(of: choice) { _, new in
                     if new == .own { withAnimation { proxy.scrollTo(Choice.own, anchor: .bottom) } }
                 }
+                // A refusal banner takes height from the list; keep the own card's field and hint in view.
+                .onChange(of: error) { _, new in
+                    if new != nil, choice == .own { proxy.scrollTo(Choice.own, anchor: .bottom) }
+                }
             }
             .frame(maxHeight: 420)
             if let error {
@@ -88,11 +92,17 @@ struct ChooseSheet: View {
             GeometryReader { proxy in
                 if suggestionsOpen, let anchor, !ownMatches.isEmpty {
                     let field = proxy[anchor]
+                    let wanted = SuggestionList.height(for: ownMatches.count)
+                    let below = proxy.size.height - field.maxY - 8
+                    let above = field.minY - 8
+                    // The field sits near the sheet's bottom edge, which clips anything drawn past it: open upward when below is short.
+                    let opensUp = wanted > below && above > below
+                    let height = min(wanted, opensUp ? above : below)
                     ZStack(alignment: .topLeading) {
                         Color.clear.contentShape(Rectangle()).onTapGesture { suggestionsOpen = false }
-                        SuggestionList(matches: ownMatches, pick: pickSuggestion)
+                        SuggestionList(matches: ownMatches, height: height, pick: pickSuggestion)
                             .frame(width: field.width)
-                            .offset(x: field.minX, y: field.maxY + 4)
+                            .offset(x: field.minX, y: opensUp ? field.minY - 4 - height : field.maxY + 4)
                     }
                 }
             }
@@ -248,7 +258,13 @@ private struct OwnFieldBounds: PreferenceKey {
 
 private struct SuggestionList: View {
     let matches: [String]
+    let height: CGFloat
     let pick: (String) -> Void
+
+    /// Short lists size to fit; long ones scroll past about six rows so every match stays reachable.
+    static func height(for count: Int) -> CGFloat {
+        min(CGFloat(count) * SuggestionRow.height + 8, 6.5 * SuggestionRow.height + 8)
+    }
 
     var body: some View {
         ScrollView {
@@ -257,8 +273,7 @@ private struct SuggestionList: View {
             }
             .padding(4)
         }
-        // Short lists size to fit; long ones scroll past about six rows so every match stays reachable.
-        .frame(height: min(CGFloat(matches.count) * SuggestionRow.height + 8, 6.5 * SuggestionRow.height + 8))
+        .frame(height: height)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
