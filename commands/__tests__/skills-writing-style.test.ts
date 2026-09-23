@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writingStyleList, writingStyleShow, writingStyleUse, type WritingStyleDeps } from "../skills-writing-style.ts";
+import { writingStyleList, writingStyleNew, writingStyleShow, writingStyleUse, type WritingStyleDeps } from "../skills-writing-style.ts";
 
 class Exit extends Error { constructor(public code: number) { super(`exit ${code}`); } }
 
@@ -111,5 +111,59 @@ describe("use", () => {
     out.length = 0;
     await writingStyleUse([], {}, fakeDeps({ isTTY: () => true, pick: async () => "mattstack:writing-style-conversational" }));
     expect(writes[0]!.value).toBe("mattstack:writing-style-conversational");
+  });
+});
+
+describe("new", () => {
+  const homeRepo = () => mkdirSync(join(home, ".mattstack", "user", ".git"), { recursive: true });
+  function mattstackPlugin(): string {
+    const installPath = join(home, "cache", "mattstack");
+    const dir = join(installPath, "skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), [
+      "---",
+      "name: writing-style-sparse",
+      'description: "Use only when the mattstack writing-style lookup names mattstack:writing-style-sparse. Terse."',
+      "---",
+      "",
+      "<!-- compiled by rt skills compile from the sources below; slots pre-resolved; edits here are working-tree drift (rt skills promote) -->",
+      "<!-- part: step source=mattstack:writing-style-sparse version=0.18.0 path=x lines=1-9 -->",
+      "# Sparse",
+      "",
+    ].join("\n"));
+    writeFileSync(join(dir, "pr-description.md"), "# PR descriptions (sparse)\n");
+    return JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
+  }
+
+  test("copies the preset into the home repo, strips compiler comments, renames, links", async () => {
+    homeRepo();
+    const list = mattstackPlugin();
+    await writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
+    const dir = join(home, ".mattstack", "user", "skills", "my-voice");
+    const text = readFileSync(join(dir, "SKILL.md"), "utf8");
+    expect(text).toContain("name: my-voice");
+    expect(text).toContain("names my-voice.");
+    expect(text).not.toContain("<!-- ");
+    expect(readFileSync(join(dir, "pr-description.md"), "utf8")).toContain("PR descriptions");
+    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+    const body = JSON.parse(out[0]!);
+    expect(body).toMatchObject({ name: "my-voice", from: "mattstack:writing-style-sparse" });
+  });
+
+  test("refusals: no-home-repo, bad-name, bad-preset, exists, no-plugin, usage", async () => {
+    const code = async (args: string[], over: Partial<WritingStyleDeps> = {}) => {
+      out.length = 0;
+      await expect(writingStyleNew([...args, "--json"], {}, fakeDeps(over))).rejects.toThrow("exit 2");
+      return JSON.parse(out[0]!).error.code;
+    };
+    expect(await code(["my-voice"])).toBe("no-home-repo");
+    homeRepo();
+    expect(await code(["../x"])).toBe("bad-name");
+    expect(await code(["my-voice", "--from", "loud"])).toBe("bad-preset");
+    expect(await code(["my-voice"], { pluginListStdout: async () => "[]" })).toBe("no-plugin");
+    const list = mattstackPlugin();
+    mkdirSync(join(home, ".mattstack", "user", "skills", "taken"), { recursive: true });
+    expect(await code(["taken"], { pluginListStdout: async () => list })).toBe("exists");
+    expect(await code([])).toBe("usage");
   });
 });

@@ -3,15 +3,16 @@
  * prose posted under your name (MR descriptions, commit messages, replies).
  */
 
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import { homeGitDir } from "../lib/setup/steps/home.ts";
 import { envelope } from "../lib/setup/contract.ts";
 import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
 import { execWithTimeout } from "../lib/setup/probes.ts";
 import { setSetting } from "../lib/settings/write.ts";
-import { isValidSkillId, resolveWritingStyle, WRITING_STYLE_KEY, type ResolvedWritingStyle } from "../lib/skills/writing-style.ts";
-import { isStyleUsable, linkPersonalSkills, listWritingStyles, parsePluginEntries, readSkillInventory } from "../lib/skills/writing-style-sources.ts";
+import { isValidSkillId, presetById, resolveWritingStyle, WRITING_STYLE_KEY, type ResolvedWritingStyle } from "../lib/skills/writing-style.ts";
+import { isStyleUsable, linkPersonalSkills, listWritingStyles, parsePluginEntries, personalSkillsDir, readSkillInventory } from "../lib/skills/writing-style-sources.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
 export interface WritingStyleDeps {
@@ -137,4 +138,70 @@ export async function writingStyleUse(args: string[], _ctx: CommandContext = {},
 
   deps.writeSetting(WRITING_STYLE_KEY, id, scope);
   deps.print(json ? JSON.stringify(envelope({ skill: id, scope }, deps.now())) : `writing style: ${id} (${scope})`);
+}
+
+const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
+const PRESET_SHORT = ["sparse", "conversational", "structured"] as const;
+
+function stripCompilerComments(text: string): string {
+  return text
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("<!-- compiled by rt skills compile") && !l.trim().startsWith("<!-- part: "))
+    .join("\n");
+}
+
+/** Renames the frontmatter `name` and the preset id the description gates on, so the copy is a skill of its own. */
+function retarget(text: string, presetId: string, name: string): string {
+  const end = text.indexOf("\n---", 4);
+  if (!text.startsWith("---\n") || end === -1) return text;
+  const frontmatter = text
+    .slice(0, end)
+    .replace(/^name:.*$/m, `name: ${name}`)
+    .split(presetId)
+    .join(name);
+  return frontmatter + text.slice(end);
+}
+
+export async function writingStyleNew(args: string[], _ctx: CommandContext = {}, deps: WritingStyleDeps = realWritingStyleDeps()): Promise<void> {
+  const json = args.includes("--json");
+  let from = "conversational";
+  let name: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--json") continue;
+    if (a === "--from") from = args[++i] ?? "";
+    else if (a.startsWith("--from=")) from = a.slice("--from=".length);
+    else if (name === undefined) name = a;
+  }
+
+  if (!existsSync(homeGitDir(deps.home()))) {
+    return refuse(new UserActionableError("no-home-repo", "your home repo does not exist yet; finish rt setup first"), json, "new", deps);
+  }
+  if (name === undefined) {
+    if (deps.isTTY() && !json && !process.env.RT_BATCH) name = (await deps.prompt("Name for your writing style (lowercase, e.g. my-voice)")) ?? undefined;
+    if (name === undefined) return refuse(new UserActionableError("usage", "usage: rt skills writing-style new <name> [--from sparse|conversational|structured] [--json]"), json, "new", deps);
+  }
+  if (!NAME_RE.test(name)) return refuse(new UserActionableError("bad-name", `"${name}" must be lowercase letters, digits, dot, dash or underscore`), json, "new", deps);
+
+  const presetId = (PRESET_SHORT as readonly string[]).includes(from) ? `mattstack:writing-style-${from}` : from;
+  if (!presetById(presetId)) return refuse(new UserActionableError("bad-preset", `--from must be one of ${PRESET_SHORT.join(", ")}`), json, "new", deps);
+
+  const target = join(personalSkillsDir(deps.home()), name);
+  if (existsSync(target)) return refuse(new UserActionableError("exists", `${target} already exists`), json, "new", deps);
+
+  const stdout = await deps.pluginListStdout();
+  const mattstack = (stdout === null ? null : parsePluginEntries(stdout))?.find((p) => p.id.startsWith("mattstack@") && p.installPath);
+  const source = mattstack?.installPath ? join(mattstack.installPath, "skills", presetId.split(":")[1]!) : null;
+  if (!source || !existsSync(join(source, "SKILL.md"))) {
+    return refuse(new UserActionableError("no-plugin", "the mattstack plugin with the writing-style presets is not installed; run rt setup"), json, "new", deps);
+  }
+
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "SKILL.md"), retarget(stripCompilerComments(readFileSync(join(source, "SKILL.md"), "utf8")), presetId, name));
+  if (existsSync(join(source, "pr-description.md"))) writeFileSync(join(target, "pr-description.md"), readFileSync(join(source, "pr-description.md"), "utf8"));
+  linkPersonalSkills(deps.home());
+
+  deps.print(json
+    ? JSON.stringify(envelope({ name, path: target, from: presetId }, deps.now()))
+    : `created ${target} from ${presetId}\nedit it, then: rt skills writing-style use ${name}`);
 }

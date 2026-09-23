@@ -2225,6 +2225,17 @@ export const TREE: Record<string, CommandNode> = {
               SETUP_JSON_ARG,
             ],
           },
+          new: {
+            description: "Start your own writing style from a preset, in your home repo",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleNew",
+            omitBehavior: "prompt",
+            args: [
+              { name: "Name", type: "text", placeholder: "my-voice", hint: "Lowercase name for the new skill" },
+              { name: "From", flag: "--from", type: "select", options: [{ value: "sparse", label: "sparse" }, { value: "conversational", label: "conversational" }, { value: "structured", label: "structured" }], default: "conversational", hint: "Preset to start from" },
+              SETUP_JSON_ARG,
+            ],
+          },
         },
       },
     },
