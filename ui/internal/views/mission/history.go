@@ -212,7 +212,7 @@ func (m *Mission) settleHistory(v historyDebounceMsg) tea.Cmd {
 
 // historyMoreInFlight: historyMoreFor records the list length a request went
 // out for, so the action row stays inert until the page lands and grows the
-// list (or SetModel re-arms it).
+// list (or SetModel re-arms it). It is inert during the first load too.
 func (m *Mission) historyMoreInFlight() bool {
 	h := m.model.History
 	return h.Loading || m.historyMoreFor == len(h.Commits)
@@ -632,9 +632,9 @@ func renderHistoryMoreRow(label string, width int, cursor, hover, inert bool) st
 // renderCommitRow is GHD's commit-list-item as three terminal rows: the
 // bold summary with its tag/unpushed indicators flush right, the byline ·
 // time, and the separator rule. Every row is exactly width cells: anything
-// wider would wrap and desync historySidebarHit's rows-per-commit
-// arithmetic. The rule stays on Bg so a selection band never merges two
-// commits into one block.
+// wider would wrap into a second terminal row and break the one painted row
+// per historyLine that historySidebarHit maps. The rule stays on Bg so a
+// selection band never merges two commits into one block.
 func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool) (string, string, string) {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	switch {

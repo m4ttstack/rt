@@ -731,8 +731,9 @@ func (m *Mission) diffWidth() int {
 // than a second, potentially drifting copy of it. sidebarTopH is the
 // constant sidebarFixedTopRows; listRegionH is the Changes list's own fixed
 // height (however many of its rows are actually filled, versus left as
-// Bg-filler or scrolled past); sidebarFillerH is how many of those rows are
-// filler (0 once the list is long enough to scroll).
+// Bg-filler or scrolled past); sidebarFillerH is how many of the Changes
+// list's rows are filler (0 once the list is long enough to scroll, and
+// always 0 on History).
 type frameLayout struct {
 	topH, bodyH, keybarH, noticeH               int
 	sidebarTopH, sidebarDockedH, sidebarFillerH int
@@ -752,7 +753,6 @@ func (m *Mission) layout() frameLayout {
 		l.sidebarTopH = historyFixedTopRows
 		l.bodyH = max(l.bodyH, historyFixedTopRows)
 		l.listRegionH = l.bodyH - historyFixedTopRows
-		l.sidebarFillerH = max(l.listRegionH-len(m.historyLines(l.listRegionH)), 0)
 		return l
 	}
 	l.sidebarTopH = sidebarFixedTopRows
