@@ -71,7 +71,7 @@ export function parsePreferencesStyle(text: string): string | null {
   const start = lines.findIndex((l) => l.trim().toLowerCase() === "## writing style");
   if (start === -1) return null;
   for (const line of lines.slice(start + 1)) {
-    if (line.startsWith("## ")) return null;
+    if (line.trim().startsWith("## ")) return null;
     const m = /^\s*writing-style:\s*`?([^`\s]+)`?\s*$/.exec(line);
     if (m) return isValidSkillId(m[1]!) ? m[1]! : null;
   }

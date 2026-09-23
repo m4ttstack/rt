@@ -42,6 +42,9 @@ describe("parsePreferencesStyle", () => {
   test("an invalid id reads nothing", () => {
     expect(parsePreferencesStyle("## Writing style\nwriting-style: `-rf`\n")).toBeNull();
   });
+  test("an indented next heading still ends the section", () => {
+    expect(parsePreferencesStyle("## Writing style\n\n  ## Other\nwriting-style: `x:y`\n")).toBeNull();
+  });
 });
 
 describe("resolveWritingStyle", () => {

@@ -126,6 +126,12 @@ describe("use", () => {
     expect(writes[0]!.value).toBe("team-voice");
   });
 
+  test("a --scope with a missing value does not swallow --json; the usage refusal is still the envelope", async () => {
+    homeRepo();
+    await expect(writingStyleUse(["--scope", "--json"], {}, fakeDeps())).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("usage");
+  });
+
   test("no id without a TTY is usage; with a TTY it picks", async () => {
     homeRepo();
     await expect(writingStyleUse(["--json"], {}, fakeDeps())).rejects.toThrow("exit 2");

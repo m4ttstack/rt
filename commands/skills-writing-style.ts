@@ -98,8 +98,10 @@ function parseUseArgs(args: string[]): { id: string | undefined; scope: string; 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--json") json = true;
-    else if (a === "--scope") scope = args[++i] ?? "";
-    else if (a.startsWith("--scope=")) scope = a.slice("--scope=".length);
+    else if (a === "--scope") {
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("--")) { scope = next; i++; } else scope = "";
+    } else if (a.startsWith("--scope=")) scope = a.slice("--scope=".length);
     else if (id === undefined) id = a;
   }
   return { id, scope, json };
