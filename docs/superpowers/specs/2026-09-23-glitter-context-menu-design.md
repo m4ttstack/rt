@@ -209,8 +209,12 @@ row shows its key and runs exactly what the key runs.
   choosing it sets the notice "No editor set: run rt code once to pick one".
 - After ignore, discard, and create-tag the driver refreshes and pushes, as
   every mutating intent does. Failures surface as the notice with git's (or
-  the Trash's) message; nothing is half-applied (discard checks the Trash
-  step before touching the index).
+  the Trash's) message. Discard re-reads git status before acting. In a
+  multi-file discard, a Trash failure on a later file still finishes the
+  files already moved to the Trash, so the discard as a whole can be
+  partially applied; any path a not-yet-trashed file still owns is left as
+  it was, even when an already-trashed file shares it. glitter's menu only
+  ever discards one file.
 - After discard, the file's commit-intent selection is cleared (it no longer
   has changes; the staging model's selection map drops it).
 
@@ -234,12 +238,11 @@ row shows its key and runs exactly what the key runs.
   first (`/usr/bin/trash`); renamed and copied files reset both their new and
   old paths and check out the old one; then `git reset --mixed HEAD --` only
   the paths the index actually changed, and `git checkout-index` the paths
-  that exist in the index. The Trash step for every file runs before any git
-  step; if any Trash move fails, nothing else runs and the error surfaces.
-  (GitHub Desktop then offers a permanent delete; glitter does not.)
-  Superseded by the implementation: a Trash failure instead finishes the
-  reset/checkout-index steps for the files already trashed (excluding any
-  path a not-yet-trashed file still owns) before rethrowing the Trash error.
+  that exist in the index. If a Trash move fails, the reset and
+  checkout-index steps still run for the files already trashed (excluding
+  any path a not-yet-trashed file still owns), then the Trash error
+  surfaces; the failing file and every later one stay untouched. (GitHub
+  Desktop then offers a permanent delete; glitter does not.)
 - Submodule handling follows GitHub Desktop's (skip the Trash for a
   submodule path, reset submodule paths separately).
 - New client methods on `GitClient` for all three, with tests against real
@@ -278,8 +281,10 @@ Disk" menu; hover versus cursor rows.
   the lift; `extname` parity cases.
 - git-core: ignore escaping, CRLF with `core.autocrlf=true`, a missing
   `.gitignore`, a symlinked `.gitignore` refused; discard of modified, new
-  (untracked), staged-new, renamed, and deleted files; a failing Trash leaves
-  the tree and index untouched.
+  (untracked), staged-new, renamed, and deleted files; a failing Trash on a
+  single file leaves the tree and index untouched; a failing Trash on a later
+  file restores the earlier trashed files to HEAD and leaves the failing one
+  (and any path it still owns) as it was.
 - pty: one test through the real binary opens the menu with ctrl-k and
   closes it with esc. Right-click is covered at the view level until the pty
   harness can send mouse events.
