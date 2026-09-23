@@ -295,18 +295,17 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 	case hover:
 		on = on.Background(theme.HoverBg)
 	}
-	prefix := "  "
+	prefix := on.Render("  ")
 	if cursor {
-		prefix = theme.GlyphBar + " "
+		prefix = on.Foreground(theme.Pink).Render(theme.GlyphBar) + on.Render(" ")
 	}
-	prefixStyled := on.Render("  ")
-	if cursor {
-		prefixStyled = on.Foreground(theme.Pink).Render(theme.GlyphBar) + on.Render(" ")
-	}
+	prefixW := lipgloss.Width(prefix)
 
 	var right string
 	if len(c.Tags) > 0 {
-		right = pill(c.Tags[0], theme.Lav)
+		// The pill's own padding is 2 cells; the whole pill stays within a
+		// third of the row so a long tag cannot starve the summary.
+		right = pill(middleTruncate(c.Tags[0], max(width/3-2, 1)), theme.Lav)
 		if len(c.Tags) > 1 {
 			right += on.Render(" ") + on.Foreground(theme.Faint).Render("+")
 		}
@@ -322,10 +321,10 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 	if rightW > 0 {
 		gap = 1
 	}
-	summaryW := width - lipgloss.Width(prefix) - gap - rightW - 1
+	summaryW := width - prefixW - gap - rightW - 1
 	if summaryW < 1 {
 		right, rightW, gap = "", 0, 0
-		summaryW = max(width-lipgloss.Width(prefix)-1, 0)
+		summaryW = max(width-prefixW-1, 0)
 	}
 	summaryStyle := on.Foreground(theme.Text)
 	summary := c.Summary
@@ -333,7 +332,7 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 		summary = "Empty commit message"
 		summaryStyle = on.Foreground(theme.Faint)
 	}
-	line1 := prefixStyled + summaryStyle.Width(summaryW).Render(clip(summary, summaryW))
+	line1 := prefix + summaryStyle.Width(summaryW).Render(clip(summary, summaryW))
 	if gap > 0 {
 		line1 += on.Render(" ")
 	}

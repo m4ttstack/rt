@@ -345,10 +345,11 @@ func renderKeybar(width int, tab string) string {
 	key := func(k, label string) string {
 		return on.Foreground(theme.KeybarKey).Bold(true).Render(k) + on.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
+	// justify clips from the right, so the tab switch sits early enough to
+	// survive a narrow terminal.
 	pairs := [][2]string{
-		{"space", "stage"}, {"enter", "diff"}, {"c", "commit"}, {"f", "action"},
+		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"c", "commit"}, {"f", "action"},
 		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
-		{"2", "history"},
 	}
 	if tab == "history" {
 		pairs = [][2]string{

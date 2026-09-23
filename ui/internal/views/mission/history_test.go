@@ -589,6 +589,95 @@ func TestClickShowingCommitReSelectsNothing(t *testing.T) {
 	}
 }
 
+func TestDownOnLastLoadedRowStillRequestsMore(t *testing.T) {
+	m := pagingMission(t, pagingCommits(30))
+	m.historyCursor = "c29"
+	_, cmd := m.Update(downKey())
+	if cmd == nil || m.historyMoreFor != 30 {
+		t.Fatalf("down on the last loaded row must still request the next page, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if m.historyCursor != "c29" {
+		t.Fatalf("the cursor should stay clamped on the last row, got %q", m.historyCursor)
+	}
+}
+
+// TestScrolledHistoryHitMirrorsRenderedRows repeats the render/hit lockstep
+// walk with the list scrolled, so historyTop is part of the mapping.
+func TestScrolledHistoryHitMirrorsRenderedRows(t *testing.T) {
+	commits := make([]HistoryCommitRow, 40)
+	for i := range commits {
+		commits[i] = HistoryCommitRow{Sha: fmt.Sprintf("c%02d", i), Summary: fmt.Sprintf("subject-%02d", i), Byline: "Matt", When: "1 day ago"}
+	}
+	m := pagingMission(t, commits)
+	m.historyCursor = "c30"
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if m.historyTop == 0 {
+		t.Fatal("setup: the list should have scrolled")
+	}
+	first, ok := findHitY(m, 2, hitCommitRow)
+	if !ok || first != m.layout().topH+historyFixedTopRows {
+		t.Fatalf("the first list row should be the first commit hit, got y=%d ok=%v", first, ok)
+	}
+	if h := m.hitTest(2, first); h.idx != m.historyTop {
+		t.Fatalf("the first list row should resolve to historyTop %d, got %+v", m.historyTop, h)
+	}
+	seen := 0
+	for idx, c := range commits {
+		y := -1
+		for i, line := range lines {
+			if strings.Contains(sidebarPart(line), c.Summary) {
+				y = i
+				break
+			}
+		}
+		if y < 0 {
+			continue
+		}
+		seen++
+		for _, row := range []int{y, y + 1} {
+			if h := m.hitTest(2, row); h.kind != hitCommitRow || h.idx != idx {
+				t.Fatalf("row %d painting %q resolved to %+v, want commit %d", row, c.Summary, h, idx)
+			}
+		}
+	}
+	if seen == 0 || strings.Contains(strings.Join(lines, "\n"), "subject-00") {
+		t.Fatalf("setup: expected a scrolled window without the first commit, saw %d rows", seen)
+	}
+}
+
+func TestLongTagKeepsSummaryReadable(t *testing.T) {
+	width := sidebarWidth - 1
+	tag := "release-candidate-" + strings.Repeat("x", 22)
+	if lipgloss.Width(tag) != 40 {
+		t.Fatalf("setup: tag should be 40 cells, got %d", lipgloss.Width(tag))
+	}
+	for _, tagW := range []int{20, 30, 35, 40} {
+		c := HistoryCommitRow{Summary: "Fix pty paint predicate", Byline: "Matt", When: "3 hours ago", Tags: []string{tag[:tagW]}, Unpushed: true}
+		a, _ := renderCommitRow(c, width, false, false, false)
+		line := ansi.Strip(a)
+		if !strings.Contains(line, "Fix pty paint predicate") {
+			t.Fatalf("a %d-cell tag starved the summary: %q", tagW, line)
+		}
+		if !strings.Contains(line, "releas") || !strings.Contains(line, "…") {
+			t.Fatalf("a %d-cell tag should stay visible, middle-truncated: %q", tagW, line)
+		}
+		if pillW := lipgloss.Width(pill(middleTruncate(tag[:tagW], width/3-2), theme.Lav)); pillW > width/3 {
+			t.Fatalf("setup: the capped pill should fit a third of the row, got %d", pillW)
+		}
+	}
+	short, _ := renderCommitRow(HistoryCommitRow{Summary: "Guard badges", Tags: []string{"v0.9.1"}}, width, false, false, false)
+	if !strings.Contains(ansi.Strip(short), " v0.9.1 ") {
+		t.Fatalf("a short tag must render whole: %q", ansi.Strip(short))
+	}
+}
+
+func TestChangesKeybarKeepsTabKeyAtNarrowWidth(t *testing.T) {
+	out := ansi.Strip(renderKeybar(100, "changes"))
+	if !strings.Contains(out, "2 history") {
+		t.Fatalf("at 100 columns the Changes keybar must still show \"2 history\":\n%s", out)
+	}
+}
+
 func TestClickTabEmitsTabSwitch(t *testing.T) {
 	m := newHistoryTestMission()
 	if _, cmd := m.Update(tea.MouseClickMsg{X: 1, Y: m.layout().topH + 1, Button: tea.MouseLeft}); cmd == nil {
