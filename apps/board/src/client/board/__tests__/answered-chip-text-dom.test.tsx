@@ -92,3 +92,29 @@ test('an edited reply keeps its paragraphs on its own line, not the faint note',
   expect(line.classList.contains('tui-gate-summary-note')).toBe(false);
   expect(line.textContent).toContain(reply);
 });
+
+test('an answer note mutes by the class, never an inline opacity', async () => {
+  const note = 'Confirmed with the on-call.\n\nNo further action needed.';
+  await React.act(async () => {
+    root.render(
+      <AnsweredChip
+        startOpen
+        row={{
+          subject: 'mr:https://gitlab.example.com/demo/app/-/merge_requests/87',
+          kind: 'respond-post',
+          status: 'answered',
+          questions: [thread(1, 'T1')],
+          answer: {
+            answers: { 'thread-1': { value: ['post:T1'], note } },
+            by: 'board',
+          },
+        }}
+      />
+    );
+  });
+  const line = container.querySelector('.tui-gate-summary-note')!;
+  expect(line).not.toBeNull();
+  expect(line.getAttribute('style')).toBeNull();
+  expect((line as HTMLElement).style.opacity).toBe('');
+  expect(line.textContent).toContain(note);
+});
