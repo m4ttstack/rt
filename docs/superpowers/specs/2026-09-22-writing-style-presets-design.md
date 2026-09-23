@@ -33,6 +33,7 @@ Ratified with the operator on 2026-09-22.
 | Presets | Three, shipped in the mattstack plugin: sparse, conversational, structured, plus one shared rules include |
 | Own style | Any installed skill id; personal skills can live in the home repo and travel; a scaffold verb copies a preset to start from |
 | Setup | A checklist row with a native picker; it blocks Finish and cannot be waived |
+| Existing installs | A Writing style section in Settings › General hosts the same row and sheet |
 | Ownership | Built by one lane, reviewed by the distribution lane |
 
 ## Design
@@ -73,8 +74,8 @@ interface ResolvedWritingStyle { skill: string; source: WritingStyleSource }
    `user` or `team`.
 2. Otherwise the `## Writing style` section of
    `~/.mattstack/user/skills/preferences.md` (section ends at the next `## `):
-   the first backticked `<plugin>:<name>` or bare skill id in it. Source
-   `preferences`.
+   the value on its `writing-style:` line, backticks stripped. No such line
+   means no value. Source `preferences`.
 3. Otherwise `mattstack:writing-style-conversational`, source `fallback`.
 
 It reads a setting and one file, spawns nothing, and writes nothing, because
@@ -90,8 +91,18 @@ every review and respond run calls it.
 | `new <name> [--from <preset>]` | Copies a preset's compiled `SKILL.md` and `pr-description.md` into `~/.mattstack/user/skills/<name>/`, strips compiler comments, rewrites the frontmatter `name`, links it, and prints the `use` command. `omitBehavior: "prompt"`. |
 
 "Installed" means a `~/.claude/skills/<id>` entry, a skill directory of an
-enabled plugin, or a linked personal skill. The new command module gets its
-`lib/module-registry.ts` thunk.
+enabled plugin, or a linked personal skill. Plugin skill directories come from
+the plugin list the `tool.plugins` probe already reads, so a plan read spawns
+no second `claude`. A skill in an installed but disabled plugin counts as not
+installed, since it cannot load; the row names the plugin to enable. The three
+catalog preset ids are always valid, whatever the install state: Install is
+what delivers them, so neither `use` nor the row may refuse one on a fresh Mac.
+
+`use` rejects an id that does not match `^[a-z0-9][a-z0-9._-]*(:[a-z0-9._-]+)?$`
+before anything else, because the app's "Use my own skill…" text reaches argv
+and a leading dash would parse as a flag.
+
+The new command module gets its `lib/module-registry.ts` thunk.
 
 ### 3. Personal styles in the home repo
 
@@ -107,17 +118,30 @@ files and are ignored, since only directories with a `SKILL.md` link.
 
 `skills.writing-style` in the tools group, `finishGated: true`.
 
-| State | When | Detail |
-| --- | --- | --- |
-| `needs-you` | resolver source is `fallback` | "Choose how your reviews and replies read (or run `rt skills writing-style use`)" |
-| `invalid` | a configured id is not installed on this Mac | "`<id>` is not installed here" |
-| `ready` | configured and installed | "Sparse (team default)", "my-voice (yours)", "from preferences.md" |
+| State | When | Detail | Action |
+| --- | --- | --- | --- |
+| `needs-you` | before Install (the home repo does not exist yet) | "You'll choose this after Install" | none |
+| `needs-you` | after Install, resolver source is `fallback` | "Choose how your reviews and replies read (or run `rt skills writing-style use`)" | `choose` |
+| `invalid` | a configured non-preset id is not installed on this Mac | "`<id>` is not installed here" (or "enable `<plugin>`") | `choose` |
+| `ready` | configured and installed, or a catalog preset | "Sparse (team default)", "my-voice (yours)", "from preferences.md" | `choose` (to change it) |
 
-It cannot be waived. Today every finish-gated row is waivable
-(`FINISH_GATED_ROW_IDS` doubles as the waiver list), so this splits them:
-`WAIVABLE_ROW_IDS` keeps the fast-browser row, `setup waive` and
-`assertFinishGated` check the waivable list, and `Row` gains
-`waivable?: boolean` so the app hides Skip.
+Before Install the row offers no pick, because `use` writes the user store
+inside `~/.mattstack/user`, and a write there before `home.init` or
+`home.restore` clones would make the clone fail on a non-empty target (the
+trap `setup repo-root set` already guards), and on a restore would clobber the
+restored choice. Install never waits on this row, since finish gates block
+Finish only. The pick happens on the Done screen.
+
+It cannot be waived. Today `FINISH_GATED_ROW_IDS` doubles as the waiver list,
+so this splits them:
+
+- `WAIVABLE_ROW_IDS` holds the fast-browser row only.
+- The gate is enforced where it is read: `finishBlockers` and
+  `applyFinishGate` honor a `setup.waived` entry only for a waivable id, so
+  `rt settings set setup.waived` cannot clear this row either.
+- `setup waive` refuses a non-waivable id. `setup unwaive` still accepts any
+  finish-gated id, so a stale entry can be removed.
+- `Row` gains `waivable: boolean`, which rt always emits on a finish-gated row.
 
 The row's action is a new contract type:
 
@@ -140,15 +164,33 @@ Compatibility: an app that predates `choose` decodes it as `.unknown` and
 the command. rt ships inside the app bundle, so that pairing only occurs with
 the dev flavor. `CONTRACT_VERSION` stays 1 because the change is additive.
 
-### 5. App sheet
+### 5. App
 
 `Sources-core`: `ActionType.choose`, the option and `other` models,
 `DispatchedAction.chooseOption(...)`, and dispatch to
-`.rtVerb(args: verb + [id, "--json"])` once an id is picked. `Sources/Setup`:
-a `ChooseSheet` listing each option's label, detail and sample line, with "Use
+`.rtVerb(args: verb + [id, "--json"])` once an id is picked. `PlanRow` decodes
+an absent `waivable` on a finish-gated row as `true`, so a new app on an older
+rt keeps Fast Browser's Skip.
+
+`ChooseSheet` lists each option's label, detail and sample line, with "Use
 this style" and the "Use my own skill…" field. It follows `ConnectSheet`'s
-structure and tokens. Built into a scratch directory, never over a blessed
-bundle, and screenshotted in light and dark before it is called done.
+structure and tokens. Three places open it:
+
+- **Checklist:** `ChecklistScreen.run`, alongside `chooseFolder`.
+- **Done:** `DoneScreen.show(row)` handles `choose` (today it handles only
+  `openURL`, `steps` and `run`, and anything else falls through). Done's Skip
+  button is gated on `waivable`, and the skip sheet's copy stays bound to the
+  Fast Browser row. A test asserts every finish-gated row's action type is
+  handled on Done, so a user can never reach Done with a blocker whose button
+  does nothing.
+- **Settings › General:** a Writing style section hosting the same row and
+  sheet. It's the native path for installs that finished setup before this
+  row existed. Nothing nags them: only the wizard's Done screen and
+  `rt setup`'s status line read finish blockers, and `verify` already excludes
+  finish-gated rows.
+
+Built into a scratch directory, never over a blessed bundle, and screenshotted
+in light and dark (checklist, Done and Settings) before it is called done.
 
 ### 6. Presets
 
@@ -208,8 +250,16 @@ and `tests/repo-purity.sh` enforce this.
 
 > Before drafting, run `rt skills writing-style show --json` and load the skill
 > its `skill` names. That load is step one: compose in that voice from the
-> first word, never as a pass over a finished draft. If the command fails or
-> the skill will not load, load `mattstack:writing-style-conversational`.
+> first word, never as a pass over a finished draft. If the command fails,
+> load the skill named on the `writing-style:` line of
+> `~/.mattstack/user/skills/preferences.md` if there is one. If that is
+> missing too, or the skill will not load, load
+> `mattstack:writing-style-conversational`.
+
+The failure path repeats one rung of the order on purpose. Plugin and pack
+updates travel apart from rt's own updates, so a Mac can hold the new skills
+and an rt without `show`, and that Mac should still keep a style declared in
+`preferences.md`.
 
 | Where | Change |
 | --- | --- |
@@ -227,32 +277,48 @@ sections (dev process runner, standing rules).
 One PR per repo, each reviewed by the distribution lane. This rides the rt
 release after the next one, whose scope is already fixed.
 
-1. **repo-tools:** setting, resolver, verbs, personal-skill linking, setup row,
-   `choose` contract, app sheet.
-2. **mattstack-skills, presets:** floor, three presets, stubs, surface, plugin
-   bump, `rt skills sync --pack mattstack`. Inert until something names them,
-   so this can merge any time.
+1. **mattstack-skills, presets:** floor, three presets, stubs, surface, plugin
+   bump, `rt skills sync --pack mattstack`. They're inert until something
+   names them, so this merges first.
+2. **repo-tools:** setting, resolver, verbs, personal-skill linking, setup row,
+   `choose` contract, app (checklist, Done, Settings). The rt release that
+   ships the row must also carry a marketplace catalog pin (the release's
+   catalog refresh step) that includes the presets. Otherwise the row offers
+   presets the installed plugin lacks.
 3. **Lookup-line changes** (mattstack-skills lookup include, team pack fills,
-   board wrappers) merge only after an rt release containing `show` has
-   shipped. Before that, the command fails and every user would drop to the
-   conversational fallback, including anyone whose style lives in
-   `preferences.md` today. The team pack recompiles through
-   `rt skills sync --pack <pack>`.
+   board wrappers) merge after that rt release has shipped. The failure path
+   in section 7 covers anyone who has not taken the rt update yet. The team
+   pack recompiles through `rt skills sync --pack <pack>`.
 
 ## Testing
 
 - **Resolver:** user beats team, team beats `preferences.md`, the
-  `preferences.md` parse (backticked id, bare id, missing section, missing
-  file), the fallback.
-- **Verbs:** `use` refuses an unknown id and lists the choices; `use` with a
-  personal skill links it first; `new` output has no compiler comments and
-  the right `name`; `show --json` envelope in an e2e test; the
-  picker-conformance gate; the module registry.
-- **Setup:** each row state, finish-gated in status mode, `setup waive` refuses
-  the row, the contract snapshot.
-- **App:** decode tests for `choose` and for an unknown type, dispatcher tests
-  for the picked and "own skill" paths, and the sheet rendered and
-  screenshotted in both schemes.
+  `preferences.md` parse (keyed line with and without backticks, no keyed
+  line, missing section, missing file), the fallback.
+- **Verbs:**
+  - `use` refuses an unknown id and lists the choices, and refuses a bad id
+    shape (a leading dash included) before any lookup.
+  - `use` accepts a catalog preset with the mattstack plugin absent.
+  - `use` with a personal skill links it first.
+  - `new` output has no compiler comments and has the right `name`.
+  - The `show --json` envelope in an e2e test.
+  - The picker-conformance gate and the module registry.
+- **Setup:**
+  - Each row state, including the no-action row before Install.
+  - A team default naming a preset reads ready on a fresh Mac.
+  - Finish-gated in status mode.
+  - A `setup.waived` entry for this row is ignored by `finishBlockers` and
+    `applyFinishGate`.
+  - `setup waive` refuses the row and `setup unwaive` still clears it.
+  - `waivable` is emitted on every finish-gated row.
+  - The contract snapshot.
+- **App:**
+  - Decode tests for `choose`, for an unknown type, and for a finish-gated row
+    with no `waivable` (reads `true`).
+  - Dispatcher tests for the picked and "own skill" paths.
+  - Every finish-gated row's action type is handled on Done.
+  - The sheet rendered and screenshotted in both schemes from the checklist,
+    Done and Settings.
 - **Presets** (superpowers:writing-skills, test-first). Fixtures: a diff with a
   real bug (finding plus summary), a reviewer comment on your own PR (reply),
   a change to describe (PR description), and a commit.
