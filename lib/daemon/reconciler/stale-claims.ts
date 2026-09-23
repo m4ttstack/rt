@@ -31,6 +31,9 @@ import type { WorktreeRepoConfig } from "../../worktree/config.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Tree path -> the refusal last logged at info for it, per daemon process. */
+const reportedRefusals = new Map<string, string>();
+
 export interface StaleClaimSweepDeps extends DisposeDeps {
   /** Injectable for tests; defaults to one lsof snapshot of every process cwd. */
   liveCwds?: () => Promise<Set<string>>;
@@ -152,14 +155,21 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
       const outcome = await withTreeLock(rec.path, () => disposeTree(deps, rec, { auto: true }));
       if (outcome === "busy") continue;
       if (outcome.disposed) {
+        reportedRefusals.delete(rec.path);
         deps.log.info(
           { repo: deps.repoName, tree: rec.name, branch: rec.branch, ageDays, inactiveDays, mrState },
           "stale claim disposed",
         );
+      } else if (reportedRefusals.get(rec.path) !== outcome.refusal) {
+        // A refusal (dirty/unpushed/attended/…) leaves the tree claimed on
+        // purpose: an old claim holding real work is live work. It repeats
+        // every pass, so only a new reason for a tree reaches info.
+        reportedRefusals.set(rec.path, outcome.refusal);
+        deps.log.info(
+          { repo: deps.repoName, tree: rec.name, branch: rec.branch, refusal: outcome.refusal, ...(outcome.detail ? { detail: outcome.detail } : {}), inactiveDays, mrState },
+          "stale claim kept: dispose refused",
+        );
       }
-      // A refusal (dirty/unpushed/attended/…) leaves the tree claimed on
-      // purpose: an old claim holding real work is live work. disposeTree
-      // already logged the reason at debug.
     } catch (err) {
       deps.log.warn({ err, repo: deps.repoName, tree: rec.name }, "stale-claim sweep: dispose failed");
     }
