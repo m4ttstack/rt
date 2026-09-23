@@ -43,6 +43,7 @@ const boardData = (gateStatus: 'open' | 'answered') => ({
       createdAt: '2026-08-19T00:00:00Z',
       reviews: { given: 0, required: 0, isApproved: false, reviewers: [] },
       blockers: { any: false },
+      mergeButton: { visible: false, disabled: false, loading: false },
       autoMergeButton: { visible: false, isActive: false },
       reviewerComments: 0,
       unresolvedThreads: 0,

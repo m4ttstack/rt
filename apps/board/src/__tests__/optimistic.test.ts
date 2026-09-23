@@ -5,8 +5,10 @@ import {
   clearServerTruth,
   EMPTY_OPTIMISTIC,
   overlay,
+  overlayMerging,
   rollback,
   setQueued,
+  settleMerging,
 } from '../client/board/optimistic.ts';
 import type { BoardMRWithReview } from '../client/types.ts';
 
@@ -71,4 +73,30 @@ test('overlay: server state wins over optimistic; optimistic fills gaps only', (
   const [out] = overlay([mr('u1', { review: { status: 'error' } })], s);
   expect(out!.review).toEqual({ status: 'error' }); // server wins
   expect(out!.respond).toEqual({ status: 'queued' }); // optimistic fills
+});
+
+const IDLE = { visible: true, disabled: false, loading: false, label: 'Merge' };
+const open = (webUrl: string, blockers: Record<string, unknown> = {}) =>
+  mr(webUrl, {
+    mergeButton: IDLE,
+    blockers: { any: false, ...blockers },
+  } as Partial<BoardMRWithReview>);
+
+test('overlayMerging: a fired merge reads as GitLab merging on that row only', () => {
+  const rows = [open('u1'), open('u2')];
+  const [one, two] = overlayMerging(rows, new Set(['u1']));
+  expect(one!.mergeButton).toEqual({ ...IDLE, loading: true });
+  expect(two).toBe(rows[1]);
+  expect(overlayMerging(rows, new Set())).toBe(rows);
+});
+
+test('settleMerging holds through a lagging sync and lets go once the MR leaves or GitLab records a merge error', () => {
+  const held = new Set(['u1', 'u2', 'u3']);
+  const settled = settleMerging(held, [
+    open('u1'),
+    open('u3', { any: true, hasMergeError: true }),
+  ]);
+  expect([...settled]).toEqual(['u1']);
+  const still = new Set(['u1']);
+  expect(settleMerging(still, [open('u1')])).toBe(still);
 });

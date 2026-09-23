@@ -153,6 +153,16 @@ function lowerFirst(s: string): string {
 
 const MERGE: Verb = { kind: 'merge', label: 'merge' };
 
+/** GitLab is merging, or the board just asked it to (optimistic.ts's
+    overlayMerging): the MR is on its way off the board, so nothing else on
+    the row is worth saying and nothing is worth clicking. */
+const MERGING: Candidate = {
+  tone: 'work',
+  word: 'merging…',
+  spin: true,
+  verbs: [],
+};
+
 /** The seat's own MR, approved, unblocked, and GitLab's merge button up and
     idle: the same button the row menu's merge item reads, plus the blockers,
     because glance enables the button optimistically while GitLab is still
@@ -797,6 +807,7 @@ export function candidateLines(
   draftResolved: Resolved,
   self: string | null
 ): Candidate[] {
+  if (mr.mergeButton.loading) return [MERGING];
   const interrupted = interruptedLane(mr);
   const lines: Candidate[] = [
     ...gateLines(mr),

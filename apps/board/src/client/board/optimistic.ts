@@ -118,3 +118,35 @@ export function overlay(
     return next;
   });
 }
+
+/** A merge the board fired reads as GitLab's own merging state on that row,
+    through the seconds GitLab and rt's sync still report the MR open and
+    mergeable. */
+export function overlayMerging(
+  mrs: BoardMRWithReview[],
+  merging: ReadonlySet<string>
+): BoardMRWithReview[] {
+  if (merging.size === 0) return mrs;
+  return mrs.map(mr =>
+    mr.webUrl && merging.has(mr.webUrl)
+      ? { ...mr, mergeButton: { ...mr.mergeButton, loading: true } }
+      : mr
+  );
+}
+
+/** Let go of a fired merge once its MR has left the board or GitLab has
+    recorded a merge error on it. Returns the SAME reference when nothing
+    changed, for the same reason as clearServerTruth. */
+export function settleMerging(
+  merging: ReadonlySet<string>,
+  mrs: BoardMRWithReview[]
+): ReadonlySet<string> {
+  if (merging.size === 0) return merging;
+  const held = new Set(
+    mrs
+      .filter(mr => mr.webUrl && !mr.blockers.hasMergeError)
+      .map(mr => mr.webUrl)
+  );
+  const next = new Set([...merging].filter(url => held.has(url)));
+  return next.size === merging.size ? merging : next;
+}

@@ -140,6 +140,15 @@ describe('needOf: my own MR', () => {
     ).toBe('merge');
     expect(need(own())).toBeNull();
   });
+
+  test('my merge in flight keeps its place in the merge group until it leaves the board', () => {
+    const merging = {
+      reviews: { isApproved: true, required: 1, given: 1, reviewers: [] },
+      mergeButton: { visible: true, disabled: true, loading: true },
+    };
+    expect(need(own(merging))).toBe('merge');
+    expect(need(mr(merging))).toBeNull();
+  });
 });
 
 describe("needOf: someone else's MR", () => {

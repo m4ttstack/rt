@@ -76,11 +76,12 @@ import { boardSummary, draftKey, mrLine } from './format.ts';
 import {
   useBoardData,
   useLaunchAction,
+  useMerging,
   useOptimisticLifecycle,
   useToasts,
 } from './hooks.ts';
 import { NEED_LABEL, NEED_ORDER, needOf } from './needs-me.ts';
-import { overlay } from './optimistic.ts';
+import { overlay, overlayMerging } from './optimistic.ts';
 import { RespondModal, ReviewModal } from './ReviewModal.tsx';
 import {
   bulkActions,
@@ -422,6 +423,7 @@ export function Board() {
   // via /data.json. Cleared per MR once the server reports real status for
   // that axis.
   const optimisticLifecycle = useOptimisticLifecycle(data);
+  const merging = useMerging(data);
 
   const openRowMenu = useCallback((e: React.MouseEvent, mr: BoardMR) => {
     e.preventDefault();
@@ -736,8 +738,9 @@ export function Board() {
       launch,
       addToast,
       reload: fresh => void load(fresh),
+      merging: { start: merging.start, fail: merging.fail },
     }),
-    [launch, addToast, load]
+    [launch, addToast, load, merging.start, merging.fail]
   );
   const rowHandlers: RowHandlers = useMemo(
     () => ({
@@ -760,16 +763,18 @@ export function Board() {
     [runner, rowHandlers]
   );
 
-  // Poll faster while a review, response, or doctor run is active, so the
-  // badge updates promptly instead of waiting for the normal 60s cadence.
+  // Poll faster while a review, response, or doctor run is active, or a fired
+  // merge waits to leave, so the row updates promptly instead of waiting for
+  // the normal 60s cadence.
   // Stays here rather than inside useBoardData -- see that hook's doc comment.
+  const fastPoll = optimisticLifecycle.active || merging.merging.size > 0;
   useEffect(() => {
-    if (!optimisticLifecycle.active) return;
+    if (!fastPoll) return;
     const t = setInterval(() => {
       if (!document.hidden) load();
     }, 4000);
     return () => clearInterval(t);
-  }, [optimisticLifecycle.active, load]);
+  }, [fastPoll, load]);
 
   // The pure filter/group/sort pipeline (overlay -> tabFiltered ->
   // filterBySlack(filterByMember(...)) -> groupMRs(...).map(sortMRs...)),
@@ -798,7 +803,10 @@ export function Board() {
     // A codeowners tab's "who counts as roster" set for excludeMembers.
     const rosterUsernames = new Set(data.members.map(m => m.username));
     // Server state wins; otherwise show an optimistic "queued" badge if pending.
-    const mrs = overlay(data.mrs, optimisticLifecycle.state);
+    const mrs = overlayMerging(
+      overlay(data.mrs, optimisticLifecycle.state),
+      merging.merging
+    );
     const need = (mr: BoardMRWithReview) =>
       self === null ? null : needOf(mr, self, now, draftResolved);
     const needsMe = (rows: BoardMRWithReview[]) =>
@@ -865,7 +873,7 @@ export function Board() {
       filtered,
       groups,
     };
-  }, [data, optimisticLifecycle.state, state, draftResolved]);
+  }, [data, optimisticLifecycle.state, merging.merging, state, draftResolved]);
 
   // Actionable gates on every row the board holds, visible rows first in
   // board order (group order, the group's own sort, stack nesting: exactly

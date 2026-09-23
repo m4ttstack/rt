@@ -1520,19 +1520,40 @@ describe('merge from the row', () => {
     ).toEqual(['read-review']);
   });
 
-  test('no merge while GitLab would refuse it: conflicts, a disabled or busy button, or no approval', () => {
+  test('no merge while GitLab would refuse it: conflicts, a disabled button, or no approval', () => {
     const cases: Over[] = [
       {
         ...blockedBy({ hasConflicts: true }),
         mergeButton: { visible: true, disabled: true, loading: false },
       },
       { mergeButton: { visible: true, disabled: true, loading: false } },
-      { mergeButton: { visible: true, disabled: false, loading: true } },
       { mergeButton: { visible: false, disabled: false, loading: false } },
       unapproved(0, 1),
     ];
     for (const over of cases)
       expect(verbs(mine({ ...reviewDone, ...over }))).toEqual(['read-review']);
+  });
+
+  test('a merge in flight spins in place of every other line, with nothing to click', () => {
+    const merging = {
+      mergeButton: { visible: true, disabled: true, loading: true },
+    };
+    for (const m of [
+      mine({ ...reviewDone, ...merging }),
+      mine(merging),
+      settled(merging),
+      mine({ ...merging, gates: [gate()] }),
+    ]) {
+      const s = rowStatus(m, NOW, NONE, ME);
+      expect(s.line).toEqual({
+        tone: 'work',
+        word: 'merging…',
+        spin: true,
+        verbs: [],
+      });
+      expect(s.more).toEqual([]);
+      expect(s.bar).toBeNull();
+    }
   });
 
   test('threads awaiting me keep respond in the lead', () => {

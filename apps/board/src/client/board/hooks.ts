@@ -11,6 +11,7 @@ import {
   EMPTY_OPTIMISTIC,
   rollback,
   setQueued,
+  settleMerging,
   type Axis,
   type OptimisticState,
 } from './optimistic.ts';
@@ -39,6 +40,27 @@ export function useOptimisticLifecycle(data: BoardData | null) {
   const active = anyActive(state, data?.mrs ?? []);
 
   return { state, setQueued: queue, rollback: rollbackOne, active };
+}
+
+/** The MRs the board has fired a merge on and not yet seen leave, for
+    overlayMerging; settled against every fresh load. */
+export function useMerging(data: BoardData | null) {
+  const [merging, setMerging] = useState<ReadonlySet<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    setMerging(s => settleMerging(s, data.mrs));
+  }, [data]);
+
+  const start = useCallback((url: string) => {
+    setMerging(s => new Set(s).add(url));
+  }, []);
+
+  const fail = useCallback((url: string) => {
+    setMerging(s => new Set([...s].filter(u => u !== url)));
+  }, []);
+
+  return { merging, start, fail };
 }
 
 /** Transient toast queue: each addToast() call appends one with a fresh id

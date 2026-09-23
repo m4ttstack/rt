@@ -88,6 +88,9 @@ export function needOf(
   now: number,
   resolved: Resolved
 ): Need | null {
+  // A merge in flight spins like an agent's run, but it is the seat's own
+  // move: the row keeps its place in the merge group until it leaves.
+  if (mr.mergeButton.loading && mr.author.username === self) return 'merge';
   const fromLine = lineNeed(mr, now, resolved, self);
   if (fromLine === 'busy') return null;
   return (

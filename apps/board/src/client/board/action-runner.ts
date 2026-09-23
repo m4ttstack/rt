@@ -30,6 +30,9 @@ export interface RunnerDeps {
   ) => Promise<ActionResult | undefined>;
   addToast: (text: string) => void;
   reload: (fresh: boolean) => void;
+  /** A fired merge holds its row at "merging…" until the MR leaves the
+      board; only a refusal lets go, so merge never reappears mid-flight. */
+  merging: { start: (url: string) => void; fail: (url: string) => void };
 }
 
 export type RunnableRequest = Extract<
@@ -122,6 +125,20 @@ const LAUNCH_WORDING: Record<LaunchFlow, { done: string; noun: string }> = {
   doctor: { done: 'doctor called on', noun: 'doctor' },
   'rebase-local': { done: 'local rebase started on', noun: 'local rebase' },
 };
+
+async function post(
+  req: PostRequest,
+  spec: PostSpec,
+  mr: BoardMR,
+  url: string,
+  deps: RunnerDeps
+): Promise<ActionResult> {
+  const merge = req.kind === 'mr' && req.action === 'merge';
+  if (merge) deps.merging.start(url);
+  const result = await deps.post(spec.path, spec.payload(mr, url));
+  if (merge && !result.ok) deps.merging.fail(url);
+  return result;
+}
 
 function postSpec(req: PostRequest): PostSpec {
   switch (req.kind) {
@@ -236,7 +253,7 @@ export async function runOne(
   const spec = postSpec(req);
   const pending = spec.pending?.(mr);
   if (pending) deps.addToast(pending);
-  const result = await deps.post(spec.path, spec.payload(mr, url));
+  const result = await post(req, spec, mr, url, deps);
   if (!result.ok) {
     deps.addToast(spec.fail(mr, result));
     return result;
@@ -284,7 +301,7 @@ function bulkPlan(req: RunnableRequest): Wording & {
   return {
     run: (mr, deps) =>
       mr.webUrl
-        ? deps.post(spec.path, spec.payload(mr, mr.webUrl))
+        ? post(req, spec, mr, mr.webUrl, deps)
         : Promise.resolve(undefined),
     fresh: spec.fresh,
     manyDone: spec.manyDone,

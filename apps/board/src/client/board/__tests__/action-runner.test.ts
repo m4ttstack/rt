@@ -45,6 +45,10 @@ function fakeDeps(
     },
     addToast: t => events.push(`toast ${t}`),
     reload: fresh => events.push(`reload ${fresh}`),
+    merging: {
+      start: url => events.push(`hold ${url.split('/').at(-1)}`),
+      fail: url => events.push(`release ${url.split('/').at(-1)}`),
+    },
   };
   return { deps, events };
 }
@@ -54,10 +58,36 @@ test('runOne merge: pending, post, done, fresh reload', async () => {
   await runOne({ kind: 'mr', action: 'merge' }, mr(7), deps);
   expect(events).toEqual([
     'toast merging !7…',
+    'hold 7',
     `post /mr/action {"mrUrl":"${mr(7).webUrl}","iid":7,"action":"merge"}`,
     'toast merge accepted !7',
     'reload true',
   ]);
+});
+
+test('a refused merge lets go of the row so merge shows again', async () => {
+  const { deps, events } = fakeDeps(() => fail(405));
+  await runOne({ kind: 'mr', action: 'merge' }, mr(7), deps);
+  expect(events.filter(e => /^(hold|release)/.test(e))).toEqual([
+    'hold 7',
+    'release 7',
+  ]);
+});
+
+test('bulk merge holds every row and lets go of only the refused ones', async () => {
+  const { deps, events } = fakeDeps(p => (p.iid === 2 ? fail(405) : ok()));
+  await runMany({ kind: 'mr', action: 'merge' }, [1, 2].map(mr), deps);
+  expect(events.filter(e => /^(hold|release)/.test(e)).sort()).toEqual([
+    'hold 1',
+    'hold 2',
+    'release 2',
+  ]);
+});
+
+test('only merge holds a row', async () => {
+  const { deps, events } = fakeDeps(() => fail(409));
+  await runOne({ kind: 'mr', action: 'rebase' }, mr(7), deps);
+  expect(events.some(e => /^(hold|release)/.test(e))).toBe(false);
 });
 
 test('runOne failure toasts the status and does not reload', async () => {
@@ -201,6 +231,7 @@ test('runMany keeps at most four requests in flight', async () => {
     launch: async () => ok(),
     addToast: () => {},
     reload: () => {},
+    merging: { start: () => {}, fail: () => {} },
   };
   await runMany(
     { kind: 'mr', action: 'rebase' },
