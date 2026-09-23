@@ -12,6 +12,7 @@ import {
 const BASE_ENV: MaterializeEnv = {
   deckOnPath: false,
   deckHealthy: false,
+  deckHelperLabel: null,
   boardRepoPath: null,
   daemonInstalled: true,
   trackedRepos: [],
@@ -63,6 +64,18 @@ describe("planMaterialize", () => {
     expect(steps.some((s) => s.kind === "deckSetup")).toBe(false);
   });
 
+  test("deck: unhealthy while a bundle helper owns deck reports it instead of running deck setup (which would install a competing LaunchAgent)", () => {
+    const steps = planMaterialize({ ...BASE_ENV, deckOnPath: true, deckHealthy: false, deckHelperLabel: "com.mattstack.deck.dev" });
+    expect(steps).toContainEqual({ kind: "reportDeckUnhealthy", helperLabel: "com.mattstack.deck.dev" });
+    expect(steps.some((s) => s.kind === "deckSetup")).toBe(false);
+  });
+
+  test("deck: healthy while a bundle helper owns deck still reports healthy", () => {
+    const steps = planMaterialize({ ...BASE_ENV, deckOnPath: true, deckHealthy: true, deckHelperLabel: "com.mattstack.deck" });
+    expect(steps).toContainEqual({ kind: "reportDeckHealthy" });
+    expect(steps.some((s) => s.kind === "deckSetup" || s.kind === "reportDeckUnhealthy")).toBe(false);
+  });
+
   test("deck: off PATH plans neither deckSetup nor reportDeckHealthy, regardless of deckHealthy", () => {
     const steps = planMaterialize({ ...BASE_ENV, deckOnPath: false, deckHealthy: true });
     expect(steps.some((s) => s.kind === "deckSetup" || s.kind === "reportDeckHealthy")).toBe(false);
@@ -79,6 +92,7 @@ describe("planMaterialize", () => {
     const steps = planMaterialize({
       deckOnPath: true,
       deckHealthy: false,
+      deckHelperLabel: null,
       boardRepoPath: "/repos/mr-board",
       daemonInstalled: false,
       trackedRepos: [{ name: "gitq", path: "/x/gitq", present: false }],
@@ -155,6 +169,16 @@ describe("runMaterialize", () => {
     );
     expect(seam.calls).toEqual([]);
     expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  test("reportDeckUnhealthy spawns nothing and fails with the helper label and why deck setup was not run", async () => {
+    const seam = new FakeExecSeam();
+    const [result] = await runMaterialize([{ kind: "reportDeckUnhealthy", helperLabel: "com.mattstack.deck.dev" }], seam);
+    expect(seam.calls).toEqual([]);
+    expect(result!.ok).toBe(false);
+    expect(result!.stderr).toContain("com.mattstack.deck.dev");
+    expect(result!.stderr).toContain("deck setup");
+    expect(RT_OWN_STEP_KINDS.has("reportDeckUnhealthy")).toBe(false);
   });
 
   test("reportDeckHealthy is always ok with the skip note", async () => {

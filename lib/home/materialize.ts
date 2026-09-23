@@ -19,6 +19,7 @@ export type MaterializeStep =
   | { kind: "reportMissingRepos"; names: string[] }
   | { kind: "deckSetup" }
   | { kind: "reportDeckHealthy" }
+  | { kind: "reportDeckUnhealthy"; helperLabel: string }
   | { kind: "boardSetup"; repoPath: string };
 
 /** A step whose failure is rt's own responsibility — gates `rt home init`'s exit code. Any other step failing (a third-party tool, or a report-only step) never aborts the run. */
@@ -28,6 +29,8 @@ export interface MaterializeEnv {
   deckOnPath: boolean;
   /** `deck`'s own healthz responded — `deckSetup` re-bootstraps deck under launchd (restarts the live proxy, blipping every *.localhost app), so a healthy deck must be skipped, not re-run. Meaningless when `deckOnPath` is false. */
   deckHealthy: boolean;
+  /** The app's deck helper label when the bundle ships deck. That helper owns deck, and `deck setup` would install a second, competing LaunchAgent. */
+  deckHelperLabel: string | null;
   /** mr-board's checkout path from the repo index, or null if it isn't cloned locally. */
   boardRepoPath: string | null;
   daemonInstalled: boolean;
@@ -48,7 +51,11 @@ export function planMaterialize(env: MaterializeEnv): MaterializeStep[] {
   const missing = env.trackedRepos.filter((r) => !r.present).map((r) => r.name);
   if (missing.length > 0) steps.push({ kind: "reportMissingRepos", names: missing });
 
-  if (env.deckOnPath) steps.push(env.deckHealthy ? { kind: "reportDeckHealthy" } : { kind: "deckSetup" });
+  if (env.deckOnPath) {
+    if (env.deckHealthy) steps.push({ kind: "reportDeckHealthy" });
+    else if (env.deckHelperLabel) steps.push({ kind: "reportDeckUnhealthy", helperLabel: env.deckHelperLabel });
+    else steps.push({ kind: "deckSetup" });
+  }
 
   if (env.boardRepoPath) steps.push({ kind: "boardSetup", repoPath: env.boardRepoPath });
 
@@ -132,6 +139,14 @@ async function runStep(step: MaterializeStep, seam: MaterializeExecSeam, rtBin: 
       return ok(step);
     case "reportDeckHealthy":
       return { step, ok: true, stderr: "", stdout: "", note: "deck healthy — setup skipped" };
+    case "reportDeckUnhealthy":
+      return {
+        step,
+        ok: false,
+        stderr: `deck is unhealthy and ${step.helperLabel} (the app's deck helper) owns it, so \`deck setup\` was not run; inspect it with \`launchctl print gui/$(id -u)/${step.helperLabel}\``,
+        stdout: "",
+        note: "",
+      };
     case "boardSetup":
       return { step, ok: true, stderr: "", stdout: "", note: `run manually (interactive): ${boardSetupCommand(step.repoPath)}` };
   }

@@ -221,7 +221,7 @@ class FakePickerSeam implements MachineProfilePickerSeam {
 }
 
 /** Nothing installed, nothing tracked — `planMaterialize` reduces this to a single `rtInterceptInstall` step. The default materialize env for every test below that isn't exercising materialize itself. */
-const NOOP_MATERIALIZE_ENV: MaterializeEnv = { deckOnPath: false, deckHealthy: false, boardRepoPath: null, daemonInstalled: true, trackedRepos: [] };
+const NOOP_MATERIALIZE_ENV: MaterializeEnv = { deckOnPath: false, deckHealthy: false, deckHelperLabel: null, boardRepoPath: null, daemonInstalled: true, trackedRepos: [] };
 
 /** Never spawns a real process. Records every argv it's asked to run; scripts a result per exact argv, defaulting to a clean exit 0. */
 class FakeMaterializeExecSeam implements MaterializeExecSeam {
@@ -1246,6 +1246,30 @@ describe("homeInit", () => {
       expect(logs.some((l) => l.includes("is provisioned"))).toBe(true);
     });
 
+    test("an unhealthy deck owned by the app's helper is reported, never repaired with deck setup, and init still exits 0", async () => {
+      const seam = new FakeSeam();
+      const exec = new FakeMaterializeExecSeam();
+      const env: MaterializeEnv = { ...NOOP_MATERIALIZE_ENV, deckOnPath: true, deckHelperLabel: "com.mattstack.deck.dev" };
+
+      const { exitCode, logs } = await runHomeInit(
+        FULLY_PROVISIONED_PROBES(),
+        seam,
+        new FakeAgeKeySeam(),
+        [],
+        new FakeSopsYamlSeam(),
+        KEY,
+        new UnreachablePickerSeam(),
+        () => false,
+        async () => env,
+        exec,
+      );
+
+      expect(exitCode).toBeUndefined();
+      expect(exec.calls.some((argv) => argv[0] === "deck")).toBe(false);
+      expect(logs.some((l) => l.includes("owns deck"))).toBe(true);
+      expect(logs.some((l) => l.includes("launchctl print gui/$(id -u)/com.mattstack.deck.dev"))).toBe(true);
+    });
+
     test("rt-own steps' stdout is printed even on a clean exit — rt daemon install's approval guidance must not be discarded", async () => {
       const seam = new FakeSeam();
       const exec = new FakeMaterializeExecSeam();
@@ -1555,6 +1579,13 @@ describe("defaultMaterializeEnv (deck health wiring)", () => {
     const env = await defaultMaterializeEnv(deckOnPathExec, fakeDeckHealthProbe({ checkHealthz: async () => false }));
     expect(env.deckOnPath).toBe(true);
     expect(env.deckHealthy).toBe(false);
+  });
+
+  test("the bundle deck helper label is carried into the env", async () => {
+    const owned = await defaultMaterializeEnv(deckOnPathExec, fakeDeckHealthProbe({ checkHealthz: async () => false }), () => "com.mattstack.deck.dev");
+    expect(owned.deckHelperLabel).toBe("com.mattstack.deck.dev");
+    const unowned = await defaultMaterializeEnv(deckOnPathExec, fakeDeckHealthProbe({ checkHealthz: async () => false }), () => null);
+    expect(unowned.deckHelperLabel).toBeNull();
   });
 
   test("deck off PATH: the health probe is never even invoked", async () => {

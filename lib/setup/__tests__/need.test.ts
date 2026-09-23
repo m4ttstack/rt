@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { HELPERS_DIR, __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
 import { setSetting } from "../../settings/write.ts";
-import { awaitNeed, servicePlists, SERVICE_PLISTS } from "../need.ts";
+import { awaitNeed, deckHelperLabel, servicePlists, SERVICE_PLISTS } from "../need.ts";
 import { fakeProbes, fakeTray } from "./fakes.ts";
 
 const DECK_LOCK = {
@@ -58,12 +58,16 @@ describe("servicePlists", () => {
 
     expect(servicePlists("dev", p)).toEqual({ plists: ["com.mattstack.daemon.dev.plist", "com.mattstack.deck.dev.plist"], deckOmitted: false });
     expect(servicePlists("prod", p)).toEqual({ plists: ["com.mattstack.daemon.plist", "com.mattstack.deck.plist"], deckOmitted: false });
+    expect(deckHelperLabel("dev", p)).toBe("com.mattstack.deck.dev");
+    expect(deckHelperLabel("prod", p)).toBe("com.mattstack.deck");
   });
 
   test("deck not bundled -> daemon only, deckOmitted true", () => {
     const p = fakeProbes({ home });
     expect(servicePlists("dev", p)).toEqual({ plists: ["com.mattstack.daemon.dev.plist"], deckOmitted: true });
     expect(servicePlists("prod", p)).toEqual({ plists: ["com.mattstack.daemon.plist"], deckOmitted: true });
+    expect(deckHelperLabel("dev", p)).toBeNull();
+    expect(deckHelperLabel("prod", p)).toBeNull();
   });
 
   test("SERVICE_PLISTS names the prod-flavor pair", () => {
