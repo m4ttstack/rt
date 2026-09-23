@@ -143,7 +143,7 @@ async function runStep(step: MaterializeStep, seam: MaterializeExecSeam, rtBin: 
       return {
         step,
         ok: false,
-        stderr: `deck is unhealthy and ${step.helperLabel} (the app's deck helper) owns it, so \`deck setup\` was not run; inspect it with \`launchctl print gui/$(id -u)/${step.helperLabel}\``,
+        stderr: `deck is unhealthy and ${step.helperLabel} (the app's deck helper) owns it, so \`deck setup\` was not run (it would install a competing LaunchAgent); if the helper is not registered run \`rt services register\`, else inspect it with \`launchctl print gui/$(id -u)/${step.helperLabel}\``,
         stdout: "",
         note: "",
       };

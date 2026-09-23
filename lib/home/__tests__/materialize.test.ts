@@ -178,6 +178,7 @@ describe("runMaterialize", () => {
     expect(result!.ok).toBe(false);
     expect(result!.stderr).toContain("com.mattstack.deck.dev");
     expect(result!.stderr).toContain("deck setup");
+    expect(result!.stderr).toContain("rt services register");
     expect(RT_OWN_STEP_KINDS.has("reportDeckUnhealthy")).toBe(false);
   });
 
