@@ -902,7 +902,7 @@ func TestHistoryPaneSlates(t *testing.T) {
 	}{
 		{"unborn", func(m *Model) { m.History = HistoryModel{} }, "No history"},
 		{"first load", func(m *Model) { m.History = HistoryModel{Loading: true} }, "Loading history…"},
-		{"nothing selected", func(m *Model) { m.History.Header = nil; m.History.Files = nil }, "No commit selected"},
+		{"nothing selected", func(m *Model) { m.History.Header = nil }, "No commit selected"},
 		{"non-contiguous", func(m *Model) {
 			m.History.Header.RangeCount, m.History.Header.Contiguous = 2, false
 		}, "Unable to display diff when multiple non-consecutive commits are selected."},
