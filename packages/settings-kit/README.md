@@ -41,3 +41,22 @@ const key = useSettingKey("board.title");
 Hooks return state and actions only. Scope semantics are the resolver's:
 `machine` writes apply immediately; `user`/`team` writes land in the home
 repo's working copy and are local until committed and pushed.
+
+## Shapes
+
+```ts
+import { SHAPES, rowKind, summarize, targetScope, matchesShape } from "@mattstack/settings-kit/shapes";
+```
+
+Headless declarations for composite keys (`stringList`, `pairList`,
+`stringMap`, `leaves`, and `external` for editors another app owns) plus
+the helpers a settings UI needs: `rowKind` picks a control, `summarize`
+gives the collapsed line, `targetScope` says where an edit lands (the
+winning layer when allowed, else the key's first scope).
+
+Pass `allowComposite: "shaped"` to `settingsHandler` to admit composite
+writes only for keys `SHAPES` declares, and only with a matching value.
+Writes also require an `application/json` body (415 otherwise).
+
+`useSettingsScope(...).move(key, from, to)` moves the source layer's
+authored value to another scope, then clears the source.
