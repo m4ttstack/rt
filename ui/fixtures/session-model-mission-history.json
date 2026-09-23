@@ -1,0 +1,157 @@
+{
+  "t": "model",
+  "model": {
+    "current": {
+      "repo": "repo-tools",
+      "repoLabel": "repo-tools",
+      "worktree": "/repo",
+      "worktreeName": "repo",
+      "branch": "main",
+      "detached": false,
+      "settling": false
+    },
+    "action": {
+      "kind": "fetch",
+      "title": "Fetch origin",
+      "meta": "Never fetched",
+      "ahead": 0,
+      "behind": 0,
+      "busy": false
+    },
+    "repos": [
+      {
+        "id": "repo-tools",
+        "label": "repo-tools",
+        "group": "local",
+        "badge": {
+          "ahead": 0,
+          "behind": 0,
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0,
+          "conflicted": 0,
+          "clean": true,
+          "lastFetchedAt": ""
+        },
+        "current": true
+      }
+    ],
+    "worktrees": [
+      {
+        "path": "/repo",
+        "name": "repo",
+        "branch": "main",
+        "badge": {
+          "ahead": 0,
+          "behind": 0,
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0,
+          "conflicted": 0,
+          "clean": true,
+          "lastFetchedAt": ""
+        },
+        "current": true,
+        "onDeck": false
+      }
+    ],
+    "branches": [],
+    "changes": [],
+    "changedTotal": 0,
+    "stagedTotal": 0,
+    "filter": "",
+    "diff": {
+      "path": "src/parser.ts",
+      "status": "modified",
+      "kind": "text",
+      "stats": "+1 -1",
+      "lang": "typescript",
+      "lines": [
+        {
+          "oldNo": 0,
+          "newNo": 1,
+          "kind": "add",
+          "text": "parse the trailing comma",
+          "selected": false,
+          "selIdx": -1
+        },
+        {
+          "oldNo": 1,
+          "newNo": 0,
+          "kind": "del",
+          "text": "parse only leading whitespace",
+          "selected": false,
+          "selIdx": -1
+        }
+      ],
+      "readOnly": true
+    },
+    "commit": {
+      "summary": "",
+      "description": "",
+      "placeholder": "Summary (required)",
+      "amending": false,
+      "buttonLabel": "Commit 0 files to main",
+      "canCommit": false,
+      "lastCommit": null
+    },
+    "stashCount": 0,
+    "notice": "",
+    "tab": "history",
+    "history": {
+      "commits": [
+        {
+          "sha": "1111111111111111111111111111111111111111",
+          "shortSha": "1111111",
+          "summary": "Add parser support",
+          "byline": "Alex Rivera",
+          "when": "2 days ago",
+          "group": "Last week",
+          "tags": [
+            "v1.2.0"
+          ],
+          "unpushed": false,
+          "selected": true
+        },
+        {
+          "sha": "2222222222222222222222222222222222222222",
+          "shortSha": "2222222",
+          "summary": "Initial commit",
+          "byline": "Sam Lee",
+          "when": "4 days ago",
+          "group": "Last week",
+          "tags": [],
+          "unpushed": false,
+          "selected": false
+        }
+      ],
+      "hasMore": false,
+      "loading": false,
+      "header": {
+        "summary": "Add parser support",
+        "body": "",
+        "byline": "Alex Rivera",
+        "authors": [
+          "Alex Rivera <alex@example.com>"
+        ],
+        "sha": "1111111111111111111111111111111111111111",
+        "shortSha": "1111111",
+        "linesAdded": 1,
+        "linesDeleted": 1,
+        "tags": [
+          "v1.2.0"
+        ],
+        "rangeCount": 1,
+        "contiguous": true
+      },
+      "files": [
+        {
+          "path": "src/parser.ts",
+          "origPath": "",
+          "status": "modified"
+        }
+      ],
+      "selectedFile": "src/parser.ts"
+    }
+  }
+}

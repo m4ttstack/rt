@@ -77,6 +77,36 @@ export interface LogEntry {
   body: string;
 }
 
+import type {
+  CommitIdentity,
+  GitAuthor,
+  ITrailer,
+  IChangesetData,
+  CommittedFileChange,
+  CommittedFileStatus,
+  SubmoduleStatus,
+} from "./vendor/ghd/log-parse.ts";
+
+export type { CommitIdentity, GitAuthor, CommittedFileChange, CommittedFileStatus, SubmoduleStatus };
+export type Trailer = ITrailer;
+export type ChangesetData = IChangesetData;
+
+/** GitHub Desktop's Commit model (app/src/models/commit.ts), as a plain record. */
+export interface Commit {
+  sha: string;
+  shortSha: string;
+  summary: string;
+  body: string;
+  author: CommitIdentity;
+  committer: CommitIdentity;
+  parentSHAs: string[];
+  trailers: Trailer[];
+  tags: string[];
+  coAuthors: GitAuthor[];
+  authoredByCommitter: boolean;
+  isMergeCommit: boolean;
+}
+
 export interface StashEntry {
   index: number;       // 0 = stash@{0}
   branch: string | null;
@@ -135,4 +165,14 @@ export interface GitClient {
   createTag(name: string, opts?: { message?: string; sha?: string }): Promise<void>;
   deleteTag(name: string): Promise<void>;
   pushTag(name: string, remote?: string): Promise<void>;
+  /** GHD getCommits: newest first; an unborn HEAD yields []. */
+  commits(range?: string, limit?: number, skip?: number, additionalArgs?: ReadonlyArray<string>): Promise<Commit[]>;
+  /** GHD loadLocalCommits: commits HEAD has that no remote does (the unpushed set). Null branch (detached/unborn) yields []. */
+  localCommits(branch: { name: string; upstream: string | null } | null, skip?: number): Promise<Commit[]>;
+  changedFiles(sha: string): Promise<ChangesetData>;
+  /** shas oldest first (GHD's orderShasByHistory order). */
+  commitRangeChangedFiles(shas: ReadonlyArray<string>): Promise<ChangesetData>;
+  commitDiff(file: CommittedFileChange, sha: string): Promise<StagingDiff>;
+  /** shas oldest first. */
+  commitRangeDiff(file: CommittedFileChange, shas: ReadonlyArray<string>): Promise<StagingDiff>;
 }

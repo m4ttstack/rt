@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, type RepoSnapshot, type StagingDiff } from "../../../packages/git-core/src/index.ts";
+import { AppFileStatusKind, DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, type Commit, type CommittedFileChange, type RepoSnapshot, type StagingDiff } from "../../../packages/git-core/src/index.ts";
 import { DiffLine, DiffLineType } from "../../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packages/git-core/src/vendor/ghd/raw-diff.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
 import { serializeIdentity } from "../../settings/identity.ts";
 import type { ActionState } from "../git-actions.ts";
+import { buildHistoryModel } from "../history-model.ts";
+import { HistoryStore } from "../history.ts";
 import { buildBranchRows, buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
 const FIXTURES = resolve(import.meta.dir, "..", "..", "..", "ui", "fixtures");
@@ -278,6 +280,74 @@ describe("buildModel golden fixture handshake", () => {
       action: baseAction({ kind: "pull", title: "Pull origin", meta: "2 commits behind", ahead: 3, behind: 2 }),
       defaultBranch: "origin/main",
       now: new Date("2026-09-18T15:00:00Z"),
+    });
+
+    expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
+  });
+});
+
+function historyIdent(name: string, email: string, iso: string) {
+  return { name, email, date: new Date(iso), tzOffset: 0 };
+}
+
+function historyCommit(over: Partial<Commit> = {}): Commit {
+  const author = historyIdent("Alex Rivera", "alex@example.com", "2026-09-20T09:00:00Z");
+  return {
+    sha: "1".repeat(40),
+    shortSha: "1111111",
+    summary: "Add parser support",
+    body: "",
+    author,
+    committer: author,
+    parentSHAs: [],
+    trailers: [],
+    tags: [],
+    coAuthors: [],
+    authoredByCommitter: true,
+    isMergeCommit: false,
+    ...over,
+  };
+}
+
+function historyDiff(): StagingDiff {
+  const lines = [new DiffLine("+parse the trailing comma", DiffLineType.Add, 1, null, 1), new DiffLine("-parse only leading whitespace", DiffLineType.Delete, 2, 1, null)];
+  const header = new DiffHunkHeader(1, 1, 1, 1);
+  const hunk = new DiffHunk(header, lines, 0, lines.length - 1, DiffHunkExpansionType.None);
+  return { path: "src/parser.ts", kind: "text", untracked: false, hunks: [hunk] };
+}
+
+describe("buildModel history tab golden fixture", () => {
+  test("reproduces ui/fixtures/session-model-mission-history.json byte for byte", () => {
+    const fixture = readFixture("session-model-mission-history.json") as { t: string; model: MissionModel };
+    const now = new Date("2026-09-22T12:00:00Z");
+
+    const store = new HistoryStore();
+    const commit1 = historyCommit({ sha: "1".repeat(40), shortSha: "1111111", summary: "Add parser support", tags: ["v1.2.0"] });
+    const commit2 = historyCommit({
+      sha: "2".repeat(40),
+      shortSha: "2222222",
+      summary: "Initial commit",
+      author: historyIdent("Sam Lee", "sam@example.com", "2026-09-18T09:00:00Z"),
+      committer: historyIdent("Sam Lee", "sam@example.com", "2026-09-18T09:00:00Z"),
+    });
+    store.commits = [commit1, commit2];
+    store.selection = [commit1.sha];
+    const file: CommittedFileChange = {
+      path: "src/parser.ts",
+      status: { kind: AppFileStatusKind.Modified },
+      commitish: commit1.sha,
+      parentCommitish: `${commit1.sha}^`,
+    };
+    store.changeset = { files: [file], linesAdded: 1, linesDeleted: 1 };
+    store.selectedFile = file;
+
+    const history = buildHistoryModel(store, { now, loading: false });
+
+    const model = buildModel({
+      ...baseInput({ now }),
+      tab: "history",
+      history,
+      historyDiff: { path: "src/parser.ts", status: "modified", diff: historyDiff(), oversizedOverride: false },
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);

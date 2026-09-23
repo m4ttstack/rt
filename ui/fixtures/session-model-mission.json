@@ -64,7 +64,8 @@
       { "oldNo": 0, "newNo": 3, "kind": "add", "text": "", "selected": true, "selIdx": 1 },
       { "oldNo": 2, "newNo": 4, "kind": "context", "text": "type Badge struct {", "selected": false, "selIdx": -1 },
       { "oldNo": 3, "newNo": 0, "kind": "del", "text": "type OldBadge struct {", "selected": false, "selIdx": 2 }
-    ]
+    ],
+    "readOnly": false
   },
   "commit": {
     "summary": "",
@@ -76,5 +77,7 @@
     "lastCommit": { "summary": "rt-ui: mission view skeleton behind an opt-in mouse session option", "when": "2 minutes ago", "undoable": true }
   },
   "stashCount": 1,
-  "notice": ""
+  "notice": "",
+  "tab": "changes",
+  "history": { "commits": [], "hasMore": false, "loading": false, "header": null, "files": [], "selectedFile": "" }
 } }

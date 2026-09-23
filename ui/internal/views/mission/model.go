@@ -60,12 +60,54 @@ type DiffLine struct {
 }
 
 type DiffModel struct {
-	Path   string     `json:"path"`
-	Status string     `json:"status"`
-	Kind   string     `json:"kind"`  // "text"|"binary"|"oversized"|"none"
-	Stats  string     `json:"stats"` // "+18 -4"
-	Lang   string     `json:"lang"`  // chroma lexer hint, e.g. "typescript"; "" = plain
-	Lines  []DiffLine `json:"lines"`
+	Path     string     `json:"path"`
+	Status   string     `json:"status"`
+	Kind     string     `json:"kind"`  // "text"|"binary"|"oversized"|"none"
+	Stats    string     `json:"stats"` // "+18 -4"
+	Lang     string     `json:"lang"`  // chroma lexer hint, e.g. "typescript"; "" = plain
+	Lines    []DiffLine `json:"lines"`
+	ReadOnly bool       `json:"readOnly"` // a committed diff (History): no stage gutter, nothing toggles
+}
+
+type HistoryCommitRow struct {
+	Sha      string   `json:"sha"`
+	ShortSha string   `json:"shortSha"`
+	Summary  string   `json:"summary"`
+	Byline   string   `json:"byline"` // GHD's commit-attribution: "A", "A, B", or "N people"
+	When     string   `json:"when"`   // driver-computed relative author date
+	Group    string   `json:"group"`  // date header: "Today", "Yesterday", "Earlier this week", "Last week", or "September 2026"
+	Tags     []string `json:"tags"`
+	Unpushed bool     `json:"unpushed"`
+	Selected bool     `json:"selected"` // the driver's selection; the view adopts it when its own cursor falls off the list
+}
+
+type HistoryHeader struct {
+	Summary      string   `json:"summary"`
+	Body         string   `json:"body"`
+	Byline       string   `json:"byline"`
+	Authors      []string `json:"authors"` // expanded author list, "Name <email>" (GHD renderExpandedAuthor)
+	Sha          string   `json:"sha"`
+	ShortSha     string   `json:"shortSha"`
+	LinesAdded   int      `json:"linesAdded"`
+	LinesDeleted int      `json:"linesDeleted"`
+	Tags         []string `json:"tags"`
+	RangeCount   int      `json:"rangeCount"` // selected commit count; above 1 the header reads "Showing changes from N commits"
+	Contiguous   bool     `json:"contiguous"`
+}
+
+type HistoryFileRow struct {
+	Path     string `json:"path"`
+	OrigPath string `json:"origPath"`
+	Status   string `json:"status"`
+}
+
+type HistoryModel struct {
+	Commits      []HistoryCommitRow `json:"commits"`
+	HasMore      bool               `json:"hasMore"`
+	Loading      bool               `json:"loading"`
+	Header       *HistoryHeader     `json:"header"`
+	Files        []HistoryFileRow   `json:"files"`
+	SelectedFile string             `json:"selectedFile"`
 }
 
 type ActionModel struct {
@@ -118,6 +160,8 @@ type Model struct {
 	Commit       CommitModel   `json:"commit"`
 	StashCount   int           `json:"stashCount"`
 	Notice       string        `json:"notice"` // one-line transient notice (guard refusals, not-yet-wired)
+	Tab          string        `json:"tab"`    // "changes"|"history"
+	History      HistoryModel  `json:"history"`
 }
 
 // decode tolerates unknown fields: the wire model is a shared contract with

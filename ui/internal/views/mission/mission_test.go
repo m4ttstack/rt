@@ -89,7 +89,11 @@ const (
 func openMission(t *testing.T, model, wantPaint string) *testutil.Session {
 	t.Helper()
 	s := testutil.StartSession(t, []string{testutil.Binary(t), "session", "--view", "mission"}, nil)
-	s.ReadLine(2 * time.Second)
+	// A binary slow to start under load must not leave hello for the test's
+	// own first read.
+	if l, ok := s.ReadLine(10 * time.Second); !ok || !strings.Contains(l, `"t":"hello"`) {
+		t.Fatalf("hello: %q ok=%v", l, ok)
+	}
 	s.Send(`{"t":"open","view":"mission","model":` + model + `}`)
 	s.WaitForPaint(wantPaint)
 	return s
@@ -606,7 +610,7 @@ const (
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go -- not the fixture's initial cursor row, so clicking its
-// checkbox (RT-221) batches a select intent alongside the stage intent; the
+// checkbox batches a select intent alongside the stage intent; the
 // two land as concurrent Cmds, so the read order between them is not
 // guaranteed and both lines are checked as a set.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
@@ -744,15 +748,371 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickHistoryTabShowsNotice clicks the tabs button's label row
+// TestMouseClickHistoryTabEmitsTabHistory clicks the tabs button's label row
 // (absolute y=5, one row into the sidebar after topH(4): the tabs button is
-// now a 2-row pad+label span, and either row hits the same target) right
-// half: Changes and History each occupy half of sidebarWidth(46), so any
-// x >= 23 resolves to History.
-func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
+// a 2-row pad+label span, and either row hits the same target) right half:
+// Changes and History each occupy half of sidebarWidth(46), so any x >= 23
+// resolves to History.
+func TestMouseClickHistoryTabEmitsTabHistory(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 30, 5))
-	s.WaitForPaint("History lands in v2")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("History tab click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// historyModel mirrors history_test.go's historyFixtureModel on the wire.
+const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"main"},` +
+	`"history":{"commits":[` +
+	`{"sha":"s1","shortSha":"s1","summary":"Fix pty paint predicate","byline":"Matt","when":"3 hours ago","group":"Today","tags":[],"unpushed":true,"selected":true},` +
+	`{"sha":"s2","shortSha":"s2","summary":"Guard badges","byline":"Matt","when":"5 hours ago","group":"Today","tags":["v0.9.1"],"unpushed":false,"selected":false},` +
+	`{"sha":"s3","shortSha":"s3","summary":"","byline":"Matt, Claude","when":"1 day ago","group":"Yesterday","tags":[],"unpushed":false,"selected":false}],` +
+	`"hasMore":false,"loading":false,` +
+	`"header":{"summary":"Fix pty paint predicate","body":"","byline":"Matt","authors":["Matt <m@x>"],"sha":"s1full","shortSha":"s1","linesAdded":12,"linesDeleted":4,"tags":[],"rangeCount":1,"contiguous":true},` +
+	`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}],"selectedFile":"lib/mission/model.ts"},` +
+	`"diff":{"path":"lib/mission/model.ts","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"x","selected":false,"selIdx":-1}],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stashCount":0,"notice":""}`
+
+// historyRowY is the frame row of commit idx's summary line: topH(4), then
+// the History sidebar's tabs(3) + tabs-gap(1) + filter box(3), then the
+// Today header over s1 and s2 and the Yesterday header over s3, and three
+// rows per commit (summary, byline, separator rule).
+func historyRowY(idx int) int {
+	headers := 1
+	if idx >= 2 {
+		headers = 2
+	}
+	return 4 + 7 + headers + 3*idx
+}
+
+func openHistory(t *testing.T) *testutil.Session {
+	t.Helper()
+	return openMission(t, historyModel, "Fix pty paint predicate")
+}
+
+// longHistoryModel is historyModel with n commits all under Today, s0
+// selected, and hasMore as given.
+func longHistoryModel(n int, hasMore bool) string {
+	commits := make([]string, n)
+	for i := range commits {
+		commits[i] = fmt.Sprintf(`{"sha":"sha%02d","shortSha":"sh%02d","summary":"subject-%02d","byline":"author-%02d","when":"1 hour ago","group":"Today","tags":[],"unpushed":false,"selected":%v}`, i, i, i, i, i == 0)
+	}
+	model := strings.Replace(historyModel, historyModel[strings.Index(historyModel, `"commits":[`):strings.Index(historyModel, `"hasMore":false`)],
+		`"commits":[`+strings.Join(commits, ",")+`],`, 1)
+	return strings.Replace(model, `"hasMore":false`, fmt.Sprintf(`"hasMore":%v`, hasMore), 1)
+}
+
+// listTopY is the frame row of the History list's first row: topH(4) plus
+// tabs(3) + tabs-gap(1) + filter box(3).
+const listTopY = 4 + 7
+
+// TestHistoryWheelScrollsTheListWithoutEmitting: a wheel tick over the list
+// moves the view three lines and sends nothing to the driver.
+func TestHistoryWheelScrollsTheListWithoutEmitting(t *testing.T) {
+	s := openMission(t, longHistoryModel(20, true), "subject-00")
+	waitRow(t, s, listTopY, "  Today")
+	s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
+	s.WaitForGone("subject-00")
+	waitRow(t, s, listTopY+1, "subject-01")
+	for range 20 {
+		s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
+	}
+	s.WaitForPaint("subject-19")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("wheel ticks must not emit, even at the end of the list: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// moreRowY is the action row under longHistoryModel(1, true): the Today
+// header, s0's summary, byline, and rule, then the row.
+const moreRowY = listTopY + 4
+
+// TestHistoryActionRowEnterEmitsOneMore: down from the only commit lands on
+// the action row without selecting anything, enter asks for the next page
+// once, and the in-flight row answers neither enter nor a click.
+func TestHistoryActionRowEnterEmitsOneMore(t *testing.T) {
+	s := openMission(t, longHistoryModel(1, true), "Load 100 more commits")
+	s.Type("\x1b[B")
+	s.Type(keyEnter)
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-more"`) {
+		t.Fatalf("enter on the action row should emit mission:history-more first and alone: %q", l)
+	}
+	s.WaitForPaint("Loading…")
+	s.Type(keyEnter)
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("the in-flight row must not emit again: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryActionRowClickEmitsOneMore(t *testing.T) {
+	s := openMission(t, longHistoryModel(1, true), "Load 100 more commits")
+	waitRow(t, s, moreRowY, "Load 100 more commits")
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-more"`) {
+		t.Fatalf("a click on the action row should emit mission:history-more: %q", l)
+	}
+	s.WaitForPaint("Loading…")
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("a click on the in-flight row must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryFilterNarrowsLiveAndReHomesWithOneSelect: typing into the
+// History filter narrows the list on every keystroke and never goes to the
+// driver; the one intent is the debounced select for the re-homed cursor,
+// and esc brings every commit back without another.
+func TestHistoryFilterNarrowsLiveAndReHomesWithOneSelect(t *testing.T) {
+	s := openHistory(t)
+	waitRow(t, s, listTopY-2, "Filter history")
+	s.Type("/")
+	s.Type("g", "u", "a", "r", "d")
+	waitRow(t, s, listTopY+1, "Guard badges")
+	if row := screenRow(s, historyRowY(1)); strings.Contains(row, "Empty commit message") {
+		t.Fatalf("the filter should hide the other commits: %q", row)
+	}
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("hiding s1 should re-home the cursor to s2 and select it once: %q", l)
+	}
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("the filter itself never reaches the driver: %q", l)
+	}
+	s.Type(keyEsc)
+	waitRow(t, s, listTopY+1, "Fix pty paint predicate")
+	waitRow(t, s, listTopY-2, "Filter history")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("esc clears the filter without emitting: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// waitRow waits for screen row y to contain want: a frame can land in more
+// than one read, so the row a test checks may paint after the text it waited
+// on.
+func waitRow(t *testing.T, s *testutil.Session, y int, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(screenRow(s, y), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("screen row %d never showed %q: %q", y, want, screenRow(s, y))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// screenRow is one row of the session's screen as plain text, "" past the
+// last painted row.
+func screenRow(s *testutil.Session, y int) string {
+	if rows := strings.Split(s.Screen(), "\n"); y < len(rows) {
+		return rows[y]
+	}
+	return ""
+}
+
+// TestHistoryDateHeadersPaintAndStayInert drives the real binary: each run
+// of commits opens on its date header, and a click on a header emits
+// nothing.
+func TestHistoryDateHeadersPaintAndStayInert(t *testing.T) {
+	s := openHistory(t)
+	s.WaitForPaint("Yesterday")
+	for y, want := range map[int]string{historyRowY(0) - 1: "Today", historyRowY(2) - 1: "Yesterday"} {
+		waitRow(t, s, y, want)
+		if row := screenRow(s, y); !strings.HasPrefix(row, "  "+want) {
+			t.Fatalf("screen row %d should open with the %q header: %q", y, want, row)
+		}
+	}
+	waitRow(t, s, historyRowY(0), "Fix pty paint predicate")
+	s.Type(sgrClick(0, 2, historyRowY(2)-1))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("clicking a date header must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestPressTwoEmitsTabHistory(t *testing.T) {
+	s := openMission(t, canCommitModel, "Commit 1 file to main")
+	s.Type("2")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("tab intent after 2: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryDownEmitsDebouncedSelect(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("history-select after down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryUpAtTopDoesNotEmit is TestListCursorAtTopUpDoesNotEmit for the
+// commit list; the window outlasts the 150ms debounce.
+func TestHistoryUpAtTopDoesNotEmit(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[A")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("up on the newest commit must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryShiftDownEmitsRange(t *testing.T) {
+	s := openHistory(t)
+	s.Type("\x1b[1;2B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s1","s2"]`) {
+		t.Fatalf("history-select after shift+down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryClickCommitRowEmitsImmediately(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 2, historyRowY(1)))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s2"]`) {
+		t.Fatalf("history-select after a row click: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryClickShowingCommitDoesNotEmit(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 2, historyRowY(0)))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("clicking the commit already showing must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestTabSwitchPushClearsTabHover hovers and clicks the History half, then
+// pushes the History model as the driver would: with no further motion the
+// Changes half, now the inactive one, must repaint in Bg, not HoverBg.
+func TestTabSwitchPushClearsTabHover(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrMotion(30, 5))
+	s.Type(sgrClick(0, 30, 5))
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("setup: History tab click intent: %q", l)
+	}
+	s.Send(`{"t":"model","model":` + historyModel + `}`)
+	s.WaitForPaint("Fix pty paint predicate")
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	for _, y := range []int{4, 5} {
+		if got := testutil.CellBackground(s.TTY(), 1, y); !sameRGB(got, themeBg) {
+			t.Fatalf("Changes half cell (1,%d) should be Bg after the switch, got %#v", y, got)
+		}
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryShiftClickEmitsRange sends a left press with the SGR shift bit
+// (4) set.
+func TestHistoryShiftClickEmitsRange(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(4, 2, historyRowY(1)))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-select"`) || !strings.Contains(l, `"shas":["s1","s2"]`) {
+		t.Fatalf("history-select after a shift+click: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryPressOneEmitsTabChanges(t *testing.T) {
+	s := openHistory(t)
+	s.Type("1")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"changes"`) {
+		t.Fatalf("tab intent after 1: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryClickChangesTabEmitsTabChanges(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 5, 5))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"changes"`) {
+		t.Fatalf("Changes tab click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestHistoryHoverCommitRowPaintsHoverBg drives a bare motion report over
+// the third commit's summary row through the real renderer and waits for
+// that cell to repaint in HoverBg.
+func TestHistoryHoverCommitRowPaintsHoverBg(t *testing.T) {
+	s := openHistory(t)
+	y := historyRowY(2)
+	s.Type(sgrMotion(20, y))
+	hoverBg := color.RGBA{R: 0x2F, G: 0x2A, B: 0x4A, A: 0xff}
+	deadline := time.Now().Add(2 * time.Second)
+	for !sameRGB(testutil.CellBackground(s.TTY(), 20, y), hoverBg) {
+		if time.Now().After(deadline) {
+			t.Fatalf("hovered commit row never painted HoverBg, got %#v", testutil.CellBackground(s.TTY(), 20, y))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("hover must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const historyOneFile = `"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}]`
+
+func TestHistoryEnterEnterDownEmitsFileSelect(t *testing.T) {
+	model := strings.Replace(historyModel, historyOneFile,
+		`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"},{"path":"lib/mission/driver.ts","origPath":"","status":"new"}]`, 1)
+	s := openMission(t, model, "2 changed files")
+	s.Type(keyEnter)
+	s.Type("\x1b[B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-file"`) || !strings.Contains(l, `"path":"lib/mission/driver.ts"`) {
+		t.Fatalf("history-file after enter, down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryOversizedEnterEmitsShowOversized(t *testing.T) {
+	model := strings.Replace(historyModel, `"kind":"text"`, `"kind":"oversized"`, 1)
+	s := openMission(t, model, "enter shows")
+	s.Type(keyEnter)
+	s.Type(keyEnter)
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-file"`) || !strings.Contains(l, `"path":"lib/mission/model.ts"`) || !strings.Contains(l, `"showOversized":true`) {
+		t.Fatalf("history-file showOversized after enter on an oversized diff: %q", l)
+	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }

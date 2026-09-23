@@ -28,11 +28,23 @@ const diffNumWidth = 4
 const diffGutterWidth = 1 + diffNumWidth*2
 
 func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch v.String() {
+	key := v.String()
+	if m.model.Diff.ReadOnly && (key == "space" || key == "s" || key == "d") {
+		return m, nil
+	}
+	switch key {
 	case "esc":
-		m.focus = focusList
+		if m.historyTab() {
+			m.focus = focusHistoryFiles
+		} else {
+			m.focus = focusList
+		}
 	case "q":
 		return m.quit()
+	case "e":
+		if m.historyTab() {
+			m.historyExpanded = !m.historyExpanded
+		}
 	case "up":
 		m.moveDiffCursor(-1)
 	case "down":
@@ -44,9 +56,13 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		return m, m.diffStageOrDiscardIntent("mission:discard")
 	case "enter":
-		if m.model.Diff.Kind == "oversized" {
-			return m, m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(diffSelectPayload{ShowOversized: true})})
+		if m.model.Diff.Kind != "oversized" {
+			break
 		}
+		if m.historyTab() {
+			return m, m.em.Emit(protocol.Intent{Name: "mission:history-file", Payload: mustPayload(historyFilePayload{Path: m.model.Diff.Path, ShowOversized: true})})
+		}
+		return m, m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(diffSelectPayload{ShowOversized: true})})
 	}
 	return m, nil
 }
@@ -204,6 +220,15 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		return ""
 	}
 	if d.Kind == "" || d.Kind == "none" {
+		// A commit with no files shows only the file column's empty state,
+		// as GHD suppresses the second one.
+		if m.historyTab() {
+			msg := ""
+			if len(m.model.History.Files) > 0 {
+				msg = "No file selected"
+			}
+			return centeredMessage(width, height, theme.Faint, clip(msg, width))
+		}
 		// ChangedTotal, not len(Changes): Changes is the FILTERED list
 		// (lib/mission/model.ts computes changedTotal from allChanges before
 		// the filter narrows it), so a filter matching nothing on a dirty
@@ -231,19 +256,31 @@ func (m *Mission) renderDiffPane(width, height int) string {
 }
 
 // renderDiffHeader is the path/stats bar: bold TextSoft path, Dimmer stats,
-// a Dimmer staging hint flush right, over a BgSubtle fill.
+// a Dimmer staging hint flush right (none on a read-only diff), over a
+// BgSubtle fill.
 func renderDiffHeader(d DiffModel, width int) string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	left := on.Foreground(theme.TextSoft).Bold(true).Render(d.Path)
 	if d.Stats != "" {
 		left += on.Render("  ") + on.Foreground(theme.Dimmer).Render(d.Stats)
 	}
-	right := on.Foreground(theme.Dimmer).Render("space stages line · s stages hunk")
+	right := ""
+	if !d.ReadOnly {
+		right = on.Foreground(theme.Dimmer).Render("space stages line · s stages hunk")
+	}
 	return justify(on, width, left, right)
 }
 
+// centeredMessage wraps text to width and centers it in a width x height
+// box. Height pads but never truncates, so wrapped rows past the box are
+// dropped here rather than growing the frame.
 func centeredMessage(width, height int, col color.Color, text string) string {
-	return lipgloss.NewStyle().Width(width).Height(height).Background(theme.Bg).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+	style := lipgloss.NewStyle().Width(width).Background(theme.Bg)
+	rows := strings.Split(style.Align(lipgloss.Center).Foreground(col).Render(text), "\n")
+	if len(rows) > height {
+		rows = rows[:max(height, 0)]
+	}
+	return style.Height(height).AlignVertical(lipgloss.Center).Render(strings.Join(rows, "\n"))
 }
 
 // renderEmptyStateCard is the clean-worktree diff pane (docs/design/mission/
@@ -339,7 +376,8 @@ func (m *Mission) renderDiffLines(width, height int) string {
 // gutter columns of its own. hover paints the row's own HoverBg; gutterHover
 // additionally previews the stage bar in GutterHoverBar on an unselected
 // add/del line -- a selected line keeps its solid Pink bar regardless, since
-// there is nothing left to preview. Chroma highlighting is skipped while
+// there is nothing left to preview. A read-only line has nothing to stage,
+// so it paints no bar at all. Chroma highlighting is skipped while
 // hovered: highlightLine's per-token spans each carry their own SGR reset,
 // which would cut the wrapping HoverBg out from under every other token.
 func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bool) string {
@@ -365,6 +403,7 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 	bar := " "
 	barStyle := rowBg
 	switch {
+	case d.ReadOnly:
 	case line.Selected:
 		bar = theme.GlyphBar
 		barStyle = barStyle.Foreground(theme.Pink)
@@ -385,7 +424,8 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 	if line.Kind != "del" && d.Lang != "" && !hover {
 		rendered = highlightLine(d.Lang, text, base, theme.Bg)
 	}
-	return rowBg.Width(width).Render(gutter + rowBg.Foreground(base).Render(mark) + rendered)
+	// A pane narrower than the gutter would otherwise wrap the row.
+	return rowBg.Width(width).Render(clipOn(gutter+rowBg.Foreground(base).Render(mark)+rendered, width, rowBg))
 }
 
 func numCell(bg lipgloss.Style, n int) string {

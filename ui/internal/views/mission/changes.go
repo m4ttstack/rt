@@ -20,51 +20,67 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the three-row tab strip per Main.png/EmptyState.png:
-// a blank pad row, the Changes/History label row, and the underline row,
-// Changes and History each occupy HALF the sidebar width, and the underline
-// runs the full width -- Pink under the active tab's half, Rule under the
-// inactive half (the board's own bottom border). Changes is always the
-// active tab; History has no wire state to select it yet (renderKeybar's own
-// "History lands in v2" notice covers a click on it).
-//
-// The pad and label rows together are the button (sidebarHit's own two-row
-// span for hitTabHistory); hoverHistory paints HoverBg behind BOTH, on the
-// History half only. The underline is the active-tab indicator, not part of
-// the button: it never takes hover, matching sidebarHit resolving it to no
-// hit target -- the invariant this button holds is that the cells that
-// hover are exactly the cells that click, not a superset or a subset.
-func renderTabsRow(changedTotal int, hoverHistory bool, width int) string {
+// renderTabsRow paints the three-row tab strip per Main.png/History.png: a
+// pad row, the Changes/History label row, and the underline row. Each tab
+// owns HALF the width; the underline is Pink under the active half and Rule
+// under the other. All three rows of the INACTIVE half are its button
+// (sidebarHit/historySidebarHit resolve exactly those cells to hitTab). Its
+// hover is the top bar's half-block treatment, a lower half-block in the pad
+// row, the full label row, an upper half-block in place of the underline, so
+// the fill sits centered on the label rather than a whole row above it. The
+// active tab is inert and never hovers.
+func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	half := width / 2
 	otherHalf := width - half
+	historyActive := activeTab == "history"
 
-	historyOn := on
-	if hoverHistory {
-		historyOn = on.Background(theme.HoverBg)
+	changesOn, historyOn := on, on
+	if hoverInactive {
+		if historyActive {
+			changesOn = on.Background(theme.HoverBg)
+		} else {
+			historyOn = on.Background(theme.HoverBg)
+		}
+	}
+	label := func(style lipgloss.Style, text string, active bool) string {
+		if active {
+			return style.Foreground(theme.Text).Bold(true).Render(text)
+		}
+		return style.Foreground(theme.Dimmer).Render(text)
 	}
 
-	pad := on.Width(half).Render("") + historyOn.Width(otherHalf).Render("")
+	changesHover := hoverInactive && historyActive
+	historyHover := hoverInactive && !historyActive
+	edge := func(hovered bool, glyph, rest string, restColor color.Color, w int) string {
+		if hovered {
+			return on.Foreground(theme.HoverBg).Render(strings.Repeat(glyph, w))
+		}
+		return on.Foreground(restColor).Render(strings.Repeat(rest, w))
+	}
 
-	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
-		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	historyLabel := historyOn.Foreground(theme.Dimmer).Render("History") + historyOn.Foreground(theme.Faint).Render(" v2")
-
-	top := on.Width(half).Align(lipgloss.Center).Render(changesLabel) +
+	pad := edge(changesHover, "▄", " ", theme.Bg, half) + edge(historyHover, "▄", " ", theme.Bg, otherHalf)
+	changesLabel := label(changesOn, "Changes", !historyActive) + changesOn.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
+	historyLabel := label(historyOn, "History", historyActive)
+	top := changesOn.Width(half).Align(lipgloss.Center).Render(changesLabel) +
 		historyOn.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
-	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
-		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
+
+	changesRule, historyRule := theme.Pink, theme.Rule
+	if historyActive {
+		changesRule, historyRule = theme.Rule, theme.Pink
+	}
+	underline := edge(changesHover, "▀", "─", changesRule, half) + edge(historyHover, "▀", "─", historyRule, otherHalf)
 	return pad + "\n" + top + "\n" + underline
 }
 
-// renderFilterRow paints the "❯ filter" box: the typed filter text, or the
-// Faint placeholder while empty. The border brightens to Pink while the
-// filter itself holds focus; hover gets GutterHoverBar instead (the same
-// dimmer-than-Pink tone the summary/description boxes use), never the
-// focus color itself -- all three sibling boxes share the one rule that a
-// hover reading as already-focused is wrong, focused still wins outright
+// renderFilterRow paints the "❯ filter" box for either tab: the typed filter
+// text, or the Faint placeholder while empty. The border brightens to Pink
+// while the filter itself holds focus; hover gets GutterHoverBar instead
+// (the same dimmer-than-Pink tone the summary/description boxes use), never
+// the focus color itself -- all three sibling boxes share the one rule that
+// a hover reading as already-focused is wrong, focused still wins outright
 // when both are true.
-func renderFilterRow(text string, focused, hovered bool, width int) string {
+func renderFilterRow(text, placeholder string, focused, hovered bool, width int) string {
 	inner := width - 4
 	if inner < 1 {
 		inner = 1
@@ -78,7 +94,7 @@ func renderFilterRow(text string, focused, hovered bool, width int) string {
 	body := text
 	bodyStyle := on.Foreground(theme.Text)
 	if body == "" {
-		body = "Filter changes"
+		body = placeholder
 		bodyStyle = on.Foreground(theme.Faint)
 	}
 	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
@@ -330,18 +346,26 @@ func renderUndoStrip(lc LastCommit, hovered bool, width int) string {
 	return justify(on, width, left, right)
 }
 
-// renderKeybar is the bottom full-width legend, key glyphs in KeybarKey
-// (bold) and their labels in KeybarLabel, separated by a Dim middle dot --
-// the same grammar the picker and board keybars use.
-func renderKeybar(width int) string {
+// renderKeybar is the bottom full-width legend for the active tab, key
+// glyphs in KeybarKey (bold) and their labels in KeybarLabel, separated by a
+// Dim middle dot -- the same grammar the picker and board keybars use.
+func renderKeybar(width int, tab string) string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	dot := on.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
 		return on.Foreground(theme.KeybarKey).Bold(true).Render(k) + on.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
+	// justify clips from the right, so the tab switch sits early enough to
+	// survive a narrow terminal.
 	pairs := [][2]string{
-		{"space", "stage"}, {"enter", "diff"}, {"c", "commit"}, {"f", "action"},
+		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"c", "commit"}, {"f", "action"},
 		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
+	}
+	if tab == "history" {
+		pairs = [][2]string{
+			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"/", "filter"}, {"e", "expand"},
+			{"1", "changes"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
+		}
 	}
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -367,14 +391,26 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 	}
 	if lipgloss.Width(left) > maxLeft {
 		// left already carries its own fg+bg per fragment (justify's
-		// callers), so its ellipsis must too -- clipOn, not clip.
-		left = clipOn(left, maxLeft, on)
+		// callers), so its ellipsis must too -- clipOn, not clip. clipOn
+		// fills exactly to its budget, so clipping straight to maxLeft would
+		// leave right's own PlaceHorizontal with no cells to pad with --
+		// left and right would touch with no separating space.
+		clipWidth := maxLeft - 1
+		if clipWidth < 0 {
+			clipWidth = 0
+		}
+		left = clipOn(left, clipWidth, on)
 	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {
 		avail = 0
 	}
-	return on.Render("  ") + left + lipgloss.PlaceHorizontal(avail, lipgloss.Right, right, lipgloss.WithWhitespaceStyle(on)) + on.Render(" ")
+	out := on.Render("  ") + left + lipgloss.PlaceHorizontal(avail, lipgloss.Right, right, lipgloss.WithWhitespaceStyle(on)) + on.Render(" ")
+	// Narrower than the 3-cell padding plus right, the parts alone overflow.
+	if lipgloss.Width(out) > width {
+		return clipOn(out, width, on)
+	}
+	return out
 }
 
 // middleTruncate keeps a path's head and tail and drops its middle behind

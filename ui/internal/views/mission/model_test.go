@@ -89,6 +89,30 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	}
 }
 
+func TestDecodeHistoryFixture(t *testing.T) {
+	m, err := decode(modelFixture(t, "session-model-mission-history.json"))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if m.Tab != "history" {
+		t.Fatalf("Tab: got %q want \"history\"", m.Tab)
+	}
+	if len(m.History.Commits) != 2 {
+		t.Fatalf("History.Commits: expected 2, got %d: %+v", len(m.History.Commits), m.History.Commits)
+	}
+	for i, c := range m.History.Commits {
+		if c.Group != "Last week" {
+			t.Fatalf("History.Commits[%d].Group: got %q want \"Last week\"", i, c.Group)
+		}
+	}
+	if m.History.Header == nil {
+		t.Fatalf("History.Header: expected non-nil")
+	}
+	if !m.Diff.ReadOnly {
+		t.Fatalf("Diff.ReadOnly: expected true")
+	}
+}
+
 func TestDecodeIgnoresUnknownFields(t *testing.T) {
 	var v map[string]any
 	if err := json.Unmarshal(modelFixture(t, "session-model-mission.json"), &v); err != nil {

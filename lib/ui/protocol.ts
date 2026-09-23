@@ -187,6 +187,55 @@ export interface MissionDiffModel {
   /** Chroma lexer hint, e.g. "typescript"; "" = plain. */
   lang: string;
   lines: MissionDiffLine[];
+  /** A committed diff (History): no stage gutter, nothing toggles. */
+  readOnly: boolean;
+}
+
+export interface MissionHistoryCommitRow {
+  sha: string;
+  shortSha: string;
+  summary: string;
+  /** GHD's commit-attribution: "A", "A, B", or "N people". */
+  byline: string;
+  /** Driver-computed relative author date. */
+  when: string;
+  /** Date header the row sits under: "Today", "Yesterday", "Earlier this week", "Last week", or "September 2026". */
+  group: string;
+  tags: string[];
+  unpushed: boolean;
+  /** The driver's selection; the view adopts it when its own cursor falls off the list. */
+  selected: boolean;
+}
+
+export interface MissionHistoryHeader {
+  summary: string;
+  body: string;
+  byline: string;
+  /** Expanded author list, "Name <email>" (GHD renderExpandedAuthor). */
+  authors: string[];
+  sha: string;
+  shortSha: string;
+  linesAdded: number;
+  linesDeleted: number;
+  tags: string[];
+  /** Selected commit count; above 1 the header reads "Showing changes from N commits". */
+  rangeCount: number;
+  contiguous: boolean;
+}
+
+export interface MissionHistoryFileRow {
+  path: string;
+  origPath: string;
+  status: MissionChangeRow["status"];
+}
+
+export interface MissionHistoryModel {
+  commits: MissionHistoryCommitRow[];
+  hasMore: boolean;
+  loading: boolean;
+  header: MissionHistoryHeader | null;
+  files: MissionHistoryFileRow[];
+  selectedFile: string;
 }
 
 export interface MissionActionModel {
@@ -242,6 +291,8 @@ export interface MissionModel {
   stashCount: number;
   /** One-line transient notice (guard refusals, not-yet-wired). */
   notice: string;
+  tab: "changes" | "history";
+  history: MissionHistoryModel;
 }
 
 export interface SessionHello {
@@ -270,6 +321,10 @@ const SESSION_INTENT_NAMES = [
   "mission:repo",
   "mission:select",
   "mission:refresh",
+  "mission:tab",
+  "mission:history-select",
+  "mission:history-file",
+  "mission:history-more",
 ] as const;
 
 export interface SessionIntent {

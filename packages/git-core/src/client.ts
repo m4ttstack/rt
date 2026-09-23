@@ -9,6 +9,7 @@ import { getStagingDiff, stageSelection, discardSelection, stageFileFully } from
 import { undoLastCommit, resetToCommit } from "./commits.ts";
 import { checkoutBranch, createBranch } from "./branch-ops.ts";
 import { scrubGitEnv } from "./exec.ts";
+import { getCommits, getLocalCommits, getChangedFiles, getCommitRangeChangedFiles, getCommitDiff, getCommitRangeDiff } from "./history.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -70,5 +71,11 @@ export function createGitClient(dir: string): GitClient {
     createTag: (name, opts) => createTag(ctx, name, opts),
     deleteTag: (name) => deleteTag(ctx, name),
     pushTag: (name, remote) => pushTag(ctx, name, remote),
+    commits: (range, limit, skip, additionalArgs) => getCommits(ctx, range, limit, skip, additionalArgs),
+    localCommits: (branch, skip) => getLocalCommits(ctx, branch, skip),
+    changedFiles: (sha) => getChangedFiles(ctx, sha),
+    commitRangeChangedFiles: (shas) => getCommitRangeChangedFiles(ctx, shas),
+    commitDiff: (file, sha) => getCommitDiff(ctx, file, sha),
+    commitRangeDiff: (file, shas) => getCommitRangeDiff(ctx, file, shas),
   };
 }

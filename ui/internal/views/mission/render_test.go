@@ -338,10 +338,10 @@ func TestRenderCommitButtonHoverBrightensOnlyWhenPressable(t *testing.T) {
 // GutterHoverBar, never Pink; focus keeps Pink and wins outright when both
 // are true. Hover must not change the box's rendered width.
 func TestRenderFilterRowHoverIsDistinctFromFocus(t *testing.T) {
-	rest := renderFilterRow("", false, false, sidebarWidth)
-	hovered := renderFilterRow("", false, true, sidebarWidth)
-	focused := renderFilterRow("", true, false, sidebarWidth)
-	focusedAndHovered := renderFilterRow("", true, true, sidebarWidth)
+	rest := renderFilterRow("", "Filter changes", false, false, sidebarWidth)
+	hovered := renderFilterRow("", "Filter changes", false, true, sidebarWidth)
+	focused := renderFilterRow("", "Filter changes", true, false, sidebarWidth)
+	focusedAndHovered := renderFilterRow("", "Filter changes", true, true, sidebarWidth)
 
 	if strings.Contains(rest, fgSGR(theme.Pink)) || strings.Contains(rest, fgSGR(theme.GutterHoverBar)) {
 		t.Fatalf("un-hovered, un-focused filter row must not wear either accent border: %q", rest)
@@ -530,7 +530,7 @@ func TestRenderMasterRowClipsLongCountsToOneRow(t *testing.T) {
 }
 
 func TestRenderKeybarContainsSpaceStage(t *testing.T) {
-	out := ansi.Strip(renderKeybar(100))
+	out := ansi.Strip(renderKeybar(100, "changes"))
 	if !strings.Contains(out, "space stage") {
 		t.Fatalf("keybar missing \"space stage\":\n%s", out)
 	}
@@ -1758,7 +1758,7 @@ func TestCommitEmitClearsLocalDrafts(t *testing.T) {
 	}
 }
 
-// TestClickCheckboxOnAnotherRowAlsoSelectsIt: RT-221. A checkbox click always
+// TestClickCheckboxOnAnotherRowAlsoSelectsIt: a checkbox click always
 // emitted its own stage intent, but never mission:select -- so the diff pane
 // kept showing the previously selected file until the next row click or
 // arrow key. Clicking a DIFFERENT row's checkbox must batch the stage intent
@@ -1802,7 +1802,7 @@ func TestClickCheckboxOnTheAlreadySelectedRowStillStages(t *testing.T) {
 	}
 }
 
-// TestCommitRefusalRestoresDraftAfterEmit: RT-221. Emitting mission:commit
+// TestCommitRefusalRestoresDraftAfterEmit: emitting mission:commit
 // clears the local drafts -- the only point they can ever go back to empty,
 // since a non-empty draft always outranks a push. A refusal or failure must
 // restore them via the next push's Commit.Summary/Description, or the typed
@@ -1970,7 +1970,7 @@ func TestMouseMotionWiresAndClearsNewHoverFields(t *testing.T) {
 		get  func(*Mission) bool
 	}{
 		{"commit button", hitCommitButton, 20, func(m *Mission) bool { return m.hoverCommitButton }},
-		{"tab history", hitTabHistory, sidebarWidth - 1, func(m *Mission) bool { return m.hoverTabHistory }},
+		{"tab history", hitTab, sidebarWidth - 1, func(m *Mission) bool { return m.hoverTab }},
 		{"filter row", hitFilterRow, 5, func(m *Mission) bool { return m.hoverFilterRow }},
 		{"commit summary", hitCommitSummary, 20, func(m *Mission) bool { return m.hoverCommitSummary }},
 		{"commit description", hitCommitDescription, 20, func(m *Mission) bool { return m.hoverCommitDescription }},
@@ -1996,7 +1996,7 @@ func TestMouseMotionWiresAndClearsNewHoverFields(t *testing.T) {
 		if tc.get(m) {
 			t.Fatalf("%s: hover field should clear once the pointer leaves its region", tc.name)
 		}
-		if m.hoverCommitButton || m.hoverTabHistory || m.hoverFilterRow || m.hoverCommitSummary ||
+		if m.hoverCommitButton || m.hoverTab || m.hoverFilterRow || m.hoverCommitSummary ||
 			m.hoverCommitDescription || m.hoverStash || m.hoverUndoChip {
 			t.Fatalf("%s: some hover field stayed stuck after the pointer moved away: %+v", tc.name, m)
 		}
@@ -2287,7 +2287,7 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 // half, spanning the full width between them.
 func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 	const width = 46
-	out := renderTabsRow(3, false, width)
+	out := renderTabsRow(3, "changes", false, width)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 3 {
 		t.Fatalf("tabs row should render exactly 3 rows, got %d:\n%s", len(lines), out)
@@ -2318,7 +2318,7 @@ func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
 // right half.
 func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	const width = 46
-	out := renderTabsRow(3, false, width)
+	out := renderTabsRow(3, "changes", false, width)
 	top := ansi.Strip(strings.Split(out, "\n")[1])
 	half := width / 2
 	left, right := top[:half], top[half:]
@@ -2335,18 +2335,17 @@ func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
 	}
 }
 
-// TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline pins the button's
-// own invariant: hovering the History tab paints HoverBg behind its half of
-// BOTH the pad row and the label row -- the two rows sidebarHit resolves to
-// hitTabHistory -- and never the underline row, which is an indicator, not
-// part of the button. The Changes half and the underline's Pink/Rule split
-// are both untouched, and the half widths (hence the row's overall width)
-// never move.
-func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
+// TestRenderTabsRowHoverCentersOnTheLabel pins the button's own invariant:
+// hovering the History tab paints a lower half-block edge in the pad row,
+// HoverBg behind the label row, and an upper half-block edge in place of
+// its underline, so the fill is centered on the label. The Changes half
+// and its Pink underline are untouched, and the half widths (hence the
+// row's overall width) never move.
+func TestRenderTabsRowHoverCentersOnTheLabel(t *testing.T) {
 	const width = 46
 	half := width / 2
-	rest := renderTabsRow(3, false, width)
-	hovered := renderTabsRow(3, true, width)
+	rest := renderTabsRow(3, "changes", false, width)
+	hovered := renderTabsRow(3, "changes", true, width)
 
 	restLines := strings.Split(rest, "\n")
 	hoveredLines := strings.Split(hovered, "\n")
@@ -2354,12 +2353,18 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 		t.Fatalf("tabs row should stay exactly 3 rows in both states: rest=%d hovered=%d", len(restLines), len(hoveredLines))
 	}
 
-	for _, row := range []int{0, 1} { // pad, label
-		if strings.Contains(restLines[row], bgSGR(theme.HoverBg)) {
+	for row := range restLines {
+		if strings.Contains(restLines[row], bgSGR(theme.HoverBg)) || strings.Contains(restLines[row], fgSGR(theme.HoverBg)) {
 			t.Fatalf("un-hovered row %d must not wear HoverBg: %q", row, restLines[row])
 		}
-		if !strings.Contains(hoveredLines[row], bgSGR(theme.HoverBg)) {
-			t.Fatalf("hovering History should paint HoverBg somewhere in row %d: %q", row, hoveredLines[row])
+	}
+	if !strings.Contains(hoveredLines[1], bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovering History should paint HoverBg behind the label row: %q", hoveredLines[1])
+	}
+	for row, glyph := range map[int]string{0: "▄", 2: "▀"} {
+		plain := []rune(ansi.Strip(hoveredLines[row]))
+		if string(plain[half:]) != strings.Repeat(glyph, width-half) || !strings.Contains(hoveredLines[row], fgSGR(theme.HoverBg)) {
+			t.Fatalf("hovering History should draw a HoverBg %s edge across its half of row %d: %q", glyph, row, hoveredLines[row])
 		}
 	}
 
@@ -2372,13 +2377,9 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 		t.Fatalf("setup: left-half slice should not contain History: %q", leftPlain)
 	}
 
-	// The underline (row 2) must keep its exact Pink/Rule split regardless
-	// of hover, and never wear HoverBg.
-	if hoveredLines[2] != restLines[2] {
-		t.Fatalf("hover must not alter the underline row:\nrest   =%q\nhovered=%q", restLines[2], hoveredLines[2])
-	}
-	if strings.Contains(hoveredLines[2], bgSGR(theme.HoverBg)) {
-		t.Fatalf("the underline row must never wear HoverBg: %q", hoveredLines[2])
+	// The active Changes half keeps its Pink underline under hover.
+	if !strings.HasPrefix(ansi.Strip(hoveredLines[2]), strings.Repeat("─", half)) || !strings.Contains(hoveredLines[2], fgSGR(theme.Pink)) {
+		t.Fatalf("the active tab's Pink underline must survive hover: %q", hoveredLines[2])
 	}
 
 	for i := range restLines {
@@ -2391,22 +2392,22 @@ func TestRenderTabsRowHoverPaintsPadAndLabelHalfNotUnderline(t *testing.T) {
 }
 
 // TestTabsButtonHoverAndClickRowsAgree is the invariant the owner called out
-// by name: every row sidebarHit resolves to hitTabHistory must be a row that
-// renders HoverBg when hovered, and no other row may. A hover-only row (the
-// old underline, clickable but unpainted) or a click-only row is exactly the
+// by name: every row sidebarHit resolves to hitTab must be a row that
+// renders HoverBg (as a background or as a half-block edge) when hovered,
+// and no other row may. A hover-only row or a click-only row is exactly the
 // bug this button exists to rule out.
 func TestTabsButtonHoverAndClickRowsAgree(t *testing.T) {
 	const width = sidebarWidth
 	x := width - 1 // inside the History half
-	hovered := renderTabsRow(3, true, width)
+	hovered := renderTabsRow(3, "changes", true, width)
 	lines := strings.Split(hovered, "\n")
 
 	m := &Mission{}
 	for row := 0; row < len(lines); row++ {
-		clicks := m.sidebarHit(x, row, 0).kind == hitTabHistory
-		paintsHover := strings.Contains(lines[row], bgSGR(theme.HoverBg))
+		clicks := m.sidebarHit(x, row, 0).kind == hitTab
+		paintsHover := strings.Contains(lines[row], bgSGR(theme.HoverBg)) || strings.Contains(lines[row], fgSGR(theme.HoverBg))
 		if clicks != paintsHover {
-			t.Fatalf("row %d: sidebarHit resolves to hitTabHistory=%v but renders HoverBg=%v -- they must agree", row, clicks, paintsHover)
+			t.Fatalf("row %d: sidebarHit resolves to hitTab=%v but renders HoverBg=%v -- they must agree", row, clicks, paintsHover)
 		}
 	}
 }
@@ -2420,7 +2421,7 @@ func TestTabsHitZonesAreHalfWidth(t *testing.T) {
 	if got := tabsHit(width, half-1); got.kind != hitNone {
 		t.Fatalf("x=%d (last cell of the left half) should be inert, got %+v", half-1, got)
 	}
-	if got := tabsHit(width, half); got.kind != hitTabHistory {
+	if got := tabsHit(width, half); got.kind != hitTab || got.idx != 1 {
 		t.Fatalf("x=%d (first cell of the right half) should hit History, got %+v", half, got)
 	}
 }
@@ -3240,7 +3241,7 @@ func TestHalfBlockGlyphsMeasureAsOneCell(t *testing.T) {
 // own trailing pad (after "q quit," the last thing justify places) still
 // wears BgSubtle, not just the text ahead of it.
 func TestRenderKeybarRestPaintsBgSubtleBandFullWidth(t *testing.T) {
-	out := renderKeybar(120)
+	out := renderKeybar(120, "changes")
 	if !strings.Contains(out, bgSGR(theme.BgSubtle)) {
 		t.Fatalf("keybar should wear the BgSubtle band: %q", out)
 	}

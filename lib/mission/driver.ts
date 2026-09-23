@@ -27,6 +27,8 @@ import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
 import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts";
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
+import { HistoryStore, type HistoryBranch } from "./history.ts";
+import { buildHistoryModel } from "./history-model.ts";
 import { buildModel, joinWorktreeRows, mergeWorktreeTrees, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import { SessionDied } from "../runner/runner.ts";
 
@@ -122,8 +124,22 @@ interface ConfirmDiscard {
   armedAt: number;
 }
 
+interface TabPayload {
+  tab: "changes" | "history";
+}
+
+interface HistorySelectPayload {
+  shas: string[];
+}
+
+interface HistoryFilePayload {
+  path: string;
+  showOversized?: boolean;
+}
+
 interface DriverState extends MissionState {
   confirmDiscard: ConfirmDiscard | null;
+  tab: "changes" | "history";
 }
 
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
@@ -231,6 +247,9 @@ export class MissionDriver {
    *  provision attempt so an unmatched entry from an earlier one never
    *  lingers. */
   private pendingSettledEvents: Map<string, boolean> = new Map();
+  private readonly history = new HistoryStore();
+  /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
+  private historySyncs = 0;
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -248,6 +267,7 @@ export class MissionDriver {
       selections: new Map(),
       confirmDiscard: null,
       settling: false,
+      tab: "changes",
     };
   }
 
@@ -316,6 +336,8 @@ export class MissionDriver {
   }
 
   private model(): MissionModel {
+    const history = buildHistoryModel(this.history, { now: this.deps.now(), loading: this.historySyncs > 0 && !this.history.loaded });
+    const selectedFile = this.history.selectedFile;
     return buildModel({
       state: this.state,
       rows: this.rows,
@@ -329,6 +351,14 @@ export class MissionDriver {
       action: this.action,
       headShortSha: this.headShortSha,
       defaultBranch: this.defaultBranch,
+      tab: this.state.tab,
+      history,
+      historyDiff: {
+        path: selectedFile?.path ?? null,
+        status: history.files.find((f) => f.path === selectedFile?.path)?.status ?? "",
+        diff: this.history.diff,
+        oversizedOverride: selectedFile ? this.history.isOversizedShown(selectedFile.path) : false,
+      },
     });
   }
 
@@ -363,6 +393,21 @@ export class MissionDriver {
       behind: this.snapshot.behind ?? 0,
       clean: this.snapshot.clean,
     };
+  }
+
+  private historyBranch(): HistoryBranch {
+    return this.snapshot.branch ? { name: this.snapshot.branch, upstream: this.snapshot.upstream } : null;
+  }
+
+  /** A no-op off the History tab: the store never fetches anything a session that stays on Changes will never render. */
+  private async syncHistory(): Promise<void> {
+    if (this.state.tab !== "history") return;
+    this.historySyncs++;
+    try {
+      await this.history.syncTip(this.deps.client(this.state.currentWorktree), this.historyBranch());
+    } finally {
+      this.historySyncs--;
+    }
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {
@@ -425,6 +470,7 @@ export class MissionDriver {
       : null;
     await this.refreshDiff(client);
     this.recomputeAction();
+    await this.syncHistory();
   }
 
   /**
@@ -451,6 +497,7 @@ export class MissionDriver {
     this.reconcileSelections();
     this.stagingDiff = stagingDiff;
     this.recomputeAction();
+    await this.syncHistory();
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
@@ -462,9 +509,9 @@ export class MissionDriver {
    * default, ratified 2026-09-21) and prunes entries for files that no
    * longer appear (committed, reverted, or discarded away) so the map never
    * grows stale forever. Called from every place that replaces this.snapshot
-   * -- refresh(), refreshBadges(), refreshSnapshotAndDiff() -- since any of
-   * them can observe a file the user, or another agent (this estate has
-   * agents that stage/edit independently), touched outside this session.
+   * -- refresh() and refreshBadges() -- since either can observe a file the
+   * user, or another agent (this estate has agents that stage/edit
+   * independently), touched outside this session.
    */
   private reconcileSelections(): void {
     const present = new Set(this.snapshot.files.map((f) => f.path));
@@ -526,9 +573,42 @@ export class MissionDriver {
       case "mission:select":
         await this.handleSelect(intent.payload as SelectPayload | undefined);
         break;
+      case "mission:tab":
+        await this.handleTab(intent.payload as TabPayload | undefined);
+        break;
+      case "mission:history-select": {
+        const payload = intent.payload as HistorySelectPayload | undefined;
+        if (!Array.isArray(payload?.shas)) break;
+        await this.history.select(this.deps.client(this.state.currentWorktree), payload.shas);
+        this.push();
+        break;
+      }
+      case "mission:history-file": {
+        const payload = intent.payload as HistoryFilePayload | undefined;
+        if (typeof payload?.path !== "string") break;
+        if (payload.showOversized === true) this.history.showOversized(payload.path);
+        else await this.history.selectFile(this.deps.client(this.state.currentWorktree), payload.path);
+        this.push();
+        break;
+      }
+      case "mission:history-more":
+        await this.history.loadNextBatch(this.deps.client(this.state.currentWorktree), this.historyBranch());
+        this.push();
+        break;
       default:
         break;
     }
+  }
+
+  private async handleTab(payload: TabPayload | undefined): Promise<void> {
+    if (payload?.tab !== "changes" && payload?.tab !== "history") return;
+    this.state.tab = payload.tab;
+    if (payload.tab === "history") {
+      const sync = this.syncHistory();
+      this.push();
+      await sync;
+    }
+    this.push();
   }
 
   private async handleAction(): Promise<void> {
@@ -562,11 +642,11 @@ export class MissionDriver {
   /**
    * The file's persisted commit-intent selection (GHD's checkbox model,
    * ratified 2026-09-21): every changed file's selection is seeded to All
-   * the moment it first appears (reconcileSelections, called from every
-   * refresh/refreshBadges/refreshSnapshotAndDiff) and persists across
-   * pushes and refreshes as the user's own commit intent, independent of
-   * the real git index. This fallback (All) only matters before the very
-   * first reconcile has ever run.
+   * the moment it first appears (reconcileSelections, called from both
+   * refresh and refreshBadges) and persists across pushes and refreshes as
+   * the user's own commit intent, independent of the real git index. This
+   * fallback (All) only matters before the very first reconcile has ever
+   * run.
    */
   private currentSelection(path: string): DiffSelection {
     return this.state.selections.get(path) ?? DiffSelection.fromInitialSelection(DiffSelectionType.All);
@@ -846,6 +926,7 @@ export class MissionDriver {
   private setCurrentWorktree(path: string, settling: boolean): void {
     this.state.currentWorktree = path;
     this.state.settling = settling;
+    this.history.reset();
   }
 
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
@@ -955,12 +1036,5 @@ export class MissionDriver {
     if (payload.showOversized === true && this.state.selectedPath) this.state.showOversized.add(this.state.selectedPath);
     if (payload.showOversized === false && this.state.selectedPath) this.state.showOversized.delete(this.state.selectedPath);
     this.push();
-  }
-
-  private async refreshSnapshotAndDiff(client: GitClient): Promise<void> {
-    this.snapshot = await client.snapshot();
-    this.reconcileSelections();
-    await this.refreshDiff(client);
-    this.recomputeAction();
   }
 }

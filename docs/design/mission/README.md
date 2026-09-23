@@ -39,6 +39,13 @@ shadows, no radii).
   new-branch action row.
 - `WorktreeModal.png`: the worktree foldout (no GitHub Desktop analog): the
   current worktree, per-tree badges, on-deck pool rows, provision action.
+- `History.png`: the History tab (GitHub Desktop's app/src/ui/history):
+  the two-line commit list with cursor, hover, tag pills, and unpushed ↑;
+  the collapsed commit header; the changed-file column; the read-only diff
+  with no stage gutter; the History keybar.
+- `HistoryStates.png`: the expanded commit header, a contiguous range
+  selection and its "Showing changes from N commits" header, and the four
+  blank slates (unborn repo, first load, nothing selected, non-contiguous).
 - `Mouse.png`: every mouse affordance by zone; hover always previews.
 - `DiffStates.png`: expand up / down / all handles, binary and oversized
   messages.
@@ -58,7 +65,21 @@ shadows, no radii).
   bare arrows.
 - A worktree segment and foldout exist; GitHub Desktop has no worktree
   surface.
-- The History tab is deferred; the tab renders dimmed.
+- `1` and `2` switch between Changes and History. GitHub Desktop binds
+  ⌘1 and ⌘2, which a terminal cannot receive.
+- `e` toggles the History commit header's expanded state. GitHub
+  Desktop's expander is a button reached by tabbing; a terminal needs a
+  key.
+- Shift+click extends a History range only where the terminal forwards
+  shift-modified clicks: Ghostty and Terminal.app keep shift+click for
+  their own text selection while mouse reporting is on. Shift+↑/↓ always
+  works.
+- The History list's mouse wheel scrolls the view without moving the
+  selection, and paging is an explicit "Load 100 more commits" row rather
+  than GitHub Desktop's load-as-you-scroll.
+- History groups commits under date headers (Today, Yesterday, Earlier
+  this week, Last week, then by month) and has a `/` filter over loaded
+  commits; GitHub Desktop has neither.
 
 ## Deferred to v2
 
@@ -69,8 +90,14 @@ only there because the repo is public and the purity gate rejects them
 in source. Adding a "lands in v2" notice to the code means adding a
 line here and a ticket there; removing one means removing all three.
 
-- **History tab.** Renders dimmed with a "v2" marker; a click answers
-  "History lands in v2". No commit data reaches the wire model.
+- **Branch compare.** GitHub Desktop's "Select Branch to Compare" box
+  atop History, with ahead/behind against another branch and the merge
+  call-to-action. Not built.
+- **Hide whitespace.** GitHub Desktop's `-w` diff option. glitter has no
+  diff options on either tab yet.
+- **Commit actions.** Revert, cherry-pick, reset to commit, create a
+  branch or tag from a commit, copy sha. They arrive with row context
+  menus.
 - **Stash foldout.** The strip shows a count and a chevron; a click
   answers "Stash foldout lands in v2". No restore, apply, or drop.
 - **Publish repository.** The action segment renders the state for
@@ -119,7 +146,7 @@ no longer point at the same content; GHD's own fix (and rt's) is to
 downgrade it to None rather than carry it forward or reseed it to All,
 so the user reviews what's left rather than it silently riding along.
 
-RT-221's own "line-level unstage is impossible" residual dissolves
+The old "line-level unstage is impossible" residual dissolves
 under this model: unchecking a line was always just deselecting it,
 once staging stopped being a git call at all.
 
@@ -188,6 +215,10 @@ division.
 | TopBar | 56 | 2.15 | 3 | label row + value row + one blank BgSubtle band row (the board's own bottom breathing; its text block ends at 44px into the 56px band). Segment hover/open fills cover all 3 rows. |
 | BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
 | Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
+| History top rows | n/a | n/a | 7 (tabs 3 + gap 1 + filter 3) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline), one blank band row, then the same 3-row filter box the Changes sidebar has ("Filter history"), directly above the commit list. |
+| History date header | n/a | n/a | 1 per run | One row before the first commit of each run of equal date group in the visible (filtered) list: the label two cells in, bold Dim on Bg. Inert to hover and click. |
+| History commit row | n/a | n/a | 3 each | GHD's commit-list-item as a bold summary line (tag pill and unpushed ↑ flush right), a Dimmer byline · time line whose byline truncates before the time does, and a Rule separator row standing in for GHD's row border. The separator is inert to hover and click. |
+| History action row | n/a | n/a | 1 | Closes the list while there is more to load: "Load 100 more commits", or "Search 100 more commits" under a filter, in Lav; a cursor stop with a commit row's cursor and hover treatments. While its page loads it reads "Loading…" in Faint and is inert. A filter that matches nothing centers a Faint "No matching commits" in the list, with this row below it. |
 | FilterRow | 34 | 1.31 | 3 | border / text / border — already correct: a bordered box is 3 physical rows regardless of its own px height. |
 | SummaryRow (master) | 24 | 0.92 | 1 | "N changed files · M staged". |
 | ChangesList row | 26 | 1.00 | 1 each | exact unit match. |

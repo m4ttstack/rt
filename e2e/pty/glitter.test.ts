@@ -8,7 +8,9 @@
  * only in waits, where it is the one signal that a round trip finished --
  * asserting on it would make this a second, worse copy of the Go render
  * tests. Each wait keys on a state transition the board only paints once the
- * driver has come back from git, never on a fixed sleep.
+ * driver has come back from git, never on a fixed sleep. The History test is
+ * the one screen-only exception: History changes no git state, so there is
+ * nothing else to assert against.
  */
 import { describe, test, expect, beforeAll, afterEach } from "bun:test";
 import { execFileSync } from "child_process";
@@ -133,5 +135,14 @@ describe("rt glitter through a pty", () => {
     const status = repo.git("status", "--porcelain");
     expect(status).toContain("config.json");
     expect(status).toContain("src/parser.ts");
+  });
+
+  test("the History tab lists the sandbox's commit and shows its diff", async () => {
+    // History changes no git state, so the screen is the only observable.
+    const { session } = await openBoard();
+    await session.press("2");
+    await session.waitForText("seed the sandbox", PAINT_TIMEOUT);
+    await session.waitForText("changed files", PAINT_TIMEOUT);
+    await session.waitForText('"maxTokens": 2048', PAINT_TIMEOUT);
   });
 });
