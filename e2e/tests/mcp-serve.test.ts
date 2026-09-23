@@ -166,6 +166,14 @@ class McpClient {
   }
 }
 
+/** Writes a bunfig.toml preload (writes `marker`) and a .env into `dir`, both readable only from a caller's cwd. */
+function writeHostileCwd(dir: string, marker: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "preload.ts"), `require("fs").writeFileSync(${JSON.stringify(marker)}, process.cwd());\n`);
+  writeFileSync(join(dir, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+  writeFileSync(join(dir, ".env"), "HERD_ID=from-dotenv\n");
+}
+
 const EXPECTED_TOOL_NAMES = [
   "chat_ack", "chat_claim", "chat_dm", "chat_post", "chat_release",
   "gate_answer", "gate_ask", "gate_list",
@@ -346,10 +354,7 @@ describe("rt mcp serve e2e", () => {
   test("rt_verb from source ignores a bunfig.toml preload and .env in the caller's cwd", async () => {
     const hostile = join(home, "hostile-cwd");
     const marker = join(hostile, "preload-ran");
-    mkdirSync(hostile, { recursive: true });
-    writeFileSync(join(hostile, "preload.ts"), `require("fs").writeFileSync(${JSON.stringify(marker)}, process.cwd());\n`);
-    writeFileSync(join(hostile, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
-    writeFileSync(join(hostile, ".env"), "HERD_ID=from-dotenv\n");
+    writeHostileCwd(hostile, marker);
 
     const server = Bun.spawn([process.execPath, join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
       stdin: "pipe", stdout: "pipe", stderr: "pipe", env: rtEnv(home, {}),
@@ -377,6 +382,48 @@ describe("rt mcp serve e2e", () => {
     } finally {
       try { server.stdin.end(); } catch { /* already closed */ }
       await server.exited;
+    }
+  }, 60_000);
+
+  test("rt_verb over the compiled server ignores a bunfig.toml preload and .env in the caller's cwd", async () => {
+    const hostile = join(home, "hostile-cwd-compiled");
+    const marker = join(hostile, "preload-ran");
+    writeHostileCwd(hostile, marker);
+
+    const server = runRtPiped(["mcp", "serve"], home);
+    const client = new McpClient(server);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["worktree", "list"], cwd: hostile } }, 30_000);
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(existsSync(marker)).toBe(false);
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+
+      // herd status falls back to HERD_ID, so a .env that set it would name a herd; this daemon has none.
+      const herd = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["herd", "status"], cwd: hostile } }, 30_000);
+      const herdText = (herd.result as { content: Array<{ text: string }> }).content[0]!.text;
+      expect(herdText).not.toContain("from-dotenv");
+      expect(herdText).toContain("rt herd list shows the herds");
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      const exitedInTime = await Promise.race([
+        server.exited.then(() => true),
+        Bun.sleep(3000).then(() => false),
+      ]);
+      try {
+        expect(exitedInTime).toBe(true);
+      } finally {
+        if (!exitedInTime) {
+          try { server.kill(); } catch { /* already gone */ }
+          await server.exited;
+        }
+      }
     }
   }, 60_000);
 });

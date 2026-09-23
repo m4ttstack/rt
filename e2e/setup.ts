@@ -47,6 +47,7 @@ if (!process.env.RT_BINARY && rtBinaryIsStale()) {
   console.log("e2e: building rt binary...");
   const proc = Bun.spawnSync([
     "bun", "build", "--compile",
+    "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv",
     "./cli.ts",
     "--outfile", RT_BINARY,
     "--define", 'RT_VERSION="e2e-test"',

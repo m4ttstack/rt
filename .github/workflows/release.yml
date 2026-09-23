@@ -121,7 +121,7 @@ jobs:
       # RT_VERSION here keeps the tag's "v" prefix — cli.ts's own contract
       # (see its RT_VERSION comment) expects that form for `rt --version`.
       - name: Compile rt (arm64)
-        run: bun build --compile --target=bun-darwin-arm64 ./cli.ts --outfile dist/rt --define RT_VERSION='"${{ steps.meta.outputs.tag }}"'
+        run: bun build --compile --target=bun-darwin-arm64 --no-compile-autoload-bunfig --no-compile-autoload-dotenv ./cli.ts --outfile dist/rt --define RT_VERSION='"${{ steps.meta.outputs.tag }}"'
 
       - uses: actions/setup-go@v5
         with:
