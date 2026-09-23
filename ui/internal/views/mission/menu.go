@@ -255,6 +255,10 @@ func (m *Mission) runMenuOutcome(out picker.MenuOutcome) (tea.Model, tea.Cmd) {
 func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 	t := m.menuTarget
 	if k, ok := strings.CutPrefix(it.ID, "key:"); ok {
+		if m.menuOnHistory != m.historyTab() {
+			m.closeMenu()
+			return m, nil
+		}
 		m.closeMenu()
 		press := tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
 		if m.menuOnHistory {

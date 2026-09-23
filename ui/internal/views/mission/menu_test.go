@@ -592,7 +592,7 @@ func TestAnAnchoredMenuFitsAShortHistoryFrame(t *testing.T) {
 	}
 }
 
-func TestAKeyRowRunsTheKeyOfTheTabItOpenedOn(t *testing.T) {
+func TestAKeyRowDoesNothingWhenTheTabChangedSinceTheMenuOpened(t *testing.T) {
 	m := newMouseTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
 	model := mouseFixtureModel()
@@ -601,9 +601,15 @@ func TestAKeyRowRunsTheKeyOfTheTabItOpenedOn(t *testing.T) {
 	for _, r := range "commit" {
 		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.focus != focusSummary {
-		t.Fatalf("a Changes menu's Commit row runs Changes' c even after a tab switch, focus %v", m.focus)
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("a Changes menu's Commit row must emit nothing after a tab switch")
+	}
+	if m.menu != nil {
+		t.Fatal("a Changes menu's Commit row must close the menu after a tab switch")
+	}
+	if m.focus != focusList {
+		t.Fatalf("a Changes menu's Commit row must leave focus on the list after a tab switch, focus %v", m.focus)
 	}
 }
 
