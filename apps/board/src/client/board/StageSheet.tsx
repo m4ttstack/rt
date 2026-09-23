@@ -21,6 +21,7 @@ import {
   Choices,
   Note,
   ProseContext,
+  reserveDock,
   SheetLost,
   SheetRows,
   type ChoiceState,
@@ -263,7 +264,7 @@ function StageSheetBody({
               {mr && <MrCard mr={mr} />}
               <ContextCard gate={gate} mr={mr} context={context} />
             </div>
-            <div className="tui-sheet-dock">
+            <div className="tui-sheet-dock" ref={reserveDock}>
               <div className="tui-sheet-dock-head">
                 <h3 className="tui-sheet-dock-heading">
                   Answers on {dockRef(gate, mr)}
@@ -448,7 +449,7 @@ function PaneSheetBody({
                 )}
               </div>
             </div>
-            <div className="tui-sheet-dock">
+            <div className="tui-sheet-dock" ref={reserveDock}>
               <div className="tui-sheet-dock-head">
                 <h3 className="tui-sheet-dock-heading">
                   Pane on {dockRef(gate, mr)}

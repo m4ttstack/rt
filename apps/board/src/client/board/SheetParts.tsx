@@ -146,6 +146,16 @@ interface SheetRow {
   chips: RowChip[];
 }
 
+/** A break opportunity after every slash, so a path that wraps in a narrow
+    dock splits between segments, never inside one. */
+function slashBreaks(text: string): ReactNode {
+  const parts = text.split('/');
+  if (parts.length === 1) return text;
+  return parts.flatMap((part, i) =>
+    i === parts.length - 1 ? [part] : [`${part}/`, <wbr key={i} />]
+  );
+}
+
 /** The dock's one line per decision: its chips, then what it decides. A
     null chip keeps its slot empty so every row's text starts at one edge. */
 function SheetRows({ card, rows }: { card: string; rows: SheetRow[] }) {
@@ -173,13 +183,36 @@ function SheetRows({ card, rows }: { card: string; rows: SheetRow[] }) {
               />
             )
           )}
-          <span className="tui-sheet-card-text" title={r.title}>
-            {r.text}
+          <span
+            className="tui-sheet-card-text"
+            title={r.title ?? (typeof r.text === 'string' ? r.text : undefined)}
+          >
+            {typeof r.text === 'string' ? slashBreaks(r.text) : r.text}
           </span>
         </div>
       ))}
     </div>
   );
+}
+
+/** Ref for a sheet's pinned panel (its dock, or the lost panel): keeps the
+    panel's height on its scroller as --sheet-dock-h, which the stacked
+    layout reserves as scroll padding, so a control scrolled into view clears
+    the panel however tall its rows make it. */
+function reserveDock(panel: HTMLElement | null) {
+  const body = panel?.closest<HTMLElement>('.tui-sheet-body');
+  if (!panel || !body || typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(() =>
+    body.style.setProperty(
+      '--sheet-dock-h',
+      `${Math.ceil(panel.getBoundingClientRect().height)}px`
+    )
+  );
+  observer.observe(panel);
+  return () => {
+    observer.disconnect();
+    body.style.removeProperty('--sheet-dock-h');
+  };
 }
 
 /** The rail once another surface answered the gate first: the answer that
@@ -194,7 +227,7 @@ function SheetLost({
   onContinue: () => void;
 }) {
   return (
-    <div className="tui-sheet-lost">
+    <div className="tui-sheet-lost" ref={reserveDock}>
       <span className="tui-gate-error">answered elsewhere</span>
       <AnsweredChip
         startOpen
@@ -219,5 +252,5 @@ function SheetLost({
   );
 }
 
-export { Choices, Note, ProseContext, SheetLost, SheetRows };
+export { Choices, Note, ProseContext, reserveDock, SheetLost, SheetRows };
 export type { ChoiceState, RowChip, SheetRow };

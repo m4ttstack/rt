@@ -17,6 +17,10 @@ import type { GateRow } from '../../../gates/store.ts';
 import type { BoardMRWithReview } from '../../types.ts';
 import { useGateForm } from '../GateForm.tsx';
 import { ReviewGateSheet } from '../ReviewGateSheet.tsx';
+import {
+  installFakeResizeObserver,
+  reserveOf,
+} from './fake-resize-observer.ts';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -805,4 +809,17 @@ test("report.json's summary never reaches the decision card", async () => {
 test('a gate the join rejects renders nothing', async () => {
   await render({ ...GATE, context: 'prose' });
   expect(container.querySelector('.tui-review-sheet')).toBeNull();
+});
+
+test('the verdict dock and the lost panel each reserve their height on the scroller', async () => {
+  const restore = installFakeResizeObserver();
+  try {
+    answeredElsewhere = true;
+    await render();
+    expect(await reserveOf('.tui-sheet-dock', 294)).toBe('294px');
+    await click(buttonByText('post 6 · approve'));
+    expect(await reserveOf('.tui-sheet-lost', 332)).toBe('332px');
+  } finally {
+    restore();
+  }
 });

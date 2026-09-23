@@ -17,7 +17,7 @@ import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
 import type { Disposition, FindingEntry, FindingSeverity } from './gate-ctx.ts';
-import { AnsweredChip, type GateFormState } from './GateForm.tsx';
+import type { GateFormState } from './GateForm.tsx';
 import { GateSheet, type GateSheetQueue } from './GateSheet.tsx';
 import {
   CircleCheckFilledIcon,
@@ -32,6 +32,7 @@ import {
   SEVERITY_LABEL,
   SEVERITY_ORDER,
 } from './review-gate.ts';
+import { reserveDock, SheetLost } from './SheetParts.tsx';
 
 /** The engine's optional record fields (`docs/superpowers/specs/
     2026-09-18-review-gate-redesign-design.md` §1): all absent on a report
@@ -577,28 +578,7 @@ function ReviewGateSheet({
         </section>
         <aside className="tui-sheet-rail">
           {form.lost ? (
-            <div className="tui-sheet-lost">
-              <span className="tui-gate-error">answered elsewhere</span>
-              <AnsweredChip
-                startOpen
-                row={{
-                  subject: gate.subject,
-                  kind: gate.kind,
-                  status: 'answered',
-                  questions: gate.questions,
-                  answer: { answers: form.lost.answers, by: form.lost.by },
-                }}
-              />
-              <Button
-                type="button"
-                variant="filled"
-                intent="accent"
-                size="lg"
-                onClick={onContinue}
-              >
-                continue
-              </Button>
-            </div>
+            <SheetLost gate={gate} lost={form.lost} onContinue={onContinue} />
           ) : (
             <>
               <div className="tui-sheet-rail-scroll">
@@ -662,7 +642,7 @@ function ReviewGateSheet({
               </div>
 
               {outcomeQuestion && (
-                <div className="tui-sheet-dock">
+                <div className="tui-sheet-dock" ref={reserveDock}>
                   <div className="tui-sheet-dock-head">
                     <h3 className="tui-sheet-dock-heading">
                       Verdict on !{mr?.iid ?? ''}

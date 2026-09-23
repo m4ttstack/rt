@@ -16,6 +16,10 @@ import { answersFromForm, noteFieldName } from '@mattstack/gate-kit/react';
 import type { GateRow } from '../../../gates/store.ts';
 import type { BoardMRWithReview } from '../../types.ts';
 import { DecisionQueueModal } from '../DecisionQueueModal.tsx';
+import {
+  installFakeResizeObserver,
+  reserveOf,
+} from './fake-resize-observer.ts';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -816,4 +820,22 @@ test('the pane actions go quiet while an answer is in flight', async () => {
     release();
     await new Promise(resolve => setTimeout(resolve, 0));
   });
+});
+
+test('the stage dock, the pane dock and the lost panel each reserve their height on the scroller', async () => {
+  const restore = installFakeResizeObserver();
+  try {
+    await render(ship(), MR);
+    expect(await reserveOf('.tui-sheet-dock', 402)).toBe('402px');
+    await render(pane('blocked'), MR);
+    expect(await reserveOf('.tui-sheet-dock', 134)).toBe('134px');
+    answeredElsewhere = true;
+    const clear = $$('.tui-sheet-text-actions button').find(
+      b => b.textContent === 'clear'
+    );
+    await click(clear ?? null);
+    expect(await reserveOf('.tui-sheet-lost', 298)).toBe('298px');
+  } finally {
+    restore();
+  }
 });

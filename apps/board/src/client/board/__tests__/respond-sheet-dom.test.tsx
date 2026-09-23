@@ -13,6 +13,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { GateRow } from '../../../gates/store.ts';
 import type { BoardMRWithReview } from '../../types.ts';
 import { DecisionQueueModal } from '../DecisionQueueModal.tsx';
+import {
+  installFakeResizeObserver,
+  reserveOf,
+} from './fake-resize-observer.ts';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -1561,4 +1565,22 @@ test('on a prose-flattened post sheet, a reply-only thread keeps its plan place 
   ]);
   expect(outcomeOf(postCards()[0]!)).toBe('reply · posts with this step');
   expect(dockRows()).toEqual(['posta.ts:1', 'postb.ts:2']);
+});
+
+test('the plan dock, the post dock and the lost panel each reserve their height on the scroller', async () => {
+  const restore = installFakeResizeObserver();
+  try {
+    await render(planGate());
+    expect(await reserveOf('.tui-sheet-dock', 183)).toBe('183px');
+    await render(postGate());
+    expect(await reserveOf('.tui-sheet-dock', 185)).toBe('185px');
+    answeredElsewhere = true;
+    await render(planGate());
+    await pick('reply:t1');
+    await pick('reply:t2');
+    await clickSubmit();
+    expect(await reserveOf('.tui-sheet-lost', 332)).toBe('332px');
+  } finally {
+    restore();
+  }
 });

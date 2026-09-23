@@ -25,6 +25,7 @@ import {
   EXECUTION_UNASSIGNED_MESSAGE,
 } from './row-status.ts';
 import {
+  reserveDock,
   SheetLost,
   SheetRows,
   type ChoiceState,
@@ -248,7 +249,7 @@ function AnsweredSheetBody({
                 )}
               </ContextCard>
             </div>
-            <div className="tui-sheet-dock">
+            <div className="tui-sheet-dock" ref={reserveDock}>
               <div className="tui-sheet-dock-head">
                 <h3 className="tui-sheet-dock-heading">
                   Answer on {dockRef(gate, mr)}

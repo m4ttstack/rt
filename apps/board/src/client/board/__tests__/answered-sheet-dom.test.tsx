@@ -15,6 +15,10 @@ import {
   DELIVERY_STUCK_MESSAGE,
   EXECUTION_UNASSIGNED_MESSAGE,
 } from '../row-status.ts';
+import {
+  installFakeResizeObserver,
+  reserveOf,
+} from './fake-resize-observer.ts';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -448,4 +452,20 @@ test('an answered review gate reads its summary as prose in the rail', async () 
   );
   expect(text('.tui-sheet-context-card')).toContain('one real defect remains.');
   expect(document.body.textContent).not.toContain('gate-ctx');
+});
+
+test('the answered dock and the lost panel each reserve their height on the scroller', async () => {
+  const restore = installFakeResizeObserver();
+  try {
+    await render(shipped(), MR);
+    expect(await reserveOf('.tui-sheet-dock', 150)).toBe('150px');
+    await render(shipped({ delivery: { outcome: 'stuck', at: 5 } }), MR);
+    expect(await reserveOf('.tui-sheet-dock', 103)).toBe('103px');
+    conflict = true;
+    await render(shipped({ execution: 'unassigned' }), MR);
+    await click(dockButton('retry'));
+    expect(await reserveOf('.tui-sheet-lost', 332)).toBe('332px');
+  } finally {
+    restore();
+  }
 });

@@ -61,6 +61,7 @@ import {
   Choices,
   Note,
   ProseContext,
+  reserveDock,
   SheetLost,
   SheetRows,
   type RowChip,
@@ -1015,7 +1016,7 @@ function RespondSheetBody({
               </div>
               {mr && <MrStatusCard mr={mr} />}
             </div>
-            <div className="tui-sheet-dock">
+            <div className="tui-sheet-dock" ref={reserveDock}>
               <div className="tui-sheet-dock-head">
                 <h3 className="tui-sheet-dock-heading">
                   {revising ? 'Send back' : plan ? 'Responses' : 'Replies'}
