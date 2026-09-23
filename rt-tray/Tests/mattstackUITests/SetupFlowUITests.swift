@@ -162,17 +162,19 @@ final class SetupFlowUITests: XCTestCase {
         XCTAssertFalse(el("setup.done.continue").isEnabled, "Finish waits on a chosen writing style")
         el("setup.done.beforeYouFinish.skills.writing-style.action").click()
         waitFor("setup.choose")
-        // The sheet's own identifier exists before its slide-in presentation
-        // animation settles; a scroll attempted that early computes a hit
-        // point against a frame the sheet has not visually reached yet (see
-        // "Unable to find hit point for ScrollView", confirmed against a real
-        // run 2026-09-23). A visible preset option becoming hittable is the
-        // sheet's own signal that it has actually finished presenting.
-        waitUntilHittable("setup.choose.option.mattstack:writing-style-sparse")
-        // The own card sits at the bottom of the sheet's 420pt-tall scroll
-        // region and is not reliably inside the visible/hittable viewport
-        // right after the sheet appears; scroll it into view before clicking.
-        app.descendants(matching: .scrollView).firstMatch.scroll(byDeltaX: 0, deltaY: -400)
+        // The ScrollView element itself is never a valid scroll target here:
+        // its content (three option cards plus the own card) fills its whole
+        // frame edge to edge, so it has no exposed hit point of its own for
+        // XCUITest to click through to ("Unable to find hit point for
+        // ScrollView", confirmed against two real runs, including one where
+        // the sheet was already fully presented and interactive -- this is
+        // not a presentation-timing race). A scroll wheel event posted at a
+        // real, hittable card inside the scroll view reaches the same
+        // NSScrollView a trackpad scroll over that card would.
+        let structured = el("setup.choose.option.mattstack:writing-style-structured")
+        waitUntilHittable("setup.choose.option.mattstack:writing-style-structured")
+        structured.scroll(byDeltaX: 0, deltaY: -300)
+        waitUntilHittable("setup.choose.own")
         el("setup.choose.own").click()
         // The own card's text field only renders once `choice == .own` takes
         // effect; a click right after selecting the card can otherwise race it.
