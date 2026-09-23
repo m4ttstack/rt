@@ -421,6 +421,27 @@ func TestActionRowIsACursorStopBelowTheLastCommit(t *testing.T) {
 	}
 }
 
+// TestShiftDownOnActionRowIsANoOp: a shift move never extends onto the
+// action row, and a downward one never leaves it upward either.
+func TestShiftDownOnActionRowIsANoOp(t *testing.T) {
+	instantSelectTick(t)
+	m := pagingMission(t, pagingCommits(30))
+	onMoreRow(t, m)
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}); cmd != nil {
+		t.Fatal("shift+down on the action row must schedule nothing")
+	}
+	if !m.historyOnMoreRow() || m.historyCursor != "c29" || m.historyAnchor != "" {
+		t.Fatalf("shift+down on the action row must leave the cursor on it, onMore=%v cursor %q anchor %q", m.historyOnMoreRow(), m.historyCursor, m.historyAnchor)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}); cmd != nil || m.historyOnMoreRow() || m.historyCursor != "c29" {
+		t.Fatalf("shift+up leaves the row for the last commit like up does, onMore=%v cursor %q", m.historyOnMoreRow(), m.historyCursor)
+	}
+	m.historyAnchor = ""
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}); cmd != nil || m.historyOnMoreRow() || m.historyCursor != "c29" {
+		t.Fatalf("shift+down from the last commit never extends onto the action row, onMore=%v cursor %q", m.historyOnMoreRow(), m.historyCursor)
+	}
+}
+
 // TestEnterOnActionRowRequestsOnePage: enter asks for the next page once;
 // until it lands the row reads "Loading…" in Faint and does nothing.
 func TestEnterOnActionRowRequestsOnePage(t *testing.T) {

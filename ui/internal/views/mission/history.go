@@ -258,8 +258,8 @@ func historyReloaded(prev, next []HistoryCommitRow) bool {
 }
 
 // historyMove steps the cursor through the visible commits and, below the
-// last one, onto the action row. Landing on the action row selects nothing,
-// and a shift move never extends onto it.
+// last one, onto the action row. Landing on the action row selects nothing;
+// a shift move never extends onto it, and shift+down on it goes nowhere.
 func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	commits := m.model.History.Commits
 	visible := m.historyVisible()
@@ -267,6 +267,9 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 		return nil
 	}
 	m.historyFreeScroll = false
+	if extend && delta > 0 && m.historyOnMoreRow() {
+		return nil
+	}
 	pos := len(visible)
 	if !m.historyOnMoreRow() {
 		pos = slices.Index(visible, m.historyIndex(m.historyCursor))
