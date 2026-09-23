@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Commit } from "../../../packages/git-core/src/index.ts";
 import { AppFileStatusKind } from "../../../packages/git-core/src/index.ts";
 import { HistoryStore } from "../history.ts";
-import { buildHistoryModel, commitAuthors, formatByline, formatExpandedAuthor, formatRelative, historyGroupLabel } from "../history-model.ts";
+import { buildHistoryModel, commitAuthors, formatByline, formatExpandedAuthor, formatRelative, historyGroupLabel, historyWhen } from "../history-model.ts";
 
 const NOW = new Date("2026-09-22T12:00:00Z");
 
@@ -150,6 +150,29 @@ describe("formatRelative (GitHub Desktop's format-relative.ts)", () => {
 
   test("a future time reads forward", () => {
     expect(formatRelative(2 * HOUR)).toBe("in 2 hours");
+  });
+});
+
+describe("historyWhen (GitHub Desktop's commit list RelativeTime)", () => {
+  const now = new Date(2026, 8, 23, 15);
+  const at = (ms: number) => new Date(now.getTime() + ms);
+
+  test("under a minute either way is just now", () => {
+    expect(historyWhen(now, now)).toBe("just now");
+    expect(historyWhen(at(-59_000), now)).toBe("just now");
+    expect(historyWhen(at(59_000), now)).toBe("just now");
+  });
+
+  test("past times read relative, however old", () => {
+    expect(historyWhen(at(-5 * 60_000), now)).toBe("5 minutes ago");
+    expect(historyWhen(new Date(2024, 8, 23, 15), now)).toBe("2 years ago");
+  });
+
+  test("more than a minute ahead (clock skew) reads as the absolute date and time", () => {
+    // The joiner between date and time ("," or " at") varies with ICU.
+    const when = historyWhen(new Date(2026, 8, 23, 17, 5), now);
+    expect(when).toStartWith("Sep 23, 2026");
+    expect(when).toEndWith("5:05 PM");
   });
 });
 

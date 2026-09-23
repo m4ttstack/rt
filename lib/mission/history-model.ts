@@ -98,6 +98,21 @@ export function formatRelative(ms: number): string {
   return relativeFormatter.format(year * sign, "year");
 }
 
+const MINUTE_MS = 60_000;
+const futureFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
+
+/**
+ * GHD getRelativeTimeInfoFromDate's relativeText with onlyRelative, which is
+ * what the commit list's RelativeTime renders (app/src/ui/relative-time.tsx).
+ */
+export function historyWhen(then: Date, now: Date): string {
+  const diff = then.getTime() - now.getTime();
+  const duration = Math.abs(diff);
+  if (diff > 0 && duration > MINUTE_MS) return futureFormatter.format(then);
+  if (duration < MINUTE_MS) return "just now";
+  return formatRelative(diff);
+}
+
 /**
  * The date header a commit sits under in the History list, on the machine's
  * local calendar with weeks starting Monday. A date after now (clock skew)
@@ -121,7 +136,7 @@ export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loadin
       shortSha: c.shortSha,
       summary: c.summary,
       byline: formatByline(commitAuthors(c)),
-      when: formatRelative(c.author.date.getTime() - opts.now.getTime()),
+      when: historyWhen(c.author.date, opts.now),
       group: historyGroupLabel(c.author.date, opts.now),
       tags: c.tags,
       unpushed: store.localShas.has(c.sha),
