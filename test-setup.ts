@@ -9,7 +9,7 @@
  * own explicit HOME when spawning the binary, so this never reaches them.
  */
 import { afterAll } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
@@ -33,7 +33,11 @@ process.env.RT_GH_TOKEN_FALLBACK = "off";
 // afterAll; a run killed before it leaves its dirs behind, and the next
 // start sweeps every dir whose run pid is gone.
 const testRoot = join(tmpdir(), "rt-tests");
-mkdirSync(testRoot, { recursive: true });
+mkdirSync(testRoot, { recursive: true, mode: 0o700 });
+const rootStat = lstatSync(testRoot);
+if (!rootStat.isDirectory() || rootStat.uid !== process.getuid?.()) {
+  throw new Error(`${testRoot} is not a directory this user owns; refusing to sweep it`);
+}
 for (const name of readdirSync(testRoot)) {
   const pid = Number(name.split("-")[0]);
   if (Number.isInteger(pid) && pid > 0 && pidIsAlive(pid)) continue;
