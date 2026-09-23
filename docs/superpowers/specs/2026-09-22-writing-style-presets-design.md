@@ -29,6 +29,7 @@ Ratified with the operator on 2026-09-22.
 | --- | --- |
 | Storage | Registered setting `skills.writingStyle`, user and team scope, value = a skill id, no registry default |
 | Lookup order | Lives in rt code: setting, then the `preferences.md` section, then the conversational preset |
+| Lookup call | Skills call `skills writing-style show` through the mattstack MCP server's curated rt-verb tool (RT-244, its own spec, shipping in the same rt release). No `BASE_PERMISSIONS` entry |
 | Unset fallback | `mattstack:writing-style-conversational` (in the resolver, never in the registry row) |
 | Presets | Three, shipped in the mattstack plugin: sparse, conversational, structured, plus one shared rules include |
 | Own style | Any installed skill id; personal skills can live in the home repo and travel; a scaffold verb copies a preset to start from |
@@ -103,6 +104,14 @@ before anything else, because the app's "Use my own skill…" text reaches argv
 and a leading dash would parse as a flag.
 
 The new command module gets its `lib/module-registry.ts` thunk.
+
+`show` is marked agent-safe on its command node, so the curated rt-verb tool
+on the mattstack MCP server (RT-244) can run it. That server is allowed at
+server level on every machine, so a board pane in default permission mode
+never stops on a prompt at the style lookup, existing installs included. A
+Bash call would prompt there, and an allowlist entry would reach new installs
+only. `use`, `list` and `new` stay CLI-only: they are for people, the setup row
+and the app, not for agents.
 
 ### 3. Personal styles in the home repo
 
@@ -248,18 +257,20 @@ and `tests/repo-purity.sh` enforce this.
 
 `writing-style-lookup` holds the one instruction every drafting skill carries:
 
-> Before drafting, run `rt skills writing-style show --json` and load the skill
-> its `skill` names. That load is step one: compose in that voice from the
-> first word, never as a pass over a finished draft. If the command fails,
-> load the skill named on the `writing-style:` line of
-> `~/.mattstack/user/skills/preferences.md` if there is one. If that is
-> missing too, or the skill will not load, load
+> Before drafting, call the mattstack rt-verb tool with
+> `skills writing-style show` and load the skill its `skill` names. That load
+> is step one: compose in that voice from the first word, never as a pass over
+> a finished draft. If the tool is unavailable or fails, load the skill named
+> on the `writing-style:` line of `~/.mattstack/user/skills/preferences.md` if
+> there is one. If that is missing too, or the skill will not load, load
 > `mattstack:writing-style-conversational`.
 
-The failure path repeats one rung of the order on purpose. Plugin and pack
-updates travel apart from rt's own updates, so a Mac can hold the new skills
-and an rt without `show`, and that Mac should still keep a style declared in
-`preferences.md`.
+The exact tool name and argument shape come from the RT-244 spec. The failure
+path repeats one rung of the order on purpose. Plugin and pack updates travel
+apart from rt's own updates, so a Mac can hold the new skills and an rt
+without the tool, and that Mac should still keep a style declared in
+`preferences.md`. The failure path reads a file and never shells out, so it
+cannot raise a prompt either.
 
 | Where | Change |
 | --- | --- |
@@ -286,7 +297,8 @@ release after the next one, whose scope is already fixed.
    catalog refresh step) that includes the presets. Otherwise the row offers
    presets the installed plugin lacks.
 3. **Lookup-line changes** (mattstack-skills lookup include, team pack fills,
-   board wrappers) merge after that rt release has shipped. The failure path
+   board wrappers) merge after the rt release carrying both `show` and the
+   RT-244 tool has shipped. The failure path
    in section 7 covers anyone who has not taken the rt update yet. The team
    pack recompiles through `rt skills sync --pack <pack>`.
 
@@ -302,6 +314,7 @@ release after the next one, whose scope is already fixed.
   - `use` with a personal skill links it first.
   - `new` output has no compiler comments and has the right `name`.
   - The `show --json` envelope in an e2e test.
+  - `show` is marked agent-safe; `use`, `list` and `new` are not.
   - The picker-conformance gate and the module registry.
 - **Setup:**
   - Each row state, including the no-action row before Install.
