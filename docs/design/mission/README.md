@@ -315,7 +315,7 @@ division.
 | UndoStrip | 30 | 1.15 | 1 | |
 | Keybar | 28 | 1.08 | 1 | |
 | DiffHeader | 34 | 1.31 | 1 | |
-| Context menu | n/a | n/a | 2 + 3 + rows | 1 border row top and bottom (`modalBoxFrame`'s rounded border), `modalHeadRows`' 3 content rows (header, filter line, a rule) between them, then one line per menu row and one rule line per section boundary. Unlike every other foldout, which grows the frame to fit, glitter caps the box at the frame's remaining height and windows the row region behind the shared scroll viewport and thumb once rows don't fit, one column narrower beside the thumb. The Changes tab's shortest workable frame is 27 rows (pre-existing, for the docked commit block to fit), which is also the floor the menu-scrolling tests build against. |
+| Context menu | n/a | n/a | 2 + 3 + rows | 1 border row top and bottom (`modalBoxFrame`'s rounded border), `modalHeadRows`' 3 content rows (header, filter line, a rule) between them, then one line per menu row and one rule line per section boundary. Unlike every other foldout, which grows the frame to fit, glitter caps the box at the frame's remaining height and windows the row region behind the shared scroll viewport and thumb once rows don't fit, one column narrower beside the thumb. The Changes tab's shortest workable frame is 27 rows plus one per extra docked strip (pre-existing, for the docked commit block to fit; a stash strip makes 28), which is also the floor the menu-scrolling tests build against. |
 
 Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
 tabs-gap blank) and the docked block gains 4 (the commit-box top-pad blank,
