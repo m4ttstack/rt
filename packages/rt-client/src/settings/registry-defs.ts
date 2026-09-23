@@ -54,6 +54,15 @@ export const REGISTRY: readonly SettingDef[] = [
     description: "Per-repo user approval of a team-authored `ready` shell ladder, as its content hash (RT-89). The reader trusts only user/machine scopes so a team store can never approve its own shell; a hash mismatch after a team edit re-holds the ladder until `rt worktree ready-approve` records the new one.",
   },
   {
+    key: "rt.ignoredMrs",
+    type: "object",
+    scopes: ALL_SCOPES,
+    merge: "deep",
+    repoScoped: true,
+    migrated: true,
+    description: "Per-repo MRs the daemon never tracks: {targetBranches?: glob[], authors?: username[]}. Target-branch globs are expanded to the repo's exact branch names and excluded on the GitLab request itself; authors are dropped after fetching. Absent means nothing is ignored.",
+  },
+  {
     key: "rt.repoIdentityOverrides",
     type: "object",
     scopes: ["machine"],
