@@ -301,7 +301,7 @@ function snapshotTree(dir: string): string[] {
 // Each call below is a fresh stub process that itself spawns the fixture
 // claude binary, so the cold starts stack up; a generous timeout keeps this
 // from flaking under load rather than proving anything about the code.
-test("writing-style real-data mode: options and suggestions come from the fixture home, use accepts a fixture id and rejects an unknown one, and nothing is written", async () => {
+test("writing-style real-data mode: options and suggestions come from the fixture home, use accepts a fixture id and rejects an unknown one, a chosen personal style reads ready, and nothing is written", async () => {
   const { home, claudeBin } = buildRealFixture();
   const state = mkdtempSync(join(tmpdir(), "stub-"));
   const extraEnv = { RT_STUB_REAL_WRITING_STYLE: "1", RT_STUB_REAL_HOME: home, RT_STUB_CLAUDE_BIN: claudeBin };
@@ -331,8 +331,30 @@ test("writing-style real-data mode: options and suggestions come from the fixtur
   expect(used.code).toBe(0);
   expect(used.lines[0]).toMatchObject({ skill: "team-voice", scope: "user" });
 
+  // Real rt's `use` links a chosen personal skill before returning; this mode
+  // never writes to realHome, so the row must still read ready off the
+  // in-memory installed set, not off a symlink that was never created.
+  const afterUse = await run("writing-style", ["setup", "plan", "--json"], "", state, extraEnv);
+  const readyRow = writingStyleRow(afterUse.lines[0])!;
+  expect(readyRow).toMatchObject({ status: "ready", detail: "team-voice (yours)" });
+  expect((readyRow.action as ChooseAction).selected).toBe("team-voice");
+
   expect(snapshotTree(home)).toEqual(before);
 }, 20000);
+
+test("writing-style real-data mode requires RT_STUB_REAL_HOME: unset or non-existent fails loudly naming it", async () => {
+  const unset = await run("writing-style", ["setup", "plan", "--json"], "", undefined, { RT_STUB_REAL_WRITING_STYLE: "1" });
+  expect(unset.code).toBe(2);
+  expect(unset.lines[0].error.code).toBe("no-real-home");
+  expect(unset.lines[0].error.message).toContain("RT_STUB_REAL_HOME");
+
+  const missing = join(tmpdir(), `stub-real-home-missing-${Date.now()}`);
+  const notADir = await run("writing-style", ["setup", "plan", "--json"], "", undefined, {
+    RT_STUB_REAL_WRITING_STYLE: "1", RT_STUB_REAL_HOME: missing,
+  });
+  expect(notADir.code).toBe(2);
+  expect(notADir.lines[0].error.code).toBe("no-real-home");
+});
 
 test("every other scenario ignores RT_STUB_REAL_WRITING_STYLE (only the writing-style scenario reads it)", async () => {
   const { home, claudeBin } = buildRealFixture();

@@ -7,9 +7,9 @@ let chooseSuggestionsChecks: [Check] = [
         c.expectEqual(ChooseSuggestions.matching("   ", in: ["x:y", "team-voice"]), [])
     },
     Check("ChooseSuggestions.matching: case-insensitive, prefix matches before contains matches, each group keeps input order") { c in
-        let all = ["team:writing-style", "matt:writing-style", "x:writing", "writing-team"]
-        c.expectEqual(ChooseSuggestions.matching("writing", in: all), ["writing-team", "team:writing-style", "matt:writing-style", "x:writing"])
-        c.expectEqual(ChooseSuggestions.matching("WRITING", in: all), ["writing-team", "team:writing-style", "matt:writing-style", "x:writing"])
+        let all = ["team:writing-style", "acme:writing-style", "x:writing", "writing-team"]
+        c.expectEqual(ChooseSuggestions.matching("writing", in: all), ["writing-team", "team:writing-style", "acme:writing-style", "x:writing"])
+        c.expectEqual(ChooseSuggestions.matching("WRITING", in: all), ["writing-team", "team:writing-style", "acme:writing-style", "x:writing"])
     },
     Check("ChooseSuggestions.matching: drops an id exactly equal to the input") { c in
         c.expectEqual(ChooseSuggestions.matching("team-voice", in: ["team-voice", "team-voice-2"]), ["team-voice-2"])

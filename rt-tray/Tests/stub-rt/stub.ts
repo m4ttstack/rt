@@ -3,8 +3,7 @@
 // State that must change between invocations (a permission granted, a step
 // retried) lives in RT_STUB_STATE_DIR so every call is a fresh process like
 // the real rt.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveClaudeBin } from "../../../lib/claude-bin.ts";
 import { FALLBACK_WRITING_STYLE, isPresetId, isValidSkillId } from "../../../lib/skills/writing-style.ts";
@@ -84,8 +83,15 @@ const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_
 // setSetting call ever runs against realHome.
 const REAL_WRITING_STYLE = scenario === "writing-style" && process.env.RT_STUB_REAL_WRITING_STYLE === "1";
 
+// No fallback: Bun's os.userInfo().homedir honors HOME, and the app runs the
+// stub under a throwaway HOME, so a default here would silently read that
+// throwaway home instead of the operator's real one.
 function realHome(): string {
-  return process.env.RT_STUB_REAL_HOME ?? userInfo().homedir;
+  const home = process.env.RT_STUB_REAL_HOME;
+  if (!home || !existsSync(home) || !statSync(home).isDirectory()) {
+    fail("no-real-home", "RT_STUB_REAL_HOME must be set to an existing directory in real-data mode");
+  }
+  return home;
 }
 
 // A failed or missing claude binary reads as "no plugins", not an error: the
@@ -109,6 +115,11 @@ function realWritingStyleRow() {
   const idPath = join(stateDir, "style-id");
   const styleId = chosen && existsSync(idPath) ? readFileSync(idPath, "utf8") : undefined;
   const resolved = styleId ? { skill: styleId, source: "user" as const } : { skill: FALLBACK_WRITING_STYLE, source: "fallback" as const };
+  // Real rt's `use` links a chosen personal skill into ~/.claude/skills before
+  // returning; this mode never writes to realHome, so a stub-chosen personal
+  // name is instead added to the in-memory installed set, matching what the
+  // real pipeline would show without ever linking anything on disk.
+  if (styleId && inventory.personal.some((p) => p.name === styleId)) inventory.installed.add(styleId);
   const options = listWritingStyles(inventory, resolved).options;
   return { ...buildWritingStyleRow({ homeReady: true, resolved, inventory, options }), waivable: false };
 }
