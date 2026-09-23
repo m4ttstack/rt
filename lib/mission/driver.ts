@@ -1134,6 +1134,7 @@ export class MissionDriver {
         case "open-repo-editor": {
           const target = p.action === "open-repo-editor" ? root : abs;
           if (!target) break;
+          if (!this.editor) this.resolveEditor();
           if (!this.editor) {
             this.state.notice = "No editor set: run rt code once to pick one";
             break;

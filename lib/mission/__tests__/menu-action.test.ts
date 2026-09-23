@@ -301,6 +301,15 @@ describe("mission:menu-action: editor", () => {
     expect(last.notice).toBe("No editor set: run rt code once to pick one");
   });
 
+  test("open-editor with no editor cached re-resolves once before giving up", async () => {
+    const { effects, last } = await run([menu({ action: "open-editor", path: "src/a.ts" })], {
+      editor: (call) => (call === 1 ? null : ZED),
+    });
+    expect(effects.resolveEditor).toEqual([ROOT, ROOT]);
+    expect(effects.launch).toEqual([["zed", `${ROOT}/src/a.ts`]]);
+    expect(last.notice).toBe("");
+  });
+
   test("open-repo-editor launches the resolved editor on the worktree root", async () => {
     const { effects } = await run([menu({ action: "open-repo-editor" })]);
     expect(effects.launch).toEqual([["zed", ROOT]]);
