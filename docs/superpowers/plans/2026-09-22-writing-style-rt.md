@@ -78,6 +78,11 @@ Before the final `];` of the defs array in `registry-defs.ts`:
   },
 ```
 
+The same test file pins the full key set: add `"skills.writingStyle"` to the
+`suiteKeys` list (around line 271) and change its `toHaveLength(75)` to
+`toHaveLength(76)`. That failure before the edit is expected, not a sign the
+row is wrong.
+
 - [ ] **Step 4: Run tests and rebuild the client**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/registry.test.ts`
@@ -858,11 +863,14 @@ Run: `bun test commands/__tests__/skills-writing-style.test.ts lib/__tests__/pic
 Expected: PASS.
 Run: `bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/skills-writing-style.test.ts`
 Expected: PASS.
+Run: `bun run docs:gen && bun run docs:check`
+Expected: the generated command reference under `website/docs/reference/`
+gains the new verbs, and the check passes (CI fails on reference drift).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts lib/module-registry.ts e2e/tests/skills-writing-style.test.ts
+git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts lib/module-registry.ts e2e/tests/skills-writing-style.test.ts website/docs/reference
 git commit -m "skills writing-style: show and list"
 ```
 
@@ -876,7 +884,7 @@ git commit -m "skills writing-style: show and list"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `commands/__tests__/skills-writing-style.test.ts` (import `writingStyleUse`, and `existsSync` from `fs`):
+Append to `commands/__tests__/skills-writing-style.test.ts` (import `writingStyleUse`, and `existsSync`, `lstatSync`, `writeFileSync` from `fs`):
 
 ```ts
 describe("use", () => {
@@ -914,6 +922,23 @@ describe("use", () => {
     expect(e.code).toBe("unknown-skill");
     expect(e.message).toContain("mattstack:writing-style-sparse");
     expect(writes).toEqual([]);
+  });
+
+  test("a bad id is refused before the home-repo check or any lookup", async () => {
+    let listed = false;
+    await expect(writingStyleUse(["-rf", "--json"], {}, fakeDeps({ pluginListStdout: async () => { listed = true; return "[]"; } }))).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("bad-id");
+    expect(listed).toBe(false);
+  });
+
+  test("a personal skill is linked, then accepted", async () => {
+    homeRepo();
+    const dir = join(home, ".mattstack", "user", "skills", "my-voice");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: my-voice\ndescription: x\n---\nbody\n");
+    await writingStyleUse(["my-voice", "--json"], {}, fakeDeps());
+    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+    expect(writes[0]!.value).toBe("my-voice");
   });
 
   test("no id without a TTY is usage; with a TTY it picks", async () => {
@@ -955,6 +980,7 @@ function parseUseArgs(args: string[]): { id: string | undefined; scope: string; 
 
 export async function writingStyleUse(args: string[], _ctx: CommandContext = {}, deps: WritingStyleDeps = realWritingStyleDeps()): Promise<void> {
   const { id: given, scope, json } = parseUseArgs(args);
+  if (given !== undefined && !isValidSkillId(given)) return refuse(new UserActionableError("bad-id", `"${given}" is not a skill id`), json, "use", deps);
   if (scope !== "user" && scope !== "team") return refuse(new UserActionableError("usage", `--scope must be user or team, not "${scope}"`), json, "use", deps);
   // setSetting creates the store directory, and a write inside ~/.mattstack/user before home.init or home.restore clones makes that clone fail.
   if (!existsSync(homeGitDir(deps.home()))) {
@@ -1007,13 +1033,13 @@ In `lib/command-tree-def.ts`, add under `writing-style.subcommands`:
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun test commands/__tests__/skills-writing-style.test.ts lib/__tests__/picker-conformance.test.ts && bun run picker:check`
-Expected: PASS; `0 violation(s)`.
+Run: `bun test commands/__tests__/skills-writing-style.test.ts lib/__tests__/picker-conformance.test.ts && bun run picker:check && bun run docs:gen && bun run docs:check`
+Expected: PASS; `0 violation(s)`; docs check passes.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts
+git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts website/docs/reference
 git commit -m "skills writing-style: use, guarded by the home repo"
 ```
 
@@ -1182,13 +1208,13 @@ In `lib/command-tree-def.ts`, add under `writing-style.subcommands`:
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun test commands/__tests__/skills-writing-style.test.ts && bun run picker:check`
-Expected: PASS; `0 violation(s)`.
+Run: `bun test commands/__tests__/skills-writing-style.test.ts && bun run picker:check && bun run docs:gen && bun run docs:check`
+Expected: PASS; `0 violation(s)`; docs check passes.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts
+git add commands/skills-writing-style.ts commands/__tests__/skills-writing-style.test.ts lib/command-tree-def.ts website/docs/reference
 git commit -m "skills writing-style: new scaffolds a personal style from a preset"
 ```
 
@@ -1203,11 +1229,11 @@ git commit -m "skills writing-style: new scaffolds a personal style from a prese
 **Interfaces:**
 - Produces:
   - `interface ChooseOption { id: string; label: string; detail: string; sample?: string }`
-  - Action variant `{ type: "choose"; label: string; verb: string[]; options: ChooseOption[]; other?: { label: string; hint: string } }`
+  - Action variant `{ type: "choose"; label: string; verb: string[]; options: ChooseOption[]; selected?: string; other?: { label: string; hint: string } }`
   - `Row.waivable?: boolean`
   - `WAIVABLE_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"]`
-  - `FINISH_GATED_ROW_IDS` gains `"skills.writing-style"`
   - `DONE_ACTION_TYPES = ["open-url", "steps", "run", "choose"] as const` (parity with the app's Done screen)
+  - `FINISH_GATED_ROW_IDS` is NOT changed here; Task 8 adds the row id together with the row, since `validators-tools.test.ts` asserts the finish-gated tool rows equal that list.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1219,8 +1245,7 @@ describe("non-waivable finish gates", () => {
   const ext = row({ id: "tool.fast-browser-extension", kind: "tool", title: "Ext", why: "x", required: false, status: "needs-you", detail: "d", finishGated: true });
   const groups = [{ id: "tools" as const, title: "Tools", rows: [style, ext] }];
 
-  test("the writing-style row is finish-gated but not waivable", () => {
-    expect(FINISH_GATED_ROW_IDS).toContain("skills.writing-style");
+  test("only the Fast Browser row is waivable", () => {
     expect(WAIVABLE_ROW_IDS).toEqual(["tool.fast-browser-extension"]);
   });
 
@@ -1237,10 +1262,10 @@ describe("non-waivable finish gates", () => {
     expect(applied.map((r) => [r.id, r.waivable])).toEqual([["skills.writing-style", false], ["tool.fast-browser-extension", true]]);
   });
 
-  test("waive refuses the row; unwaive still clears a stale entry", () => {
-    const store = { ids: ["skills.writing-style"], read() { return this.ids; }, write(ids: string[]) { this.ids = ids; } };
+  test("waive refuses a finish-gated row that is not waivable", () => {
+    const store = { ids: [] as string[], read() { return this.ids; }, write(ids: string[]) { this.ids = ids; } };
     expect(() => waiveRow("skills.writing-style", store)).toThrow(UserActionableError);
-    expect(unwaiveRow("skills.writing-style", store)).toEqual({ waived: [], changed: true });
+    expect(store.ids).toEqual([]);
   });
 });
 ```
@@ -1267,7 +1292,7 @@ Add to the `Action` union:
 
 ```ts
   // The app appends the picked id and --json to verb; "other" collects a free-text id for the same verb.
-  | { type: "choose"; label: string; verb: string[]; options: ChooseOption[]; other?: { label: string; hint: string } }
+  | { type: "choose"; label: string; verb: string[]; options: ChooseOption[]; selected?: string; other?: { label: string; hint: string } }
 ```
 
 Add to `Row`:
@@ -1277,12 +1302,9 @@ Add to `Row`:
   waivable?: boolean;
 ```
 
-Replace the ids block:
+Add beside `FINISH_GATED_ROW_IDS` (leave that list unchanged in this task):
 
 ```ts
-/** The rows that gate Finish. */
-export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension", "skills.writing-style"];
-
 /** The finish-gated rows `rt setup waive` may skip; the gate honors a stored waiver only for these. */
 export const WAIVABLE_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];
 
@@ -1343,7 +1365,7 @@ test("DONE_ACTION_TYPES matches the app's DoneActions.handled", () => {
 - [ ] **Step 4: Run tests**
 
 Run: `bun test lib/setup commands/__tests__/setup*.test.ts`
-Expected: PASS. Fix any existing test that asserted the old `FINISH_GATED_ROW_IDS` or waive picker candidates.
+Expected: PASS after one deliberate update: `commands/__tests__/setup-waive.test.ts` (around line 80) expects `not-finish-gated` for an id `waive` now refuses with `not-waivable` (waive checks the waivable list first); change that expectation. `unwaive` keeps `not-finish-gated`. Do not edit any other existing assertion to make it pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1371,8 +1393,9 @@ git commit -m "setup contract: choose action, waivable rows, non-waivable finish
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { DONE_ACTION_TYPES } from "../contract.ts";
-import { writingStyleRow } from "../validators/writing-style.ts";
+import { DONE_ACTION_TYPES, FINISH_GATED_ROW_IDS, WAIVABLE_ROW_IDS, finishBlockers } from "../contract.ts";
+import { unwaiveRow } from "../finish-gate.ts";
+import { writingStyleRow, writingStyleRowFor } from "../validators/writing-style.ts";
 import type { SkillInventory } from "../../skills/writing-style-sources.ts";
 
 const inv = (installed: string[] = [], disabled: [string, string][] = []): SkillInventory => ({
@@ -1419,6 +1442,30 @@ describe("writingStyleRow", () => {
     const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory: inv(), options: opts });
     expect((DONE_ACTION_TYPES as readonly string[]).includes(r.action!.type)).toBe(true);
   });
+
+  test("a ready row preselects the current style in its choose action", () => {
+    const r = writingStyleRow({ homeReady: true, resolved: { skill: "mattstack:writing-style-sparse", source: "user" }, inventory: inv(), options: opts });
+    expect((r.action as { selected?: string }).selected).toBe("mattstack:writing-style-sparse");
+  });
+});
+
+describe("writing-style row in the finish gate", () => {
+  test("the row id is finish-gated and not waivable; unwaive still clears a stale entry", () => {
+    expect(FINISH_GATED_ROW_IDS).toContain("skills.writing-style");
+    expect(WAIVABLE_ROW_IDS).not.toContain("skills.writing-style");
+    const store = { ids: ["skills.writing-style"], read() { return this.ids; }, write(ids: string[]) { this.ids = ids; } };
+    expect(unwaiveRow("skills.writing-style", store)).toEqual({ waived: [], changed: true });
+  });
+
+  test("an error row never blocks Finish: a gate that could not be evaluated must not strand the wizard", () => {
+    const broken = writingStyleRowFor(
+      { home: "/nonexistent-home", exists: () => { throw new Error("store unreadable"); } },
+      { code: 0, stdout: "[]", stderr: "" },
+    );
+    expect(broken.status).toBe("error");
+    expect(broken.finishGated).toBe(false);
+    expect(finishBlockers([{ id: "tools", title: "Tools", rows: [broken] }])).toEqual([]);
+  });
 });
 ```
 
@@ -1460,12 +1507,13 @@ const SOURCE_LABEL: Record<Exclude<ResolvedWritingStyle["source"], "fallback">, 
   preferences: "from preferences.md",
 };
 
-function chooseAction(options: WritingStyleOption[]): Action {
+function chooseAction(options: WritingStyleOption[], selected?: string): Action {
   return {
     type: "choose",
     label: "Choose style…",
     verb: ["skills", "writing-style", "use"],
     options: options.map(({ id, label, detail, sample }) => ({ id, label, detail, ...(sample ? { sample } : {}) })),
+    ...(selected ? { selected } : {}),
     other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." },
   };
 }
@@ -1475,7 +1523,7 @@ export function writingStyleRow(input: { homeReady: boolean; resolved: ResolvedW
   // use writes the user store inside the home repo, which does not exist until Install clones it.
   if (!homeReady) return row({ ...BASE, status: "needs-you", detail: "You'll choose this after Install" });
 
-  const action = chooseAction(options);
+  const action = chooseAction(options, resolved.source === "fallback" ? undefined : resolved.skill);
   if (resolved.source === "fallback") {
     return row({ ...BASE, status: "needs-you", detail: "Choose how your reviews and replies read (or run rt skills writing-style use)", action });
   }
@@ -1487,14 +1535,18 @@ export function writingStyleRow(input: { homeReady: boolean; resolved: ResolvedW
   return row({ ...BASE, status: "ready", detail: `${label} (${SOURCE_LABEL[resolved.source]})`, action });
 }
 
-/** A throw here would reach buildGroup's catch and replace every tools row, so the row reports its own error. */
+/**
+ * A throw here would reach buildGroup's catch and replace every tools row, so
+ * the row reports its own error. The error row is not finish-gated: it cannot
+ * be waived and carries no action, so gating on it would strand Finish.
+ */
 export function writingStyleRowFor(p: Pick<Probes, "home" | "exists">, pluginList: ExecResult): Row {
   try {
     const inventory = readSkillInventory(p.home, pluginList.code === 0 ? parsePluginEntries(pluginList.stdout) : null);
     const resolved = resolveWritingStyle({ home: p.home });
     return writingStyleRow({ homeReady: p.exists(homeGitDir(p.home)), resolved, inventory, options: listWritingStyles(inventory, resolved).options });
   } catch (err) {
-    return row({ ...BASE, status: "error", detail: `could not read the writing style: ${err instanceof Error ? err.message : String(err)}` });
+    return row({ ...BASE, finishGated: false, status: "error", detail: `could not read the writing style: ${err instanceof Error ? err.message : String(err)}` });
   }
 }
 ```
@@ -1507,15 +1559,24 @@ In `lib/setup/validators/tools.ts`, right after `rows.push(pluginsRow(pluginList
 
 with `import { writingStyleRowFor } from "./writing-style.ts";`.
 
+In `lib/setup/contract.ts`, add the row id to the finish gate now that the row exists:
+
+```ts
+export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension", "skills.writing-style"];
+```
+
 - [ ] **Step 4: Run tests**
 
-Run: `bun test lib/setup`
-Expected: PASS. Existing `toolRows` tests that assert the exact row list gain `skills.writing-style` after `tool.plugins`; update them.
+Run: `bun test lib/setup commands/__tests__/setup*.test.ts`
+Expected: PASS after these deliberate updates, and no others:
+- `validators-tools.test.ts` (around line 465): the finish-gated tool rows now equal both ids, matching `FINISH_GATED_ROW_IDS`.
+- `plan.test.ts` (around line 280, "exactly one finish-gated row today"): now two.
+- Tests that assert the exact tools row list gain `skills.writing-style` right after `tool.plugins`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/setup/validators/writing-style.ts lib/setup/validators/tools.ts lib/setup/__tests__
+git add lib/setup/validators/writing-style.ts lib/setup/validators/tools.ts lib/setup/contract.ts lib/setup/__tests__
 git commit -m "setup: writing-style row (finish-gated, not waivable, choose action)"
 ```
 
@@ -1529,11 +1590,11 @@ git commit -m "setup: writing-style row (finish-gated, not waivable, choose acti
 
 **Interfaces:**
 - Produces (Swift, `MattstackCore`):
-  - `ActionType.choose`; `ChooseOption { id, label, detail, sample? }`; `ChooseOther { label, hint }`; `RowAction.options: [ChooseOption]?`, `RowAction.other: ChooseOther?`
+  - `ActionType.choose` (and `ActionType: CaseIterable`); `ChooseOption { id, label, detail, sample? }`; `ChooseOther { label, hint }`; `RowAction.options: [ChooseOption]?`, `RowAction.selected: String?`, `RowAction.other: ChooseOther?`
   - `PlanRow.waivable: Bool` (absent decodes as `finishGated`)
   - `DispatchedAction.chooseOption(options: [ChooseOption], other: ChooseOther?)`
   - `ChoiceClient(rt:)` with `func choose(verb: [String], id: String) async -> String?` (nil on success, else failure copy)
-  - `DoneActions.handled: [ActionType]` = `[.openURL, .steps, .run, .choose]`
+  - `DoneRoute` (`.openURL(URL)`, `.steps([String])`, `.recheck`, `.choose`) and `DoneActions.route(_ action: RowAction) -> DoneRoute?`, the Done screen's only routing (Task 10's `DoneScreen.show` switches on it), so the parity check tests what Done actually does
 
 - [ ] **Step 1: Write the failing checks**
 
@@ -1544,10 +1605,12 @@ Append to `planModelsChecks` in `PlanModelsChecks.swift`:
         let json = """
         {"type":"choose","label":"Choose style…","verb":["skills","writing-style","use"],
          "options":[{"id":"mattstack:writing-style-sparse","label":"Sparse","detail":"Terse.","sample":"**issue:** x"}],
+         "selected":"mattstack:writing-style-sparse",
          "other":{"label":"Use my own skill…","hint":"Any installed skill id."}}
         """
         let a = try JSONDecoder().decode(RowAction.self, from: Data(json.utf8))
         c.expectEqual(a.type, .choose)
+        c.expectEqual(a.selected, "mattstack:writing-style-sparse")
         c.expectEqual(a.options?.first?.id, "mattstack:writing-style-sparse")
         c.expectEqual(a.options?.first?.sample, "**issue:** x")
         c.expectEqual(a.other?.label, "Use my own skill…")
@@ -1580,18 +1643,23 @@ Append to `rowActionChecks` in `RowActionChecks.swift`:
 Append to `doneModelChecks` in `DoneModelChecks.swift`:
 
 ```swift
-    Check("Done handles exactly the contract's DONE_ACTION_TYPES (lib/setup/contract.ts)") { c in
-        c.expectEqual(DoneActions.handled, [.openURL, .steps, .run, .choose])
+    Check("Done routes exactly the contract's DONE_ACTION_TYPES (lib/setup/contract.ts)") { c in
+        let sample = { (t: ActionType) in RowAction(type: t, label: "x", verb: ["a"], steps: ["s"], url: "https://example.com") }
+        let routed = Set(ActionType.allCases.filter { DoneActions.route(sample($0)) != nil })
+        c.expectEqual(routed, Set([ActionType.openURL, .steps, .run, .choose]))
     },
     Check("ChoiceClient: nil on success; the exit-2 envelope's message on refusal") { c in
-        let okRt = ScriptedRt(results: [RtResult(exitCode: 0, stdout: Data(#"{"contract":1,"at":"x","skill":"a","scope":"user"}"#.utf8), stderr: Data())])
-        c.expectNil(await ChoiceClient(rt: okRt).choose(verb: ["skills", "writing-style", "use"], id: "a"))
-        let refuse = ScriptedRt(results: [RtResult(exitCode: 2, stdout: Data(#"{"contract":1,"at":"x","error":{"code":"bad-id","message":"\"-rf\" is not a skill id"}}"#.utf8), stderr: Data())])
-        c.expectEqual(await ChoiceClient(rt: refuse).choose(verb: ["skills", "writing-style", "use"], id: "-rf"), "\"-rf\" is not a skill id")
+        let rt = ScriptedRt()
+        rt.answers["skills writing-style use a"] = (0, #"{"contract":1,"at":"x","skill":"a","scope":"user"}"#)
+        rt.answers["skills writing-style use -rf"] = (2, #"{"contract":1,"at":"x","error":{"code":"bad-id","message":"\"-rf\" is not a skill id"}}"#)
+        let client = await ChoiceClient(rt: rt)
+        c.expect(await client.choose(verb: ["skills", "writing-style", "use"], id: "a") == nil)
+        c.expectEqual(await client.choose(verb: ["skills", "writing-style", "use"], id: "-rf"), "\"-rf\" is not a skill id")
+        c.expectEqual(rt.calls.last?.args, ["skills", "writing-style", "use", "-rf", "--json"])
     },
 ```
 
-Read `ScriptedRt.swift` and match its initializer and whether checks may be `async` in this harness (`Harness.swift`); adapt the last check's shape to the harness if it needs a different async form.
+`ScriptedRt` answers by the longest key that prefixes the joined args (`ScriptedRt.swift`), and the harness has `expect` and `expectEqual` only (no `expectNil`). Checks may be async (`Harness.swift`: the body is `async throws`). `ChoiceClient` is `@MainActor`; if the harness does not run checks on the main actor, construct and call it inside `await MainActor.run { ... }`.
 
 - [ ] **Step 2: Run to see them fail**
 
@@ -1600,7 +1668,7 @@ Expected: build errors for the missing symbols.
 
 - [ ] **Step 3: Implement**
 
-`PlanModels.swift`: add `case choose` to `ActionType`. Add:
+`PlanModels.swift`: add `case choose` to `ActionType` and make it `CaseIterable` (its custom `init(from:)` is unaffected). Add:
 
 ```swift
 public struct ChooseOption: Codable, Equatable, Sendable {
@@ -1620,7 +1688,7 @@ public struct ChooseOther: Codable, Equatable, Sendable {
 }
 ```
 
-Add `options: [ChooseOption]?` and `other: ChooseOther?` to `RowAction` (properties, init parameters defaulting to `nil`, assignments).
+Add `options: [ChooseOption]?`, `selected: String?` and `other: ChooseOther?` to `RowAction` (properties, init parameters defaulting to `nil`, assignments).
 
 Add to `PlanRow`: `public var waivable: Bool`, an init parameter `waivable: Bool? = nil` assigned as `waivable ?? finishGated`, and in `init(from:)` after `finishGated`:
 
@@ -1662,11 +1730,34 @@ public final class ChoiceClient {
     }
 }
 
-/// Action types the Done screen acts on; parity with DONE_ACTION_TYPES in lib/setup/contract.ts.
+public enum DoneRoute: Equatable, Sendable {
+    case openURL(URL)
+    case steps([String])
+    case recheck
+    case choose
+}
+
+/// The Done screen's only routing; the types it routes are pinned to
+/// DONE_ACTION_TYPES in lib/setup/contract.ts.
 public enum DoneActions {
-    public static let handled: [ActionType] = [.openURL, .steps, .run, .choose]
+    public static func route(_ action: RowAction) -> DoneRoute? {
+        switch action.type {
+        case .openURL:
+            // Mirrors RowActionDispatcher: an unsupported scheme does nothing.
+            guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return nil }
+            return .openURL(url)
+        case .steps: return .steps(action.steps ?? [])
+        // The only run verb a Done row carries is a re-check; Done re-reads the plan itself.
+        case .run: return .recheck
+        case .choose: return .choose
+        case .openSettings, .requestPermission, .connect, .oauth, .install, .ownerOnce, .linkBundled, .chooseFolder, .unknown:
+            return nil
+        }
+    }
 }
 ```
+
+The switch lists every case with no `default`, so a new `ActionType` fails to compile until someone decides whether Done routes it.
 
 - [ ] **Step 4: Run the checks**
 
@@ -1709,6 +1800,19 @@ struct ChooseSheet: View {
     let onChoose: (String) async -> String?
     @State private var selection: String?
     @State private var ownId = ""
+
+    init(title: String, options: [ChooseOption], selected: String?, other: ChooseOther?, onChoose: @escaping (String) async -> String?) {
+        self.title = title
+        self.options = options
+        self.other = other
+        self.onChoose = onChoose
+        // A current value that is not a listed option (a personal skill picked by id) opens in the own-skill field.
+        if let selected, options.contains(where: { $0.id == selected }) {
+            _selection = State(initialValue: selected)
+        } else if let selected {
+            _ownId = State(initialValue: selected)
+        }
+    }
     @State private var busy = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
@@ -1734,9 +1838,13 @@ struct ChooseSheet: View {
                 .accessibilityIdentifier(AXID.chooseOption(o.id))
             }
             .frame(minHeight: 220)
+            // Picking a listed style clears the typed id and typing clears the pick, so what is highlighted is what gets saved.
+            .onChange(of: selection) { _, new in if new != nil { ownId = "" } }
             if let other {
                 VStack(alignment: .leading, spacing: 2) {
-                    TextField(other.label, text: $ownId).accessibilityIdentifier(AXID.chooseOther)
+                    TextField(other.label, text: $ownId)
+                        .onChange(of: ownId) { _, new in if !new.trimmingCharacters(in: .whitespaces).isEmpty { selection = nil } }
+                        .accessibilityIdentifier(AXID.chooseOther)
                     Text(other.hint).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1786,7 +1894,7 @@ Add to `AccessibilityIDs.swift` (match the file's existing style for static lets
 
 - [ ] **Step 2: Wire the checklist**
 
-In `ChecklistScreen.swift`, add `@State private var choose: PlanRow?`, handle the new dispatch case in `run(_:for:)`:
+In `ChecklistScreen.swift` (it already has `let rt: RtRunning` and `model: ReadinessModel` with `afterAction(rowId:)`, used by its `.rtVerb` path; match those names if they differ), add `@State private var choose: PlanRow?`, handle the new dispatch case in `run(_:for:)`:
 
 ```swift
         case .chooseOption:
@@ -1797,7 +1905,7 @@ and present the sheet beside the existing ones:
 
 ```swift
         .sheet(item: $choose) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], other: row.action?.other) { id in
+            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
                 let failure = await ChoiceClient(rt: rt).choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await model.afterAction(rowId: row.id) }
                 return failure
@@ -1814,13 +1922,31 @@ In `FinishGate.swift`, give `DoneModel` a `public let choices: ChoiceClient` and
 In `DoneScreen.swift`:
 
 - `@State private var choose: PlanRow?`
-- in `show(_:)`, add `case .choose: choose = row`
+- replace the body of `show(_:)` so Done routes only through `DoneActions.route`:
+
+```swift
+    private func show(_ row: PlanRow) {
+        guard let action = row.action, let route = DoneActions.route(action) else { return }
+        switch route {
+        case .openURL(let url):
+            NSWorkspace.shared.open(url)
+            Task { await model.retryCheck() }
+        case .steps(let list):
+            steps = (title: row.title, steps: list)
+        case .recheck:
+            Task { await model.retryCheck() }
+        case .choose:
+            choose = row
+        }
+    }
+```
+
 - gate Skip on the row: wrap the Skip `HStack` in `if row.waivable { ... }`
 - present:
 
 ```swift
         .sheet(item: $choose) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], other: row.action?.other) { id in
+            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
                 let failure = await model.choices.choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await model.retryCheck() }
                 return failure
@@ -1852,7 +1978,7 @@ and on the `Form`:
 ```swift
         .task { await readiness.load() }
         .sheet(item: $chooseRow) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], other: row.action?.other) { id in
+            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
                 let failure = await ChoiceClient(rt: env.rt).choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await readiness.recheckAll() }
                 return failure
@@ -1909,8 +2035,8 @@ git commit -m "rt-tray: ChooseSheet on the checklist, Done and Settings; Skip on
 
 - [ ] **Step 1: Gates**
 
-Run: `bun run test:all`, `bun run picker:check`, `scripts/repo-purity.sh`, `cd rt-tray && swift run mattstack-checks`
-Expected: all green, `0 violation(s)`, `ok repo-purity`, `0 failed`.
+Run: `bunx tsc --noEmit`, `bun run test:all`, `bun run picker:check`, `bun run docs:check`, `scripts/repo-purity.sh`, `cd rt-tray && swift run mattstack-checks`
+Expected: all green (CI runs `tsc --noEmit` and `docs:check` too), `0 violation(s)`, `ok repo-purity`, `0 failed`.
 
 - [ ] **Step 2: Push and PR**
 
@@ -1924,6 +2050,12 @@ Wait for CodeRabbit's review and address every actionable finding, and wait for 
 ---
 
 ### Task 12: Mark `show` agent-safe (after the RT-244 lane merges)
+
+Order against Task 11: if the RT-244 PR has merged by the time this lane's
+PR is ready, do this task on the same branch before merge. If it has not,
+merge Task 11's PR and do this as a small follow-up PR once RT-244 lands.
+Either way, the rt release that ships the setup row must include it, or the
+lookup-line work has nothing to call.
 
 **Files:**
 - Modify: `lib/command-tree-def.ts`, `lib/__tests__/agent-safe.test.ts`
@@ -1955,4 +2087,9 @@ git commit -m "skills writing-style show is agent-safe"
 
 ## Rollout note
 
-The rt release that ships this must carry a marketplace catalog pin that includes the presets (release step 2c, `bash scripts/release/marketplace.sh --refresh`, after the presets lane has merged). That is the release owner's step, not a task here.
+The rt release that ships this must carry:
+
+- a marketplace catalog pin that includes the presets (release step 2c, `bash scripts/release/marketplace.sh --refresh`, after the presets lane has merged);
+- Task 12 (`show` marked agent-safe) and the RT-244 tool.
+
+Both are the release owner's checks, not tasks here.

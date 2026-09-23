@@ -561,13 +561,24 @@ In `pack/stubs.jsonc`, add inside `"verbs"`:
 }
 ```
 
+Then add `"writing-style-sparse"` to the `"public"` list in `surface.jsonc`
+now, before the first compile. Compile writes a verb missing from that list
+to `attachments/<verb>/` as an internal verb (`commands/skills.ts`,
+`isPublic: !publicSet || publicSet.has(verb.name)`), and every later compile
+would then find that output at the flat `attachments/writing-style-sparse/`
+before the engine one group down, and fail on its missing
+`type: pipeline-step`.
+
 - [ ] **Step 4: Compile and read the output in full**
 
-Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-sparse --dry-run`
-Expected: it names `skills/writing-style-sparse/SKILL.md` and
-`skills/writing-style-sparse/pr-description.md`. If `pr-description.md` is
-not listed, the step-file vendoring did not pick it up: stop and report
-rather than hand-copying it.
+Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-sparse --dry-run --json`
+Expected: the row for `writing-style-sparse` lists files
+`skills/writing-style-sparse/SKILL.md` and
+`skills/writing-style-sparse/pr-description.md` (text-mode dry-run prints
+only `would write 2 files`). If `pr-description.md` is not listed, the
+step-file vendoring did not pick it up: stop and report rather than
+hand-copying it. If the files land under `attachments/`, the surface entry
+above is missing.
 
 Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-sparse`
 Then read `skills/writing-style-sparse/SKILL.md` in full (not grep).
@@ -606,7 +617,7 @@ Run: `sh tests/certify.sh attachments/writing-style/writing-style-sparse` then
 Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/writing-style-sparse pack/stubs.jsonc skills/writing-style-sparse docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-sparse pack/stubs.jsonc surface.jsonc skills/writing-style-sparse docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: sparse preset"
 ```
 
@@ -628,7 +639,7 @@ git commit -m "writing-style: sparse preset"
 
 `attachments/writing-style/writing-style-conversational/SKILL.md`:
 
-````markdown
+`````markdown
 ---
 name: writing-style-conversational
 description: "Use only when the mattstack writing-style lookup names mattstack:writing-style-conversational. The voice for review comments, replies, PR descriptions and commit messages posted under the operator's name: short, friendly sentences in sentence case, like talking to a teammate."
@@ -667,13 +678,13 @@ author to do.
 Two to four sentences: what's wrong, why in one sentence (with
 `file.ts:line`), and the fix as a friendly question, code in a fenced block.
 
-```
+````
 **issue:** The cache is keyed on `userId` alone, but user ids repeat across tenants (`src/users/ids.ts:14`). So t1's u7 and t2's u7 share an entry and see each other's settings. Could we key on both?
 
 ```ts
 const key = `${tenantId}:${userId}`;
 ```
-```
+````
 
 A process ask is one line: `**suggestion:** Looks good! Could you add a test
 for the two-tenant case?`
@@ -702,7 +713,7 @@ Read `${CLAUDE_SKILL_DIR}/pr-description.md` before drafting.
 - Subject: imperative, sentence case, under 72 characters, with the ticket
   key when the repo uses them (`ABC-123: Key settings cache on tenant`).
 - Body, optional: one or two sentences on why, wrapped at 72.
-````
+`````
 
 - [ ] **Step 2: Write the companion**
 
@@ -756,6 +767,9 @@ Add to `pack/stubs.jsonc`:
 }
 ```
 
+Add `"writing-style-conversational"` to `surface.jsonc`'s `"public"` list
+before compiling (same reason as Task 3 Step 3).
+
 Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-conversational`
 Read `skills/writing-style-conversational/SKILL.md` in full. Expected: as in
 Task 3 Step 4.
@@ -777,7 +791,7 @@ Run: `sh tests/certify.sh attachments/writing-style/writing-style-conversational
 `sh tests/certify.sh skills/writing-style-conversational`. Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/writing-style-conversational pack/stubs.jsonc skills/writing-style-conversational docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-conversational pack/stubs.jsonc surface.jsonc skills/writing-style-conversational docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: conversational preset"
 ```
 
@@ -799,7 +813,7 @@ git commit -m "writing-style: conversational preset"
 
 `attachments/writing-style/writing-style-structured/SKILL.md`:
 
-````markdown
+`````markdown
 ---
 name: writing-style-structured
 description: "Use only when the mattstack writing-style lookup names mattstack:writing-style-structured. The voice for review comments, replies, PR descriptions and commit messages posted under the operator's name: labelled lines and short bullets for teams that prefer formal write-ups."
@@ -831,7 +845,7 @@ skip without missing the ask.
 Open with a bolded Conventional Comments label, never a code span, then
 labelled lines:
 
-```
+````
 **issue:** Settings leak across tenants.
 Why: the cache is keyed on `userId` alone, and user ids repeat across tenants (`src/users/ids.ts:14`).
 Impact: confirmed in seed data, t2's u7 gets t1's settings.
@@ -840,7 +854,7 @@ Suggestion: key on both ids.
 ```ts
 const key = `${tenantId}:${userId}`;
 ```
-```
+````
 
 Use only the lines that carry something: a `nitpick` is the label and one
 line. A process ask is one line.
@@ -867,7 +881,7 @@ Read `${CLAUDE_SKILL_DIR}/pr-description.md` before drafting.
 - Subject: imperative, sentence case, under 72 characters, with the ticket
   key when the repo uses them (`ABC-123: Key settings cache on tenant`).
 - Body: a blank line, then one to three lines on why, wrapped at 72.
-````
+`````
 
 - [ ] **Step 2: Write the companion**
 
@@ -925,6 +939,9 @@ Add to `pack/stubs.jsonc`:
 }
 ```
 
+Add `"writing-style-structured"` to `surface.jsonc`'s `"public"` list before
+compiling (same reason as Task 3 Step 3).
+
 Run: `rt skills compile --pack mattstack --pack-dir "$PWD" --verb writing-style-structured`
 Read `skills/writing-style-structured/SKILL.md` in full. Expected: as in Task 3
 Step 4.
@@ -945,7 +962,7 @@ Run: `sh tests/certify.sh attachments/writing-style/writing-style-structured` an
 `sh tests/certify.sh skills/writing-style-structured`. Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/writing-style-structured pack/stubs.jsonc skills/writing-style-structured docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-structured pack/stubs.jsonc surface.jsonc skills/writing-style-structured docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: structured preset"
 ```
 
@@ -958,16 +975,20 @@ git commit -m "writing-style: structured preset"
 - Modify: `.claude-plugin/plugin.json` (version bump)
 - Modify: `CERTIFICATION.md` (ledger rows)
 
-- [ ] **Step 1: Make the presets public**
+- [ ] **Step 1: Confirm the surface**
 
-In `surface.jsonc`, add `"writing-style-sparse"`,
-`"writing-style-conversational"` and `"writing-style-structured"` to
-`"public"`.
+`surface.jsonc`'s `"public"` list already holds `"writing-style-sparse"`,
+`"writing-style-conversational"` and `"writing-style-structured"` (added in
+Tasks 3 to 5), and `attachments/` holds no compiled `writing-style-*`
+directory at the top level.
 
-- [ ] **Step 2: Bump the plugin**
+- [ ] **Step 2: Rebase, then bump the plugin**
 
-Bump `.claude-plugin/plugin.json` `version` one minor (for example
-`0.17.21` to `0.18.0`; use whatever `main` carries plus one minor).
+Another lane (the respond-post-per-thread work) bumps `plugin.json` and adds
+`CERTIFICATION.md` rows on `main` first. Run `git fetch origin && git rebase
+origin/main`, keep both sides' ledger rows on conflict, then bump
+`.claude-plugin/plugin.json` `version` one minor above what `main` carries
+(for example `0.17.22` to `0.18.0`).
 
 - [ ] **Step 3: Recompile and check**
 

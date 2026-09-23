@@ -689,12 +689,48 @@ harness runs it under a temp HOME; never run the built binary against the real
 HOME).
 Expected: PASS. Both tests pass, and every stdout line is still JSON-RPC.
 
-- [ ] **Step 3: Full suite**
+- [ ] **Step 3: Source-mode server**
 
-Run: `bun run test:all`
-Expected: PASS. Rerun any failure on `main` before calling it pre-existing.
+The operator's machine runs `rt mcp serve` from source (the dev wrapper runs
+`bun ... cli.ts`), so `rtSelfArgv()`'s `[execPath, Bun.main]` branch first
+runs for real there. Add a second test to `e2e/tests/mcp-serve.test.ts` that
+starts the server from source instead of `RT_BINARY`:
 
-- [ ] **Step 4: Commit and open the PR**
+```ts
+  test("rt_verb works when the server runs from source", async () => {
+    const server = Bun.spawn(["bun", join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
+      stdin: "pipe", stdout: "pipe", stderr: "pipe", env: rtEnv(home, {}),
+    });
+    children.push(server as never);
+    const client = new McpClient(server as never);
+    try {
+      await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "rt-e2e", version: "0.0.0" } });
+      client.notify("notifications/initialized");
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["worktree", "list"] } }, 30_000);
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError).toBeUndefined();
+      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+    } finally {
+      server.stdin.end();
+      await server.exited;
+    }
+  });
+```
+
+Match `rtEnv`, `children` and `McpClient`'s constructor type to what the file
+defines (they exist there for the compiled path); cast only where the spawn
+shape differs from `runRtPiped`'s.
+
+Run: `bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/mcp-serve.test.ts`
+Expected: PASS.
+
+- [ ] **Step 4: Full gates**
+
+Run: `bunx tsc --noEmit`, then `bun run test:all`, then `bun run docs:check`
+Expected: all PASS (CI runs all three). Rerun any failure on `main` before
+calling it pre-existing.
+
+- [ ] **Step 5: Commit and open the PR**
 
 ```bash
 git add e2e/tests/mcp-serve.test.ts
