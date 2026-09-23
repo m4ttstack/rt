@@ -8,14 +8,21 @@ struct InstallScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Form {
-                Section {
-                    ForEach(model.steps) { step in stepRow(step) }
-                } header: {
-                    Text(headerText)
+            ScrollViewReader { proxy in
+                Form {
+                    Section {
+                        ForEach(model.steps) { step in stepRow(step).id(step.id) }
+                    } header: {
+                        Text(headerText)
+                    }
+                }
+                .formStyle(.grouped)
+                // The list outgrows the window, so the step in play (and a failure's Retry) would otherwise sit below the fold.
+                .onChange(of: focusStepId) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
                 }
             }
-            .formStyle(.grouped)
             if !model.streamNotes.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle").foregroundStyle(.secondary)
@@ -44,12 +51,16 @@ struct InstallScreen: View {
         .accessibilityIdentifier(AXID.installScreen)
     }
 
+    private var focusStepId: String? {
+        model.failedStepId ?? model.steps.first { $0.state == .running }?.id
+    }
+
     private var headerText: String {
         switch model.phase {
         case .idle: return "Ready to install."
         case .running: return "Installing… nothing runs that isn't listed here."
         case .succeeded: return "Installed."
-        case .failed(let id, _): return "Stopped at \(model.steps.first { $0.id == id }?.info.title ?? id)."
+        case .failed(let id, _): return "Stopped at: \(model.steps.first { $0.id == id }?.info.title ?? id)"
         case .streamError: return "Install stopped."
         }
     }
@@ -70,17 +81,25 @@ struct InstallScreen: View {
                 }
                 Spacer()
                 if !model.logLines(for: step.id).isEmpty {
-                    Button("Show log") { logFor = step }.controlSize(.small).accessibilityIdentifier(AXID.installStepLog(step.id))
+                    if step.state == .failed {
+                        Button("Show log") { logFor = step }.controlSize(.small).accessibilityIdentifier(AXID.installStepLog(step.id))
+                    } else {
+                        Button { logFor = step } label: { Label("Show log", systemImage: "doc.text").labelStyle(.iconOnly) }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Show log")
+                            .accessibilityIdentifier(AXID.installStepLog(step.id))
+                    }
                 }
             }
             if step.state == .failed, model.failedStepId == step.id {
                 HStack(alignment: .top) {
-                    if let r = step.remedy { Text(r).font(.callout) }
+                    if let r = step.remedy { Text(r).font(.callout).fixedSize(horizontal: false, vertical: true) }
                     Spacer()
                     Button("Retry from here") { model.retryFromFailure() }
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier(AXID.installRetry)
                 }
+                // 20pt badge + 10pt spacing: the remedy starts under the step title.
+                .padding(.leading, 30)
                 .padding(.top, 2)
             }
         }
