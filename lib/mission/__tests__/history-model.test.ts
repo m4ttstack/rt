@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Commit } from "../../../packages/git-core/src/index.ts";
 import { AppFileStatusKind } from "../../../packages/git-core/src/index.ts";
 import { HistoryStore } from "../history.ts";
-import { buildHistoryModel, commitAuthors, formatByline, formatExpandedAuthor, historyGroupLabel } from "../history-model.ts";
+import { buildHistoryModel, commitAuthors, formatByline, formatExpandedAuthor, formatRelative, historyGroupLabel } from "../history-model.ts";
 
 const NOW = new Date("2026-09-22T12:00:00Z");
 
@@ -109,6 +109,60 @@ describe("buildHistoryModel", () => {
     ];
     const model = buildHistoryModel(store, { now, loading: false });
     expect(model.commits.map((c) => c.group)).toEqual(["Today", "August 2026"]);
+  });
+});
+
+// formatRelative takes then minus now, so a past time is negative.
+describe("formatRelative (GitHub Desktop's format-relative.ts)", () => {
+  const SEC = 1000;
+  const MIN = 60 * SEC;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+  const ago = (ms: number) => formatRelative(-ms);
+
+  test("seconds, then minutes from 45 seconds", () => {
+    expect(formatRelative(0)).toBe("now");
+    expect(ago(44 * SEC)).toBe("44 seconds ago");
+    expect(ago(45 * SEC)).toBe("1 minute ago");
+  });
+
+  test("minutes, then hours from 45 minutes", () => {
+    expect(ago(44 * MIN)).toBe("44 minutes ago");
+    expect(ago(45 * MIN)).toBe("1 hour ago");
+  });
+
+  test("hours, then days from 24 hours, rounding to the nearest day", () => {
+    expect(ago(23 * HOUR)).toBe("23 hours ago");
+    expect(ago(24 * HOUR)).toBe("yesterday");
+    expect(ago(25 * HOUR)).toBe("yesterday");
+    expect(ago(36 * HOUR)).toBe("2 days ago");
+  });
+
+  test("days, then months from 30 days", () => {
+    expect(ago(29 * DAY)).toBe("29 days ago");
+    expect(ago(30 * DAY)).toBe("last month");
+  });
+
+  test("months, then years from 18 months", () => {
+    expect(ago(17 * 30 * DAY)).toBe("17 months ago");
+    expect(ago(18 * 30 * DAY)).toBe("2 years ago");
+  });
+
+  test("a future time reads forward", () => {
+    expect(formatRelative(2 * HOUR)).toBe("in 2 hours");
+  });
+});
+
+describe("History rows use formatRelative, agreeing with their date header", () => {
+  test("Monday evening seen on Wednesday afternoon is 2 days ago, earlier this week", () => {
+    const now = new Date(2026, 8, 23, 15);
+    const monday = new Date(2026, 8, 21, 19);
+    const store = new HistoryStore();
+    const at = { name: "Pat", email: "pat@example.com", date: monday, tzOffset: 0 };
+    store.commits = [commit({ sha: "s1", author: at, committer: at })];
+    const row = buildHistoryModel(store, { now, loading: false }).commits[0]!;
+    expect(row.when).toBe("2 days ago");
+    expect(row.group).toBe("Earlier this week");
   });
 });
 

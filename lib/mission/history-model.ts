@@ -1,5 +1,4 @@
 import { AppFileStatusKind, type Commit, type CommittedFileChange, type GitAuthor } from "../../packages/git-core/src/index.ts";
-import { formatRelativeTime } from "../relative-time.ts";
 import type { MissionChangeRow, MissionHistoryFileRow, MissionHistoryHeader, MissionHistoryModel } from "../ui/protocol.ts";
 import type { HistoryStore } from "./history.ts";
 
@@ -74,6 +73,31 @@ function buildHeader(store: HistoryStore): MissionHistoryHeader | null {
   };
 }
 
+const relativeFormatter = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+
+/**
+ * GHD formatRelative (app/src/lib/format-relative.ts), ported verbatim: ms
+ * is then minus now, rounded unit by unit. History rows use it rather than
+ * formatRelativeTime, whose "yesterday" spans 48 hours and so contradicts
+ * the date headers.
+ */
+export function formatRelative(ms: number): string {
+  const sign = ms < 0 ? -1 : 1;
+  const sec = Math.round(Math.abs(ms) / 1000);
+  const min = Math.round(sec / 60);
+  const hr = Math.round(min / 60);
+  const day = Math.round(hr / 24);
+  const month = Math.round(day / 30);
+  const year = Math.round(month / 12);
+
+  if (sec < 45) return relativeFormatter.format(sec * sign, "second");
+  if (min < 45) return relativeFormatter.format(min * sign, "minute");
+  if (hr < 24) return relativeFormatter.format(hr * sign, "hour");
+  if (day < 30) return relativeFormatter.format(day * sign, "day");
+  if (month < 18) return relativeFormatter.format(month * sign, "month");
+  return relativeFormatter.format(year * sign, "year");
+}
+
 /**
  * The date header a commit sits under in the History list, on the machine's
  * local calendar with weeks starting Monday. A date after now (clock skew)
@@ -97,7 +121,7 @@ export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loadin
       shortSha: c.shortSha,
       summary: c.summary,
       byline: formatByline(commitAuthors(c)),
-      when: formatRelativeTime(c.author.date.toISOString(), opts.now),
+      when: formatRelative(c.author.date.getTime() - opts.now.getTime()),
       group: historyGroupLabel(c.author.date, opts.now),
       tags: c.tags,
       unpushed: store.localShas.has(c.sha),
