@@ -4,7 +4,7 @@
 
 **Goal:** Ship three writing-style presets (sparse, conversational, structured) and one shared rules include in the public mattstack plugin, each proven against a no-style baseline and against the operator's own style skill.
 
-**Architecture:** The presets are compiled verbs of the mattstack pack itself: an engine per preset under `attachments/writing-style/<preset>/` that `{{include:writing-style-floor}}`s the shared rules, rostered in `pack/stubs.jsonc`, compiled to `skills/writing-style-<preset>/` with a vendored `pr-description.md` beside each. Includes resolve only at compile time and cannot nest, which is why the floor is an include and the presets are compiled rather than hand-written.
+**Architecture:** The presets are compiled verbs of the mattstack pack itself: an engine per preset under `attachments/writing-style/writing-style-<preset>/` (the compiler matches an engine by directory name one group level down) that `{{include:writing-style-floor}}`s the shared rules, rostered in `pack/stubs.jsonc`, compiled to `skills/writing-style-<preset>/` with a vendored `pr-description.md` beside each. Includes resolve only at compile time and cannot nest, which is why the floor is an include and the presets are compiled rather than hand-written.
 
 **Tech Stack:** Markdown skills, `rt skills compile/check/sync`, `tests/certify.sh`, `tests/repo-purity.sh`.
 
@@ -266,7 +266,7 @@ git commit -m "writing-style presets: fixtures, floor checker, baseline and refe
 ### Task 2: The shared floor include
 
 **Files:**
-- Create: `attachments/writing-style/floor/SKILL.md`
+- Create: `attachments/writing-style-floor/SKILL.md`
 
 **Interfaces:**
 - Consumes: Task 1's baseline failures list.
@@ -274,7 +274,7 @@ git commit -m "writing-style presets: fixtures, floor checker, baseline and refe
 
 - [ ] **Step 1: Write the include**
 
-`attachments/writing-style/floor/SKILL.md`:
+`attachments/writing-style-floor/SKILL.md`:
 
 ```markdown
 ---
@@ -329,14 +329,14 @@ The preset sets the voice; these set the floor.
 
 - [ ] **Step 2: Certify**
 
-Run: `sh tests/certify.sh attachments/writing-style/floor`
+Run: `sh tests/certify.sh attachments/writing-style-floor`
 Expected: every check `ok` (purity-domain, purity-personal, no-em-dashes,
 no-ticket-ids, fm-open, fm-name, fm-description).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add attachments/writing-style/floor/SKILL.md
+git add attachments/writing-style-floor/SKILL.md
 git commit -m "writing-style: shared floor include"
 ```
 
@@ -345,8 +345,8 @@ git commit -m "writing-style: shared floor include"
 ### Task 3: The sparse preset
 
 **Files:**
-- Create: `attachments/writing-style/sparse/SKILL.md`
-- Create: `attachments/writing-style/sparse/pr-description.md`
+- Create: `attachments/writing-style/writing-style-sparse/SKILL.md`
+- Create: `attachments/writing-style/writing-style-sparse/pr-description.md`
 - Modify: `pack/stubs.jsonc` (add the verb)
 - Create (compiled): `skills/writing-style-sparse/SKILL.md`, `skills/writing-style-sparse/pr-description.md`
 
@@ -356,7 +356,7 @@ git commit -m "writing-style: shared floor include"
 
 - [ ] **Step 1: Write the engine**
 
-`attachments/writing-style/sparse/SKILL.md`:
+`attachments/writing-style/writing-style-sparse/SKILL.md`:
 
 ````markdown
 ---
@@ -470,7 +470,7 @@ length target, the structure, and the anti-patterns.
 
 - [ ] **Step 2: Write the companion**
 
-`attachments/writing-style/sparse/pr-description.md`:
+`attachments/writing-style/writing-style-sparse/pr-description.md`:
 
 ````markdown
 # PR descriptions (sparse)
@@ -601,12 +601,12 @@ recompile, rerun the sparse run, and recheck. Repeat until clean.
 
 - [ ] **Step 7: Certify and commit**
 
-Run: `sh tests/certify.sh attachments/writing-style/sparse` then
+Run: `sh tests/certify.sh attachments/writing-style/writing-style-sparse` then
 `sh tests/certify.sh skills/writing-style-sparse`
 Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/sparse pack/stubs.jsonc skills/writing-style-sparse docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-sparse pack/stubs.jsonc skills/writing-style-sparse docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: sparse preset"
 ```
 
@@ -615,8 +615,8 @@ git commit -m "writing-style: sparse preset"
 ### Task 4: The conversational preset
 
 **Files:**
-- Create: `attachments/writing-style/conversational/SKILL.md`
-- Create: `attachments/writing-style/conversational/pr-description.md`
+- Create: `attachments/writing-style/writing-style-conversational/SKILL.md`
+- Create: `attachments/writing-style/writing-style-conversational/pr-description.md`
 - Modify: `pack/stubs.jsonc`
 - Create (compiled): `skills/writing-style-conversational/`
 
@@ -626,7 +626,7 @@ git commit -m "writing-style: sparse preset"
 
 - [ ] **Step 1: Write the engine**
 
-`attachments/writing-style/conversational/SKILL.md`:
+`attachments/writing-style/writing-style-conversational/SKILL.md`:
 
 ````markdown
 ---
@@ -706,7 +706,7 @@ Read `${CLAUDE_SKILL_DIR}/pr-description.md` before drafting.
 
 - [ ] **Step 2: Write the companion**
 
-`attachments/writing-style/conversational/pr-description.md`:
+`attachments/writing-style/writing-style-conversational/pr-description.md`:
 
 ````markdown
 # PR descriptions (conversational)
@@ -773,11 +773,11 @@ tighten, recompile, rerun.
 
 - [ ] **Step 5: Certify and commit**
 
-Run: `sh tests/certify.sh attachments/writing-style/conversational` and
+Run: `sh tests/certify.sh attachments/writing-style/writing-style-conversational` and
 `sh tests/certify.sh skills/writing-style-conversational`. Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/conversational pack/stubs.jsonc skills/writing-style-conversational docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-conversational pack/stubs.jsonc skills/writing-style-conversational docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: conversational preset"
 ```
 
@@ -786,8 +786,8 @@ git commit -m "writing-style: conversational preset"
 ### Task 5: The structured preset
 
 **Files:**
-- Create: `attachments/writing-style/structured/SKILL.md`
-- Create: `attachments/writing-style/structured/pr-description.md`
+- Create: `attachments/writing-style/writing-style-structured/SKILL.md`
+- Create: `attachments/writing-style/writing-style-structured/pr-description.md`
 - Modify: `pack/stubs.jsonc`
 - Create (compiled): `skills/writing-style-structured/`
 
@@ -797,7 +797,7 @@ git commit -m "writing-style: conversational preset"
 
 - [ ] **Step 1: Write the engine**
 
-`attachments/writing-style/structured/SKILL.md`:
+`attachments/writing-style/writing-style-structured/SKILL.md`:
 
 ````markdown
 ---
@@ -871,7 +871,7 @@ Read `${CLAUDE_SKILL_DIR}/pr-description.md` before drafting.
 
 - [ ] **Step 2: Write the companion**
 
-`attachments/writing-style/structured/pr-description.md`:
+`attachments/writing-style/writing-style-structured/pr-description.md`:
 
 ````markdown
 # PR descriptions (structured)
@@ -941,11 +941,11 @@ Follow-up. Any miss: tighten, recompile, rerun.
 
 - [ ] **Step 5: Certify and commit**
 
-Run: `sh tests/certify.sh attachments/writing-style/structured` and
+Run: `sh tests/certify.sh attachments/writing-style/writing-style-structured` and
 `sh tests/certify.sh skills/writing-style-structured`. Expected: all `ok`.
 
 ```bash
-git add attachments/writing-style/structured pack/stubs.jsonc skills/writing-style-structured docs/superpowers/tests/2026-09-22-writing-style-presets
+git add attachments/writing-style/writing-style-structured pack/stubs.jsonc skills/writing-style-structured docs/superpowers/tests/2026-09-22-writing-style-presets
 git commit -m "writing-style: structured preset"
 ```
 
@@ -979,7 +979,7 @@ last time.
 - [ ] **Step 4: Gates**
 
 Run: `sh tests/repo-purity.sh`, then `sh tests/certify.sh` on each of
-`attachments/writing-style/floor`, the three engines, and the three compiled
+`attachments/writing-style-floor`, the three engines, and the three compiled
 skills.
 Expected: all `ok`. Add ledger rows to `CERTIFICATION.md` in the table's
 existing format.
