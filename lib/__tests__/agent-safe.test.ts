@@ -16,6 +16,7 @@ describe("agent-safe surface", () => {
     expect(listAgentSafe(TREE).map((e) => e.path.join(" ")).sort()).toEqual([
       "endpoint lookup",
       "herd status",
+      "skills writing-style show",
       "worktree list",
     ]);
   });

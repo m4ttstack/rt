@@ -2206,6 +2206,7 @@ export const TREE: Record<string, CommandNode> = {
             description: "The writing style your reviews and replies use, and where it comes from",
             module: "./commands/skills-writing-style.ts",
             fn: "writingStyleShow",
+            agentSafe: true,
             args: [SETUP_JSON_ARG],
           },
           list: {
