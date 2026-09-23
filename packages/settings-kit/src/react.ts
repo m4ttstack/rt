@@ -140,12 +140,18 @@ export function useSettingsScope(prefix: string, opts: SettingsKitOptions = {}):
 
   const move = useCallback(
     async (key: string, from: string, to: string): Promise<string | null> => {
-      let rows: ExplainRowWire[];
+      let explained: { def: SettingDefWire; rows: ExplainRowWire[] };
       try {
-        rows = (await getJson<{ rows: ExplainRowWire[] }>(`${base}/explain/${encodeURIComponent(key)}`)).rows;
+        explained = await getJson<{ def: SettingDefWire; rows: ExplainRowWire[] }>(
+          `${base}/explain/${encodeURIComponent(key)}`,
+        );
       } catch (err) {
         return (err as Error).message;
       }
+      const { def, rows } = explained;
+      // A non-store `from` such as "default" would copy the registry default
+      // into the target and then fail its unset.
+      if (!(def.scopes as readonly string[]).includes(from)) return `${from} is not a store scope for ${key}`;
       const source = rows.find((r) => r.scope === from);
       return moveValue(
         { set: (scope, value) => set(key, scope, value), unset: (scope) => unset(key, scope) },
