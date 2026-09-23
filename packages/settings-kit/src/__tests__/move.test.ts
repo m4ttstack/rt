@@ -81,6 +81,6 @@ describe("moveTargetFrom", () => {
   test("an invalid or absent target row counts as empty", () => {
     const withBad = [rows[1]!, { scope: "machine", file: "/m", present: true, value: { b: "x" }, invalid: "nope" }];
     expect(moveTargetFrom(withBad, "user", "machine").present).toBe(false);
-    expect(moveTargetFrom([rows[1]!, { scope: "machine", file: "/m", present: false }], "user", "machine").present).toBe(false);
+    expect(moveTargetFrom([rows[1]!, { scope: "machine", present: false }], "user", "machine").present).toBe(false);
   });
 });

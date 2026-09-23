@@ -30,7 +30,7 @@ export function moveTargetFrom(
     deep-merged key the effective value includes defaults and other layers,
     which must not be baked into the target. A deep move merges into the
     target's own authored value in precedence order, so the effective value
-    is unchanged by the move. */
+    is unchanged unless a populated layer sits between the two. */
 export async function moveValue(
   api: MoveApi,
   from: string,
