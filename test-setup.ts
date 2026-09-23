@@ -10,6 +10,7 @@
  */
 import { afterAll } from "bun:test";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
+import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
@@ -47,9 +48,10 @@ const runTmp = mkdtempSync(join(testRoot, `${process.pid}-run-`));
 const home = mkdtempSync(join(testRoot, `${process.pid}-home-`));
 process.env.TMPDIR = runTmp;
 process.env.HOME = home;
+// A whole run's tree takes longer to delete than bun's 5s hook timeout, so
+// a detached rm does it after the process exits.
 afterAll(() => {
-  rmSync(runTmp, { recursive: true, force: true });
-  rmSync(home, { recursive: true, force: true });
+  spawn("rm", ["-rf", runTmp, home], { detached: true, stdio: "ignore" }).unref();
 });
 
 function pidIsAlive(pid: number): boolean {
