@@ -12,9 +12,9 @@ struct ChecklistScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.lastError != nil {
-                // A failed refresh keeps the last good plan, so Install may still be enabled under this banner.
-                Label(model.canInstall ? "Couldn't refresh the checklist. Re-check to try again."
-                                       : "Couldn't load the checklist, so Install can't start yet. Re-check to try again.",
+                // A failed refresh keeps the last loaded plan on screen, and Install may still be enabled under it.
+                Label(model.groups.isEmpty ? "Couldn't load the checklist, so Install can't start yet. Re-check to try again."
+                                           : "Couldn't refresh the checklist. Re-check to try again.",
                       systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)

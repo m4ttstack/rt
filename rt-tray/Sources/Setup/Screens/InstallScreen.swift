@@ -18,10 +18,9 @@ struct InstallScreen: View {
                 }
                 .formStyle(.grouped)
                 // The list outgrows the window, so the step in play (and a failure's Retry) would otherwise sit below the fold.
-                .onChange(of: focusStepId) { _, id in
-                    guard let id else { return }
-                    withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
-                }
+                // A failure is observed on its own: the failing step was already the running one, so a shared id may not change.
+                .onChange(of: runningStepId) { _, id in scroll(proxy, to: id) }
+                .onChange(of: model.failedStepId) { _, id in scroll(proxy, to: id) }
             }
             if !model.streamNotes.isEmpty {
                 HStack(spacing: 6) {
@@ -51,8 +50,13 @@ struct InstallScreen: View {
         .accessibilityIdentifier(AXID.installScreen)
     }
 
-    private var focusStepId: String? {
-        model.failedStepId ?? model.steps.first { $0.state == .running }?.id
+    private var runningStepId: String? {
+        model.steps.first { $0.state == .running }?.id
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to id: String?) {
+        guard let id else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
     }
 
     private var headerText: String {
