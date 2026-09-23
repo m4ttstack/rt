@@ -25,6 +25,7 @@ import { pruneDiscussionsStore } from "./discussions-file-store.ts";
 import { reconcileForRepo } from "./doppler-sync.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
 import { listWorktreesAsync, listWorktreeRootsAsync, runGit, type WorktreeEntry } from "../worktree/git-async.ts";
+import type { Forge } from "../enrich.ts";
 
 export interface CacheRefresherDeps {
   log: Logger;
@@ -204,6 +205,34 @@ export function applyRefreshOutcome(
   if (failedReposCount === 0 && enrichErrorsCount === 0) ref.lastSuccessAt = at;
 }
 
+const CONNECT_HINT: Record<Forge, string> = {
+  github: "rt setup github connect --use-gh",
+  gitlab: "rt setup gitlab connect",
+};
+
+/**
+ * One info line per repo whose remote's forge has no token, re-armed once a
+ * token shows up. Without it a tokenless forge reads as "no PRs anywhere":
+ * every branch Local Only and merge cleanup silently off.
+ */
+export function createMissingTokenNotice(
+  log: { info: (fields: Record<string, unknown>, msg: string) => void },
+): (repoName: string, gap: { forge: Forge; token: string | null } | null) => void {
+  const noted = new Set<string>();
+  return (repoName, gap) => {
+    if (!gap || gap.token) {
+      noted.delete(repoName);
+      return;
+    }
+    if (noted.has(repoName)) return;
+    noted.add(repoName);
+    log.info(
+      { repo: repoName, forge: gap.forge },
+      `no ${gap.forge} token: PR state and merge cleanup are off for this repo ... run: ${CONNECT_HINT[gap.forge]}`,
+    );
+  };
+}
+
 export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<void> {
   const { log, cache, refreshStatusRef, portCacheRef, repoIndex, broadcast } = deps;
 
@@ -213,14 +242,18 @@ export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<vo
     () => log.warn("cache refresh timed out; cleared in-flight latch for next tick"),
     { onRefused: () => log.warn("cache refresh skipped; too many stalled cycles already running") },
   );
+  const noteForgeToken = createMissingTokenNotice(log);
 
   async function refreshCacheImpl(signal: AbortSignal): Promise<void> {
     log.debug("cache: starting background refresh");
 
     try {
       // Dynamic imports to avoid loading heavy deps if not needed
-      const { refreshAllMRs } = await import("../enrich.ts");
-      const { extractLinearId } = await import("../linear.ts");
+      const { refreshAllMRs, forgeTokenFor } = await import("../enrich.ts");
+      const { extractLinearId, loadSecrets } = await import("../linear.ts");
+      // One read per cycle; a failed read skips the notice rather than
+      // reporting every repo as tokenless.
+      const cycleSecrets = await loadSecrets().catch(() => null);
       const repos = repoIndex();
       const tracking = loadRepoTracking();
       const failedRepos = new Set<string>();
@@ -315,6 +348,7 @@ export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<vo
             let remoteUrl: string | undefined;
             const remote = await runGit(repoPath, ["config", "--get", "remote.origin.url"], { signal });
             if (remote.exitCode === 0) remoteUrl = remote.stdout.trim() || undefined;
+            if (cycleSecrets) noteForgeToken(repoName, await forgeTokenFor(remoteUrl, cycleSecrets));
 
             // Optimized: 3 GraphQL calls for ALL open MRs + 1 Linear batch.
             // The onError callback fires on per-MR enrich failures (GitLab,
