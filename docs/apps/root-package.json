@@ -21,7 +21,7 @@
       "@mantine/modals": "^9.5.2",
       "@mantine/notifications": "^9.5.2",
       "@mantine/spotlight": "^9.5.2",
-      "@mattstack/glance": "^0.24.0",
+      "@mattstack/glance": "^0.27.0",
       "@mattstack/rt-client": "0.30.0",
       "@mattstack/settings-kit": "0.2.0",
       "@radix-ui/colors": "^3.0.0",
