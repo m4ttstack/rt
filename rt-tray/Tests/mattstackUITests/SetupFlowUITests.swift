@@ -139,6 +139,39 @@ final class SetupFlowUITests: XCTestCase {
         waitUntilGone("setup.done.screen")
     }
 
+    /// The writing-style row's ChooseSheet: typing into "Use my own skill…"
+    /// opens the suggestion dropdown, picking one fills the field, and
+    /// submitting resolves the row and reopens Finish.
+    func testDoneOwnSkillSuggestionPickAndSubmit() {
+        joinThroughInstall("writing-style")
+        // The row's own container identifier does not surface as a distinct
+        // element inside Done's "Before you finish" VStack wrapper (unlike the
+        // Checklist screen's bare RowView); its action button always does, and
+        // that is what gets clicked next regardless.
+        waitFor("setup.done.beforeYouFinish.skills.writing-style.action", 45)
+        XCTAssertFalse(el("setup.done.continue").isEnabled, "Finish waits on a chosen writing style")
+        el("setup.done.beforeYouFinish.skills.writing-style.action").click()
+        waitFor("setup.choose")
+        // The own card sits at the bottom of the sheet's 420pt-tall scroll
+        // region and is not reliably inside the visible/hittable viewport
+        // right after the sheet appears; scroll it into view before clicking.
+        app.descendants(matching: .scrollView).firstMatch.scroll(byDeltaX: 0, deltaY: -400)
+        el("setup.choose.own").click()
+        // The own card's text field only renders once `choice == .own` takes
+        // effect; a click right after selecting the card can otherwise race it.
+        waitFor("setup.choose.other")
+        el("setup.choose.other").click()
+        el("setup.choose.other").typeText("team")
+        waitFor("setup.choose.suggestion.team-voice")
+        el("setup.choose.suggestion.team-voice").click()
+        el("setup.choose.submit").click()
+        waitUntilGone("setup.choose")
+        waitUntilEnabled("setup.done.continue", 30)
+        XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "the resolved row left Before you finish")
+        el("setup.done.continue").click()
+        waitUntilGone("setup.done.screen")
+    }
+
     func testCreateHappyShowsSlugAndReachesChecklist() {
         launch("create-happy")
         waitFor("setup.welcome.screen")
