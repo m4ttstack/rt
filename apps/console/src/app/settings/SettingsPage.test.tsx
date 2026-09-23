@@ -1,7 +1,7 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { SettingDefWire } from '@mattstack/settings-kit/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -86,6 +86,36 @@ function renderPage() {
       <SettingsPage />
     </QueryClientProvider>
   );
+}
+
+/** Lays the sections out at fixed offsets inside the content frame's
+    viewport, which jsdom never measures, and scrolls that viewport. */
+function frame(offsets: Record<string, number>, height = 400) {
+  const viewport = document.querySelector<HTMLElement>(
+    '#page-shell-content .mantine-ScrollArea-viewport'
+  )!;
+  const scrollHeight = Math.max(...Object.values(offsets)) + 300;
+  Object.defineProperty(viewport, 'clientHeight', { value: height });
+  Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight });
+  viewport.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+  for (const [id, offset] of Object.entries(offsets))
+    document.getElementById(`settings-${id}`)!.getBoundingClientRect = () =>
+      ({ top: 100 + offset - viewport.scrollTop }) as DOMRect;
+  return {
+    viewport,
+    scrollTo(top: number) {
+      viewport.scrollTop = top;
+      fireEvent.scroll(viewport);
+    },
+  };
+}
+
+function marked() {
+  const index = screen.getByRole('navigation', { name: 'settings groups' });
+  return within(index)
+    .getAllByRole('link')
+    .filter(l => l.hasAttribute('data-active'))
+    .map(l => l.getAttribute('href'));
 }
 
 describe('SettingsPage', () => {
@@ -326,5 +356,80 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('radio', { name: 'Codex' })).toBeChecked();
     expect(screen.queryAllByText('agent.claude.')).toHaveLength(0);
     expect(screen.getByText('1 of 3')).toBeInTheDocument();
+  });
+  it('marks the group in view in the index as the reader scrolls', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    const f = frame({ agents: 0, daemon: 300, board: 600 }, 200);
+    f.scrollTo(0);
+    expect(marked()).toEqual(['#agents']);
+    f.scrollTo(320);
+    expect(marked()).toEqual(['#daemon']);
+    f.scrollTo(650);
+    expect(marked()).toEqual(['#board']);
+    f.scrollTo(100);
+    expect(marked()).toEqual(['#agents']);
+  });
+
+  it('marks the last group once the frame reaches its end', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    const f = frame({ agents: 0, daemon: 300, board: 600 }, 800);
+    f.scrollTo(100);
+    expect(marked()).toEqual(['#board']);
+  });
+
+  it('a picked group stays marked when the frame cannot scroll it to the top', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    const f = frame({ agents: 0, daemon: 300, board: 600 }, 800);
+    document.getElementById('settings-daemon')!.scrollIntoView = () =>
+      f.scrollTo(100);
+    const index = screen.getByRole('navigation', { name: 'settings groups' });
+    await userEvent.click(within(index).getByRole('link', { name: /^Daemon/ }));
+    expect(marked()).toEqual(['#daemon']);
+    f.scrollTo(60);
+    expect(marked()).toEqual(['#agents']);
+  });
+
+  it('a picked group the filter then hides gives the mark back to the spy', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    frame({ agents: 0, daemon: 300, board: 600 }, 200);
+    const index = screen.getByRole('navigation', { name: 'settings groups' });
+    await userEvent.click(within(index).getByRole('link', { name: /^Board/ }));
+    expect(marked()).toEqual(['#board']);
+    await userEvent.type(screen.getByLabelText('filter settings'), 'Prune');
+    await waitFor(() => expect(marked()).toEqual(['#daemon']));
+  });
+
+  it('a deep link marks its group', async () => {
+    window.history.replaceState(null, '', '/settings#board');
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    await waitFor(() => expect(marked()).toEqual(['#board']));
+  });
+
+  it('a deep link to a group the filter hides marks nothing hidden', async () => {
+    window.history.replaceState(null, '', '/settings?q=Prune#board');
+    renderPage();
+    await screen.findByRole('heading', { name: 'Daemon' });
+    expect(screen.queryByRole('heading', { name: 'Board' })).toBeNull();
+    await waitFor(() => expect(marked()).toEqual(['#daemon']));
+  });
+
+  it('a picked group stays marked through the scroll its jump causes', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    const f = frame({ agents: 0, daemon: 300, board: 600 }, 800);
+    document.getElementById('settings-daemon')!.scrollIntoView = () => {
+      f.viewport.scrollTop = 100;
+    };
+    const index = screen.getByRole('navigation', { name: 'settings groups' });
+    await userEvent.click(within(index).getByRole('link', { name: /^Daemon/ }));
+    fireEvent.scroll(f.viewport);
+    expect(marked()).toEqual(['#daemon']);
+    f.scrollTo(60);
+    expect(marked()).toEqual(['#agents']);
   });
 });

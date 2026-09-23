@@ -10,7 +10,8 @@ import { isStoreScope, type StoreScope } from './view';
 const SLOT = 28;
 
 /** Move and remove for the layer a writable row's value comes from. Rows
-    with nothing stored keep an empty slot so every chevron lines up. */
+    with nothing stored, or stored where the key no longer allows, keep an
+    empty slot so every chevron lines up. */
 export function RowMenu({
   def,
   row,
@@ -20,10 +21,14 @@ export function RowMenu({
 }) {
   const { text } = useSchemeColors();
   const from = def.effective.scope;
-  if (!def.writable || !isStoreScope(from)) return <Box w={SLOT} />;
-  const moveTo = (def.scopes as StoreScope[]).filter(
-    s => s !== from && isStoreScope(s)
-  );
+  if (!def.writable || !isStoreScope(from) || !def.scopes.includes(from))
+    return <Box w={SLOT} />;
+  // A move re-sets the value at its target, which rejects what rt already
+  // refused here; removing it still works.
+  const moveTo =
+    def.effective.invalid === undefined
+      ? (def.scopes as StoreScope[]).filter(s => s !== from && isStoreScope(s))
+      : [];
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>

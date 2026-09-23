@@ -64,7 +64,27 @@ function stubExplain() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('composite rows', () => {
-  it('a short string list edits inline as tags', async () => {
+  const PREFIXES = def('board.ticketPrefixes', {
+    scopes: ['team'],
+    effective: { scope: 'team', file: '/t', value: ['RT', 'MAT'] },
+  });
+
+  it('a short string list shows its items as tags with a separate add control', () => {
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={store()} subhead={null} query="" />
+    );
+    expect(screen.getByText('RT')).toBeInTheDocument();
+    expect(screen.getByText('MAT')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'remove RT' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'remove MAT' })).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('the add control opens a field that appends on Enter', async () => {
     const s = store();
     renderWithProviders(
       <SettingRow
@@ -77,16 +97,19 @@ describe('composite rows', () => {
         query=""
       />
     );
-    await userEvent.type(
-      screen.getByRole('combobox', { name: 'board.ticketPrefixes' }),
-      'MAT{enter}'
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
     );
+    const field = screen.getByRole('textbox', { name: 'board.ticketPrefixes' });
+    expect(field).toHaveFocus();
+    await userEvent.type(field, 'MAT{enter}');
     await waitFor(() =>
       expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', [
         'RT',
         'MAT',
       ])
     );
+    expect(s.set).toHaveBeenCalledTimes(1);
   });
 
   it('an inline tag keeps its commas', async () => {
@@ -102,8 +125,13 @@ describe('composite rows', () => {
         query=""
       />
     );
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'add to boxscore.excludeFilePatterns',
+      })
+    );
     await userEvent.type(
-      screen.getByRole('combobox', { name: 'boxscore.excludeFilePatterns' }),
+      screen.getByRole('textbox', { name: 'boxscore.excludeFilePatterns' }),
       '*.{{js,ts}{enter}'
     );
     await waitFor(() =>
@@ -114,6 +142,173 @@ describe('composite rows', () => {
       )
     );
     expect(s.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tag’s x removes just that item', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'remove RT' }));
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', [
+        'MAT',
+      ])
+    );
+  });
+
+  it('Backspace in an empty add field removes the last tag', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    );
+    await userEvent.keyboard('{Backspace}');
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', ['RT'])
+    );
+  });
+
+  it('Escape closes the add field and writes nothing', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    );
+    await userEvent.keyboard('JIRA{Escape}');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    ).toBeInTheDocument();
+    expect(s.set).not.toHaveBeenCalled();
+  });
+
+  it('leaving the add field keeps what was typed', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    );
+    await userEvent.keyboard('JIRA');
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', [
+        'RT',
+        'MAT',
+        'JIRA',
+      ])
+    );
+  });
+
+  it('after an Escape, the next add still saves on leaving the field', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    const plus = () =>
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' });
+    await userEvent.click(plus());
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(plus());
+    await userEvent.keyboard('JIRA');
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', [
+        'RT',
+        'MAT',
+        'JIRA',
+      ])
+    );
+  });
+
+  it('keys in the add field write nothing more while a save is in flight', async () => {
+    const s = store();
+    s.set.mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    );
+    await userEvent.keyboard('{Backspace}');
+    await waitFor(() => expect(s.set).toHaveBeenCalledTimes(1));
+    await userEvent.keyboard('{Backspace}{Enter}');
+    expect(s.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('removing a tag from the keyboard leaves focus on the add control', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    screen.getByRole('button', { name: 'remove RT' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(s.set).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+      ).toHaveFocus()
+    );
+  });
+
+  it('tabbing out after a Backspace removal leaves focus where Tab put it', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    );
+    await userEvent.keyboard('{Backspace}');
+    await waitFor(() => expect(s.set).toHaveBeenCalledTimes(1));
+    await userEvent.tab();
+    expect(
+      screen.getByRole('button', { name: 'board.ticketPrefixes actions' })
+    ).toHaveFocus();
+  });
+
+  it('a repeated item removes one copy at a time', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow
+        def={def('board.ticketPrefixes', {
+          scopes: ['team'],
+          effective: { scope: 'team', file: '/t', value: ['RT', 'RT', 'MAT'] },
+        })}
+        store={s}
+        subhead={null}
+        query=""
+      />
+    );
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'remove RT' })[1]!
+    );
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('board.ticketPrefixes', 'team', [
+        'RT',
+        'MAT',
+      ])
+    );
+  });
+
+  it('inline tags hold still while a save is in flight', async () => {
+    const s = store();
+    s.set.mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={s} subhead={null} query="" />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'remove RT' }));
+    await waitFor(() => expect(s.set).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'remove MAT' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    ).toBeDisabled();
   });
 
   it('list editors hold still while a save is in flight', async () => {
@@ -540,7 +735,10 @@ describe('composite rows', () => {
         query=""
       />
     );
-    expect(screen.getByPlaceholderText('none')).toBeInTheDocument();
+    expect(screen.getByText('none')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'add to board.ticketPrefixes' })
+    ).toBeInTheDocument();
   });
 
   it('a deep key locked by a weaker layer clears that layer, not the winner', async () => {

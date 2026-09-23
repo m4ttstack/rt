@@ -27,6 +27,7 @@ import { PAGE_ROW_HEIGHT } from '../chrome';
 import { TIER_LABEL, type Tier } from './groups';
 import { ScopeDot } from './ScopeBadge';
 import { SettingsSection, type Provider } from './SettingsSection';
+import { useSectionSpy } from './useSectionSpy';
 import {
   buildSections,
   isEditable,
@@ -43,15 +44,16 @@ const HEADER_HEIGHT = PAGE_ROW_HEIGHT + TOOLBAR_ROW + 1;
 function Index({
   sections,
   filtering,
+  active,
+  onPick,
 }: {
   sections: Section[];
   filtering: boolean;
+  active: string;
+  onPick: (id: string) => void;
 }) {
   const { text } = useSchemeColors();
   const { collapsedSidebar, toggleSidebar } = usePageShellContext();
-  const [active, setActive] = useState(() =>
-    window.location.hash.replace('#', '')
-  );
   return (
     <Box component="nav" aria-label="settings groups" p="12px 12px 20px 16px">
       {TIERS.map((tier, i) => (
@@ -116,15 +118,12 @@ function Index({
                   onClick={e => {
                     e.preventDefault();
                     if (empty) return;
-                    setActive(s.group.id);
                     window.history.replaceState(
                       null,
                       '',
                       `${window.location.pathname}${window.location.search}#${s.group.id}`
                     );
-                    document
-                      .getElementById(`settings-${s.group.id}`)
-                      ?.scrollIntoView({ block: 'start' });
+                    onPick(s.group.id);
                     if (collapsedSidebar) toggleSidebar();
                   }}
                 />
@@ -150,16 +149,6 @@ export function SettingsPage() {
     if (!store.loading && store.error === null) setAsOf(new Date());
   }, [store.loading, store.error]);
   useHotkeys([['/', () => filterRef.current?.focus()]]);
-
-  // A deep link (/settings#board) can only scroll once the sections exist.
-  useEffect(() => {
-    if (store.loading) return;
-    const id = window.location.hash.slice(1);
-    if (id)
-      document
-        .getElementById(`settings-${id}`)
-        ?.scrollIntoView({ block: 'start' });
-  }, [store.loading]);
 
   const setQuery = (q: string) =>
     setParams(
@@ -187,6 +176,19 @@ export function SettingsPage() {
   const filtering =
     query !== '' || changedOnly || editableOnly || scope !== 'any';
   const visible = sections.filter(s => s.shown > 0);
+  const frame = useRef<HTMLDivElement>(null);
+  const [active, jump] = useSectionSpy(
+    frame,
+    visible.map(s => s.group.id),
+    window.location.hash.slice(1)
+  );
+
+  // A deep link (/settings#board) can only scroll once the sections exist.
+  useEffect(() => {
+    if (store.loading) return;
+    const id = window.location.hash.slice(1);
+    if (id) jump(id);
+  }, [store.loading, jump]);
   const hiddenGroups = sections.length - visible.length;
   const clearAll = () => {
     setQuery('');
@@ -202,7 +204,12 @@ export function SettingsPage() {
       drawerStateKey="console-settings-index"
     >
       <PageShell.Sidebar hideCollapseButton>
-        <Index sections={sections} filtering={filtering} />
+        <Index
+          sections={sections}
+          filtering={filtering}
+          active={active}
+          onPick={jump}
+        />
       </PageShell.Sidebar>
       <PageShell.Main>
         <PageShell.Header px={0} gap={0} align="stretch">
@@ -328,7 +335,11 @@ export function SettingsPage() {
             </Group>
           </Stack>
         </PageShell.Header>
-        <PageShell.Content contentContainer={false} bg={bg.level3}>
+        <PageShell.Content
+          contentContainer={false}
+          bg={bg.level3}
+          scrollAreaProps={{ viewportRef: frame }}
+        >
           <Box px={32} pb={32}>
             {store.error && (
               <Alert

@@ -14,7 +14,9 @@ import { Hono } from 'hono';
  * The typed routes must be registered first: Hono matches in order, and the
  * catch-all would otherwise answer them with a 404.
  */
-export function createSettingsRoutes(kit: SettingsHandlerOptions = {}) {
+export function createSettingsRoutes(
+  kit: Omit<SettingsHandlerOptions, 'allowWrite'> = {}
+) {
   return (
     new Hono()
       .get('/api/settings/runs-prune-days', c => {
@@ -56,9 +58,9 @@ export function createSettingsRoutes(kit: SettingsHandlerOptions = {}) {
         // locality gate check the socket peer, not just the forgeable Host.
         const res = await settingsHandler(c.req.raw, {
           allowComposite: 'shaped',
+          ...kit,
           allowWrite: req =>
             isLocalRequest(req, c.env as LocalServer | undefined),
-          ...kit,
         });
         return res ?? c.json({ error: 'not found' }, 404);
       })

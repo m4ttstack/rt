@@ -21,6 +21,10 @@ import {
 import { unitOf } from './units';
 import { isStoreScope } from './view';
 
+const OPTION_LABELS: Record<string, Record<string, string>> = {
+  'agent.provider': { claude: 'Claude', codex: 'Codex' },
+};
+
 function blurOnEnter(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key === 'Enter') e.currentTarget.blur();
 }
@@ -62,15 +66,17 @@ export function ScalarControl({
     );
 
   const options = ENUMS[def.key];
-  if (options)
+  if (options) {
+    const labels = OPTION_LABELS[def.key] ?? {};
+    const data = options.map(o => ({ value: o, label: labels[o] ?? o }));
     return (
       <Select
         aria-label={label}
         size="xs"
-        w={enumWidth(options)}
+        w={enumWidth(data.map(o => o.label))}
         styles={INPUT_TYPE.label}
         placeholder="unset"
-        data={[...options]}
+        data={data}
         value={typeof value === 'string' ? value : null}
         allowDeselect={false}
         onChange={v => {
@@ -78,6 +84,7 @@ export function ScalarControl({
         }}
       />
     );
+  }
 
   if (def.type === 'number') {
     const unit = unitOf(def.key);

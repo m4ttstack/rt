@@ -6,15 +6,16 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  ActionIcon,
   Box,
   Button,
   Code,
   Group,
   NumberInput,
+  Pill,
   Select,
   Stack,
   Switch,
-  TagsInput,
   Text,
   TextInput,
   UnstyledButton,
@@ -42,7 +43,6 @@ import {
   enumWidth,
   INPUT_TYPE,
   numberWidth,
-  PLACEHOLDER,
   SWITCH_SIZE,
 } from './controlStyles';
 import { ExpandToggle } from './ExpandToggle';
@@ -151,6 +151,135 @@ function StringListBody({ def, row }: { def: SettingDefWire; row: Row }) {
         />
       </Box>
     </Body>
+  );
+}
+
+const TAG_HEIGHT = 24;
+const TAG_STYLES = {
+  root: {
+    height: TAG_HEIGHT,
+    borderRadius: 4,
+    background: 'var(--tk-raised)',
+    color: 'var(--tk-text-1)',
+  },
+  remove: { color: 'var(--tk-text-3)' },
+} as const;
+
+/** A short list edited in place: each item a tag with its own x, and a
+    separate + that opens a field for the next one. */
+function InlineTags({
+  def,
+  row,
+  list,
+}: {
+  def: SettingDefWire;
+  row: Row;
+  list: string[];
+}) {
+  const { text } = useSchemeColors();
+  const saving = row.status === 'saving';
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState('');
+  const plus = useRef<HTMLButtonElement>(null);
+  // Escape unmounts the field, and a blur that still fires must not save.
+  const cancelled = useRef(false);
+  // Closing the field or removing a tag takes the focused control away.
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (adding || saving || !refocus.current) return;
+    refocus.current = false;
+    plus.current?.focus();
+  }, [adding, saving]);
+
+  const commit = () => {
+    if (saving) return;
+    const next = addToList(list, draft);
+    if (next) void row.save(next).then(ok => ok && setDraft(''));
+  };
+  const remove = (at: number) => {
+    if (saving) return;
+    void row.save(list.filter((_, i) => i !== at));
+  };
+
+  return (
+    <Group gap={6} wrap="wrap">
+      {list.length === 0 && !adding && (
+        <Text fz={12} c={text.muted}>
+          {def.effective.value === undefined ? 'unset' : 'none'}
+        </Text>
+      )}
+      {list.map((item, i) => (
+        <Pill
+          key={`${i}:${item}`}
+          ff="monospace"
+          styles={TAG_STYLES}
+          withRemoveButton
+          onRemove={() => {
+            refocus.current = true;
+            remove(i);
+          }}
+          removeButtonProps={{
+            'aria-label': `remove ${item}`,
+            'aria-hidden': false,
+            tabIndex: 0,
+            disabled: saving,
+          }}
+        >
+          {item}
+        </Pill>
+      ))}
+      {adding ? (
+        <TextInput
+          aria-label={def.key}
+          size="xs"
+          w={120}
+          styles={{
+            input: {
+              ...INPUT_TYPE.code.input,
+              height: TAG_HEIGHT,
+              minHeight: TAG_HEIGHT,
+            },
+          }}
+          autoFocus
+          readOnly={saving}
+          value={draft}
+          onTextChange={setDraft}
+          onKeyDown={e => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Backspace' && draft === '' && list.length > 0)
+              remove(list.length - 1);
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              cancelled.current = true;
+              refocus.current = true;
+              setDraft('');
+              setAdding(false);
+            }
+          }}
+          onBlur={() => {
+            if (!cancelled.current) commit();
+            cancelled.current = false;
+            setAdding(false);
+          }}
+        />
+      ) : (
+        <ActionIcon
+          ref={plus}
+          variant="default"
+          size={TAG_HEIGHT}
+          radius={4}
+          c={text.muted}
+          aria-label={`add to ${def.key}`}
+          disabled={saving}
+          onClick={() => {
+            cancelled.current = false;
+            setAdding(true);
+          }}
+        >
+          <Icons.plus size={14} />
+        </ActionIcon>
+      )}
+    </Group>
   );
 }
 
@@ -598,25 +727,7 @@ export function compositeParts(
       list.every(x => x.length <= INLINE_MAX_CHARS)
     )
       return {
-        control: (
-          <TagsInput
-            aria-label={def.key}
-            size="xs"
-            w={200}
-            splitChars={[]}
-            readOnly={row.status === 'saving'}
-            styles={{ inputField: { ...PLACEHOLDER, minWidth: 48 } }}
-            placeholder={
-              list.length > 0
-                ? undefined
-                : value === undefined
-                  ? 'unset'
-                  : 'none'
-            }
-            value={list}
-            onChange={next => void row.save(next)}
-          />
-        ),
+        control: <InlineTags def={def} row={row} list={list} />,
         body: null,
       };
     return {
