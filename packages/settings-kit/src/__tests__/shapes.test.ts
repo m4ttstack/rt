@@ -78,6 +78,17 @@ describe("matchesShape", () => {
     expect(matchesShape(s, { doctorSkill: "x" })).toBe(true);
     expect(matchesShape(s, [])).toBe(false);
   });
+
+  test("leaves refuses a present parent of a dotted path that is not a plain object", () => {
+    const slack = SHAPES["board.slack"]!;
+    expect(matchesShape(slack, { emoji: 5 })).toBe(false);
+    expect(matchesShape(slack, { emoji: null })).toBe(false);
+    expect(matchesShape(slack, {})).toBe(true);
+    expect(matchesShape(slack, { emoji: { looking: "eyes" } })).toBe(true);
+    const triage = SHAPES["board.triage"]!;
+    expect(matchesShape(triage, { fixClasses: [] })).toBe(false);
+    expect(matchesShape(triage, { fixClasses: "x" })).toBe(false);
+  });
 });
 
 describe("leaf access", () => {

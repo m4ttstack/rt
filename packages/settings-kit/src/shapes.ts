@@ -118,6 +118,7 @@ export function matchesShape(shape: CompositeShape, value: unknown): boolean {
       return (
         isRecord(value) &&
         Object.entries(shape.fields).every(([path, type]) => {
+          if (!parentsAreRecords(value, path)) return false;
           const v = getLeaf(value, path);
           return v === undefined || matchesLeaf(type, v);
         })
@@ -125,6 +126,18 @@ export function matchesShape(shape: CompositeShape, value: unknown): boolean {
     case "external":
       return true;
   }
+}
+
+/** getLeaf reads a non-object parent as an absent leaf; the write gate must
+    not, since the owning app's loader throws on it. A missing parent is fine. */
+function parentsAreRecords(obj: Record<string, unknown>, path: string): boolean {
+  let cur: unknown = obj;
+  for (const part of path.split(".").slice(0, -1)) {
+    cur = (cur as Record<string, unknown>)[part];
+    if (cur === undefined) return true;
+    if (!isRecord(cur)) return false;
+  }
+  return true;
 }
 
 export function getLeaf(obj: unknown, path: string): unknown {
