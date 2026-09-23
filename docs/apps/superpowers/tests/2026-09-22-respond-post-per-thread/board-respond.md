@@ -60,3 +60,58 @@ from the act paragraph; neither changes a scenario outcome.
 
 The self-built Gate 2 now matches the receive-review engine's
 per-thread shape, and the count definitions read off `post:` directly.
+
+## Editable replies: the answer's `text`
+
+Scope: step 6's act paragraph and form branch, the `respond-post` resume
+bullet, and the "Gate protocol (both gates)" answer reading. A Gate 2
+answer's object form may now carry `text`, the reply the developer edited
+on the board.
+
+`scenarios/wrap-edited.md`: the generic path acts on a Gate 2 answer
+where `thread-1` is `{"value": ["post:T1"], "text": "Fixed in ab12cd3,
+with a test for the empty queue."}` and `thread-2` is `["post:T2"]`.
+Pass: T1's body is exactly the answer's `text`, T2's body is its report
+reply, and `done ... --posted 2 --threads 2`. Same method as above.
+
+Three probes for loopholes the edit could open, committed beside it:
+
+- `scenarios/wrap-text-no-post.md`: `thread-1` carries `text` with only
+  `resolve:T1`. Pass: T1 resolved with nothing posted, T2 posts its
+  report reply, `--posted 1 --threads 2 --held 1`.
+- `scenarios/wrap-pane-note.md`: the in-pane form, where the human ticks
+  post on both and types a full replacement for T1 in the free-text
+  field. Pass: the `gate answer` json carries no `text`, the typed
+  string rides as `note`, and T1 posts its report reply.
+- `scenarios/wrap-resume-edited.md`: a parked `respond-post` resume on
+  the generic path whose answer carries `text` for T1. Pass: `drafting`
+  first, T1 posts the `text` and then resolves, T2 posts its report
+  reply, `--posted 2 --threads 2`.
+
+### RED (the wrapper before this edit)
+
+wrap-edited: 0/5 PASS. Every rep posted T1's report reply and dropped
+`text`; the counts were right in all five. Failure class: omission, the
+answer reading unwrapped `{value, note}` and had no place for `text`.
+
+### GREEN
+
+wrap-edited: 5/5 PASS on the first wording. Probes on that wording:
+wrap-text-no-post 5/5, wrap-resume-edited 3/5, wrap-pane-note 0/5.
+
+- The pane probe failed in every rep: each wrote the typed replacement
+  as `text` and posted it. The wrapper before any edit scored 4/5 on the
+  same probe (the note rides and the report reply posts; one rep
+  appended the note to the reply), so the edit opened this. The Gate 2
+  form branch now says the pane's answer never carries `text`, which is
+  receive-review's own rule.
+- The two resume misses posted the right bodies but read the report
+  before re-emitting `drafting`. The wrapper before any edit put
+  `drafting` first in 5/5 (while posting the report reply for T1 in all
+  five), and the final wording, whose resume bullet is unchanged from
+  the first, put it first in 10/10, so no wording was added for it.
+
+Final wording: wrap-edited 5/5, wrap-pane-note 5/5, wrap-text-no-post
+5/5, wrap-resume-edited 10/10. Regressions: wrap-build 5/5 (scored by a
+script that parses the `--questions` json), wrap-counts 5/5, wrap-none
+5/5.

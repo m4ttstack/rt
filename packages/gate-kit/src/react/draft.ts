@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { GateSelections } from '../payload';
 
 /** What a card keeps between visits to an open gate: the picks, the
-    per-question notes, and which step was showing. */
+    per-question notes, edited texts, and which step was showing. */
 export interface GateDraft {
   selections: GateSelections;
   notes: Record<string, string>;
+  texts?: Record<string, string>;
   item: string | null;
 }
 
@@ -32,15 +33,22 @@ function parseDraft(raw: string | null): GateDraft | null {
   if (raw === null) return null;
   const parsed = guarded<unknown>(() => JSON.parse(raw), null);
   if (parsed === null || typeof parsed !== 'object') return null;
-  const { selections, notes, item } = parsed as Record<string, unknown>;
+  const { selections, notes, texts, item } = parsed as Record<string, unknown>;
   if (selections === null || typeof selections !== 'object') return null;
   if (notes === null || typeof notes !== 'object') return null;
+  if (texts !== undefined && (texts === null || typeof texts !== 'object'))
+    return null;
   if (item !== null && typeof item !== 'string') return null;
   const draft: GateDraft = { selections: {}, notes: {}, item };
   for (const [id, v] of Object.entries(selections as Record<string, unknown>))
     if (typeof v === 'string' || isStringArray(v)) draft.selections[id] = v;
   for (const [id, v] of Object.entries(notes as Record<string, unknown>))
     if (typeof v === 'string') draft.notes[id] = v;
+  if (texts !== undefined) {
+    draft.texts = {};
+    for (const [id, v] of Object.entries(texts as Record<string, unknown>))
+      if (typeof v === 'string') draft.texts[id] = v;
+  }
   return draft;
 }
 
@@ -51,7 +59,8 @@ function draftIsEmpty(draft: GateDraft): boolean {
     v => Array.isArray(v) || v.length > 0
   );
   const noted = Object.values(draft.notes).some(n => n.trim().length > 0);
-  return !picked && !noted;
+  const edited = Object.keys(draft.texts ?? {}).length > 0;
+  return !picked && !noted && !edited;
 }
 
 export function readGateDraft(gateId: string): GateDraft | null {

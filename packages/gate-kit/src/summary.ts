@@ -24,12 +24,16 @@ export interface GateSummaryDetailRow {
   question: string;
   answers: GateOptionDisplay[];
   note?: string;
+  text?: string;
   decidedBy: string | null;
   at: number | null;
 }
 
 export interface GateSummary {
   chip: string;
+  /** The answers tallied for a glance ("5 findings, comment"), with no
+      kind and subject head and no decider suffix. */
+  outcome: string;
   detail: GateSummaryDetailRow[];
 }
 
@@ -77,6 +81,103 @@ function isPostPair(q: GateQuestion): boolean {
   return post !== undefined && values.includes(`resolve:${post.slice(5)}`);
 }
 
+/** "2 posted (1 edited), 1 resolved, 1 held" across a respond-post gate's
+    thread questions; null when the gate has none. */
+function postPairSummary(
+  pairs: GateQuestion[],
+  answers: GateAnswers | undefined
+): string | null {
+  if (pairs.length === 0) return null;
+  let posted = 0;
+  let edited = 0;
+  let resolved = 0;
+  for (const q of pairs) {
+    const raw = answers?.[q.id];
+    const unwrapped = raw === undefined ? null : unwrapGateAnswer(raw);
+    const value = unwrapped?.value ?? [];
+    const picked = Array.isArray(value) ? value : [value];
+    if (picked.some(v => v.startsWith('post:'))) {
+      posted++;
+      if (unwrapped?.text !== undefined) edited++;
+    }
+    if (picked.some(v => v.startsWith('resolve:'))) resolved++;
+  }
+  return [
+    edited > 0 ? `${posted} posted (${edited} edited)` : `${posted} posted`,
+    resolved > 0 ? `${resolved} resolved` : null,
+    posted < pairs.length ? `${pairs.length - posted} held` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** "1 finding" / "5 findings" from a question-id noun, which may already be
+    plural. */
+function nounCount(noun: string, n: number): string {
+  const one = noun.endsWith('ies')
+    ? `${noun.slice(0, -3)}y`
+    : noun.replace(/s$/, '');
+  const many = noun.endsWith('s')
+    ? noun
+    : one.endsWith('y')
+      ? `${one.slice(0, -1)}ies`
+      : `${one}s`;
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+type OutcomeSlot = { text: string } | { verbs: true } | { noun: string };
+
+/** The outcome reads at a glance where the chip lists labels: verb picks
+    from every question add up into one tally, a multi's other picks count
+    under its noun, a single pick keeps its label. Each tally sits where its
+    first question does; "nothing posted" stays last, as on the chip. */
+function compactOutcome(
+  questions: GateQuestion[],
+  answers: GateAnswers | undefined,
+  pairs: GateQuestion[],
+  pairSummary: string | null
+): string {
+  const slots: OutcomeSlot[] =
+    pairSummary === null ? [] : [{ text: pairSummary }];
+  const verbs: string[] = [];
+  const nouns = new Map<string, number>();
+  for (const q of questions) {
+    if (pairs.includes(q)) continue;
+    const raw = answers?.[q.id];
+    if (raw === undefined && !(q.multi && q.options.length === 0)) continue;
+    const value = raw === undefined ? [] : unwrapGateAnswer(raw).value;
+    const values = Array.isArray(value) ? value : [value];
+    const picked = values.filter(v => VERB_VALUE.test(v));
+    const plain = values.filter(v => !VERB_VALUE.test(v));
+    if (picked.length > 0 && verbs.length === 0) slots.push({ verbs: true });
+    verbs.push(...picked);
+    if (!q.multi) {
+      for (const v of plain)
+        slots.push({ text: displayForValue(v, q.options).text });
+      continue;
+    }
+    if (plain.length === 0 && picked.length > 0) continue;
+    // Chunks of one list (`findings-1`, `findings-2`) share a noun, so they
+    // count together.
+    const noun = q.id.replace(/-\d+$/, '');
+    if (!nouns.has(noun)) slots.push({ noun });
+    nouns.set(noun, (nouns.get(noun) ?? 0) + plain.length);
+  }
+  const parts: string[] = [];
+  let nothingPosted = false;
+  for (const slot of slots) {
+    if ('text' in slot) parts.push(slot.text);
+    else if ('verbs' in slot) parts.push(verbCounts(verbs) ?? 'all skipped');
+    else {
+      const n = nouns.get(slot.noun) ?? 0;
+      if (n > 0) parts.push(nounCount(slot.noun, n));
+      else nothingPosted = true;
+    }
+  }
+  if (nothingPosted) parts.push('nothing posted');
+  return parts.length > 0 ? parts.join(', ') : 'no answers recorded';
+}
+
 function subjectRef(subject: string | undefined): string | null {
   if (subject === undefined) return null;
   if (subject.startsWith('mr:')) {
@@ -119,6 +220,7 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
           ? values.map(v => displayForValue(v, q.options))
           : [{ text: '(none)' }],
       ...(unwrapped?.note !== undefined ? { note: unwrapped.note } : {}),
+      ...(unwrapped?.text !== undefined ? { text: unwrapped.text } : {}),
       decidedBy,
       at,
     };
@@ -129,31 +231,16 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
     .join(' ');
 
   const fragments: string[] = [];
+  let outcome: string;
   if (row.status === 'closed') {
     fragments.push(row.closedReason ?? 'closed');
+    outcome = fragments[0]!;
   } else {
     const markers: string[] = [];
     const pairs = row.questions.filter(isPostPair);
-    if (pairs.length > 0) {
-      let posted = 0;
-      let resolved = 0;
-      for (const q of pairs) {
-        const raw = answers?.[q.id];
-        const value = raw === undefined ? [] : unwrapGateAnswer(raw).value;
-        const picked = Array.isArray(value) ? value : [value];
-        if (picked.some(v => v.startsWith('post:'))) posted++;
-        if (picked.some(v => v.startsWith('resolve:'))) resolved++;
-      }
-      fragments.push(
-        [
-          `${posted} posted`,
-          resolved > 0 ? `${resolved} resolved` : null,
-          posted < pairs.length ? `${pairs.length - posted} held` : null,
-        ]
-          .filter(Boolean)
-          .join(', ')
-      );
-    }
+    const pairSummary = postPairSummary(pairs, answers);
+    if (pairSummary !== null) fragments.push(pairSummary);
+    outcome = compactOutcome(row.questions, answers, pairs, pairSummary);
     for (const q of row.questions) {
       if (pairs.includes(q)) continue;
       const raw = answers?.[q.id];
@@ -185,5 +272,9 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
   const by = row.answer?.by;
   const bySuffix =
     by !== undefined && by !== '' && by !== BY_PANE ? ` · by ${by}` : '';
-  return { chip: `${head} · ${fragments.join(', ')}${bySuffix}`, detail };
+  return {
+    chip: `${head} · ${fragments.join(', ')}${bySuffix}`,
+    outcome,
+    detail,
+  };
 }

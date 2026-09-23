@@ -51,6 +51,36 @@ export function postPicks(questions: GateQuestion[]): PostPick[] {
   });
 }
 
+/** A thread's edit counts only when it differs from the drafted reply once
+    surrounding whitespace is ignored. */
+export function isEdited(
+  pick: PostPick,
+  texts: Record<string, string>
+): boolean {
+  const edit = texts[pick.name];
+  return edit !== undefined && edit.trim() !== (pick.reply?.text ?? '').trim();
+}
+
+/** The trimmed edit each posting thread sends, keyed by question id. Null
+    when a posting thread's edit is empty: an empty reply cannot post, and
+    holding the thread is how nothing posts. */
+export function postTexts(
+  picks: PostPick[],
+  selections: GateSelections,
+  texts: Record<string, string>
+): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  for (const p of picks) {
+    const v = selections[p.name];
+    if (!Array.isArray(v) || !v.includes(p.post)) continue;
+    const edit = texts[p.name];
+    if (edit === undefined) continue;
+    if (edit.trim() === '') return null;
+    if (isEdited(p, texts)) out[p.name] = edit.trim();
+  }
+  return out;
+}
+
 export function postTally(
   picks: PostPick[],
   selections: GateSelections

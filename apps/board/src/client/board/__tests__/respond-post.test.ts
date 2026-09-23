@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test';
 
 import type { GateQuestion } from '@mattstack/gate-kit';
-import { postPicks, postTally } from '../respond-post.ts';
+import {
+  isEdited,
+  postPicks,
+  postTally,
+  postTexts,
+  type PostPick,
+} from '../respond-post.ts';
 
 const reply = (thread: string, verb: 'fix' | 'reply') =>
   JSON.stringify({
@@ -102,4 +108,56 @@ test('the tally counts threads posting and threads resolving, independently', ()
     posting: 0,
     resolving: 0,
   });
+});
+
+const pick = (name: string, id: string, text: string): PostPick => ({
+  name,
+  threadId: id,
+  label: `${id}.ts:1`,
+  reply: { thread: id, file: `${id}.ts:1`, verb: 'reply', text },
+  post: `post:${id}`,
+  resolve: `resolve:${id}`,
+  defaults: [`post:${id}`],
+});
+
+test('postTexts sends a trimmed edit only for a posting thread whose edit differs', () => {
+  const picks = [
+    pick('thread-1', 'T1', 'draft one'),
+    pick('thread-2', 'T2', 'draft two'),
+    pick('thread-3', 'T3', 'draft three'),
+  ];
+  const selections = {
+    'thread-1': ['post:T1'],
+    'thread-2': ['resolve:T2'],
+    'thread-3': ['post:T3'],
+  };
+  const texts = {
+    'thread-1': '  edited one \n',
+    'thread-2': 'held edit',
+    'thread-3': ' draft three ',
+  };
+  expect(postTexts(picks, selections, texts)).toEqual({
+    'thread-1': 'edited one',
+  });
+});
+
+test('postTexts is null when a posting thread was emptied, never when a held one was', () => {
+  const picks = [pick('thread-1', 'T1', 'd1'), pick('thread-2', 'T2', 'd2')];
+  expect(
+    postTexts(
+      picks,
+      { 'thread-1': ['post:T1'], 'thread-2': [] },
+      { 'thread-1': '   ' }
+    )
+  ).toBeNull();
+  expect(
+    postTexts(picks, { 'thread-1': [], 'thread-2': [] }, { 'thread-1': '   ' })
+  ).toEqual({});
+});
+
+test('isEdited ignores surrounding whitespace', () => {
+  const p = pick('thread-1', 'T1', 'draft');
+  expect(isEdited(p, {})).toBe(false);
+  expect(isEdited(p, { 'thread-1': ' draft\n' })).toBe(false);
+  expect(isEdited(p, { 'thread-1': 'draft, edited' })).toBe(true);
 });

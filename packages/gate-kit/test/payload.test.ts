@@ -107,3 +107,10 @@ test('unwrapGateAnswer unwraps an array value inside the object form, with no no
     value: ['critical'],
   });
 });
+
+test('the text form unwraps with its text beside the value', () => {
+  expect(unwrapGateAnswer({ value: ['post:T1'], text: 'edited' })).toEqual({
+    value: ['post:T1'],
+    text: 'edited',
+  });
+});

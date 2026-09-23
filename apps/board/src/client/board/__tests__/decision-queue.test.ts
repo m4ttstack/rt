@@ -6,6 +6,7 @@ import {
   advance,
   advanceOrWrap,
   backTo,
+  decidedEntries,
   forwardTo,
   queueView,
   reconcile,
@@ -204,4 +205,36 @@ test('the active pip reads "you are here" even on an answered gate', () => {
   expect(v.states).toEqual(['done', 'active', 'todo']);
   const back = { ...session({ answered: ['g1'] }), activeId: 'g1' };
   expect(queueView(back, entries).states).toEqual(['active', 'todo', 'todo']);
+});
+
+test('the view lists answered gates in the order they were answered', () => {
+  const v = queueView(
+    session({ answered: ['g3', 'g1'], activeId: 'g2' }),
+    entries
+  );
+  expect(v.answeredIds).toEqual(['g3', 'g1']);
+});
+
+test('the recap takes each answered gate from the latest rows, else the entry the queue saw', () => {
+  const answeredRow = {
+    gateId: 'g1',
+    status: 'answered',
+    answers: { verdict: 'approve' },
+  } as unknown as GateRow;
+  const mr1 = { iid: 1, title: 'fresh title', gates: [answeredRow] };
+  const extra = { gateId: 'g4', status: 'answered' } as GateRow;
+  const seen = new Map([
+    ['g1', entry('g1', 1, 'stale title')],
+    ['g2', entry('g2', 2, 'merged since')],
+  ]);
+  const decided = decidedEntries(
+    ['g2', 'g4', 'g1', 'g9'],
+    { mrs: [mr1 as unknown as BoardMRWithReview], queueExtras: [extra] },
+    seen
+  );
+  expect(decided.map(d => d.gate.gateId)).toEqual(['g2', 'g4', 'g1']);
+  expect(decided[0]!.mr?.title).toBe('merged since');
+  expect(decided[1]).toEqual({ gate: extra });
+  expect(decided[2]!.gate).toBe(answeredRow);
+  expect(decided[2]!.mr?.title).toBe('fresh title');
 });

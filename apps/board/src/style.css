@@ -2400,11 +2400,14 @@ body {
   text-transform: uppercase;
   color: var(--text-2);
 }
-/* The post step's outcome chip holds the card head's right edge. */
-.tui-respond-chip.tui-thread-outcome {
-  margin-left: auto;
+/* The post step's outcome chip holds the card head's right edge; the
+   edited mark rides beside it at the same size. */
+.tui-respond-chip:is(.tui-thread-outcome, .tui-thread-edited) {
   padding: 4px 12px;
   font-size: 13px;
+}
+.tui-respond-chip.tui-thread-outcome {
+  margin-left: auto;
 }
 .tui-thread-nothing {
   margin: 0;
@@ -2487,6 +2490,43 @@ body {
 }
 .tui-thread-reply[data-kind='direction'] .tui-thread-reply-k {
   color: var(--text-2);
+}
+/* The margins undo the padding plus border, so the words sit exactly where
+   the resting reply drew them and opening the box moves nothing. */
+.tui-thread-reply-input {
+  width: calc(100% + 18px);
+  box-sizing: border-box;
+  margin: -4px -9px;
+  padding: 3px 8px;
+  font: inherit;
+  color: var(--text-1);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+}
+/* Drawn over the border, inside the box: outside it, the ring would crowd
+   the label above and the reply fill's edge. */
+.tui-thread-reply-input:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: -2px;
+}
+.tui-thread-reply-actions {
+  display: flex;
+  gap: 12px;
+}
+.tui-thread-reply-action {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-4);
+  cursor: pointer;
+}
+.tui-thread-reply-action:hover {
+  color: var(--text-accent-small);
+  text-decoration: underline;
 }
 /* A respond-post reply option carries the full reply text, so the box
    tops its checkbox against the first line instead of centring it. */
@@ -2585,6 +2625,16 @@ body {
 .tui-gate-summary-note {
   font-size: 0.6875rem;
   opacity: 0.7;
+}
+/* The words that posted, so they read whole: their own line breaks, and a
+   muted text role rather than the note's fade. */
+.tui-gate-summary-reply {
+  margin-top: 4px;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 /* ── gate triage modal ────────────────────────────────────────────── */
 /* Context sits ABOVE the form, the way a real pane reads: transcript on
@@ -2816,14 +2866,115 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  max-width: 560px;
+  min-height: 0;
   padding: 1.6rem 0 0.8rem;
 }
-.tui-triage-done-line {
-  font-size: 0.85rem;
+.tui-triage-done-badge {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--text-ok-vivid);
+  background: color-mix(in srgb, var(--fill-ok) 17%, transparent);
+}
+.tui-triage-done-heading {
+  margin: 0.2rem 0 0;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-1);
 }
 .tui-triage-done-counts {
-  font: 500 0.7rem/1.4 var(--font-mono);
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-3);
+}
+.tui-triage-done-badge,
+.tui-triage-done-heading {
+  animation: tui-done-rise 220ms ease-out both;
+}
+.tui-triage-done-heading {
+  animation-delay: 50ms;
+}
+@keyframes tui-done-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tui-triage-done-badge,
+  .tui-triage-done-heading {
+    animation: none;
+  }
+}
+.tui-triage-done-recap {
+  align-self: stretch;
+  min-height: 0;
+  margin-top: 0.8rem;
+}
+/* Rows share the list's columns through subgrid, so every title starts at
+   the same x whatever width its ref and kind take. */
+.tui-triage-done-list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  column-gap: 10px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.tui-triage-done-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  row-gap: 2px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.tui-triage-done-row:first-child {
+  padding-top: 4px;
+  border-top: none;
+}
+.tui-triage-done-row:last-child {
+  padding-bottom: 0;
+}
+.tui-triage-done-ref {
+  white-space: nowrap;
+  font: 500 var(--gate-font-meta) / 1.4 var(--font-mono);
+  color: var(--text-2);
+}
+/* Pinned to its column so a row without an MR (no ref) leaves the ref
+   column empty instead of sliding its kind under the refs. */
+.tui-triage-done-row > .tui-respond-chip {
+  grid-column: 2;
+  justify-self: start;
+}
+.tui-triage-done-title,
+.tui-triage-done-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+.tui-triage-done-subject {
+  font: var(--gate-font-meta) / 1.4 var(--font-mono);
+}
+.tui-triage-done-outcome {
+  grid-column: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+}
+.tui-triage-done-outcome[data-pending],
+.tui-triage-done-by {
   color: var(--text-4);
 }
 .tui-triage-done-action {
@@ -3858,7 +4009,7 @@ body {
   gap: var(--gate-gap);
 }
 .tui-triage-sheet-body > .tui-triage-done {
-  margin: auto 0;
+  margin: auto;
 }
 .tui-sheet-main {
   flex: 1;

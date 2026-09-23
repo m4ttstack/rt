@@ -108,6 +108,30 @@ describe('useGateDraft', () => {
     });
   });
 
+  test('texts round-trip, and a draft stored before texts existed still restores', () => {
+    const withTexts: GateDraft = { ...DRAFT, texts: { flags: 'edited' } };
+    const first = renderHook(() => useGateDraft('g-texts', true));
+    act(() => first.result.current.save(withTexts));
+    const again = renderHook(() => useGateDraft('g-texts', true));
+    expect(again.result.current.initial).toEqual(withTexts);
+    localStorage.setItem(gateDraftKey('g-old'), JSON.stringify(DRAFT));
+    const old = renderHook(() => useGateDraft('g-old', true));
+    expect(old.result.current.initial).toEqual(DRAFT);
+  });
+
+  test('an edit alone keeps the draft', () => {
+    const { result } = renderHook(() => useGateDraft('g-edit', true));
+    act(() =>
+      result.current.save({
+        selections: {},
+        notes: {},
+        texts: { q: 'e' },
+        item: null,
+      })
+    );
+    expect(localStorage.getItem(gateDraftKey('g-edit'))).not.toBeNull();
+  });
+
   test('an unavailable localStorage degrades to no draft: read, save, and clear never throw', () => {
     const original = Object.getOwnPropertyDescriptor(
       globalThis,

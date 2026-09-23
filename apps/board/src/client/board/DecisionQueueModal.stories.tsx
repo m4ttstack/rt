@@ -422,6 +422,86 @@ export const WriteInAnswer: Story = {
 
 // --- QueueComplete ----------------------------------------------------------
 
+const decidedMr = (iid: number, title: string) =>
+  ({ ...boardMr, iid, title }) as BoardMRWithReview;
+
+const postThread = (n: number, t: string) =>
+  question(`thread-${n}`, `widgets/${t}.ts:${n * 12}`, true, [
+    { value: `post:${t}`, label: 'Post' },
+    { value: `resolve:${t}`, label: 'Resolve' },
+  ]);
+
+const decided: Array<{ gate: GateRow; mr?: BoardMRWithReview }> = [
+  {
+    gate: {
+      ...firstGate,
+      gateId: 'done-post',
+      kind: 'respond-post',
+      status: 'answered',
+      questions: [
+        postThread(1, 'queue'),
+        postThread(2, 'retry'),
+        postThread(3, 'drain'),
+      ],
+      answers: {
+        'thread-1': {
+          value: ['post:queue', 'resolve:queue'],
+          text: 'Reworded reply',
+        },
+        'thread-2': ['post:retry'],
+        'thread-3': [],
+      },
+      answeredBy: 'board',
+    },
+    mr: decidedMr(31, 'themed gate controls'),
+  },
+  {
+    gate: {
+      ...firstGate,
+      gateId: 'done-plan',
+      status: 'answered',
+      answers: {
+        'thread-1': 'fix:bbbbbbbbbbbb',
+        'thread-2': 'reply:dddddddddddd',
+        'code-changes': 'separate-commit',
+      },
+      answeredBy: 'board',
+    },
+    mr: decidedMr(44, 'retry loop backs off on a 429 from the export queue'),
+  },
+  {
+    gate: {
+      ...lastGate,
+      gateId: 'done-review',
+      kind: 'review-post',
+      status: 'answered',
+      answers: { verdict: 'approve' },
+      answeredBy: 'dana',
+    },
+    mr: decidedMr(46, 'drain the widget queue before shutdown'),
+  },
+  {
+    gate: { ...lastGate, gateId: 'done-lagging', kind: 'review-post' },
+    mr: decidedMr(52, 'split the settings form into sections'),
+  },
+  {
+    gate: {
+      ...lastGate,
+      gateId: 'done-attention',
+      subject: 'agent:pane-4',
+      kind: 'pane-attention',
+      status: 'answered',
+      questions: [question('next', 'What next?', false, ['resume', 'stop'])],
+      answers: { next: 'resume' },
+      answeredBy: 'board',
+    },
+  },
+];
+
 export const QueueComplete: Story = {
-  render: () => <DecisionQueueComplete answered={5} onClose={noop} />,
+  render: () => <DecisionQueueComplete decided={decided} onClose={noop} />,
+};
+
+export const QueueCompleteEmpty: Story = {
+  render: () => <DecisionQueueComplete decided={[]} onClose={noop} />,
 };

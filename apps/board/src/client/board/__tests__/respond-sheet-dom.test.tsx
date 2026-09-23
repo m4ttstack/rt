@@ -128,12 +128,14 @@ let container: HTMLElement;
 let posts: Array<{ url: string; body: unknown }>;
 let answeredElsewhere: boolean;
 let continues: number;
+let closes: number;
 
 beforeEach(() => {
   localStorage.clear();
   posts = [];
   answeredElsewhere = false;
   continues = 0;
+  closes = 0;
   (globalThis as { fetch: unknown }).fetch = async (
     input: RequestInfo | URL,
     init?: { body?: string }
@@ -169,7 +171,9 @@ async function render(row: GateRow, mr: BoardMRWithReview = MR) {
         mr={mr}
         position={1}
         states={['active']}
-        onClose={() => {}}
+        onClose={() => {
+          closes++;
+        }}
         onNext={() => {}}
         onBack={() => {}}
         onFocusPane={() => {}}
@@ -776,4 +780,231 @@ test('a held thread stays held after leaving the per-thread post step and coming
   await render(perThreadPostGate(), withFixPlan());
   expect(control(postCards()[1]!, 'hold')!.checked).toBe(true);
   expect(submit().textContent).toBe('post 1 · resolve 1');
+});
+
+const seedTexts = (
+  texts: Record<string, string>,
+  selections?: Record<string, string[]>
+) =>
+  localStorage.setItem(
+    `gate-kit:draft:g-post-threads`,
+    JSON.stringify({
+      selections: selections ?? {
+        'thread-1': ['post:r1', 'resolve:r1'],
+        'thread-2': ['post:r2'],
+      },
+      notes: {},
+      texts,
+      item: null,
+    })
+  );
+
+test('an edited posting thread answers with its text; the others stay bare', async () => {
+  seedTexts({ 'thread-1': '  Fixed, and the retry is now bounded.  ' });
+  await render(perThreadPostGate(), withFixPlan());
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-post-threads',
+    answers: {
+      'thread-1': {
+        value: ['post:r1', 'resolve:r1'],
+        text: 'Fixed, and the retry is now bounded.',
+      },
+      'thread-2': ['post:r2'],
+    },
+  });
+});
+
+test('a held thread keeps its edit out of the answer', async () => {
+  seedTexts(
+    { 'thread-2': 'edited but held' },
+    { 'thread-1': ['post:r1'], 'thread-2': [] }
+  );
+  await render(perThreadPostGate(), withFixPlan());
+  await clickSubmit();
+  expect(answer()).toEqual({
+    gateId: 'g-post-threads',
+    answers: { 'thread-1': ['post:r1'], 'thread-2': [] },
+  });
+});
+
+test('an emptied reply on a posting thread disables submit', async () => {
+  seedTexts({ 'thread-2': '   ' });
+  await render(perThreadPostGate(), withFixPlan());
+  expect(submit().disabled).toBe(true);
+});
+
+const editButton = (card: HTMLElement) =>
+  card.querySelector<HTMLButtonElement>('button[aria-label$=": edit reply"]');
+const replyBox = (card: HTMLElement) =>
+  card.querySelector<HTMLTextAreaElement>('textarea[aria-label$=": reply"]');
+const button = (card: HTMLElement, text: string) =>
+  [...card.querySelectorAll('button')].find(b => b.textContent === text);
+async function typeInto(el: HTMLTextAreaElement, text: string) {
+  await React.act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value'
+    )!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+test('edit opens the reply in a box seeded with the draft; done closes it', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  expect(replyBox(reply)).toBeNull();
+  await React.act(async () => editButton(reply)!.click());
+  expect(replyBox(reply)!.value).toBe('The delay is fixed by design.');
+  expect(document.activeElement).toBe(replyBox(reply));
+  await React.act(async () => button(reply, 'done')!.click());
+  expect(replyBox(reply)).toBeNull();
+  expect(document.activeElement).toBe(editButton(reply));
+});
+
+test('a changed reply shows the edited chip and posts; reset to draft clears both', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(
+    replyBox(reply)!,
+    'The delay is fixed by design; see retry.ts.'
+  );
+  expect(reply.querySelector('[data-chip="edited"]')).not.toBeNull();
+  await React.act(async () => button(reply, 'reset to draft')!.click());
+  expect(reply.querySelector('[data-chip="edited"]')).toBeNull();
+  expect(replyBox(reply)!.value).toBe('The delay is fixed by design.');
+  expect(document.activeElement).toBe(replyBox(reply));
+});
+
+test('an edit survives hold and back to post, and is what posts', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, 'Kept on purpose.');
+  const hold = control(reply, 'hold')!;
+  await React.act(async () => {
+    hold.focus();
+    hold.click();
+  });
+  expect(editButton(reply)).toBeNull();
+  expect(replyBox(reply)).toBeNull();
+  expect(document.activeElement).toBe(hold);
+  await React.act(async () => control(reply, 'post')!.click());
+  expect(replyBox(reply)).toBeNull();
+  await clickSubmit();
+  expect(
+    (answer() as { answers: Record<string, unknown> }).answers['thread-2']
+  ).toEqual({
+    value: ['post:r2'],
+    text: 'Kept on purpose.',
+  });
+});
+
+test('an emptied reply says so on its card', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, '  ');
+  expect(reply.textContent).toContain('the reply is empty');
+  expect(submit().disabled).toBe(true);
+  const hint = replyBox(reply)!.getAttribute('aria-describedby');
+  expect(hint && document.getElementById(hint)?.textContent).toBe(
+    'the reply is empty'
+  );
+});
+
+test('the dock reset restores the picks but keeps an edited reply', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, 'Kept on purpose.');
+  await React.act(async () => control(reply, 'hold')!.click());
+  await click($('.tui-sheet-reset'));
+  const again = postCards()[1]!;
+  expect(control(again, 'post')!.checked).toBe(true);
+  expect(again.querySelector('[data-chip="edited"]')).not.toBeNull();
+  expect(again.textContent).toContain('Kept on purpose.');
+  await clickSubmit();
+  expect(
+    (answer() as { answers: Record<string, unknown> }).answers['thread-2']
+  ).toEqual({ value: ['post:r2'], text: 'Kept on purpose.' });
+});
+
+const DOCK_EMPTY = 'a reply is empty: write it or hold the thread';
+
+test('the dock says why submit is off while a posting reply is empty', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const dock = () => $('.tui-sheet-dock')!.textContent;
+  expect(dock()).not.toContain(DOCK_EMPTY);
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, '');
+  expect(dock()).toContain(DOCK_EMPTY);
+  await React.act(async () => control(reply, 'hold')!.click());
+  expect(dock()).not.toContain(DOCK_EMPTY);
+  expect(submit().disabled).toBe(false);
+});
+
+test('the reply controls are named by their thread', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, 'Kept on purpose.');
+  expect(
+    [...reply.querySelectorAll('.tui-thread-reply-action')].map(b =>
+      b.getAttribute('aria-label')
+    )
+  ).toEqual(['b.ts:2: done editing', 'b.ts:2: reset to draft']);
+  expect(replyBox(reply)!.hasAttribute('aria-describedby')).toBe(false);
+});
+
+test("the edited chip is grey, never the fix chip's accent", async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const fix = postCards()[0]!;
+  await React.act(async () => editButton(fix)!.click());
+  await typeInto(replyBox(fix)!, 'Fixed, and bounded.');
+  expect(
+    fix.querySelector('[data-chip="edited"]')!.getAttribute('data-hue')
+  ).toBe('grey');
+});
+
+test('Escape in the reply box closes the box, not the sheet', async () => {
+  await render(perThreadPostGate(), withFixPlan());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await React.act(async () => {
+    replyBox(reply)!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    );
+  });
+  expect(replyBox(reply)).toBeNull();
+  expect(document.body.querySelector('.tui-gate-sheet')).not.toBeNull();
+  expect(closes).toBe(0);
+  expect(document.activeElement).toBe(editButton(reply));
+});
+
+test('a card whose reply did not fit the gate offers no edit', async () => {
+  const gate = perThreadPostGate();
+  gate.questions = [
+    { ...gate.questions[0]!, context: undefined },
+    gate.questions[1]!,
+  ];
+  await render(gate);
+  const [unfit, fit] = postCards();
+  expect(unfit!.textContent).toContain(
+    'The reply text did not fit the gate; read it in the pane.'
+  );
+  expect(editButton(unfit!)).toBeNull();
+  expect(editButton(fit!)).not.toBeNull();
+});
+
+test('without its plan gate, an edited reply still carries its chip', async () => {
+  await render(perThreadPostGate());
+  const reply = postCards()[1]!;
+  await React.act(async () => editButton(reply)!.click());
+  await typeInto(replyBox(reply)!, 'Kept on purpose.');
+  expect(
+    reply.querySelector('.tui-gate-question-head [data-chip="edited"]')
+  ).not.toBeNull();
 });

@@ -128,7 +128,8 @@ old one. Instead:
     `drafting`, then run Gate 2 **fresh** (open it, wait, hand `{post: ...}`
     down) exactly as steps 5-6 describe below.
   - `respond-post` → execute posting FROM THE REPORT's finalized replies plus
-    the wait's `{post: <answers>, by: <by>}`, never re-adjudicating or
+    the wait's `{post: <answers>, by: <by>}` (a thread answer's `text`
+    replaces that thread's report reply), never re-adjudicating or
     re-implementing.
     Hand both to the domain skill exactly as step 6 would have.
 - `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
@@ -399,7 +400,10 @@ conversation.
      and descriptions. Ask the thread questions in order, up to four per
      call, and submit exactly one `<status-bin> gate answer <state>
      --answers <json> --by pane` after the last call, carrying every
-     thread question's answer.
+     thread question's answer. That answer never carries `text`: whatever
+     the human types in the form's free-text field, a full replacement
+     reply included, rides as `note`, and the report's finalized reply
+     posts.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
      for the background-wait mechanics, unchanged; the gate to name in
@@ -407,10 +411,11 @@ conversation.
    - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
      skill so it can execute the posting, or act per thread yourself on the
      generic no-domain-skill path: `post:<threadId>` posts that thread's
-     reply, `resolve:<threadId>` resolves the thread (after the reply when
-     both are picked), and an empty array leaves it untouched. `by` is
-     the wait's own decider field, so the domain skill's decision record
-     names who actually decided instead of guessing.
+     reply (the answer's `text` when it carries one, the report's finalized
+     reply otherwise), `resolve:<threadId>` resolves the thread (after the
+     reply when both are picked), and an empty array leaves it untouched.
+     `by` is the wait's own decider field, so the domain skill's decision
+     record names who actually decided instead of guessing.
 7. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
    `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
@@ -448,13 +453,14 @@ keyed by that gate's own question ids: for Gate 1, one `thread-<n>` id per
 unresolved thread plus `code-changes`; for Gate 2, one `thread-<n>` id per
 offered thread, each an array of `post:<threadId>` and/or
 `resolve:<threadId>`. Read either gate's thread answers by iterating every
-key other than `code-changes`, unwrapping a `{value, note}` object to its
-`value`, and splitting each value at the first `:` into the verb and the
-thread id: the thread id is in the value, and the `thread-<n>` key is never
-a join key. A Gate 2 opened before this shape (a `replies` multi, or its
-`replies-1`, `replies-2`, ... chunks, of bare thread ids plus
-`disposition`) still reads as it did: post the union of the selected
-replies, and resolve them only on `resolve-addressed`.
+key other than `code-changes`, unwrapping a `{value, note, text}` object to
+its `value`, and splitting each value at the first `:` into the verb and
+the thread id: the thread id is in the value, and the `thread-<n>` key is
+never a join key. A Gate 2 answer's `text`, when present, is the reply to
+post for that thread; the note never is. A Gate 2 opened before this shape
+(a `replies` multi, or its `replies-1`, `replies-2`, ... chunks, of bare
+thread ids plus `disposition`) still reads as it did: post the union of the
+selected replies, and resolve them only on `resolve-addressed`.
 
 A PreToolUse hook may deny native AskUserQuestion when no gate is open; that
 denial is the gate protocol speaking: open the gate as this section

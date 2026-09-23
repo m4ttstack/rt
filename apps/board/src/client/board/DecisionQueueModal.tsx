@@ -1,11 +1,22 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import type { GateDomain } from '@mattstack/gate-kit';
-import { Button, Chip, Markdown, ScrollPane } from '@mattstack/tui-kit';
+import {
+  answeredGateSummary,
+  domainForKind,
+  type GateDomain,
+} from '@mattstack/gate-kit';
+import {
+  Button,
+  CHECK_ICON,
+  Chip,
+  Icon,
+  Markdown,
+  ScrollPane,
+} from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview, ExecutorState } from '../types.ts';
 import { AttentionCard } from './AttentionCard.tsx';
-import { ago, cleanTitle } from './format.ts';
+import { ago, cleanTitle, signOff } from './format.ts';
 import { parseGateCtx, type PlanCtx, type PostCtx } from './gate-ctx.ts';
 import {
   AnsweredChip,
@@ -418,14 +429,75 @@ function DecisionQueueModal({
   );
 }
 
-/** The queue's terminal face, shown once no gate is left active. */
+/** One decided gate on the finished face. The outcome waits on the poll: a
+    row that does not carry its answer yet reads plain "answered". A gate
+    answered on another surface lands here too (the queue retires it), so
+    its decider is named. */
+function DecidedRow({ gate, mr }: { gate: GateRow; mr?: BoardMRWithReview }) {
+  const outcome = gate.answers
+    ? answeredGateSummary({
+        subject: gate.subject,
+        kind: gate.kind,
+        status: gate.status,
+        questions: gate.questions,
+        answer: {
+          answers: gate.answers,
+          by: gate.answeredBy,
+          answeredAt: gate.answeredAt,
+        },
+      }).outcome
+    : null;
+  const title = mr ? cleanTitle(mr.title) : null;
+  // 'board' is the `by` gates/answer.ts stamps on this board's own answers.
+  const by =
+    outcome !== null && gate.answeredBy && gate.answeredBy !== 'board'
+      ? ` · by ${gate.answeredBy}`
+      : '';
+  return (
+    <li className="tui-triage-done-row">
+      {mr && <span className="tui-triage-done-ref">!{mr.iid}</span>}
+      <span className="tui-respond-chip">
+        {domainForKind(gate.kind) ?? gate.kind.replaceAll('-', ' ')}
+      </span>
+      {title !== null ? (
+        <span className="tui-triage-done-title" title={title}>
+          {title}
+        </span>
+      ) : (
+        <span className="tui-triage-done-subject" title={gate.subject}>
+          {gate.subject}
+        </span>
+      )}
+      <span
+        className="tui-triage-done-outcome"
+        title={outcome === null ? undefined : `${outcome}${by}`}
+        data-pending={outcome === null ? 'true' : undefined}
+      >
+        {outcome ?? 'answered'}
+        {by && <span className="tui-triage-done-by">{by}</span>}
+      </span>
+    </li>
+  );
+}
+
+/** The queue's terminal face, shown once no gate is left active: what this
+    session decided, in the order it was decided. */
 function DecisionQueueComplete({
-  answered,
+  decided,
   onClose,
 }: {
-  answered: number;
+  decided: Array<{ gate: GateRow; mr?: BoardMRWithReview }>;
   onClose: () => void;
 }) {
+  const doneRef = useRef<HTMLButtonElement | null>(null);
+  // GateSheet focuses itself on mount; a child's effect runs before its
+  // parent's, so this lands after it and Enter closes.
+  useEffect(() => {
+    doneRef.current?.focus();
+  }, []);
+  const [hour] = useState(() => new Date().getHours());
+  const recapId = useId();
+  const count = decided.length;
   return (
     <GateSheet
       variant="triage"
@@ -434,11 +506,31 @@ function DecisionQueueComplete({
     >
       <div className="tui-triage-sheet-body">
         <div className="tui-triage-done">
-          <span className="tui-triage-done-line">
-            no gates left in the queue
+          <span className="tui-triage-done-badge">
+            <Icon d={CHECK_ICON} width="22" height="22" />
           </span>
-          <span className="tui-triage-done-counts">{answered} answered</span>
+          <h2 className="tui-triage-done-heading">Queue cleared</h2>
+          <p className="tui-triage-done-counts">
+            {count === 1 ? '1 decision' : `${count} decisions`} this session.{' '}
+            {signOff(hour)}
+          </p>
+          {count > 0 && (
+            <section
+              className="tui-sheet-context-card tui-triage-done-recap"
+              aria-labelledby={recapId}
+            >
+              <span id={recapId} className="tui-sheet-context-label">
+                decided this session
+              </span>
+              <ol className="tui-triage-done-list">
+                {decided.map(({ gate, mr }) => (
+                  <DecidedRow key={gate.gateId} gate={gate} mr={mr} />
+                ))}
+              </ol>
+            </section>
+          )}
           <Button
+            ref={doneRef}
             type="button"
             className="tui-triage-done-action"
             variant="filled"

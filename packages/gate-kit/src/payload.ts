@@ -52,15 +52,17 @@ export function gateAnswerPayload(
 export interface UnwrappedGateAnswer {
   value: string | string[];
   note?: string;
+  text?: string;
 }
 
 /**
  * Normalizes one answer's wire value into a uniform shape a renderer can
  * read without its own type check: a bare option string/array passes through
- * as `{value}`, and the wrapper's note form (`{value, note}`) unwraps to the
- * same shape with `note` carried alongside -- the object form (posted
- * whenever a human's pane answer carries free text) must render instead of
- * crashing React on an object child.
+ * as `{value}`, and the wrapper's `{value, note, text}` object form unwraps
+ * to the same shape with `note`/`text` carried alongside -- the object form
+ * (posted whenever a human's pane answer carries free text, or a board edit
+ * replaces the drafted text) must render instead of crashing React on an
+ * object child.
  */
 export function unwrapGateAnswer(raw: GateAnswerValue): UnwrappedGateAnswer {
   const value = unwrapGateAnswerValue(raw) as string | string[];
@@ -70,7 +72,11 @@ export function unwrapGateAnswer(raw: GateAnswerValue): UnwrappedGateAnswer {
     !Array.isArray(raw) &&
     'value' in raw
   ) {
-    return { value, note: raw.note };
+    return {
+      value,
+      note: raw.note,
+      ...(raw.text !== undefined ? { text: raw.text } : {}),
+    };
   }
   return { value };
 }

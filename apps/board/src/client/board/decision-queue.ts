@@ -22,10 +22,14 @@ export interface QueueView {
   canBack: boolean;
   canNext: boolean;
   complete: boolean;
-  answeredCount: number;
+  /** In the order they were answered. */
+  answeredIds: readonly string[];
 }
 
 export interface DecisionQueue extends QueueView {
+  /** The last entry this session saw for each gate, the recap's fallback
+      for a gate the board's rows no longer hold. */
+  seenEntries: ReadonlyMap<string, QueueEntry>;
   openAtStart: () => void;
   openAt: (gateId: string) => void;
   close: () => void;
@@ -100,8 +104,32 @@ export function queueView(
     canBack: backTo(session, entries, session.activeId) !== null,
     canNext: nextId !== null,
     complete: session.activeId === null && session.order.length > 0,
-    answeredCount: session.answered.length,
+    answeredIds: session.answered,
   };
+}
+
+/** The finished queue's recap, in answer order: each answered gate's latest
+    row where the board still holds one (it carries the answer once a poll
+    catches up), else the entry the queue last saw for it. */
+export function decidedEntries(
+  answeredIds: readonly string[],
+  rows: {
+    mrs: readonly BoardMRWithReview[];
+    queueExtras?: readonly GateRow[];
+  },
+  seen: ReadonlyMap<string, QueueEntry>
+): QueueEntry[] {
+  const wanted = new Set(answeredIds);
+  const latest = new Map<string, QueueEntry>();
+  for (const mr of rows.mrs)
+    for (const gate of mr.gates)
+      if (wanted.has(gate.gateId)) latest.set(gate.gateId, { gate, mr });
+  for (const gate of rows.queueExtras ?? [])
+    if (wanted.has(gate.gateId)) latest.set(gate.gateId, { gate });
+  return answeredIds.flatMap(id => {
+    const entry = latest.get(id) ?? seen.get(id);
+    return entry ? [entry] : [];
+  });
 }
 
 /** The first unanswered gate after `from` in `order` (from the start when
@@ -237,6 +265,14 @@ export function useDecisionQueue(
   // keep rendering it through a transient snapshot that dropped the gate
   // without answering it.
   const lastActiveEntry = useRef<QueueEntry | null>(null);
+  const seen = useRef<Map<string, QueueEntry> | null>(null);
+  const seenEntries = (seen.current ??= new Map());
+
+  useEffect(() => {
+    if (!open) return;
+    const map = (seen.current ??= new Map());
+    for (const e of entries) map.set(e.gate.gateId, e);
+  }, [open, entries]);
 
   useEffect(() => {
     if (!open) return;
@@ -267,6 +303,7 @@ export function useDecisionQueue(
     setSession(CLOSED_SESSION);
     setHeldId(null);
     lastActiveEntry.current = null;
+    seen.current = null;
   }, []);
 
   const next = useCallback(() => {
@@ -308,6 +345,7 @@ export function useDecisionQueue(
 
   return {
     ...view,
+    seenEntries,
     open,
     openAtStart,
     openAt,

@@ -59,7 +59,7 @@ import { CommentsDrawer } from './CommentsDrawer.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls, ThemeToggle } from './Controls.tsx';
 import type { QueueEntry } from './decision-queue.ts';
-import { useDecisionQueue } from './decision-queue.ts';
+import { decidedEntries, useDecisionQueue } from './decision-queue.ts';
 import {
   DecisionQueueComplete,
   DecisionQueueModal,
@@ -1467,7 +1467,7 @@ export function Board() {
       )}
       {queue.open && queue.complete && (
         <DecisionQueueComplete
-          answered={queue.answeredCount}
+          decided={decidedEntries(queue.answeredIds, data, queue.seenEntries)}
           onClose={queue.close}
         />
       )}

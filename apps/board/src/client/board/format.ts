@@ -44,6 +44,12 @@ function ago(iso: string | null, now: number): string {
   return `${Math.round(hours / 24)}d`;
 }
 
+function signOff(hour: number): string {
+  if (hour < 12) return 'Enjoy the rest of your morning.';
+  if (hour < 17) return 'Enjoy the rest of your afternoon.';
+  return 'Enjoy your evening.';
+}
+
 function activeReviewers(mr: BoardMR): string[] {
   // getReviewDisplayState maps the raw reviewState to the UI taxonomy; the SDK
   // never populates r.displayState, so derive it rather than reading that field.
@@ -385,6 +391,7 @@ export {
   GROUP_LABEL,
   SORT_LABEL,
   ago,
+  signOff,
   activeReviewers,
   cleanTitle,
   rowTitle,
