@@ -141,10 +141,21 @@ function emptyQueueCopy(
     if (slackHidden === 0) return 'Nothing found in slack';
     return `Nothing found in slack · ${slackHidden} item${slackHidden === 1 ? '' : 's'} hidden`;
   }
-  if (draftFilter === 'hide' && draftsHidden > 0) {
-    return `nothing waiting on review ✓ · ${draftsHidden} draft${draftsHidden === 1 ? '' : 's'} hidden`;
-  }
-  return 'nothing waiting on review ✓';
+  const drafts = draftsHiddenCopy(draftFilter, draftsHidden);
+  return drafts
+    ? `nothing waiting on review ✓ · ${drafts}`
+    : 'nothing waiting on review ✓';
+}
+
+/** The sidebar counts every row for a member, drafts included, so a list
+    the drafts chip has trimmed needs to say what it hid or the two numbers
+    read as disagreeing. */
+function draftsHiddenCopy(
+  draftFilter: DraftFilter,
+  draftsHidden: number
+): string | null {
+  if (draftFilter !== 'hide' || draftsHidden === 0) return null;
+  return `${draftsHidden} draft${draftsHidden === 1 ? '' : 's'} hidden`;
 }
 
 // Module scope, not inline in useLaunchAction's call below: an inline arrow
@@ -1004,6 +1015,7 @@ export function Board() {
     groups,
   } = boardView!;
 
+  const draftsNote = draftsHiddenCopy(draftFilter, draftsHidden);
   const dataAge = dataAgeLabel(data.dataSyncedAt, now);
   // Both known and the board asks for more history than rt actually syncs --
   // config drift the board can't self-correct, so it needs to be visible.
@@ -1319,6 +1331,9 @@ export function Board() {
               />
             </Panel>
           ))
+        )}
+        {filtered.length > 0 && draftsNote && (
+          <p className="tui-hidden-note">{draftsNote}</p>
         )}
 
         <footer

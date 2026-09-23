@@ -1448,6 +1448,12 @@ body {
   text-align: center;
   margin-top: 3.5rem;
 }
+.tui-hidden-note {
+  color: var(--text-2);
+  font: 500 0.82rem/1.5 var(--font-sans);
+  text-align: center;
+  margin-top: 1.2rem;
+}
 .tui-loading {
   color: var(--text-2);
   text-align: center;
