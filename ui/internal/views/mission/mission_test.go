@@ -774,8 +774,9 @@ const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"
 	`"stashCount":0,"notice":""}`
 
 // historyRowY is the frame row of commit idx's summary line: topH(4), then
-// the History sidebar's tabs(3) + tabs-gap(1), then two rows per commit.
-func historyRowY(idx int) int { return 4 + 4 + 2*idx }
+// the History sidebar's tabs(3) + tabs-gap(1), then three rows per commit
+// (summary, byline, separator rule).
+func historyRowY(idx int) int { return 4 + 4 + 3*idx }
 
 func openHistory(t *testing.T) *testutil.Session {
 	t.Helper()

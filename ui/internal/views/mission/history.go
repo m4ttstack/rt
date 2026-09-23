@@ -21,7 +21,8 @@ import (
 const (
 	// tabs(3, pad+label+underline) + the tabs-gap blank band row(1).
 	historyFixedTopRows = 4
-	historyRowHeight    = 2
+	// summary, byline, then the separator rule (GHD's row border).
+	historyRowHeight = 3
 	// Rows from the end at which the next page is requested.
 	historyPageThreshold = 10
 	historyFilesMin      = 24
@@ -346,12 +347,12 @@ func (m *Mission) renderCommitList(width, height int) string {
 	lines := make([]string, 0, height)
 	for i := 0; i < capRows; i++ {
 		idx := top + i
-		a, b := blank, blank
+		a, b, c := blank, blank, blank
 		if i < vis && idx < n {
-			a, b = renderCommitRow(commits[idx], rowWidth, commits[idx].Sha == m.historyCursor, m.historyInSelection(idx), idx == m.hoverCommit)
+			a, b, c = renderCommitRow(commits[idx], rowWidth, commits[idx].Sha == m.historyCursor, m.historyInSelection(idx), idx == m.hoverCommit)
 		}
 		cell := picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
-		lines = append(lines, a+cell, b+cell)
+		lines = append(lines, a+cell, b+cell, c+cell)
 	}
 	for len(lines) < height {
 		lines = append(lines, blank+restOn.Render(" "))
@@ -359,11 +360,13 @@ func (m *Mission) renderCommitList(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderCommitRow is GHD's commit-list-item as two terminal rows: the
-// summary with its tag/unpushed indicators flush right, then byline · time.
-// Both rows are exactly width cells: anything wider would wrap and desync
-// historySidebarHit's two-rows-per-commit arithmetic.
-func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool) (string, string) {
+// renderCommitRow is GHD's commit-list-item as three terminal rows: the
+// bold summary with its tag/unpushed indicators flush right, the byline ·
+// time, and the separator rule. Every row is exactly width cells: anything
+// wider would wrap and desync historySidebarHit's rows-per-commit
+// arithmetic. The rule stays on Bg so a selection band never merges two
+// commits into one block.
+func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool) (string, string, string) {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	switch {
 	case selected || cursor:
@@ -402,7 +405,7 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 		right, rightW, gap = "", 0, 0
 		summaryW = max(width-prefixW-1, 0)
 	}
-	summaryStyle := on.Foreground(theme.Text)
+	summaryStyle := on.Foreground(theme.Text).Bold(true)
 	summary := c.Summary
 	if summary == "" {
 		summary = "Empty commit message"
@@ -414,13 +417,21 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 	}
 	line1 += right + on.Render(" ")
 
-	meta := c.Byline
-	if c.When != "" {
-		meta += " · " + c.When
-	}
+	// The relative time is what a reader scans for, so a long byline (several
+	// co-authors) gives up its own tail before the time loses a cell.
 	metaW := max(width-2, 0)
-	line2 := on.Render("  ") + on.Foreground(theme.Dim).Width(metaW).Render(clip(meta, metaW))
-	return line1, line2
+	meta := clip(c.Byline, metaW)
+	if c.When != "" {
+		when := " · " + c.When
+		if bylineW := metaW - lipgloss.Width(when); bylineW >= 4 {
+			meta = clip(c.Byline, bylineW) + when
+		} else {
+			meta = clip(c.Byline+when, metaW)
+		}
+	}
+	line2 := on.Render("  ") + on.Foreground(theme.Dimmer).Width(metaW).Render(meta)
+	rule := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width))
+	return line1, line2, rule
 }
 
 // historySidebarHit walks renderHistorySidebar's row sequence in lockstep.
@@ -441,6 +452,9 @@ func (m *Mission) historySidebarHit(x, y, listRegionH int) hit {
 	idx := m.historyTop + row/historyRowHeight
 	if row/historyRowHeight >= listRegionH/historyRowHeight || idx >= len(m.model.History.Commits) {
 		return hit{}
+	}
+	if row%historyRowHeight == historyRowHeight-1 {
+		return hit{} // the separator rule: never hovers, never clicks
 	}
 	return hit{kind: hitCommitRow, idx: idx}
 }

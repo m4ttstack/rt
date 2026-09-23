@@ -192,8 +192,8 @@ func TestCommitRowNeverWraps(t *testing.T) {
 			for _, flags := range [][3]bool{{false, false, false}, {true, true, false}, {false, false, true}} {
 				c := v
 				c.Summary = s
-				a, b := renderCommitRow(c, width, flags[0], flags[1], flags[2])
-				for li, line := range []string{a, b} {
+				a, b, r := renderCommitRow(c, width, flags[0], flags[1], flags[2])
+				for li, line := range []string{a, b, r} {
 					if strings.Contains(line, "\n") {
 						t.Fatalf("summary %q variant %d line %d wrapped: %q", s, vi, li, line)
 					}
@@ -498,8 +498,8 @@ func TestHitTestResolvesCommitRowsAndTab(t *testing.T) {
 	if h := m.hitTest(2, y+1); h.kind != hitCommitRow || h.idx != 0 {
 		t.Fatalf("the byline row should resolve to the same commit, got %+v", h)
 	}
-	if h := m.hitTest(2, y+2); h.kind != hitCommitRow || h.idx != 1 {
-		t.Fatalf("the next row pair should be commit 1, got %+v", h)
+	if h := m.hitTest(2, y+historyRowHeight); h.kind != hitCommitRow || h.idx != 1 {
+		t.Fatalf("the next commit's summary row should be commit 1, got %+v", h)
 	}
 	if h := m.hitTest(1, l.topH+1); h.kind != hitTab || h.idx != 0 {
 		t.Fatalf("the inactive Changes half should resolve to hitTab idx 0, got %+v", h)
@@ -690,6 +690,52 @@ func TestScrolledHistoryHitMirrorsRenderedRows(t *testing.T) {
 	}
 }
 
+func TestLongBylineKeepsTheTime(t *testing.T) {
+	width := sidebarWidth - 1
+	c := HistoryCommitRow{Summary: "s", Byline: "Matthew Goodwin, Claude Opus 5.5 (1M context)", When: "3 hours ago"}
+	_, b, _ := renderCommitRow(c, width, false, false, false)
+	line := ansi.Strip(b)
+	if !strings.HasSuffix(strings.TrimRight(line, " "), "· 3 hours ago") {
+		t.Fatalf("the relative time must survive a long byline: %q", line)
+	}
+	if !strings.Contains(line, "Matthew Goodwin") || !strings.Contains(line, "…") {
+		t.Fatalf("the byline should give up its own tail: %q", line)
+	}
+	if !strings.Contains(b, fgSGR(theme.Dimmer)) {
+		t.Fatalf("the byline should wear Dimmer so it recedes behind the summary: %q", b)
+	}
+}
+
+func TestCommitSummaryIsBoldAndRowsAreRuled(t *testing.T) {
+	width := sidebarWidth - 1
+	a, _, r := renderCommitRow(HistoryCommitRow{Summary: "Guard badges", Byline: "Matt", When: "1 day ago"}, width, false, false, false)
+	if !strings.Contains(a, "\x1b[1;") && !strings.Contains(a, ";1;") && !strings.Contains(a, "\x1b[1m") {
+		t.Fatalf("the summary should be bold: %q", a)
+	}
+	if ansi.Strip(r) != strings.Repeat("─", width) || !strings.Contains(r, fgSGR(theme.Rule)) {
+		t.Fatalf("the third row should be a full-width Rule separator: %q", r)
+	}
+	_, _, selRule := renderCommitRow(HistoryCommitRow{Summary: "x"}, width, true, true, false)
+	if strings.Contains(selRule, bgSGR(theme.SelBg)) {
+		t.Fatalf("a selected commit's separator must stay on Bg: %q", selRule)
+	}
+}
+
+func TestSeparatorRuleRowIsInert(t *testing.T) {
+	m := newHistoryTestMission()
+	ruleY := m.layout().topH + historyFixedTopRows + historyRowHeight - 1
+	if h := m.hitTest(3, ruleY); h.kind != hitNone {
+		t.Fatalf("the separator rule must not hit, got %v", h)
+	}
+	m.Update(tea.MouseMotionMsg{X: 3, Y: ruleY})
+	if m.hoverCommit != -1 {
+		t.Fatalf("hovering the separator must not hover a commit, got %d", m.hoverCommit)
+	}
+	if h := m.hitTest(3, ruleY-1); h.kind != hitCommitRow || h.idx != 0 {
+		t.Fatalf("the byline row above the rule still belongs to commit 0, got %v", h)
+	}
+}
+
 func TestLongTagKeepsSummaryReadable(t *testing.T) {
 	width := sidebarWidth - 1
 	tag := "release-candidate-" + strings.Repeat("x", 22)
@@ -698,7 +744,7 @@ func TestLongTagKeepsSummaryReadable(t *testing.T) {
 	}
 	for _, tagW := range []int{20, 30, 35, 40} {
 		c := HistoryCommitRow{Summary: "Fix pty paint predicate", Byline: "Matt", When: "3 hours ago", Tags: []string{tag[:tagW]}, Unpushed: true}
-		a, _ := renderCommitRow(c, width, false, false, false)
+		a, _, _ := renderCommitRow(c, width, false, false, false)
 		line := ansi.Strip(a)
 		if !strings.Contains(line, "Fix pty paint predicate") {
 			t.Fatalf("a %d-cell tag starved the summary: %q", tagW, line)
@@ -710,7 +756,7 @@ func TestLongTagKeepsSummaryReadable(t *testing.T) {
 			t.Fatalf("setup: the capped pill should fit a third of the row, got %d", pillW)
 		}
 	}
-	short, _ := renderCommitRow(HistoryCommitRow{Summary: "Guard badges", Tags: []string{"v0.9.1"}}, width, false, false, false)
+	short, _, _ := renderCommitRow(HistoryCommitRow{Summary: "Guard badges", Tags: []string{"v0.9.1"}}, width, false, false, false)
 	if !strings.Contains(ansi.Strip(short), " v0.9.1 ") {
 		t.Fatalf("a short tag must render whole: %q", ansi.Strip(short))
 	}
