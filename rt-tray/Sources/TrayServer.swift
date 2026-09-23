@@ -419,23 +419,25 @@ class TrayServer {
                         errs.append(String(describing: error))
                     }
                     loginAfter = Self.statusName(SMAppService.mainApp.status)
+                    let handDeck = await Self.retireHandDeckAgent()
 
                     // Ground truth, not intention: retired means neither
-                    // registration is enabled any more.
+                    // registration is enabled any more. A hand deck agent
+                    // that would not retire is logged, never a retire failure.
                     let retired = daemonAfter != "enabled" && loginAfter != "enabled"
                     if retired {
                         TrayLog.info("flavor retired",
                                      ["daemon": daemonAfter, "loginItem": loginAfter,
                                       "label": self.daemonLifecycle?.label ?? "(none)"])
                         self.sendResponse(connection: connection, status: 200,
-                                          body: "{\"ok\":true,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\"}")
+                                          body: "{\"ok\":true,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\"}")
                     } else {
                         let errMsg = errs.joined(separator: "; ")
                             .replacingOccurrences(of: "\"", with: "\\\"")
                         TrayLog.error("flavor retire failed",
                                       ["daemon": daemonAfter, "loginItem": loginAfter, "err": errMsg])
                         self.sendResponse(connection: connection, status: 500,
-                                          body: "{\"ok\":false,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"error\":\"\(errMsg)\"}",
+                                          body: "{\"ok\":false,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\",\"error\":\"\(errMsg)\"}",
                                           path: path)
                     }
                 }
@@ -486,6 +488,22 @@ class TrayServer {
                 self.readFullRequest(connection: connection, buffer: accumulated, completion: completion)
             }
         }
+    }
+
+    /// Shared by /flavor/retire and the stand-down path in AppDelegate.
+    static func retireHandDeckAgent() async -> HandDeckRetireOutcome {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let outcome = await HandDeckAgent.retire(home: home, uid: getuid(), runner: SystemCommandRunner(), fs: .system)
+        switch outcome {
+        case .absent:
+            break
+        case .retired(let bootedOut, let archivedTo):
+            TrayLog.info("retired hand-installed deck agent",
+                         ["label": HandDeckAgent.label, "bootedOut": String(bootedOut), "archivedTo": archivedTo])
+        case .failed(let err):
+            TrayLog.warn("could not retire hand-installed deck agent", ["label": HandDeckAgent.label, "err": err])
+        }
+        return outcome
     }
 
     static func statusName(_ status: SMAppService.Status) -> String {

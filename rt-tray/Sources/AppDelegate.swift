@@ -269,6 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             // status logged below is the ground truth.
             TrayLog.warn("login item unregister failed", ["err": String(describing: error)])
         }
+        _ = await TrayServer.retireHandDeckAgent()
         TrayLog.info("stood down", ["daemon": TrayServer.statusName(daemonLifecycle.status),
                                     "loginItem": TrayServer.statusName(SMAppService.mainApp.status)])
         // The notification is the only trace this leaves, so the quit waits
