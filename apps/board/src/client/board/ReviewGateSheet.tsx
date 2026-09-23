@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
-import { Invadr } from 'invadrs/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   collapseChunks,
@@ -19,46 +12,32 @@ import {
   type GateOption,
   type GateQuestion,
 } from '@mattstack/gate-kit';
-import {
-  Button,
-  Chip,
-  Markdown,
-  useBodyScrollLock,
-  useEscapeClose,
-} from '@mattstack/tui-kit';
+import { Button, Chip, Markdown } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
-import type { TriageGateState } from './DecisionQueueModal.tsx';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
-import { parseFindingOption, type ParsedFinding } from './finding-option.ts';
-import { ago, cleanTitle } from './format.ts';
-import { parseGateContext, sectionFor } from './gate-context.ts';
+import type { Disposition, FindingEntry, FindingSeverity } from './gate-ctx.ts';
 import { AnsweredChip, type GateFormState } from './GateForm.tsx';
+import { GateSheet, type GateSheetQueue } from './GateSheet.tsx';
 import {
   CircleCheckFilledIcon,
-  NoAnchorIcon,
   PencilLineIcon,
   SearchCheckIcon,
 } from './icons.tsx';
-
-/** Readiness values (`with-fixes`, `blocked`, ...) come as hyphenated
-    tokens whether they arrive from `report.summary.readiness` or from a
-    parsed `gate.context` verdict; both feed this one sentence. The
-    question-and-answer prefix only fits the schema's own vocabulary --
-    a foreign verdict like `blocked` renders bare so the sentence never
-    contradicts itself. */
-const READINESS_VALUES = new Set(['yes', 'no', 'with-fixes']);
-function readinessProse(value: string): string {
-  const prose = value.replace(/-/g, ' ');
-  return READINESS_VALUES.has(value) ? `Ready to merge: ${prose}` : prose;
-}
+import { MrCard } from './MrCard.tsx';
+import {
+  readinessProse,
+  readReviewGate,
+  reviewMeta,
+  SEVERITY_LABEL,
+  SEVERITY_ORDER,
+} from './review-gate.ts';
 
 /** The engine's optional record fields (`docs/superpowers/specs/
     2026-09-18-review-gate-redesign-design.md` §1): all absent on a report
     that only carries `summary`/`findings`, in which case the sheet falls
     back to the raw markdown instead of an empty cluster. */
 interface ReviewReportJson {
-  summary?: { readiness?: string; reasoning?: string };
   depth?: string;
   strengths?: Array<{ lead: string; detail?: string }>;
   checks?: Array<{ tag: string; text: string }>;
@@ -66,48 +45,14 @@ interface ReviewReportJson {
 }
 
 /** report.json arrives from disk unvalidated; the record arrays each have
-    their own safe* guard at render, but `summary` fields land in JSX
-    directly, where a non-string (an object readiness, say) would throw as
-    a React child. Keep only the string-shaped summary fields. */
+    their own safe* guard at render, and `depth` lands in JSX directly, so
+    a non-string one is dropped here. */
 function sanitizeReport(j: unknown): ReviewReportJson | null {
   if (typeof j !== 'object' || j === null || Array.isArray(j)) return null;
   const raw = j as Record<string, unknown>;
   const out: ReviewReportJson = { ...(raw as ReviewReportJson) };
-  const s = raw['summary'];
-  if (typeof s === 'object' && s !== null && !Array.isArray(s)) {
-    const summary: { readiness?: string; reasoning?: string } = {};
-    const { readiness, reasoning } = s as Record<string, unknown>;
-    if (typeof readiness === 'string') summary.readiness = readiness;
-    if (typeof reasoning === 'string') summary.reasoning = reasoning;
-    out.summary = summary;
-  } else {
-    delete out.summary;
-  }
   if (typeof raw['depth'] !== 'string') delete out.depth;
   return out;
-}
-
-export interface ReviewGateSheetQueue {
-  /** 0-based position of the active gate in the queue. */
-  index: number;
-  total: number;
-  states: TriageGateState[];
-  onPrev: () => void;
-  onNext: () => void;
-}
-
-/** True when a gate is the review-post shape this sheet renders: at least
-    one question option parses as a finding (`[Tier] title`), or the gate
-    carries no multi question at all (a clean review, outcome only). A gate
-    whose only multi question is the legacy per-tier checkbox ("Minor (4)")
-    falls through to the generic decision-queue modal instead. */
-export function isReviewSheetGate(gate: GateRow): boolean {
-  if (gate.kind !== 'review-post') return false;
-  const hasFindingOption = gate.questions.some(q =>
-    q.options.some(o => parseFindingOption(o) !== null)
-  );
-  if (hasFindingOption) return true;
-  return !gate.questions.some(q => q.multi);
 }
 
 /** The engine's own emission and hand-edits of report.json both land here
@@ -219,22 +164,31 @@ function singles(answers: GateAnswers): GateAnswers {
   return out;
 }
 
-function tierGroupsOf(
-  findings: ParsedFinding[]
-): Array<[string, ParsedFinding[]]> {
-  const map = new Map<string, ParsedFinding[]>();
-  for (const f of findings) {
-    const list = map.get(f.tier);
-    if (list) list.push(f);
-    else map.set(f.tier, [f]);
-  }
-  return [...map.entries()];
+const DISPOSITION: Record<
+  Disposition,
+  { text: string; hue: 'accent' | 'amber' | 'green' }
+> = {
+  new: { text: 'new', hue: 'accent' },
+  'still-open': { text: 'still open', hue: 'amber' },
+  'addressed-check': { text: 'confirm fix', hue: 'green' },
+};
+
+function severityGroups(
+  findings: FindingEntry[]
+): Array<[FindingSeverity, FindingEntry[]]> {
+  return SEVERITY_ORDER.map(
+    s =>
+      [s, findings.filter(f => f.severity === s)] as [
+        FindingSeverity,
+        FindingEntry[],
+      ]
+  ).filter(([, items]) => items.length > 0);
 }
 
 /** The full-screen sheet a `review-post` gate opens (design doc §4). Header
-    carries queue chrome; the main column is the MR card, findings, and the
-    optional record cluster; the rail is decision context, checks, and the
-    verdict form. Selection state keys by the COLLAPSED question ids
+    carries queue chrome; the main column is the findings and the optional
+    record cluster; the rail is the MR card, decision context and checks,
+    over the pinned verdict dock. Selection state keys by the COLLAPSED question ids
     (`collapseChunks`), so a fresh gate defaults to every finding checked and
     the recommended verdict picked -- the reviewer opts OUT rather than in. */
 function ReviewGateSheet({
@@ -243,65 +197,25 @@ function ReviewGateSheet({
   form,
   queue,
   onClose,
-  onSkip,
+  onContinue,
   onFocusPane,
 }: {
   gate: GateRow;
   mr?: BoardMRWithReview;
   form: GateFormState;
-  queue: ReviewGateSheetQueue;
+  queue: GateSheetQueue;
   onClose: () => void;
-  onSkip: () => void;
+  /** Retires a gate answered elsewhere from the queue. */
+  onContinue: () => void;
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
 }) {
-  useEscapeClose(onClose);
-  useBodyScrollLock();
-
-  // Dialog focus contract: take focus on mount, keep Tab cycling inside
-  // (aria-modal alone does not fence keyboard focus), and hand focus back
-  // to whatever opened the sheet when it unmounts.
-  const sheetRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    sheetRef.current?.focus();
-    return () => opener?.focus();
-  }, []);
-  const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Tab') return;
-    const root = sheetRef.current;
-    if (!root) return;
-    const focusable = Array.from(
-      root.querySelectorAll<HTMLElement>(
-        'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
-      )
-    ).filter(el => !el.hasAttribute('disabled'));
-    if (focusable.length === 0) return;
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
-
   const { questions, groups } = useMemo(
     () => collapseChunks(gate.questions),
     [gate.questions]
   );
+  const data = useMemo(() => readReviewGate(gate), [gate]);
   const findingsQuestion = useMemo<GateQuestion | undefined>(
-    () =>
-      questions.find(
-        q =>
-          q.multi &&
-          q.options.length > 0 &&
-          q.options.some(o => parseFindingOption(o) !== null)
-      ),
+    () => questions.find(q => q.multi && q.id === 'findings'),
     [questions]
   );
   const outcomeQuestion = useMemo<GateQuestion | undefined>(
@@ -311,40 +225,17 @@ function ReviewGateSheet({
   const findingsName = findingsQuestion?.id;
   const outcomeName = outcomeQuestion?.id;
 
-  const findings = useMemo<ParsedFinding[]>(
+  const findings = useMemo<FindingEntry[]>(
     () =>
-      (findingsQuestion?.options ?? [])
-        .map(o => parseFindingOption(o))
-        .filter((f): f is ParsedFinding => f !== null),
-    [findingsQuestion]
+      (findingsQuestion?.options ?? []).flatMap(o => {
+        const f = data?.findings.get(optionValue(o));
+        return f ? [f] : [];
+      }),
+    [findingsQuestion, data]
   );
-  const tierGroups = useMemo(() => tierGroupsOf(findings), [findings]);
-
-  // The gate's own context (design doc §3: "gate-level --context carries the
-  // readiness line and tier counts"), sectioned per question the same way
-  // GateForm.tsx does -- the outcome question's section carries the verdict
-  // recommendation a bare option label may not spell out.
-  const parsedContext = useMemo(
-    () => parseGateContext(gate.context),
-    [gate.context]
-  );
-  const outcomeSection = useMemo(
-    () =>
-      outcomeQuestion
-        ? sectionFor(parsedContext, {
-            id: outcomeQuestion.id,
-            label: outcomeQuestion.label,
-          })
-        : undefined,
-    [parsedContext, outcomeQuestion]
-  );
-  const isRecommended = (o: GateOption) => {
-    if (optionDisplayFor(o).recommended) return true;
-    return (
-      outcomeSection?.recommendation !== undefined &&
-      optionDisplayFor(o).text.toLowerCase() === outcomeSection.recommendation
-    );
-  };
+  const tierGroups = useMemo(() => severityGroups(findings), [findings]);
+  const isRecommended = (o: GateOption) =>
+    Boolean(optionDisplayFor(o).recommended);
 
   // A fresh gate (or an explicit reset) proposes posting everything with the
   // recommended verdict; the reviewer unchecks rather than builds the set
@@ -445,7 +336,7 @@ function ReviewGateSheet({
     };
   }, [findings.length, report]);
 
-  const toggleTier = (items: ParsedFinding[], on: boolean) => {
+  const toggleTier = (items: FindingEntry[], on: boolean) => {
     if (!findingsName) return;
     for (const f of items) form.toggleMulti(findingsName, f.id, on);
   };
@@ -460,147 +351,61 @@ function ReviewGateSheet({
           ? { value: selectedOutcome, note: trimmedNote }
           : selectedOutcome,
     };
-    void form.submit({ answers }, submitted => ({
-      ...splitChunkSelections(groups, gate.questions, pickMultis(submitted)),
-      ...singles(submitted),
-    }));
+    void form.submit({ answers }, submitted => {
+      const multis = pickMultis(submitted);
+      return {
+        ...Object.fromEntries(
+          Object.entries(multis).filter(([id]) => !groups.has(id))
+        ),
+        ...splitChunkSelections(groups, gate.questions, multis),
+        ...singles(submitted),
+      };
+    });
   };
 
   const parked = gate.status === 'parked';
 
-  return (
-    <div
-      className="tui-review-sheet"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tui-review-sheet-title"
-      tabIndex={-1}
-      ref={sheetRef}
-      onKeyDown={trapTab}
-    >
-      <header className="tui-review-sheet-head">
-        <span className="tui-review-sheet-title" id="tui-review-sheet-title">
-          decision queue
-        </span>
-        <span className="tui-review-sheet-head-actions">
-          <Button
-            type="button"
-            variant="light"
-            intent="accent"
-            size="lg"
-            disabled={
-              parked
-                ? !(gate.domain && mr)
-                : !form.originFocusable || form.focusBusy
-            }
-            onClick={() =>
-              parked
-                ? gate.domain && mr && onFocusPane(mr, gate.domain)
-                : void form.focusGate()
-            }
-          >
-            focus pane
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            intent="muted"
-            size="lg"
-            onClick={onSkip}
-          >
-            skip gate
-          </Button>
-        </span>
-        <span className="tui-review-sheet-spacer" />
-        <nav className="tui-review-queue-nav" aria-label="gate queue">
-          {/* No backward queue traversal exists yet (the queue only ever
-              advances); unconditionally disabled rather than a live control
-              with nothing behind it. */}
-          <button
-            type="button"
-            className="tui-review-queue-chevron"
-            onClick={queue.onPrev}
-            disabled
-            aria-disabled="true"
-            aria-label="previous gate"
-          >
-            ‹
-          </button>
-          <span className="tui-review-queue-pips">
-            {queue.states.map((s, i) => (
-              <i key={i} className="tui-review-queue-pip" data-state={s} />
-            ))}
-          </span>
-          <span className="tui-review-queue-pos">
-            gate {queue.index + 1} of {queue.total}
-          </span>
-          <button
-            type="button"
-            className="tui-review-queue-chevron"
-            onClick={queue.onNext}
-            disabled={queue.index >= queue.total - 1}
-            aria-label="next gate"
-          >
-            ›
-          </button>
-        </nav>
-        <span className="tui-review-head-sep" aria-hidden="true" />
-        <span className="tui-review-gate-tag">
-          review gate{mr ? ` !${mr.iid}` : ''}
-        </span>
-        <button
-          type="button"
-          className="tui-review-close"
-          onClick={onClose}
-          aria-label="close"
-        >
-          ✕
-        </button>
-      </header>
-      <div className="tui-review-sheet-body">
-        <section className="tui-review-sheet-main" ref={mainRef}>
-          {mr && (
-            <div className="tui-review-mr-card">
-              <Invadr
-                id={mr.author.username}
-                palette="css-vars"
-                className="tui-review-mr-avatar"
-              />
-              <div className="tui-review-mr-body">
-                <div className="tui-review-mr-head">
-                  <span className="tui-review-author">
-                    {mr.author.name || mr.author.username}
-                  </span>
-                  <span className="tui-review-mr-open">
-                    opened !{mr.iid} into {mr.targetBranch} ·{' '}
-                    {ago(mr.createdAt, Date.now())}
-                  </span>
-                </div>
-                <h2 className="tui-review-mr-title">{cleanTitle(mr.title)}</h2>
-                <div className="tui-review-mr-meta">
-                  <span className="tui-branch">{mr.sourceBranch}</span>
-                  {mr.diff && (
-                    <span className="tui-review-diff">
-                      <span className="tui-review-diff-add">
-                        +{mr.diff.additions}
-                      </span>
-                      <span className="tui-review-diff-del">
-                        -{mr.diff.deletions}
-                      </span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+  if (!data) return null;
+  const { review } = data;
+  const meta = reviewMeta(review);
 
+  return (
+    <GateSheet
+      variant="review"
+      ariaLabel="review gate"
+      actions={
+        <Button
+          type="button"
+          variant="light"
+          intent="accent"
+          size="sm"
+          disabled={
+            parked
+              ? !(gate.domain && mr)
+              : !form.originFocusable || form.focusBusy
+          }
+          onClick={() =>
+            parked
+              ? gate.domain && mr && onFocusPane(mr, gate.domain)
+              : void form.focusGate()
+          }
+        >
+          focus pane
+        </Button>
+      }
+      queue={queue}
+      tag={`review gate${mr ? ` !${mr.iid}` : ''}`}
+      onClose={onClose}
+    >
+      <div className="tui-sheet-body">
+        <section className="tui-sheet-main" ref={mainRef}>
           {findingsQuestion && (
             <>
-              <div className="tui-review-find-head">
-                <span className="tui-review-find-title">
+              <div className="tui-sheet-list-head">
+                <span className="tui-sheet-list-title">
                   {findingsQuestion.label}
                 </span>
-                <span className="tui-review-find-tally">
+                <span className="tui-sheet-list-tally">
                   {selectedFindings.size} of {findings.length} selected
                   {!atEnd && moreBelow > 0 ? ` · ${moreBelow} more below` : ''}
                 </span>
@@ -615,8 +420,11 @@ function ReviewGateSheet({
                   return (
                     <div className="tui-review-tier-group" key={tier}>
                       <div className="tui-review-tier-head">
-                        <span className="tui-review-tier-pill" data-tier={tier}>
-                          {tier} ({items.length})
+                        <span
+                          className="tui-review-tier-pill"
+                          data-tier={SEVERITY_LABEL[tier]}
+                        >
+                          {SEVERITY_LABEL[tier]} ({items.length})
                         </span>
                         <span className="tui-review-allnone-group">
                           <button
@@ -653,6 +461,7 @@ function ReviewGateSheet({
                               data-type="checkbox"
                               data-checked={checked ? '' : undefined}
                               checked={checked}
+                              aria-labelledby={`tui-review-finding-title-${f.id}`}
                               onChange={e =>
                                 findingsName &&
                                 form.toggleMulti(
@@ -664,26 +473,32 @@ function ReviewGateSheet({
                             />
                             <span className="tui-review-finding-body">
                               <span className="tui-review-finding-line1">
-                                <span className="tui-review-finding-title">
+                                <span
+                                  className="tui-review-finding-title"
+                                  id={`tui-review-finding-title-${f.id}`}
+                                >
                                   {f.title}
                                 </span>
-                                {f.kind && (
-                                  <span className="tui-review-finding-kind">
-                                    {f.kind}
+                                {f.disposition && (
+                                  <span
+                                    className="tui-respond-pill"
+                                    data-hue={DISPOSITION[f.disposition].hue}
+                                    data-disposition={f.disposition}
+                                  >
+                                    {DISPOSITION[f.disposition].text}
                                   </span>
                                 )}
                               </span>
-                              {f.anchor && (
+                              {f.file && (
                                 <span className="tui-review-finding-anchor">
-                                  {f.anchor}
+                                  {f.file}
                                 </span>
                               )}
-                              {f.anchorLabel && (
-                                <span className="tui-review-finding-anchor-label">
-                                  <NoAnchorIcon />
-                                  {f.anchorLabel}
-                                </span>
-                              )}
+                              <span className="tui-review-finding-text">
+                                <Markdown unstyled linkTargetBlank>
+                                  {f.body}
+                                </Markdown>
+                              </span>
                               {f.fix && (
                                 <span className="tui-review-finding-fix">
                                   {f.fix}
@@ -760,9 +575,9 @@ function ReviewGateSheet({
             <FullReportDisclosure mrUrl={mr?.webUrl} />
           )}
         </section>
-        <aside className="tui-review-sheet-rail">
+        <aside className="tui-sheet-rail">
           {form.lost ? (
-            <div className="tui-review-lost">
+            <div className="tui-sheet-lost">
               <span className="tui-gate-error">answered elsewhere</span>
               <AnsweredChip
                 startOpen
@@ -774,64 +589,56 @@ function ReviewGateSheet({
                   answer: { answers: form.lost.answers, by: form.lost.by },
                 }}
               />
+              <Button
+                type="button"
+                variant="filled"
+                intent="accent"
+                size="lg"
+                onClick={onContinue}
+              >
+                continue
+              </Button>
             </div>
           ) : (
             <>
-              <div className="tui-review-rail-scroll">
-                <div className="tui-review-decision-card">
-                  <span className="tui-review-decision-label">
+              <div className="tui-sheet-rail-scroll">
+                {mr && <MrCard mr={mr} />}
+                <div className="tui-sheet-context-card">
+                  <span className="tui-sheet-context-label">
                     decision context
                   </span>
-                  {report?.summary?.readiness ? (
-                    <p className="tui-review-decision-lead">
-                      {readinessProse(report.summary.readiness)}
-                    </p>
-                  ) : (
-                    outcomeSection?.verdict && (
-                      <p className="tui-review-decision-lead">
-                        {readinessProse(outcomeSection.verdict)}
-                      </p>
-                    )
-                  )}
-                  {report?.summary?.reasoning ? (
-                    <p className="tui-review-decision-reasoning">
-                      {report.summary.reasoning}
-                    </p>
-                  ) : (
-                    (outcomeSection?.remainder ??
-                      outcomeSection?.body ??
-                      parsedContext?.preamble) && (
-                      <div className="tui-review-decision-reasoning">
-                        <Markdown unstyled linkTargetBlank>
-                          {outcomeSection?.remainder ??
-                            outcomeSection?.body ??
-                            parsedContext?.preamble ??
-                            ''}
-                        </Markdown>
-                      </div>
-                    )
-                  )}
-                  {tierGroups.length > 0 && (
+                  <p className="tui-sheet-context-lead">
+                    {readinessProse(review.readiness)}
+                  </p>
+                  <div className="tui-sheet-context-reasoning">
+                    <Markdown unstyled linkTargetBlank>
+                      {review.summary}
+                    </Markdown>
+                  </div>
+                  {meta && <p className="tui-sheet-context-meta">{meta}</p>}
+                  {SEVERITY_ORDER.some(s => review.findings[s] > 0) && (
                     <div className="tui-review-tier-pills">
-                      {tierGroups.map(([tier, items]) => (
-                        <span
-                          className="tui-review-tier-pill"
-                          data-tier={tier}
-                          key={tier}
-                        >
-                          {tier} ({items.length})
-                        </span>
-                      ))}
+                      {SEVERITY_ORDER.filter(s => review.findings[s] > 0).map(
+                        s => (
+                          <span
+                            className="tui-review-tier-pill"
+                            data-tier={SEVERITY_LABEL[s]}
+                            key={s}
+                          >
+                            {SEVERITY_LABEL[s]} ({review.findings[s]})
+                          </span>
+                        )
+                      )}
                     </div>
                   )}
                 </div>
 
                 {checks.length > 0 && (
-                  <div className="tui-review-checks-card">
-                    <span className="tui-review-checks-title">checks</span>
-                    <div className="tui-review-checks-list">
+                  <div className="tui-sheet-card">
+                    <span className="tui-sheet-card-title">checks</span>
+                    <div className="tui-sheet-card-list">
                       {checks.map((c, i) => (
-                        <div className="tui-review-check-row" key={i}>
+                        <div className="tui-sheet-card-row" key={i}>
                           <Chip
                             intent={
                               c.tag === 'FAIL'
@@ -842,13 +649,11 @@ function ReviewGateSheet({
                             }
                             variant="outline"
                             uppercase
-                            className="tui-review-check-chip"
+                            className="tui-sheet-card-chip"
                           >
                             {c.tag}
                           </Chip>
-                          <span className="tui-review-check-text">
-                            {c.text}
-                          </span>
+                          <span className="tui-sheet-card-text">{c.text}</span>
                         </div>
                       ))}
                     </div>
@@ -857,20 +662,24 @@ function ReviewGateSheet({
               </div>
 
               {outcomeQuestion && (
-                <div className="tui-review-verdict">
-                  <div className="tui-review-verdict-head">
-                    <h3 className="tui-review-verdict-heading">
+                <div className="tui-sheet-dock">
+                  <div className="tui-sheet-dock-head">
+                    <h3 className="tui-sheet-dock-heading">
                       Verdict on !{mr?.iid ?? ''}
                     </h3>
                     <button
                       type="button"
-                      className="tui-review-reset"
+                      className="tui-sheet-reset"
                       onClick={handleReset}
                     >
                       reset
                     </button>
                   </div>
-                  <div className="tui-gate-choices">
+                  <div
+                    className="tui-gate-choices"
+                    role="radiogroup"
+                    aria-label={outcomeQuestion.label}
+                  >
                     {outcomeQuestion.options.map((o: GateOption) => {
                       const display = optionDisplayFor(o);
                       const value = optionValue(o);
@@ -938,7 +747,7 @@ function ReviewGateSheet({
                     variant="filled"
                     intent="accent"
                     size="lg"
-                    className="tui-review-submit"
+                    className="tui-sheet-submit"
                     disabled={form.busy || typeof selectedOutcome !== 'string'}
                     onClick={submit}
                   >
@@ -964,7 +773,7 @@ function ReviewGateSheet({
           )}
         </aside>
       </div>
-    </div>
+    </GateSheet>
   );
 }
 

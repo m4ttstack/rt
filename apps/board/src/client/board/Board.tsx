@@ -1448,17 +1448,26 @@ export function Board() {
           states={queue.states}
           nextPeek={queue.nextPeek}
           onClose={queue.close}
-          onSkip={queue.skip}
+          onNext={queue.next}
+          onBack={queue.back}
+          canBack={queue.canBack}
+          canNext={queue.canNext}
           onFocusPane={handleFocusPane}
           onAnswered={() => queue.noteAnswered(activeGateId)}
           onContinue={() => queue.noteAnswered(activeGateId)}
           onLostChange={lost => queue.hold(lost ? activeGateId : null)}
+          people={
+            new Map(
+              data.members.flatMap(m =>
+                m.name ? [[m.username, m.name] as const] : []
+              )
+            )
+          }
         />
       )}
       {queue.open && queue.complete && (
         <DecisionQueueComplete
           answered={queue.answeredCount}
-          skipped={queue.skippedCount}
           onClose={queue.close}
         />
       )}

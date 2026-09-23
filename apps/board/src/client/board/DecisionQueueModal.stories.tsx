@@ -21,10 +21,11 @@ import {
 /**
  * Sign-off catalog for the triage-queue modal (the gate-kit design pass's
  * ratified direction): the kit Modal hosting GateForm, with queue chrome
- * around it -- pips in the head, gate-level actions on the gate strip,
- * next-gate peek in the footer. The Modal recipe is fixed-position, so each
- * story renders inside a tall stage that the overlay covers; drafts seed via
- * the same `gateDraftKey()` localStorage write `useGateDraft` reads.
+ * around it -- the head is one row (title, gate-level actions, close), the
+ * step nav stays inline in GateForm's own body, and the footer carries only
+ * queue-scope chrome (pips, gate count). The Modal recipe is fixed-position,
+ * so each story renders inside a tall stage that the overlay covers; drafts
+ * seed via the same `gateDraftKey()` localStorage write `useGateDraft` reads.
  */
 function BoardStage({
   scheme,
@@ -138,7 +139,8 @@ export const FirstGateIdle: Story = {
       states={['active', 'todo', 'todo', 'todo', 'todo']}
       nextPeek="rt!218 · picker follow-ups"
       onClose={noop}
-      onSkip={noop}
+      onNext={noop}
+      onBack={noop}
       onFocusPane={noop}
       onAnswered={noop}
       onContinue={noop}
@@ -168,7 +170,8 @@ export const MidGateSelected: Story = {
         states={['done', 'active', 'todo', 'todo', 'todo']}
         nextPeek="rt!218 · picker follow-ups"
         onClose={noop}
-        onSkip={noop}
+        onNext={noop}
+        onBack={noop}
         onFocusPane={noop}
         onAnswered={noop}
         onContinue={noop}
@@ -208,9 +211,10 @@ export const LastGateSubmit: Story = {
         gate={lastGate}
         mr={boardMr}
         position={5}
-        states={['done', 'done', 'skipped', 'done', 'active']}
+        states={['done', 'done', 'done', 'done', 'active']}
         onClose={noop}
-        onSkip={noop}
+        onNext={noop}
+        onBack={noop}
         onFocusPane={noop}
         onAnswered={noop}
         onContinue={noop}
@@ -234,7 +238,8 @@ export const ErrorState: Story = {
       states={['done', 'done', 'active', 'todo', 'todo']}
       nextPeek="widgets!44 · retry loop"
       onClose={noop}
-      onSkip={noop}
+      onNext={noop}
+      onBack={noop}
       onFocusPane={noop}
       onAnswered={noop}
       onContinue={noop}
@@ -264,10 +269,11 @@ export const ParkedGate: Story = {
       gate={parkedGate}
       mr={boardMr}
       position={4}
-      states={['done', 'done', 'skipped', 'active', 'todo']}
+      states={['done', 'done', 'done', 'active', 'todo']}
       nextPeek="widgets!46 · pane tokens"
       onClose={noop}
-      onSkip={noop}
+      onNext={noop}
+      onBack={noop}
       onFocusPane={noop}
       onAnswered={noop}
       onContinue={noop}
@@ -320,7 +326,8 @@ export const WithContext: Story = {
         states={['done', 'active', 'todo', 'todo', 'todo']}
         nextPeek="rt!218 · picker follow-ups"
         onClose={noop}
-        onSkip={noop}
+        onNext={noop}
+        onBack={noop}
         onFocusPane={noop}
         onAnswered={noop}
         onContinue={noop}
@@ -358,7 +365,8 @@ export const LongContextScroll: Story = {
       states={['done', 'active', 'todo', 'todo', 'todo']}
       nextPeek="rt!218 · picker follow-ups"
       onClose={noop}
-      onSkip={noop}
+      onNext={noop}
+      onBack={noop}
       onFocusPane={noop}
       onAnswered={noop}
       onContinue={noop}
@@ -402,7 +410,8 @@ export const WriteInAnswer: Story = {
         states={['done', 'done', 'active', 'todo', 'todo']}
         nextPeek="widgets!44 · retry loop"
         onClose={noop}
-        onSkip={noop}
+        onNext={noop}
+        onBack={noop}
         onFocusPane={noop}
         onAnswered={noop}
         onContinue={noop}
@@ -414,7 +423,5 @@ export const WriteInAnswer: Story = {
 // --- QueueComplete ----------------------------------------------------------
 
 export const QueueComplete: Story = {
-  render: () => (
-    <DecisionQueueComplete answered={4} skipped={1} onClose={noop} />
-  ),
+  render: () => <DecisionQueueComplete answered={5} onClose={noop} />,
 };

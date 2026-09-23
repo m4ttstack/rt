@@ -8,7 +8,7 @@ description: >-
   <mrUrl> --state <path> --status-bin <path> [--report <path>] [--skill <name>]
   [--re-review]". When no --skill is given, the domain skill is resolved from
   the review slot binding in .mattstack/skills.jsonc. Not for manual use.
-allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*), Bash(${CLAUDE_SKILL_DIR}/scripts/open-gate.sh:*)
 metadata:
   slots: "review"
   slot-review: "required mr-review@2 -- owns the domain review flow for one MR: resolving the MR/ticket, producing the draft review, writing the report, reporting the severity levels present, and executing the posting once handed the human's decision. Never presents posting gates or decides disposition."
@@ -104,9 +104,13 @@ remembered in the conversation.
    it changes how you frame this step (and what you hand the `--skill`).
    - **If a domain skill resolved** (explicit `--skill`, else the `review`
      slot per "Resolving the domain skill"): invoke that skill with the MR url and the
-     `--report <path>`. It owns the actual review — resolving the MR/ticket,
-     producing the draft, and writing the report — then reports back to you
-     the severity levels present in its findings. It never presents posting
+     `--report <path>`, telling it that this wrapper owns the gate, so it
+     opens nothing: it hands back instead, including the absolute paths of
+     the fitted `review-post` open file and of the `gate-ctx.sh` that
+     fitted it, when it builds one. It owns the actual review (resolving
+     the MR/ticket, producing the draft, and writing the report), then
+     reports back to you the severity levels present in its findings,
+     plus those two paths when it built one. It never presents posting
      gates or decides disposition; this wrapper owns the single event gate
      (step 4, "Gate protocol") and hands the domain skill `{findings, outcome}`
      (or the tier-fallback `{tiers, outcome}` shape; see step 4) to execute
@@ -137,7 +141,24 @@ remembered in the conversation.
    describes. When the daemon is down the hook allows the native form
    (degraded mode is unchanged).
 
-   - **Build the questions.** Read the json sibling of `--report`: swap the
+   - **Handed a fitted open file?** Then that file IS this gate:
+     `gate-ctx.sh fit` output whose `.context` carries the review's
+     structured summary and whose `findings-N` questions each carry their
+     findings' structured context, with options already in the recipe
+     below. Open it with:
+
+     ```bash
+     "${CLAUDE_SKILL_DIR}/scripts/open-gate.sh" <status-bin> <state> review-post <open-file>
+     ```
+
+     It prints the same one-line `{"gateId": ..., "presentation": ...}` as
+     `gate open` and exits with its status. A `fits: false` file is still
+     over the shared context budget; the script drops whole question
+     contexts, largest first, until it fits, so the file goes in untouched:
+     never rebuilt, re-ordered, trimmed, or hand-edited. Skip "Build the
+     questions" and "Open the gate" below and go to the presentation
+     branches.
+   - **Otherwise, build the questions yourself.** Read the json sibling of `--report`: swap the
      trailing `.md` for `.json`, or append `.json` when `--report`'s path
      doesn't end in `.md` -- a stem swap, never an append onto the md path.
      That's the same derivation the board's own `readReviewReportJson`
@@ -192,13 +213,15 @@ remembered in the conversation.
        inline thread). When the finding carries a `kind`, append
        " · kind:<word>" to the very end of the description, `<word>` being
        the report's `kind` value verbatim. `<word>` must be lowercase and
-       hyphens only -- `finding-option.ts`'s `KIND_RE` is the parser's whole
-       vocabulary for it, so normalize anything else (case, spaces,
-       underscores) to that shape before it rides the description.
+       hyphens only, the pinned format's whole vocabulary for it, so
+       normalize anything else (case, spaces, underscores) to that shape
+       before it rides the description.
        Descriptions cap at 1024 UTF-8
        bytes; if one would run over, shorten the fix gist, never the
-       anchor and never the trailing kind suffix -- `finding-option.ts`'s
-       parser reads the kind suffix off the literal end of the string.
+       anchor and never the trailing kind suffix, which the pinned format
+       keeps at the literal end of the string. This option recipe is pinned:
+       a fitted open's options carry the same one, and surfaces without a
+       card renderer read it, so it never changes shape.
      - **Verdict label.** Compose `<readiness clause>` from the json's
        `summary.readiness` and `summary.reasoning`, not a copy of either
        field verbatim: readiness `yes` reads as "ready to merge";
@@ -311,6 +334,14 @@ remembered in the conversation.
      answer in -- there is never a "skip and approve clean" combo
      option, since "post nothing" is every `findings-N` question
      answered as an explicit empty array, which the daemon records.
+     A gate opened from a fitted file never shows its JSON in the form:
+     run the `gate-ctx.sh` whose path the domain skill handed back with the open file,
+     in `prose` mode on the source file beside it (the open file's name
+     with `.open.json` swapped for `.source.json`: `sh <gate-ctx.sh> prose <
+     <dir>/review-post.source.json`), print its `.context` as one pane line
+     before the form call, and make each `findings-N` question's form text
+     its label, a newline, then its prose `context`. Options keep the
+     gate's labels and descriptions.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
      for the background-wait mechanics, unchanged; the gate to name in
@@ -343,7 +374,8 @@ remembered in the conversation.
      `outcome` when the json has findings (or the tier fallback's `tiers`
      plus `outcome` on the json-absent path), `outcome` alone on a clean
      review -- never the old two-gate pair, rendered by the same mechanical
-     rules as presentation "form" above, and proceed on its answers.
+     rules as presentation "form" above, a fitted file flattened to prose
+     exactly as that branch describes, and proceed on its answers.
      Follow `board:gate-cli-recipes`'s "A failing wait is not degradation"
      section for when to retry `gate wait` versus fall through to this
      same combined `AskUserQuestion`.

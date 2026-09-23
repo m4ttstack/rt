@@ -1470,7 +1470,7 @@
           "status": "open",
           "openedAt": 1755603000000,
           "domain": "review",
-          "context": "MR 1271 (WEB-418) has two unresolved findings from the review pass. Adjudication is done; one is a real defect, one is a coverage gap.\n\n=== finding-1 TabBar.tsx:58 (verdict: valid, recommend post) ===\nreviewer: \"An empty label still renders the bullet separator, so a label-only tab shows a stray dot before nothing. The separator should key on the label being non-empty, not on the tab having a label field at all.\"\nAdjudication: correct. The separator check reads `label !== undefined`, and the fixture's label-only tab passes an empty string. Fix is a one-line predicate change at :58.\n\n=== finding-2 TabBar.test.tsx (verdict: valid, recommend post) ===\nreviewer: \"No test covers the label-only tab, which is the shape the separator bug lives in. Adding one would have caught this before review.\"\nAdjudication: correct. The suite covers icon-plus-label and icon-only tabs; label-only is the missing third shape. One new case in the existing describe block.\n\n=== also ===\nNot a finding: the tab strip's hover ring is one pixel wider than the design spec at the 480px breakpoint. Cosmetic, out of scope, noted for a follow-up ticket.",
+          "context": "{\"gate-ctx\":\"review@1\",\"reviewer\":\"pat\",\"readiness\":\"with-fixes\",\"summary\":\"The separator still renders for a label-only tab, and nothing in the suite exercises that shape; the rest is housekeeping.\",\"findings\":{\"important\":2,\"minor\":3},\"round\":2,\"re_review\":true,\"prior\":{\"addressed\":2,\"still_open\":1}}",
           "origin": {
             "paneId": "pane-1271",
             "tabId": "w16:t1",
@@ -1478,17 +1478,60 @@
           },
           "questions": [
             {
-              "id": "findings",
-              "label": "Post which findings?",
+              "id": "findings-1",
+              "label": "Post which findings to !1271?",
               "multi": true,
+              "context": "{\"gate-ctx\":\"findings@1\",\"findings\":[{\"id\":\"f1\",\"severity\":\"important\",\"title\":\"separator still renders after an empty label\",\"file\":\"src/tabs/TabBar.tsx:58\",\"body\":\"The check reads `label !== undefined`, and the label-only tab passes an empty string, so the bullet separator renders before nothing. Keying on a non-empty label fixes both call sites.\",\"fix\":\"check label for a non-empty string, not for presence\",\"disposition\":\"still-open\"},{\"id\":\"f2\",\"severity\":\"important\",\"title\":\"label-only tab has no test\",\"file\":\"src/tabs/TabBar.test.tsx\",\"body\":\"The suite covers icon-plus-label and icon-only tabs; label-only is the missing third shape, and the separator bug lives in it.\",\"fix\":\"add a label-only case to the existing describe block\",\"evidence\":\"TabBar.test.tsx: 6 pass, 0 fail, no label-only case\",\"disposition\":\"new\"},{\"id\":\"f3\",\"severity\":\"minor\",\"title\":\"hover ring width now matches the spec\",\"file\":\"src/tabs/TabBar.css:12\",\"body\":\"The last round flagged the hover ring as one pixel wide at the 480px breakpoint. The stylesheet now uses the shared ring token; confirm before resolving.\",\"disposition\":\"addressed-check\"},{\"id\":\"f4\",\"severity\":\"minor\",\"title\":\"stale comment above the separator\",\"file\":\"src/tabs/TabBar.tsx:52\",\"body\":\"The comment still describes the old icon-first layout.\",\"fix\":\"drop the comment or restate the current order\",\"disposition\":\"new\"}]}",
               "options": [
                 {
-                  "value": "finding:separator",
-                  "label": "the bullet separator still renders after an empty label (recommended)"
+                  "value": "f1",
+                  "label": "[Important] separator still renders after an empty label",
+                  "description": "src/tabs/TabBar.tsx:58 · check label for a non-empty string, not for presence"
                 },
                 {
-                  "value": "finding:coverage",
-                  "label": "no test covers the label-only tab"
+                  "value": "f2",
+                  "label": "[Important] label-only tab has no test",
+                  "description": "src/tabs/TabBar.test.tsx · add a label-only case to the existing describe block"
+                },
+                {
+                  "value": "f3",
+                  "label": "[Minor] hover ring width now matches the spec",
+                  "description": "src/tabs/TabBar.css:12"
+                },
+                {
+                  "value": "f4",
+                  "label": "[Minor] stale comment above the separator",
+                  "description": "src/tabs/TabBar.tsx:52 · drop the comment or restate the current order"
+                }
+              ]
+            },
+            {
+              "id": "findings-2",
+              "label": "Post which findings to !1271?",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"findings@1\",\"findings\":[{\"id\":\"f5\",\"severity\":\"minor\",\"title\":\"changelog entry missing\",\"body\":\"Tab rendering changed in a way users can see, and the changelog has no entry for it.\",\"fix\":\"add a line under Unreleased\",\"disposition\":\"new\"}]}",
+              "options": [
+                {
+                  "value": "f5",
+                  "label": "[Minor] changelog entry missing",
+                  "description": "not inline-anchorable · add a line under Unreleased"
+                }
+              ]
+            },
+            {
+              "id": "outcome",
+              "label": "Verdict on !1271: ready once the separator check is fixed",
+              "multi": false,
+              "options": [
+                {
+                  "value": "comment",
+                  "label": "comment (recommended)",
+                  "description": "post the picked findings, no merge decision yet"
+                },
+                {
+                  "value": "approve",
+                  "label": "approve",
+                  "description": "approve alongside the picked findings"
                 }
               ]
             }

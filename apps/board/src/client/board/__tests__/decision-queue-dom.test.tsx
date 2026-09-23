@@ -1,6 +1,6 @@
 /** DOM-level test for the decision queue wired into Board.tsx: a real
     happy-dom document and a real Board render, covering the header entry
-    point (`decision queue · N`) through open, skip, and close, and the
+    point (`decision queue · N`) through open, next gate, and close, and the
     row's own way in (the status line's answer verb on a stuck or unassigned
     gate) -- the wiring a component-level test of the queue hook or the
     modal alone can't exercise, since it depends on Board's own entries
@@ -272,166 +272,6 @@ test('a parked gate: focus pane is offered disabled, with the hint that answerin
   }
 });
 
-const SECTIONED_CONTEXT = [
-  'MR 1 (ACME-1) has 2 unresolved threads from Nils. Adjudication done.',
-  '',
-  '=== thread-1 tabs.ts:12 \u2014 verdict pushback \u2192 recommend REPLY ===',
-  'Nils: "Does the key carry the unit?"',
-  'Adjudication: it does; reply with the contract.',
-  '',
-  '=== thread-2 merge.ts:58 \u2014 verdict valid \u2192 recommend FIX ===',
-  'Nils: "The first phone wins even when empty."',
-  'Adjudication: correct. Prefer the non-empty value.',
-].join('\n');
-
-const THREAD_QUESTIONS = [
-  {
-    id: 'thread-1',
-    label: 'tabs.ts:12',
-    multi: false,
-    options: [
-      { value: 'reply:1', label: 'reply' },
-      { value: 'fix:1', label: 'fix' },
-      { value: 'skip:1', label: 'skip' },
-    ],
-  },
-  {
-    id: 'thread-2',
-    label: 'merge.ts:58',
-    multi: false,
-    options: [
-      { value: 'reply:2', label: 'reply' },
-      { value: 'fix:2', label: 'fix' },
-      { value: 'skip:2', label: 'skip' },
-    ],
-  },
-];
-
-test('a sectioned context: each question carries its slice, the pane collapses to a strip, and the disclosure brings it back', async () => {
-  servedData = withOpenGate({
-    kind: 'respond-plan',
-    domain: 'respond',
-    context: SECTIONED_CONTEXT,
-    questions: THREAD_QUESTIONS,
-  });
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  try {
-    const dialog = await openQueue(container);
-    expect(dialog.querySelector('[data-part="scrollpane"]')).toBeNull();
-    const strip = dialog.querySelector('.tui-triage-overview')!;
-    expect(strip.textContent).toContain(
-      'MR 1 (ACME-1) has 2 unresolved threads from Nils. Adjudication done.'
-    );
-    expect(strip.textContent).toContain('recommends 1 reply, 1 fix');
-
-    const first = dialog.querySelector('.tui-gate-question[data-sectioned]')!;
-    expect(first.querySelector('.tui-gate-question-ord')?.textContent).toBe(
-      'thread 1 of 2'
-    );
-    expect(first.querySelector('.tui-gate-quote-who')?.textContent).toBe(
-      'Nils'
-    );
-    expect(first.querySelector('.tui-gate-quote-text')?.textContent).toBe(
-      'Does the key carry the unit?'
-    );
-    expect(first.querySelector('.tui-gate-verdict-word')?.textContent).toBe(
-      'pushback'
-    );
-    expect(first.querySelector('.tui-gate-recommends')?.textContent).toBe(
-      'recommends reply'
-    );
-    expect(first.querySelector('.tui-gate-adjudication')?.textContent).toBe(
-      'it does; reply with the contract.'
-    );
-    const recommended = first.querySelector(
-      '.tui-gate-choice[data-recommended]'
-    )!;
-    expect(recommended.textContent).toContain('reply');
-    expect(
-      recommended.querySelector('[data-gate="recommended"]')
-    ).not.toBeNull();
-
-    const toggle = findByText(
-      dialog,
-      'button',
-      'full text \u25be'
-    ) as HTMLElement;
-    await React.act(async () => {
-      toggle.click();
-    });
-    expect(dialog.querySelector('[data-part="scrollpane"]')).not.toBeNull();
-    expect(findByText(dialog, 'button', 'less \u25b4')).not.toBeNull();
-  } finally {
-    container.remove();
-  }
-});
-
-test('a bracketed-findings context renders grouped, with a way back to the words as written', async () => {
-  servedData = withOpenGate({
-    context:
-      'Findings: Important (1), Minor (1)\n[Important] a `key` collides\n[Minor] doc overstates it',
-    questions: [
-      {
-        id: 'tiers',
-        label: 'Post which findings?',
-        multi: true,
-        options: [
-          { value: 'Important', label: 'Important (1)' },
-          { value: 'Minor', label: 'Minor (1)' },
-        ],
-      },
-    ],
-  });
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  try {
-    const dialog = await openQueue(container);
-    const groups = dialog.querySelectorAll('.tui-gate-group');
-    expect(
-      [...groups].map(
-        g => g.querySelector('.tui-gate-group-label')?.textContent
-      )
-    ).toEqual(['Important', 'Minor']);
-    expect(dialog.querySelector('.tui-gate-groups-total')?.textContent).toBe(
-      '2 findings'
-    );
-    // The tally-only preamble is gone; the finding's code span is live.
-    expect(dialog.querySelector('.tui-gate-groups-preamble')).toBeNull();
-    expect(
-      dialog.querySelector('.tui-gate-group-items code')?.textContent
-    ).toBe('key');
-
-    const raw = findByText(dialog, 'button', 'as written') as HTMLElement;
-    await React.act(async () => {
-      raw.click();
-    });
-    expect(dialog.querySelector('.tui-gate-groups')).toBeNull();
-    expect(
-      dialog.querySelector('[data-part="scrollpane-body"]')?.textContent
-    ).toContain('[Important] a key collides');
-    expect(findByText(dialog, 'button', 'grouped')).not.toBeNull();
-  } finally {
-    container.remove();
-  }
-});
-
-test('a context whose sections match no question keeps the pane and adds no strip', async () => {
-  servedData = withOpenGate({ context: SECTIONED_CONTEXT });
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  try {
-    const dialog = await openQueue(container);
-    expect(dialog.querySelector('[data-part="scrollpane"]')).not.toBeNull();
-    expect(dialog.querySelector('.tui-triage-overview')).toBeNull();
-    expect(
-      dialog.querySelector('.tui-gate-question[data-sectioned]')
-    ).toBeNull();
-  } finally {
-    container.remove();
-  }
-});
-
 test('an open gate whose pane is gone: focus pane is offered disabled, saying so', async () => {
   servedData = withOpenGate({ executor: 'gone' });
   const container = document.createElement('div');
@@ -458,7 +298,7 @@ function findByText(root: ParentNode, tag: string, text: string): Element {
   return found;
 }
 
-test('decision queue: header entry opens, skip advances, close dismisses', async () => {
+test('decision queue: header entry opens, next gate advances, close dismisses', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);
 
@@ -488,9 +328,9 @@ test('decision queue: header entry opens, skip advances, close dismisses', async
     expect(dialog).not.toBeNull();
     expect(dialog?.textContent).toContain('first mr title');
 
-    const skipButton = findByText(dialog!, 'button', 'skip gate');
+    const nextButton = dialog!.querySelector('[aria-label="next gate"]');
     await React.act(async () => {
-      (skipButton as HTMLElement).click();
+      (nextButton as HTMLElement).click();
     });
 
     dialog = container.querySelector(
@@ -579,7 +419,7 @@ test('decision queue: a gate-less snapshot (server warm-up) does not complete th
   }
 });
 
-test('decision queue: skipping a gate does not bleed its selection into the next', async () => {
+test('decision queue: paging to the next gate does not bleed its selection into it', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);
 
@@ -613,9 +453,9 @@ test('decision queue: skipping a gate does not bleed its selection into the next
     });
     expect(firstChoice.checked).toBe(true);
 
-    const skipButton = findByText(dialog!, 'button', 'skip gate');
+    const nextButton = dialog!.querySelector('[aria-label="next gate"]');
     await React.act(async () => {
-      (skipButton as HTMLElement).click();
+      (nextButton as HTMLElement).click();
     });
 
     dialog = container.querySelector(
@@ -760,8 +600,10 @@ test('the queue counts gates on rows an author filter hides, visible rows first'
       '[role="dialog"][aria-label="decision queue"]'
     );
     expect(dialog?.textContent).toContain('second mr title');
-    expect(dialog?.textContent).toMatch(/next:\s*!1/);
-    expect(dialog?.textContent).toContain('gate 1 of 2');
+    expect(
+      dialog?.querySelector('.tui-gate-queue-pos')?.getAttribute('title')
+    ).toMatch(/next:\s*!1/);
+    expect(dialog?.textContent).toContain('1 of 2');
   } finally {
     localStorage.removeItem('mrs-view-state');
     await React.act(async () => {

@@ -44,12 +44,21 @@ describe('useGateDraft', () => {
     expect(localStorage.getItem(gateDraftKey('g1'))).toBeNull();
     act(() =>
       result.current.save({
-        selections: { flags: [] },
+        selections: {},
         notes: { outcome: '  ' },
         item: 'flags',
       })
     );
     expect(localStorage.getItem(gateDraftKey('g1'))).toBeNull();
+  });
+
+  test('an emptied multi is a pick, so a card that seeds defaults can tell it from a fresh gate', () => {
+    const { result } = renderHook(() => useGateDraft('g1', true));
+    act(() =>
+      result.current.save({ selections: { flags: [] }, notes: {}, item: null })
+    );
+    const again = renderHook(() => useGateDraft('g1', true));
+    expect(again.result.current.initial?.selections).toEqual({ flags: [] });
   });
 
   test('a disabled hook neither restores nor saves, and going disabled clears what is stored', () => {

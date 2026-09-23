@@ -1,9 +1,9 @@
-import { Invadr } from 'invadrs/react';
-
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { ago, cleanTitle } from './format.ts';
 import type { PlanCtx, PostCtx } from './gate-ctx.ts';
+import { forgeNoun, MrLinks } from './MrLinks.tsx';
+import { PersonLead } from './PersonLead.tsx';
 
 export interface HeaderChip {
   key: string;
@@ -50,65 +50,85 @@ export function headerChips(ctx: PlanCtx | PostCtx): HeaderChip[] {
         })
       );
   }
-  if (ctx.adjudication)
-    chips.push({ key: 'adjudication', text: ctx.adjudication, hue: 'green' });
-  if (ctx.round !== undefined)
-    chips.push({ key: 'round', text: `round ${ctx.round}`, hue: 'grey' });
   return chips;
+}
+
+/** The review round and the adjudication, the context's prose facts; they
+    read as a meta line rather than chips. */
+export function headerMeta(ctx: PlanCtx | PostCtx): string[] {
+  return [
+    ctx.round !== undefined ? `round ${ctx.round}` : undefined,
+    ctx.adjudication,
+  ].filter((m): m is string => Boolean(m));
+}
+
+/** The reviewer's full name for a gate's reviewer handle: the board's team
+    roster first, then the MR's assigned reviewers and approvers, else the
+    handle itself. */
+export function reviewerName(
+  handle: string,
+  mr?: BoardMRWithReview,
+  people?: ReadonlyMap<string, string>
+): string {
+  const same = (u: { username: string }) => u.username === handle;
+  return (
+    people?.get(handle) ??
+    mr?.reviews?.reviewers?.find(same)?.name ??
+    mr?.reviews?.approvedBy?.find(same)?.name ??
+    handle
+  );
 }
 
 /** `!<n>` from an `mr:<url>` subject: the object line's stand-in when the
     board has no row for the MR, so the card never waits on the join. */
-function subjectRef(subject: string): string {
+export function subjectRef(subject: string): string {
   const m = subject.startsWith('mr:') ? /(\d+)\/?$/.exec(subject) : null;
   return m ? `!${m[1]}` : subject;
 }
 
-/** A respond gate's head in the decision queue, in place of the MR strip
-    and the context pane: who is being answered leads, the MR is the
-    object line, and the chips say what the gate decides. */
+/** A respond gate's identity card: the invader, who is being answered and
+    the MR's links share the top line; the MR title, the meta line, the
+    branch and the chips each take the card's full width below it. */
 export function RespondGateHeader({
   gate,
   mr,
   ctx,
+  people,
 }: {
   gate: GateRow;
   mr?: BoardMRWithReview;
   ctx: PlanCtx | PostCtx;
+  people?: ReadonlyMap<string, string>;
 }) {
   const author = mr?.author?.name || mr?.author?.username;
   const meta = [
-    mr?.sourceBranch,
     author,
     ago(new Date(gate.openedAt).toISOString(), Date.now()),
+    ...headerMeta(ctx),
   ].filter(Boolean);
   return (
-    <div className="tui-respond-head" data-shape={ctx.shape}>
-      <div className="tui-respond-head-top">
-        <Invadr
-          id={ctx.reviewer}
-          palette="css-vars"
-          className="tui-respond-avatar"
-        />
-        <div className="tui-respond-head-text">
-          <p className="tui-respond-headline">
-            {ctx.shape === 'plan@1' ? 'Responding to ' : 'Posting replies to '}
-            <strong>{ctx.reviewer}</strong>
-            {"'s review"}
-          </p>
-          <p className="tui-respond-object">
-            <span className="tui-respond-object-ref">
-              {mr ? `!${mr.iid}` : subjectRef(gate.subject)}
-            </span>
-            {mr && (
-              <span className="tui-respond-object-title">
-                · {cleanTitle(mr.title)}
-              </span>
-            )}
-          </p>
-          <p className="tui-respond-meta">{meta.join(' · ')}</p>
-        </div>
-      </div>
+    <div className="tui-id-card tui-respond-head" data-shape={ctx.shape}>
+      <PersonLead
+        id={ctx.reviewer}
+        name={reviewerName(ctx.reviewer, mr, people)}
+        trailing={mr && <MrLinks mr={mr} />}
+      >
+        reviewed your {forgeNoun(mr, gate.subject)}
+      </PersonLead>
+      {mr && <p className="tui-id-card-title">{cleanTitle(mr.title)}</p>}
+      <p className="tui-id-card-meta">
+        <span className="tui-id-card-ref">
+          {mr ? `!${mr.iid}` : subjectRef(gate.subject)}
+        </span>
+        {meta.map(m => (
+          <span key={m}>· {m}</span>
+        ))}
+      </p>
+      {mr?.sourceBranch && (
+        <p className="tui-id-card-branch" title={mr.sourceBranch}>
+          {mr.sourceBranch}
+        </p>
+      )}
       <div className="tui-respond-chips">
         {headerChips(ctx).map(chip => (
           <span

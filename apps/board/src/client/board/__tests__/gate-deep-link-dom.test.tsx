@@ -150,11 +150,8 @@ test('a ?gate=<id> deep link to a pending gate opens the decision modal and stri
   currentData = boardData('open');
   const { container, scrolled, cleanup } = await renderBoard();
   try {
-    // A review-post gate renders the ReviewGateSheet face; other kinds
-    // render the triage shell. Either one is "the decision modal opened".
-    expect(
-      container.querySelector('.tui-triage-modal, .tui-review-sheet')
-    ).not.toBeNull();
+    // Every gate face renders in the one full-screen GateSheet frame.
+    expect(container.querySelector('.tui-gate-sheet')).not.toBeNull();
     expect(window.location.search).toBe('');
     const row = container.querySelector('[data-mr-iid="1"]');
     expect(scrolled.length).toBe(0);
@@ -174,9 +171,7 @@ test('a ?gate=<id> deep link to an answered gate scrolls to, flashes, and strips
     expect(scrolled[0] === row).toBe(true);
     expect(row?.classList.contains('tui-row-flash')).toBe(true);
     expect(window.location.search).toBe('');
-    expect(
-      container.querySelector('.tui-triage-modal, .tui-review-sheet')
-    ).toBeNull();
+    expect(container.querySelector('.tui-gate-sheet')).toBeNull();
   } finally {
     await cleanup();
   }

@@ -1,8 +1,6 @@
-/** BOARD-33: a plain-prose gate context (no `=== key ===` markers, no
-    `[Label]` lines) parses to an empty section list from both
-    gate-context.ts parsers, so no question ever gets a section. GateForm
-    must fall back to the raw context, the same fallback DecisionQueueModal
-    already has, instead of showing nothing. */
+/** A bare GateForm host (no Decision context pane above it) renders the
+    gate context itself: prose as plain markdown, a review@1 flattened,
+    never raw JSON. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -46,9 +44,9 @@ const GATE: GateRow = {
 
 const MR = { iid: 9 } as unknown as BoardMRWithReview;
 
-function Host() {
-  const form = useGateForm(GATE, () => {});
-  return <GateForm gate={GATE} mr={MR} form={form} onFocusPane={() => {}} />;
+function Host({ gate = GATE }: { gate?: GateRow }) {
+  const form = useGateForm(gate, () => {});
+  return <GateForm gate={gate} mr={MR} form={form} onFocusPane={() => {}} />;
 }
 
 let root: Root;
@@ -66,9 +64,28 @@ afterEach(async () => {
   container.remove();
 });
 
-test('a plain-prose context renders as a raw fallback when no question sections it', async () => {
+test('a plain-prose context renders as plain markdown', async () => {
   await React.act(async () => {
     root.render(<Host />);
   });
   expect(container.textContent).toContain(PROSE);
+});
+
+test('a review@1 context renders flattened, never as raw JSON', async () => {
+  const gate: GateRow = {
+    ...GATE,
+    gateId: 'g-review',
+    context: JSON.stringify({
+      'gate-ctx': 'review@1',
+      readiness: 'yes',
+      summary: 'nothing worth a thread.',
+      findings: {},
+    }),
+  };
+  await React.act(async () => {
+    root.render(<Host gate={gate} />);
+  });
+  expect(container.textContent).toContain('Ready to merge: yes');
+  expect(container.textContent).toContain('nothing worth a thread.');
+  expect(container.textContent).not.toContain('gate-ctx');
 });

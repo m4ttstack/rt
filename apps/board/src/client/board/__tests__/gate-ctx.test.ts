@@ -56,6 +56,42 @@ const REPLIES = {
   ],
 } as const;
 
+const REVIEW = {
+  'gate-ctx': 'review@1',
+  reviewer: 'renee',
+  readiness: 'with-fixes',
+  summary:
+    'mechanism verified against the pinned deps; tests substantiate both criteria.',
+  findings: { critical: 0, important: 1, minor: 4 },
+  round: 2,
+  re_review: true,
+  prior: { addressed: 3, still_open: 1 },
+} as const;
+
+const FINDING = {
+  id: 'f1',
+  severity: 'important',
+  title: 'retry fix is parity wiring, not a live fix',
+  file: 'queue/enqueue.ts:81',
+  body: 'the guard only runs on the parity path; the live path still re-enqueues.',
+  fix: 'note it is parity wiring in the doc comment',
+  evidence: 'enqueue.test.ts: 4 pass, 0 fail',
+  disposition: 'new',
+} as const;
+
+const FINDINGS = {
+  'gate-ctx': 'findings@1',
+  findings: [
+    FINDING,
+    {
+      id: 'f2',
+      severity: 'minor',
+      title: 'test over-specifies the ordering',
+      body: 'asserts exact call order where the contract only promises the set.',
+    },
+  ],
+} as const;
+
 const j = (v: unknown) => JSON.stringify(v);
 
 describe('valid shapes', () => {
@@ -169,8 +205,100 @@ describe('valid shapes', () => {
     });
   });
 
+  test('review@1', () => {
+    expect(parseGateCtx(j(REVIEW))).toEqual({
+      shape: 'review@1',
+      reviewer: 'renee',
+      readiness: 'with-fixes',
+      summary: REVIEW.summary,
+      findings: { critical: 0, important: 1, minor: 4 },
+      round: 2,
+      re_review: true,
+      prior: { addressed: 3, still_open: 1 },
+    });
+  });
+
+  test('review@1 minimal: absent severities read 0, re_review reads false, no optional keys', () => {
+    expect(
+      parseGateCtx(
+        j({
+          'gate-ctx': 'review@1',
+          readiness: 'yes',
+          summary: 'clean.',
+          findings: {},
+        })
+      )
+    ).toEqual({
+      shape: 'review@1',
+      readiness: 'yes',
+      summary: 'clean.',
+      findings: { critical: 0, important: 0, minor: 0 },
+      re_review: false,
+    });
+  });
+
+  test('review@1 accepts every readiness in the engine vocabulary', () => {
+    for (const readiness of ['yes', 'no', 'with-fixes'])
+      expect(parseGateCtx(j({ ...REVIEW, readiness }))).toMatchObject({
+        readiness,
+      });
+  });
+
+  test('findings@1', () => {
+    expect(parseGateCtx(j(FINDINGS))).toEqual({
+      shape: 'findings@1',
+      findings: [
+        { ...FINDING },
+        {
+          id: 'f2',
+          severity: 'minor',
+          title: 'test over-specifies the ordering',
+          body: 'asserts exact call order where the contract only promises the set.',
+        },
+      ],
+    });
+  });
+
+  test('findings@1 accepts every severity and disposition', () => {
+    for (const severity of ['critical', 'important', 'minor'])
+      for (const disposition of ['new', 'still-open', 'addressed-check'])
+        expect(
+          parseGateCtx(
+            j({
+              ...FINDINGS,
+              findings: [{ ...FINDING, severity, disposition }],
+            })
+          )
+        ).toMatchObject({ findings: [{ severity, disposition }] });
+  });
+
+  test('findings@1 with an empty list', () => {
+    expect(parseGateCtx(j({ 'gate-ctx': 'findings@1', findings: [] }))).toEqual(
+      { shape: 'findings@1', findings: [] }
+    );
+  });
+
   test('leading whitespace before the object is fine', () => {
     expect(parseGateCtx(`\n  ${j(PLAN)}`)?.shape).toBe('plan@1');
+  });
+
+  test('a whitespace-only optional string is absent, not preserved', () => {
+    expect(parseGateCtx(j({ ...PLAN, adjudication: '   ' }))).toEqual({
+      shape: 'plan@1',
+      reviewer: 'renee',
+      round: 1,
+      threads: { total: 2, blocking: 1 },
+    });
+    const parsed = parseGateCtx(
+      j({ ...FINDINGS, findings: [{ ...FINDING, file: '  ' }] })
+    );
+    expect(parsed).toEqual({
+      shape: 'findings@1',
+      findings: [{ ...FINDING, file: undefined }],
+    });
+    expect(
+      parsed?.shape === 'findings@1' && 'file' in parsed.findings[0]!
+    ).toBe(false);
   });
 });
 
@@ -203,6 +331,30 @@ describe('unknown extra keys are accepted and dropped', () => {
     expect(
       parseGateCtx(j({ ...POST, fixes: [{ sha: 'ab12cd3', note: 'x' }] }))
     ).toMatchObject({ fixes: [{ sha: 'ab12cd3' }] });
+  });
+
+  test('review@1 top level, counts, and prior', () => {
+    const parsed = parseGateCtx(
+      j({
+        ...REVIEW,
+        extra: 1,
+        findings: { ...REVIEW.findings, nit: 2 },
+        prior: { ...REVIEW.prior, extra: true },
+      })
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty('extra');
+    expect((parsed as { findings: object }).findings).not.toHaveProperty('nit');
+    expect((parsed as { prior: object }).prior).not.toHaveProperty('extra');
+  });
+
+  test('inside a finding entry', () => {
+    const parsed = parseGateCtx(
+      j({ ...FINDINGS, findings: [{ ...FINDING, extra: 'x' }] })
+    );
+    expect((parsed as { findings: object[] }).findings[0]).not.toHaveProperty(
+      'extra'
+    );
   });
 });
 
@@ -307,6 +459,79 @@ describe('everything non-conforming returns null', () => {
       j({ ...REPLIES, replies: [{ ...REPLIES.replies[0], sha: 7 }] }),
     ],
     ['replies: entry not an object', j({ ...REPLIES, replies: ['t-1'] })],
+    // review@1
+    ['review: missing readiness', j({ ...REVIEW, readiness: undefined })],
+    [
+      'review: readiness outside the vocabulary',
+      j({ ...REVIEW, readiness: 'ready' }),
+    ],
+    ['review: readiness a boolean', j({ ...REVIEW, readiness: true })],
+    ['review: missing summary', j({ ...REVIEW, summary: undefined })],
+    ['review: empty summary', j({ ...REVIEW, summary: ' ' })],
+    ['review: missing findings', j({ ...REVIEW, findings: undefined })],
+    ['review: findings an array', j({ ...REVIEW, findings: [1, 4] })],
+    ['review: a count as a string', j({ ...REVIEW, findings: { minor: '4' } })],
+    ['review: a negative count', j({ ...REVIEW, findings: { minor: -1 } })],
+    ['review: a fractional count', j({ ...REVIEW, findings: { minor: 1.5 } })],
+    ['review: reviewer not a string', j({ ...REVIEW, reviewer: 7 })],
+    ['review: round zero', j({ ...REVIEW, round: 0 })],
+    ['review: re_review a string', j({ ...REVIEW, re_review: 'true' })],
+    ['review: prior null', j({ ...REVIEW, prior: null })],
+    [
+      'review: prior missing still_open',
+      j({ ...REVIEW, prior: { addressed: 3 } }),
+    ],
+    [
+      'review: prior.addressed negative',
+      j({ ...REVIEW, prior: { addressed: -1, still_open: 1 } }),
+    ],
+    // findings@1
+    ['findings: missing list', j({ 'gate-ctx': 'findings@1' })],
+    [
+      'findings: list not an array',
+      j({ 'gate-ctx': 'findings@1', findings: {} }),
+    ],
+    ['findings: entry not an object', j({ ...FINDINGS, findings: ['f1'] })],
+    [
+      'findings: entry missing id',
+      j({ ...FINDINGS, findings: [{ ...FINDING, id: undefined }] }),
+    ],
+    [
+      'findings: entry missing title',
+      j({ ...FINDINGS, findings: [{ ...FINDING, title: undefined }] }),
+    ],
+    [
+      'findings: entry missing body',
+      j({ ...FINDINGS, findings: [{ ...FINDING, body: undefined }] }),
+    ],
+    [
+      'findings: entry empty body',
+      j({ ...FINDINGS, findings: [{ ...FINDING, body: '' }] }),
+    ],
+    [
+      'findings: severity outside the vocabulary',
+      j({ ...FINDINGS, findings: [{ ...FINDING, severity: 'nit' }] }),
+    ],
+    [
+      'findings: severity in the label casing',
+      j({ ...FINDINGS, findings: [{ ...FINDING, severity: 'Important' }] }),
+    ],
+    [
+      'findings: file not a string',
+      j({ ...FINDINGS, findings: [{ ...FINDING, file: 81 }] }),
+    ],
+    [
+      'findings: fix null',
+      j({ ...FINDINGS, findings: [{ ...FINDING, fix: null }] }),
+    ],
+    [
+      'findings: evidence not a string',
+      j({ ...FINDINGS, findings: [{ ...FINDING, evidence: 7 }] }),
+    ],
+    [
+      'findings: unknown disposition',
+      j({ ...FINDINGS, findings: [{ ...FINDING, disposition: 'fixed' }] }),
+    ],
   ];
   for (const [name, input] of cases)
     test(name, () => {

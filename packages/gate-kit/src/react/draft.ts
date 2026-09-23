@@ -44,8 +44,12 @@ function parseDraft(raw: string | null): GateDraft | null {
   return draft;
 }
 
+/** An emptied multi counts as a pick: a card that seeds a multi with
+    defaults must be able to tell "cleared every box" from a fresh gate. */
 function draftIsEmpty(draft: GateDraft): boolean {
-  const picked = Object.values(draft.selections).some(v => v.length > 0);
+  const picked = Object.values(draft.selections).some(
+    v => Array.isArray(v) || v.length > 0
+  );
   const noted = Object.values(draft.notes).some(n => n.trim().length > 0);
   return !picked && !noted;
 }

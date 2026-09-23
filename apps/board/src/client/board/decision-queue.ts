@@ -19,16 +19,18 @@ export interface QueueView {
   position: number;
   states: TriageGateState[];
   nextPeek: string | undefined;
+  canBack: boolean;
+  canNext: boolean;
   complete: boolean;
   answeredCount: number;
-  skippedCount: number;
 }
 
 export interface DecisionQueue extends QueueView {
   openAtStart: () => void;
   openAt: (gateId: string) => void;
   close: () => void;
-  skip: () => void;
+  next: () => void;
+  back: () => void;
   noteAnswered: (gateId: string) => void;
   hold: (gateId: string | null) => void;
 }
@@ -39,14 +41,12 @@ export interface DecisionQueue extends QueueView {
 export interface QueueSession {
   order: string[];
   answered: string[];
-  skipped: string[];
   activeId: string | null;
 }
 
 const CLOSED_SESSION: QueueSession = {
   order: [],
   answered: [],
-  skipped: [],
   activeId: null,
 };
 
@@ -59,10 +59,21 @@ function entryFor(
 }
 
 function stateFor(session: QueueSession, gateId: string): TriageGateState {
-  if (session.answered.includes(gateId)) return 'done';
-  if (session.skipped.includes(gateId)) return 'skipped';
   if (session.activeId === gateId) return 'active';
+  if (session.answered.includes(gateId)) return 'done';
   return 'todo';
+}
+
+/** Adds `gateId` to `answered` if it is not there already. */
+export function markAnswered(
+  session: QueueSession,
+  gateId: string
+): Pick<QueueSession, 'answered'> {
+  return {
+    answered: session.answered.includes(gateId)
+      ? session.answered
+      : [...session.answered, gateId],
+  };
 }
 
 export function queueView(
@@ -74,13 +85,7 @@ export function queueView(
   const position = session.activeId
     ? session.order.indexOf(session.activeId) + 1
     : 0;
-  // The peek mirrors where skip/answer actually lands (wraparound included);
-  // when the wrap would land back on the active gate itself, there is no
-  // "next" to glance at.
-  const wrapped = session.activeId
-    ? advanceOrWrap(session, entries, session.activeId)
-    : null;
-  const nextId = wrapped === session.activeId ? null : wrapped;
+  const nextId = forwardTo(session, entries, session.activeId);
   const nextEntry = entryFor(entries, nextId);
   return {
     open: false,
@@ -92,14 +97,15 @@ export function queueView(
         ? `!${nextEntry.mr.iid} · ${cleanTitle(nextEntry.mr.title)}`
         : nextEntry.gate.label
       : undefined,
+    canBack: backTo(session, entries, session.activeId) !== null,
+    canNext: nextId !== null,
     complete: session.activeId === null && session.order.length > 0,
     answeredCount: session.answered.length,
-    skippedCount: session.skipped.length,
   };
 }
 
-/** Walks `order` forward from `from`'s successor only, so a skipped gate
-    never comes back around this session (no wraparound to earlier ids). */
+/** The first unanswered gate after `from` in `order` (from the start when
+    `from` is null), without wrapping. */
 export function advance(
   session: QueueSession,
   entries: QueueEntry[],
@@ -108,7 +114,7 @@ export function advance(
   const startIndex = from === null ? -1 : session.order.indexOf(from);
   for (let i = startIndex + 1; i < session.order.length; i++) {
     const id = session.order[i]!;
-    if (session.answered.includes(id) || session.skipped.includes(id)) continue;
+    if (session.answered.includes(id)) continue;
     if (entryFor(entries, id)) return id;
   }
   return null;
@@ -124,6 +130,60 @@ export function advanceOrWrap(
   from: string
 ): string | null {
   return advance(session, entries, from) ?? advance(session, entries, null);
+}
+
+/** `from`'s nearest predecessor in `order` that still has an entry. Never
+    consults `answered`: looking back is a view change, not a decision. A
+    gate answered here has left `entries`, so there is nothing to land on. */
+export function backTo(
+  session: QueueSession,
+  entries: QueueEntry[],
+  from: string | null
+): string | null {
+  if (from === null) return null;
+  const idx = session.order.indexOf(from);
+  for (let i = idx - 1; i >= 0; i--) {
+    const id = session.order[i]!;
+    if (entryFor(entries, id)) return id;
+  }
+  return null;
+}
+
+/** `backTo`'s mirror: `from`'s successor in `order` that still has an
+    entry. Also a view change, so it never consults `answered` and never
+    wraps; null on the last gate. */
+export function forwardTo(
+  session: QueueSession,
+  entries: QueueEntry[],
+  from: string | null
+): string | null {
+  if (from === null) return null;
+  const idx = session.order.indexOf(from);
+  if (idx < 0) return null;
+  for (let i = idx + 1; i < session.order.length; i++) {
+    const id = session.order[i]!;
+    if (entryFor(entries, id)) return id;
+  }
+  return null;
+}
+
+/** The previous-gate control's transition, `stepForward`'s mirror. */
+export function stepBack(
+  session: QueueSession,
+  entries: QueueEntry[]
+): QueueSession {
+  const target = backTo(session, entries, session.activeId);
+  return target === null ? session : { ...session, activeId: target };
+}
+
+/** The next-gate control's transition: onto the successor in order,
+    changing nothing else; the session unchanged on the last gate. */
+export function stepForward(
+  session: QueueSession,
+  entries: QueueEntry[]
+): QueueSession {
+  const target = forwardTo(session, entries, session.activeId);
+  return target === null ? session : { ...session, activeId: target };
 }
 
 /** Appends unseen actionable gates to `order` without touching existing
@@ -152,10 +212,11 @@ export function reconcile(
     (heldId === null || heldId !== session.activeId) &&
     answeredIds?.has(session.activeId)
   ) {
-    const answered = session.answered.includes(session.activeId)
-      ? session.answered
-      : [...session.answered, session.activeId];
-    const next = { ...session, order, answered };
+    const next = {
+      ...session,
+      order,
+      ...markAnswered(session, session.activeId),
+    };
     return {
       ...next,
       activeId: advanceOrWrap(next, entries, session.activeId),
@@ -184,12 +245,7 @@ export function useDecisionQueue(
 
   const openAtStart = useCallback(() => {
     const order = entries.map(e => e.gate.gateId);
-    setSession({
-      order,
-      answered: [],
-      skipped: [],
-      activeId: order[0] ?? null,
-    });
+    setSession({ order, answered: [], activeId: order[0] ?? null });
     setOpen(true);
   }, [entries]);
 
@@ -200,7 +256,7 @@ export function useDecisionQueue(
         return;
       }
       const order = entries.map(e => e.gate.gateId);
-      setSession({ order, answered: [], skipped: [], activeId: gateId });
+      setSession({ order, answered: [], activeId: gateId });
       setOpen(true);
     },
     [entries, openAtStart]
@@ -213,28 +269,24 @@ export function useDecisionQueue(
     lastActiveEntry.current = null;
   }, []);
 
-  const skip = useCallback(() => {
-    setSession(s => {
-      if (s.activeId === null) return s;
-      const skipped = [...s.skipped, s.activeId];
-      const next = { ...s, skipped };
-      return { ...next, activeId: advanceOrWrap(next, entries, s.activeId) };
-    });
+  const next = useCallback(() => {
+    setSession(s => stepForward(s, entries));
   }, [entries]);
 
   const noteAnswered = useCallback(
     (gateId: string) => {
       setHeldId(h => (h === gateId ? null : h));
       setSession(s => {
-        const answered = s.answered.includes(gateId)
-          ? s.answered
-          : [...s.answered, gateId];
-        const next = { ...s, answered };
+        const next = { ...s, ...markAnswered(s, gateId) };
         return { ...next, activeId: advanceOrWrap(next, entries, gateId) };
       });
     },
     [entries]
   );
+
+  const back = useCallback(() => {
+    setSession(s => stepBack(s, entries));
+  }, [entries]);
 
   const hold = useCallback((gateId: string | null) => {
     setHeldId(gateId);
@@ -260,7 +312,8 @@ export function useDecisionQueue(
     openAtStart,
     openAt,
     close,
-    skip,
+    next,
+    back,
     noteAnswered,
     hold,
   };

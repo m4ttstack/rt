@@ -1414,19 +1414,6 @@ body {
   max-width: 100%;
 }
 
-/* ── ticket link ──────────────────────────────────────────────────── */
-.tui-ticket {
-  color: var(--text-purple-small);
-  opacity: 0.75;
-  flex-shrink: 0;
-  align-self: center;
-  display: inline-flex;
-  padding: 0.15rem;
-}
-.tui-ticket:hover {
-  opacity: 1;
-}
-
 /* ── chrome ───────────────────────────────────────────────────────── */
 .tui-banner {
   color: var(--text-warn-small);
@@ -2043,8 +2030,7 @@ body {
 /* review gate card: the questions a review pane opened on this row, answered
    inline in the triage modal. */
 .tui-gate-card,
-.tui-triage-modal,
-.tui-review-sheet {
+.tui-gate-sheet {
   /* Card ground needs its own edge in dark: --border and --border-soft sit
      too close to --card there, so this scope re-points them (and
      --border-control) onto the kit's on-card roles. In light the on-card
@@ -2093,7 +2079,14 @@ body {
    the fieldset's min-content default, which otherwise refuses to shrink.
    The primitive hides every non-active item with the `hidden` attribute,
    and an author `display` rule beats the UA [hidden] rule, hence the
-   explicit override. */
+   explicit override. `.tui-gate-items` is a plain scroll container, not a
+   flex container, so this card is never given a constrained height and
+   always renders at its natural size: the head, the choices, the note and
+   the error line need no protecting, since nothing ever asks them to
+   shrink. Only the card's context (prose or a thread card, see
+   `.tui-gate-question-context` / `.tui-thread-card`) carries its own
+   viewport-relative cap; whatever the card's own natural height does not
+   fit in `.tui-gate-items`'s box is what that scrolls past. */
 .tui-gate-question {
   display: flex;
   flex-direction: column;
@@ -2128,12 +2121,23 @@ body {
   line-height: 1.35;
   color: var(--text-1);
 }
+/* The form itself never scrolls or gets clipped by an ancestor: the
+   question area below is the one flexible child, shrinking to whatever
+   height the modal leaves it and scrolling internally past that, so the
+   nav (outside this flex item, fixed) always stays on screen. */
 .tui-gate-form {
   display: flex;
   flex-direction: column;
   gap: var(--gate-gap-inner);
   min-width: 0;
   max-width: 36rem;
+  min-height: 0;
+}
+.tui-gate-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .tui-gate-progress {
   flex-shrink: 0;
@@ -2278,121 +2282,6 @@ body {
   background: var(--surface-inset);
   pointer-events: none;
 }
-/* B9: a context the asker wrote as `[Label] text` lines. The label becomes
-   a small uppercase heading with its count and the findings sit beneath it
-   as bullets, so the severity is stated once per group instead of leading
-   every line. Groups after the first take a soft rule; the bullet is drawn
-   by the marker box so a wrapped line hangs under its own text, not under
-   the dot. */
-.tui-gate-groups {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gate-gap-inner);
-  min-width: 0;
-}
-.tui-gate-groups-total {
-  margin-left: 8px;
-  font-weight: 500;
-  font-size: var(--gate-font-meta);
-  color: var(--text-3);
-}
-.tui-gate-groups-preamble {
-  margin: 0;
-  font-size: var(--gate-font-meta);
-  color: var(--text-3);
-}
-.tui-gate-groups-preamble [data-part='markdown'] > * {
-  margin: 0;
-}
-/* The head's way back to the asker's own words. Quiet text, the pane's
-   own accent, no box: it is a view switch, not an action. */
-.tui-gate-groups-raw {
-  margin-left: auto;
-  border: 0;
-  padding: 0;
-  background: none;
-  font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--text-accent-small);
-  cursor: pointer;
-}
-.tui-gate-groups-raw:hover {
-  text-decoration: underline;
-}
-.tui-triage-modal [data-part='scrollpane-head'] {
-  display: flex;
-  align-items: baseline;
-}
-.tui-gate-group + .tui-gate-group {
-  padding-top: var(--gate-gap-inner);
-  border-top: 1px solid var(--border-soft);
-}
-.tui-gate-group-head {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin: 0 0 6px;
-  font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.tui-gate-group-label {
-  color: var(--orange);
-}
-/* Every group past the first reads as the quieter tail of the list: the
-   asker's own order puts what matters first, so only it takes the tone. */
-.tui-gate-group + .tui-gate-group .tui-gate-group-label {
-  color: var(--text-4);
-}
-/* The preamble is a <p> before the groups, so the first group is not the
-   pane's first child; keyed on type instead, the tone lands with or
-   without one. */
-.tui-gate-groups
-  .tui-gate-group:first-of-type
-  .tui-gate-group-items
-  li::marker {
-  color: var(--orange);
-}
-.tui-gate-group-count {
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text-4);
-}
-.tui-gate-group-items {
-  margin: 0;
-  padding: 0 0 0 15px;
-  list-style: disc;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: var(--gate-font-meta);
-  line-height: 1.45;
-  color: var(--text-1);
-}
-.tui-gate-group-items li {
-  padding-left: 3px;
-  overflow-wrap: anywhere;
-}
-/* A finding renders through the markdown recipe so links and code stay
-   live; it is one line inside a list item, so its block margins go. */
-.tui-gate-group-items li [data-part='markdown'] > * {
-  margin: 0;
-}
-.tui-gate-group-items li [data-part='markdown'] code {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-.tui-gate-group-items li::marker {
-  color: var(--text-4);
-  font-size: 0.85em;
-}
-
-/* B7: a question that owns a slice of the gate context. The head leads with
-   its ordinal among the threads and sets the file:line in mono; the slice
-   sits between the head and the choices: the reviewer's words as a quote
-   with a left rule, the verdict with the recommendation chip, then the
-   adjudication. The recommended choice is marked at rest so the eye lands
-   on it before the pointer does. */
 .tui-gate-question-ord {
   flex-shrink: 0;
   font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
@@ -2400,19 +2289,14 @@ body {
   text-transform: uppercase;
   color: var(--text-4);
 }
-.tui-gate-question[data-sectioned] .tui-gate-question-label {
-  font-family: var(--font-mono);
-  margin-right: auto;
-}
-.tui-gate-context {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gate-gap-row);
-  min-width: 0;
-}
 /* A question's own `context` field, rendered with its card above its
-   choices. It is the material the choice is made on, so it reads in ink. */
+   choices. It is the material the choice is made on, so it reads in ink.
+   A viewport-relative cap keeps an unusually long one from pushing the
+   choices below it out of view; it scrolls internally past the cap. */
 .tui-gate-question-context {
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
   font-size: var(--gate-font-meta);
   line-height: 1.45;
   color: var(--text-1);
@@ -2424,8 +2308,8 @@ body {
 .tui-gate-question-context [data-part='markdown'] > * + * {
   margin-top: 6px;
 }
-/* Respond gates' small uppercase tags: a thread's severity, a reply's verb.
-   Grey unless a hue names what needs the eye. */
+/* The small uppercase tags: a thread's severity, a reply's verb, a
+   finding's disposition. Grey unless a hue names what needs the eye. */
 .tui-respond-pill {
   flex-shrink: 0;
   display: inline-flex;
@@ -2469,7 +2353,14 @@ body {
   text-transform: none;
   color: var(--text-2);
 }
+/* Same role as `.tui-gate-question-context`, for a structured thread's
+   claim / points / verdict / reply instead of plain prose: the whole card
+   scrolls as a unit once it hits its own viewport-relative cap, rather
+   than the choices below it losing any ground. */
 .tui-thread-card {
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2508,6 +2399,17 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-2);
+}
+/* The post step's outcome chip holds the card head's right edge. */
+.tui-respond-chip.tui-thread-outcome {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.tui-thread-nothing {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-3);
 }
 .tui-thread-verdict-call {
   font-weight: 700;
@@ -2555,7 +2457,7 @@ body {
 }
 /* A respond-post reply option carries the full reply text, so the box
    tops its checkbox against the first line instead of centring it. */
-.tui-gate-question[data-gate-ctx='replies'] .tui-gate-choice {
+[data-gate-ctx='replies'] .tui-gate-choice {
   align-items: flex-start;
 }
 .tui-reply-choice-file {
@@ -2574,59 +2476,11 @@ body {
 .tui-reply-choice-text [data-part='markdown'] > * + * {
   margin-top: 6px;
 }
-.tui-gate-quote {
-  margin: 0;
-  padding: 2px 0 2px 12px;
-  border-left: 2px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.tui-gate-quote-who {
-  font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--text-3);
-}
-.tui-gate-quote-text {
-  margin: 0;
-  font-size: var(--gate-font-meta);
-  line-height: 1.45;
-  color: var(--text-3);
-  overflow-wrap: anywhere;
-}
-.tui-gate-verdict {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.tui-gate-verdict-word {
-  font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--text-1);
-}
-.tui-gate-lead,
-.tui-gate-adjudication {
-  margin: 0;
-  font-size: var(--gate-font-meta);
-  line-height: 1.45;
-  color: var(--text-1);
-  overflow-wrap: anywhere;
-}
-.tui-gate-lead {
-  color: var(--text-3);
-}
-.tui-gate-lead [data-part='markdown'] > *,
-.tui-gate-adjudication [data-part='markdown'] > * {
-  margin: 0;
-}
-.tui-gate-lead [data-part='markdown'] > * + *,
-.tui-gate-adjudication [data-part='markdown'] > * + * {
-  margin-top: 6px;
-}
-.tui-gate-adjudication [data-part='markdown'] ul,
-.tui-gate-adjudication [data-part='markdown'] ol {
-  padding-left: 18px;
-}
-.tui-gate-choice[data-recommended]:not([data-checked]) {
+/* The recommended choice is marked only while its question has no pick,
+   so the eye lands on it before the pointer does; once anything is picked,
+   the pick is the only highlighted choice. */
+:is(.tui-gate-question, .tui-sheet-dock-question):not(:has([data-checked]))
+  .tui-gate-choice[data-recommended] {
   border-color: color-mix(in srgb, var(--fill-accent) 55%, var(--border));
   background: color-mix(in srgb, var(--fill-accent) 7%, transparent);
 }
@@ -2655,6 +2509,7 @@ body {
   outline-offset: 1px;
 }
 .tui-gate-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2699,141 +2554,38 @@ body {
   opacity: 0.7;
 }
 /* ── gate triage modal ────────────────────────────────────────────── */
-/* The frame is the kit Modal recipe; this class both widens it (app CSS
-   outranks the recipe's @layer rule) and scopes the gate contrast vars. */
-.tui-triage-modal {
-  max-width: 760px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gate-gap);
-  background: var(--surface-overlay);
-}
-/* The head is the recipe's accent title span, stretched so the gate cluster
-   (kind + actions) can ride its right edge; everything inside resets the
-   title's weight/tracking for its own voice. */
-.tui-triage-modal [data-part='modal-title'] {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--gate-font-display);
-  line-height: 1.4;
-}
-.tui-triage-head-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-/* Rest-state weight the kit's light tier doesn't carry: board chrome only. */
-.tui-triage-head-actions [data-part='button'] {
-  font-weight: 500;
-}
-/* The queue line sits under the head: count, pips and the gate kind get
-   their own row so the head keeps only the title, actions and close. */
-.tui-triage-modal [data-part='modal-head'] {
-  margin-bottom: 0.45rem;
-}
-.tui-triage-queue-row {
-  display: flex;
-  align-items: center;
-  gap: var(--gate-gap-row);
-}
-.tui-triage-pos {
-  font-family: var(--font-sans);
-  font-size: var(--gate-font-body);
-  font-weight: 500;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: normal;
-  color: var(--text-1);
-  align-self: center;
-}
-.tui-triage-pips {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: center;
-}
-.tui-triage-pip {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-}
-.tui-triage-pip[data-state='done'] {
-  background: color-mix(in srgb, var(--fg) 55%, transparent);
-}
-.tui-triage-pip[data-state='active'] {
-  background: var(--fill-accent);
-}
-.tui-triage-pip[data-state='todo'] {
-  background: transparent;
-  border: 1px solid var(--border);
-  box-sizing: border-box;
-}
-.tui-triage-pip[data-state='skipped'] {
-  background: var(--fill-warn);
-  opacity: 0.55;
-}
-/* B7's stand-in for the context pane: one line with the preamble and a
-   tally of the sections' recommendations, the disclosure at its end. Same
-   card ground and soft edge as the strip above it. */
-.tui-triage-overview {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--gate-radius-control);
-  background: var(--card);
-  font-size: var(--gate-font-meta);
-  line-height: 1.4;
-}
-.tui-triage-overview-title {
-  flex-shrink: 0;
-  font-weight: 600;
-  color: var(--text-accent-small);
-}
-.tui-triage-overview-text {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-3);
-  overflow-wrap: anywhere;
-}
-.tui-triage-overview-toggle {
-  flex-shrink: 0;
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  color: var(--text-accent-small);
-  cursor: pointer;
-}
-.tui-triage-overview-toggle:hover {
-  text-decoration: underline;
-}
 /* Context sits ABOVE the form, the way a real pane reads: transcript on
-   top, prompt below. The pane is as tall as its text up to the ScrollPane's
-   46vh cap and scrolls on its own past that. It never shrinks: the kit
-   pane's own `min-height: 0` would let a flexed pane collapse to its header
-   at laptop heights, so when the pane plus the form outgrow the modal's cap
-   the body scrolls to the form under the pinned head and footer instead.
-   `min-height: 0` lets the body shrink to the cap; `overflow-y: auto` is
-   what turns the overflow into that scroll instead of a clipped form. */
+   top, prompt below. Nothing here scrolls the body itself, and the nav is
+   never compressed or pushed below the fold: a container that can outgrow
+   its box owns its own scroll instead. The pane and the form's own question
+   area below (`.tui-gate-items`, see `.tui-gate-form`) are not equal
+   competitors: the choices are what the reviewer is at the gate to act on,
+   the pane is reference, so the pane's flex-shrink is set far above the
+   form column's (200 to 1): the pane absorbs about 200/201 of any deficit,
+   the question area the remaining ~0.5%, so in practice the pane reaches
+   its floor first. The law this buys: if `.tui-gate-items` scrolls, the
+   pane is already at its floor. */
 .tui-triage-body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--gate-gap);
   min-height: 0;
-  overflow-y: auto;
 }
+/* The floor is the pane's header band plus a couple lines of prose, so a
+   shrunk pane still reads as a pane, never just its own title. */
 .tui-triage-body > [data-part='scrollpane'] {
-  flex: 0 0 auto;
+  flex: 0 200 auto;
+  min-height: 6.75rem;
 }
+/* No floor of its own: the nav below `.tui-gate-items` is what must never
+   be pushed off screen, and it is protected structurally (a fixed sibling
+   after the one flexible child), not by a minimum height on the form. The
+   low flex-shrink (against the pane's 200) is what keeps this the second
+   thing to give, not the first. */
 .tui-triage-body > .tui-triage-form-col {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 .tui-triage-form-col {
   min-width: 0;
@@ -2842,17 +2594,8 @@ body {
   align-items: center;
   gap: var(--gate-gap-inner);
 }
-/* The form takes most of the modal's width, not all of it. At 30rem a third
-   of the modal sat empty while a six-question gate ran out of room inside
-   the box; full bleed reads blown out, so it keeps a gutter of its own
-   against the context pane above. */
 .tui-triage-form-col .tui-gate-form {
   width: 100%;
-  max-width: 40rem;
-}
-/* Under the respond header card the form spans the body, so the question
-   card's edges line up with the card above it. */
-.tui-triage-body[data-respond] .tui-triage-form-col .tui-gate-form {
   max-width: none;
 }
 .tui-attention-card {
@@ -2906,69 +2649,83 @@ body {
 /* The respond gate's header card, in place of the MR strip when the
    gate-level context is structured: who is being answered leads, the MR is
    the object line, the operator plumbing (pane, worktree) is gone. */
-.tui-respond-head {
+/* The identity card each sheet leads its rail with. Only the top line is a
+   row (invader, lead, links); everything below spans the card's full
+   width, so nothing wraps under a prefix or an avatar column. */
+.tui-id-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   padding: 16px;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   background: var(--panel);
 }
-.tui-respond-head-top {
+.tui-id-card-top {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  margin-bottom: 2px;
 }
-.tui-respond-avatar {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 8px;
+/* The invader and name travel as one inline unit wherever a sheet names a
+   person, a card's lead line or a heading alike. */
+.tui-person {
+  white-space: nowrap;
+}
+/* Only the invader is centred on the line; the name stays inline text so
+   it shares the sentence's baseline. */
+.tui-person-avatar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 22px;
+  height: 22px;
+  margin: -3px 7px 0 0;
+  border-radius: 5px;
   overflow: hidden;
 }
-.tui-respond-head-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.tui-id-card-lead {
+  flex: 1;
   min-width: 0;
-}
-.tui-respond-headline {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.25;
-  color: var(--text-1);
-}
-.tui-respond-headline strong {
-  font-weight: 700;
-}
-.tui-respond-object {
-  margin: 0;
-  display: flex;
-  gap: 6px;
-  min-width: 0;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.3;
   color: var(--text-1);
 }
-.tui-respond-object-ref {
-  flex-shrink: 0;
+.tui-id-card-lead strong {
+  font-weight: 700;
+}
+.tui-id-card-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-1);
+}
+.tui-id-card-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.tui-id-card-ref {
   font-weight: 500;
   color: var(--text-accent);
 }
-.tui-respond-object-title {
-  min-width: 0;
+.tui-id-card-branch {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tui-respond-meta {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-3);
-  overflow-wrap: anywhere;
+.tui-id-card .tui-respond-chips {
+  margin-top: 6px;
 }
 .tui-respond-chips {
   display: flex;
@@ -2989,8 +2746,8 @@ body {
   flex-direction: column;
   padding: var(--gate-pad-chrome);
   border: 1px solid var(--border-soft);
-  border-radius: var(--gate-radius-btn);
-  background: var(--chrome);
+  border-radius: 10px;
+  background: var(--panel);
 }
 /* The strip separates its facts with this glyph; rows carry no separators. */
 .tui-triage-strip .tui-row-sep {
@@ -3021,46 +2778,6 @@ body {
 .tui-triage-row-1 .tui-title {
   font-size: var(--gate-font-body);
 }
-.tui-triage-row-1 .tui-ticket {
-  font-size: var(--gate-font-meta);
-}
-.tui-triage-kind {
-  flex-shrink: 0;
-  font: 600 var(--gate-font-small) / 1 var(--font-sans);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-4);
-  align-self: center;
-}
-/* Footer: next-gate peek left, pips centered on the modal, count right. */
-.tui-triage-footer {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 10px;
-  border-top: 1px solid var(--border-soft);
-  padding: 0.85rem 0 0.35rem;
-}
-.tui-triage-footer .tui-triage-pos {
-  justify-self: end;
-}
-/* Long next-gate titles wrap to a second line instead of truncating. */
-.tui-triage-peek {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: var(--gate-font-meta);
-  color: var(--text-3);
-  min-height: 1lh;
-  min-width: 0;
-}
-.tui-triage-peek > span:last-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.tui-triage-peek-k {
-  font-weight: 500;
-}
 .tui-triage-done {
   display: flex;
   flex-direction: column;
@@ -3086,26 +2803,26 @@ body {
    (see its own comment for why the first/last-child margin collapse has to
    key on [data-part="markdown"] rather than a bare `>` selector), sized down
    to sit quietly inside the kit ScrollPane instead of the wider comments
-   drawer. Scoped under .tui-triage-modal since [data-part='scrollpane-body']
+   drawer. Scoped under .tui-triage-sheet since [data-part='scrollpane-body']
    is a generic kit hook, not unique to the gate context pane. */
-.tui-triage-modal [data-part='scrollpane'] {
+.tui-triage-sheet [data-part='scrollpane'] {
   border-color: var(--border-soft);
 }
-.tui-triage-modal [data-part='scrollpane-head'] {
+.tui-triage-sheet [data-part='scrollpane-head'] {
   border-bottom-color: var(--border-soft);
 }
-.tui-triage-modal [data-part='scrollpane-body'] {
+.tui-triage-sheet [data-part='scrollpane-body'] {
   font: inherit;
   color: inherit;
   overflow-wrap: anywhere;
 }
-.tui-triage-modal
+.tui-triage-sheet
   [data-part='scrollpane-body']
   [data-part='markdown']
   > :first-child {
   margin-top: 0;
 }
-.tui-triage-modal
+.tui-triage-sheet
   [data-part='scrollpane-body']
   [data-part='markdown']
   > :last-child {
@@ -3114,72 +2831,72 @@ body {
 /* Pane context is often transcript-shaped plain text: markdown treats its
    single newlines as soft breaks and runs the lines together, so the pane
    honors them (and indent runs) instead. */
-.tui-triage-modal [data-part='scrollpane-body'] p,
-.tui-triage-modal [data-part='scrollpane-body'] li {
+.tui-triage-sheet [data-part='scrollpane-body'] p,
+.tui-triage-sheet [data-part='scrollpane-body'] li {
   white-space: pre-wrap;
 }
-.tui-triage-modal [data-part='scrollpane-body'] p {
+.tui-triage-sheet [data-part='scrollpane-body'] p {
   margin: 0 0 0.4rem;
 }
-.tui-triage-modal [data-part='scrollpane-body'] a {
+.tui-triage-sheet [data-part='scrollpane-body'] a {
   color: var(--text-accent-small);
 }
-.tui-triage-modal [data-part='scrollpane-body'] code {
+.tui-triage-sheet [data-part='scrollpane-body'] code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: 3px;
   padding: 0.05em 0.3em;
 }
-.tui-triage-modal [data-part='scrollpane-body'] pre {
+.tui-triage-sheet [data-part='scrollpane-body'] pre {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: 6px;
   padding: 0.5rem 0.6rem;
   overflow-x: auto;
   margin: 0 0 0.4rem;
 }
-.tui-triage-modal [data-part='scrollpane-body'] pre code {
+.tui-triage-sheet [data-part='scrollpane-body'] pre code {
   background: none;
   padding: 0;
   font-size: 0.85em;
 }
-.tui-triage-modal [data-part='scrollpane-body'] ul,
-.tui-triage-modal [data-part='scrollpane-body'] ol {
+.tui-triage-sheet [data-part='scrollpane-body'] ul,
+.tui-triage-sheet [data-part='scrollpane-body'] ol {
   margin: 0 0 0.4rem;
   padding-left: 1.1rem;
 }
-.tui-triage-modal [data-part='scrollpane-body'] li {
+.tui-triage-sheet [data-part='scrollpane-body'] li {
   margin: 0.1rem 0;
 }
 /* Quotes read on the CARD ground; border-left uses the on-card border role
    so it doesn't sit too close to the card fill in dark. */
-.tui-triage-modal [data-part='scrollpane-body'] blockquote {
+.tui-triage-sheet [data-part='scrollpane-body'] blockquote {
   margin: 0 0 0.4rem;
   padding-left: 0.6rem;
   border-left: 2px solid var(--border-on-card);
   color: var(--text-3);
 }
-.tui-triage-modal [data-part='scrollpane-body'] h1,
-.tui-triage-modal [data-part='scrollpane-body'] h2,
-.tui-triage-modal [data-part='scrollpane-body'] h3,
-.tui-triage-modal [data-part='scrollpane-body'] h4,
-.tui-triage-modal [data-part='scrollpane-body'] h5,
-.tui-triage-modal [data-part='scrollpane-body'] h6 {
+.tui-triage-sheet [data-part='scrollpane-body'] h1,
+.tui-triage-sheet [data-part='scrollpane-body'] h2,
+.tui-triage-sheet [data-part='scrollpane-body'] h3,
+.tui-triage-sheet [data-part='scrollpane-body'] h4,
+.tui-triage-sheet [data-part='scrollpane-body'] h5,
+.tui-triage-sheet [data-part='scrollpane-body'] h6 {
   margin: 0.35rem 0 0.25rem;
   font-size: 0.95em;
   font-weight: 700;
 }
-.tui-triage-modal [data-part='scrollpane-body'] table {
+.tui-triage-sheet [data-part='scrollpane-body'] table {
   border-collapse: collapse;
   margin: 0 0 0.4rem;
   font-size: 0.95em;
 }
-.tui-triage-modal [data-part='scrollpane-body'] th,
-.tui-triage-modal [data-part='scrollpane-body'] td {
+.tui-triage-sheet [data-part='scrollpane-body'] th,
+.tui-triage-sheet [data-part='scrollpane-body'] td {
   border: 1px solid var(--border-soft);
   padding: 0.15rem 0.35rem;
 }
-.tui-triage-modal [data-part='scrollpane-body'] img {
+.tui-triage-sheet [data-part='scrollpane-body'] img {
   max-width: 100%;
 }
 /* The header's slack filter glyph (Controls.tsx's SlackPostedMark); rows
@@ -3970,8 +3687,8 @@ body {
   flex: 1 1 200px;
 }
 
-/* review gate sheet */
-.tui-review-sheet {
+/* the full-screen frame every decision-queue face renders in */
+.tui-gate-sheet {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -3986,94 +3703,91 @@ body {
   display: flex;
   flex-direction: column;
 }
-.tui-review-sheet-head {
-  display: flex;
+.tui-gate-sheet-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
   flex-shrink: 0;
   padding: 14px 20px;
   border-bottom: 1px solid var(--border);
 }
-.tui-review-sheet-title {
+.tui-gate-sheet-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.tui-gate-sheet-trail {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.tui-gate-sheet-title {
   font-weight: 700;
   font-size: 20px;
   color: var(--text-1);
 }
-.tui-review-sheet-head-actions {
+.tui-gate-sheet-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.tui-review-sheet-spacer {
-  flex: 1;
+.tui-gate-sheet-actions [data-part='button'] {
+  font-weight: 500;
 }
-.tui-review-queue-nav {
+.tui-gate-queue-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.tui-review-queue-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-1);
-  cursor: pointer;
-}
-.tui-review-queue-chevron:hover:not(:disabled) {
-  border-color: var(--fill-accent);
-  color: var(--text-accent-small);
-}
-.tui-review-queue-chevron:disabled {
-  color: var(--text-3);
-  cursor: default;
-  opacity: 0.5;
-}
-.tui-review-queue-pips {
+.tui-gate-queue-pips {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
-.tui-review-queue-pip {
+.tui-gate-queue-pip {
   width: 6px;
   height: 6px;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--border);
 }
-.tui-review-queue-pip[data-state='done'] {
+.tui-gate-queue-pip[data-state='done'] {
   background: color-mix(in srgb, var(--fg) 55%, transparent);
 }
-.tui-review-queue-pip[data-state='active'] {
+.tui-gate-queue-pip[data-state='active'] {
   background: var(--fill-accent);
 }
-.tui-review-queue-pip[data-state='skipped'] {
-  background: var(--fill-warn);
-}
-.tui-review-queue-pip[data-state='todo'] {
+.tui-gate-queue-pip[data-state='todo'] {
   background: transparent;
   border: 1px solid var(--border);
 }
-.tui-review-queue-pos {
+/* Fixed width and tabular digits: the count never changes the nav's
+   width, so the chevrons stay put under the pointer from gate to gate. */
+.tui-gate-queue-where {
+  min-width: 8ch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.tui-gate-queue-pos {
+  line-height: 1.2;
   font-size: var(--gate-font-meta);
-  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
   white-space: nowrap;
 }
-.tui-review-head-sep {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-}
-.tui-review-gate-tag {
-  font-size: 11px;
+.tui-gate-sheet-tag {
+  font-size: var(--gate-font-meta);
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-4);
+  color: var(--text-2);
 }
-.tui-review-close {
+.tui-gate-sheet-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4086,21 +3800,39 @@ body {
   cursor: pointer;
   border-radius: 6px;
 }
-.tui-review-close:hover {
+.tui-gate-sheet-close:hover {
   color: var(--text-1);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
-.tui-review-sheet-body {
+.tui-sheet-body {
   flex: 1;
   display: flex;
   min-height: 0;
 }
-.tui-review-sheet-main {
+/* A non-review gate reads at the width its cards were designed for,
+   centred in the frame; this column is the height `.tui-triage-body`'s
+   pane-then-question yield order sizes against. */
+.tui-triage-sheet-body {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap);
+}
+.tui-triage-sheet-body > .tui-triage-done {
+  margin: auto 0;
+}
+.tui-sheet-main {
   flex: 1;
   overflow-y: auto;
   padding: 22px 28px;
 }
-.tui-review-sheet-rail {
+.tui-sheet-rail {
   width: 470px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
@@ -4112,7 +3844,7 @@ body {
 /* The rail splits in two: reference material scrolls, the decision docks.
    The submit is the one control a long report must never push off-screen,
    so the scroll lives on the half above it rather than on the rail. */
-.tui-review-rail-scroll {
+.tui-sheet-rail-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -4126,87 +3858,106 @@ body {
 }
 
 /* MR card */
-.tui-review-mr-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 16px;
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  background: var(--panel);
-}
-.tui-review-mr-avatar {
-  width: 42px;
-  height: 42px;
+/* An MR card's external homes, riding its top-right edge. */
+.tui-mr-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
-  border-radius: 8px;
-  overflow: hidden;
+  margin-left: auto;
 }
-.tui-review-mr-body {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.tui-review-mr-head {
-  display: flex;
+.tui-mr-link {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
 }
-.tui-review-author {
+.tui-mr-link:hover {
+  color: var(--text-1);
+  border-color: var(--fill-accent);
+}
+.tui-person-name {
   color: var(--text-purple);
-  font-size: 15px;
-  font-weight: 700;
 }
-.tui-review-mr-open {
-  color: var(--text-3);
-  font-size: var(--gate-font-meta);
-}
-/* The locked design holds one scale across this card (author 15, title
-   13.5, meta 12, all sans) and lets the author line carry the emphasis. A
-   16px bold title plus an 11px mono meta was three sizes and two families
-   fighting inside one block. */
-.tui-review-mr-title {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-}
-.tui-review-mr-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-4);
-  font-size: 12px;
-}
-.tui-review-diff {
+.tui-mr-card-diff {
   display: inline-flex;
   gap: 6px;
 }
-.tui-review-diff-add {
+.tui-mr-card-diff-add {
   color: var(--color-gray-okText);
 }
-.tui-review-diff-del {
+.tui-mr-card-diff-del {
   color: var(--text-bad-small);
 }
 
 /* findings list */
-.tui-review-find-head {
+.tui-sheet-list-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
   margin: 18px 0 10px;
 }
-.tui-review-find-title {
-  font-weight: 600;
+.tui-sheet-main > .tui-sheet-list-head:first-child {
+  margin-top: 0;
 }
-.tui-review-find-tally {
+.tui-sheet-list-title {
+  font-weight: 700;
+}
+.tui-sheet-list-tally {
   color: var(--text-3);
   font-size: var(--gate-font-meta);
   white-space: nowrap;
+}
+/* A respond sheet decides each thread on its own card, all of them in
+   the main column, which scrolls; a card's context shows at full height. */
+.tui-respond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tui-respond-list .tui-thread-card {
+  max-height: none;
+  overflow: visible;
+}
+/* The rail's secondary action: sending the plan back is rarer and heavier
+   than submitting it, so it reads as a link under the primary button. */
+.tui-sheet-revise {
+  align-self: center;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tui-sheet-revise:hover {
+  color: var(--text-accent-small);
+  text-decoration: underline;
+}
+.tui-sheet-dock-next {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.tui-sheet-revise-reason {
+  min-height: 88px;
+  resize: vertical;
+}
+.tui-respond-replies,
+.tui-sheet-dock-question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tui-sheet-dock-prompt {
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
 }
 .tui-review-find-list {
   position: relative;
@@ -4353,10 +4104,8 @@ body {
   min-width: 0;
   flex: 1;
 }
-/* Line 1 is the title and its kind chip alone. The anchor used to sit here
-   too, which stole width from the title and forced it to wrap -- and a
-   finding whose location is prose (the engine's fileLabel) then rendered as
-   a code path. Anchor and fix each get their own line below instead. */
+/* Line 1 is the title and its disposition pill alone; the anchor, the
+   body, and the fix each get their own line below it. */
 .tui-review-finding-line1 {
   display: flex;
   align-items: flex-start;
@@ -4367,32 +4116,25 @@ body {
   flex: 1;
   min-width: 0;
 }
-.tui-review-finding-kind {
-  font-size: 11px;
-  color: var(--color-gray-badgeText);
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 4px;
-  padding: 1px 6px;
-  flex-shrink: 0;
-}
 .tui-review-finding-anchor {
   font-family: var(--font-mono);
   font-size: var(--gate-font-meta);
   color: var(--text-accent-small);
   overflow-wrap: anywhere;
 }
-/* A finding that anchors to nothing in the diff: prose, so it never takes
-   the mono/accent treatment a real path gets. */
-.tui-review-finding-anchor-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+/* The finding's full text is the decision material itself, so it reads in
+   ink; only the fix line below it stays on the muted token. */
+.tui-review-finding-text {
+  color: var(--text-1);
   font-size: var(--gate-font-meta);
-  font-style: italic;
-  color: var(--text-3);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
-.tui-review-finding-anchor-label svg {
-  color: var(--text-3);
+.tui-review-finding-text [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-review-finding-text [data-part='markdown'] > * + * {
+  margin-top: 6px;
 }
 .tui-review-finding-fix {
   color: var(--text-3);
@@ -4471,7 +4213,7 @@ body {
 }
 
 /* right rail */
-.tui-review-decision-card {
+.tui-sheet-context-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4480,24 +4222,35 @@ body {
   border-radius: 10px;
   background: var(--card);
 }
-.tui-review-decision-label {
+.tui-sheet-context-label {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-4);
 }
-.tui-review-decision-lead {
+.tui-sheet-context-lead {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-1);
 }
 /* The verdict's rationale is the reason the reader is here, not a
    footnote: it reads at full foreground alongside the checks, while the
    genuinely secondary lines (fix gists, strengths detail, option
    subtitles) stay on the muted text token. */
-.tui-review-decision-reasoning {
+.tui-sheet-context-reasoning {
   margin: 0;
   color: var(--text-1);
+  font-size: var(--gate-font-meta);
+}
+.tui-sheet-context-reasoning [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-sheet-context-reasoning [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-sheet-context-meta {
+  margin: 0;
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
 }
 .tui-review-tier-pills {
@@ -4506,7 +4259,7 @@ body {
   flex-wrap: wrap;
   margin-top: 2px;
 }
-.tui-review-checks-card {
+.tui-sheet-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4515,29 +4268,29 @@ body {
   border-radius: 10px;
   background: var(--card);
 }
-.tui-review-checks-title {
+.tui-sheet-card-title {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-4);
 }
-.tui-review-checks-list {
+.tui-sheet-card-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.tui-review-check-row {
+.tui-sheet-card-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
 }
-.tui-review-check-chip {
+.tui-sheet-card-chip {
   flex-shrink: 0;
   width: 46px;
   justify-content: center;
   text-align: center;
 }
-.tui-review-check-text {
+.tui-sheet-card-text {
   color: var(--text-1);
   font-size: var(--gate-font-meta);
   line-height: 1.4;
@@ -4545,7 +4298,7 @@ body {
 /* The docked decision is its own plane: one step off the rail's card, bled
    to the rail's edges with a hairline above it, so the scrolling reference
    material above reads as passing behind it. */
-.tui-review-verdict {
+.tui-sheet-dock {
   background: var(--surface-wash-fg-4-card);
   border-top: 1px solid var(--border-soft);
   padding: 14px 26px 18px;
@@ -4553,18 +4306,18 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.tui-review-verdict-heading {
+.tui-sheet-dock-heading {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
-.tui-review-submit {
+.tui-sheet-submit {
   min-height: 44px;
   border-radius: 8px;
 }
 /* Sits with the verdict heading rather than under the submit: a full-width
    lg button spent a whole row of docked height on the least-used control. */
-.tui-review-reset {
+.tui-sheet-reset {
   border: none;
   background: none;
   padding: 0;
@@ -4572,11 +4325,11 @@ body {
   color: var(--text-4);
   cursor: pointer;
 }
-.tui-review-reset:hover {
+.tui-sheet-reset:hover {
   color: var(--text-accent-small);
   text-decoration: underline;
 }
-.tui-review-verdict-head {
+.tui-sheet-dock-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4584,8 +4337,9 @@ body {
 }
 /* CAS-loss face: the rail swaps entirely to this instead of appearing to
    accept a selection that can no longer be posted. */
-.tui-review-lost {
+.tui-sheet-lost {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 22px 26px;
 }
