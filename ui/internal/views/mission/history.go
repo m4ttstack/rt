@@ -247,6 +247,7 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	if n == 0 {
 		return nil
 	}
+	m.historyFreeScroll = false
 	before := m.historySelectionKey()
 	if extend {
 		if m.historyAnchor == "" {
@@ -387,9 +388,22 @@ func (m *Mission) historyCursorLine(lines []historyLine) int {
 // their rows from here, so a hit always names the row the frame painted.
 func (m *Mission) historyWindow(height int) (lines []historyLine, top, vis int) {
 	lines = m.historyLines()
-	top, vis = picker.Viewport(m.historyCursorLine(lines), m.historyTop, len(lines), height, height, 0)
+	if m.historyFreeScroll {
+		vis = max(min(len(lines), height), 0)
+		top = max(0, min(m.historyTop, len(lines)-vis))
+	} else {
+		top, vis = picker.Viewport(m.historyCursorLine(lines), m.historyTop, len(lines), height, height, 0)
+	}
 	m.historyTop = top
 	return lines, top, vis
+}
+
+// historyScroll is the wheel over the commit list: it moves the view by
+// delta lines from where it is painted and leaves the cursor alone.
+func (m *Mission) historyScroll(delta int) {
+	lines, top, vis := m.historyWindow(m.layout().listRegionH)
+	m.historyFreeScroll = true
+	m.historyTop = max(0, min(top+delta, len(lines)-vis))
 }
 
 func (m *Mission) renderCommitList(width, height int) string {
@@ -555,6 +569,7 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	m.historyCursor = commits[idx].Sha
 	m.focus = focusList
+	m.historyFreeScroll = false
 	// A pending tick left in flight settles against the same shown selection
 	// and finds nothing to emit either.
 	if m.historySelectionKey() == m.historyShown {

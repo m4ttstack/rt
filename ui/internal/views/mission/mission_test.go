@@ -790,6 +790,45 @@ func openHistory(t *testing.T) *testutil.Session {
 	return openMission(t, historyModel, "Fix pty paint predicate")
 }
 
+// longHistoryModel is historyModel with n commits all under Today, s0
+// selected, and hasMore as given.
+func longHistoryModel(n int, hasMore bool) string {
+	commits := make([]string, n)
+	for i := range commits {
+		commits[i] = fmt.Sprintf(`{"sha":"sha%02d","shortSha":"sh%02d","summary":"subject-%02d","byline":"author-%02d","when":"1 hour ago","group":"Today","tags":[],"unpushed":false,"selected":%v}`, i, i, i, i, i == 0)
+	}
+	model := strings.Replace(historyModel, historyModel[strings.Index(historyModel, `"commits":[`):strings.Index(historyModel, `"hasMore":false`)],
+		`"commits":[`+strings.Join(commits, ",")+`],`, 1)
+	return strings.Replace(model, `"hasMore":false`, fmt.Sprintf(`"hasMore":%v`, hasMore), 1)
+}
+
+// listTopY is the frame row of the History list's first row: topH(4) plus
+// tabs(3) + tabs-gap(1) + filter box(3).
+const listTopY = 4 + 7
+
+// TestHistoryWheelScrollsTheListWithoutEmitting: a wheel tick over the list
+// moves the view three lines and sends nothing to the driver.
+func TestHistoryWheelScrollsTheListWithoutEmitting(t *testing.T) {
+	s := openMission(t, longHistoryModel(20, true), "subject-00")
+	if row := screenRow(s, listTopY); !strings.HasPrefix(row, "  Today") {
+		t.Fatalf("setup: the list should open on its header: %q", row)
+	}
+	s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
+	s.WaitForGone("subject-00")
+	if row := screenRow(s, listTopY+1); !strings.Contains(row, "subject-01") {
+		t.Fatalf("one tick should scroll three lines, putting subject-01 on the list's second row: %q", row)
+	}
+	for range 20 {
+		s.Type(sgrClick(sgrWheelDown, 5, listTopY+2))
+	}
+	s.WaitForPaint("subject-19")
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("wheel ticks must not emit, even at the end of the list: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // screenRow is one row of the session's screen as plain text.
 func screenRow(s *testutil.Session, y int) string {
 	return strings.Split(s.Screen(), "\n")[y]

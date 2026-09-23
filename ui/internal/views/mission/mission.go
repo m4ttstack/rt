@@ -108,7 +108,10 @@ type Mission struct {
 	// History tab view state. historyCursor/historyAnchor are held by sha
 	// (the list reorders and grows across pushes); the anchor is "" unless a
 	// shift gesture opened a range. historyMoreFor is the list length the
-	// last mission:history-more went out for, -1 before any.
+	// last mission:history-more went out for, -1 before any. historyTop is
+	// the list's first painted line; while historyFreeScroll is set (the
+	// wheel moved the view) it holds as the wheel left it instead of
+	// following the cursor.
 	//
 	// The commit and file debounces are selectGen's counterparts:
 	// historyShown/historyFileShown are what the driver shows or was last
@@ -121,6 +124,7 @@ type Mission struct {
 	historyCursor      string
 	historyAnchor      string
 	historyTop         int
+	historyFreeScroll  bool
 	historyGen         int
 	historyShown       string
 	historyDriverKey   string
@@ -233,10 +237,13 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	// hasMore still true: a history-more that threw (a notice, list
 	// unchanged) and a worktree switch to a tree at the same tip (pool
 	// worktrees commonly share one), so each needs its own re-arm check.
-	if historyReloaded(m.model.History.Commits, decoded.History.Commits) ||
-		decoded.Current.Worktree != m.model.Current.Worktree ||
-		(decoded.Notice != "" && len(decoded.History.Commits) == m.historyMoreFor) {
+	reloaded := historyReloaded(m.model.History.Commits, decoded.History.Commits) ||
+		decoded.Current.Worktree != m.model.Current.Worktree
+	if reloaded || (decoded.Notice != "" && len(decoded.History.Commits) == m.historyMoreFor) {
 		m.historyMoreFor = -1
+	}
+	if reloaded {
+		m.historyFreeScroll = false
 	}
 	m.model = decoded
 	m.clampSelection()
@@ -1327,9 +1334,9 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 
 // mouseWheel scrolls whichever pane the pointer sits over: the modal's own
 // cursor (skipping a guarded row, like its keyboard up/down), the diff
-// pane's line cursor, or the base list's row cursor -- there being no
-// scroll offset independent of the cursor in any of the three today, a
-// wheel tick moves the same cursor the arrow keys do. A modal claims every
+// pane's line cursor, or the Changes list's row cursor, each moving the same
+// cursor the arrow keys do. The History commit list is the exception: the
+// wheel scrolls its view and never its selection (historyScroll). A modal claims every
 // row like hitTest's own first check; otherwise the tick must land inside
 // the body's Y range (between the topbar and the keybar/notice strip) --
 // mirroring hitTest's bodyY bound -- or a tick over the keybar/notice row
@@ -1366,7 +1373,10 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.historyTab() {
-		return m, m.historyMove(delta, false)
+		if bodyY >= historyFixedTopRows {
+			m.historyScroll(delta)
+		}
+		return m, nil
 	}
 	return m, m.cursorSelectCmd(delta)
 }

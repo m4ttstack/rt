@@ -822,15 +822,126 @@ func TestClickTabEmitsTabSwitch(t *testing.T) {
 	}
 }
 
-func TestMouseWheelOverHistorySidebarMovesCursor(t *testing.T) {
-	instantSelectTick(t)
-	m := newHistoryTestMission()
-	_, cmd := m.Update(tea.MouseWheelMsg{X: 5, Y: m.layout().topH + historyFixedTopRows, Button: tea.MouseWheelDown})
-	if m.historyCursor != "s3" {
-		t.Fatalf("a wheel tick should move the cursor wheelStep rows (clamped to s3), got %q", m.historyCursor)
+// listTexts is the painted commit list, one trimmed row per list row.
+func listTexts(m *Mission) []string {
+	lines := strings.Split(m.View().Content, "\n")
+	l := m.layout()
+	var out []string
+	for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
+		out = append(out, listRowText(lines[y]))
 	}
-	if _, ok := cmd().(historyDebounceMsg); !ok {
-		t.Fatal("a wheel move should route through the History debounce")
+	return out
+}
+
+func wheelOverList(m *Mission, button tea.MouseButton) tea.Cmd {
+	_, cmd := m.Update(tea.MouseWheelMsg{X: 5, Y: m.layout().topH + historyFixedTopRows + 2, Button: button})
+	return cmd
+}
+
+// TestWheelOverHistoryListScrollsTheView: GitHub Desktop's wheel scrolls
+// the list, never the selection, so a tick moves the view three lines and
+// selects, loads, and pages nothing.
+func TestWheelOverHistoryListScrollsTheView(t *testing.T) {
+	m := groupedMission(t, 30, true)
+	before := listTexts(m)
+	if cmd := wheelOverList(m, tea.MouseWheelDown); cmd != nil {
+		t.Fatal("a wheel tick over the list must emit nothing")
+	}
+	if m.historyCursor != "sha00" || m.historyAnchor != "" {
+		t.Fatalf("a wheel tick must not move the cursor, got %q", m.historyCursor)
+	}
+	after := listTexts(m)
+	if strings.Join(after[:len(after)-wheelStep], "\n") != strings.Join(before[wheelStep:], "\n") {
+		t.Fatalf("a tick should scroll the list %d lines:\nbefore %q\nafter  %q", wheelStep, before[:6], after[:6])
+	}
+	assertHistoryHitMatchesPaint(t, m, "wheel-scrolled")
+	if cmd := wheelOverList(m, tea.MouseWheelUp); cmd != nil || strings.Join(listTexts(m), "\n") != strings.Join(before, "\n") {
+		t.Fatal("a tick back up should return to the first frame and emit nothing")
+	}
+	if cmd := wheelOverList(m, tea.MouseWheelUp); cmd != nil || listTexts(m)[0] != "Today" {
+		t.Fatal("a tick up at the top stays at the top")
+	}
+}
+
+// TestWheelToTheEndRequestsNoPage: scrolling reaches the end of the loaded
+// list and stops there; nothing loads while scrolling.
+func TestWheelToTheEndRequestsNoPage(t *testing.T) {
+	m := groupedMission(t, 30, true)
+	var last []string
+	for range 60 {
+		if cmd := wheelOverList(m, tea.MouseWheelDown); cmd != nil {
+			t.Fatal("no wheel tick may emit, even at the end of the list")
+		}
+		last = listTexts(m)
+	}
+	if m.historyMoreFor != -1 {
+		t.Fatalf("scrolling to the end must not request a page, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if m.historyCursor != "sha00" {
+		t.Fatalf("the cursor stays put, got %q", m.historyCursor)
+	}
+	joined := strings.Join(last, "\n")
+	if !strings.Contains(joined, "subject-29") || strings.Contains(joined, "subject-00") {
+		t.Fatalf("sixty ticks should rest on the list's end:\n%s", joined)
+	}
+	assertHistoryHitMatchesPaint(t, m, "wheel-end")
+}
+
+// TestKeyClickAndReloadEndFreeScroll: once the wheel has scrolled the
+// cursor away, a key move, a click, or a reload brings the viewport back to
+// following the cursor.
+func TestKeyClickAndReloadEndFreeScroll(t *testing.T) {
+	instantSelectTick(t)
+	scrolled := func() *Mission {
+		m := groupedMission(t, 30, true)
+		for range 8 {
+			wheelOverList(m, tea.MouseWheelDown)
+		}
+		if strings.Contains(strings.Join(listTexts(m), "\n"), "subject-00") {
+			t.Fatal("setup: the wheel should have scrolled the cursor out of view")
+		}
+		return m
+	}
+	cursorPainted := func(m *Mission, summary string) bool {
+		for _, text := range listTexts(m) {
+			if text == summary {
+				return true
+			}
+		}
+		return false
+	}
+
+	m := scrolled()
+	m.Update(downKey())
+	if m.historyCursor != "sha01" || !cursorPainted(m, "subject-01") {
+		t.Fatalf("a key move should move from the cursor and bring it back into view, cursor %q", m.historyCursor)
+	}
+
+	m = scrolled()
+	texts := listTexts(m)
+	y := -1
+	for i, text := range texts {
+		if strings.HasPrefix(text, "subject-") {
+			y = i
+			break
+		}
+	}
+	target := texts[y]
+	m.Update(tea.MouseClickMsg{X: 2, Y: m.layout().topH + historyFixedTopRows + y, Button: tea.MouseLeft})
+	for range 4 {
+		m.Update(downKey())
+	}
+	if !cursorPainted(m, fmt.Sprintf("subject-%02d", m.historyIndex(m.historyCursor))) {
+		t.Fatalf("after clicking %q the viewport should follow the cursor again", target)
+	}
+
+	m = scrolled()
+	reloaded := append([]HistoryCommitRow{{Sha: "tip", Summary: "subject-tip", Byline: "author-tip", Group: "Today", Selected: true}}, groupedCommits(30)...)
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: reloaded, HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if !cursorPainted(m, "subject-00") {
+		t.Fatalf("a reload should end free scroll so the cursor (still sha00) is in view:\n%s", strings.Join(listTexts(m), "\n"))
 	}
 }
 
