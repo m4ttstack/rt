@@ -1622,10 +1622,13 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
     expect(await fetchDeltaFrom(fake.provider, "g/p", UA, stored)).toEqual([]);
   });
 
-  test("a terminal row lands after the opened fetch's copy of the same MR", async () => {
-    const stored = storedWith(pr(5));
+  test("an MR in both responses is stored in its terminal state", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(5)], Date.now() - 1000);
+    const deltaStartedAt = Date.now() - 500;
     const fake = fakeProvider([pr(5, { title: "still open" })], [row(5)]);
-    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
-    expect(prs.map((p) => [p.iid, p.state])).toEqual([[5, "opened"], [5, "merged"]]);
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, store.read("repo"));
+    store.applyDelta("repo", "g/p", prs, deltaStartedAt);
+    expect(store.read("repo")!.mrs[5]!.pr.state).toBe("merged");
   });
 });

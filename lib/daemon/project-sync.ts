@@ -179,7 +179,9 @@ export async function fetchDeltaFrom(
     if (existing.state === row.state && existing.updatedAt === row.updatedAt) continue;
     terminal.push({ ...existing, state: row.state, updatedAt: row.updatedAt, mergedAt: row.mergedAt, title: row.title });
   }
-  return [...opened, ...terminal];
+  // One copy per iid: applyDelta skips a second copy of an iid it just wrote.
+  const terminalIids = new Set(terminal.map((pr) => pr.iid));
+  return [...opened.filter((pr) => !terminalIids.has(pr.iid)), ...terminal];
 }
 
 const syncInFlight = new Map<string, Promise<void>>();
