@@ -1083,6 +1083,9 @@ func TestKeyClickAndReloadEndFreeScroll(t *testing.T) {
 	}
 	target := texts[y]
 	m.Update(tea.MouseClickMsg{X: 2, Y: m.layout().topH + historyFixedTopRows + y, Button: tea.MouseLeft})
+	if m.historyFreeScroll {
+		t.Fatalf("the click on %q itself should end free scroll, before any key", target)
+	}
 	for range 4 {
 		m.Update(downKey())
 	}
@@ -2260,9 +2263,21 @@ func TestHistoryFilterBoxClickFocuses(t *testing.T) {
 }
 
 // TestChangesFilterUnaffectedByHistoryFilter: the Changes filter still
-// commits through the driver on enter and never reads the History filter.
+// commits through the driver on enter and never reads the History filter;
+// a History filter left behind a tab switch shows nowhere on Changes.
 func TestChangesFilterUnaffectedByHistoryFilter(t *testing.T) {
-	m := newMouseTestMission()
+	m := newHistoryTestMission()
+	typeKeys(m, "/guard")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	changes := mouseFixtureModel()
+	changes.Tab = "changes"
+	if err := m.setModelValue(changes); err != nil {
+		t.Fatal(err)
+	}
+	box := sidebarLine(t, ansi.Strip(m.View().Content), "│ ❯")
+	if !strings.Contains(box, "Filter changes") || strings.Contains(box, "guard") {
+		t.Fatalf("the painted Changes filter box should show its own placeholder, not the History filter: %q", box)
+	}
 	typeKeys(m, "/xy")
 	if m.focus != focusFilter || m.filterText != "xy" {
 		t.Fatalf("the Changes filter still takes the typed text, got %q", m.filterText)
@@ -2270,8 +2285,22 @@ func TestChangesFilterUnaffectedByHistoryFilter(t *testing.T) {
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 		t.Fatal("enter on the Changes filter still emits mission:select")
 	}
-	if !strings.Contains(ansi.Strip(renderFilterRow("", "Filter changes", false, false, sidebarWidth)), "Filter changes") {
-		t.Fatal("the Changes placeholder is unchanged")
+}
+
+// TestFilterEditEndsFreeScroll: a wheel-scrolled view gives way when a
+// filter edit re-homes the cursor, so the re-homed cursor is on screen.
+func TestFilterEditEndsFreeScroll(t *testing.T) {
+	instantSelectTick(t)
+	m := groupedMission(t, 30, false)
+	for range 60 {
+		wheelOverList(m, tea.MouseWheelDown)
+	}
+	typeKeys(m, "/1")
+	if m.historyCursor != "sha01" {
+		t.Fatalf("setup: hiding sha00 should re-home the cursor to sha01, got %q", m.historyCursor)
+	}
+	if row := sidebarLine(t, m.View().Content, "subject-01"); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the re-homed cursor should be painted: %q", row)
 	}
 }
 
