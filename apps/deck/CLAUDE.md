@@ -14,6 +14,14 @@ checkout. `deploy` compiles `dist/deck`, installs it over `~/.local/bin/deck`,
 and self-restarts (`deck restart deck`; the socket drop mid-restart is
 expected).
 
+On a machine with the mattstack app installed, the app's SMAppService helper
+(`com.mattstack.deck.dev`, or `com.mattstack.deck` in prod) owns deck and runs
+the bundle's pinned release, not `~/.local/bin/deck`. There `deck setup`
+refuses, and the helper's boot retires a hand-installed agent
+(`src/services/helper-owner.ts`). The helper starts on launchd's bare PATH, so
+it composes its own; Bun spawns with the PATH it started on, so any new spawn
+of a non-OS binary must pass `env: process.env`.
+
 ## Manifest-first
 
 Each app declares a `mattstack.deck.json` with a `dev` node: `dev.start` (the

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  adoptHelperPath,
   composeServicePath,
   resolveProgram,
   stablePathDirs,
@@ -137,5 +138,37 @@ describe('resolveProgram', () => {
     expect(
       resolveProgram('node', '/opt/newmgr/shims:/usr/bin', p => moved.has(p))
     ).toBe('/opt/newmgr/shims/node');
+  });
+});
+
+describe('adoptHelperPath', () => {
+  const composed = () => '/opt/homebrew/bin:/usr/bin:/bin';
+
+  test("a bundle helper swaps launchd's bare PATH for the composed one", () => {
+    const env: Record<string, string | undefined> = {
+      PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    };
+
+    adoptHelperPath(env, '/Applications/m.app', composed);
+
+    expect(env.PATH).toBe('/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin');
+  });
+
+  test('keeps an inherited dir the composed set lacks, after it', () => {
+    const env: Record<string, string | undefined> = {
+      PATH: '/custom/bin:/usr/bin',
+    };
+
+    adoptHelperPath(env, '/Applications/m.app', composed);
+
+    expect(env.PATH).toBe('/opt/homebrew/bin:/usr/bin:/bin:/custom/bin');
+  });
+
+  test('outside a bundle the inherited PATH is left alone', () => {
+    const env: Record<string, string | undefined> = { PATH: '/usr/bin:/bin' };
+
+    adoptHelperPath(env, null, composed);
+
+    expect(env.PATH).toBe('/usr/bin:/bin');
   });
 });

@@ -12,7 +12,7 @@ import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
 import { logPortHolder, redirectAgentOutput } from './agent-log.ts';
 import { startApi } from './api/server.ts';
-import { claimApiInfo } from './api/state.ts';
+import { claimApiInfo, stateDir } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
 import { resolveCfDns, type CfDns } from './edge/cf-dns.ts';
 import { PortlessCli } from './edge/portless.ts';
@@ -20,7 +20,13 @@ import { CloudflaredCli } from './edge/tunnel.ts';
 import { bindGatewayOrExit } from './gateway-boot.ts';
 import { migrateManagedDevShape } from './registry/migrate-dev-shape.ts';
 import { listRecords } from './registry/records.ts';
-import { LaunchdManager } from './services/launchd.ts';
+import { bundleRootFromExec } from './services/bundle-layout.ts';
+import {
+  liveProbe,
+  liveRun,
+  prepareHelperBoot,
+} from './services/helper-owner.ts';
+import { agentsDir, LaunchdManager } from './services/launchd.ts';
 import { isPlatformManagedBy } from './services/manager.ts';
 
 // Before anything else module-level (listRecords below reads the registry at
@@ -38,7 +44,21 @@ const APP_NAME =
   'apps';
 const CANARY_INTERVAL_MS = 5 * 60_000;
 
-export function serve(): void {
+export async function serve(): Promise<void> {
+  await prepareHelperBoot({
+    bundleRoot: bundleRootFromExec(),
+    env: process.env,
+    retire: {
+      probe: liveProbe,
+      run: liveRun,
+      agentsDir: agentsDir(),
+      archiveDir: stateDir(),
+      uid: process.getuid?.() ?? 0,
+      selfPid: process.pid,
+    },
+    log: console.log,
+  });
+
   // ---- canary / auto-heal state, lifted verbatim from core/server.ts ----
   let proxyFreshness: Freshness = 'unknown';
   let lastHealAt = 0;
@@ -88,17 +108,6 @@ export function serve(): void {
     }, 15_000);
   }
 
-  try {
-    const migrated = migrateManagedDevShape();
-    if (migrated.slimmed.length || migrated.skipped.length) {
-      console.log(
-        `[migrate] dev shape: slimmed ${migrated.slimmed.join(', ') || 'none'}; skipped ${migrated.skipped.join(', ') || 'none'}`
-      );
-    }
-  } catch (err) {
-    console.error('registry dev-shape migration failed:', err);
-  }
-
   // Same contract as the gateway bind below: a held API port exits for
   // launchd's retry, naming the holder on the way out, instead of the
   // uncaught EADDRINUSE crash loop a held port otherwise produces.
@@ -121,6 +130,28 @@ export function serve(): void {
   }
   console.log(`Deck serving on http://localhost:${PORT}`);
 
+  let gatewayServer: ReturnType<typeof bindGatewayOrExit> = null;
+  let canaryServer: ReturnType<typeof startCanaryListener> | null = null;
+  let canaryInterval: ReturnType<typeof setInterval> | null = null;
+  let canaryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const gatewayEnabled = process.env.LOCAL_APPS_NO_GATEWAY !== '1';
+  if (gatewayEnabled) gatewayServer = bindGatewayOrExit();
+
+  // No shared-state write until both ports are held: launchd retries a
+  // losing instance every 10s, and one that migrated or reconciled before
+  // dying is a second writer on the winner's registry and routes.
+  try {
+    const migrated = migrateManagedDevShape();
+    if (migrated.slimmed.length || migrated.skipped.length) {
+      console.log(
+        `[migrate] dev shape: slimmed ${migrated.slimmed.join(', ') || 'none'}; skipped ${migrated.skipped.join(', ') || 'none'}`
+      );
+    }
+  } catch (err) {
+    console.error('registry dev-shape migration failed:', err);
+  }
+
   // Ownership-driven TLD rehome: every managed record (mattstack product)
   // surfaces on name.mattstack; the tlds cache is then re-derived from the
   // routes that actually exist -- tlds is a derived cache of portless state,
@@ -135,13 +166,7 @@ export function serve(): void {
     reconcileOnce().catch(err => console.error('reconcile tick failed:', err));
   }, 5000);
 
-  let gatewayServer: ReturnType<typeof bindGatewayOrExit> = null;
-  let canaryServer: ReturnType<typeof startCanaryListener> | null = null;
-  let canaryInterval: ReturnType<typeof setInterval> | null = null;
-  let canaryTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  if (process.env.LOCAL_APPS_NO_GATEWAY !== '1') {
-    gatewayServer = bindGatewayOrExit();
+  if (gatewayEnabled) {
     try {
       canaryServer = startCanaryListener(CANARY_PORT, PORT);
       canaryTimeout = setTimeout(runCanaryCheck, 10_000);
@@ -209,7 +234,7 @@ async function uninstallDns(): Promise<CfDns | undefined> {
 }
 
 const cmd = Bun.argv[2] ?? 'serve';
-if (cmd === 'serve') serve();
+if (cmd === 'serve') await serve();
 else if (cmd === 'setup') {
   const { setup } = await import('./cli/setup.ts');
   const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };

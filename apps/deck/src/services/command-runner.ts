@@ -22,8 +22,12 @@ export function resetRuns(): void {
   runs.clear();
 }
 
+// Explicit env: Bun otherwise spawns with the PATH the process started on,
+// never the one adoptHelperPath composes.
 const defaultSpawn: SpawnFn = (argv, opts) =>
-  Bun.spawn(argv, opts) as unknown as { exited: Promise<number> };
+  Bun.spawn(argv, { ...opts, env: process.env }) as unknown as {
+    exited: Promise<number>;
+  };
 
 export function startCommandRun(
   input: { name: string; cmd: string; shell: string; workingDirectory: string },

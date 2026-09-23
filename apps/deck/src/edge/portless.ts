@@ -17,7 +17,13 @@ export interface ExecResult {
 export type Exec = (argv: string[]) => Promise<ExecResult>;
 
 const realExec: Exec = async argv => {
-  const proc = Bun.spawn(argv, { stderr: 'pipe', stdout: 'pipe' });
+  // Explicit env: Bun otherwise spawns with the PATH the process started
+  // on, never the one adoptHelperPath composes.
+  const proc = Bun.spawn(argv, {
+    env: process.env,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
   const [code, stdout, stderr] = await Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),

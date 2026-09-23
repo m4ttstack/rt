@@ -77,6 +77,12 @@ portless trust
 portless service install
 ```
 
+On a machine where the mattstack app is installed, the app supervises deck
+through its bundle helper instead. There `deck setup` refuses and changes
+nothing, and the helper boots out and archives any hand-installed
+`com.mattstack.deck` agent it finds, so two supervisors never fight over
+deck's ports and state.
+
 ## Quickstart
 
 Register something Deck should run for you:

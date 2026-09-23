@@ -13,7 +13,13 @@ type ExecOut = (
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 const realExec: ExecOut = async argv => {
-  const proc = Bun.spawn(argv, { stderr: 'pipe', stdout: 'pipe' });
+  // Explicit env: Bun otherwise spawns with the PATH the process started
+  // on, never the one adoptHelperPath composes.
+  const proc = Bun.spawn(argv, {
+    env: process.env,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

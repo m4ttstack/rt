@@ -91,6 +91,24 @@ export function composeServicePath(opts: ComposePathOpts = {}): string {
   return out.join(':');
 }
 
+/**
+ * launchd starts an SMAppService helper on its bare default PATH, and the
+ * bundle plist carries none, so deck serving as a bundle helper composes its
+ * own. Dirs the inherited PATH adds beyond the composed set are kept, after it.
+ */
+export function adoptHelperPath(
+  env: Record<string, string | undefined>,
+  bundleRoot: string | null,
+  compose: () => string = composeServicePath
+): void {
+  if (!bundleRoot) return;
+  const composed = compose().split(':');
+  const extra = (env.PATH ?? '')
+    .split(':')
+    .filter(dir => dir && !composed.includes(dir));
+  env.PATH = [...composed, ...extra].join(':');
+}
+
 function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;

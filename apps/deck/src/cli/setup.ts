@@ -9,6 +9,8 @@ import { unbindDomain } from '../edge/domain.ts';
 import { readProxyTlds } from '../edge/portless.ts';
 import { bootstrapSelf } from '../registry/bootstrap.ts';
 import { deleteRecord, getRecord, listRecords } from '../registry/records.ts';
+import { bundleRootFromExec } from '../services/bundle-layout.ts';
+import { bundleHelperOwnsDeck } from '../services/helper-owner.ts';
 import {
   isPlatformManagedBy,
   LEGACY_PLATFORM_NAME,
@@ -141,8 +143,16 @@ function tailLog(path: string, lines = 20): string {
 export async function setup(
   drivers: Drivers,
   io: Io,
-  checkExec: CheckExec = realCheckExec
+  checkExec: CheckExec = realCheckExec,
+  bundleRoot: string | null = bundleRootFromExec()
 ): Promise<number> {
+  if (await bundleHelperOwnsDeck(checkExec, bundleRoot)) {
+    io.err(
+      'The mattstack app owns deck through its bundle helper; `deck setup` would install a second supervisor. Nothing was changed.'
+    );
+    return 1;
+  }
+
   const check = await checkPrereqs(checkExec);
   if (!check.ok) {
     for (const problem of check.problems) io.err(problem);

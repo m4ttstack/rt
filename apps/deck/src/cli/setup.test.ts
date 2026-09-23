@@ -185,3 +185,47 @@ test('setup: healthz timeout exits 1 and shows a tail of the error log', async (
   expect(code).toBe(1);
   expect(o.lines.join('\n')).toContain('boom: something broke');
 });
+
+test('setup refuses and changes nothing when a bundle helper owns deck', async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  const asked: string[] = [];
+  const helperExec = async (argv: string[]) => {
+    asked.push(argv[0]!);
+    return argv[0] === 'launchctl' &&
+      argv[2]!.endsWith('com.mattstack.deck.dev')
+      ? {
+          code: 0,
+          stdout:
+            '\tpath = (submitted by smd.340)\n\tmanaged_by = com.apple.xpc.ServiceManagement\n',
+        }
+      : passExec(argv);
+  };
+  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = '100';
+
+  const o = io();
+  const code = await setup({ manager, edge }, o, helperExec);
+
+  expect(code).toBe(1);
+  expect(o.lines.join('\n')).toContain('mattstack app');
+  expect(manager.installed.size).toBe(0);
+  expect(getRecord('deck')).toBeUndefined();
+  expect(asked).not.toContain('portless');
+});
+
+test('setup run from inside a bundle refuses without asking launchd', async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = '100';
+
+  const o = io();
+  const code = await setup(
+    { manager, edge },
+    o,
+    passExec,
+    '/Applications/m.app'
+  );
+
+  expect(code).toBe(1);
+  expect(manager.installed.size).toBe(0);
+});
