@@ -393,6 +393,21 @@ func boxWidth(t *testing.T, frame string) int {
 	return 0
 }
 
+func TestAPushedStepKeepsTheWindowedRootsThumbColumn(t *testing.T) {
+	items := make([]MenuItem, 20)
+	for i := range items {
+		items[i] = MenuItem{ID: fmt.Sprintf("r%02d", i), Label: fmt.Sprintf("Discard changes to file number %02d.txt", i), Section: i / 5}
+	}
+	mn := NewMenu("x.go", items, &MenuAnchor{X: 10, Y: 0})
+	mn.FitParentHeight()
+	before := boxWidth(t, mn.Render(dottedFrame(80, 12), 80))
+	mn.Push("Discard Changes?", []MenuItem{{ID: "yes", Label: "Discard Changes"}, {ID: "no", Label: "Cancel"}})
+	after := boxWidth(t, mn.Render(dottedFrame(80, 12), 80))
+	if after != before {
+		t.Fatalf("a step pushed over a windowed root changed the box width from %d to %d, want unchanged", before, after)
+	}
+}
+
 func TestAFittedMenuTallerThanTheParentPaintsItsHeightWithAThumb(t *testing.T) {
 	mn := NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 3})
 	mn.FitParentHeight()

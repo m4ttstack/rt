@@ -613,6 +613,9 @@ func modalContentWidth(mn *Menu, maxInner int, thumb bool) int {
 			hint = "esc dismiss"
 		}
 		need = max(need, levelNeed(&mn.stack[i], hint))
+		if mn.stack[i].winH > 0 {
+			thumb = true
+		}
 	}
 	if thumb {
 		need++
