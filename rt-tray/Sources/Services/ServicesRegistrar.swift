@@ -18,6 +18,10 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     private let scanned: [AgentPlist]
     private let runner: CommandRunner
     private let uid: uid_t
+    private let handDeckPreflight = HandDeckPreflight()
+    /// Called on the main actor after every hand-agent preflight, with nil
+    /// once nothing blocks the deck helper.
+    var onHandDeckBlocked: (@MainActor (HandDeckBlockedNotice?) -> Void)?
 
     init(bundlePath: String, runner: CommandRunner, uid: uid_t = getuid()) {
         self.bundlePath = bundlePath
@@ -41,9 +45,25 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     func smStatuses() -> [SMAppService.Status] { agents.map { service($0).status } }
 
     @discardableResult
-    func registerAll() -> [ServiceRegisterResult] { registerSync(plists: agents.map(\.fileName)) }
+    func registerAll() async -> [ServiceRegisterResult] { await register(plists: agents.map(\.fileName)) }
 
-    private func registerSync(plists: [String]) -> [ServiceRegisterResult] {
+    /// launchd gives a label to whichever job loads first, so a hand-installed
+    /// com.mattstack.deck that won it at login keeps the prod helper from ever
+    /// running. It has to go before the helper registers, never after.
+    /// Only runnable helpers count: retiring a working hand agent for a helper
+    /// registerSync will then refuse leaves deck with no supervisor at all.
+    private func clearHandDeckLabel(before plists: [String]) async -> HandDeckRetireOutcome? {
+        let labels = agents.filter { plists.contains($0.fileName) }.map(\.label)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard let outcome = await handDeckPreflight.clearLabel(forHelpers: labels, home: home, uid: uid,
+                                                               runner: runner, fs: .system) else { return nil }
+        TrayServer.logHandDeckOutcome(outcome)
+        let notice = HandDeckAgent.blockedNotice(for: outcome, home: home, uid: uid, fs: .system)
+        await MainActor.run { onHandDeckBlocked?(notice) }
+        return outcome
+    }
+
+    private func registerSync(plists: [String], handDeck: HandDeckRetireOutcome? = nil) -> [ServiceRegisterResult] {
         plists.map { name in
             guard let plist = scanned.first(where: { $0.fileName == name }) else {
                 return ServiceRegisterResult(plist: name, ok: false, status: "notFound", error: "not shipped in this bundle")
@@ -54,6 +74,24 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
                 return ServiceRegisterResult(plist: name, ok: false, status: "notFound", error: "BundleProgram missing: \(missing)")
             }
             let svc = service(plist)
+            if let handDeck, plist.label == HandDeckAgent.label {
+                if handDeck.freedLoadedLabel {
+                    // Registered while the hand job held the label, so launchd never
+                    // loaded it; a plain register() would answer already-registered.
+                    do { try svc.unregister() } catch where svc.status != .notRegistered {
+                        TrayLog.error("deck helper resubmit: unregister failed", ["label": plist.label, "err": String(describing: error)])
+                        return ServiceRegisterResult(plist: name, ok: false, status: TrayServer.statusName(svc.status),
+                                                     error: "resubmit after hand agent bootout failed: \(error)")
+                    } catch {}
+                }
+                if handDeck.labelMayBeHeld, case .failed(let reason, _) = handDeck {
+                    // Still registered so the next login can load it, but the
+                    // hand job may own the label now, so this is not a success.
+                    _ = try? svc.register()
+                    return ServiceRegisterResult(plist: name, ok: false, status: TrayServer.statusName(svc.status),
+                                                 error: "hand-installed \(HandDeckAgent.label) may still hold the label: \(reason)")
+                }
+            }
             do {
                 try svc.register()
                 let s = svc.status
@@ -78,7 +116,8 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     }
 
     func register(plists: [String]) async -> [ServiceRegisterResult] {
-        await MainActor.run { registerSync(plists: plists) }
+        let handDeck = await clearHandDeckLabel(before: plists)
+        return await MainActor.run { registerSync(plists: plists, handDeck: handDeck) }
     }
 
     func unregister(plists: [String]) async -> [ServiceRegisterResult] {
@@ -146,7 +185,7 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
             return change
         }
         TrayLog.info("app version changed; restarting agents", ["from": from, "to": to])
-        let registerResults = await MainActor.run { registerAll() }
+        let registerResults = await registerAll()
         let restarted = await restartAllChecked()
         let failedRegisters = registerResults.filter { !$0.ok }.map(\.plist)
         guard failedRegisters.isEmpty, restarted else {
