@@ -17,10 +17,12 @@
  * only reason this preload is sufficient today -- a new test that calls one
  * of them for real must pass its own override, not rely on this file.
  */
-import { mkdtempSync } from 'fs';
+import { spawn } from 'child_process';
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { afterAll } from 'bun:test';
 
 import { guardTestDaemonEnv } from '@mattstack/rt-client';
 
@@ -30,7 +32,49 @@ import { guardTestDaemonEnv } from '@mattstack/rt-client';
 // arms RT_TEST_FORBID_SOCKS, which makes rtCommand throw on a live socket.
 guardTestDaemonEnv();
 
-process.env.HOME = mkdtempSync(join(tmpdir(), 'mr-board-test-home-'));
+// Every run gets its own directories under one shared parent, and TMPDIR
+// points into the run's, so nothing a test (or a child it spawns) makes
+// under tmpdir() lands in the machine's TMPDIR: hundreds of thousands of
+// leftover mkdtemp dirs there once made every file create on the machine
+// slow. HOME is a sibling, not nested, to keep socket paths under it inside
+// macOS's 104 bytes. bun test never fires process "exit", so removal starts in
+// a global afterAll; a run killed before it leaves its dirs behind, and the
+// next start sweeps every dir whose run pid is gone.
+const testRoot = join(tmpdir(), 'mr-board-tests');
+mkdirSync(testRoot, { recursive: true, mode: 0o700 });
+const rootStat = lstatSync(testRoot);
+if (!rootStat.isDirectory() || rootStat.uid !== process.getuid?.()) {
+  throw new Error(
+    `${testRoot} is not a directory this user owns; refusing to sweep it`
+  );
+}
+for (const name of readdirSync(testRoot)) {
+  const pid = Number(name.split('-')[0]);
+  if (Number.isInteger(pid) && pid > 0 && pidIsAlive(pid)) continue;
+  rmSync(join(testRoot, name), { recursive: true, force: true });
+}
+const runTmp = mkdtempSync(join(testRoot, `${process.pid}-run-`));
+const runHome = mkdtempSync(join(testRoot, `${process.pid}-home-`));
+process.env.TMPDIR = runTmp;
+// A whole run's tree takes longer to delete than bun's 5s hook timeout, so
+// a detached rm does it after the process exits.
+afterAll(() => {
+  spawn('rm', ['-rf', runTmp, runHome], {
+    detached: true,
+    stdio: 'ignore',
+  }).unref();
+});
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+process.env.HOME = runHome;
 
 /**
  * Same hazard, second root: the board writes every state file (review,
@@ -41,7 +85,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'mr-board-test-home-'));
  * impossible rather than merely discouraged; a test that needs the repo's
  * own state/ must now say so explicitly.
  */
-process.env.BOARD_APP_ROOT = mkdtempSync(join(tmpdir(), 'mr-board-test-root-'));
+process.env.BOARD_APP_ROOT = mkdtempSync(join(runTmp, 'mr-board-test-root-'));
 
 /**
  * Third hazard, same shape: react-dom decides once, at first import, whether
