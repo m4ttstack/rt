@@ -6,7 +6,7 @@ import { mcpTools } from "../tools.ts";
 import { normalizeGateQuestions } from "../../../packages/rt-client/src/gate-options.ts";
 import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_map","herd_gates","herd_ask","herd_answer","herd_report"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -30,8 +30,8 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
-  test("roster has 15 tools", () => {
-    expect(mcpTools().length).toBe(15);
+  test("roster has 16 tools", () => {
+    expect(mcpTools().length).toBe(16);
   });
 
   test("every tool has a description and an object schema", () => {
