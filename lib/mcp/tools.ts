@@ -554,8 +554,9 @@ export function mcpTools(): McpToolDef[] {
           cwd: { type: "string", description: "Absolute directory to run in; defaults to the server's own." },
         },
         required: ["args"],
+        additionalProperties: false,
       },
-      handler: async (input) => {
+      async handler(input) {
         const r = await runRtVerb(input);
         return r.ok ? ok(r.body) : err(r.error);
       },

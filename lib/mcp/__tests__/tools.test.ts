@@ -34,10 +34,11 @@ describe("mcpTools", () => {
     expect(mcpTools().length).toBe(16);
   });
 
-  test("every tool has a description and an object schema", () => {
+  test("every tool has a description and a closed object schema", () => {
     for (const t of mcpTools()) {
       expect(t.description.length).toBeGreaterThan(20);
       expect((t.inputSchema as { type?: string }).type).toBe("object");
+      expect((t.inputSchema as { additionalProperties?: unknown }).additionalProperties, t.name).toBe(false);
     }
   });
 

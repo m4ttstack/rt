@@ -1,8 +1,9 @@
 /**
- * e2e: `rt mcp serve` over the COMPILED binary (RT_BINARY), not `bun run
- * cli.ts` -- this is the only path that exercises the module-registry thunk
- * for commands/mcp.ts and the bundled dynamic import of the MCP SDK, both of
- * which the source-run fallback masks.
+ * e2e: `rt mcp serve` over the COMPILED binary (RT_BINARY), the only path that
+ * exercises the module-registry thunk for commands/mcp.ts and the bundled
+ * dynamic import of the MCP SDK, both of which a source run masks. Two rt_verb
+ * tests also run the server from source (`bun cli.ts`), since rt_verb spawns
+ * its child with a different argv in each mode (lib/rt-self.ts).
  *
  * The server drains in-flight tools/call work on stdin EOF rather than
  * aborting it (see commands/mcp.ts), so teardown ends stdin and waits for a
