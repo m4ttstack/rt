@@ -145,4 +145,18 @@ describe("rt glitter through a pty", () => {
     await session.waitForText("changed files", PAINT_TIMEOUT);
     await session.waitForText('"maxTokens": 2048', PAINT_TIMEOUT);
   });
+
+  test("ctrl-k opens the context menu's board-wide section, and esc closes it", async () => {
+    // The context menu changes no git state, so the screen is the only observable.
+    const { session } = await openBoard();
+    await session.ctrl("k");
+    await session.waitForText("Switch Branch…", PAINT_TIMEOUT);
+    await session.waitForText("Reveal Repository in Finder", PAINT_TIMEOUT);
+
+    await session.press("Escape");
+    await session.waitForIdle(300, PAINT_TIMEOUT);
+    const screen = await session.screen();
+    expect(screen).not.toContain("Switch Branch…");
+    expect(screen).not.toContain("Reveal Repository in Finder");
+  });
 });

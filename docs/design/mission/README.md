@@ -52,6 +52,13 @@ shadows, no radii).
 - `EmptyState.png`: the clean-worktree state (no GitHub Desktop card
   clone): zeroed sidebar, disabled commit button, and a centered
   "No local changes" card in the diff pane with key hints.
+- `ContextMenu.png`: a Changes file menu anchored at a right-click near the
+  right edge (slid left to fit), and a commit menu, each followed by the
+  board-wide section below a rule.
+- `ContextMenuStates.png`: ctrl-k centered with only the board-wide section
+  (titled "Actions"), disabled rows, the Discard question step, the Create
+  Tag name step, the History "File Does Not Exist on Disk" menu, and hover
+  versus cursor rows.
 
 ## Ratified deviations from GitHub Desktop
 
@@ -80,6 +87,16 @@ shadows, no radii).
 - History groups commits under date headers (Today, Yesterday, Earlier
   this week, Last week, then by month) and has a `/` filter over loaded
   commits; GitHub Desktop has neither.
+- The context menu filters by typing and carries a live key hint per row;
+  GitHub Desktop's menus do neither.
+- ctrl-k opens the menu for whatever has focus and always carries the
+  board-wide section that lists every key, even when a file or commit menu
+  is also showing; GitHub Desktop has no keyboard-opened menu.
+- Ignore Folder is a follow-up list in the same box (deepest ancestor
+  first), not GitHub Desktop's submenu.
+- A failed move to the Trash reports the error and stops; glitter never
+  offers GitHub Desktop's fallback permanent delete.
+- View on GitHub is not offered yet.
 
 ## Deferred to v2
 
@@ -95,15 +112,15 @@ line here and a ticket there; removing one means removing all three.
   call-to-action. Not built.
 - **Hide whitespace.** GitHub Desktop's `-w` diff option. glitter has no
   diff options on either tab yet.
-- **Commit actions.** Revert, cherry-pick, reset to commit, create a
-  branch or tag from a commit, copy sha. They arrive with row context
-  menus.
+- **Commit actions follow-up.** Reset to commit, checkout, reorder, revert,
+  cherry-pick, copy tag, delete tag, and the multi-commit menu. Not built;
+  Undo Commit, Create Branch from Commit, Create Tag, and Copy SHA ship on
+  the commit row's context menu.
 - **Stash foldout.** The strip shows a count and a chevron; a click
   answers "Stash foldout lands in v2". No restore, apply, or drop.
 - **Publish repository.** The action segment renders the state for
   parity; activating it answers "publishing a repository is not wired
   yet".
-- **Row context menus.** Right-click answers "menu lands with polish".
 - **Not copied from GitHub Desktop at all:** the Pull Requests tab and
   its merge-into footer, image diffs (submodule diffs collapse into the
   binary message today), drag-and-drop cherry-pick, and clone or
@@ -153,6 +170,71 @@ once staging stopped being a git call at all.
 ## Worktree provisioning: the name field names the branch
 
 When provisioning a worktree from a foldout, the inline name field captures the BRANCH name, not the worktree's directory name. rt picks the folder name itself from a pool (names like `theoden` or `denethor`); the provisioning verb refuses outright when given no branch, which is why the field cannot be blank. A reader seeing "Provision new worktree..." and a text entry naturally assumes the name typed is the folder -- this note clarifies it captures the branch instead.
+
+## Context menu: GitHub Desktop's row menus, ported through rt nav's engine (2026-09-23)
+
+Right-click on a Changes file row (label or checkbox), a History commit row,
+or a History file row opens that row's menu; ctrl-k opens the same menu for
+whatever has focus -- the Changes list or its diff, the History commit list
+or a range, the History file column or its diff. ctrl-k inside a text field
+(the commit summary or description) stays that field's own binding, never
+the menu. A right-click always selects its row first, exactly as a
+left-click would, and never pairs into a double-click; with a foldout
+already open, a right-click only closes the foldout. With nothing to act
+on, ctrl-k opens the board-wide section alone, titled "Actions".
+
+The menu is `rt nav`'s picker menu (`ui/internal/views/picker/menu.go`)
+lifted to a shared engine and driven from `ui/internal/views/mission/menu.go`;
+row sets, enablement, and wording are GitHub Desktop's own, ported verbatim
+-- see the row tables in
+`docs/superpowers/specs/2026-09-23-glitter-context-menu-design.md` section 3
+for the Changes file row, the History file row, and the commit row. A
+menu's title is the file's full relative path, the commit summary ("Empty
+commit message" for one with none), or "Actions" with nothing targeted.
+Typing filters the rows (nav's fzf-backed rank), and each section stays
+contiguous through a filter -- one rule per section boundary, never a rule
+left over where every row on one side of it was filtered away. A row's key
+hint is a live accelerator while the menu is open. Disabled rows paint
+Faint; the cursor, hover, and clicks all skip them.
+
+Below a rule in every menu, and the whole menu when nothing is targeted, is
+the board-wide section: each row replays its own key exactly (`c` commits,
+`f` runs the action segment's current verb, `b`/`w`/`r` open their
+foldouts, and so on), and the two repo rows -- Open Repository in *Editor*,
+Reveal Repository in Finder -- carry no path or sha. The editor name is
+`rt code`'s resolved editor for the repo; an `open -a "App"` command labels
+as *App*. With no editor resolved, the row reads "Open in External Editor",
+and choosing it sets the notice "No editor set: run rt code once to pick
+one".
+
+**Steps.** Discard's confirmation, Ignore Folder's ancestor-folder list,
+and Create Tag's name field each replace the row region in the same box:
+esc steps back to the rows (or to the previous step), and the header reads
+"esc back" mid-step, "esc dismiss" at the root. A step never shrinks the
+box below the width it replaced. Discard's question names the file's base
+name -- "Discard all changes to *name*?" -- with choices "Discard Changes"
+and "Cancel".
+
+**Fitting the frame.** Unlike `rt nav`'s inline list, which grows the frame
+to fit, glitter caps the menu at the parent frame's height: a row region
+too tall to show whole windows behind the shared scroll viewport and thumb
+(`picker.Viewport`/`ThumbSpan`/`ThumbCell`), scrollable by wheel and by
+keyboard exactly like every other scrolling region in rt-ui.
+
+**Discard** moves the file to the Trash before touching git; the driver
+re-reads git status immediately before discarding, since the cached
+snapshot can lag the tree. A Trash failure partway through a multi-file
+discard leaves the files already moved discarded and surfaces the failure
+as the notice -- there is no permanent-delete fallback (GitHub Desktop
+offers one; glitter does not).
+
+**Create Tag** reloads the loaded History list in place, so the new tag's
+pill shows immediately with no manual refresh.
+
+The `ContextMenu.png` and `ContextMenuStates.png` boards (see Boards above)
+are the signed-off reference for every state: anchored and centered
+placement, disabled rows, both step kinds, the History "File Does Not
+Exist on Disk" menu, and hover versus cursor treatment.
 
 ## Terminal-fidelity deltas (same set the picker ratified)
 
@@ -233,6 +315,7 @@ division.
 | UndoStrip | 30 | 1.15 | 1 | |
 | Keybar | 28 | 1.08 | 1 | |
 | DiffHeader | 34 | 1.31 | 1 | |
+| Context menu | n/a | n/a | 2 + 3 + rows | 1 border row top and bottom (`modalBoxFrame`'s rounded border), `modalHeadRows`' 3 content rows (header, filter line, a rule) between them, then one line per menu row and one rule line per section boundary. Unlike every other foldout, which grows the frame to fit, glitter caps the box at the frame's remaining height and windows the row region behind the shared scroll viewport and thumb once rows don't fit, one column narrower beside the thumb. The Changes tab's shortest workable frame is 27 rows (pre-existing, for the docked commit block to fit), which is also the floor the menu-scrolling tests build against. |
 
 Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
 tabs-gap blank) and the docked block gains 4 (the commit-box top-pad blank,
@@ -264,6 +347,8 @@ pre-ratification drawing:
   sidebar, Undo chip right) instead of the boards' two-line strip.
 - The main keybar lists the built action set (adds "enter diff" and
   "u undo", names the adaptive segment key "f action", omits "? help").
+  Both tabs also add "⌃k menu" right after the tab-switch key, so it
+  survives a narrow terminal.
 - The commit button renders the disabled treatment whenever the wire says
   it cannot commit (empty summary); the boards draw the enabled pink for
   visual reference.
