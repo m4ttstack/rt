@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do case "$1" in
   *) vm_die "unknown arg $1";; esac; done
 [ -n "$HANDLES" ] || vm_die "--handles a,b is required"
 [ -d "$FIX" ] || vm_die "no fixture dir: $FIX"
-[ -x "$RT_BIN" ] || vm_die "no compiled rt at $RT_BIN (bun build --compile ./cli.ts --outfile dist/rt)"
+[ -x "$RT_BIN" ] || vm_die "no compiled rt at $RT_BIN (bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv)"
 mkdir -p "$OUT"
 
 TGZ="$(mktemp -t team-fixture).tgz"; tar -czf "$TGZ" -C "$FIX" .

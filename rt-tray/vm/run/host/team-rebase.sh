@@ -18,7 +18,7 @@ SLUG=vmtest; RT_BIN="$VM_ROOT/../../dist/rt"; LOGS="$PWD"
 while [ $# -gt 0 ]; do case "$1" in
   --slug) SLUG="$2"; shift 2;; --rt) RT_BIN="$2"; shift 2;; --logs) LOGS="$2"; shift 2;;
   *) vm_die "unknown arg $1";; esac; done
-[ -x "$RT_BIN" ] || vm_die "no compiled rt at $RT_BIN (bun build --compile ./cli.ts --outfile dist/rt)"
+[ -x "$RT_BIN" ] || vm_die "no compiled rt at $RT_BIN (bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv)"
 mkdir -p "$LOGS"
 # The tally at the end counts TEAM FAIL rows across this run's logs; a previous
 # run's logs in the same --logs dir would be counted as this run's failures.

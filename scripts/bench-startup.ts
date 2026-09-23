@@ -56,7 +56,7 @@ function runOnce(): number {
 
 if (!existsSync(BINARY)) {
   console.error(`bench-startup: binary not found at ${BINARY} — build with:`);
-  console.error(`  bun build --compile ./cli.ts --outfile dist/rt`);
+  console.error(`  bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv`);
   process.exit(1);
 }
 
