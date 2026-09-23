@@ -69,4 +69,6 @@ from `explain`, as `move` does, never from `effective.value`, or the write
 bakes the default and weaker layers into the target store.
 
 `useSettingsScope(...).move(key, from, to)` moves the source layer's
-authored value to another scope, then clears the source.
+authored value to another scope, then clears the source. For a deep-merged
+key it merges into the target's own authored value in precedence order, so
+the effective value does not change.

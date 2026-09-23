@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { moveValue } from "./move.ts";
+import { moveTargetFrom, moveValue } from "./move.ts";
 import type { EffectiveWire, ExplainRowWire, SettingDefWire } from "./server.ts";
 
 export type { EffectiveWire, ExplainRowWire, SettingDefWire };
@@ -158,6 +158,10 @@ export function useSettingsScope(prefix: string, opts: SettingsKitOptions = {}):
         from,
         to,
         { present: source?.present === true && "value" in source, value: source?.value },
+        {
+          deep: def.merge === "deep" && def.type === "object",
+          target: moveTargetFrom(rows, from, to),
+        },
       );
     },
     [base, set, unset],
