@@ -210,7 +210,7 @@ division.
 | BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
 | Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
 | History top rows | n/a | n/a | 4 (tabs 3 + gap 1) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline) plus one History-only blank band row before the commit list. |
-| History commit row | n/a | n/a | 2 each | `historyRowHeight`: GHD's two-line commit-list-item, subject line over tags/timestamp/unpushed line. |
+| History commit row | n/a | n/a | 3 each | `historyRowHeight`: GHD's commit-list-item as a bold summary line (tag pill and unpushed ↑ flush right), a Dimmer byline · time line whose byline truncates before the time does, and a Rule separator row standing in for GHD's row border. The separator is inert to hover and click. |
 | FilterRow | 34 | 1.31 | 3 | border / text / border — already correct: a bordered box is 3 physical rows regardless of its own px height. |
 | SummaryRow (master) | 24 | 0.92 | 1 | "N changed files · M staged". |
 | ChangesList row | 26 | 1.00 | 1 each | exact unit match. |
