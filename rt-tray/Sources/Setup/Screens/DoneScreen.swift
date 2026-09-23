@@ -10,14 +10,17 @@ struct DoneScreen: View {
     @State private var steps: (title: String, steps: [String])?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        // No outer padding: the grouped Form insets its own boxes 20pt, and the
+        // headline and button bar use the same 20pt so every left edge lines up.
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: headlineSymbol).font(.system(size: 40)).foregroundStyle(headlineTint)
-                VStack(alignment: .leading) {
+                Image(systemName: headlineSymbol).font(.system(size: 36)).foregroundStyle(headlineTint)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(model.headline).font(.title3.weight(.semibold))
                     Text(verifySummary).foregroundStyle(.secondary)
                 }
             }
+            .padding(.horizontal, 20).padding(.top, 20)
             if model.refreshFailed {
                 HStack {
                     Text("Couldn't confirm the checklist: \(model.refreshError ?? "unknown error")")
@@ -28,12 +31,13 @@ struct DoneScreen: View {
                         .controlSize(.small)
                         .accessibilityIdentifier(AXID.doneRetryCheck)
                 }
+                .padding(.horizontal, 20).padding(.top, 12)
             }
             Form {
                 Section("Where things live") {
-                    LabeledContent("Menu bar") { Text("the m at the top right") }
-                    LabeledContent("Terminal") { Text("rt — open a new terminal window").font(.system(.body, design: .monospaced)) }
-                    LabeledContent("Board") { Link("https://board.mattstack", destination: URL(string: "https://board.mattstack")!) }
+                    LabeledContent("Menu bar") { Text("the m icon, top right") }
+                    LabeledContent("Terminal") { Text("run rt in a new terminal window") }
+                    LabeledContent("Board") { Link("board.mattstack", destination: URL(string: "https://board.mattstack")!) }
                 }
                 if !model.blockedRows.isEmpty {
                     Section(FinishGate.beforeYouFinishTitle) {
@@ -64,15 +68,15 @@ struct DoneScreen: View {
                     .accessibilityIdentifier(AXID.doneStillToDo)
                 }
             }
-            .formStyle(.grouped).scrollDisabled(true)
+            .formStyle(.grouped)
             HStack {
                 Button("Open the board", action: openBoard).accessibilityIdentifier(AXID.doneOpenBoard)
                 if isOwner { Button("Invite teammates…", action: onInvite).accessibilityIdentifier(AXID.doneInvite) }
                 Spacer()
             }
-            Spacer()
+            .controlSize(.regular)
+            .padding(.horizontal, 20).padding(.bottom, 10)
         }
-        .padding(24)
         .task { await model.checkPostInstall() }
         .sheet(isPresented: Binding(get: { steps != nil }, set: { presented in
             guard !presented else { return }
