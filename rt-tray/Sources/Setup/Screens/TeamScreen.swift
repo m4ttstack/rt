@@ -34,9 +34,9 @@ struct TeamScreen: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier(cardID(choice))
             .accessibilityAddTraits(selected ? [.isSelected] : [])
-            // 16pt radio + 8pt spacing: the fields start under the title's icon.
             if selected {
                 VStack(alignment: .leading, spacing: 14) { content() }
+                    // 16pt radio + 8pt spacing: the fields start under the title's icon.
                     .padding(.leading, 24)
                     .textFieldStyle(.roundedBorder)
             }
@@ -90,7 +90,7 @@ struct TeamScreen: View {
         Group {
             SetupField(label: "Invite code", note: "Paste the whole code or the mattstack://join link you were sent. macOS may ask to read your clipboard.") {
                 HStack(alignment: .top, spacing: 8) {
-                    // .roundedBorder never wraps on macOS, and a 77-character code must stay readable whole.
+                    // .roundedBorder never wraps on macOS, and a full invite code must stay readable whole.
                     TextField("Invite code", text: $model.inviteCode, prompt: Text("XXXX-XXXX-…"), axis: .vertical)
                         .labelsHidden()
                         .textFieldStyle(.plain)

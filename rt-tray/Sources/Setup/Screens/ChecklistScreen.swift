@@ -12,7 +12,10 @@ struct ChecklistScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.lastError != nil {
-                Label("Couldn't load the checklist, so Install can't start yet. Re-check to try again.", systemImage: "exclamationmark.triangle")
+                // A failed refresh keeps the last good plan, so Install may still be enabled under this banner.
+                Label(model.canInstall ? "Couldn't refresh the checklist. Re-check to try again."
+                                       : "Couldn't load the checklist, so Install can't start yet. Re-check to try again.",
+                      systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20).padding(.top, 12)
@@ -62,9 +65,6 @@ struct ChecklistScreen: View {
         // -- same fix as InstallScreen's stepRow.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AXID.checklistScreen)
-        .onChange(of: model.lastError) { _, e in
-            if let e { TrayLog.warn("checklist load failed", ["err": e]) }
-        }
     }
 
     private var footerText: String {
