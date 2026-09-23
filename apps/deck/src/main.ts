@@ -12,7 +12,7 @@ import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
 import { logPortHolder, redirectAgentOutput } from './agent-log.ts';
 import { startApi } from './api/server.ts';
-import { writeApiInfo } from './api/state.ts';
+import { claimApiInfo } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
 import { resolveCfDns, type CfDns } from './edge/cf-dns.ts';
 import { PortlessCli } from './edge/portless.ts';
@@ -119,7 +119,6 @@ export function serve(): void {
     logPortHolder(PORT);
     process.exit(1);
   }
-  writeApiInfo(PORT);
   console.log(`Deck serving on http://localhost:${PORT}`);
 
   // Ownership-driven TLD rehome: every managed record (mattstack product)
@@ -151,6 +150,18 @@ export function serve(): void {
       console.error('proxy freshness check failed to start:', err);
     }
   }
+
+  // Only once every port is held: a deck that dies on a clash above must not
+  // have already repointed api.json at its own soon-dead API port.
+  claimApiInfo(PORT)
+    .then(wrote => {
+      if (!wrote) {
+        console.warn(
+          'api.json names another live deck; leaving it pointed there'
+        );
+      }
+    })
+    .catch(err => console.error('api.json write failed:', err));
 
   // Graceful shutdown (installer checklist item 5): Sparkle replaces the
   // whole bundle on update (this process's inode vanishes mid-run) and

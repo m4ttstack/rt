@@ -99,14 +99,13 @@ interface DeckStatusRow {
  * local `https://<name>.<tld>` form), never `publicUrl` (the tunnel
  * address, meaningless for a notification click handled on this machine).
  * Any failure -- deck not running, no `api.json`, a bad port, a non-200 or
- * timed-out response, or a missing/null row -- returns `fallback` rather
- * than throwing, since this only ever runs at app boot.
+ * timed-out response, or a missing/null row -- resolves `null` rather than
+ * throwing, since this only ever runs at app boot.
  */
 export async function deckAppUrl(
   name: string,
-  fallback: string,
   opts?: { stateDir?: string; fetch?: typeof fetch }
-): Promise<string> {
+): Promise<string | null> {
   const fetchImpl = opts?.fetch ?? fetch;
   try {
     const raw = await readFile(
@@ -114,19 +113,53 @@ export async function deckAppUrl(
       'utf8'
     );
     const info = JSON.parse(raw) as { port?: unknown };
-    if (!Number.isInteger(info.port)) return fallback;
+    if (!Number.isInteger(info.port)) return null;
     const res = await fetchImpl(
       `http://127.0.0.1:${info.port}/api/v1/status`,
       // A hung deck must not leave this promise pending forever -- an abort
-      // falls into the catch below and returns `fallback`, same as any
-      // other failure.
+      // falls into the catch below and resolves null, same as any other
+      // failure.
       { signal: AbortSignal.timeout(2000) }
     );
-    if (!res.ok) return fallback;
+    if (!res.ok) return null;
     const body = (await res.json()) as { apps?: DeckStatusRow[] };
     const row = (body.apps ?? []).find(a => a.name === name);
-    return typeof row?.url === 'string' ? row.url : fallback;
+    return typeof row?.url === 'string' ? row.url : null;
   } catch {
-    return fallback;
+    return null;
   }
+}
+
+/**
+ * Boot reconcile of one app's rule in `rt.notify.eventBridges`, given what
+ * `deckAppUrl` resolved. That setting is user-scoped and synced across
+ * machines, so a url only this machine can reach (`http://localhost:<port>`)
+ * must never be written into it. When deck answered, its url wins. When it
+ * did not, an existing rule with the same identity is left byte-for-byte as
+ * it is (it may carry a url deck resolved on a healthier boot), and only a
+ * missing rule is seeded, with `https://<app>.mattstack`.
+ */
+export function reconcileEventBridgeRule(opts: {
+  app: string;
+  deckUrl: string | null;
+  rule: (appUrl: string) => EventBridgeRule;
+  read: () => EventBridgeRule[];
+  write: (next: EventBridgeRule[]) => void;
+  replacePatterns?: string[];
+}): void {
+  const rule = opts.rule(opts.deckUrl ?? `https://${opts.app}.mattstack`);
+  if (
+    opts.deckUrl === null &&
+    opts
+      .read()
+      .some(
+        r =>
+          r.pattern === rule.pattern && r.subjectPrefix === rule.subjectPrefix
+      )
+  ) {
+    return;
+  }
+  ensureEventBridgeRule(opts.read, opts.write, rule, {
+    replacePatterns: opts.replacePatterns,
+  });
 }

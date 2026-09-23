@@ -49,24 +49,42 @@ describe('consoleBridgeRule', () => {
 describe('installConsoleBridgeRule', () => {
   const rule = consoleBridgeRule('https://console.mattstack');
 
-  it('resolves the url through resolveUrl with the port fallback, then upserts an empty list', async () => {
+  it('upserts the url deck resolved into an empty list', async () => {
     const io = fakeIo([]);
-    const resolveUrl = vi.fn(async () => 'https://console.mattstack');
     await installConsoleBridgeRule({
-      port: 11011,
       read: io.read,
       write: io.write,
-      resolveUrl,
+      resolveUrl: async () => 'https://console.local.test',
     });
-    expect(resolveUrl).toHaveBeenCalledWith('http://localhost:11011');
-    expect(io.writes).toHaveLength(1);
-    expect(io.writes[0]).toEqual([rule]);
+    expect(io.writes).toEqual([
+      [consoleBridgeRule('https://console.local.test')],
+    ]);
+  });
+
+  it('keeps an existing rule exactly as it is when deck does not answer', async () => {
+    const existing = consoleBridgeRule('http://localhost:11011');
+    const io = fakeIo([existing]);
+    await installConsoleBridgeRule({
+      read: io.read,
+      write: io.write,
+      resolveUrl: async () => null,
+    });
+    expect(io.writes).toHaveLength(0);
+  });
+
+  it('seeds a missing rule with the https console domain when deck does not answer', async () => {
+    const io = fakeIo([]);
+    await installConsoleBridgeRule({
+      read: io.read,
+      write: io.write,
+      resolveUrl: async () => null,
+    });
+    expect(io.writes).toEqual([[rule]]);
   });
 
   it('leaves an identical rule already present untouched, no duplicate written', async () => {
     const io = fakeIo([rule]);
     await installConsoleBridgeRule({
-      port: 11011,
       read: io.read,
       write: io.write,
       resolveUrl: async () => 'https://console.mattstack',
@@ -92,7 +110,6 @@ describe('installConsoleBridgeRule', () => {
     };
     const io = fakeIo([board, stale]);
     await installConsoleBridgeRule({
-      port: 11011,
       read: io.read,
       write: io.write,
       resolveUrl: async () => 'https://console.mattstack',
@@ -104,7 +121,6 @@ describe('installConsoleBridgeRule', () => {
   it('wires the default read/write through getSetting/setSetting when no overrides are given', async () => {
     vi.mocked(rt.getSetting).mockReturnValue({ value: [], provenance: [] });
     await installConsoleBridgeRule({
-      port: 11011,
       resolveUrl: async () => 'https://console.mattstack',
     });
     expect(rt.getSetting).toHaveBeenCalledWith('rt.notify.eventBridges');

@@ -11,14 +11,14 @@ export interface GatewayBootDeps {
   holder: (port: number) => void;
 }
 
+export const GATEWAY_PORT = Number(process.env.LOCAL_APPS_GATEWAY_PORT ?? 7950);
+
 const live: GatewayBootDeps = {
-  start: () => startGateway(),
+  start: () => startGateway(GATEWAY_PORT),
   exit: code => process.exit(code),
   err: console.error,
   holder: logPortHolder,
 };
-
-export const GATEWAY_PORT = 7950;
 
 /**
  * The gateway is deck's only public edge: without it every tunnel request is

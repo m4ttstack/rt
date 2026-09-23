@@ -1,14 +1,5 @@
-import { readApiInfo } from '../api/state.ts';
+import { isAlive, readApiInfo } from '../api/state.ts';
 import { getRecord } from '../registry/records.ts';
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
 
 /**
  * api.json is rewritten by whichever `deck serve` booted last, so a hand-run

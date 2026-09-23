@@ -75,3 +75,52 @@ export function readApiInfo(): { port: number; pid: number } | null {
     return null;
   }
 }
+
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function apiAnswers(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/status`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Serve boot's api.json write. A deck already recorded there that is alive
+ * and answering owns the file: a second serve (hand-run, or a launchd retry
+ * racing the outgoing instance) must not repoint every CLI call and app
+ * lookup at itself. Returns whether this process wrote the file.
+ */
+export async function claimApiInfo(
+  port: number,
+  probe: {
+    isAlive: (pid: number) => boolean;
+    answers: (port: number) => Promise<boolean>;
+  } = { isAlive, answers: apiAnswers }
+): Promise<boolean> {
+  const current = readApiInfo();
+  if (
+    current &&
+    current.pid !== process.pid &&
+    // This process already holds `port`, so a record naming it can only be
+    // answered by this process: its live pid is a reused one.
+    current.port !== port &&
+    probe.isAlive(current.pid) &&
+    (await probe.answers(current.port))
+  ) {
+    return false;
+  }
+  writeApiInfo(port);
+  return true;
+}

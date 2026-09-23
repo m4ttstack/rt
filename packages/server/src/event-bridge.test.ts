@@ -6,6 +6,7 @@ import { expect, test, vi } from 'vitest';
 import {
   deckAppUrl,
   ensureEventBridgeRule,
+  reconcileEventBridgeRule,
   type EventBridgeRule,
 } from './event-bridge';
 
@@ -167,7 +168,7 @@ test('deckAppUrl returns the matching row url on the happy path', async () => {
         { name: 'board', url: 'https://board.mattstack' },
       ],
     });
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fetchImpl,
     });
@@ -182,20 +183,20 @@ test('deckAppUrl returns the matching row url on the happy path', async () => {
   }
 });
 
-test('deckAppUrl returns the fallback when api.json is missing', async () => {
+test('deckAppUrl returns null when api.json is missing', async () => {
   const dir = tempStateDir();
   try {
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fakeStatusFetch(200, { apps: [] }),
     });
-    expect(url).toBe('http://localhost:9999');
+    expect(url).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('deckAppUrl returns the fallback when fetch throws', async () => {
+test('deckAppUrl returns null when fetch throws', async () => {
   const dir = tempStateDir();
   try {
     writeFileSync(
@@ -205,17 +206,17 @@ test('deckAppUrl returns the fallback when fetch throws', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('connection refused');
     }) as unknown as typeof fetch;
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fetchImpl,
     });
-    expect(url).toBe('http://localhost:9999');
+    expect(url).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('deckAppUrl returns the fallback when the row url is null', async () => {
+test('deckAppUrl returns null when the row url is null', async () => {
   const dir = tempStateDir();
   try {
     writeFileSync(
@@ -225,17 +226,17 @@ test('deckAppUrl returns the fallback when the row url is null', async () => {
     const fetchImpl = fakeStatusFetch(200, {
       apps: [{ name: 'board', url: null }],
     });
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fetchImpl,
     });
-    expect(url).toBe('http://localhost:9999');
+    expect(url).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('deckAppUrl returns the fallback when the row is missing', async () => {
+test('deckAppUrl returns null when the row is missing', async () => {
   const dir = tempStateDir();
   try {
     writeFileSync(
@@ -245,29 +246,99 @@ test('deckAppUrl returns the fallback when the row is missing', async () => {
     const fetchImpl = fakeStatusFetch(200, {
       apps: [{ name: 'console', url: 'https://console.mattstack' }],
     });
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fetchImpl,
     });
-    expect(url).toBe('http://localhost:9999');
+    expect(url).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('deckAppUrl returns the fallback on a non-200 response', async () => {
+test('deckAppUrl returns null on a non-200 response', async () => {
   const dir = tempStateDir();
   try {
     writeFileSync(
       join(dir, 'api.json'),
       JSON.stringify({ port: 4123, pid: 1 })
     );
-    const url = await deckAppUrl('board', 'http://localhost:9999', {
+    const url = await deckAppUrl('board', {
       stateDir: dir,
       fetch: fakeStatusFetch(500, { error: 'boom' }),
     });
-    expect(url).toBe('http://localhost:9999');
+    expect(url).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const boardRule = (appUrl: string): EventBridgeRule => ({
+  ...BOARD_RULE,
+  url: `${appUrl}/?gate={id}`,
+});
+
+test('reconcileEventBridgeRule installs the deck url when deck answers', () => {
+  const store = fakeStore([boardRule('http://localhost:9999')]);
+  reconcileEventBridgeRule({
+    app: 'board',
+    deckUrl: 'https://board.mattstack',
+    rule: boardRule,
+    read: store.read,
+    write: store.write,
+  });
+  expect(store.writes).toEqual([[boardRule('https://board.mattstack')]]);
+});
+
+test('reconcileEventBridgeRule leaves an existing rule untouched when deck does not answer', () => {
+  const existing: EventBridgeRule = {
+    ...boardRule('https://board.mattstack'),
+    title: 'hand-tuned title',
+  };
+  const store = fakeStore([existing]);
+  reconcileEventBridgeRule({
+    app: 'board',
+    deckUrl: null,
+    rule: boardRule,
+    read: store.read,
+    write: store.write,
+    replacePatterns: ['gate/opened/*'],
+  });
+  expect(store.writes).toHaveLength(0);
+});
+
+test('reconcileEventBridgeRule seeds a missing rule with the https app domain when deck does not answer', () => {
+  const other: EventBridgeRule = {
+    ...BOARD_RULE,
+    subjectPrefix: 'run:',
+    url: 'https://console.mattstack/gates/{id}',
+  };
+  const store = fakeStore([other]);
+  reconcileEventBridgeRule({
+    app: 'board',
+    deckUrl: null,
+    rule: boardRule,
+    read: store.read,
+    write: store.write,
+  });
+  expect(store.writes).toEqual([[other, boardRule('https://board.mattstack')]]);
+});
+
+test('reconcileEventBridgeRule seeding still drops replacePatterns entries', () => {
+  const legacy: EventBridgeRule = {
+    pattern: 'board/gate/opened/*',
+    category: 'gate',
+    title: '{label}',
+    message: '{subject}',
+  };
+  const store = fakeStore([legacy]);
+  reconcileEventBridgeRule({
+    app: 'board',
+    deckUrl: null,
+    rule: boardRule,
+    read: store.read,
+    write: store.write,
+    replacePatterns: ['board/gate/opened/*'],
+  });
+  expect(store.writes).toEqual([[boardRule('https://board.mattstack')]]);
 });

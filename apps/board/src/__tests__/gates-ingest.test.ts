@@ -9,6 +9,7 @@ import {
   boardBridgeRule,
   GATE_LIST_PAGE_LIMIT,
   ingestRelayFrame,
+  installBoardBridgeRule,
   reconcileGatesOnBoot,
   type GateCacheTarget,
   type GateReconcileTarget,
@@ -320,5 +321,71 @@ describe('boardBridgeRule', () => {
     ensureEventBridgeRule(io.read, io.write, rule);
     expect(io.writes).toHaveLength(1);
     expect(io.writes[0]).toEqual([other, rule]);
+  });
+});
+
+describe('installBoardBridgeRule', () => {
+  function fakeIo(initial: EventBridgeRule[]): {
+    read: () => EventBridgeRule[];
+    write: (next: EventBridgeRule[]) => void;
+    writes: EventBridgeRule[][];
+  } {
+    let current = initial;
+    const writes: EventBridgeRule[][] = [];
+    return {
+      read: () => current,
+      write: next => {
+        writes.push(next);
+        current = next;
+      },
+      writes,
+    };
+  }
+
+  const legacy: EventBridgeRule = {
+    pattern: 'board/gate/opened/*',
+    category: 'gate',
+    title: 'review gate: !{iid}',
+    message: '{mrUrl}',
+  };
+
+  test('deck answers: its url is installed and the legacy rule dropped', async () => {
+    const io = fakeIo([legacy]);
+    await installBoardBridgeRule({
+      ...io,
+      resolveUrl: async () => 'https://board.local.test',
+      stillWriter: () => true,
+    });
+    expect(io.writes).toEqual([[boardBridgeRule('https://board.local.test')]]);
+  });
+
+  test('deck does not answer: an existing rule is left exactly as it is', async () => {
+    const io = fakeIo([boardBridgeRule('http://localhost:7941')]);
+    await installBoardBridgeRule({
+      ...io,
+      resolveUrl: async () => null,
+      stillWriter: () => true,
+    });
+    expect(io.writes).toHaveLength(0);
+  });
+
+  test('deck does not answer: a missing rule is seeded with the https board domain', async () => {
+    const io = fakeIo([]);
+    await installBoardBridgeRule({
+      ...io,
+      resolveUrl: async () => null,
+      stillWriter: () => true,
+    });
+    expect(io.writes).toEqual([[boardBridgeRule('https://board.mattstack')]]);
+  });
+
+  test('a writer lease lost during the deck lookup writes nothing', async () => {
+    const io = fakeIo([]);
+    await installBoardBridgeRule({
+      ...io,
+      resolveUrl: async () => 'https://board.mattstack',
+      stillWriter: () => false,
+    });
+    expect(io.writes).toHaveLength(0);
   });
 });

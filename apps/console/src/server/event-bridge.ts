@@ -1,6 +1,6 @@
 import {
   deckAppUrl,
-  ensureEventBridgeRule,
+  reconcileEventBridgeRule,
   type EventBridgeRule,
 } from '@mattstack/app-server/event-bridge';
 import { getSetting, setSetting } from '@mattstack/rt-client';
@@ -32,24 +32,25 @@ function writeEventBridges(next: EventBridgeRule[]): void {
 }
 
 /**
- * Boot step: upsert `consoleBridgeRule` into `rt.notify.eventBridges` once
- * deck's local url for this app resolves (or the given port's localhost
- * fallback, when deck is not running). `read`/`write`/`resolveUrl` default
- * to the real settings store and deck lookup, and are seams for tests --
- * this function never touches deck or a settings store directly.
+ * Boot step: reconcile `consoleBridgeRule` in `rt.notify.eventBridges`
+ * against deck's local url for this app (see `reconcileEventBridgeRule` for
+ * what happens when deck does not answer). `read`/`write`/`resolveUrl`
+ * default to the real settings store and deck lookup, and are seams for
+ * tests -- this function never touches deck or a settings store directly.
  */
-export async function installConsoleBridgeRule(opts: {
-  port: number;
-  read?: () => EventBridgeRule[];
-  write?: (next: EventBridgeRule[]) => void;
-  resolveUrl?: (fallback: string) => Promise<string>;
-}): Promise<void> {
-  const resolveUrl =
-    opts.resolveUrl ?? (fallback => deckAppUrl('console', fallback));
-  const consoleUrl = await resolveUrl(`http://localhost:${opts.port}`);
-  ensureEventBridgeRule(
-    opts.read ?? readEventBridges,
-    opts.write ?? writeEventBridges,
-    consoleBridgeRule(consoleUrl)
-  );
+export async function installConsoleBridgeRule(
+  opts: {
+    read?: () => EventBridgeRule[];
+    write?: (next: EventBridgeRule[]) => void;
+    resolveUrl?: () => Promise<string | null>;
+  } = {}
+): Promise<void> {
+  const resolveUrl = opts.resolveUrl ?? (() => deckAppUrl('console'));
+  reconcileEventBridgeRule({
+    app: 'console',
+    deckUrl: await resolveUrl(),
+    rule: consoleBridgeRule,
+    read: opts.read ?? readEventBridges,
+    write: opts.write ?? writeEventBridges,
+  });
 }

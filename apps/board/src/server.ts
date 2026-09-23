@@ -4,7 +4,6 @@ import { basename, dirname, join } from 'path';
 import { canonicalHostRedirect } from '@mattstack/app-server/canonical-host';
 import {
   deckAppUrl,
-  ensureEventBridgeRule,
   type EventBridgeRule,
 } from '@mattstack/app-server/event-bridge';
 import { shellHandoff } from '@mattstack/app-server/shell-handoff';
@@ -121,9 +120,9 @@ import {
   type ExecuteSweepActionIo,
 } from './gates/execute-sweep-action.ts';
 import {
-  boardBridgeRule,
   buildQueueExtras,
   ingestRelayFrame,
+  installBoardBridgeRule,
   reconcileAttentionGatesOnBoot,
   reconcileGatesOnBoot,
   type GateEventFrame,
@@ -3890,10 +3889,8 @@ if (writer) {
   wakeAgentStatusFeed();
 }
 
-// Bridge-rule registration: upsert this board's gate-opened rule into
-// `rt.notify.eventBridges` (merge-not-clobber -- see ensureEventBridgeRule),
-// so a gate/opened/* event raises a desktop notification, with a click-through
-// url, once the rt daemon side has registered that key. `deckAppUrl` awaits a
+// Bridge-rule registration: reconcile this board's gate-opened rule in
+// `rt.notify.eventBridges` (see installBoardBridgeRule). The deck lookup is a
 // local `/api/v1/status` round trip, so the whole reconcile runs async and is
 // caught so a stale rt-client copy without the key yet (or any other
 // read/write/lookup failure) never blocks boot -- just skip and log once.
@@ -3903,28 +3900,18 @@ function readEventBridges(): EventBridgeRule[] {
 function writeEventBridges(next: EventBridgeRule[]): void {
   setSetting('rt.notify.eventBridges', next, 'user');
 }
-// Writer only: the rule carries this process's own url, so a second board
-// would point every gate notification at its port instead.
+// Writer only: a second board must not race the writer's reconcile.
 if (writer) {
-  void (async () => {
-    try {
-      const boardUrl = await deckAppUrl('board', `http://localhost:${port}`);
-      // The await is long enough to lose the lease inside: installing the
-      // rule now would point every gate notification at a board that has
-      // already stood down.
-      if (!writer) return;
-      ensureEventBridgeRule(
-        readEventBridges,
-        writeEventBridges,
-        boardBridgeRule(boardUrl),
-        { replacePatterns: ['board/gate/opened/*'] }
-      );
-    } catch (err) {
-      console.error(
-        `gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`
-      );
-    }
-  })();
+  void installBoardBridgeRule({
+    read: readEventBridges,
+    write: writeEventBridges,
+    resolveUrl: () => deckAppUrl('board'),
+    stillWriter: () => writer,
+  }).catch(err =>
+    console.error(
+      `gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`
+    )
+  );
 }
 
 // Hot-reload config.json so adding/removing members (or any setting) takes

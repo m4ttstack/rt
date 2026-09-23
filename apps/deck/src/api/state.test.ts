@@ -13,7 +13,8 @@ import { afterAll, beforeEach, expect, test } from 'bun:test';
 const scratch = mkdtempSync(join(tmpdir(), 'local-state-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-const { stateDir, adoptLegacyStateDir } = await import('./state.ts');
+const { stateDir, adoptLegacyStateDir, claimApiInfo } =
+  await import('./state.ts');
 
 beforeEach(() => {
   delete process.env.LOCAL_STATE_DIR;
@@ -94,4 +95,70 @@ test('stateDir follows a faked HOME at call time, not a value frozen at process 
   } finally {
     process.env.HOME = originalHome;
   }
+});
+
+function seededStateDir(apiJson?: object): string {
+  const dir = mkdtempSync(join(scratch, 'claim-'));
+  if (apiJson) writeFileSync(join(dir, 'api.json'), JSON.stringify(apiJson));
+  process.env.LOCAL_STATE_DIR = dir;
+  return dir;
+}
+
+function apiJsonIn(dir: string): unknown {
+  return JSON.parse(readFileSync(join(dir, 'api.json'), 'utf8'));
+}
+
+test('claimApiInfo writes api.json when none exists', async () => {
+  const dir = seededStateDir();
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+});
+
+test('claimApiInfo overwrites an api.json whose pid is dead', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => false,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+});
+
+test('claimApiInfo overwrites an api.json whose live pid does not answer on its port', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => false,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+});
+
+test('claimApiInfo leaves an api.json alone while its writer is alive and answering', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const probed: number[] = [];
+  const wrote = await claimApiInfo(7940, {
+    isAlive: pid => pid === 4242,
+    answers: async port => {
+      probed.push(port);
+      return true;
+    },
+  });
+  expect(wrote).toBe(false);
+  expect(probed).toEqual([7000]);
+  expect(apiJsonIn(dir)).toEqual({ port: 7000, pid: 4242 });
+});
+
+test('claimApiInfo overwrites an api.json naming its own port, whose live pid must be a reused one', async () => {
+  const dir = seededStateDir({ port: 7940, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
 });

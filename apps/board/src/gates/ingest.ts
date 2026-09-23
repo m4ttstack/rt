@@ -1,4 +1,7 @@
-import type { EventBridgeRule } from '@mattstack/app-server/event-bridge';
+import {
+  reconcileEventBridgeRule,
+  type EventBridgeRule,
+} from '@mattstack/app-server/event-bridge';
 import { domainForKind } from '@mattstack/gate-kit';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 import { cachedDelivery, cachedExecution } from './cache.ts';
@@ -216,4 +219,27 @@ export function boardBridgeRule(boardUrl: string): EventBridgeRule {
     message: '{question}',
     url: `${boardUrl}/?gate={id}`,
   };
+}
+
+/** Boot step: reconcile `boardBridgeRule` against the url deck resolved (see
+    `reconcileEventBridgeRule` for the deck-unreachable case). `stillWriter`
+    is rechecked after the lookup: the await is long enough to lose the
+    writer lease, and installing the rule then would point every gate
+    notification at a board that has already stood down. */
+export async function installBoardBridgeRule(opts: {
+  read: () => EventBridgeRule[];
+  write: (next: EventBridgeRule[]) => void;
+  resolveUrl: () => Promise<string | null>;
+  stillWriter: () => boolean;
+}): Promise<void> {
+  const deckUrl = await opts.resolveUrl();
+  if (!opts.stillWriter()) return;
+  reconcileEventBridgeRule({
+    app: 'board',
+    deckUrl,
+    rule: boardBridgeRule,
+    read: opts.read,
+    write: opts.write,
+    replacePatterns: ['board/gate/opened/*'],
+  });
 }
