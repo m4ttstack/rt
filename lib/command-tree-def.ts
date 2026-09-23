@@ -2199,6 +2199,23 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Print what would change without writing" },
         ],
       },
+      "writing-style": {
+        description: "Show, list, choose, or start the voice for prose posted under your name",
+        subcommands: {
+          show: {
+            description: "The writing style your reviews and replies use, and where it comes from",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleShow",
+            args: [SETUP_JSON_ARG],
+          },
+          list: {
+            description: "Writing styles you can choose: the presets, your own, and installed ones",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleList",
+            args: [SETUP_JSON_ARG],
+          },
+        },
+      },
     },
   },
 
