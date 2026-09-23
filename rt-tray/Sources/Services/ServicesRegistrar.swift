@@ -18,6 +18,7 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     private let scanned: [AgentPlist]
     private let runner: CommandRunner
     private let uid: uid_t
+    private let handDeckPreflight = HandDeckPreflight()
     /// Called on the main actor after every hand-agent preflight, with nil
     /// once nothing blocks the deck helper.
     var onHandDeckBlocked: (@MainActor (HandDeckBlockedNotice?) -> Void)?
@@ -54,8 +55,8 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     private func clearHandDeckLabel(before plists: [String]) async -> HandDeckRetireOutcome? {
         let labels = agents.filter { plists.contains($0.fileName) }.map(\.label)
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        guard let outcome = await HandDeckAgent.clearLabel(forHelpers: labels, home: home, uid: uid,
-                                                           runner: runner, fs: .system) else { return nil }
+        guard let outcome = await handDeckPreflight.clearLabel(forHelpers: labels, home: home, uid: uid,
+                                                               runner: runner, fs: .system) else { return nil }
         TrayServer.logHandDeckOutcome(outcome)
         let notice = HandDeckAgent.blockedNotice(for: outcome, home: home, uid: uid, fs: .system)
         await MainActor.run { onHandDeckBlocked?(notice) }

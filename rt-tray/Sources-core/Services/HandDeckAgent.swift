@@ -100,7 +100,13 @@ public enum HandDeckAgent {
         let dest = archiveDestination(home: home, fs: fs, now: now)
         let dir = (dest as NSString).deletingLastPathComponent
         var lines = ["mkdir -p \(shellQuoted(dir)) && mv -n \(shellQuoted(plistPath(home: home))) \(shellQuoted(dest))"]
-        if stage == .bootout { lines.insert("launchctl bootout gui/\(uid)/\(label)", at: 0) }
+        if stage == .bootout {
+            // Re-checked at paste time: once the helper holds the label, a bare
+            // bootout by label would remove the helper instead.
+            let target = "gui/\(uid)/\(label)"
+            let probe = "launchctl print \(target) | grep -cF \(shellQuoted("path = \(plistPath(home: home))"))"
+            lines.insert("[ \"$(\(probe))\" -gt 0 ] && launchctl bootout \(target)", at: 0)
+        }
         return HandDeckBlockedNotice(summary: "A hand-installed deck agent is blocking the deck helper.",
                                      reason: reason, fixCommand: lines.joined(separator: "\n"))
     }
@@ -136,5 +142,30 @@ public enum HandDeckAgent {
             return .failed("could not archive \(plist): \(error.localizedDescription)", stage: .archive(bootedOut: bootedOut))
         }
         return .retired(bootedOut: bootedOut, archivedTo: archivedTo)
+    }
+}
+
+/// Several callers can register the deck helper at once (launch, rt's
+/// /services/register, a need). Two interleaved preflights both see the hand
+/// job loaded, and the loser's bootout fails on a service the winner already
+/// removed, so each preflight waits for the one before it.
+public final class HandDeckPreflight: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tail: Task<Void, Never>?
+
+    public init() {}
+
+    public func clearLabel(forHelpers helperLabels: [String], home: String, uid: uid_t, runner: CommandRunner,
+                           fs: HandDeckFS) async -> HandDeckRetireOutcome? {
+        let run: Task<HandDeckRetireOutcome?, Never> = lock.withLock {
+            let previous = tail
+            let run = Task {
+                await previous?.value
+                return await HandDeckAgent.clearLabel(forHelpers: helperLabels, home: home, uid: uid, runner: runner, fs: fs)
+            }
+            tail = Task { _ = await run.value }
+            return run
+        }
+        return await run.value
     }
 }

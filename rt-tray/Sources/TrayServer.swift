@@ -505,8 +505,9 @@ class TrayServer {
         case .retired(let bootedOut, let archivedTo):
             TrayLog.info("retired hand-installed deck agent",
                          ["label": HandDeckAgent.label, "bootedOut": String(bootedOut), "archivedTo": archivedTo])
-        case .failed(let err):
-            TrayLog.warn("could not retire hand-installed deck agent", ["label": HandDeckAgent.label, "err": err])
+        case .failed(let err, let stage):
+            TrayLog.warn("could not retire hand-installed deck agent",
+                         ["label": HandDeckAgent.label, "err": err, "stage": String(describing: stage)])
         }
     }
 

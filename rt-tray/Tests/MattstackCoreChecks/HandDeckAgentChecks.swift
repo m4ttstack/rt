@@ -20,17 +20,31 @@ private final class VerbRunner: CommandRunner, @unchecked Sendable {
     }
 }
 
+/// Yields inside every call so two unserialized preflights interleave.
+private final class YieldingRunner: CommandRunner, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _calls: [[String]] = []
+    var calls: [[String]] { lock.withLock { _calls } }
+    func run(_ executable: String, _ args: [String]) async -> CommandOutcome {
+        lock.withLock { _calls.append(args) }
+        for _ in 0..<20 { await Task.yield() }
+        return args.first == "print" ? CommandOutcome(exitCode: 0, stdout: handPrint, stderr: "")
+                                     : CommandOutcome(exitCode: 0, stdout: "", stderr: "")
+    }
+}
+
 private final class FakeFS: @unchecked Sendable {
     var files: Set<String>
     var moves: [[String]] = []
     var moveError: Error?
     init(_ files: [String]) { self.files = Set(files) }
+    private let lock = NSLock()
     var seam: HandDeckFS {
-        HandDeckFS(exists: { self.files.contains($0) },
+        HandDeckFS(exists: { path in self.lock.withLock { self.files.contains(path) } },
                    createDirectory: { _ in },
                    move: { from, to in
                        if let e = self.moveError { throw e }
-                       self.moves.append([from, to]); self.files.remove(from); self.files.insert(to)
+                       self.lock.withLock { self.moves.append([from, to]); self.files.remove(from); self.files.insert(to) }
                    })
     }
 }
@@ -171,6 +185,7 @@ let handDeckAgentChecks: [Check] = [
         let lines = notice.fixCommand.split(separator: "\n").map(String.init)
         c.expectEqual(lines.count, 2)
         c.expect(lines.first?.hasSuffix("ctl bootout gui/501/com.mattstack.deck") == true)
+        c.expect(lines.first?.contains("print gui/501/com.mattstack.deck | grep -cF 'path = \(plist)')\" -gt 0 ] && ") == true)
         c.expectEqual(lines.last, "mkdir -p '/Users/tester/.mattstack/deck' && mv -n '\(plist)' '\(retired)'")
     },
     Check("hand deck notice: an unconfirmed job is never booted out by the fix") { c in
@@ -191,5 +206,16 @@ let handDeckAgentChecks: [Check] = [
         let fs = FakeFS([])
         let notice = HandDeckAgent.blockedNotice(for: .failed("x", stage: .probe), home: "/Users/o'b", uid: 501, fs: fs.seam)
         c.expect(notice?.fixCommand.hasPrefix("mkdir -p '/Users/o'\\''b/.mattstack/deck' && ") == true)
+    },
+    Check("hand deck preflight: overlapping registrations run one preflight at a time") { c in
+        let runner = YieldingRunner()
+        let fs = FakeFS([plist])
+        let preflight = HandDeckPreflight()
+        async let a = preflight.clearLabel(forHelpers: ["com.mattstack.deck"], home: home, uid: 501, runner: runner, fs: fs.seam)
+        async let b = preflight.clearLabel(forHelpers: ["com.mattstack.deck"], home: home, uid: 501, runner: runner, fs: fs.seam)
+        let outcomes = await [a, b]
+        c.expectEqual(runner.calls, [["print", "gui/501/com.mattstack.deck"], ["bootout", "gui/501/com.mattstack.deck"]])
+        c.expect(outcomes.contains(.absent))
+        c.expect(outcomes.contains(.retired(bootedOut: true, archivedTo: retired)))
     },
 ]
