@@ -20,11 +20,12 @@ app.all("/api/settings/*", async (c) => (await settingsHandler(c.req.raw)) ?? c.
 ```
 
 Routes: `GET {base}/defs?prefix=board.`, `GET {base}/explain/{key}`,
-`POST {base}/set`. Writes are refused for non-local Hosts by default; pass
-`allowWrite` with your own predicate when your server knows the real peer
-address (and always when the app has any non-local exposure). Secret keys
-never put values on the wire; composite (object/array) and unmigrated keys
-are read-only through this surface.
+`POST {base}/set`, `POST {base}/unset`. Writes are refused for non-local
+Hosts by default; pass `allowWrite` with your own predicate when your server
+knows the real peer address (and always when the app has any non-local
+exposure). Secret keys never put values on the wire; composite
+(object/array) keys are read-only by default (see `allowComposite`), and
+unmigrated keys are always read-only through this surface.
 
 ## React
 
@@ -55,8 +56,9 @@ gives the collapsed line, `targetScope` says where an edit lands (the
 winning layer when allowed, else the key's first scope).
 
 Pass `allowComposite: "shaped"` to `settingsHandler` to admit composite
-writes only for keys `SHAPES` declares, and only with a matching value.
-Writes also require an `application/json` body (415 otherwise).
+writes only for keys `SHAPES` declares, and only with a matching value;
+`external` keys are never admitted. `allowComposite: true` admits every
+composite as a whole-JSON replacement. Writes also require an `application/json` body (415 otherwise).
 
 `useSettingsScope(...).move(key, from, to)` moves the source layer's
 authored value to another scope, then clears the source.
