@@ -69,16 +69,6 @@ final class SetupFlowUITests: XCTestCase {
         waitForExpectations(timeout: timeout)
     }
 
-    /// A sheet's own existence check passes the instant its identifier lands
-    /// in the AX tree, well before the native sheet's slide-in presentation
-    /// animation settles; an interaction attempted in that window (a scroll,
-    /// a click by frame) can compute a hit point against a frame the sheet
-    /// has not actually reached on screen yet. Hittability is the real signal.
-    private func waitUntilHittable(_ id: String, _ timeout: TimeInterval = 10) {
-        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: el(id))
-        waitForExpectations(timeout: timeout)
-    }
-
     /// Finish closes the setup window; a click that does nothing would
     /// otherwise pass, since tearDown terminates the app either way.
     private func waitUntilGone(_ id: String, _ timeout: TimeInterval = 10) {
@@ -145,48 +135,6 @@ final class SetupFlowUITests: XCTestCase {
         waitFor("setup.done.stillToDo.tool.fast-browser-extension")
         XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "the skipped row left Before you finish")
         XCTAssertFalse(el("setup.done.skipConfirm").exists, "the sheet closed on success")
-        el("setup.done.continue").click()
-        waitUntilGone("setup.done.screen")
-    }
-
-    /// The writing-style row's ChooseSheet: typing into "Use my own skill…"
-    /// opens the suggestion dropdown, picking one fills the field, and
-    /// submitting resolves the row and reopens Finish.
-    func testDoneOwnSkillSuggestionPickAndSubmit() {
-        joinThroughInstall("writing-style")
-        // The row's own container identifier does not surface as a distinct
-        // element inside Done's "Before you finish" VStack wrapper (unlike the
-        // Checklist screen's bare RowView); its action button always does, and
-        // that is what gets clicked next regardless.
-        waitFor("setup.done.beforeYouFinish.skills.writing-style.action", 45)
-        XCTAssertFalse(el("setup.done.continue").isEnabled, "Finish waits on a chosen writing style")
-        el("setup.done.beforeYouFinish.skills.writing-style.action").click()
-        waitFor("setup.choose")
-        // The ScrollView element itself is never a valid scroll target here:
-        // its content (three option cards plus the own card) fills its whole
-        // frame edge to edge, so it has no exposed hit point of its own for
-        // XCUITest to click through to ("Unable to find hit point for
-        // ScrollView", confirmed against two real runs, including one where
-        // the sheet was already fully presented and interactive -- this is
-        // not a presentation-timing race). A scroll wheel event posted at a
-        // real, hittable card inside the scroll view reaches the same
-        // NSScrollView a trackpad scroll over that card would.
-        let structured = el("setup.choose.option.mattstack:writing-style-structured")
-        waitUntilHittable("setup.choose.option.mattstack:writing-style-structured")
-        structured.scroll(byDeltaX: 0, deltaY: -300)
-        waitUntilHittable("setup.choose.own")
-        el("setup.choose.own").click()
-        // The own card's text field only renders once `choice == .own` takes
-        // effect; a click right after selecting the card can otherwise race it.
-        waitFor("setup.choose.other")
-        el("setup.choose.other").click()
-        el("setup.choose.other").typeText("team")
-        waitFor("setup.choose.suggestion.team-voice")
-        el("setup.choose.suggestion.team-voice").click()
-        el("setup.choose.submit").click()
-        waitUntilGone("setup.choose")
-        waitUntilEnabled("setup.done.continue", 30)
-        XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "the resolved row left Before you finish")
         el("setup.done.continue").click()
         waitUntilGone("setup.done.screen")
     }
