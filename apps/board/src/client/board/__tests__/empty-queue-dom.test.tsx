@@ -4,9 +4,22 @@
     posted-in-slack pick persists across tabs — including Needs me. */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  expect,
+  setSystemTime,
+  test,
+} from 'bun:test';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
+
+// Frozen for the whole suite (via setSystemTime in beforeAll below) so every
+// fixture built from Date.now() -- module-level BOARD_DATA included, since
+// it evaluates before any hook runs -- lands at the same instant the board's
+// own freshness math reads at render time.
+const NOW = Date.now();
 
 class FakeEventSource {
   onmessage: ((ev: MessageEvent) => void) | null = null;
@@ -35,7 +48,10 @@ const BOARD_DATA = {
     multiHeader: '{count} ready',
     multiItem: '- {title}',
   },
-  dataSyncedAt: 1755600000000,
+  // Always "now": a fixed past timestamp drifts stale over time, which
+  // fires the freshness banner and, in turn, suppresses the empty-queue
+  // check mark these tests assert on.
+  dataSyncedAt: NOW,
   scopeUncovered: [],
   scopeUncoveredSections: [],
   scopeKnownSections: null,
@@ -79,6 +95,7 @@ function needsMeMr(iid: number) {
 }
 
 beforeAll(async () => {
+  setSystemTime(NOW);
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.startsWith('/data.json')) {
@@ -99,6 +116,7 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
+  setSystemTime();
   globalThis.fetch = realFetch;
   delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
   await GlobalRegistrator.unregister();
@@ -132,11 +150,12 @@ function emptyCopy(container: HTMLElement): string {
 test('an empty Needs me queue without the slack filter says nothing is waiting', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);
+  const root = await renderBoard(container);
   try {
-    await renderBoard(container);
     await openNeedsMe(container);
     expect(emptyCopy(container)).toBe('nothing waiting on review ✓');
   } finally {
+    await React.act(async () => root.unmount());
     container.remove();
   }
 });
@@ -145,11 +164,40 @@ test('an empty Needs me queue with the slack filter on names the filter', async 
   history.replaceState(null, '', '?slack=posted');
   const container = document.createElement('div');
   document.body.appendChild(container);
+  const root = await renderBoard(container);
   try {
-    await renderBoard(container);
     await openNeedsMe(container);
     expect(emptyCopy(container)).toBe('Nothing found in slack');
   } finally {
+    await React.act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test('a red freshness banner suppresses the empty-queue check mark', async () => {
+  servedData = {
+    ...BOARD_DATA,
+    dataSyncedAt: 0,
+    mrs: [],
+    syncError: {
+      since: NOW - 100 * 60_000,
+      lastAt: NOW - 60_000,
+      kind: 'timeout',
+      message: 'GraphQL errors: Timeout on MergeRequest.id',
+      projects: 1,
+    },
+  };
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = await renderBoard(container);
+  try {
+    const el = container.querySelector<HTMLElement>(
+      '.tui-banner[role="status"]'
+    );
+    expect(el?.dataset.intent).toBe('bad');
+    expect(container.querySelector('.tui-empty')).toBeNull();
+  } finally {
+    await React.act(async () => root.unmount());
     container.remove();
   }
 });
@@ -166,13 +214,14 @@ test('a slack-filtered Needs me queue says how many items it hid', async () => {
   history.replaceState(null, '', '?slack=posted');
   const container = document.createElement('div');
   document.body.appendChild(container);
+  const root = await renderBoard(container);
   try {
-    await renderBoard(container);
     await openNeedsMe(container);
     expect(emptyCopy(container)).toBe(
       'Nothing found in slack · 2 items hidden'
     );
   } finally {
+    await React.act(async () => root.unmount());
     container.remove();
   }
 });

@@ -773,6 +773,7 @@ describe('aggregateSyncScope', () => {
       scopeWindowDays: null,
       scopeUncoveredSections: [],
       scopeKnownSections: null,
+      syncError: null,
     });
   });
 
@@ -858,6 +859,41 @@ describe('aggregateSyncScope', () => {
     ]);
     expect(agg.scopeKnownSections).toEqual([]);
   });
+
+  test('syncError is the failing read with the earliest since, counting every failing project', () => {
+    const agg = aggregateSyncScope([
+      {
+        syncedAt: 100,
+        syncError: {
+          since: 50,
+          lastAt: 90,
+          kind: 'timeout',
+          message: 'GraphQL errors: Timeout on MergeRequest.id',
+        },
+      },
+      { syncedAt: 100 },
+      {
+        syncedAt: 100,
+        syncError: {
+          since: 20,
+          lastAt: 95,
+          kind: 'server-error',
+          message: 'GraphQL request failed: 500 Internal Server Error',
+        },
+      },
+    ]);
+    expect(agg.syncError).toEqual({
+      since: 20,
+      lastAt: 95,
+      kind: 'server-error',
+      message: 'GraphQL request failed: 500 Internal Server Error',
+      projects: 2,
+    });
+  });
+
+  test('reads without a syncError yield null', () => {
+    expect(aggregateSyncScope([{ syncedAt: 1 }]).syncError).toBeNull();
+  });
 });
 
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
@@ -870,6 +906,7 @@ function fetchResult(mrs: unknown[]): FetchResult {
     scopeWindowDays: null,
     scopeUncoveredSections: [],
     scopeKnownSections: null,
+    syncError: null,
   };
 }
 

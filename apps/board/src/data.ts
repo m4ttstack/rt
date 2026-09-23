@@ -5,10 +5,18 @@ import {
   type MRDashboardProps,
   type PullRequest,
 } from '@mattstack/glance';
-import type { DemandDecl, ProjectMRsScope } from '@mattstack/rt-client';
+import type {
+  DemandDecl,
+  ProjectMRsScope,
+  ProjectSyncError,
+} from '@mattstack/rt-client';
 import type { ExecutorState, ExecutorView } from './client/types.ts';
 import type { BoardConfig, Member } from './config.ts';
 import { extractTicketId } from './ticket.ts';
+
+/** The board-wide sync failure: the failing project with the longest
+    outage, plus how many projects are failing. */
+export type BoardSyncError = ProjectSyncError & { projects: number };
 
 export type PipelineState = 'passed' | 'running' | 'failed' | 'none';
 
@@ -73,6 +81,9 @@ export interface Snapshot {
       carried the field (an older rt), which disables the wrong-section alarm
       rather than raising it. */
   scopeKnownSections: string[] | null;
+  /** The longest-running rt project sync failure among the daemon reads;
+      null when none reported one (including an rt without the field). */
+  syncError: BoardSyncError | null;
 }
 
 /** Parse "group/project" out of a GitLab MR web URL. */
@@ -270,6 +281,7 @@ export function configuredSlackChannels(
 export interface SyncScopeRead {
   syncedAt: number;
   scope?: ProjectMRsScope;
+  syncError?: ProjectSyncError;
 }
 
 /**
@@ -280,8 +292,9 @@ export interface SyncScopeRead {
  * (the tightest constraint any project reported); `scopeUncoveredSections`
  * unions every project's uncovered codeowner sections; `scopeKnownSections`
  * unions every project's CODEOWNERS headers and is null when none reported
- * them. A project that errored before yielding a read is simply absent from
- * `reads`.
+ * them. `syncError` is the failing project with the earliest `since`, with
+ * `projects` counting every failing read. A project that errored before
+ * yielding a read is simply absent from `reads`.
  */
 export function aggregateSyncScope(reads: SyncScopeRead[]): {
   dataSyncedAt: number | null;
@@ -289,12 +302,15 @@ export function aggregateSyncScope(reads: SyncScopeRead[]): {
   scopeWindowDays: number | null;
   scopeUncoveredSections: string[];
   scopeKnownSections: string[] | null;
+  syncError: BoardSyncError | null;
 } {
   let dataSyncedAt: number | null = null;
   let scopeWindowDays: number | null = null;
   const uncovered = new Set<string>();
   const uncoveredSections = new Set<string>();
   let known: Set<string> | null = null;
+  let longest: ProjectSyncError | null = null;
+  let failing = 0;
   for (const read of reads) {
     dataSyncedAt =
       dataSyncedAt === null
@@ -313,6 +329,11 @@ export function aggregateSyncScope(reads: SyncScopeRead[]): {
         for (const section of read.scope.knownSections) known.add(section);
       }
     }
+    if (read.syncError) {
+      failing++;
+      if (!longest || read.syncError.since < longest.since)
+        longest = read.syncError;
+    }
   }
   return {
     dataSyncedAt,
@@ -320,6 +341,7 @@ export function aggregateSyncScope(reads: SyncScopeRead[]): {
     scopeWindowDays,
     scopeUncoveredSections: [...uncoveredSections],
     scopeKnownSections: known ? [...known].sort() : null,
+    syncError: longest ? { ...longest, projects: failing } : null,
   };
 }
 

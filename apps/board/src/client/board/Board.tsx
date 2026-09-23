@@ -19,6 +19,7 @@ import {
   filterByMember,
   filterBySlack,
   filterByTab,
+  freshnessBanner,
   GROUP_KEYS,
   groupMRs,
   NEEDS_ME_TAB,
@@ -93,6 +94,7 @@ import { RowView } from './RowView.tsx';
 import { SelectionBar } from './SelectionBar.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { useStaleTabTitle } from './stale-tab-title.ts';
 import { TabBar } from './TabBar.tsx';
 
 declare global {
@@ -956,6 +958,17 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot link consumption; see above
   }, [gateDeepLink]);
 
+  const now = Date.now();
+  const freshness = data
+    ? freshnessBanner({
+        fetchError: data.fetchError,
+        dataSyncedAt: data.dataSyncedAt,
+        syncError: data.syncError,
+        now,
+      })
+    : null;
+  useStaleTabTitle(freshness !== null);
+
   if (!data) {
     return (
       <p className="tui-loading">
@@ -983,8 +996,6 @@ export function Board() {
     groups,
   } = boardView!;
 
-  const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
-  const now = Date.now();
   const dataAge = dataAgeLabel(data.dataSyncedAt, now);
   // Both known and the board asks for more history than rt actually syncs --
   // config drift the board can't self-correct, so it needs to be visible.
@@ -1241,9 +1252,14 @@ export function Board() {
           />
         )}
 
-        {data.fetchError && (
-          <div className="tui-banner">
-            ⚠ data from {staleMins}m ago — gitlab fetch failing
+        {freshness && (
+          <div
+            className="tui-banner"
+            data-intent={freshness.intent === 'bad' ? 'bad' : undefined}
+            role="status"
+            title={freshness.title}
+          >
+            {freshness.text}
           </div>
         )}
         {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}
@@ -1266,6 +1282,7 @@ export function Board() {
 
         {filtered.length === 0 &&
         !data.fetchError &&
+        freshness?.intent !== 'bad' &&
         !activeSection?.unknown ? (
           <p className="tui-empty">
             {emptyQueueCopy(

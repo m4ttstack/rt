@@ -11,6 +11,7 @@ function fetchResult(mrs: unknown[]): FetchResult {
     scopeWindowDays: null,
     scopeUncoveredSections: [],
     scopeKnownSections: null,
+    syncError: null,
   };
 }
 

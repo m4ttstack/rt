@@ -2,7 +2,7 @@ import type { MouseEvent } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import type { TabConfig } from '../config.ts';
-import type { BoardMR } from '../data.ts';
+import type { BoardMR, BoardSyncError } from '../data.ts';
 import type { GateRow } from '../gates/store.ts';
 import type { RespondStatus } from '../respond-outcome.ts';
 import type { SlackTemplates } from '../template.ts';
@@ -181,6 +181,9 @@ export interface BoardData {
       this snapshot. Drives the honest footer (distinct from `fetchedAt`, which
       only says the board's own poll succeeded). */
   dataSyncedAt: number | null;
+  /** The longest-running rt project sync failure behind this snapshot;
+      null when rt reported none. Names the cause in the freshness banner. */
+  syncError: BoardSyncError | null;
   /** Authors this board demanded but rt hasn't finished backfilling yet. */
   scopeUncovered: string[];
   /** Codeowners sections this board demanded but rt hasn't finished backfilling

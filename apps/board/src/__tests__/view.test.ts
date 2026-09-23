@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { TabConfig } from '../config.ts';
-import type { BoardMR } from '../data.ts';
+import type { BoardMR, BoardSyncError } from '../data.ts';
 import {
+  ageText,
   behindToken,
   dataAgeLabel,
   DEFAULT_VIEW,
@@ -12,6 +13,7 @@ import {
   filterByMember,
   filterBySlack,
   filterByTab,
+  freshnessBanner,
   groupMRs,
   hasStackDescendants,
   joinRowState,
@@ -1195,5 +1197,153 @@ describe('offRosterPeers', () => {
       offRosterPeers(['ada', 'smoketest', 'me', 'grace'], members, 'me')
     ).toEqual(['smoketest']);
     expect(offRosterPeers(null, members, 'me')).toEqual([]);
+  });
+});
+
+describe('ageText', () => {
+  test('minutes under an hour, hours and minutes from an hour', () => {
+    expect(ageText(0)).toBe('0m');
+    expect(ageText(59 * 60_000 + 59_000)).toBe('59m');
+    expect(ageText(60 * 60_000)).toBe('1h 0m');
+    expect(ageText(103 * 60_000)).toBe('1h 43m');
+    expect(ageText(25 * 60 * 60_000 + 3 * 60_000)).toBe('25h 3m');
+  });
+
+  test('a negative age (clock skew) reads as 0m', () => {
+    expect(ageText(-5 * 60_000)).toBe('0m');
+  });
+});
+
+describe('freshnessBanner', () => {
+  // Local-time constructor, so the clock labels hold in any TZ.
+  const at = (h: number, m: number) => new Date(2026, 8, 22, h, m).getTime();
+  const now = at(16, 11);
+  const timeout: BoardSyncError = {
+    since: at(14, 31),
+    lastAt: at(16, 5),
+    kind: 'timeout',
+    message: 'GraphQL errors: Timeout on MergeRequest.id',
+    projects: 1,
+  };
+  const base = {
+    fetchError: null,
+    dataSyncedAt: at(14, 28),
+    syncError: null,
+    now,
+  };
+
+  test('fresh data: no banner, even with a sync error on record', () => {
+    expect(freshnessBanner({ ...base, dataSyncedAt: at(16, 9) })).toBeNull();
+    expect(
+      freshnessBanner({ ...base, dataSyncedAt: at(16, 9), syncError: timeout })
+    ).toBeNull();
+  });
+
+  test('stale data with a sync error names the cause; past 30 minutes it is bad', () => {
+    expect(freshnessBanner({ ...base, syncError: timeout })).toEqual({
+      text: '⚠ GitLab timing out since 14:31... board data is 1h 43m old (as of 14:28)',
+      intent: 'bad',
+      title: 'GraphQL errors: Timeout on MergeRequest.id',
+    });
+  });
+
+  test('stale data without a cause is a warn up to 30 minutes', () => {
+    expect(freshnessBanner({ ...base, dataSyncedAt: at(15, 56) })).toEqual({
+      text: '⚠ board data is 15m old (as of 15:56)... rt sync is behind',
+      intent: 'warn',
+    });
+  });
+
+  test('thresholds: 10m exactly is fresh, 30m exactly is still warn, 31m is bad', () => {
+    expect(
+      freshnessBanner({ ...base, dataSyncedAt: now - 10 * 60_000 })
+    ).toBeNull();
+    expect(
+      freshnessBanner({ ...base, dataSyncedAt: now - 30 * 60_000 })!.intent
+    ).toBe('warn');
+    expect(
+      freshnessBanner({ ...base, dataSyncedAt: now - 31 * 60_000 })!.intent
+    ).toBe('bad');
+  });
+
+  test('each kind has its own wording', () => {
+    const text = (kind: BoardSyncError['kind']) =>
+      freshnessBanner({ ...base, syncError: { ...timeout, kind } })!.text;
+    expect(text('server-error')).toStartWith(
+      '⚠ GitLab returning server errors since 14:31'
+    );
+    expect(text('rate-limited')).toStartWith(
+      '⚠ GitLab rate-limiting rt since 14:31'
+    );
+    expect(text('auth')).toStartWith(
+      "⚠ GitLab rejecting rt's token since 14:31"
+    );
+    expect(text('other')).toStartWith('⚠ GitLab sync failing since 14:31');
+  });
+
+  test('auth is bad even while the data is only 15 minutes old', () => {
+    expect(
+      freshnessBanner({
+        ...base,
+        dataSyncedAt: at(15, 56),
+        syncError: { ...timeout, kind: 'auth' },
+      })!.intent
+    ).toBe('bad');
+  });
+
+  test('unknown data age with a sync error still shows, escalating from since', () => {
+    expect(
+      freshnessBanner({
+        ...base,
+        dataSyncedAt: null,
+        syncError: { ...timeout, since: at(16, 0) },
+      })
+    ).toEqual({
+      text: '⚠ GitLab timing out since 16:00',
+      intent: 'warn',
+      title: 'GraphQL errors: Timeout on MergeRequest.id',
+    });
+    expect(
+      freshnessBanner({ ...base, dataSyncedAt: 0, syncError: timeout })!.intent
+    ).toBe('bad');
+  });
+
+  test('unknown data age and no sync error: no banner (the footer covers it)', () => {
+    expect(freshnessBanner({ ...base, dataSyncedAt: null })).toBeNull();
+  });
+
+  test("the board's own refresh failure outranks everything and is always bad", () => {
+    expect(
+      freshnessBanner({
+        ...base,
+        fetchError: 'g/p: daemon unreachable',
+        dataSyncedAt: at(16, 9),
+        syncError: timeout,
+      })
+    ).toEqual({
+      text: "⚠ board can't refresh... data is 2m old (as of 16:09)",
+      intent: 'bad',
+      title: 'g/p: daemon unreachable',
+    });
+    expect(
+      freshnessBanner({ ...base, fetchError: 'x', dataSyncedAt: null })!.text
+    ).toBe("⚠ board can't refresh");
+  });
+
+  test('several failing projects are counted in the tooltip', () => {
+    expect(
+      freshnessBanner({ ...base, syncError: { ...timeout, projects: 3 } })!
+        .title
+    ).toBe('GraphQL errors: Timeout on MergeRequest.id (3 projects failing)');
+  });
+
+  test('a syncedAt ahead of the board clock reads as fresh', () => {
+    expect(freshnessBanner({ ...base, dataSyncedAt: at(16, 20) })).toBeNull();
+  });
+
+  test('a missing syncError key (older server) falls back to the age-only banner', () => {
+    expect(
+      freshnessBanner({ fetchError: null, dataSyncedAt: at(14, 28), now })!.text
+    ).toBe('⚠ board data is 1h 43m old (as of 14:28)... rt sync is behind');
   });
 });

@@ -127,6 +127,7 @@ export class SnapshotCache {
                 scopeWindowDays: null,
                 scopeUncoveredSections: [],
                 scopeKnownSections: null,
+                syncError: null,
               }
         );
       })

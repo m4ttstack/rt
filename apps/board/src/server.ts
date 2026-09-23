@@ -82,6 +82,7 @@ import {
   reviewSkillForTab,
   visibleMrsFor,
   type BoardMR,
+  type BoardSyncError,
   type SyncScopeRead,
 } from './data.ts';
 import {
@@ -547,6 +548,7 @@ interface TeamMRsResult {
   scopeWindowDays: number | null;
   scopeUncoveredSections: string[];
   scopeKnownSections: string[] | null;
+  syncError: BoardSyncError | null;
   tags: Map<string, string[]>;
 }
 
@@ -582,7 +584,11 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
       errors.push(`${projectPath}: ${res.error ?? 'empty daemon response'}`);
       continue;
     }
-    reads.push({ syncedAt: res.data.syncedAt, scope: res.data.scope });
+    reads.push({
+      syncedAt: res.data.syncedAt,
+      scope: res.data.scope,
+      syncError: res.data.syncError,
+    });
     for (const entry of Object.values(res.data.mrs)) {
       if (entry.pr.state !== 'opened') continue;
       byId.set(entry.pr.id, entry.pr);
@@ -737,6 +743,7 @@ const cache = new SnapshotCache(async () => {
     scopeWindowDays,
     scopeUncoveredSections,
     scopeKnownSections,
+    syncError,
     tags,
   } = await fetchTeamMRs(force);
   const mrs = buildBoard(prs, config, undefined, tags);
@@ -748,6 +755,7 @@ const cache = new SnapshotCache(async () => {
     scopeWindowDays,
     scopeUncoveredSections,
     scopeKnownSections,
+    syncError,
   };
 });
 
@@ -1208,6 +1216,7 @@ const httpServer = Bun.serve({
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
             dataSyncedAt: snapshot.dataSyncedAt,
+            syncError: snapshot.syncError,
             scopeUncovered: snapshot.scopeUncovered,
             scopeWindowDays: snapshot.scopeWindowDays,
             scopeUncoveredSections: snapshot.scopeUncoveredSections,

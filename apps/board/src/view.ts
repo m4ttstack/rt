@@ -1,7 +1,7 @@
 import { getReviewDisplayState } from '@mattstack/glance';
 import type { ReviewStatus } from './client/types.ts';
 import type { TabConfig } from './config.ts';
-import type { BoardMR } from './data.ts';
+import type { BoardMR, BoardSyncError } from './data.ts';
 import { hasChangesRequested } from './data.ts';
 import { projectKeyOf } from './triage/stack.ts';
 
@@ -51,6 +51,16 @@ export function commentsAllResolved(mr: BoardMR): boolean {
   );
 }
 
+/** Daemon data older than this reads as stale, in the footer and the banner alike. */
+const STALE_AFTER_MS = 10 * 60_000;
+/** A stale banner turns from warn to bad past this. */
+const ESCALATE_AFTER_MS = 30 * 60_000;
+
+function clockLabel(at: number): string {
+  const d = new Date(at);
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 /** Board freshness is the daemon's syncedAt, not the board's own poll loop --
     a poll can succeed against data the daemon hasn't refreshed in a while, so
     "just fetched" and "actually fresh" are different claims. Stale past 10
@@ -65,11 +75,85 @@ export function dataAgeLabel(
   // "data as of 1:00" (local-timezone midnight) is misleading, not stale-but-honest.
   if (dataSyncedAt === null || dataSyncedAt <= 0)
     return { text: 'data age unknown', stale: true };
-  const stale = now - dataSyncedAt > 10 * 60_000;
-  const d = new Date(dataSyncedAt);
-  const hh = d.getHours();
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return { text: `data as of ${hh}:${mm}`, stale };
+  return {
+    text: `data as of ${clockLabel(dataSyncedAt)}`,
+    stale: now - dataSyncedAt > STALE_AFTER_MS,
+  };
+}
+
+/** "25m" under an hour, "1h 43m" from an hour. */
+export function ageText(ms: number): string {
+  const mins = Math.max(0, Math.floor(ms / 60_000));
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+const SYNC_ERROR_PHRASE: Record<BoardSyncError['kind'], string> = {
+  timeout: 'timing out',
+  'server-error': 'returning server errors',
+  'rate-limited': 'rate-limiting rt',
+  auth: "rejecting rt's token",
+  other: 'sync failing',
+};
+
+export interface FreshnessBanner {
+  text: string;
+  intent: 'warn' | 'bad';
+  title?: string;
+}
+
+/** The top-of-board freshness warning, or null while the data is fresh.
+    The board's own refresh failing outranks rt's GitLab sync failing, which
+    outranks bare age. A sync error stays quiet until the data actually goes
+    stale, so one failed cycle never flashes a banner. */
+export function freshnessBanner(input: {
+  fetchError: string | null;
+  dataSyncedAt: number | null;
+  syncError?: BoardSyncError | null;
+  now: number;
+}): FreshnessBanner | null {
+  const { fetchError, syncError, now } = input;
+  const syncedAt =
+    input.dataSyncedAt !== null && input.dataSyncedAt > 0
+      ? input.dataSyncedAt
+      : null;
+  const age = syncedAt === null ? null : now - syncedAt;
+  const ageClause =
+    syncedAt === null
+      ? null
+      : `${ageText(now - syncedAt)} old (as of ${clockLabel(syncedAt)})`;
+
+  if (fetchError)
+    return {
+      text: ageClause
+        ? `⚠ board can't refresh... data is ${ageClause}`
+        : "⚠ board can't refresh",
+      intent: 'bad',
+      title: fetchError,
+    };
+
+  if (syncError && (age === null || age > STALE_AFTER_MS)) {
+    const outage = age ?? now - syncError.since;
+    const cause = `⚠ GitLab ${SYNC_ERROR_PHRASE[syncError.kind]} since ${clockLabel(syncError.since)}`;
+    return {
+      text: ageClause ? `${cause}... board data is ${ageClause}` : cause,
+      intent:
+        syncError.kind === 'auth' || outage > ESCALATE_AFTER_MS
+          ? 'bad'
+          : 'warn',
+      title:
+        syncError.projects > 1
+          ? `${syncError.message} (${syncError.projects} projects failing)`
+          : syncError.message,
+    };
+  }
+
+  if (age !== null && age > STALE_AFTER_MS)
+    return {
+      text: `⚠ board data is ${ageClause}... rt sync is behind`,
+      intent: age > ESCALATE_AFTER_MS ? 'bad' : 'warn',
+    };
+
+  return null;
 }
 
 /** Keyed, not classed: RowView keys its icon and CSS on the key, so an
