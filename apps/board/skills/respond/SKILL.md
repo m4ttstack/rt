@@ -114,8 +114,9 @@ old one. Instead:
   blocking.
 - **Act on the answer, by `--resumed-gate-kind`.** Read `--report <path>` first: it
   holds the adjudication table and drafted/finalized replies a fresh pane has
-  no other way to recover once the pane that produced them is gone. Never
-  re-adjudicate and never re-implement from scratch:
+  no other way to recover once the pane that produced them is gone. On the
+  generic no-domain-skill path, run step 2's writing-style lookup first.
+  Never re-adjudicate and never re-implement from scratch:
   - `respond-plan` → implement from the report's decided plan: the wait's
     `{plan: <answers>, by: <by>}` select among the report's threads. Join
     each answer to its report row by the thread id inside the option VALUE

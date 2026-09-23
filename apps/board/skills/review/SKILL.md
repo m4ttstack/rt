@@ -85,6 +85,7 @@ Instead:
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
+- On the generic no-domain-skill path, run step 2's writing-style lookup first.
 - Act on the answer (hand `{findings: [ids], outcome}` to the domain skill
   on the per-finding path, or `{tiers, outcome}` on the tier-fallback path
   described in step 4 below, or post directly on the generic
