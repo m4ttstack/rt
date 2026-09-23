@@ -114,8 +114,9 @@ old one. Instead:
   blocking.
 - **Act on the answer, by `--resumed-gate-kind`.** Read `--report <path>` first: it
   holds the adjudication table and drafted/finalized replies a fresh pane has
-  no other way to recover once the pane that produced them is gone. Never
-  re-adjudicate and never re-implement from scratch:
+  no other way to recover once the pane that produced them is gone. On the
+  generic no-domain-skill path, run step 2's writing-style lookup first.
+  Never re-adjudicate and never re-implement from scratch:
   - `respond-plan` → implement from the report's decided plan: the wait's
     `{plan: <answers>, by: <by>}` select among the report's threads. Join
     each answer to its report row by the thread id inside the option VALUE
@@ -175,9 +176,17 @@ conversation.
      posted; this wrapper owns both facility gates (steps 4 and 6) and hands
      the domain skill `{plan: ...}` to act on once a human has answered, and
      `{post: ...}` only when Gate 2 opened.
-   - **If no domain skill resolved:** fetch the MR's unresolved review threads
-     yourself, adjudicate each on its merits, and draft replies and any
-     proposed fixes. Build your own verdict table for the gates below.
+   - **If no domain skill resolved:** Before drafting, call
+     `mcp__plugin_mattstack_mattstack__rt_verb` with
+     `{"args": ["skills", "writing-style", "show"]}` and load the skill its `skill`
+     names. That load is step one: compose in that voice from the first word, never as
+     a pass over a finished draft. If the tool is unavailable, refused, or fails, load
+     the skill named on the `writing-style:` line of
+     `~/.mattstack/user/skills/preferences.md` if there is one. If that is missing
+     too, or the skill will not load, load `mattstack:writing-style-conversational`.
+     Then fetch the MR's unresolved review threads yourself, adjudicate each on its
+     merits, and draft replies and any proposed fixes. Build your own verdict table
+     for the gates below.
    - **Zero unresolved threads?** Skip straight to step 7:
      `done "no unresolved threads" --posted 0 --threads 0`. That is not an
      error condition, and neither gate opens.
