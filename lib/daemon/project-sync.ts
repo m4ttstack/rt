@@ -29,7 +29,7 @@
  * record to delta against) and explicit `mode: "deep"` requests still reject.
  */
 
-import type { PullRequest, ApprovalRuleLite, MRApprovalRules } from "@mattstack/glance";
+import type { PullRequest, ApprovalRuleLite, MRApprovalRules, GitLabProvider } from "@mattstack/glance";
 import { getRepoContext, getSelfUsername, resolveSelfUsername } from "./freshness.ts";
 import { getProjectMRs, freshnessOf, type ProjectMRs, type ProjectMRStore } from "./project-mrs-store.ts";
 import { loadRepoTracking, grants } from "../repo-tracking.ts";
@@ -123,6 +123,8 @@ export interface ProjectSyncOverrides {
   mode?: "auto" | "deep";
   fetchProject?: (repoName: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
   fetchDelta?: (repoName: string, updatedAfter: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
+  /** The default fetchDelta's provider and project path; production resolves them via getRepoContext. */
+  deltaContext?: (repoName: string) => Promise<{ provider: DeltaProvider; projectPath: string }>;
   fetchSingle?: (repoName: string, projectPath: string, iid: number) => Promise<PullRequest | null>;
   /** Scoped deep's fetch: every open MR by any of these authors. */
   fetchAuthors?: (repoName: string, authors: string[]) => Promise<{ projectPath: string; prs: PullRequest[] }>;
@@ -155,6 +157,61 @@ export const TOPUP_CONCURRENCY = 4;
  * The daily deep reconcile still re-reads them.
  */
 export const TOPUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export type DeltaProvider = Pick<GitLabProvider, "fetchPullRequests" | "fetchMergeRequestIndex" | "fetchSingleMR">;
+
+/**
+ * The delta window's changed MRs. Only opened MRs are read at list weight:
+ * GitLab evaluates approval rules on read, and on a large merged MR (a
+ * ~1,000-file deploy MR against a big CODEOWNERS) that alone runs past the
+ * 60s request limit, failing the whole page. Merged/closed MRs come from the
+ * cheap index instead and only move entries the store already holds. A
+ * never-stored one is fetched in full only when it would become its branch's
+ * findBySourceBranch answer; otherwise nothing reads it.
+ */
+export async function fetchDeltaFrom(
+  provider: DeltaProvider,
+  projectPath: string,
+  updatedAfter: string,
+  stored: ProjectMRStore | undefined,
+): Promise<PullRequest[]> {
+  const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true });
+  const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"] });
+  const rowIids = new Set(rows.map((row) => row.iid));
+  const openBranches = new Set(opened.filter((pr) => !rowIids.has(pr.iid)).map((pr) => pr.sourceBranch));
+  const newestStored = new Map<string, number>();
+  for (const { pr } of Object.values(stored?.mrs ?? {})) {
+    if (pr.state === "opened" && !rowIids.has(pr.iid)) openBranches.add(pr.sourceBranch);
+    newestStored.set(pr.sourceBranch, Math.max(newestStored.get(pr.sourceBranch) ?? 0, pr.iid));
+  }
+  // Mirrors syncImpl's scope filter: a terminal stranger is never section-tagged.
+  const scopeAuthors = stored?.scope?.authors;
+  const reuse = new Map<string, number>();
+  const terminal: PullRequest[] = [];
+  for (const row of rows) {
+    const existing = stored?.mrs[row.iid]?.pr;
+    if (!existing) {
+      const newest = newestStored.get(row.sourceBranch);
+      if (newest === undefined || openBranches.has(row.sourceBranch) || row.iid < newest) continue;
+      if (scopeAuthors && row.authorUsername && !scopeAuthors.includes(row.authorUsername)) continue;
+      reuse.set(row.sourceBranch, Math.max(reuse.get(row.sourceBranch) ?? 0, row.iid));
+      continue;
+    }
+    if (existing.state === row.state && existing.updatedAt === row.updatedAt) continue;
+    terminal.push({ ...existing, state: row.state, updatedAt: row.updatedAt, mergedAt: row.mergedAt, title: row.title });
+  }
+  for (const iid of reuse.values()) {
+    try {
+      const full = await provider.fetchSingleMR(projectPath, iid, null);
+      if (full) terminal.push(full);
+    } catch (err) {
+      log.warn({ err, projectPath, iid }, "branch-reuse fetch failed");
+    }
+  }
+  // One copy per iid: applyDelta skips a second copy of an iid it just wrote.
+  const terminalIids = new Set(terminal.map((pr) => pr.iid));
+  return [...opened.filter((pr) => !terminalIids.has(pr.iid)), ...terminal];
+}
 
 const syncInFlight = new Map<string, Promise<void>>();
 
@@ -357,15 +414,10 @@ async function syncImpl(
   // in-flight duration).
   const deltaStartedAt = Date.now();
   const updatedAfter = new Date(freshnessOf(record) - DELTA_OVERLAP_MS).toISOString();
+  const deltaContext = overrides.deltaContext ?? ((repo: string) => getRepoContext(repo, deps.repoIndex()[repo]));
   const fetchDelta = overrides.fetchDelta ?? (async (repo: string, ua: string) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    const prs = await provider.fetchPullRequests({
-      projectPath,
-      state: ["opened", "merged", "closed"],
-      updatedAfter: ua,
-      listWeight: true,
-    });
-    return { projectPath, prs };
+    const { provider, projectPath } = await deltaContext(repo);
+    return { projectPath, prs: await fetchDeltaFrom(provider, projectPath, ua, record) };
   });
 
   let { projectPath, prs } = await fetchDelta(repoName, updatedAfter);
@@ -449,8 +501,10 @@ async function syncImpl(
   const afterDelta = store.read(repoName);
   for (const [iidStr, entry] of Object.entries(afterDelta?.mrs ?? {})) {
     const iid = Number(iidStr);
-    if (deltaIids.has(iid)) continue;
-    if (entry.pr.state !== "opened") continue;
+    // A terminal copy the delta just built carries its open-era pipeline
+    // (fetchDeltaFrom), so it is refreshed rather than exempt.
+    const justMovedToTerminal = deltaIids.has(iid) && entry.pr.state !== "opened";
+    if (!justMovedToTerminal && (deltaIids.has(iid) || entry.pr.state !== "opened")) continue;
     const status = (entry.pr as { pipeline?: { status?: string } | null }).pipeline?.status;
     if (!status || !IN_FLIGHT_PIPELINE.has(status)) continue;
     const updatedAt = Date.parse(entry.pr.updatedAt ?? "");

@@ -2,11 +2,11 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
+import { syncProjectMRs, fetchDeltaFrom, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { readSyncHealth, recordSyncFailure } from "../project-sync-health.ts";
-import type { PullRequest } from "@mattstack/glance";
+import type { FetchMergeRequestIndexOptions, FetchPullRequestsOptions, MergeRequestIndexRow, PullRequest } from "@mattstack/glance";
 
 function pr(iid: number, over: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -1563,5 +1563,148 @@ describe("sync health recording", () => {
     await expect(p1).rejects.toThrow("503");
     await expect(p2).rejects.toThrow("503");
     expect(readSyncHealth("health-coalesce")).toMatchObject({ kind: "server-error" });
+  });
+});
+
+describe("fetchDeltaFrom (terminal MRs via the index)", () => {
+  const UA = "2026-09-22T19:26:07.270Z";
+  const NOW = "2026-09-22T20:00:00.000Z";
+
+  function row(iid: number, over: Partial<MergeRequestIndexRow> = {}): MergeRequestIndexRow {
+    return {
+      iid, projectPath: "g/p", title: `MR ${iid}`, state: "merged", createdAt: NOW, updatedAt: NOW,
+      mergedAt: NOW, authorUsername: "ada", sourceBranch: `b${iid}`, labels: [], ...over,
+    };
+  }
+
+  function fakeProvider(open: PullRequest[], index: MergeRequestIndexRow[], singles: Record<number, PullRequest> = {}) {
+    const pulls: FetchPullRequestsOptions[] = [];
+    const indexCalls: FetchMergeRequestIndexOptions[] = [];
+    const singleCalls: number[] = [];
+    return {
+      pulls,
+      indexCalls,
+      singleCalls,
+      provider: {
+        fetchPullRequests: async (o?: FetchPullRequestsOptions) => { pulls.push(o!); return open; },
+        fetchMergeRequestIndex: async (o: FetchMergeRequestIndexOptions) => { indexCalls.push(o); return index; },
+        fetchSingleMR: async (_pp: string, iid: number) => { singleCalls.push(iid); return singles[iid] ?? null; },
+      },
+    };
+  }
+
+  function storedWith(...prs: PullRequest[]) {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", prs, Date.now());
+    return store.read("repo");
+  }
+
+  test("asks for list-weight fields on opened MRs only, and the index for merged/closed", async () => {
+    const fake = fakeProvider([], []);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, undefined);
+    expect(fake.pulls).toEqual([{ projectPath: "g/p", state: "opened", updatedAfter: UA, listWeight: true }]);
+    expect(fake.indexCalls).toEqual([{ projectPaths: ["g/p"], updatedAfter: UA, states: ["merged", "closed"] }]);
+  });
+
+  test("moves a stored open MR to its terminal state and keeps its stored fields", async () => {
+    const stored = storedWith(pr(7, { approved: true, updatedAt: UA } as Partial<PullRequest>));
+    const fake = fakeProvider([], [row(7, { title: "renamed" })]);
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toMatchObject({ iid: 7, state: "merged", mergedAt: NOW, updatedAt: NOW, title: "renamed", approved: true });
+  });
+
+  test("drops terminal MRs the store never held", async () => {
+    const fake = fakeProvider([], [row(99)]);
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, storedWith(pr(1)))).toEqual([]);
+  });
+
+  test("skips stored terminal entries the index reports unchanged", async () => {
+    const stored = storedWith(pr(8, { state: "merged", updatedAt: NOW } as Partial<PullRequest>));
+    const fake = fakeProvider([], [row(8)]);
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, stored)).toEqual([]);
+  });
+
+  test("an MR in both responses is stored in its terminal state", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(5)], Date.now() - 1000);
+    const deltaStartedAt = Date.now() - 500;
+    const fake = fakeProvider([pr(5, { title: "still open" })], [row(5)]);
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, store.read("repo"));
+    store.applyDelta("repo", "g/p", prs, deltaStartedAt);
+    expect(store.read("repo")!.mrs[5]!.pr.state).toBe("merged");
+  });
+
+  test("fetches in full a never-stored terminal MR that would win its branch", async () => {
+    const stored = storedWith(pr(3, { state: "merged", sourceBranch: "fix" }));
+    const full = pr(9, { state: "merged", sourceBranch: "fix" });
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" })], { 9: full });
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, stored)).toEqual([full]);
+    expect(fake.singleCalls).toEqual([9]);
+  });
+
+  test("leaves a never-stored terminal MR alone when its branch has an open entry", async () => {
+    const stored = storedWith(pr(3, { sourceBranch: "fix" }));
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" })], { 9: pr(9, { state: "merged", sourceBranch: "fix" }) });
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, stored)).toEqual([]);
+    expect(fake.singleCalls).toEqual([]);
+  });
+
+  test("leaves a never-stored terminal MR alone when a stored entry on its branch is newer", async () => {
+    const stored = storedWith(pr(12, { state: "merged", sourceBranch: "fix" }));
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([]);
+  });
+
+  test("fetches only the newest never-stored terminal MR per branch", async () => {
+    const stored = storedWith(pr(3, { state: "merged", sourceBranch: "fix" }));
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" }), row(11, { sourceBranch: "fix" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([11]);
+  });
+
+  test("skips a never-stored terminal MR whose author the scope filter would drop", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(3, { state: "merged", sourceBranch: "fix" })], Date.now());
+    store.setScope("repo", { authors: ["ada"], windowDays: 30 });
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix", authorUsername: "deploy-bot" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, store.read("repo"));
+    expect(fake.singleCalls).toEqual([]);
+  });
+
+  test("a branch whose open entry merges in the same window no longer counts as open", async () => {
+    const stored = storedWith(pr(3, { sourceBranch: "fix" }));
+    const full = pr(9, { state: "merged", sourceBranch: "fix" });
+    const fake = fakeProvider([], [row(3, { sourceBranch: "fix" }), row(9, { sourceBranch: "fix" })], { 9: full });
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([9]);
+    expect(prs.map((p) => [p.iid, p.state])).toEqual([[3, "merged"], [9, "merged"]]);
+  });
+
+  test("the default fetchDelta reads opened MRs at list weight and moves stored ones via the index", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(3)], Date.now() - 1000);
+    const fake = fakeProvider([], [row(3)]);
+    await syncProjectMRs({ repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} }, "repo", {
+      store,
+      deltaContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
+    });
+    expect(fake.pulls.map((o) => o.state)).toEqual(["opened"]);
+    expect(store.read("repo")!.mrs[3]!.pr.state).toBe("merged");
+  });
+
+  test("a terminal copy the delta just built is refreshed while its pipeline was in flight", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(4, { pipeline: { status: "running" } } as Partial<PullRequest>)], Date.now() - 1000);
+    const fake = fakeProvider([], [row(4, { updatedAt: new Date().toISOString() })]);
+    const singles: number[] = [];
+    await syncProjectMRs({ repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} }, "repo", {
+      store,
+      deltaContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
+      fetchSingle: async (_r, _pp, iid) => { singles.push(iid); return pr(iid, { state: "merged", pipeline: { status: "success" } } as Partial<PullRequest>); },
+    });
+    expect(singles).toEqual([4]);
+    expect(store.read("repo")!.mrs[4]!.pr).toMatchObject({ state: "merged", pipeline: { status: "success" } });
   });
 });
