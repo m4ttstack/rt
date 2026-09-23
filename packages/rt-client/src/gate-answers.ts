@@ -3,8 +3,9 @@ import { gateOptionValue } from "./gate-options.ts";
 
 export type GateAnswerWire = GateAnswer["answers"][string];
 
-/** Both wire shapes carry the same value underneath: bare, or {value, note?}
-    when a panel attaches free text. Validation reads only the value. */
+/** Both wire shapes carry the same value underneath: bare, or {value,
+    note?, text?} when a panel attaches free text or a replacement for text
+    the gate offered. Unwrapping keeps only the value. */
 export function unwrapGateAnswerValue(raw: unknown): unknown {
   if (raw && typeof raw === "object" && !Array.isArray(raw) && "value" in (raw as Record<string, unknown>)) {
     return (raw as { value: unknown }).value;
@@ -12,12 +13,15 @@ export function unwrapGateAnswerValue(raw: unknown): unknown {
   return raw;
 }
 
-function wrapperNoteIsValid(raw: unknown): boolean {
+function wrapperFieldError(qid: string, raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("value" in (raw as Record<string, unknown>))) {
-    return true;
+    return null;
   }
-  const note = (raw as Record<string, unknown>).note;
-  return note === undefined || typeof note === "string";
+  const { note, text } = raw as Record<string, unknown>;
+  if (note !== undefined && typeof note !== "string") return `question ${qid} note must be a string`;
+  if (text !== undefined && typeof text !== "string") return `question ${qid} text must be a string`;
+  if (typeof text === "string" && text.trim() === "") return `question ${qid} text must not be empty`;
+  return null;
 }
 
 /** Option membership is required whenever a question declares options,
@@ -32,7 +36,8 @@ export function validateGateAnswers(
   for (const [qid, raw] of Object.entries(answers)) {
     const question = byId.get(qid);
     if (!question) return `unknown question id: ${qid}`;
-    if (!wrapperNoteIsValid(raw)) return `question ${qid} note must be a string`;
+    const wrapperError = wrapperFieldError(qid, raw);
+    if (wrapperError) return wrapperError;
     const value = unwrapGateAnswerValue(raw);
     const isArray = Array.isArray(value);
     if (question.multi && !isArray) return `question ${qid} expects an array (multi)`;

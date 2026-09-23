@@ -82,6 +82,16 @@ describe("mcpTools", () => {
     expect(tool.description).toContain("all statuses");
   });
 
+  test("gate_answer's object answer form accepts text beside note", () => {
+    const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+    const schema = tool.inputSchema as {
+      properties: { answers: { additionalProperties: { oneOf: Array<{ type: string; properties?: Record<string, unknown> }> } } };
+    };
+    const objectForm = schema.properties.answers.additionalProperties.oneOf.find((b) => b.type === "object")!;
+    expect(Object.keys(objectForm.properties!)).toEqual(["value", "note", "text"]);
+    expect(objectForm.properties!.text).toMatchObject({ type: "string", pattern: "\\S" });
+  });
+
   describe("gate_ask", () => {
     afterEach(() => {
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
