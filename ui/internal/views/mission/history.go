@@ -7,6 +7,7 @@ package mission
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,10 +25,8 @@ const (
 	historyFilterTopRow = 4
 	historyFixedTopRows = 7
 	// summary, byline, then the separator rule (GHD's row border).
-	historyRowHeight = 3
-	// Rows from the end at which the next page is requested.
-	historyPageThreshold = 10
-	historyFilesMin      = 24
+	historyRowHeight   = 3
+	historyFilesMin    = 24
 	historyFilesMax      = 40
 	historyFilesNarrow   = 12
 	historyDiffMin       = 30
@@ -213,20 +212,34 @@ func (m *Mission) settleHistory(v historyDebounceMsg) tea.Cmd {
 	return nil
 }
 
-// maybeRequestMore asks for the next page once per page: historyMoreFor
-// records the list length a request went out for, so every further move
-// inside the threshold is silent until the page lands and grows the list.
-func (m *Mission) maybeRequestMore() tea.Cmd {
+// historyMoreInFlight: historyMoreFor records the list length a request went
+// out for, so the action row stays inert until the page lands and grows the
+// list (or SetModel re-arms it).
+func (m *Mission) historyMoreInFlight() bool {
 	h := m.model.History
-	n := len(h.Commits)
-	if !h.HasMore || h.Loading || n == 0 || m.historyMoreFor == n {
+	return h.Loading || m.historyMoreFor == len(h.Commits)
+}
+
+// requestMore is the action row's one intent, and the only path that emits
+// mission:history-more.
+func (m *Mission) requestMore() tea.Cmd {
+	h := m.model.History
+	if !h.HasMore || len(h.Commits) == 0 || m.historyMoreInFlight() {
 		return nil
 	}
-	if m.historyIndex(m.historyCursor) < n-historyPageThreshold {
-		return nil
-	}
-	m.historyMoreFor = n
+	m.historyMoreFor = len(h.Commits)
 	return m.em.Emit(protocol.Intent{Name: "mission:history-more"})
+}
+
+func (m *Mission) historyOnMoreRow() bool {
+	return m.historyOnMore && m.model.History.HasMore
+}
+
+func (m *Mission) historyMoreLabel() string {
+	if m.historyMoreInFlight() {
+		return "Loading…"
+	}
+	return "Load 100 more commits"
 }
 
 // historyReloaded reports whether a push replaced the commit list instead of
@@ -241,13 +254,30 @@ func historyReloaded(prev, next []HistoryCommitRow) bool {
 	return len(prev) > 0 && len(next) > 0 && prev[0].Sha != next[0].Sha
 }
 
+// historyMove steps the cursor through the visible commits and, below the
+// last one, onto the action row. Landing on the action row selects nothing,
+// and a shift move never extends onto it.
 func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	commits := m.model.History.Commits
-	n := len(commits)
-	if n == 0 {
+	visible := m.historyVisible()
+	if len(visible) == 0 {
 		return nil
 	}
 	m.historyFreeScroll = false
+	pos := len(visible)
+	if !m.historyOnMoreRow() {
+		pos = slices.Index(visible, m.historyIndex(m.historyCursor))
+	}
+	last := len(visible) - 1
+	if m.model.History.HasMore && !extend {
+		last++
+	}
+	target := max(0, min(last, pos+delta))
+	if target == len(visible) {
+		m.historyOnMore = true
+		return nil
+	}
+	m.historyOnMore = false
 	before := m.historySelectionKey()
 	if extend {
 		if m.historyAnchor == "" {
@@ -256,19 +286,17 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	} else {
 		m.historyAnchor = ""
 	}
-	i := max(0, min(n-1, m.historyIndex(m.historyCursor)+delta))
-	m.historyCursor = commits[i].Sha
+	m.historyCursor = commits[visible[target]].Sha
 	// A move clamped at either end changes nothing, so it leaves any pending
 	// tick to settle as it was.
 	if m.historySelectionKey() == before {
-		return m.maybeRequestMore()
+		return nil
 	}
 	m.historyGen++
 	gen := m.historyGen
-	tick := selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
+	return selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
 		return historyDebounceMsg{generation: gen, kind: historyDebounceCommit}
 	})
-	return tea.Batch(tick, m.maybeRequestMore())
 }
 
 func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -282,6 +310,9 @@ func (m *Mission) historyListKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "shift+down":
 		return m, m.historyMove(1, true)
 	case "enter":
+		if m.historyOnMoreRow() {
+			return m, m.requestMore()
+		}
 		if len(m.model.History.Files) > 0 {
 			m.focus = focusHistoryFiles
 		}
@@ -332,10 +363,11 @@ const (
 	historyLineSummary
 	historyLineByline
 	historyLineRule
+	historyLineMore
 )
 
 // historyLine is one painted row of the commit list: a date header (label),
-// or one of a commit's three rows (idx is its model index).
+// one of a commit's three rows (idx is its model index), or the action row.
 type historyLine struct {
 	kind  historyLineKind
 	idx   int
@@ -353,7 +385,7 @@ func (m *Mission) historyVisible() []int {
 
 // historyLines is the commit list top to bottom, one entry per painted row:
 // a header opens each run of equal Group, then every commit's summary,
-// byline, and rule.
+// byline, and rule, then the action row while there is more to load.
 func (m *Mission) historyLines() []historyLine {
 	commits := m.model.History.Commits
 	visible := m.historyVisible()
@@ -368,15 +400,20 @@ func (m *Mission) historyLines() []historyLine {
 			historyLine{kind: historyLineByline, idx: idx},
 			historyLine{kind: historyLineRule, idx: idx})
 	}
+	if m.model.History.HasMore {
+		lines = append(lines, historyLine{kind: historyLineMore})
+	}
 	return lines
 }
 
-// historyCursorLine is the line the viewport keeps in view: the cursor
-// commit's summary; scrolloff then keeps its byline and rule on screen too.
+// historyCursorLine is the line the viewport keeps in view: the action row
+// when it holds the cursor, else the cursor commit's summary; scrolloff then
+// keeps its byline and rule on screen too.
 func (m *Mission) historyCursorLine(lines []historyLine) int {
 	cursor := m.historyIndex(m.historyCursor)
+	onMore := m.historyOnMoreRow()
 	for i, l := range lines {
-		if l.kind == historyLineSummary && l.idx == cursor {
+		if onMore && l.kind == historyLineMore || !onMore && l.kind == historyLineSummary && l.idx == cursor {
 			return i
 		}
 	}
@@ -432,10 +469,13 @@ func (m *Mission) renderCommitList(width, height int) string {
 			switch l := lines[top+i]; l.kind {
 			case historyLineHeader:
 				row = renderHistoryGroupHeader(l.label, rowWidth)
+			case historyLineMore:
+				row = renderHistoryMoreRow(m.historyMoreLabel(), rowWidth, m.historyOnMoreRow(), m.hoverHistoryMore, m.historyMoreInFlight())
 			default:
 				if l.idx != rowIdx {
 					c := commits[l.idx]
-					rows[0], rows[1], rows[2] = renderCommitRow(c, rowWidth, c.Sha == m.historyCursor, m.historyInSelection(l.idx), l.idx == m.hoverCommit)
+					cursor := c.Sha == m.historyCursor && !m.historyOnMoreRow()
+					rows[0], rows[1], rows[2] = renderCommitRow(c, rowWidth, cursor, m.historyInSelection(l.idx), l.idx == m.hoverCommit)
 					rowIdx = l.idx
 				}
 				row = rows[l.kind-historyLineSummary]
@@ -449,6 +489,30 @@ func (m *Mission) renderCommitList(width, height int) string {
 // renderHistoryGroupHeader is a date header row, exactly width cells.
 func renderHistoryGroupHeader(label string, width int) string {
 	return lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Dim).Bold(true).Width(width).Render(clip("  "+label, width))
+}
+
+// renderHistoryMoreRow is the action row closing a list with more to load,
+// exactly width cells: Lav like the foldouts' action rows, with a commit
+// row's cursor and hover treatments; Faint, and never hovered, while its
+// page is in flight.
+func renderHistoryMoreRow(label string, width int, cursor, hover, inert bool) string {
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	switch {
+	case cursor:
+		on = on.Background(theme.SelBg)
+	case hover && !inert:
+		on = on.Background(theme.HoverBg)
+	}
+	prefix := on.Render("  ")
+	if cursor {
+		prefix = on.Foreground(theme.Pink).Render(theme.GlyphBar) + on.Render(" ")
+	}
+	col := theme.Lav
+	if inert {
+		col = theme.Faint
+	}
+	textW := max(width-2, 0)
+	return on.Width(width).Render(clipOn(prefix+on.Foreground(col).Width(textW).Render(clip(label, textW)), width, on))
 }
 
 // renderCommitRow is GHD's commit-list-item as three terminal rows: the
@@ -551,6 +615,10 @@ func (m *Mission) historySidebarHit(x, y, listRegionH int) hit {
 	switch l := lines[top+row]; l.kind {
 	case historyLineSummary, historyLineByline:
 		return hit{kind: hitCommitRow, idx: l.idx}
+	case historyLineMore:
+		if !m.historyMoreInFlight() {
+			return hit{kind: hitHistoryMore}
+		}
 	}
 	return hit{}
 }
@@ -569,13 +637,13 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	m.historyCursor = commits[idx].Sha
 	m.focus = focusList
-	m.historyFreeScroll = false
+	m.historyFreeScroll, m.historyOnMore = false, false
 	// A pending tick left in flight settles against the same shown selection
 	// and finds nothing to emit either.
 	if m.historySelectionKey() == m.historyShown {
-		return m, m.maybeRequestMore()
+		return m, nil
 	}
-	return m, tea.Batch(m.emitHistorySelect(), m.maybeRequestMore())
+	return m, m.emitHistorySelect()
 }
 
 // historyFilesWidth is a third of the pane clamped to [24, 40]. Where that

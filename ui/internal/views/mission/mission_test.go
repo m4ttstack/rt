@@ -829,6 +829,48 @@ func TestHistoryWheelScrollsTheListWithoutEmitting(t *testing.T) {
 	s.Wait()
 }
 
+// moreRowY is the action row under longHistoryModel(1, true): the Today
+// header, s0's summary, byline, and rule, then the row.
+const moreRowY = listTopY + 4
+
+// TestHistoryActionRowEnterEmitsOneMore: down from the only commit lands on
+// the action row without selecting anything, enter asks for the next page
+// once, and the in-flight row answers neither enter nor a click.
+func TestHistoryActionRowEnterEmitsOneMore(t *testing.T) {
+	s := openMission(t, longHistoryModel(1, true), "Load 100 more commits")
+	s.Type("\x1b[B")
+	s.Type(keyEnter)
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-more"`) {
+		t.Fatalf("enter on the action row should emit mission:history-more first and alone: %q", l)
+	}
+	s.WaitForPaint("Loading…")
+	s.Type(keyEnter)
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("the in-flight row must not emit again: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryActionRowClickEmitsOneMore(t *testing.T) {
+	s := openMission(t, longHistoryModel(1, true), "Load 100 more commits")
+	if row := screenRow(s, moreRowY); !strings.Contains(row, "Load 100 more commits") {
+		t.Fatalf("setup: frame row %d should be the action row: %q", moreRowY, row)
+	}
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"name":"mission:history-more"`) {
+		t.Fatalf("a click on the action row should emit mission:history-more: %q", l)
+	}
+	s.WaitForPaint("Loading…")
+	s.Type(sgrClick(0, 5, moreRowY))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("a click on the in-flight row must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // screenRow is one row of the session's screen as plain text.
 func screenRow(s *testutil.Session, y int) string {
 	return strings.Split(s.Screen(), "\n")[y]

@@ -111,7 +111,8 @@ type Mission struct {
 	// last mission:history-more went out for, -1 before any. historyTop is
 	// the list's first painted line; while historyFreeScroll is set (the
 	// wheel moved the view) it holds as the wheel left it instead of
-	// following the cursor.
+	// following the cursor. historyOnMore puts the cursor on the "Load 100
+	// more commits" row; historyCursor keeps the commit selection meanwhile.
 	//
 	// The commit and file debounces are selectGen's counterparts:
 	// historyShown/historyFileShown are what the driver shows or was last
@@ -125,6 +126,8 @@ type Mission struct {
 	historyAnchor      string
 	historyTop         int
 	historyFreeScroll  bool
+	historyOnMore      bool
+	hoverHistoryMore   bool
 	historyGen         int
 	historyShown       string
 	historyDriverKey   string
@@ -244,6 +247,11 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	}
 	if reloaded {
 		m.historyFreeScroll = false
+	}
+	// A landed page puts the cursor back on the last commit it followed, so
+	// it never chases the action row to the new end of the list.
+	if reloaded || len(decoded.History.Commits) != len(m.model.History.Commits) || !decoded.History.HasMore {
+		m.historyOnMore = false
 	}
 	m.model = decoded
 	m.clampSelection()
@@ -838,6 +846,7 @@ const (
 	hitCommitRow
 	hitHistoryFile
 	hitHistoryExpander
+	hitHistoryMore
 )
 
 // hit is hitTest's result: idx is a Changes/Diff.Lines/modal-matches/History
@@ -1142,6 +1151,8 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m.clickCommitRow(h.idx, mouse.Mod&tea.ModShift != 0)
 	case hitHistoryFile:
 		return m.clickHistoryFile(h.idx)
+	case hitHistoryMore:
+		return m, m.requestMore()
 	case hitHistoryExpander:
 		m.historyExpanded = !m.historyExpanded
 	case hitFilterRow:
@@ -1288,6 +1299,7 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	m.hoverStash = false
 	m.hoverUndoChip = false
 	m.hoverCommit = -1
+	m.hoverHistoryMore = false
 	m.hoverHistoryFile = -1
 	m.hoverExpander = false
 	if m.modal != nil {
@@ -1314,6 +1326,8 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 		m.hoverTab = true
 	case hitCommitRow:
 		m.hoverCommit = h.idx
+	case hitHistoryMore:
+		m.hoverHistoryMore = true
 	case hitHistoryFile:
 		m.hoverHistoryFile = h.idx
 	case hitHistoryExpander:

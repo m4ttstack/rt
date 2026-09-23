@@ -310,7 +310,7 @@ func TestRangeRowsPaintSelBg(t *testing.T) {
 func pagingCommits(n int) []HistoryCommitRow {
 	commits := make([]HistoryCommitRow, n)
 	for i := range commits {
-		commits[i] = HistoryCommitRow{Sha: fmt.Sprintf("c%02d", i), Summary: fmt.Sprintf("commit %d", i), Byline: "Matt", When: "1 day ago"}
+		commits[i] = HistoryCommitRow{Sha: fmt.Sprintf("c%02d", i), Summary: fmt.Sprintf("subject-%02d", i), Byline: fmt.Sprintf("author-%02d", i), When: "1 day ago"}
 	}
 	return commits
 }
@@ -344,37 +344,174 @@ func batchSize(t *testing.T, cmd tea.Cmd) int {
 	}
 }
 
-func TestPagingRequestsMoreOncePerPage(t *testing.T) {
+// TestMovingThroughTheListRequestsNoPage: paging is the explicit action row
+// only, so walking the cursor to the last loaded commit loads nothing.
+func TestMovingThroughTheListRequestsNoPage(t *testing.T) {
 	instantSelectTick(t)
 	m := pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c24"
-	_, cmd := m.Update(downKey())
-	if m.historyIndex(m.historyCursor) != 25 {
-		t.Fatalf("setup: cursor should sit at index 25, got %q", m.historyCursor)
+	for range 29 {
+		if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 1 {
+			t.Fatal("a move carries its debounce tick and nothing else")
+		}
 	}
-	if m.historyMoreFor != 30 {
-		t.Fatalf("a move inside the threshold should request the next page for 30 commits, historyMoreFor=%d", m.historyMoreFor)
+	if m.historyCursor != "c29" || m.historyMoreFor != -1 {
+		t.Fatalf("moving to the last commit must not request a page, cursor %q historyMoreFor=%d", m.historyCursor, m.historyMoreFor)
 	}
-	if n := batchSize(t, cmd); n != 2 {
-		t.Fatalf("the move should batch a debounce tick and a page request, got %d cmds", n)
+	m.historyCursor = "c05"
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: historyRowFrameY(t, m, "subject-06"), Button: tea.MouseLeft}); cmd == nil || m.historyMoreFor != -1 {
+		t.Fatalf("a click selects without paging, historyMoreFor=%d", m.historyMoreFor)
 	}
-	_, cmd = m.Update(downKey())
-	if m.historyMoreFor != 30 {
-		t.Fatalf("a second move must not re-arm the request, historyMoreFor=%d", m.historyMoreFor)
+}
+
+// historyRowFrameY is the frame row whose list text starts with prefix.
+func historyRowFrameY(t *testing.T, m *Mission, prefix string) int {
+	t.Helper()
+	lines := strings.Split(m.View().Content, "\n")
+	l := m.layout()
+	for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
+		if strings.HasPrefix(listRowText(lines[y]), prefix) {
+			return y
+		}
 	}
-	if n := batchSize(t, cmd); n != 1 {
-		t.Fatalf("a second move inside the same page must carry only its debounce tick, got %d cmds", n)
+	t.Fatalf("no list row starts with %q:\n%s", prefix, strings.Join(listTexts(m), "\n"))
+	return -1
+}
+
+// onMoreRow walks the cursor from the last commit onto the action row.
+func onMoreRow(t *testing.T, m *Mission) {
+	t.Helper()
+	m.historyCursor = m.model.History.Commits[len(m.model.History.Commits)-1].Sha
+	if _, cmd := m.Update(downKey()); cmd != nil {
+		t.Fatal("down from the last commit onto the action row must select nothing")
 	}
+}
+
+func TestActionRowIsACursorStopBelowTheLastCommit(t *testing.T) {
+	instantSelectTick(t)
+	m := pagingMission(t, pagingCommits(30))
+	onMoreRow(t, m)
+	if m.historyCursor != "c29" {
+		t.Fatalf("the commit selection stays on c29, got %q", m.historyCursor)
+	}
+	y := historyRowFrameY(t, m, "Load 100 more commits")
+	row := sidebarPart(strings.Split(m.View().Content, "\n")[y])
+	if !strings.Contains(row, theme.GlyphBar) || !strings.Contains(row, bgSGR(theme.SelBg)) {
+		t.Fatalf("the action row holding the cursor wears the Pink bar on SelBg: %q", row)
+	}
+	if last := sidebarPart(strings.Split(m.View().Content, "\n")[historyRowFrameY(t, m, "subject-29")]); strings.Contains(last, theme.GlyphBar) {
+		t.Fatalf("the cursor bar left the last commit: %q", last)
+	}
+	if _, cmd := m.Update(downKey()); cmd != nil || m.historyCursor != "c29" {
+		t.Fatal("down on the action row is the end of the list")
+	}
+	if _, cmd := m.Update(upKey()); cmd != nil || m.historyCursor != "c29" {
+		t.Fatalf("up returns to the last commit without re-selecting it, cursor %q", m.historyCursor)
+	}
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[historyRowFrameY(t, m, "subject-29")]); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the cursor bar is back on the last commit: %q", row)
+	}
+	if _, cmd := m.Update(upKey()); batchSize(t, cmd) != 1 || m.historyCursor != "c28" {
+		t.Fatalf("up from the last commit is an ordinary move, cursor %q", m.historyCursor)
+	}
+}
+
+// TestEnterOnActionRowRequestsOnePage: enter asks for the next page once;
+// until it lands the row reads "Loading…" in Faint and does nothing.
+func TestEnterOnActionRowRequestsOnePage(t *testing.T) {
+	m := pagingMission(t, pagingCommits(30))
+	onMoreRow(t, m)
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.historyMoreFor != 30 {
+		t.Fatalf("enter on the action row should request the page after 30 commits, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if m.focus != focusList {
+		t.Fatalf("enter on the action row must not step into the files, focus %v", m.focus)
+	}
+	y := historyRowFrameY(t, m, "Loading…")
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[y]); !strings.Contains(row, fgSGR(theme.Faint)) {
+		t.Fatalf("an in-flight row reads Loading… in Faint: %q", row)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatal("a second enter while the page is in flight must not request again")
+	}
+	if h := m.hitTest(2, y); h.kind != hitNone {
+		t.Fatalf("the in-flight row is inert, got %+v", h)
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("clicking the in-flight row must not request again")
+	}
+	assertHistoryHitMatchesPaint(t, m, "loading")
+}
+
+// TestClickActionRowRequestsOnePage: a click asks once and leaves the
+// cursor, the selection, and a wheel-scrolled view where they were.
+func TestClickActionRowRequestsOnePage(t *testing.T) {
+	m := pagingMission(t, pagingCommits(30))
+	for range 40 {
+		wheelOverList(m, tea.MouseWheelDown)
+	}
+	y := historyRowFrameY(t, m, "Load 100 more commits")
+	m.Update(tea.MouseMotionMsg{X: 5, Y: y})
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[y]); !strings.Contains(row, bgSGR(theme.HoverBg)) {
+		t.Fatalf("a hovered action row paints HoverBg: %q", row)
+	}
+	assertHistoryHitMatchesPaint(t, m, "action row")
+	before := listTexts(m)
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft}); cmd == nil || m.historyMoreFor != 30 {
+		t.Fatalf("a click on the action row should request the next page, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if m.historyCursor != "c00" {
+		t.Fatalf("a click on the action row leaves the cursor, got %q", m.historyCursor)
+	}
+	after := listTexts(m)
+	if strings.Join(after[:len(after)-1], "\n") != strings.Join(before[:len(before)-1], "\n") || !strings.HasSuffix(after[len(after)-1], "Loading…") {
+		t.Fatalf("the view stays where the wheel left it, with the row now Loading…:\n%s", strings.Join(after, "\n"))
+	}
+	m.Update(tea.MouseMotionMsg{X: 5, Y: y})
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[y]); strings.Contains(row, bgSGR(theme.HoverBg)) {
+		t.Fatalf("an in-flight row never hovers: %q", row)
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("a second click while the page is in flight must not request again")
+	}
+}
+
+// TestLandedPageReturnsTheCursorToTheLastOldCommit: the action row's
+// cursor gives way to the commit above it once the page lands, so the next
+// down reaches the first new commit instead of chasing the row to the end.
+func TestLandedPageReturnsTheCursorToTheLastOldCommit(t *testing.T) {
+	instantSelectTick(t)
+	m := pagingMission(t, pagingCommits(30))
+	onMoreRow(t, m)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(40), HasMore: true}}); err != nil {
 		t.Fatal(err)
 	}
-	m.historyCursor = "c34"
-	_, cmd = m.Update(downKey())
-	if m.historyMoreFor != 40 {
-		t.Fatalf("a landed page should allow the next request, historyMoreFor=%d", m.historyMoreFor)
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[historyRowFrameY(t, m, "subject-29")]); !strings.Contains(row, theme.GlyphBar) {
+		t.Fatalf("the cursor bar returns to c29 once the page lands: %q", row)
 	}
-	if n := batchSize(t, cmd); n != 2 {
-		t.Fatalf("the next page's request should batch with the tick, got %d cmds", n)
+	if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 1 || m.historyCursor != "c30" {
+		t.Fatalf("down after the page lands reaches the first new commit, cursor %q", m.historyCursor)
+	}
+	onMoreRow(t, m)
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.historyMoreFor != 40 {
+		t.Fatalf("the grown list can request its own next page, historyMoreFor=%d", m.historyMoreFor)
+	}
+}
+
+func TestNoActionRowWithoutMore(t *testing.T) {
+	m := pagingMission(t, pagingCommits(3))
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(3)}}); err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(listTexts(m), "\n"); strings.Contains(joined, "more commits") {
+		t.Fatalf("no action row without hasMore:\n%s", joined)
+	}
+	m.historyCursor = "c02"
+	if _, cmd := m.Update(downKey()); cmd != nil || m.historyCursor != "c02" {
+		t.Fatal("down on the last commit with nothing more to load goes nowhere")
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.historyMoreFor != -1 {
+		t.Fatal("enter on the last commit is the ordinary enter")
 	}
 }
 
@@ -384,84 +521,87 @@ func TestPagingRequestsMoreOncePerPage(t *testing.T) {
 // at the length the last request went out for.
 func TestPagingReArmsAfterReload(t *testing.T) {
 	instantSelectTick(t)
-	m := pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c24"
-	m.Update(downKey())
-	if m.historyMoreFor != 30 {
-		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
+	// requested asks for the page after 30 commits from the action row.
+	requested := func() *Mission {
+		m := pagingMission(t, pagingCommits(30))
+		onMoreRow(t, m)
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.historyMoreFor != 30 {
+			t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
+		}
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+			t.Fatal("setup: the request is in flight")
+		}
+		return m
 	}
-	newTip := append([]HistoryCommitRow{{Sha: "tip", Summary: "new commit"}}, pagingCommits(29)...)
+	// canRequest reports that the action row asks again: it reads "Load
+	// 100 more commits" and enter on it requests a page.
+	canRequest := func(m *Mission) bool {
+		onMoreRow(t, m)
+		historyRowFrameY(t, m, "Load 100 more commits")
+		_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		return cmd != nil && m.historyMoreFor == len(m.model.History.Commits)
+	}
+
+	m := requested()
+	newTip := append([]HistoryCommitRow{{Sha: "tip", Summary: "subject-tip", Byline: "author-tip"}}, pagingCommits(29)...)
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: newTip, HasMore: true}}); err != nil {
 		t.Fatal(err)
 	}
-	m.historyCursor = "c23"
-	_, cmd := m.Update(downKey())
-	if m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+	if !canRequest(m) {
 		t.Fatalf("a reload under a new tip must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
 	}
 
-	m = pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c24"
-	m.Update(downKey())
+	m = requested()
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(40), HasMore: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true}}); err != nil {
 		t.Fatal(err)
 	}
-	m.historyCursor = "c24"
-	if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 2 {
+	if !canRequest(m) {
 		t.Fatal("a list that shrank back to one batch must re-arm paging")
 	}
 
 	// A history-more that threw lands as a notice with the list unchanged at
 	// the exact length the request went out for; historyReloaded sees neither
 	// a shorter list nor a new first sha, so it alone would leave paging dead.
-	m = pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c24"
-	m.Update(downKey())
-	if m.historyMoreFor != 30 {
-		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
-	}
+	m = requested()
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true}, Notice: "history-more failed"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, cmd := m.Update(downKey()); m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+	if !canRequest(m) {
 		t.Fatalf("a notice with the list unchanged at historyMoreFor's length must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
 	}
 
 	// A worktree switch to a tree at the same tip (common across pool
 	// worktrees) reloads to the identical 100 commits with the same first
 	// sha, so historyReloaded also sees nothing here.
-	m = pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c24"
-	m.Update(downKey())
-	if m.historyMoreFor != 30 {
-		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
-	}
+	m = requested()
 	if err := m.setModelValue(Model{Tab: "history", Current: Current{Worktree: "/other/tree"}, History: HistoryModel{Commits: pagingCommits(30), HasMore: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, cmd := m.Update(downKey()); m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+	if !canRequest(m) {
 		t.Fatalf("a worktree switch to a same-tip tree must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
+	}
+
+	// An unrelated push leaves the list and the request alone.
+	m = requested()
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || !strings.Contains(strings.Join(listTexts(m), "\n"), "Loading…") {
+		t.Fatal("a push that neither reloads nor lands the page keeps the request in flight")
 	}
 }
 
-func TestPagingSilentWithoutMoreOrWhileLoading(t *testing.T) {
-	instantSelectTick(t)
+func TestActionRowInertWhileFirstLoadRuns(t *testing.T) {
 	m := pagingMission(t, pagingCommits(30))
-	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: false}}); err != nil {
-		t.Fatal(err)
-	}
-	m.historyCursor = "c28"
-	if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 1 || m.historyMoreFor != -1 {
-		t.Fatalf("no page request without hasMore, historyMoreFor=%d", m.historyMoreFor)
-	}
 	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true, Loading: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, cmd := m.Update(upKey()); batchSize(t, cmd) != 1 || m.historyMoreFor != -1 {
-		t.Fatalf("no page request while loading, historyMoreFor=%d", m.historyMoreFor)
+	onMoreRow(t, m)
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.historyMoreFor != -1 {
+		t.Fatalf("no page request while the list is loading, historyMoreFor=%d", m.historyMoreFor)
 	}
 }
 
@@ -647,18 +787,6 @@ func TestClickShowingCommitReSelectsNothing(t *testing.T) {
 	}
 	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y + historyRowHeight, Button: tea.MouseLeft}); cmd == nil {
 		t.Fatal("a plain click that collapses the range must still emit")
-	}
-}
-
-func TestDownOnLastLoadedRowStillRequestsMore(t *testing.T) {
-	m := pagingMission(t, pagingCommits(30))
-	m.historyCursor = "c29"
-	_, cmd := m.Update(downKey())
-	if cmd == nil || m.historyMoreFor != 30 {
-		t.Fatalf("down on the last loaded row must still request the next page, historyMoreFor=%d", m.historyMoreFor)
-	}
-	if m.historyCursor != "c29" {
-		t.Fatalf("the cursor should stay clamped on the last row, got %q", m.historyCursor)
 	}
 }
 
@@ -1782,6 +1910,9 @@ func assertHistoryHitMatchesPaint(t *testing.T, m *Mission, label string) (seen 
 	for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
 		text := listRowText(lines[y])
 		want := hit{}
+		if strings.HasSuffix(text, "more commits") {
+			want = hit{kind: hitHistoryMore}
+		}
 		for i, c := range commits {
 			if c.Summary != "" && strings.HasPrefix(text, c.Summary) || c.Byline != "" && strings.HasPrefix(text, c.Byline) {
 				want = hit{kind: hitCommitRow, idx: i}
