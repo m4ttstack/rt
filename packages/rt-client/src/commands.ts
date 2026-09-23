@@ -474,6 +474,8 @@ export interface WorktreeListData {
   trees: WorktreeTreeRow[];
   dormant?: true; dormantRepos?: string[]; message?: string;
   readyHeld?: true; readyHeldRepos?: string[];
+  /** Repos with claimed trees whose merge-driven cleanup cannot run: no `branches` tracking grant, or no token for the remote's forge. */
+  mergeCleanupOff?: Array<{ repo: string; path: string; reason: "untracked" | "no-token"; forge: "github" | "gitlab" }>;
 }
 export interface WorktreeProvisionData {
   tree: string; path: string; branch: string; wasOnDeck: boolean;

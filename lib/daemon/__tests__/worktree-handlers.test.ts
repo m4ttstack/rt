@@ -14,6 +14,7 @@ import { tmpdir } from "os";
 import { basename, join } from "path";
 import type { Logger } from "pino";
 import { writeJson } from "../../json-store.ts";
+import { setSetting } from "../../settings/write.ts";
 import { goldenRoot, machineSettingsPath, repoDataDir, rtDir } from "../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
@@ -910,6 +911,45 @@ describe("worktree:list", () => {
     expect(res.data.dormant).toBe(true);
     expect(res.data.dormantRepos).toEqual([repoName]);
     expect(res.data.message).toContain('rt settings set rt.worktreeApp \'{"enabled":true}\' --scope machine');
+  });
+
+  function claimOne(repo: string): void {
+    const now = new Date().toISOString();
+    saveRegistry(repoName, [{ name: "a", path: join(repo, ".worktrees", "a"), kind: "ephemeral", state: "claimed", branch: "feat", createdAt: now }]);
+  }
+
+  test("a GitHub repo with claimed trees but no tracking reports merge cleanup off as untracked", async () => {
+    const repo = makeRepo();
+    sh("git remote set-url origin https://github.com/o/r.git", repo);
+    claimOne(repo);
+    const { h } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:list"]!({ repoName });
+
+    expect(res.data.mergeCleanupOff).toEqual([{ repo: repoName, path: repo, reason: "untracked", forge: "github" }]);
+  });
+
+  test("a tracked GitHub repo with no token reports merge cleanup off as no-token", async () => {
+    const repo = makeRepo();
+    sh("git remote set-url origin https://github.com/o/r.git", repo);
+    claimOne(repo);
+    setSetting("rt.repoTracking", { [repoName]: { mode: "poll", caches: ["branches"] } }, "machine");
+    const { h } = makeHandlers({ [repoName]: repo });
+
+    const res: any = await h["worktree:list"]!({ repoName });
+
+    expect(res.data.mergeCleanupOff).toEqual([{ repo: repoName, path: repo, reason: "no-token", forge: "github" }]);
+  });
+
+  test("a repo on no known forge, or with no claimed trees, reports nothing", async () => {
+    const repo = makeRepo();
+    claimOne(repo);
+    const { h } = makeHandlers({ [repoName]: repo });
+    expect(((await h["worktree:list"]!({ repoName })) as any).data.mergeCleanupOff).toBeUndefined();
+
+    sh("git remote set-url origin https://github.com/o/r.git", repo);
+    saveRegistry(repoName, []);
+    expect(((await h["worktree:list"]!({ repoName })) as any).data.mergeCleanupOff).toBeUndefined();
   });
 
   test("an owned machine with a declared pool never reports dormant", async () => {

@@ -47,6 +47,7 @@ import { disambiguate, slugifyTicketTitle } from "../../worktree/branch-name.ts"
 import { classifyDirtyAsync, disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 import { restoreTree } from "../../worktree/restore.ts";
+import { mergeCleanupGap, type MergeCleanupGap } from "../../worktree/merge-cleanup-gap.ts";
 import { branchOf, composeKey } from "../../state/branch-cache.ts";
 import { isTreeLocked, withTreeLock } from "../../worktree/locks.ts";
 import {
@@ -679,11 +680,16 @@ export function createWorktreeHandlers(
       const rows: Array<Record<string, unknown>> = [];
       const dormantRepos: string[] = [];
       const readyHeldRepos: string[] = [];
+      const mergeCleanupOff: Array<{ repo: string; path: string } & MergeCleanupGap> = [];
 
       for (const [repoName, repoPath] of repos) {
         if (await worktreePoolDormant(repoName, repoPath)) dormantRepos.push(repoName);
         if (await worktreeReadyHeld(repoName, repoPath)) readyHeldRepos.push(repoName);
         const trees = loadRegistry(repoName);
+        if (trees.some((t) => t.kind === "ephemeral" && t.state === "claimed")) {
+          const gap = await mergeCleanupGap(repoName, repoPath);
+          if (gap) mergeCleanupOff.push({ repo: repoName, path: repoPath, ...gap });
+        }
         const branchCounts = new Map<string, number>();
         for (const t of trees) {
           if (t.branch) branchCounts.set(t.branch, (branchCounts.get(t.branch) ?? 0) + 1);
@@ -719,6 +725,7 @@ export function createWorktreeHandlers(
         data.readyHeld = true;
         data.readyHeldRepos = readyHeldRepos;
       }
+      if (mergeCleanupOff.length > 0) data.mergeCleanupOff = mergeCleanupOff;
       return { ok: true, data };
     },
 
