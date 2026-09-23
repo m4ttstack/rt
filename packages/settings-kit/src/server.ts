@@ -190,8 +190,8 @@ export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): Effectiv
     }
     return { scope: null, file: null };
   }
-  if (top.invalid) return { scope: top.scope, file: top.file, invalid: top.invalid };
   const wire: EffectiveWire = { scope: top.scope, file: top.file };
+  if (top.invalid) wire.invalid = top.invalid;
   if (def.secret === true) return wire;
   if (def.merge === "deep" && def.type === "object") {
     let merged: unknown = undefined;
@@ -201,9 +201,9 @@ export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): Effectiv
       merged = merged === undefined ? r.value : overlay(merged, r.value);
       if (r.scope !== "default") authored = authored === undefined ? r.value : overlay(authored, r.value);
     }
-    wire.value = merged;
+    if (!top.invalid) wire.value = merged;
     if (authored !== undefined) wire.authored = authored;
-  } else if ("value" in top) {
+  } else if (!top.invalid && "value" in top) {
     wire.value = top.value;
   }
   return wire;

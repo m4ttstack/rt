@@ -68,6 +68,12 @@ describe("effectiveFromRows", () => {
     expect(eff.authored).toEqual({ a: 1, b: 2 });
   });
 
+  test("an invalid strongest layer still reports the valid layers as authored", () => {
+    const d = def({ type: "object", merge: "deep", scopes: ["team", "user"] });
+    const eff = effectiveFromRows(d, [row("team", { enabled: false }), row("user", { enabled: "yes" }, { invalid: "expected boolean" } as Partial<ExplainRow>)]);
+    expect(eff).toEqual({ scope: "user", file: "/stores/user.jsonc", invalid: "expected boolean", authored: { enabled: false } });
+  });
+
   test("a deep-merged secret carries no authored", () => {
     const d = def({ type: "object", merge: "deep", secret: true });
     const eff = effectiveFromRows(d, [row("user", { a: 1 })]);
