@@ -69,8 +69,8 @@ const WRITING_STYLE_PRESETS = [
     detail: "Labelled lines and short bullets for teams that like formal write-ups.",
     sample: "**issue:** Settings leak across tenants. Why: the cache key omits the tenant. Suggestion: key on (tenant, id)." },
 ];
-// Rows the operator's real picker demoted to suggestions: an installed writing-style
-// skill and a personal style, carried here only for the ready-detail label lookup.
+// Not part of the choose action's own options list; carried only so the
+// ready-detail label lookup below can resolve a suggestion id to a label.
 const WRITING_STYLE_OPTION_ROWS = [
   { id: "team-voice", label: "team-voice", detail: "Your own style, in your home repo" },
   { id: "acme:team-writing-style", label: "acme:team-writing-style", detail: "An installed skill" },
