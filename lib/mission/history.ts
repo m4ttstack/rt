@@ -90,7 +90,15 @@ export class HistoryStore {
     const count = this.commits.length;
     if (count === 0) return false;
     const gen = ++this.generation;
-    const [batch, local] = await Promise.all([client.commits("HEAD", count, 0), client.localCommits(branch)]);
+    let batch: Commit[];
+    let local: Commit[];
+    try {
+      [batch, local] = await Promise.all([client.commits("HEAD", count, 0), client.localCommits(branch)]);
+    } catch (err) {
+      // A superseded reload's failure must not re-arm a request the newer load already served.
+      if (gen === this.generation) this.reloadRequested = true;
+      throw err;
+    }
     if (gen !== this.generation) return false;
     this.commits = batch;
     this.localShas = new Set(local.map((c) => c.sha));

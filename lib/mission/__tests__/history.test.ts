@@ -106,6 +106,25 @@ describe("HistoryStore", () => {
     expect(calls.commits.length).toBe(reads + 1);
   });
 
+  test("a requested reload whose git read fails stays requested, so the next sync retries it", async () => {
+    const { client, calls } = fakeClient({ history: shas("c", 3) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    const read = client.commits;
+    let failNext = true;
+    client.commits = async (range, limit, skip, extra) => {
+      if (failNext && limit !== 1) {
+        failNext = false;
+        throw new Error("git log failed");
+      }
+      return read(range, limit, skip, extra);
+    };
+    store.requestReload();
+    await expect(store.syncTip(client, BRANCH)).rejects.toThrow("git log failed");
+    expect(await store.syncTip(client, BRANCH)).toBe(true);
+    expect(calls.commits.at(-1)).toEqual({ range: "HEAD", limit: 3, skip: 0 });
+  });
+
   test("a new tip reloads and keeps a selection that is still present", async () => {
     const history = shas("c", 3);
     const { client } = fakeClient({ history });
