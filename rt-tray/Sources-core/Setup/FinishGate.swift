@@ -13,6 +13,13 @@ public enum FinishGate {
     public static func headline(blocked: Int) -> String {
         blocked == 1 ? "One step left before you finish" : "\(blocked) steps left before you finish"
     }
+
+    /// A blocker always wins the symbol; the multicolor warning triangle
+    /// matches StatusGlyph's own needsYou/missing rendering.
+    public static func headlineSymbol(blocked: Bool, allDone: Bool) -> String {
+        if blocked { return "exclamationmark.triangle.fill" }
+        return allDone ? "checkmark.seal.fill" : "checkmark.seal"
+    }
 }
 
 public extension PlanRow {

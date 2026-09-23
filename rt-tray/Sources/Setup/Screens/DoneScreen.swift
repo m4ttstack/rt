@@ -15,7 +15,14 @@ struct DoneScreen: View {
         // headline and button bar use the same 20pt so every left edge lines up.
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: headlineSymbol).font(.system(size: 36)).foregroundStyle(headlineTint)
+                Group {
+                    if isBlocked {
+                        Image(systemName: headlineSymbol).symbolRenderingMode(.multicolor)
+                    } else {
+                        Image(systemName: headlineSymbol).foregroundStyle(headlineTint)
+                    }
+                }
+                .font(.system(size: 36))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.headline).font(.title3.weight(.semibold))
                     Text(verifySummary).foregroundStyle(.secondary)
@@ -107,13 +114,13 @@ struct DoneScreen: View {
         .accessibilityIdentifier(AXID.doneScreen)
     }
 
+    private var isBlocked: Bool { !model.blockedRows.isEmpty }
     private var headlineSymbol: String {
-        if !model.blockedRows.isEmpty { return "exclamationmark.triangle" }
-        return model.stillToDoRows.isEmpty ? "checkmark.seal.fill" : "checkmark.seal"
+        FinishGate.headlineSymbol(blocked: isBlocked, allDone: model.stillToDoRows.isEmpty)
     }
+    /// Only read when `!isBlocked`: the blocked case renders as multicolor instead.
     private var headlineTint: Color {
-        if !model.blockedRows.isEmpty { return .yellow }
-        return model.stillToDoRows.isEmpty ? .green : .accentColor
+        model.stillToDoRows.isEmpty ? .green : .accentColor
     }
 
     private func show(_ row: PlanRow) {

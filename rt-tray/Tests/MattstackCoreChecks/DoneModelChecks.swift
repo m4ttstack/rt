@@ -121,6 +121,12 @@ let doneModelChecks: [Check] = [
         c.expectEqual(FinishGate.headline(blocked: 1), "One step left before you finish")
         c.expectEqual(FinishGate.headline(blocked: 2), "2 steps left before you finish")
     },
+    Check("headline glyph: a blocker is the multicolor warning triangle; otherwise a plain seal") { c in
+        c.expectEqual(FinishGate.headlineSymbol(blocked: true, allDone: false), "exclamationmark.triangle.fill")
+        c.expectEqual(FinishGate.headlineSymbol(blocked: true, allDone: true), "exclamationmark.triangle.fill", "a blocker always wins the symbol, regardless of allDone")
+        c.expectEqual(FinishGate.headlineSymbol(blocked: false, allDone: true), "checkmark.seal.fill")
+        c.expectEqual(FinishGate.headlineSymbol(blocked: false, allDone: false), "checkmark.seal")
+    },
     Check("before the post-install check nothing is listed and Finish is closed; after it the blocked row is in Before you finish, not Still to do") { c in
         let (m, _, _, _) = await doneFixture(plans: [makeManualPlan(extensionStatus: .needsYou)])
         await MainActor.run {
