@@ -698,7 +698,7 @@ starts the server from source instead of `RT_BINARY`:
 
 ```ts
   test("rt_verb works when the server runs from source", async () => {
-    const server = Bun.spawn(["bun", join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
+    const server = Bun.spawn([process.execPath, join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
       stdin: "pipe", stdout: "pipe", stderr: "pipe", env: rtEnv(home, {}),
     });
     children.push(server as never);
