@@ -31,6 +31,7 @@
     "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
+    "@mattstack/app-server": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/rt-client": "catalog:",
     "@mattstack/tui-kit": "workspace:*",

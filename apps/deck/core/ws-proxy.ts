@@ -74,14 +74,16 @@ export function upstreamUrl(
 export function connectUpstream(
   url: string,
   protocols: string[],
+  headers: Record<string, string> = {},
   timeoutMs = 5000
 ): Promise<{ upstream: WebSocket; data: WsProxyData }> {
   return new Promise((resolve, reject) => {
     let upstream: WebSocket;
     try {
-      upstream = protocols.length
-        ? new WebSocket(url, protocols)
-        : new WebSocket(url);
+      upstream = new WebSocket(
+        url,
+        protocols.length ? { headers, protocols } : { headers }
+      );
     } catch (err) {
       reject(err);
       return;

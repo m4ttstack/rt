@@ -3,8 +3,9 @@ export const CANONICAL_HOST_ENV = 'MATTSTACK_CANONICAL_HOST';
 /**
  * Deck sets MATTSTACK_CANONICAL_HOST (<name>.mattstack) on every mattstack
  * app it supervises; a request that arrived on the app's .localhost alias is
- * sent there instead. portless rewrites Host to the loopback upstream and
- * carries the browser's hostname in x-forwarded-host, so that header wins.
+ * sent there instead. portless keeps the browser's Host and also sets
+ * x-forwarded-host; that header is read first so a proxy that does rewrite
+ * Host still redirects. Navigation only, never a locality check.
  */
 export function canonicalHostRedirect(
   req: Request,

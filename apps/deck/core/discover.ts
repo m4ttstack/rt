@@ -206,9 +206,8 @@ export async function readServices(
 
 /**
  * The parent domain to show/link when the board is reached through a real domain
- * (e.g. a Cloudflare tunnel), or null for local access. Feed it the value portless
- * forwards as `x-forwarded-host` — the raw `Host` is rewritten to the 127.0.0.1
- * upstream, so relying on it renders a bogus "0.0.1" suffix.
+ * (e.g. a Cloudflare tunnel), or null for local access. Display only: the client
+ * picks the host it sends, so whether a caller is local is isLocalRequest's call.
  */
 export function publicDomainFor(requestHost?: string): string | null {
   if (!requestHost) return null;

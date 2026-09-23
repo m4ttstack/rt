@@ -37,11 +37,15 @@ writeFileSync(
   JSON.stringify({ publicDomain: PUBLIC_DOMAIN })
 );
 
+/** The headers of the last request (HTTP or upgrade) the dev stand-in saw. */
+let seen: Headers = new Headers();
+
 /** Stands in for a Vite dev server: greets, and echoes over `vite-hmr`. */
 const dev = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
   fetch(req, server) {
+    seen = req.headers;
     if (server.upgrade(req)) return undefined;
     return new Response('DEV');
   },
@@ -190,4 +194,43 @@ test('frames sent before the client socket opens are queued, not dropped', async
 
   ws.close();
   expect(first).toBe('hello-from-dev');
+});
+
+const FORGED = {
+  'x-forwarded-host': 'deck.mattstack',
+  'x-mattstack-edge': 'local',
+};
+
+test('an HTTP upstream sees the public Host, the edge stamp, and no client x-forwarded-host', async () => {
+  writeSettings(true);
+  reloadSettings();
+  await fetch(`${origin}/`, { headers: { host: HOST, ...FORGED } });
+  expect(seen.get('host')).toBe(HOST);
+  expect(seen.get('x-mattstack-edge')).toBe('public');
+  expect(seen.has('x-forwarded-host')).toBe(false);
+});
+
+test('a websocket upstream sees the public Host, the edge stamp, and no client x-forwarded-host', async () => {
+  writeSettings(true);
+  reloadSettings();
+
+  const ws = new WebSocket(`ws://127.0.0.1:${gateway.port}/`, {
+    headers: { host: HOST, ...FORGED },
+  } as unknown as string[]);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('no greeting')), 5000);
+    ws.onmessage = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error('upgrade failed'));
+    };
+  });
+  ws.close();
+
+  expect(seen.get('host')).toBe(HOST);
+  expect(seen.get('x-mattstack-edge')).toBe('public');
+  expect(seen.has('x-forwarded-host')).toBe(false);
 });

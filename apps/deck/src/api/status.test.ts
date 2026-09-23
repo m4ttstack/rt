@@ -35,6 +35,7 @@ beforeEach(() => {
 });
 
 const opts = {
+  local: true,
   port: 7940,
   canaryPort: 7942,
   proxyFreshness: 'unknown' as const,
@@ -136,6 +137,7 @@ test('through a public host that record shape is redacted — command/workingDir
   });
   const status = await buildStatus({
     ...opts,
+    local: false,
     requestHost: 'myapp.example.dev',
   });
   const row = status.apps.find(a => a.name === 'myapp')!;
@@ -272,4 +274,25 @@ test('the top-level devMode flag mirrors opts.devMode, for the board to show', a
   expect((await buildStatus({ ...opts, devMode: true })).devMode).toBe(true);
   expect((await buildStatus({ ...opts, devMode: false })).devMode).toBe(false);
   expect((await buildStatus(opts)).devMode).toBe(false);
+});
+
+test('a non-local caller on a local-looking host gets no controls and a redacted record', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'user',
+    port: 19999,
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/secret-dir',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({
+    ...opts,
+    local: false,
+    requestHost: 'deck.mattstack',
+  });
+  expect(status.canManage).toBe(false);
+  expect(status.canRestart).toBe(false);
+  expect(JSON.stringify(status)).not.toContain('/tmp/secret-dir');
 });

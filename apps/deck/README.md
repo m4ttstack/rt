@@ -171,6 +171,12 @@ password <name>`. It's served by Deck's own gateway; no accounts
   tunnel; `deck push <name>` redeploys it again after a local change;
   `deck remote <name> off` moves it back. `<name>.localhost` stays local
   either way, remote only ever swaps the public origin.
+- **Not `--ngrok`**: local-only controls (Deck's own API, settings writes,
+  the board's actions) trust a request only when it arrives on a local
+  hostname with no public-edge headers. `portless --ngrok`, or `ngrok
+--host-header`, rewrites a public request's Host to `<name>.localhost`,
+  which defeats those gates. Share through `--funnel` or `deck domain`
+  instead.
 
 ```
 $ deck domain yourdomain.dev

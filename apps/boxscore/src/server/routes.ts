@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 
+import {
+  isLocalRequest,
+  type LocalServer,
+} from '@mattstack/app-server/local-request';
 import { settingsHandler } from '@mattstack/settings-kit/server';
 import type { CacheStatsResponse } from '../shared/types.js';
 import { ConfigError, readSettings } from './config/index.js';
@@ -132,8 +136,13 @@ const cache = new Hono()
 
 // `settingsHandler` answers its own routes and returns null for anything else,
 // so a miss here must fall through to the frame's 404 rather than short-circuit.
+// Under Bun.serve, Hono's `c.env` is the Bun server, which is what lets the
+// locality gate check the socket peer.
 const settings = new Hono().all('/api/settings/*', async c => {
-  const res = await settingsHandler(c.req.raw, { allowComposite: true });
+  const res = await settingsHandler(c.req.raw, {
+    allowComposite: true,
+    allowWrite: req => isLocalRequest(req, c.env as LocalServer | undefined),
+  });
   return res ?? c.notFound();
 });
 

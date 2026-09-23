@@ -13,8 +13,9 @@ import type { BoardData, ConfigMember } from '../types.ts';
 
 /** Check members in/out, and (on a board that can hand out invites) put each
     teammate on a board of their own. Toggling persists the hidden flag to
-    config.json; every peering affordance is conditional, so a board with no
-    switchboard renders exactly the roster it always did. */
+    config.json, so like joining it is offered only to a local viewer; every
+    peering affordance is conditional, so a board with no switchboard renders
+    exactly the roster it always did. */
 function SettingsModal({
   members,
   canInvite,
@@ -201,9 +202,11 @@ function SettingsModal({
       onClose={onClose}
       closeGlyph="✕"
     >
-      <p className="tui-modal-sub">
-        # check people out to hide them from the board
-      </p>
+      {local && (
+        <p className="tui-modal-sub">
+          # check people out to hide them from the board
+        </p>
+      )}
       <ul className="tui-modal-list">
         {members.map(m => {
           const peerState =
@@ -223,12 +226,14 @@ function SettingsModal({
                     : 'checked in'
                 }
               >
-                <input
-                  type="checkbox"
-                  className="tui-check-box"
-                  checked={!m.hidden}
-                  onChange={() => onToggle(m.username, !m.hidden)}
-                />
+                {local && (
+                  <input
+                    type="checkbox"
+                    className="tui-check-box"
+                    checked={!m.hidden}
+                    onChange={() => onToggle(m.username, !m.hidden)}
+                  />
+                )}
                 <Invadr
                   id={m.username}
                   palette="css-vars"

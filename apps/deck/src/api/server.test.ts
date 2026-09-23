@@ -377,6 +377,65 @@ test('mutations through a public host are forbidden', async () => {
   expect(res.status).toBe(403);
 });
 
+test('a public host cannot claim locality through x-forwarded-host', async () => {
+  const forged = {
+    host: 'deck.example.dev',
+    'x-forwarded-host': 'deck.mattstack',
+  };
+  const status = await (
+    await api('/api/v1/status', { headers: forged })
+  ).json();
+  expect(status.canManage).toBe(false);
+  expect(status.canRestart).toBe(false);
+  const res = await post(
+    '/api/v1/apps',
+    { name: 'evil', staticPort: 1 },
+    forged
+  );
+  expect(res.status).toBe(403);
+});
+
+test('mutations need positive proof of locality, not just a local-looking host', async () => {
+  const edges: Record<string, string>[] = [
+    { 'x-mattstack-edge': 'public' },
+    { 'cf-connecting-ip': '203.0.113.9' },
+    { 'tailscale-funnel-request': '?1' },
+    { 'x-forwarded-for': '203.0.113.9' },
+  ];
+  for (const edge of edges) {
+    const headers = { host: 'deck.mattstack', ...edge };
+    const res = await post(
+      '/api/v1/apps',
+      { name: 'evil', staticPort: 1 },
+      headers
+    );
+    expect({ edge, status: res.status }).toEqual({ edge, status: 403 });
+    const status = await (await api('/api/v1/status', { headers })).json();
+    expect({ edge, canManage: status.canManage }).toEqual({
+      edge,
+      canManage: false,
+    });
+  }
+});
+
+test('a cross-site write from a page in the local browser is forbidden', async () => {
+  const res = await post(
+    '/api/v1/apps',
+    { name: 'evil', staticPort: 1 },
+    { host: 'deck.mattstack', origin: 'https://evil.example.dev' }
+  );
+  expect(res.status).toBe(403);
+});
+
+test("the board's own same-origin write still passes the origin gate", async () => {
+  const res = await post(
+    '/api/v1/apps/nope-missing/restart',
+    {},
+    { host: 'deck.mattstack', origin: 'https://deck.mattstack' }
+  );
+  expect(res.status).not.toBe(403);
+});
+
 test('legacy /api/status still answers with the board document', async () => {
   const legacy = await (await api('/api/status')).json();
   expect(legacy).toHaveProperty('apps');

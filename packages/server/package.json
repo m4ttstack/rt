@@ -24,6 +24,7 @@
     "./static": "./src/static.ts",
     "./event-bridge": "./src/event-bridge.ts",
     "./canonical-host": "./src/canonical-host.ts",
+    "./local-request": "./src/local-request.ts",
     "./shell-handoff": "./src/shell-handoff.ts"
   },
   "scripts": {

@@ -29,6 +29,8 @@ import { isPlatformManagedBy } from '../services/manager.ts';
 import { getPlatformSettings } from './platform-settings.ts';
 
 export interface BuildStatusOpts {
+  /** Whether the caller proved locality; gates controls and unredacted records. */
+  local: boolean;
   requestHost?: string;
   port: number;
   canaryPort: number;
@@ -221,11 +223,10 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         record: record
           ? {
               kind: record.kind,
-              command: publicDomain === null ? (record.command ?? null) : null,
-              workingDirectory:
-                publicDomain === null
-                  ? (record.workingDirectory ?? null)
-                  : null,
+              command: opts.local ? (record.command ?? null) : null,
+              workingDirectory: opts.local
+                ? (record.workingDirectory ?? null)
+                : null,
             }
           : null,
         oauth: getOAuth(a.name),
@@ -236,7 +237,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
             : undefined,
         devDir:
           record && record.managedBy !== 'user'
-            ? publicDomain === null
+            ? opts.local
               ? (record.dev?.workingDirectory ?? null)
               : null
             : undefined,
@@ -295,8 +296,8 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   return {
     suffix: publicDomain ?? 'localhost',
     // Restart is a local-only control: never expose it through a public tunnel.
-    canRestart: publicDomain === null,
-    canManage: publicDomain === null,
+    canRestart: opts.local,
+    canManage: opts.local,
     devMode: !!opts.devMode,
     up: healths.filter(h => h.ok).length,
     total: apps.length,

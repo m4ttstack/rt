@@ -1,13 +1,16 @@
 import { userInfo } from 'os';
 import { join } from 'path';
 
+import {
+  hasLocalOrigin,
+  isLocalRequest,
+} from '@mattstack/app-server/local-request';
 import { boardCss, boardHtml, boardJs } from '../../core/board-assets.ts';
 import { CANARY_PATH } from '../../core/canary.ts';
 import { DECK_ICON_SVG } from '../../core/deck-icon.ts';
 import {
   bareName,
   MATTSTACK_TLD,
-  publicDomainFor,
   readRoutes,
   readServices,
   restartService,
@@ -289,7 +292,7 @@ export function startApi(deps: ApiDeps) {
   return Bun.serve({
     port: deps.port,
     hostname: '127.0.0.1',
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url);
       const { pathname } = url;
 
@@ -315,8 +318,9 @@ export function startApi(deps: ApiDeps) {
         `${PLATFORM_NAME}.${MATTSTACK_TLD}`
       );
       if (redirect) return redirect;
-      const isPublic = publicDomainFor(host) !== null;
+      const local = isLocalRequest(req, server);
       const statusOpts = {
+        local,
         requestHost: host,
         port: deps.port,
         canaryPort: deps.canaryPort,
@@ -382,7 +386,7 @@ export function startApi(deps: ApiDeps) {
 
       // ---- versioned API ----
       if (pathname.startsWith('/api/v1/')) {
-        if (req.method !== 'GET' && isPublic)
+        if (req.method !== 'GET' && (!local || !hasLocalOrigin(req)))
           return json({ error: 'forbidden' }, 403);
         const caller = callerOf(req);
         const force = url.searchParams.get('force') === 'true';
@@ -394,7 +398,7 @@ export function startApi(deps: ApiDeps) {
           // Every registered record, through the shared safe-row join.
           const byName = rowsByName((await buildStatus(statusOpts)).apps);
           const apps: StatusRow[] = listRecords().map(record =>
-            rowFor(record, byName, isPublic)
+            rowFor(record, byName, !local)
           );
           return json({ apps });
         }
@@ -589,7 +593,7 @@ export function startApi(deps: ApiDeps) {
               const byName = rowsByName((await buildStatus(statusOpts)).apps);
               return json({
                 record: safeRecord(record),
-                row: rowFor(record, byName, isPublic),
+                row: rowFor(record, byName, !local),
               });
             }
             if (req.method === 'PATCH') {

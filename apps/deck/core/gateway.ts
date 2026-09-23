@@ -1,5 +1,6 @@
 import type { Server } from 'bun';
 
+import { EDGE_HEADER } from '@mattstack/app-server/local-request';
 import { getPlatformSettings } from '../src/api/platform-settings.ts';
 import { bareName, dedupeRoutes, readRoutes } from './discover.ts';
 import {
@@ -150,6 +151,10 @@ async function proxyTo(
   // decompressed bytes labeled gzip (ERR_CONTENT_DECODING_FAILED).
   const headers = new Headers(req.headers);
   headers.delete('accept-encoding');
+  // Upstreams read x-forwarded-host as the host portless saw, so a client copy
+  // could pose as a local one. set() also overwrites any client edge stamp.
+  headers.delete('x-forwarded-host');
+  headers.set(EDGE_HEADER, 'public');
   const proxyReq = new Request(url.toString(), {
     method: req.method,
     headers,
@@ -190,7 +195,8 @@ async function proxyWebSocket(
   try {
     conn = await connectUpstream(
       upstreamUrl(port, url.pathname, url.search),
-      requestedProtocols(req.headers.get('sec-websocket-protocol'))
+      requestedProtocols(req.headers.get('sec-websocket-protocol')),
+      { host: req.headers.get('host') ?? '', [EDGE_HEADER]: 'public' }
     );
   } catch {
     return html(pageOffline(app), 502);
