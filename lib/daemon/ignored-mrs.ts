@@ -6,7 +6,7 @@
  * here is the backstop the project-MR store applies to every write.
  */
 
-import type { PullRequest } from "@mattstack/glance";
+import type { GitLabProvider, PullRequest } from "@mattstack/glance";
 import { getSetting, type ResolveOpts } from "../settings/resolve.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import { lazyChildLogger } from "../daemon-logger.ts";
@@ -73,6 +73,26 @@ export async function expandTargetBranches(
     }
   }
   return [...names].sort();
+}
+
+const BRANCH_PAGE = 100;
+
+/** Branch names starting with a prefix, via GitLab's `^` (starts-with) branch search, every page. */
+export function gitlabBranchSearch(
+  provider: Pick<GitLabProvider, "restRequest">,
+  projectPath: string,
+): (prefix: string) => Promise<string[]> {
+  return async (prefix) => {
+    const names: string[] = [];
+    for (let page = 1; ; page++) {
+      const path = `/projects/${encodeURIComponent(projectPath)}/repository/branches?search=${encodeURIComponent(`^${prefix}`)}&per_page=${BRANCH_PAGE}&page=${page}`;
+      const res = await provider.restRequest("GET", path, undefined, "searchBranches");
+      if (!res.ok) throw new Error(`branch search for "${prefix}" failed: ${res.status}`);
+      const rows = (await res.json()) as Array<{ name: string }>;
+      names.push(...rows.map((r) => r.name));
+      if (rows.length < BRANCH_PAGE) return names;
+    }
+  };
 }
 
 export interface ExcludedTargetsCache {

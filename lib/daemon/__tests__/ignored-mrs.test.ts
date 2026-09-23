@@ -3,6 +3,7 @@ import type { PullRequest } from "@mattstack/glance";
 import {
   createExcludedTargetsCache,
   expandTargetBranches,
+  gitlabBranchSearch,
   isIgnoredMr,
   readIgnoredMrs,
   type IgnoredMrRules,
@@ -82,6 +83,31 @@ describe("expandTargetBranches", () => {
     let searches = 0;
     expect(await expandTargetBranches(["main", "main"], async () => { searches++; return []; })).toEqual(["main"]);
     expect(searches).toBe(0);
+  });
+});
+
+describe("gitlabBranchSearch", () => {
+  test("pages a starts-with branch search until a short page", async () => {
+    const paths: string[] = [];
+    const page = (n: number, count: number) => Array.from({ length: count }, (_, i) => ({ name: `deployments/e${n}-${i}` }));
+    const search = gitlabBranchSearch({
+      restRequest: async (_method: string, path: string) => {
+        paths.push(path);
+        const n = Number(new URL(path, "https://x").searchParams.get("page"));
+        return new Response(JSON.stringify(n === 1 ? page(1, 100) : page(2, 3)));
+      },
+    } as never, "g/sub/p");
+    const names = await search("deployments/");
+    expect(names).toHaveLength(103);
+    expect(paths).toEqual([
+      "/projects/g%2Fsub%2Fp/repository/branches?search=%5Edeployments%2F&per_page=100&page=1",
+      "/projects/g%2Fsub%2Fp/repository/branches?search=%5Edeployments%2F&per_page=100&page=2",
+    ]);
+  });
+
+  test("a failed page throws instead of reading as no branches", async () => {
+    const search = gitlabBranchSearch({ restRequest: async () => new Response("nope", { status: 503 }) } as never, "g/p");
+    await expect(search("deployments/")).rejects.toThrow("503");
   });
 });
 
