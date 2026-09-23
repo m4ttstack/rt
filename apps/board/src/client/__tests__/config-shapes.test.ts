@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { allDefs } from '@mattstack/rt-client';
+import type { ExplainRowWire } from '@mattstack/settings-kit/react';
 import { DEFAULT_SLACK_EMOJI as KIT_SLACK_EMOJI } from '@mattstack/settings-kit/shapes';
 import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
 import {
@@ -10,6 +11,7 @@ import {
   getLeaf,
   groupByScope,
   isSet,
+  leafWrite,
   matchesShape,
   parseScalar,
   rosterSummary,
@@ -362,5 +364,33 @@ describe('slugTabId', () => {
 describe('shared shapes', () => {
   test("settings-kit's slack emoji fallbacks match the board's", () => {
     expect(DEFAULT_SLACK_EMOJI).toEqual(KIT_SLACK_EMOJI);
+  });
+});
+
+describe('leafWrite', () => {
+  const row = (
+    scope: ExplainRowWire['scope'],
+    value: unknown
+  ): ExplainRowWire => ({
+    scope,
+    file: `${scope}.jsonc`,
+    present: true,
+    value,
+  });
+
+  test('starts from the target layer, never the default', () => {
+    const rows = [
+      row('default', { channel: 'd', multiHeader: 'h' }),
+      row('team', { channel: 't' }),
+    ];
+    expect(leafWrite(rows, 'team', 'multiItem', 'i')).toEqual({
+      channel: 't',
+      multiItem: 'i',
+    });
+  });
+
+  test('prunes an object a removed leaf left empty', () => {
+    const rows = [row('team', { emoji: { looking: 'x' } })];
+    expect(leafWrite(rows, 'team', 'emoji.looking', undefined)).toEqual({});
   });
 });

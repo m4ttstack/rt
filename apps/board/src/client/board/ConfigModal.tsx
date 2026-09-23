@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import {
   useSettingKey,
   useSettingsScope,
+  type ExplainRowWire,
   type SettingKeyState,
   type SettingsScopeState,
 } from '@mattstack/settings-kit/react';
@@ -18,12 +19,13 @@ import {
   getLeaf,
   groupByScope,
   isSet,
+  leafWrite,
   matchesShape,
+  ownValue,
   parseScalar,
   rosterSummary,
   rowKind,
   scopeLabel,
-  setLeaf,
   slugTabId,
   type CompositeShape,
   type ConfigDef,
@@ -58,6 +60,7 @@ function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   };
 
   return {
+    scope,
     busy,
     error,
     saved,
@@ -205,9 +208,10 @@ function ChipControl({
   );
 }
 
-/** One control per declared leaf, editing a copy of the whole object. An
-    emptied leaf is removed rather than stored as "" so the reader's own
-    fallback (e.g. respond → review cwd) takes over. */
+/** One control per declared leaf. Each edit rewrites the target layer's own
+    object (leafWrite), read from the key's explain rows. An emptied leaf is
+    removed rather than stored as "" so the reader's own fallback (e.g.
+    respond → review cwd) takes over. */
 function LeavesControl({
   def,
   value,
@@ -221,8 +225,59 @@ function LeavesControl({
   fallbacks?: Record<string, string>;
   row: ReturnType<typeof useRowSave>;
 }) {
-  const commit = (path: string, leaf: unknown) =>
-    void row.save(setLeaf(value, path, leaf));
+  const explained = useSettingKey(def.key);
+  const [resets, setResets] = useState<Record<string, number>>({});
+  const reset = (path: string) =>
+    setResets(r => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
+
+  // The rows must postdate the def's current value and our last write, or an
+  // edit rebuilds the layer without a field just written. The kit raises
+  // `loading` only a render after refresh(), so staleness is tracked against
+  // the rows array that was current when the def changed.
+  const fingerprint = JSON.stringify([
+    def.effective.scope,
+    def.effective.value,
+  ]);
+  const [seen, setSeen] = useState(fingerprint);
+  const [staleRows, setStaleRows] = useState<ExplainRowWire[] | null>(null);
+  if (fingerprint !== seen) {
+    setSeen(fingerprint);
+    setStaleRows(explained.rows);
+  }
+  const { refresh } = explained;
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (mounted.current) refresh();
+    mounted.current = true;
+  }, [fingerprint, refresh]);
+  const disabled =
+    row.busy ||
+    explained.loading ||
+    explained.error !== null ||
+    explained.rows === staleRows;
+
+  const commit = (path: string, leaf: unknown) => {
+    const rows = explained.rows;
+    // Emptying a field the target layer does not set would write that layer
+    // anyway; the inherited value still applies.
+    if (
+      leaf === undefined &&
+      getLeaf(ownValue(rows, row.scope), path) === undefined
+    ) {
+      reset(path);
+      return;
+    }
+    const next = leafWrite(rows, row.scope, path, leaf);
+    const write = Object.keys(next).length === 0 ? row.clear() : row.save(next);
+    void write.then(ok => {
+      if (!ok) return;
+      setStaleRows(rows);
+      refresh();
+      // A text field emptied back to an inherited value keeps its value prop,
+      // so it would stay blank without a remount.
+      if (leaf === undefined) reset(path);
+    });
+  };
   return (
     <div className="tui-config-leaves">
       {Object.entries(fields).map(([path, type]) => {
@@ -235,7 +290,7 @@ function LeavesControl({
               type="checkbox"
               className="tui-check-box"
               checked={leaf === true}
-              disabled={row.busy}
+              disabled={disabled}
               aria-label={label}
               onChange={e => commit(path, e.target.checked)}
             />
@@ -244,7 +299,7 @@ function LeavesControl({
           control = (
             <select
               value={typeof leaf === 'string' ? leaf : ''}
-              disabled={row.busy}
+              disabled={disabled}
               aria-label={label}
               onChange={e =>
                 commit(path, e.target.value === '' ? undefined : e.target.value)
@@ -261,10 +316,11 @@ function LeavesControl({
         } else {
           control = (
             <TextField
+              key={resets[path] ?? 0}
               value={leaf === undefined ? '' : String(leaf)}
               placeholder={fallbacks?.[path] ?? 'unset'}
               ariaLabel={label}
-              disabled={row.busy}
+              disabled={disabled}
               onCommit={text => {
                 if (text.trim() === '') return commit(path, undefined);
                 const parsed = parseScalar(type, text);
@@ -281,6 +337,14 @@ function LeavesControl({
           </div>
         );
       })}
+      {explained.error && (
+        <p className="tui-config-error tui-config-leaves-error">
+          {explained.error} ·{' '}
+          <button type="button" className="tui-config-link" onClick={refresh}>
+            retry
+          </button>
+        </p>
+      )}
     </div>
   );
 }

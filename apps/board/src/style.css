@@ -3578,6 +3578,9 @@ body {
 .tui-config-leaf {
   display: contents;
 }
+.tui-config-leaves-error {
+  grid-column: 1 / -1;
+}
 .tui-config-leaf-label {
   font-family: var(--font-sans);
   font-size: 0.76rem;

@@ -1,6 +1,11 @@
-import type { SettingDefWire } from '@mattstack/settings-kit/react';
+import type {
+  ExplainRowWire,
+  SettingDefWire,
+} from '@mattstack/settings-kit/react';
 import {
+  getLeaf,
   matchesShape as matchesKitShape,
+  setLeaf,
   SHAPES,
   type CompositeShape as KitShape,
 } from '@mattstack/settings-kit/shapes';
@@ -17,6 +22,35 @@ export {
 } from '@mattstack/settings-kit/shapes';
 
 export type ConfigDef = SettingDefWire;
+
+/** The target layer's own authored value, from the key's explain rows. */
+export function ownValue(rows: ExplainRowWire[], target: string): unknown {
+  return rows.find(r => r.scope === target && r.present)?.value;
+}
+
+/** The object to write to `target` after changing one field. A deep-merged
+    key's effective value is the merge of the default and every layer, so the
+    edit starts from the target layer's own value instead, or it would bake
+    the default and other layers into that store. A removed leaf takes any
+    parent it leaves empty with it, so emptying a layer's last field reads as
+    an empty object and the caller can clear the layer. */
+export function leafWrite(
+  rows: ExplainRowWire[],
+  target: string,
+  path: string,
+  value: unknown
+): Record<string, unknown> {
+  let next = setLeaf(ownValue(rows, target), path, value);
+  if (value !== undefined) return next;
+  const parts = path.split('.');
+  for (let i = parts.length - 1; i > 0; i--) {
+    const parent = parts.slice(0, i).join('.');
+    const obj = getLeaf(next, parent);
+    if (!isRecord(obj) || Object.keys(obj).length > 0) break;
+    next = setLeaf(next, parent, undefined);
+  }
+  return next;
+}
 
 export type CompositeShape =
   | Exclude<KitShape, { kind: 'external' }>
