@@ -35,6 +35,19 @@ function SeverityPill({ severity }: { severity: Severity }) {
   );
 }
 
+function ReplyBlock({ text }: { text: string }) {
+  return (
+    <div className="tui-thread-reply" data-kind="verbatim">
+      <span className="tui-thread-reply-k">will post as reply</span>
+      <div className="tui-thread-reply-text">
+        <Markdown unstyled linkTargetBlank>
+          {text}
+        </Markdown>
+      </div>
+    </div>
+  );
+}
+
 /** A respond-plan thread question's body: the reviewer's claim, the
     adjudicated verdict, and the reply that goes out in the developer's
     name. The file:line and the severity ride the question head; the plan
@@ -68,13 +81,10 @@ function ThreadCard({ ctx }: { ctx: ThreadCtx }) {
           <span className="tui-thread-verdict-note">· {verdict.note}</span>
         )}
       </div>
-      {reply.kind !== 'none' && (
-        <div className="tui-thread-reply" data-kind={reply.kind}>
-          <span className="tui-thread-reply-k">
-            {reply.kind === 'verbatim'
-              ? 'will post as reply'
-              : 'reply direction'}
-          </span>
+      {reply.kind === 'verbatim' && <ReplyBlock text={reply.text} />}
+      {reply.kind === 'direction' && (
+        <div className="tui-thread-reply" data-kind="direction">
+          <span className="tui-thread-reply-k">reply direction</span>
           <div className="tui-thread-reply-text">
             <Markdown unstyled linkTargetBlank>
               {reply.text}
@@ -82,6 +92,16 @@ function ThreadCard({ ctx }: { ctx: ThreadCtx }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A post-step thread's body when its plan gate is gone: only the reply
+    this gate would post. */
+function ReplyCard({ entry }: { entry: ReplyEntry }) {
+  return (
+    <div className="tui-thread-card">
+      <ReplyBlock text={entry.text} />
     </div>
   );
 }
@@ -155,4 +175,4 @@ function ReplyChoiceBody({
   );
 }
 
-export { ReplyChoiceBody, SeverityPill, ThreadCard, ThreadOutcome };
+export { ReplyCard, ReplyChoiceBody, SeverityPill, ThreadCard, ThreadOutcome };

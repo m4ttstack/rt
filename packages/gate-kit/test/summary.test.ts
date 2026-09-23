@@ -51,6 +51,35 @@ describe('answeredGateSummary chip', () => {
     expect(chip).toBe('review !44043 · comment, nothing posted');
   });
 
+  test('per-thread post questions add up across threads: posted, resolved, held', () => {
+    const thread = (n: number, t: string): GateQuestion => ({
+      id: `thread-${n}`,
+      label: `${t}.ts:1`,
+      multi: true,
+      options: [
+        { value: `post:${t}`, label: 'Post' },
+        { value: `resolve:${t}`, label: 'Resolve' },
+      ],
+    });
+    const { chip } = answeredGateSummary({
+      subject:
+        'mr:https://gitlab.example.invalid/group/proj/-/merge_requests/87',
+      kind: 'respond-post',
+      status: 'answered',
+      questions: [thread(1, 'T1'), thread(2, 'T2'), thread(3, 'T3')],
+      answer: {
+        answers: {
+          'thread-1': ['post:T1', 'resolve:T1'],
+          'thread-2': { value: ['resolve:T2'], note: 'stale' },
+          'thread-3': [],
+        },
+        by: 'board',
+        answeredAt: 1,
+      },
+    });
+    expect(chip).toBe('respond !87 · 1 posted, 2 resolved, 2 held · by board');
+  });
+
   test('an explicit empty multi answer chips the same nothing-posted marker as the zero-option shape', () => {
     const questions: GateQuestion[] = [
       {

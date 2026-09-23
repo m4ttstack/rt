@@ -1001,37 +1001,38 @@
           "context": "{\"gate-ctx\":\"post@1\",\"reviewer\":\"pat\",\"round\":1,\"replies\":2,\"fixes\":[{\"sha\":\"4be91c2\"}]}",
           "questions": [
             {
-              "id": "replies",
-              "label": "Post which replies?",
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
               "multi": true,
-              "context": "{\"gate-ctx\":\"replies@1\",\"replies\":[{\"thread\":\"f1e2d3c4b5a697887766554433221100ffeeddcc\",\"file\":\"highlights/panel.tsx:118\",\"verb\":\"fix\",\"sha\":\"4be91c2\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"},{\"thread\":\"0a1b2c3d4e5f60718293a4b5c6d7e8f901234567\",\"file\":\"highlights/temperature.ts:42\",\"verb\":\"reply\",\"text\":\"Agreed it could live in settings. Keeping the constant until a second caller needs it; noted that beside the constant.\"}]}",
+              "context": "{\"gate-ctx\":\"reply@1\",\"thread\":\"f1e2d3c4b5a697887766554433221100ffeeddcc\",\"file\":\"highlights/panel.tsx:118\",\"verb\":\"fix\",\"sha\":\"4be91c2\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}",
               "options": [
                 {
-                  "value": "f1e2d3c4b5a697887766554433221100ffeeddcc",
-                  "label": "highlights/panel.tsx:118",
-                  "description": "Good catch. The panel now reads the factored score…"
+                  "value": "post:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "Post (Recommended)",
+                  "description": "post this reply to the thread"
                 },
                 {
-                  "value": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
-                  "label": "highlights/temperature.ts:42",
-                  "description": "Agreed it could live in settings…"
+                  "value": "resolve:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "Resolve (Recommended)",
+                  "description": "resolve the thread"
                 }
               ]
             },
             {
-              "id": "disposition",
-              "label": "After posting?",
-              "multi": false,
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"reply@1\",\"thread\":\"0a1b2c3d4e5f60718293a4b5c6d7e8f901234567\",\"file\":\"highlights/temperature.ts:42\",\"verb\":\"reply\",\"text\":\"Agreed it could live in settings. Keeping the constant until a second caller needs it; noted that beside the constant.\"}",
               "options": [
                 {
-                  "value": "resolve-addressed",
-                  "label": "resolve-addressed (recommended)",
-                  "description": "resolve each thread just replied to"
+                  "value": "post:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "Post (Recommended)",
+                  "description": "post this reply to the thread"
                 },
                 {
-                  "value": "leave-open",
-                  "label": "leave-open",
-                  "description": "post the replies without resolving the threads"
+                  "value": "resolve:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "Resolve",
+                  "description": "resolve the thread"
                 }
               ]
             }

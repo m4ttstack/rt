@@ -15,6 +15,7 @@ import {
 } from './GateForm.tsx';
 import { GateSheet, type GateSheetQueue } from './GateSheet.tsx';
 import { MrLinks } from './MrLinks.tsx';
+import { postPicks } from './respond-post.ts';
 import { RespondGateHeader } from './RespondGateHeader.tsx';
 import { RespondSheetBody } from './RespondSheet.tsx';
 import { isReviewSheetGate, paneContext } from './review-gate.ts';
@@ -153,6 +154,16 @@ function DecisionQueueModal({
     return ctx?.shape === 'plan@1' || ctx?.shape === 'post@1' ? ctx : null;
   }, [gate.context]);
   const proseContext = useMemo(() => paneContext(gate.context), [gate.context]);
+  // A respond-post gate whose contexts were all flattened to prose still
+  // carries its per-thread questions; the sheet takes it without a reviewer.
+  const sheetCtx = useMemo((): PlanCtx | PostCtx | null => {
+    if (headerCtx) return headerCtx;
+    if (gate.kind !== 'respond-post') return null;
+    const picks = postPicks(gate.questions);
+    return picks.length > 0
+      ? { shape: 'post@1', reviewer: '', replies: picks.length, fixes: [] }
+      : null;
+  }, [headerCtx, gate.kind, gate.questions]);
   const isReviewSheet = useMemo(() => isReviewSheetGate(gate), [gate]);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
@@ -231,7 +242,7 @@ function DecisionQueueModal({
     );
   }
 
-  if (headerCtx && actionable) {
+  if (sheetCtx && actionable) {
     return (
       <GateSheet
         variant="respond"
@@ -244,7 +255,8 @@ function DecisionQueueModal({
         <RespondSheetBody
           gate={gate}
           mr={mr}
-          ctx={headerCtx}
+          ctx={sheetCtx}
+          {...(headerCtx ? {} : { frame: proseContext ?? '' })}
           form={form}
           people={people}
           onContinue={onContinue}

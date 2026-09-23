@@ -49,6 +49,11 @@ export interface ReplyEntry {
   text: string;
 }
 
+/** One respond-post thread question: the reply its `post:` option posts. */
+export interface ReplyCtx extends ReplyEntry {
+  shape: 'reply@1';
+}
+
 export interface RepliesCtx {
   shape: 'replies@1';
   replies: ReplyEntry[];
@@ -82,7 +87,13 @@ export interface FindingsCtx {
 }
 
 export type GateCtx =
-  PlanCtx | PostCtx | ThreadCtx | RepliesCtx | ReviewCtx | FindingsCtx;
+  | PlanCtx
+  | PostCtx
+  | ThreadCtx
+  | ReplyCtx
+  | RepliesCtx
+  | ReviewCtx
+  | FindingsCtx;
 
 type Obj = Record<string, unknown>;
 
@@ -222,6 +233,10 @@ function readEntry(v: unknown): ReplyEntry {
   };
 }
 
+function readReplyCtx(o: Obj): ReplyCtx {
+  return { shape: 'reply@1', ...readEntry(o) };
+}
+
 function readReplies(o: Obj): RepliesCtx {
   const replies = o.replies;
   if (!Array.isArray(replies)) reject();
@@ -287,6 +302,7 @@ const READERS = new Map<string, (o: Obj) => GateCtx>([
   ['plan@1', readPlan],
   ['post@1', readPost],
   ['thread@1', readThread],
+  ['reply@1', readReplyCtx],
   ['replies@1', readReplies],
   ['review@1', readReview],
   ['findings@1', readFindings],

@@ -103,19 +103,16 @@ describe('open-gate.sh', () => {
   });
 
   test('drops the pane-only next question and nothing else', () => {
-    const replies: Question = {
-      id: 'replies',
-      label: 'Post which replies?',
+    const reply = (n: number): Question => ({
+      id: `thread-${n}`,
+      label: `src/mod${n}.ts:10`,
       multi: true,
-      context: '{"gate-ctx":"replies@1","replies":[]}',
-      options: [{ value: 't1', label: 'src/mod1.ts:10' }],
-    };
-    const disposition: Question = {
-      id: 'disposition',
-      label: 'Disposition',
-      multi: false,
-      options: ['resolve-addressed', 'leave-open'],
-    };
+      context: `{"gate-ctx":"reply@1","thread":"t${n}","file":"src/mod${n}.ts:10","verb":"reply","text":"done"}`,
+      options: [
+        { value: `post:t${n}`, label: 'post' },
+        { value: `resolve:t${n}`, label: 'resolve' },
+      ],
+    });
     const next: Question = {
       id: 'next',
       label: 'Next',
@@ -124,10 +121,10 @@ describe('open-gate.sh', () => {
     };
     const r = run({
       context: '{"gate-ctx":"post@1"}',
-      questions: [replies, disposition, next],
+      questions: [reply(1), reply(2), next],
     });
     expect(r.exitCode).toBe(0);
-    expect(sentQuestions(r.argv[0]!)).toEqual([replies, disposition]);
+    expect(sentQuestions(r.argv[0]!)).toEqual([reply(1), reply(2)]);
   });
 
   test('over budget: drops whole contexts largest-first, ties to the earliest, until under', () => {

@@ -319,8 +319,8 @@ conversation.
      that as a new round of step 3-4 (a new `respond-plan` gate, same
      shape, opened from its fresh open file when it hands one back, and the
      report update from step 3 applies again, recording the new round). On `skip`,
-     go straight to Gate 2: reply and skip threads still get their drafted
-     replies posted, there is just nothing to implement first. A thread
+     go straight to Gate 2: `reply:` threads still get their drafted
+     replies offered, there is just nothing to implement first. A thread
      answered `fix:` under `skip` stays unimplemented and has no finalized
      reply, so it is held out of Gate 2 rather than posted as a draft.
 6. **Gate 2 — post.** **Handed a fitted open file?** (the domain skill
@@ -334,39 +334,40 @@ conversation.
    Its questions end with a pane-only `next` navigation question this
    wrapper does not ask; the script drops it, and applies the same budget
    rule. In the form branch, flatten the source beside it the same way
-   (`respond-post.source.json`), leave `next` out, print the prose
-   `.context` as one pane line, and make each reply option's description
-   that thread's line from the prose `replies` context
-   (`<file> FIX · <sha>: <text>` or `<file> REPLY: <text>`), so the whole
-   reply shows at its checkbox. Then skip to the presentation branches below.
+   (`respond-post.source.json`) and leave `next` out. Then skip to the
+   presentation branches below.
 
-   **Otherwise, build the gate yourself** from the finalized replies:
+   **Otherwise, build the gate yourself** from the finalized replies: ONE
+   multi-select question per thread with a finalized reply, in
+   verdict-table order (a `skip:` thread and a `fix:` thread held out
+   under `code-changes: skip` get none). Its id is `thread-<n>` by 1-based
+   position among these threads, its label the thread's `<file>:<line>`,
+   and its two options `post:<threadId>` and `resolve:<threadId>`, thread
+   id VERBATIM:
 
    ```json
    [
-     {"id": "replies", "label": "Post which replies?", "multi": true,
-      "context": "<the finalized replies, one short block per thread: its file:line, then the reply text that will post>",
-      "options": [{"value": "<threadId>", "label": "<file>:<line>", "description": "<first line of that thread's finalized reply>"}]},
-     {"id": "disposition", "label": "Disposition", "multi": false, "options": ["resolve-addressed", "leave-open"]}
+     {"id": "thread-1", "label": "<file>:<line>", "multi": true,
+      "context": "<this thread's file:line, then the reply text that will post>",
+      "options": [{"value": "post:<threadId>", "label": "post", "recommended": true, "description": "post this reply to the thread"},
+                  {"value": "resolve:<threadId>", "label": "resolve", "recommended": true, "description": "resolve the thread"}]},
+     {"id": "thread-2", "label": "<file>:<line>", "multi": true,
+      "context": "<thread 2's file:line and reply>",
+      "options": [{"value": "post:<threadId>", "label": "post", "recommended": true, "description": "post this reply to the thread"},
+                  {"value": "resolve:<threadId>", "label": "resolve", "description": "resolve the thread"}]}
    ]
    ```
 
-   A question holds at most 4 options: that is the native form's hard
-   per-question limit, and the daemon presents a gate as an in-pane form
-   only when EVERY question fits it — one 5-option question sends the whole
-   gate to the wait queue instead. With more than 4 finalized replies,
-   split the `replies` question into `replies-1`, `replies-2`, ... in
-   thread order, each `multi: true` with up to 4 options and the `context`
-   block for its own threads; `disposition` stays one question. Everything
-   below that reads "the `replies` answer" then means the union of every
-   `replies-*` answer.
+   `post` is recommended on every thread; `resolve` only on a thread whose
+   reply finalizes a fix, so a pushback or a clarifying question stays open
+   for the reviewer unless the human ticks it. Post and resolve are
+   independent: both, either one, or neither.
 
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-post --questions <json> --context <context text>`
      The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
-     The finalized replies ride the `replies` question's `context` (and each
-     option's `description` carries its reply's first line), so the decision
-     material sits with the question. `--context` carries only the shared
+     Each thread's finalized reply rides its own question's `context`, so
+     the decision material sits with the question. `--context` carries only the shared
      frame (the MR and round); `--context` plus question `context` fields
      share one 8192 UTF-8 byte budget, dropped question-contexts-first when
      the total would exceed it, never trimmed mid-text.
@@ -386,27 +387,40 @@ conversation.
      or folding one question's answer into another option, at all):
      your framing and reasoning go in the pane prose or option
      descriptions, never into rewritten question or option text; never
-     as an option that folds another question's answer in; and "post
-     no replies" is every `replies-*` question answered as an explicit
-     empty array, which the daemon records -- Gate 2's own reminder.
+     as an option that folds another question's answer in; and a thread
+     with neither picked is its question answered as an explicit empty
+     array, which the daemon records -- Gate 2's own reminder.
+
+     Each thread's form question: header `Thread <n>`; question text its
+     label, a newline, its prose context (for a fitted file, that
+     thread's line from `gate-ctx.sh prose` on the source beside it:
+     `<file> FIX · <sha>: <text>` or `<file> REPLY: <text>`), then `Post,
+     resolve, both, or neither?`; a multi-select with the gate's labels
+     and descriptions. Ask the thread questions in order, up to four per
+     call, and submit exactly one `<status-bin> gate answer <state>
+     --answers <json> --by pane` after the last call, carrying every
+     thread question's answer.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
      for the background-wait mechanics, unchanged; the gate to name in
      `holding at gate <gateId>` is this one.
    - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
-     skill so it can execute the posting, or post the selected replies
-     yourself on the generic no-domain-skill path — `by` is the wait's own
-     decider field, so the domain skill's decision record names who actually
-     decided instead of guessing.
+     skill so it can execute the posting, or act per thread yourself on the
+     generic no-domain-skill path: `post:<threadId>` posts that thread's
+     reply, `resolve:<threadId>` resolves the thread (after the reply when
+     both are picked), and an empty array leaves it untouched. `by` is
+     the wait's own decider field, so the domain skill's decision record
+     names who actually decided instead of guessing.
 7. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
    `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
    - `--threads` is the number of unresolved human threads the run set out to
      answer, i.e. the rows in the verdict table.
-   - `--posted` is how many of those actually received a posted reply, per
-     Gate 2's replies selection (the union of every `replies-*` answer).
+   - `--posted` is how many of those actually received a posted reply: the
+     Gate 2 threads whose answer carries `post:`. Resolving counts toward
+     neither number.
    - `--held` is how many of those deliberately got NO posted reply because
-     a gate decided so: a reply deselected at Gate 2, a `skip:` thread with
+     a gate decided so: a Gate 2 thread answered without `post:`, a `skip:` thread with
      nothing worth posting, or a `fix:` thread held out of Gate 2 under
      `code-changes: skip`. Count a thread here only when a gate answer
      settled it without a reply going up; a thread the run simply never got
@@ -430,13 +444,17 @@ closed-gate/escape-hatch/degraded-mode mechanics, self-contained here since
 each gate follows it independently. (The open/presentation/wait mechanics are
 inline at each gate above, since the questions and context differ per gate.)
 `gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
-keyed by that gate's own question ids: the `replies-*` chunks (or the single
-`replies`) plus `disposition` for Gate 2, read as `answers.<id>` with the
-replies selection being the union of every `replies-*` answer; for Gate 1,
-one `thread-<n>` id per unresolved thread plus `code-changes`. Read Gate 1's thread answers by iterating every
+keyed by that gate's own question ids: for Gate 1, one `thread-<n>` id per
+unresolved thread plus `code-changes`; for Gate 2, one `thread-<n>` id per
+offered thread, each an array of `post:<threadId>` and/or
+`resolve:<threadId>`. Read either gate's thread answers by iterating every
 key other than `code-changes`, unwrapping a `{value, note}` object to its
-`value`, and splitting at the first `:` into the verb and the thread id:
-the thread id is in the value, and the `thread-<n>` key is never a join key.
+`value`, and splitting each value at the first `:` into the verb and the
+thread id: the thread id is in the value, and the `thread-<n>` key is never
+a join key. A Gate 2 opened before this shape (a `replies` multi, or its
+`replies-1`, `replies-2`, ... chunks, of bare thread ids plus
+`disposition`) still reads as it did: post the union of the selected
+replies, and resolve them only on `resolve-addressed`.
 
 A PreToolUse hook may deny native AskUserQuestion when no gate is open; that
 denial is the gate protocol speaking: open the gate as this section
@@ -461,14 +479,14 @@ describes. When the daemon is down the hook allows the native form
     ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`) for this CLI's own
     silent-success-versus-JSON-line contract. Specific to these gates: the note
     form example is `{"code-changes": {"value": "approve", "note": "approve
-    but hold off on thread 3"}}`, and a multi question's explicit empty
-    array (`{"replies": []}`) is also valid, recording the decision to post
-    none of the drafted replies.
+    but hold off on thread 3"}}`, and a Gate 2 thread's explicit empty
+    array (`{"thread-2": []}`) is also valid, recording the decision to
+    neither post its reply nor resolve it.
 - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
   open time), fall back to the native form alone, chunked exactly as that
   gate's form branch describes (Gate 1: thread questions four per call,
-  then `code-changes` only after a fix; Gate 2: its two questions in one
-  call), and proceed on the combined answers. Follow
+  then `code-changes` only after a fix; Gate 2: its thread questions four
+  per call), and proceed on the combined answers. Follow
   `board:gate-cli-recipes`'s "A failing wait is not degradation" section for
   when to retry `gate wait` versus fall through to this same
   `AskUserQuestion`.

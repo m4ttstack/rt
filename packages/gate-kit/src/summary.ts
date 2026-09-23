@@ -68,6 +68,15 @@ function verbCounts(values: string[]): string | null {
   return parts.length > 0 ? parts.join(', ') : 'all skipped';
 }
 
+/** A respond-post thread question: a multi of exactly `post:<id>` and
+    `resolve:<id>`. Its answers add up across threads on the chip. */
+function isPostPair(q: GateQuestion): boolean {
+  if (!q.multi || q.options.length !== 2) return false;
+  const values = q.options.map(o => (typeof o === 'string' ? o : o.value));
+  const post = values.find(v => v.startsWith('post:'));
+  return post !== undefined && values.includes(`resolve:${post.slice(5)}`);
+}
+
 function subjectRef(subject: string | undefined): string | null {
   if (subject === undefined) return null;
   if (subject.startsWith('mr:')) {
@@ -124,7 +133,29 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
     fragments.push(row.closedReason ?? 'closed');
   } else {
     const markers: string[] = [];
+    const pairs = row.questions.filter(isPostPair);
+    if (pairs.length > 0) {
+      let posted = 0;
+      let resolved = 0;
+      for (const q of pairs) {
+        const raw = answers?.[q.id];
+        const value = raw === undefined ? [] : unwrapGateAnswer(raw).value;
+        const picked = Array.isArray(value) ? value : [value];
+        if (picked.some(v => v.startsWith('post:'))) posted++;
+        if (picked.some(v => v.startsWith('resolve:'))) resolved++;
+      }
+      fragments.push(
+        [
+          `${posted} posted`,
+          resolved > 0 ? `${resolved} resolved` : null,
+          posted < pairs.length ? `${pairs.length - posted} held` : null,
+        ]
+          .filter(Boolean)
+          .join(', ')
+      );
+    }
     for (const q of row.questions) {
+      if (pairs.includes(q)) continue;
       const raw = answers?.[q.id];
       if (raw === undefined) {
         if (q.multi && q.options.length === 0) markers.push('nothing posted');

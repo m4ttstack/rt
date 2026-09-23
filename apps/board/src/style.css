@@ -2411,6 +2411,39 @@ body {
   font-size: var(--gate-font-meta);
   color: var(--text-3);
 }
+/* Post and hold are one choice, side by side; resolve is independent of
+   both, so it takes its own row. */
+.tui-post-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-row);
+}
+.tui-post-controls > .tui-gate-choices {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.tui-post-controls > .tui-gate-choices > .tui-gate-choice {
+  flex: 1 1 220px;
+}
+/* The resolve tick is painted with the on-fill token through a mask, so it
+   follows the fill it sits on in either scheme. */
+.tui-check {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.tui-check-tick {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--on-fill-accent);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+  opacity: 0;
+}
+.tui-check > [data-checked] + .tui-check-tick {
+  opacity: 1;
+}
 .tui-thread-verdict-call {
   font-weight: 700;
   color: var(--text-2);
@@ -4289,6 +4322,13 @@ body {
   width: 46px;
   justify-content: center;
   text-align: center;
+}
+/* A post row's resolve chip gets its own fixed slot, kept empty when the
+   thread is not resolving, so every row's text starts at one edge. */
+.tui-sheet-card-chip + .tui-sheet-card-chip,
+.tui-sheet-card-chip-slot {
+  flex-shrink: 0;
+  width: 64px;
 }
 .tui-sheet-card-text {
   color: var(--text-1);

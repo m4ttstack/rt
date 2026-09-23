@@ -56,6 +56,15 @@ const REPLIES = {
   ],
 } as const;
 
+const REPLY = {
+  'gate-ctx': 'reply@1',
+  thread: 't-1',
+  file: 'queue/enqueue.ts:88',
+  verb: 'fix',
+  sha: 'ab12cd3',
+  text: 'Fixed -- enqueue() now drops non-retryable jobs.',
+} as const;
+
 const REVIEW = {
   'gate-ctx': 'review@1',
   reviewer: 'renee',
@@ -202,6 +211,29 @@ describe('valid shapes', () => {
     expect(parseGateCtx(j({ 'gate-ctx': 'replies@1', replies: [] }))).toEqual({
       shape: 'replies@1',
       replies: [],
+    });
+  });
+
+  test('reply@1', () => {
+    expect(parseGateCtx(j(REPLY))).toEqual({
+      shape: 'reply@1',
+      thread: 't-1',
+      file: 'queue/enqueue.ts:88',
+      verb: 'fix',
+      sha: 'ab12cd3',
+      text: 'Fixed -- enqueue() now drops non-retryable jobs.',
+    });
+  });
+
+  test('reply@1 for a plain reply carries no sha', () => {
+    expect(
+      parseGateCtx(j({ ...REPLY, verb: 'reply', sha: undefined }))
+    ).toEqual({
+      shape: 'reply@1',
+      thread: 't-1',
+      file: 'queue/enqueue.ts:88',
+      verb: 'reply',
+      text: 'Fixed -- enqueue() now drops non-retryable jobs.',
     });
   });
 
@@ -439,6 +471,11 @@ describe('everything non-conforming returns null', () => {
       'thread: none reply with a non-string text',
       j({ ...THREAD, reply: { kind: 'none', text: 5 } }),
     ],
+    // reply@1
+    ['reply: missing thread', j({ ...REPLY, thread: undefined })],
+    ['reply: missing text', j({ ...REPLY, text: ' ' })],
+    ['reply: unknown verb', j({ ...REPLY, verb: 'skip' })],
+    ['reply: sha not a string', j({ ...REPLY, sha: 7 })],
     // replies@1
     ['replies: missing list', j({ 'gate-ctx': 'replies@1' })],
     ['replies: list not an array', j({ 'gate-ctx': 'replies@1', replies: {} })],
