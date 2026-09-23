@@ -1018,6 +1018,52 @@ func TestWheelOverHistoryListScrollsTheView(t *testing.T) {
 	}
 }
 
+// TestWheelKeepsHoverUnderThePointer: the wheel slides the rows under a
+// still pointer, so the hover follows the row now under it rather than the
+// commit that scrolled away.
+func TestWheelKeepsHoverUnderThePointer(t *testing.T) {
+	m := groupedMission(t, 30, false)
+	y := historyRowFrameY(t, m, "subject-01")
+	m.Update(tea.MouseMotionMsg{X: 5, Y: y})
+	if m.hoverCommit != 1 {
+		t.Fatalf("setup: motion over subject-01 hovers commit 1, got %d", m.hoverCommit)
+	}
+	m.Update(tea.MouseWheelMsg{X: 5, Y: y, Button: tea.MouseWheelDown})
+	row := strings.Split(m.View().Content, "\n")[y]
+	if text := listRowText(row); !strings.HasPrefix(text, "subject-02") {
+		t.Fatalf("setup: one tick should bring subject-02 under the pointer, got %q", text)
+	}
+	if m.hoverCommit != 2 || !strings.Contains(sidebarPart(row), bgSGR(theme.HoverBg)) {
+		t.Fatalf("the row under the pointer should hover after the wheel, hoverCommit=%d: %q", m.hoverCommit, sidebarPart(row))
+	}
+	if old := sidebarLine(t, m.View().Content, "subject-01"); strings.Contains(old, bgSGR(theme.HoverBg)) {
+		t.Fatalf("the commit that scrolled out from under the pointer must drop its hover: %q", old)
+	}
+	m.Update(tea.MouseWheelMsg{X: 5, Y: y - 1, Button: tea.MouseWheelDown})
+	if under := listRowText(strings.Split(m.View().Content, "\n")[y-1]); strings.HasPrefix(under, "───") && m.hoverCommit != -1 {
+		t.Fatalf("a rule under the pointer hovers nothing, got %d", m.hoverCommit)
+	}
+}
+
+// TestLandedPageDropsActionRowHover: the page grows the list and moves the
+// action row away from the pointer that hovered it.
+func TestLandedPageDropsActionRowHover(t *testing.T) {
+	m := pagingMission(t, pagingCommits(3))
+	y := historyRowFrameY(t, m, "Load 100 more commits")
+	m.Update(tea.MouseMotionMsg{X: 5, Y: y})
+	m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft})
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(5), HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	ny := historyRowFrameY(t, m, "Load 100 more commits")
+	if ny == y {
+		t.Fatal("setup: the landed page should move the action row")
+	}
+	if row := sidebarPart(strings.Split(m.View().Content, "\n")[ny]); strings.Contains(row, bgSGR(theme.HoverBg)) {
+		t.Fatalf("the moved action row must not keep a hover the pointer left: %q", row)
+	}
+}
+
 // TestWheelToTheEndRequestsNoPage: scrolling reaches the end of the loaded
 // list and stops there; nothing loads while scrolling.
 func TestWheelToTheEndRequestsNoPage(t *testing.T) {

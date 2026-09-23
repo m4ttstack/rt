@@ -253,9 +253,10 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		m.historyFreeScroll = false
 	}
 	// A landed page puts the cursor back on the last commit it followed, so
-	// it never chases the action row to the new end of the list.
+	// it never chases the action row to the new end of the list, and the
+	// row's hover stays with the pointer it moved away from.
 	if reloaded || len(decoded.History.Commits) != len(m.model.History.Commits) || !decoded.History.HasMore {
-		m.historyOnMore = false
+		m.historyOnMore, m.hoverHistoryMore = false, false
 	}
 	m.model = decoded
 	m.clampSelection()
@@ -1298,6 +1299,13 @@ func (m *Mission) clickModalRow(h hit) (tea.Model, tea.Cmd) {
 // established (mouse.go).
 func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	mouse := msg.Mouse()
+	m.setHover(mouse.X, mouse.Y)
+	return m, nil
+}
+
+// setHover points every hover field at whatever hitTest resolves (x, y) to,
+// clearing the rest.
+func (m *Mission) setHover(x, y int) {
 	m.hoverZone = zoneNone
 	m.hoverFile = -1
 	m.hoverDiffLine = -1
@@ -1317,7 +1325,7 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 		m.modal.hoverRow = -1
 		m.modal.hoverAction = false
 	}
-	switch h := m.hitTest(mouse.X, mouse.Y); h.kind {
+	switch h := m.hitTest(x, y); h.kind {
 	case hitTopbar:
 		m.hoverZone = h.zone
 	case hitFileRow, hitFileCheckbox:
@@ -1354,7 +1362,6 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 	case hitUndoChip:
 		m.hoverUndoChip = true
 	}
-	return m, nil
 }
 
 // mouseWheel scrolls whichever pane the pointer sits over: the modal's own
@@ -1401,6 +1408,7 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	if m.historyTab() {
 		if bodyY >= historyFixedTopRows {
 			m.historyScroll(delta)
+			m.setHover(mouse.X, mouse.Y)
 		}
 		return m, nil
 	}
