@@ -29,7 +29,7 @@
  * record to delta against) and explicit `mode: "deep"` requests still reject.
  */
 
-import type { PullRequest, ApprovalRuleLite, MRApprovalRules } from "@mattstack/glance";
+import type { PullRequest, ApprovalRuleLite, MRApprovalRules, GitLabProvider } from "@mattstack/glance";
 import { getRepoContext, getSelfUsername, resolveSelfUsername } from "./freshness.ts";
 import { getProjectMRs, freshnessOf, type ProjectMRs, type ProjectMRStore } from "./project-mrs-store.ts";
 import { loadRepoTracking, grants } from "../repo-tracking.ts";
@@ -155,6 +155,32 @@ export const TOPUP_CONCURRENCY = 4;
  * The daily deep reconcile still re-reads them.
  */
 export const TOPUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The delta window's changed MRs. Only opened MRs are read at list weight:
+ * GitLab evaluates approval rules on read, and on a large merged MR (a
+ * ~1,000-file deploy MR against a big CODEOWNERS) that alone runs past the
+ * 60s request limit, failing the whole page. Merged/closed MRs come from the
+ * cheap index instead and only move entries the store already holds; an MR
+ * never stored has no open-state consumer, and mr:by-branch fetches misses.
+ */
+export async function fetchDeltaFrom(
+  provider: Pick<GitLabProvider, "fetchPullRequests" | "fetchMergeRequestIndex">,
+  projectPath: string,
+  updatedAfter: string,
+  stored: ProjectMRStore | undefined,
+): Promise<PullRequest[]> {
+  const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true });
+  const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"] });
+  const terminal: PullRequest[] = [];
+  for (const row of rows) {
+    const existing = stored?.mrs[row.iid]?.pr;
+    if (!existing) continue;
+    if (existing.state === row.state && existing.updatedAt === row.updatedAt) continue;
+    terminal.push({ ...existing, state: row.state, updatedAt: row.updatedAt, mergedAt: row.mergedAt, title: row.title });
+  }
+  return [...opened, ...terminal];
+}
 
 const syncInFlight = new Map<string, Promise<void>>();
 
@@ -359,13 +385,7 @@ async function syncImpl(
   const updatedAfter = new Date(freshnessOf(record) - DELTA_OVERLAP_MS).toISOString();
   const fetchDelta = overrides.fetchDelta ?? (async (repo: string, ua: string) => {
     const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    const prs = await provider.fetchPullRequests({
-      projectPath,
-      state: ["opened", "merged", "closed"],
-      updatedAfter: ua,
-      listWeight: true,
-    });
-    return { projectPath, prs };
+    return { projectPath, prs: await fetchDeltaFrom(provider, projectPath, ua, record) };
   });
 
   let { projectPath, prs } = await fetchDelta(repoName, updatedAfter);

@@ -2,11 +2,11 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
+import { syncProjectMRs, fetchDeltaFrom, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { readSyncHealth, recordSyncFailure } from "../project-sync-health.ts";
-import type { PullRequest } from "@mattstack/glance";
+import type { FetchMergeRequestIndexOptions, FetchPullRequestsOptions, MergeRequestIndexRow, PullRequest } from "@mattstack/glance";
 
 function pr(iid: number, over: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -1563,5 +1563,69 @@ describe("sync health recording", () => {
     await expect(p1).rejects.toThrow("503");
     await expect(p2).rejects.toThrow("503");
     expect(readSyncHealth("health-coalesce")).toMatchObject({ kind: "server-error" });
+  });
+});
+
+describe("fetchDeltaFrom (terminal MRs via the index)", () => {
+  const UA = "2026-09-22T19:26:07.270Z";
+  const NOW = "2026-09-22T20:00:00.000Z";
+
+  function row(iid: number, over: Partial<MergeRequestIndexRow> = {}): MergeRequestIndexRow {
+    return {
+      iid, projectPath: "g/p", title: `MR ${iid}`, state: "merged", createdAt: NOW, updatedAt: NOW,
+      mergedAt: NOW, authorUsername: "ada", sourceBranch: `b${iid}`, labels: [], ...over,
+    };
+  }
+
+  function fakeProvider(open: PullRequest[], index: MergeRequestIndexRow[]) {
+    const pulls: FetchPullRequestsOptions[] = [];
+    const indexCalls: FetchMergeRequestIndexOptions[] = [];
+    return {
+      pulls,
+      indexCalls,
+      provider: {
+        fetchPullRequests: async (o?: FetchPullRequestsOptions) => { pulls.push(o!); return open; },
+        fetchMergeRequestIndex: async (o: FetchMergeRequestIndexOptions) => { indexCalls.push(o); return index; },
+      },
+    };
+  }
+
+  function storedWith(...prs: PullRequest[]) {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", prs, Date.now());
+    return store.read("repo");
+  }
+
+  test("asks for list-weight fields on opened MRs only, and the index for merged/closed", async () => {
+    const fake = fakeProvider([], []);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, undefined);
+    expect(fake.pulls).toEqual([{ projectPath: "g/p", state: "opened", updatedAfter: UA, listWeight: true }]);
+    expect(fake.indexCalls).toEqual([{ projectPaths: ["g/p"], updatedAfter: UA, states: ["merged", "closed"] }]);
+  });
+
+  test("moves a stored open MR to its terminal state and keeps its stored fields", async () => {
+    const stored = storedWith(pr(7, { approved: true, updatedAt: UA } as Partial<PullRequest>));
+    const fake = fakeProvider([], [row(7, { title: "renamed" })]);
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toMatchObject({ iid: 7, state: "merged", mergedAt: NOW, updatedAt: NOW, title: "renamed", approved: true });
+  });
+
+  test("drops terminal MRs the store never held", async () => {
+    const fake = fakeProvider([], [row(99)]);
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, storedWith(pr(1)))).toEqual([]);
+  });
+
+  test("skips stored terminal entries the index reports unchanged", async () => {
+    const stored = storedWith(pr(8, { state: "merged", updatedAt: NOW } as Partial<PullRequest>));
+    const fake = fakeProvider([], [row(8)]);
+    expect(await fetchDeltaFrom(fake.provider, "g/p", UA, stored)).toEqual([]);
+  });
+
+  test("a terminal row lands after the opened fetch's copy of the same MR", async () => {
+    const stored = storedWith(pr(5));
+    const fake = fakeProvider([pr(5, { title: "still open" })], [row(5)]);
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(prs.map((p) => [p.iid, p.state])).toEqual([[5, "opened"], [5, "merged"]]);
   });
 });
