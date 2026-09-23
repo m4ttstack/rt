@@ -181,7 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             if BundleFlavor.isStubActive {
                 TrayLog.info("stub mode: skipping real service registration and version-change restart")
             } else {
-                servicesRegistrar.registerAll()
+                await servicesRegistrar.registerAll()
                 let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
                 let change = await servicesRegistrar.handleVersionChange(current: version, store: UserDefaults.standard)
                 TrayLog.info("version change evaluated", ["change": String(describing: change)])

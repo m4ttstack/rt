@@ -19,6 +19,13 @@ public enum HandDeckRetireOutcome: Equatable, Sendable {
         case .failed: return "failed"
         }
     }
+
+    /// A hand job was loaded under the label, so an SMAppService helper that
+    /// shares it could not have been bootstrapped and must be resubmitted.
+    public var freedLoadedLabel: Bool {
+        if case .retired(bootedOut: true, _) = self { return true }
+        return false
+    }
 }
 
 public struct HandDeckFS: Sendable {
@@ -44,6 +51,15 @@ public enum HandDeckAgent {
 
     public static func plistPath(home: String) -> String { "\(home)/Library/LaunchAgents/\(label).plist" }
     public static func retiredPath(home: String) -> String { "\(home)/.mattstack/deck/\(label).plist.retired" }
+
+    /// Run before registering the bundle's agents. Only the prod deck helper
+    /// shares the hand agent's label, so any other helper set returns nil
+    /// without a launchctl call.
+    public static func clearLabel(forHelpers helperLabels: [String], home: String, uid: uid_t, runner: CommandRunner,
+                                  fs: HandDeckFS, now: () -> Date = Date.init) async -> HandDeckRetireOutcome? {
+        guard helperLabels.contains(label) else { return nil }
+        return await retire(home: home, uid: uid, runner: runner, fs: fs, now: now)
+    }
 
     public static func retire(home: String, uid: uid_t, runner: CommandRunner, fs: HandDeckFS,
                               now: () -> Date = Date.init) async -> HandDeckRetireOutcome {

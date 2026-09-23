@@ -94,4 +94,36 @@ let handDeckAgentChecks: [Check] = [
         c.expectEqual(HandDeckRetireOutcome.retired(bootedOut: true, archivedTo: retired).name, "retired")
         c.expectEqual(HandDeckRetireOutcome.failed("x").name, "failed")
     },
+    Check("hand deck preflight: a helper set without the prod deck label touches nothing") { c in
+        let runner = VerbRunner(["print": CommandOutcome(exitCode: 0, stdout: handPrint, stderr: "")])
+        let fs = FakeFS([plist])
+        let out = await HandDeckAgent.clearLabel(forHelpers: ["com.mattstack.daemon.dev", "com.mattstack.deck.dev"],
+                                                 home: home, uid: 501, runner: runner, fs: fs.seam)
+        c.expectEqual(out, nil)
+        c.expectEqual(runner.calls, [])
+        c.expectEqual(fs.moves, [])
+    },
+    Check("hand deck preflight: the prod deck helper clears a loaded hand agent before registering") { c in
+        let runner = VerbRunner(["print": CommandOutcome(exitCode: 0, stdout: handPrint, stderr: "")])
+        let fs = FakeFS([plist])
+        let out = await HandDeckAgent.clearLabel(forHelpers: ["com.mattstack.daemon", "com.mattstack.deck"],
+                                                 home: home, uid: 501, runner: runner, fs: fs.seam)
+        c.expectEqual(out, .retired(bootedOut: true, archivedTo: retired))
+        c.expectEqual(runner.calls, [["print", "gui/501/com.mattstack.deck"], ["bootout", "gui/501/com.mattstack.deck"]])
+        c.expectEqual(fs.moves, [[plist, retired]])
+    },
+    Check("hand deck preflight: an unloaded hand plist is archived so the next login cannot load it") { c in
+        let runner = VerbRunner(["print": notLoaded])
+        let fs = FakeFS([plist])
+        let out = await HandDeckAgent.clearLabel(forHelpers: ["com.mattstack.deck"],
+                                                 home: home, uid: 501, runner: runner, fs: fs.seam)
+        c.expectEqual(out, .retired(bootedOut: false, archivedTo: retired))
+        c.expect(!runner.calls.contains { $0.first == "bootout" })
+    },
+    Check("hand deck preflight: only a booted-out hand agent means the helper lost the label") { c in
+        c.expect(HandDeckRetireOutcome.retired(bootedOut: true, archivedTo: retired).freedLoadedLabel)
+        c.expect(!HandDeckRetireOutcome.retired(bootedOut: false, archivedTo: retired).freedLoadedLabel)
+        c.expect(!HandDeckRetireOutcome.absent.freedLoadedLabel)
+        c.expect(!HandDeckRetireOutcome.failed("x").freedLoadedLabel)
+    },
 ]

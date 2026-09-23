@@ -494,6 +494,11 @@ class TrayServer {
     static func retireHandDeckAgent() async -> HandDeckRetireOutcome {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let outcome = await HandDeckAgent.retire(home: home, uid: getuid(), runner: SystemCommandRunner(), fs: .system)
+        logHandDeckOutcome(outcome)
+        return outcome
+    }
+
+    static func logHandDeckOutcome(_ outcome: HandDeckRetireOutcome) {
         switch outcome {
         case .absent:
             break
@@ -503,7 +508,6 @@ class TrayServer {
         case .failed(let err):
             TrayLog.warn("could not retire hand-installed deck agent", ["label": HandDeckAgent.label, "err": err])
         }
-        return outcome
     }
 
     static func statusName(_ status: SMAppService.Status) -> String {

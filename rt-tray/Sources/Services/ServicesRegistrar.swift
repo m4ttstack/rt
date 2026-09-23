@@ -41,9 +41,21 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     func smStatuses() -> [SMAppService.Status] { agents.map { service($0).status } }
 
     @discardableResult
-    func registerAll() -> [ServiceRegisterResult] { registerSync(plists: agents.map(\.fileName)) }
+    func registerAll() async -> [ServiceRegisterResult] { await register(plists: agents.map(\.fileName)) }
 
-    private func registerSync(plists: [String]) -> [ServiceRegisterResult] {
+    /// launchd gives a label to whichever job loads first, so a hand-installed
+    /// com.mattstack.deck that won it at login keeps the prod helper from ever
+    /// running. It has to go before the helper registers, never after.
+    private func clearHandDeckLabel(before plists: [String]) async -> Bool {
+        let labels = scanned.filter { plists.contains($0.fileName) }.map(\.label)
+        guard let outcome = await HandDeckAgent.clearLabel(
+            forHelpers: labels, home: FileManager.default.homeDirectoryForCurrentUser.path,
+            uid: uid, runner: runner, fs: .system) else { return false }
+        TrayServer.logHandDeckOutcome(outcome)
+        return outcome.freedLoadedLabel
+    }
+
+    private func registerSync(plists: [String], resubmitHandDeckLabel: Bool = false) -> [ServiceRegisterResult] {
         plists.map { name in
             guard let plist = scanned.first(where: { $0.fileName == name }) else {
                 return ServiceRegisterResult(plist: name, ok: false, status: "notFound", error: "not shipped in this bundle")
@@ -54,6 +66,11 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
                 return ServiceRegisterResult(plist: name, ok: false, status: "notFound", error: "BundleProgram missing: \(missing)")
             }
             let svc = service(plist)
+            if resubmitHandDeckLabel && plist.label == HandDeckAgent.label {
+                // Registered while the hand job held the label, so launchd never
+                // loaded it; a plain register() would answer already-registered.
+                try? svc.unregister()
+            }
             do {
                 try svc.register()
                 let s = svc.status
@@ -78,7 +95,8 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     }
 
     func register(plists: [String]) async -> [ServiceRegisterResult] {
-        await MainActor.run { registerSync(plists: plists) }
+        let resubmit = await clearHandDeckLabel(before: plists)
+        return await MainActor.run { registerSync(plists: plists, resubmitHandDeckLabel: resubmit) }
     }
 
     func unregister(plists: [String]) async -> [ServiceRegisterResult] {
@@ -146,7 +164,7 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
             return change
         }
         TrayLog.info("app version changed; restarting agents", ["from": from, "to": to])
-        let registerResults = await MainActor.run { registerAll() }
+        let registerResults = await registerAll()
         let restarted = await restartAllChecked()
         let failedRegisters = registerResults.filter { !$0.ok }.map(\.plist)
         guard failedRegisters.isEmpty, restarted else {
