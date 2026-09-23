@@ -17,7 +17,13 @@ const scrolloff = 2
 // margin to know whether a wheel-scrolled top will hold on the next render
 // or get immediately overridden by placeTop re-centering on the cursor.
 func scrollMargin(h int) int {
-	off := scrolloff
+	return marginWithin(h, scrolloff)
+}
+
+// marginWithin is want rows of margin, shrunk to what an h-row window can
+// hold on both edges at once.
+func marginWithin(h, want int) int {
+	off := max(want, 0)
 	if lim := (h - 1) / 2; lim < off {
 		off = lim
 	}
@@ -30,6 +36,15 @@ func scrollMargin(h int) int {
 // the picker must fit inside the pane rather than paint rows the terminal
 // will just truncate or scroll away from under it.
 func Viewport(cursor, top, n, cap_, paneRows, chromeRows int) (newTop, h int) {
+	return ViewportAround(cursor, top, n, cap_, paneRows, chromeRows, scrolloff, scrolloff)
+}
+
+// ViewportAround is Viewport with the cursor's margins set by the caller:
+// before rows stay in view above the cursor row and after rows below it,
+// each shrinking on a short window exactly as scrolloff does. A list whose
+// cursor row opens a multi-row block counts the block's own trailing rows
+// in after.
+func ViewportAround(cursor, top, n, cap_, paneRows, chromeRows, before, after int) (newTop, h int) {
 	if cap_ <= 0 {
 		cap_ = defaultCap
 	}
@@ -46,7 +61,7 @@ func Viewport(cursor, top, n, cap_, paneRows, chromeRows int) (newTop, h int) {
 	if h == 0 || n == 0 {
 		return 0, h
 	}
-	return placeTop(cursor, top, n, h), h
+	return placeTopAround(cursor, top, n, h, before, after), h
 }
 
 // placeTop positions a window's top edge for an already-decided height h so
@@ -58,6 +73,12 @@ func Viewport(cursor, top, n, cap_, paneRows, chromeRows int) (newTop, h int) {
 // a scrolloff-correct top for each candidate instead of inheriting whatever
 // top Viewport happened to compute for its own, larger h.
 func placeTop(cursor, prevTop, n, h int) int {
+	return placeTopAround(cursor, prevTop, n, h, scrolloff, scrolloff)
+}
+
+// placeTopAround is placeTop with the margin above and below the cursor
+// given separately, each shrunk by marginWithin.
+func placeTopAround(cursor, prevTop, n, h, before, after int) int {
 	if h <= 0 || n <= 0 {
 		return 0
 	}
@@ -80,13 +101,13 @@ func placeTop(cursor, prevTop, n, h int) int {
 		top = maxTop
 	}
 
-	off := scrollMargin(h)
+	above, below := marginWithin(h, before), marginWithin(h, after)
 
 	switch pos := cursor - top; {
-	case pos < off:
-		top = cursor - off
-	case pos > h-1-off:
-		top = cursor - (h - 1 - off)
+	case pos < above:
+		top = cursor - above
+	case pos > h-1-below:
+		top = cursor - (h - 1 - below)
 	}
 	if top < 0 {
 		top = 0
