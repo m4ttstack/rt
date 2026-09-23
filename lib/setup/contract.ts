@@ -82,7 +82,7 @@ export interface Plan {
 export const GROUP_TITLES: Record<GroupId, string> = { mac: "Your Mac", accounts: "Accounts", access: "Access", tools: "Tools" };
 
 /** The rows that gate Finish. Enumerated here so `rt setup waive` can refuse anything else and offer a picker over the set. */
-export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];
+export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension", "skills.writing-style"];
 
 /** The finish-gated rows `rt setup waive` may skip; the gate honors a stored waiver only for these. */
 export const WAIVABLE_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];

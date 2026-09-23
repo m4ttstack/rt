@@ -30,6 +30,7 @@ import { atLeast } from "../semver.ts";
 import { deployedProxyVersion, pinnedPortlessVersion, PORTLESS_LAUNCHD_PLIST, PROXY_VERSION_PATH, proxyCaIsTrusted, proxyPredatesMattstack } from "../steps/services.ts";
 import { isValidBrewFormula } from "../tools-install.ts";
 import type { SecretPresence } from "./accounts.ts";
+import { writingStyleRowFor } from "./writing-style.ts";
 
 const HERDR_FLOOR = "0.7.5";
 /** Every exec in this module is bounded: a hung team-declared `--version`, or a wedged herdr/claude subprocess, must surface as "error" (124), never hang `rt setup plan` forever. This is the bound for a quick `--version`/status probe; `fast-browser doctor` is slow by design and uses DOCTOR_TIMEOUT_MS instead. */
@@ -727,6 +728,7 @@ export async function toolRows(
   // unconditional, so there is no longer a case where nothing needs it.
   const pluginList = await exec(p, ["claude", "plugin", "list", "--json"]);
   rows.push(pluginsRow(pluginList));
+  rows.push(writingStyleRowFor(p, pluginList));
 
   const served = opts.teamSlug ? readServedPacks(p, opts.teamSlug) : { packs: [], error: null };
   if (served.error) {

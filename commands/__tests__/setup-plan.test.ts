@@ -209,7 +209,8 @@ describe("setupStatus Finish line", () => {
     await setupStatus([], {}, deps);
     const install = deps.lines.findIndex((l) => l.startsWith("Install: "));
     expect(install).toBeGreaterThan(0);
-    expect(deps.lines[install + 1]).toBe("Finish: ready");
+    // The fake home has no home repo, so skills.writing-style blocks Finish here.
+    expect(deps.lines[install + 1]).toBe("Finish: blocked by: skills.writing-style");
   });
 
   test("setup plan (human) prints no Finish line", async () => {

@@ -227,7 +227,8 @@ describe("composePlan — install-satisfied flip", () => {
       const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
       expect(r.status).toBe("needs-you");
       expect(r.required).toBe(mode === "status");
-      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension"]);
+      // The fake home has no home repo, so skills.writing-style also blocks Finish here.
+      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension", "skills.writing-style"]);
       expect(plan.requiredMissing).not.toContain("tool.fast-browser-extension");
     }
   });
@@ -277,8 +278,8 @@ function gatedPlan(status: Row["status"], mode: "plan" | "status", waived: strin
 }
 
 describe("finish gate", () => {
-  test("the contract names exactly one finish-gated row today", () => {
-    expect([...FINISH_GATED_ROW_IDS]).toEqual(["tool.fast-browser-extension"]);
+  test("the contract names exactly two finish-gated rows today", () => {
+    expect([...FINISH_GATED_ROW_IDS]).toEqual(["tool.fast-browser-extension", "skills.writing-style"]);
   });
 
   test("a needs-you finish-gated row blocks Finish in both modes and never Install", () => {
@@ -346,7 +347,8 @@ describe("finish gate", () => {
       const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [] });
       const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
       expect(r.optionalNote).toBe(WAIVED_NOTE);
-      expect(plan.finishBlockedBy).toEqual([]);
+      // skills.writing-style is finish-gated but not waivable, so it still blocks Finish.
+      expect(plan.finishBlockedBy).toEqual(["skills.writing-style"]);
     } finally {
       process.env.HOME = prevHome;
       rmSync(home, { recursive: true, force: true });

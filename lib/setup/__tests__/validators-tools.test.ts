@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
 import { setSetting } from "../../settings/write.ts";
-import { FINISH_GATED_ROW_IDS, STEP_IDS } from "../contract.ts";
+import { DONE_ACTION_TYPES, FINISH_GATED_ROW_IDS, STEP_IDS } from "../contract.ts";
 import { toolRows, extractVersion } from "../validators/tools.ts";
 import type { ToolsSeams } from "../validators/tools.ts";
 import { fakeProbes, ok, missing } from "./fakes.ts";
@@ -459,10 +459,24 @@ describe("toolRows - tool.fast-browser-extension", () => {
     expect(r.status).toBe("skipped");
   });
 
-  test("the extension row is finish-gated, and it is the only tool row that is", async () => {
+  test("the extension row is finish-gated, matching the contract's finish-gated ids", async () => {
     const p = withChrome(doctorExec(withCheckStatus(REAL_DOCTOR, "extension-loaded", "fail")));
     const rows = await toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams());
     expect(rows.filter((r) => r.finishGated).map((r) => r.id)).toEqual([...FINISH_GATED_ROW_IDS]);
+  });
+
+  test("every action the extension row can carry, across its states, is one the Done screen handles", async () => {
+    const scenarios: ExecScript[] = [
+      doctorExec(withCheckStatus(REAL_DOCTOR, "extension-loaded", "fail")),
+      doctorExec(withCheckStatus(REAL_DOCTOR, "pairing", "fail")),
+      doctorExec(withoutCheck(REAL_DOCTOR, "extension-loaded")),
+      doctorExec(withoutCheck(REAL_DOCTOR, "pairing")),
+    ];
+    for (const exec of scenarios) {
+      const r = await pickRow(toolRows(withChrome(exec), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+      expect(r.action).not.toBeNull();
+      expect((DONE_ACTION_TYPES as readonly string[]).includes(r.action!.type)).toBe(true);
+    }
   });
 });
 
