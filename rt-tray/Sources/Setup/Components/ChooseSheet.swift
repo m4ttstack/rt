@@ -98,11 +98,25 @@ struct ChooseSheet: View {
                     // The field sits near the sheet's bottom edge, which clips anything drawn past it: open upward when below is short.
                     let opensUp = wanted > below && above > below
                     let height = min(wanted, opensUp ? above : below)
+                    let dropdown = CGRect(x: field.minX, y: opensUp ? field.minY - 4 - height : field.maxY + 4, width: field.width, height: height)
                     ZStack(alignment: .topLeading) {
-                        Color.clear.contentShape(Rectangle()).onTapGesture { suggestionsOpen = false }
+                        // Relying on ZStack paint order (this catcher declared
+                        // first, the dropdown second) for the dropdown to win
+                        // hit-testing as the topmost view does not hold in
+                        // practice -- its buttons read as not hittable even
+                        // once the sheet is fully presented. Carving the
+                        // catcher's own hit area down to the space outside the
+                        // dropdown removes the ambiguity structurally.
+                        ForEach(Array(ChooseDropdownGeometry.rectsOutside(dropdown, in: CGRect(origin: .zero, size: proxy.size)).enumerated()), id: \.offset) { _, rect in
+                            Color.clear
+                                .frame(width: rect.width, height: rect.height)
+                                .contentShape(Rectangle())
+                                .position(x: rect.midX, y: rect.midY)
+                                .onTapGesture { suggestionsOpen = false }
+                        }
                         SuggestionList(matches: ownMatches, height: height, pick: pickSuggestion)
                             .frame(width: field.width)
-                            .offset(x: field.minX, y: opensUp ? field.minY - 4 - height : field.maxY + 4)
+                            .offset(x: dropdown.minX, y: dropdown.minY)
                     }
                 }
             }
