@@ -237,6 +237,9 @@ row shows its key and runs exactly what the key runs.
   that exist in the index. The Trash step for every file runs before any git
   step; if any Trash move fails, nothing else runs and the error surfaces.
   (GitHub Desktop then offers a permanent delete; glitter does not.)
+  Superseded by the implementation: a Trash failure instead finishes the
+  reset/checkout-index steps for the files already trashed (excluding any
+  path a not-yet-trashed file still owns) before rethrowing the Trash error.
 - Submodule handling follows GitHub Desktop's (skip the Trash for a
   submodule path, reset submodule paths separately).
 - New client methods on `GitClient` for all three, with tests against real
