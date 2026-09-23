@@ -7,10 +7,19 @@ import Foundation
 /// The prod helper reuses the label `com.mattstack.deck`, so only a job whose
 /// launchd `path` is the ~/Library/LaunchAgents plist is booted out; an
 /// SMAppService job prints `path = (submitted by smd.<pid>)` instead.
+public enum HandDeckFailStage: Equatable, Sendable {
+    /// launchctl print failed for a reason other than a missing service, so
+    /// whether a hand job holds the label is unknown.
+    case probe
+    /// A hand job is confirmed loaded and still holds the label.
+    case bootout
+    case archive(bootedOut: Bool)
+}
+
 public enum HandDeckRetireOutcome: Equatable, Sendable {
     case absent
     case retired(bootedOut: Bool, archivedTo: String)
-    case failed(String)
+    case failed(String, stage: HandDeckFailStage)
 
     public var name: String {
         switch self {
@@ -23,8 +32,17 @@ public enum HandDeckRetireOutcome: Equatable, Sendable {
     /// A hand job was loaded under the label, so an SMAppService helper that
     /// shares it could not have been bootstrapped and must be resubmitted.
     public var freedLoadedLabel: Bool {
-        if case .retired(bootedOut: true, _) = self { return true }
-        return false
+        switch self {
+        case .retired(bootedOut: true, _), .failed(_, stage: .archive(bootedOut: true)): return true
+        default: return false
+        }
+    }
+
+    public var labelMayBeHeld: Bool {
+        switch self {
+        case .failed(_, stage: .probe), .failed(_, stage: .bootout): return true
+        default: return false
+        }
     }
 }
 
@@ -54,6 +72,8 @@ public struct HandDeckBlockedNotice: Equatable, Sendable {
 public enum HandDeckAgent {
     public static let label = "com.mattstack.deck"
     static let launchctlPath = "/bin/launchctl"
+    /// launchctl print's exit status for a service the domain does not have.
+    static let serviceNotFoundExit: Int32 = 113
 
     public static func plistPath(home: String) -> String { "\(home)/Library/LaunchAgents/\(label).plist" }
     public static func retiredPath(home: String) -> String { "\(home)/.mattstack/deck/\(label).plist.retired" }
@@ -67,17 +87,22 @@ public enum HandDeckAgent {
         return await retire(home: home, uid: uid, runner: runner, fs: fs, now: now)
     }
 
-    public static func blockedNotice(for outcome: HandDeckRetireOutcome, home: String, uid: uid_t) -> HandDeckBlockedNotice? {
-        guard case .failed(let reason) = outcome else { return nil }
-        let retired = retiredPath(home: home)
-        let dir = (retired as NSString).deletingLastPathComponent
-        return HandDeckBlockedNotice(
-            summary: "A hand-installed deck agent is blocking the deck helper.",
-            reason: reason,
-            fixCommand: """
-                launchctl bootout gui/\(uid)/\(label)
-                mkdir -p '\(dir)' && mv -n '\(plistPath(home: home))' '\(retired)'
-                """)
+    static func archiveDestination(home: String, fs: HandDeckFS, now: () -> Date) -> String {
+        let base = retiredPath(home: home)
+        return fs.exists(base) ? "\(base).\(Int64(now().timeIntervalSince1970 * 1000))" : base
+    }
+
+    private static func shellQuoted(_ s: String) -> String { "'\(s.replacingOccurrences(of: "'", with: "'\\''"))'" }
+
+    public static func blockedNotice(for outcome: HandDeckRetireOutcome, home: String, uid: uid_t, fs: HandDeckFS,
+                                     now: () -> Date = Date.init) -> HandDeckBlockedNotice? {
+        guard case .failed(let reason, let stage) = outcome else { return nil }
+        let dest = archiveDestination(home: home, fs: fs, now: now)
+        let dir = (dest as NSString).deletingLastPathComponent
+        var lines = ["mkdir -p \(shellQuoted(dir)) && mv -n \(shellQuoted(plistPath(home: home))) \(shellQuoted(dest))"]
+        if stage == .bootout { lines.insert("launchctl bootout gui/\(uid)/\(label)", at: 0) }
+        return HandDeckBlockedNotice(summary: "A hand-installed deck agent is blocking the deck helper.",
+                                     reason: reason, fixCommand: lines.joined(separator: "\n"))
     }
 
     public static func retire(home: String, uid: uid_t, runner: CommandRunner, fs: HandDeckFS,
@@ -87,24 +112,28 @@ public enum HandDeckAgent {
 
         let target = "gui/\(uid)/\(label)"
         let print = await runner.run(launchctlPath, ["print", target])
+        if !print.ok && print.exitCode != serviceNotFoundExit {
+            return .failed("print \(target) exited \(print.exitCode): \((print.stderr + print.stdout).trimmingCharacters(in: .whitespacesAndNewlines))",
+                           stage: .probe)
+        }
         var bootedOut = false
         let loadedFromPlist = print.ok && print.stdout.split(separator: "\n")
             .contains { $0.trimmingCharacters(in: .whitespaces) == "path = \(plist)" }
         if loadedFromPlist {
             let bootout = await runner.run(launchctlPath, ["bootout", target])
             guard bootout.ok else {
-                return .failed("bootout \(target) exited \(bootout.exitCode): \((bootout.stderr + bootout.stdout).trimmingCharacters(in: .whitespacesAndNewlines))")
+                return .failed("bootout \(target) exited \(bootout.exitCode): \((bootout.stderr + bootout.stdout).trimmingCharacters(in: .whitespacesAndNewlines))",
+                               stage: .bootout)
             }
             bootedOut = true
         }
 
-        let base = retiredPath(home: home)
-        let archivedTo = fs.exists(base) ? "\(base).\(Int64(now().timeIntervalSince1970 * 1000))" : base
+        let archivedTo = archiveDestination(home: home, fs: fs, now: now)
         do {
-            try fs.createDirectory((base as NSString).deletingLastPathComponent)
+            try fs.createDirectory((archivedTo as NSString).deletingLastPathComponent)
             try fs.move(plist, archivedTo)
         } catch {
-            return .failed("could not archive \(plist): \(error.localizedDescription)")
+            return .failed("could not archive \(plist): \(error.localizedDescription)", stage: .archive(bootedOut: bootedOut))
         }
         return .retired(bootedOut: bootedOut, archivedTo: archivedTo)
     }
