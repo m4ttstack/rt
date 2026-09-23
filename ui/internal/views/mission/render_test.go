@@ -1758,7 +1758,7 @@ func TestCommitEmitClearsLocalDrafts(t *testing.T) {
 	}
 }
 
-// TestClickCheckboxOnAnotherRowAlsoSelectsIt: RT-221. A checkbox click always
+// TestClickCheckboxOnAnotherRowAlsoSelectsIt: a checkbox click always
 // emitted its own stage intent, but never mission:select -- so the diff pane
 // kept showing the previously selected file until the next row click or
 // arrow key. Clicking a DIFFERENT row's checkbox must batch the stage intent
@@ -1802,7 +1802,7 @@ func TestClickCheckboxOnTheAlreadySelectedRowStillStages(t *testing.T) {
 	}
 }
 
-// TestCommitRefusalRestoresDraftAfterEmit: RT-221. Emitting mission:commit
+// TestCommitRefusalRestoresDraftAfterEmit: emitting mission:commit
 // clears the local drafts -- the only point they can ever go back to empty,
 // since a non-empty draft always outranks a push. A refusal or failure must
 // restore them via the next push's Commit.Summary/Description, or the typed

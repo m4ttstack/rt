@@ -8,7 +8,9 @@
  * only in waits, where it is the one signal that a round trip finished --
  * asserting on it would make this a second, worse copy of the Go render
  * tests. Each wait keys on a state transition the board only paints once the
- * driver has come back from git, never on a fixed sleep.
+ * driver has come back from git, never on a fixed sleep. The History test is
+ * the one screen-only exception: History changes no git state, so there is
+ * nothing else to assert against.
  */
 import { describe, test, expect, beforeAll, afterEach } from "bun:test";
 import { execFileSync } from "child_process";

@@ -606,7 +606,7 @@ const (
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go -- not the fixture's initial cursor row, so clicking its
-// checkbox (RT-221) batches a select intent alongside the stage intent; the
+// checkbox batches a select intent alongside the stage intent; the
 // two land as concurrent Cmds, so the read order between them is not
 // guaranteed and both lines are checked as a set.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {

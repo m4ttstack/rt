@@ -505,9 +505,9 @@ export class MissionDriver {
    * default, ratified 2026-09-21) and prunes entries for files that no
    * longer appear (committed, reverted, or discarded away) so the map never
    * grows stale forever. Called from every place that replaces this.snapshot
-   * -- refresh(), refreshBadges(), refreshSnapshotAndDiff() -- since any of
-   * them can observe a file the user, or another agent (this estate has
-   * agents that stage/edit independently), touched outside this session.
+   * -- refresh() and refreshBadges() -- since either can observe a file the
+   * user, or another agent (this estate has agents that stage/edit
+   * independently), touched outside this session.
    */
   private reconcileSelections(): void {
     const present = new Set(this.snapshot.files.map((f) => f.path));
@@ -638,11 +638,11 @@ export class MissionDriver {
   /**
    * The file's persisted commit-intent selection (GHD's checkbox model,
    * ratified 2026-09-21): every changed file's selection is seeded to All
-   * the moment it first appears (reconcileSelections, called from every
-   * refresh/refreshBadges/refreshSnapshotAndDiff) and persists across
-   * pushes and refreshes as the user's own commit intent, independent of
-   * the real git index. This fallback (All) only matters before the very
-   * first reconcile has ever run.
+   * the moment it first appears (reconcileSelections, called from both
+   * refresh and refreshBadges) and persists across pushes and refreshes as
+   * the user's own commit intent, independent of the real git index. This
+   * fallback (All) only matters before the very first reconcile has ever
+   * run.
    */
   private currentSelection(path: string): DiffSelection {
     return this.state.selections.get(path) ?? DiffSelection.fromInitialSelection(DiffSelectionType.All);
@@ -1032,13 +1032,5 @@ export class MissionDriver {
     if (payload.showOversized === true && this.state.selectedPath) this.state.showOversized.add(this.state.selectedPath);
     if (payload.showOversized === false && this.state.selectedPath) this.state.showOversized.delete(this.state.selectedPath);
     this.push();
-  }
-
-  private async refreshSnapshotAndDiff(client: GitClient): Promise<void> {
-    this.snapshot = await client.snapshot();
-    this.reconcileSelections();
-    await this.refreshDiff(client);
-    this.recomputeAction();
-    await this.syncHistory();
   }
 }
