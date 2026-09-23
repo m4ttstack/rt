@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { moveValue } from "./move.ts";
 import type { EffectiveWire, ExplainRowWire, SettingDefWire } from "./server.ts";
 
 export type { EffectiveWire, ExplainRowWire, SettingDefWire };
@@ -29,6 +30,8 @@ export interface SettingsScopeState {
       def's `effective` in place. Resolves null on success, else the server's
       refusal message verbatim. */
   unset: (key: string, scope: string) => Promise<string | null>;
+  /** Move one key's authored value from one scope's store to another. */
+  move: (key: string, from: string, to: string) => Promise<string | null>;
 }
 
 export interface SettingKeyState {
@@ -135,9 +138,28 @@ export function useSettingsScope(prefix: string, opts: SettingsKitOptions = {}):
     [base],
   );
 
+  const move = useCallback(
+    async (key: string, from: string, to: string): Promise<string | null> => {
+      let rows: ExplainRowWire[];
+      try {
+        rows = (await getJson<{ rows: ExplainRowWire[] }>(`${base}/explain/${encodeURIComponent(key)}`)).rows;
+      } catch (err) {
+        return (err as Error).message;
+      }
+      const source = rows.find((r) => r.scope === from);
+      return moveValue(
+        { set: (scope, value) => set(key, scope, value), unset: (scope) => unset(key, scope) },
+        from,
+        to,
+        { present: source?.present === true && "value" in source, value: source?.value },
+      );
+    },
+    [base, set, unset],
+  );
+
   return useMemo(
-    () => ({ defs, loading, error, refresh, set, saving, unset }),
-    [defs, loading, error, refresh, set, saving, unset],
+    () => ({ defs, loading, error, refresh, set, saving, unset, move }),
+    [defs, loading, error, refresh, set, saving, unset, move],
   );
 }
 
