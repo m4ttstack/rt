@@ -170,6 +170,7 @@ const EXPECTED_TOOL_NAMES = [
   "gate_answer", "gate_ask", "gate_list",
   "herd_answer", "herd_ask", "herd_gates", "herd_report",
   "mr_comment_inline", "mr_map", "mr_reply_thread",
+  "rt_verb",
 ];
 
 describe("rt mcp serve e2e", () => {
@@ -275,4 +276,69 @@ describe("rt mcp serve e2e", () => {
       }
     }
   }, 30_000);
+
+  test("rt_verb runs worktree list the same as the CLI and refuses a leading flag", async () => {
+    const server = runRtPiped(["mcp", "serve"], home);
+    const client = new McpClient(server);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["worktree", "list"] } });
+      expect(call.error).toBeUndefined();
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError).toBeUndefined();
+
+      const cli = runRt(["worktree", "list", "--json"], home);
+      const cliOut = await new Response(cli.stdout as ReadableStream).text();
+      await cli.exited;
+      expect(JSON.parse(result.content[0]!.text)).toEqual(JSON.parse(cliOut));
+
+      const refused = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["--post-install", "worktree", "list"] } });
+      const refusedResult = refused.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(refusedResult.isError).toBe(true);
+      expect(refusedResult.content[0]!.text).toContain("Agent-safe verbs:");
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      const exitedInTime = await Promise.race([
+        server.exited.then(() => true),
+        Bun.sleep(3000).then(() => false),
+      ]);
+      try {
+        expect(exitedInTime).toBe(true);
+      } finally {
+        if (!exitedInTime) {
+          try { server.kill(); } catch { /* already gone */ }
+          await server.exited;
+        }
+      }
+    }
+  }, 30_000);
+
+  test("rt_verb works when the server runs from source", async () => {
+    const server = Bun.spawn([process.execPath, join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
+      stdin: "pipe", stdout: "pipe", stderr: "pipe", env: rtEnv(home, {}),
+    });
+    children.push(server as never);
+    const client = new McpClient(server as never);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["worktree", "list"] } }, 30_000);
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError).toBeUndefined();
+      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      await server.exited;
+    }
+  }, 60_000);
 });
