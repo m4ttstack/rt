@@ -33,7 +33,8 @@ function store() {
 }
 
 describe('SettingRow', () => {
-  it('shows the key, the first sentence, the source, and an explain link', () => {
+  it('shows the key, the first sentence, the source, and an explain button', async () => {
+    const onExplain = vi.fn();
     renderWithProviders(
       <SettingRow
         def={def('agent.claude.effort', {
@@ -42,15 +43,31 @@ describe('SettingRow', () => {
         store={store()}
         subhead={null}
         query=""
+        onExplain={onExplain}
       />
     );
     expect(screen.getByText('agent.claude.')).toBeInTheDocument();
     expect(screen.getByText('effort')).toBeInTheDocument();
     expect(screen.getByText('What it does.')).toBeInTheDocument();
     expect(screen.getByText('default')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'explain agent.claude.effort' })
+    );
+    expect(onExplain).toHaveBeenCalledWith('agent.claude.effort');
+  });
+
+  it('has no explain button without onExplain', () => {
+    renderWithProviders(
+      <SettingRow
+        def={def('agent.claude.effort')}
+        store={store()}
+        subhead={null}
+        query=""
+      />
+    );
     expect(
-      screen.getByRole('link', { name: 'explain agent.claude.effort' })
-    ).toHaveAttribute('href', '/config/agent.claude.effort');
+      screen.queryByRole('button', { name: 'explain agent.claude.effort' })
+    ).not.toBeInTheDocument();
   });
 
   it('clamps the description to one line', () => {

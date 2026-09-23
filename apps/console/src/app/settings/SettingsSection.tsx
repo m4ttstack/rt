@@ -79,12 +79,14 @@ function AgentsSection({
   query,
   filtering,
   initialProvider,
+  onExplain,
 }: {
   section: Section;
   store: RowStore;
   query: string;
   filtering: boolean;
   initialProvider: Provider;
+  onExplain: (key: string) => void;
 }) {
   const all = section.subsections.flatMap(s => s.defs);
   const [chosen, setChosen] = useState<Provider>(initialProvider);
@@ -125,6 +127,7 @@ function AgentsSection({
           subhead={null}
           query={query}
           suggestions={def.key.endsWith('.model') ? suggestions : undefined}
+          onExplain={onExplain}
         />
       ))}
     </Box>
@@ -137,12 +140,14 @@ export function SettingsSection({
   query,
   filtering,
   agentProvider,
+  onExplain,
 }: {
   section: Section;
   store: RowStore;
   query: string;
   filtering: boolean;
   agentProvider: Provider;
+  onExplain: (key: string) => void;
 }) {
   const { text } = useSchemeColors();
   if (section.group.id === 'agents')
@@ -153,6 +158,7 @@ export function SettingsSection({
         query={query}
         filtering={filtering}
         initialProvider={agentProvider}
+        onExplain={onExplain}
       />
     );
   return (
@@ -195,6 +201,7 @@ export function SettingsSection({
               store={store}
               subhead={sub.scope}
               query={query}
+              onExplain={onExplain}
             />
           ))}
         </Box>

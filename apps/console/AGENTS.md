@@ -34,7 +34,8 @@ to `rt`, and nothing proxied through to another service. The dev server defaults
 Routing is `wouter`, via `useAppRoute()` (`src/app/routes.ts`), which maps the current location to
 a structured `AppRoute` union: `board`, `run`, `search`, `wiring`, `settings`, `config`, `not-found`.
 `/settings` is the grouped, filterable page over every registered key (`src/app/settings/`);
-`/config/:key` is its per-key explain drill-in. The
+a row's explain opens a modal over the page, kept in `?explain=<key>`, and old `/config/:key`
+links redirect there. The
 `/runs/:repo/:runId` route carries a percent-encoded, possibly `remote:`/`path:`-prefixed repo
 identity in the `repo` segment; `canonicalRepo()` decodes and re-serializes it back to the exact
 wire form `@mattstack/rt-client`'s `serializeIdentity` produces, because a repo identity containing

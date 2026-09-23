@@ -24,6 +24,8 @@ import { isSet } from '@mattstack/settings-kit/shapes';
 import { useSearchParams } from 'wouter';
 
 import { PAGE_ROW_HEIGHT } from '../chrome';
+import { ExplainModal } from './ExplainModal';
+import { useExplainParam } from './explainParam';
 import { TIER_LABEL, type Tier } from './groups';
 import { ScopeDot } from './ScopeBadge';
 import { SettingsSection, type Provider } from './SettingsSection';
@@ -138,6 +140,7 @@ function Index({
 export function SettingsPage() {
   const { text, bg } = useSchemeColors();
   const store = useSettingsScope('');
+  const explain = useExplainParam();
   const [params, setParams] = useSearchParams();
   const query = params.get('q') ?? '';
   const [changedOnly, setChangedOnly] = useState(false);
@@ -393,6 +396,7 @@ export function SettingsPage() {
                   query={query}
                   filtering={filtering}
                   agentProvider={agentProvider}
+                  onExplain={explain.open}
                 />
               ))
             )}
@@ -412,6 +416,11 @@ export function SettingsPage() {
           </Box>
         </PageShell.Content>
       </PageShell.Main>
+      <ExplainModal
+        settingKey={explain.key}
+        store={store}
+        onClose={explain.close}
+      />
     </PageShell>
   );
 }

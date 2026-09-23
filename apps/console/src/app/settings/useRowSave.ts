@@ -42,6 +42,8 @@ export function useRowSave(store: RowStore, def: SettingDefWire) {
           ? store.unset(def.key, scope)
           : store.set(def.key, scope, value)
       ),
+    setAt: (at: string, value: unknown) =>
+      run(() => store.set(def.key, at, value)),
     clear: (at: string) => run(() => store.unset(def.key, at)),
     move: (from: string, to: string) =>
       run(() => store.move(def.key, from, to)),

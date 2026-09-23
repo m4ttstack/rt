@@ -18,7 +18,6 @@ import {
   SHAPES,
   summarize,
 } from '@mattstack/settings-kit/shapes';
-import { Link } from 'wouter';
 
 import { compositeParts } from './CompositeControls';
 import { RowMenu } from './RowMenu';
@@ -60,12 +59,16 @@ export function SettingRow({
   subhead,
   query,
   suggestions,
+  onExplain,
+  fullDescription = false,
 }: {
   def: SettingDefWire;
   store: RowStore;
   subhead: StoreScope | null;
   query: string;
   suggestions?: string[];
+  onExplain?: (key: string) => void;
+  fullDescription?: boolean;
 }) {
   const { text } = useSchemeColors();
   const row = useRowSave(store, def);
@@ -146,12 +149,14 @@ export function SettingRow({
             ) : null}
           </Group>
           <Marked
-            text={firstSentence(def.description)}
+            text={
+              fullDescription ? def.description : firstSentence(def.description)
+            }
             query={query}
             fz={12}
             lh="15px"
             c={text.muted}
-            lineClamp={1}
+            lineClamp={fullDescription ? undefined : 1}
           />
         </Stack>
         <Group w={260} gap={8} wrap="nowrap" style={{ flex: 'none' }}>
@@ -172,16 +177,17 @@ export function SettingRow({
         </Group>
         <Group gap={4} wrap="nowrap" style={{ flex: 'none' }}>
           <RowMenu def={def} row={row} />
-          <ActionIcon
-            component={Link}
-            href={`/config/${encodeURIComponent(def.key)}`}
-            variant="subtle"
-            color="gray"
-            c={text.muted}
-            aria-label={`explain ${def.key}`}
-          >
-            <Icons.chevronRight size={16} />
-          </ActionIcon>
+          {onExplain && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              c={text.muted}
+              aria-label={`explain ${def.key}`}
+              onClick={() => onExplain(def.key)}
+            >
+              <Icons.chevronRight size={16} />
+            </ActionIcon>
+          )}
         </Group>
       </Group>
       {(row.error || def.effective.invalid) && (

@@ -244,7 +244,7 @@ describe('EffectiveInputs', () => {
     ).toBeInTheDocument();
   });
 
-  it('navigates to the config lens for a config row', async () => {
+  it('opens the explain modal over the run for a config row', async () => {
     effectiveInputsGet.mockResolvedValue(ok(PAYLOAD));
 
     renderPanel();
@@ -253,8 +253,10 @@ describe('EffectiveInputs', () => {
     const row = await screen.findByTestId('config-row-rt.runsPruneDays');
     await userEvent.click(row);
 
-    expect(window.location.pathname).toBe('/config/rt.runsPruneDays');
-    expect(window.location.pathname).not.toBe(before);
+    expect(window.location.pathname).toBe(before);
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      'rt settings explain rt.runsPruneDays'
+    );
   });
 
   it('opens a drawer with the compiled stage doc when a stage row is clicked', async () => {

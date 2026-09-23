@@ -119,6 +119,47 @@ function marked() {
 }
 
 describe('SettingsPage', () => {
+  it('opens a row in the explain modal and keeps the key in the URL', async () => {
+    const rows = [
+      { scope: 'default', file: null, present: false },
+      { scope: 'user', file: '/u', present: true, value: 'sonnet' },
+      { scope: 'machine', file: '/m', present: true, value: 'opus' },
+    ];
+    vi.stubGlobal('fetch', async (url: string) =>
+      url.startsWith('/api/settings/explain/')
+        ? {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              def: DEFS.find(d => d.key === 'board.agent.model'),
+              rows,
+            }),
+          }
+        : defsResponse()
+    );
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'explain board.agent.model' })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByTestId('explain-sentence')
+    ).toHaveTextContent('because the machine layer sets it, overriding user');
+    expect(new URLSearchParams(window.location.search).get('explain')).toBe(
+      'board.agent.model'
+    );
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Close modal' })
+    );
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).has('explain')).toBe(
+        false
+      )
+    );
+  });
+
   it('lists groups in the index with their counts and renders sections', async () => {
     renderPage();
     const index = await screen.findByRole('navigation', {

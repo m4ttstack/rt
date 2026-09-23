@@ -3,10 +3,9 @@ import { MattstackShell } from '@mattstack/app-kit/app';
 import { GenericError, PageShell } from '@mattstack/app-kit/core';
 import { RailLink } from '@mattstack/app-kit/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
 
 import { SHELL_HEADER_HEIGHT } from './chrome';
-import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { GateRedirect } from './gates/GateRedirect';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
@@ -14,6 +13,7 @@ import { useAppRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
+import { explainHref } from './settings/explainParam';
 import { SettingsPage } from './settings/SettingsPage';
 import { WiringMap } from './wiring/WiringMap';
 import { WiringRailEntry } from './wiring/WiringRailEntry';
@@ -25,9 +25,8 @@ type ConsoleSection = 'runs' | 'search' | 'wiring' | 'settings';
 function chromeSection(route: AppRoute): ConsoleSection | null {
   if (route.name === 'search') return 'search';
   if (route.name === 'wiring') return 'wiring';
-  if (route.name === 'settings') return 'settings';
+  if (route.name === 'settings' || route.name === 'config') return 'settings';
   if (route.name === 'not-found') return null;
-  if (route.name === 'config') return null;
   return 'runs';
 }
 
@@ -75,7 +74,7 @@ function RouteContent({ route }: { route: AppRoute }) {
     case 'settings':
       return <SettingsPage />;
     case 'config':
-      return <ExplainKeyPage settingKey={route.key} />;
+      return <Redirect to={explainHref(route.key)} replace />;
     case 'not-found':
       return (
         <PageShell>

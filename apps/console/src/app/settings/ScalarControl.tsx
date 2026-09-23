@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState } from 'react';
 import {
   Autocomplete,
   Group,
@@ -25,10 +25,6 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
   'agent.provider': { claude: 'Claude', codex: 'Codex' },
 };
 
-function blurOnEnter(e: KeyboardEvent<HTMLInputElement>) {
-  if (e.key === 'Enter') e.currentTarget.blur();
-}
-
 /** The text and number inputs are uncontrolled so a refused save leaves the
     typed text in place. They are keyed on the effective scope and value, or a
     refresh leaves stale text that the next blur writes back. Switch and
@@ -46,6 +42,7 @@ export function ScalarControl({
   const value = def.effective.value;
   const label = def.key;
   const [resets, setResets] = useState(0);
+  const abandoned = useRef(false);
   const seed = JSON.stringify([def.effective.scope, value, resets]);
   // A default or unset value has no store layer to unset; emptying the field
   // just restores the text the value still resolves to.
@@ -99,8 +96,16 @@ export function ScalarControl({
           placeholder="unset"
           hideControls
           defaultValue={typeof value === 'number' ? value : undefined}
-          onKeyDown={blurOnEnter}
+          onKeyDown={e => {
+            if (e.key === 'Escape') abandoned.current = true;
+            if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
+          }}
           onBlur={e => {
+            if (abandoned.current) {
+              abandoned.current = false;
+              setResets(n => n + 1);
+              return;
+            }
             const raw = e.currentTarget.value.trim();
             if (raw === '') {
               if (value !== undefined) clear();
@@ -133,6 +138,7 @@ export function ScalarControl({
         initial={current}
         suggestions={suggestions}
         commit={commit}
+        abandon={() => setResets(n => n + 1)}
       />
     );
   return (
@@ -158,14 +164,17 @@ function SuggestInput({
   initial,
   suggestions,
   commit,
+  abandon,
 }: {
   label: string;
   initial: string;
   suggestions: string[];
   commit: (next: string) => void;
+  abandon: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const picked = useRef<string | null>(null);
+  const abandoned = useRef(false);
   return (
     <Autocomplete
       ref={input}
@@ -177,6 +186,15 @@ function SuggestInput({
       data={suggestions}
       defaultValue={initial}
       onKeyDown={e => {
+        // An open dropdown takes the first Escape; the next one abandons.
+        if (
+          e.key === 'Escape' &&
+          e.currentTarget.getAttribute('aria-expanded') !== 'true'
+        ) {
+          abandoned.current = true;
+          e.currentTarget.blur();
+          return;
+        }
         // The combobox runs this before it submits the highlighted option,
         // and the input still holds the typed fragment until that submit.
         if (e.key !== 'Enter') return;
@@ -188,6 +206,12 @@ function SuggestInput({
         input.current?.blur();
       }}
       onBlur={e => {
+        if (abandoned.current) {
+          abandoned.current = false;
+          picked.current = null;
+          abandon();
+          return;
+        }
         commit(picked.current ?? e.currentTarget.value);
         picked.current = null;
       }}

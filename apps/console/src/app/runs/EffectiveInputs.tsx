@@ -12,8 +12,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 import type { RunDecisionRow } from '@mattstack/rt-client';
-import { useQuery } from '@tanstack/react-query';
-import { navigate } from 'wouter/use-browser-location';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   ConfigDepRow,
@@ -22,6 +21,7 @@ import type {
 } from '../../server/effectiveInputs';
 import { client } from '../api';
 import { shortValue } from '../config/chain';
+import { ExplainModal } from '../settings/ExplainModal';
 import { useDrawerSurface } from '../wiring/drawerSurface';
 import { QuietBadge } from '../wiring/QuietBadge';
 import { CommandProvenance } from './CommandProvenance';
@@ -210,15 +210,21 @@ function DecisionsSection({ decisions }: { decisions: RunDecisionRow[] }) {
   );
 }
 
-function ConfigRow({ row }: { row: ConfigDepRow }) {
+function ConfigRow({
+  row,
+  onExplain,
+}: {
+  row: ConfigDepRow;
+  onExplain: (key: string) => void;
+}) {
   const { text } = useSchemeColors();
   // Provenance arrives weakest-first (rt-client's resolver contract, same as
   // ExplainRowWire) -- the last entry is the strongest layer that set it.
   const strongest = row.provenance.at(-1);
   return (
     <UnstyledButton
-      onClick={() => navigate('/config/' + row.key)}
-      aria-label={`open ${row.key} in the config lens`}
+      onClick={() => onExplain(row.key)}
+      aria-label={`explain ${row.key}`}
       data-testid={`config-row-${row.key}`}
     >
       <Group gap={6} wrap="nowrap">
@@ -236,12 +242,22 @@ function ConfigRow({ row }: { row: ConfigDepRow }) {
 
 function ConfigSection({ config }: { config: ConfigDepRow[] }) {
   const { text } = useSchemeColors();
+  const queryClient = useQueryClient();
+  // Local, not ?explain=: this panel sits in a tab that a reload unmounts.
+  const [explaining, setExplaining] = useState<string | null>(null);
   return (
     <Stack gap="xs" data-testid="effective-inputs-config">
       <Text fw={700}>Configuration</Text>
       {config.map(row => (
-        <ConfigRow key={row.key} row={row} />
+        <ConfigRow key={row.key} row={row} onExplain={setExplaining} />
       ))}
+      <ExplainModal
+        settingKey={explaining}
+        onClose={() => setExplaining(null)}
+        onChanged={() =>
+          void queryClient.invalidateQueries({ queryKey: ['effective-inputs'] })
+        }
+      />
       <Text size="xs" c={text.dimmed}>
         Current values, not as-run — runs do not record the config they read.
       </Text>

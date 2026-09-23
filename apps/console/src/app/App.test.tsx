@@ -121,3 +121,17 @@ describe('App keyboard contract', () => {
     await waitFor(() => expect(writeText).not.toHaveBeenCalled());
   });
 });
+
+describe('App routes', () => {
+  it('sends an old /config/<key> link to the explain modal on /settings', async () => {
+    window.history.pushState(null, '', '/config/board.agent.model');
+    gatesGet.mockResolvedValue(ok({ gates: [] }));
+
+    renderWithProviders(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
+    expect(new URLSearchParams(window.location.search).get('explain')).toBe(
+      'board.agent.model'
+    );
+  });
+});
