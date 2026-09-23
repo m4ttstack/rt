@@ -222,11 +222,16 @@ ax_enabled_or_fail() {  # <axid> -> true|false
 
 # The Done screen's gate settles only once its post-install re-check lands:
 # until then Finish is disabled and no section is shown, which is neither of
-# the two states a driver can act on. Waits for either.
+# the two states a driver can act on. Waits for any of: the section, either
+# finish-gated row's own .action id (the section container id likely never
+# surfaces either, the same way a row's own container id does not -- confirmed
+# by a host-side XCUITest run, 2026-09-23), or Finish enabled.
 ax_wait_done_gate() {  # <timeout-s>
   local deadline=$((SECONDS + ${1:-60}))
   while [ "$SECONDS" -lt "$deadline" ]; do
     ax_find setup.done.beforeYouFinish >/dev/null 2>&1 && { ax_log "done gate: Before you finish shown"; return 0; }
+    ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1 && { ax_log "done gate: Fast Browser row present"; return 0; }
+    ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1 && { ax_log "done gate: writing-style row present"; return 0; }
     [ "$(ax_enabled setup.done.continue || true)" = true ] && { ax_log "done gate: Finish enabled"; return 0; }
     sleep 1
   done
@@ -365,6 +370,47 @@ ax_click_sheet_id() {  # <axid> -- returns 1 on failure, like ax_click_sheet_but
       click r
     end tell" >/dev/null || return 1
   ax_log "clicked sheet id $1"
+}
+
+# A bounded poll for sheet content, the counterpart to ax_wait_window/
+# ax_wait_screen: a row's action opens a sheet asynchronously, and a one-shot
+# ax_find_sheet_id right after clicking can race the sheet's own appearance.
+ax_wait_sheet_id() {  # <axid> <timeout-s>
+  local deadline=$((SECONDS + ${2:-10}))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    ax_find_sheet_id "$1" >/dev/null 2>&1 && { ax_log "sheet axid present: $1"; return 0; }
+    sleep 1
+  done
+  ax_log "sheet axid never appeared: $1"; return 1
+}
+
+# ax_enabled/ax_wait_enabled are window-1-scoped like ax_find/ax_click and
+# never see sheet content; these are their sheet-scoped counterparts.
+ax_enabled_sheet() {  # <axid> -> true|false
+  local id; id=$(ax_esc "$1")
+  ax_osa "$AX_WALK_AS
+    tell application \"System Events\" to tell process \"$AX_APP\"
+      set r to missing value
+      repeat with s in (every sheet of window 1)
+        if r is missing value then set r to my walk(s, \"$id\")
+      end repeat
+      if r is missing value then error \"sheet axid not found: $id\"
+      return (enabled of r) as text
+    end tell" 2>/dev/null
+}
+
+# ax_click_sheet_id on a disabled button is a silent no-op (AppleScript
+# `click` on a disabled control raises nothing and does nothing), so a
+# submit clicked before its row's own choice registers fails much later and
+# far from the real cause. Wait for enabled first.
+ax_wait_sheet_enabled() {  # <axid> <timeout-s>
+  local deadline=$((SECONDS + ${2:-10})) s
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    s=$(ax_enabled_sheet "$1" || true)
+    [ "$s" = true ] && { ax_log "sheet $1 enabled"; return 0; }
+    sleep 1
+  done
+  ax_log "sheet $1 still '${s:-?}' (wanted enabled)"; return 1
 }
 
 ax_admin_auth_once() {

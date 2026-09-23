@@ -143,6 +143,21 @@ t "drive-setup.sh takes the writing-style row through the choose sheet by option
    && grep -q "ax_click_sheet_id setup.choose.submit" run/guest/drive-setup.sh'
 t "ax.sh gained sheet-scoped AXIdentifier helpers alongside ax_click_sheet_button" bash -c \
   'grep -q "^ax_find_sheet_id()" run/guest/ax.sh && grep -q "^ax_click_sheet_id()" run/guest/ax.sh'
+t "ax_wait_done_gate also settles on a finish-gated row's own .action id, not just the section or Finish" bash -c \
+  'grep -q "ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action" run/guest/ax.sh \
+   && grep -q "ax_find setup.done.beforeYouFinish.skills.writing-style.action" run/guest/ax.sh'
+t "ax.sh gained a bounded sheet-content wait, not a one-shot check" bash -c \
+  'grep -q "^ax_wait_sheet_id()" run/guest/ax.sh'
+t "ax.sh gained sheet-scoped enabled helpers so a driver can wait before clicking a sheet button" bash -c \
+  'grep -q "^ax_enabled_sheet()" run/guest/ax.sh && grep -q "^ax_wait_sheet_enabled()" run/guest/ax.sh'
+t "drive-setup.sh waits for the sheet with a bounded poll before looking for the option" bash -c \
+  'grep -q "ax_wait_sheet_id \"setup.choose.option.\$style\"" run/guest/drive-setup.sh'
+t "drive-setup.sh waits for Use this style to enable before clicking it" bash -c \
+  'grep -q "ax_wait_sheet_enabled setup.choose.submit" run/guest/drive-setup.sh'
+t "assert-installed.sh parses finish-gate.txt's per-row line format, not just skipped/open" bash -c \
+  'grep -q "fast-browser-extension=skipped" run/guest/assert-installed.sh \
+   && grep -q "writing-style=" run/guest/assert-installed.sh \
+   && grep -q "writing-style show --json" run/guest/assert-installed.sh'
 t "ax_enabled_or_fail names a missing axid"             env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; out=$( (ax_enabled_or_fail setup.done.continue) 2>&1 ); [ $? -ne 0 ] && printf "%s" "$out" | grep -q "setup.done.continue not found"'
 t "assert-installed.sh asserts setup.waived"            bash -c 'grep -q "rt settings get setup.waived --json" run/guest/assert-installed.sh'
 t "assert-installed.sh takes a backup and asserts the .age plus the LFS filter" bash -c \

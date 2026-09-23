@@ -216,9 +216,10 @@ screen_done() {
   if ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1; then
     local style="mattstack:writing-style-conversational"
     ax_click setup.done.beforeYouFinish.skills.writing-style.action
-    ax_find_sheet_id "setup.choose.option.$style" >/dev/null 2>&1 || ax_fail "the writing-style choose sheet did not open with the $style option"
+    ax_wait_sheet_id "setup.choose.option.$style" 10 || ax_fail "the writing-style choose sheet did not open with the $style option"
     ax_shot 05-writing-style-choose
     ax_click_sheet_id "setup.choose.option.$style" || ax_fail "could not click the $style option in the choose sheet"
+    ax_wait_sheet_enabled setup.choose.submit 10 || ax_fail "Use this style never enabled after picking $style"
     ax_click_sheet_id setup.choose.submit || ax_fail "could not click Use this style in the choose sheet"
     local n=30
     while [ "$n" -gt 0 ] && ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1; do sleep 1; n=$((n-1)); done
