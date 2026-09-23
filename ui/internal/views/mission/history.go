@@ -122,6 +122,10 @@ func (m *Mission) historySelectionShas() []string {
 	return shas
 }
 
+func (m *Mission) historySelectionKey() string {
+	return strings.Join(m.historySelectionShas(), ",")
+}
+
 func (m *Mission) historyInSelection(idx int) bool {
 	c := m.historyIndex(m.historyCursor)
 	if c < 0 {
@@ -173,7 +177,7 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	if n == 0 {
 		return nil
 	}
-	before := strings.Join(m.historySelectionShas(), ",")
+	before := m.historySelectionKey()
 	if extend {
 		if m.historyAnchor == "" {
 			m.historyAnchor = m.historyCursor
@@ -185,7 +189,7 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	m.historyCursor = commits[i].Sha
 	// The driver's select resets its file cursor, so a move clamped at
 	// either end must not re-select what is already showing.
-	if strings.Join(m.historySelectionShas(), ",") == before {
+	if m.historySelectionKey() == before {
 		return m.maybeRequestMore()
 	}
 	m.historyGen++
@@ -371,6 +375,7 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(commits) {
 		return m, nil
 	}
+	before := m.historySelectionKey()
 	if shift {
 		if m.historyAnchor == "" {
 			m.historyAnchor = m.historyCursor
@@ -380,5 +385,10 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	m.historyCursor = commits[idx].Sha
 	m.focus = focusList
+	// Unchanged means a pending debounce, if any, already carries this
+	// selection, so it is left to settle rather than superseded.
+	if m.historySelectionKey() == before {
+		return m, m.maybeRequestMore()
+	}
 	return m, tea.Batch(m.emitHistorySelect(), m.maybeRequestMore())
 }

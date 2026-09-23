@@ -838,6 +838,16 @@ func TestHistoryClickCommitRowEmitsImmediately(t *testing.T) {
 	s.Wait()
 }
 
+func TestHistoryClickShowingCommitDoesNotEmit(t *testing.T) {
+	s := openHistory(t)
+	s.Type(sgrClick(0, 2, historyRowY(0)))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("clicking the commit already showing must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // TestTabSwitchPushClearsTabHover hovers and clicks the History half, then
 // pushes the History model as the driver would: with no further motion the
 // Changes half, now the inactive one, must repaint in Bg, not HoverBg.

@@ -570,6 +570,25 @@ func TestTabSwitchClearsStaleTabHover(t *testing.T) {
 	}
 }
 
+// TestClickShowingCommitReSelectsNothing: the driver's select resets its
+// file cursor, so a click that leaves the selection as it is must not emit.
+func TestClickShowingCommitReSelectsNothing(t *testing.T) {
+	m := newHistoryTestMission()
+	y := m.layout().topH + historyFixedTopRows
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("clicking the commit already showing must not re-select it")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y + historyRowHeight, Button: tea.MouseLeft, Mod: tea.ModShift}); cmd == nil {
+		t.Fatal("a shift+click that widens the range must still emit")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y + historyRowHeight, Button: tea.MouseLeft, Mod: tea.ModShift}); cmd != nil {
+		t.Fatal("repeating the same shift+click leaves the range as it is and must not emit")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y + historyRowHeight, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("a plain click that collapses the range must still emit")
+	}
+}
+
 func TestClickTabEmitsTabSwitch(t *testing.T) {
 	m := newHistoryTestMission()
 	if _, cmd := m.Update(tea.MouseClickMsg{X: 1, Y: m.layout().topH + 1, Button: tea.MouseLeft}); cmd == nil {
