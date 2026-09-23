@@ -95,6 +95,19 @@ func sidebarPart(line string) string {
 	return ansi.Truncate(line, sidebarWidth, "")
 }
 
+// sidebarLine is the sidebar part of the first frame line whose sidebar
+// columns contain want; the pane's header repeats the selected summary.
+func sidebarLine(t *testing.T, out, want string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if part := sidebarPart(line); strings.Contains(ansi.Strip(part), want) {
+			return part
+		}
+	}
+	t.Fatalf("no sidebar row contains %q:\n%s", want, ansi.Strip(out))
+	return ""
+}
+
 func TestTabStripMarksHistoryActive(t *testing.T) {
 	out := renderTabsRow(3, "history", false, sidebarWidth)
 	plain := ansi.Strip(out)
@@ -158,10 +171,10 @@ func TestHistorySidebarPaintsTwoLineRows(t *testing.T) {
 			t.Fatalf("History sidebar missing %q:\n%s", want, out)
 		}
 	}
-	if row := sidebarPart(lineContaining(t, out, "Fix pty paint predicate")); !strings.Contains(row, "↑") {
+	if row := sidebarLine(t, out, "Fix pty paint predicate"); !strings.Contains(row, "↑") {
 		t.Fatalf("the unpushed commit's row should carry ↑: %q", row)
 	}
-	if row := sidebarPart(lineContaining(t, out, "Guard badges")); strings.Contains(row, "↑") {
+	if row := sidebarLine(t, out, "Guard badges"); strings.Contains(row, "↑") {
 		t.Fatalf("a pushed commit's row must not carry ↑: %q", row)
 	}
 }
@@ -272,11 +285,11 @@ func TestRangeRowsPaintSelBg(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
 	out := m.View().Content
 	for _, summary := range []string{"Fix pty paint predicate", "Guard badges"} {
-		if row := sidebarPart(lineContaining(t, out, summary)); !strings.Contains(row, bgSGR(theme.SelBg)) {
+		if row := sidebarLine(t, out, summary); !strings.Contains(row, bgSGR(theme.SelBg)) {
 			t.Fatalf("range row %q should wear SelBg: %q", summary, row)
 		}
 	}
-	if row := sidebarPart(lineContaining(t, out, "Empty commit message")); strings.Contains(row, bgSGR(theme.SelBg)) {
+	if row := sidebarLine(t, out, "Empty commit message"); strings.Contains(row, bgSGR(theme.SelBg)) {
 		t.Fatalf("a row outside the range must not wear SelBg: %q", row)
 	}
 }
@@ -772,4 +785,528 @@ func TestFullFrameHistoryEveryRowFullyPaintsBackground(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
 	m.Update(tea.MouseMotionMsg{X: 5, Y: m.layout().topH + historyFixedTopRows + 2*historyRowHeight})
 	assertFullyBgFilled(t, "history", m.View().Content, m.width)
+}
+
+func fixtureHeader() HistoryHeader {
+	return *historyFixtureModel().History.Header
+}
+
+func strippedHeader(h HistoryHeader, expanded bool, width int) []string {
+	lines := historyHeaderLines(h, expanded, false, width)
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = ansi.Strip(l)
+	}
+	return out
+}
+
+func TestHeaderCollapsedShowsSummaryMetaAndExpander(t *testing.T) {
+	lines := strippedHeader(fixtureHeader(), false, 80)
+	if !strings.Contains(lines[0], "Fix pty paint predicate") || !strings.Contains(lines[0], "⌄") {
+		t.Fatalf("the first line should carry the summary and the ⌄ expander: %q", lines[0])
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "Matt · s1 · +12 −4") {
+		t.Fatalf("the collapsed header needs a byline · short sha · +N −M meta line:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func TestHeaderExpandedShowsFullShaAndAuthors(t *testing.T) {
+	out := strings.Join(strippedHeader(fixtureHeader(), true, 80), "\n")
+	for _, want := range []string{"s1full", "Matt <m@x>", "12 added lines", "4 removed lines", "⌃"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the expanded header is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestHeaderClipsDescriptionToTwoLinesCollapsed(t *testing.T) {
+	h := fixtureHeader()
+	h.Body = "body one\nbody two\nbody three\nbody four\nbody five"
+	collapsed := strings.Join(strippedHeader(h, false, 80), "\n")
+	for _, want := range []string{"body one", "body two"} {
+		if !strings.Contains(collapsed, want) {
+			t.Fatalf("collapsed should show %q:\n%s", want, collapsed)
+		}
+	}
+	for _, hidden := range []string{"body three", "body four", "body five"} {
+		if strings.Contains(collapsed, hidden) {
+			t.Fatalf("collapsed must clip the description to two lines, found %q:\n%s", hidden, collapsed)
+		}
+	}
+	expanded := strings.Join(strippedHeader(h, true, 80), "\n")
+	for _, want := range []string{"body one", "body two", "body three", "body four", "body five"} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded should show every description line, missing %q:\n%s", want, expanded)
+		}
+	}
+}
+
+func TestHeaderRangeReadsShowingChanges(t *testing.T) {
+	h := fixtureHeader()
+	h.RangeCount = 2
+	lines := strippedHeader(h, false, 80)
+	if len(lines) != 1 {
+		t.Fatalf("a range header is one line with no meta line, got %d:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	if strings.TrimSpace(lines[0]) != "Showing changes from 2 commits" {
+		t.Fatalf("a range header should read \"Showing changes from 2 commits\", got %q", lines[0])
+	}
+	if strings.ContainsAny(lines[0], "⌄⌃") {
+		t.Fatalf("a range header has no expander: %q", lines[0])
+	}
+	raw := historyHeaderLines(h, false, false, 80)[0]
+	if !strings.Contains(raw, "1;"+fgSGR(theme.Text)) && !strings.Contains(raw, fgSGR(theme.Text)+";1") {
+		t.Fatalf("the range header should be bold Text like the board: %q", raw)
+	}
+}
+
+func TestHeaderLinesNeverWrap(t *testing.T) {
+	h := fixtureHeader()
+	h.Summary = strings.Repeat("s", 300)
+	h.Body = "修正する修正する修正する修正する修正する修正する修正する修正する修正する修正する修正する\n" + strings.Repeat("b", 200) + "\n\tindented\twith\ttabs " + strings.Repeat("t", 80)
+	h.Tags = []string{"v0.9.1", "v0.9.0", "v0.8.9", "release-candidate-long-name", "v0.8.7", "v0.8.6"}
+	h.Authors = []string{strings.Repeat("Author ", 20) + "<a@x>"}
+	h.Byline = strings.Repeat("Author ", 20)
+	for _, expanded := range []bool{false, true} {
+		for _, hover := range []bool{false, true} {
+			for i, line := range historyHeaderLines(h, expanded, hover, 80) {
+				if strings.Contains(line, "\n") {
+					t.Fatalf("expanded=%v line %d wrapped: %q", expanded, i, line)
+				}
+				if w := lipgloss.Width(line); w != 80 {
+					t.Fatalf("expanded=%v line %d: width %d, want 80: %q", expanded, i, w, line)
+				}
+			}
+		}
+	}
+}
+
+func TestHeaderHidesZeroLineCounts(t *testing.T) {
+	h := fixtureHeader()
+	h.LinesAdded, h.LinesDeleted = 0, 0
+	collapsed := strings.Join(strippedHeader(h, false, 80), "\n")
+	if strings.Contains(collapsed, "+0") || strings.Contains(collapsed, "−0") {
+		t.Fatalf("zero line counts must hide in the collapsed meta:\n%s", collapsed)
+	}
+	expanded := strings.Join(strippedHeader(h, true, 80), "\n")
+	if strings.Contains(expanded, "added lines") || strings.Contains(expanded, "removed lines") {
+		t.Fatalf("zero line counts must hide in the expanded meta:\n%s", expanded)
+	}
+}
+
+func TestHistoryPaneSlates(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*Model)
+		want string
+	}{
+		{"unborn", func(m *Model) { m.History = HistoryModel{} }, "No history"},
+		{"first load", func(m *Model) { m.History = HistoryModel{Loading: true} }, "Loading history…"},
+		{"nothing selected", func(m *Model) { m.History.Header = nil; m.History.Files = nil }, "No commit selected"},
+		{"non-contiguous", func(m *Model) {
+			m.History.Header.RangeCount, m.History.Header.Contiguous = 2, false
+		}, "Unable to display diff when multiple non-consecutive commits are selected."},
+	}
+	for _, c := range cases {
+		model := historyFixtureModel()
+		c.edit(&model)
+		m := New(nil)
+		m.width, m.height = 130, 38
+		if err := m.setModelValue(model); err != nil {
+			t.Fatal(err)
+		}
+		out := m.renderHistoryPane(m.diffWidth(), 20)
+		if got := lipgloss.Height(out); got != 20 {
+			t.Fatalf("%s: the slate must fill the pane's 20 rows, got %d", c.name, got)
+		}
+		if plain := ansi.Strip(out); !strings.Contains(plain, c.want) {
+			t.Fatalf("%s: pane should read %q:\n%s", c.name, c.want, plain)
+		}
+		if h := m.historyPaneHit(3, 0); h.kind != hitNone {
+			t.Fatalf("%s: a slate has no hit targets, got %+v", c.name, h)
+		}
+	}
+}
+
+func TestHistoryFilesWidthClamps(t *testing.T) {
+	for _, c := range [][2]int{{60, 24}, {90, 30}, {200, 40}} {
+		if got := historyFilesWidth(c[0]); got != c[1] {
+			t.Fatalf("historyFilesWidth(%d) = %d, want %d", c[0], got, c[1])
+		}
+	}
+}
+
+func TestReadOnlyDiffHasNoStageAffordances(t *testing.T) {
+	if out := ansi.Strip(renderDiffHeader(DiffModel{Path: "a", ReadOnly: true}, 80)); strings.Contains(out, "space stages") {
+		t.Fatalf("a read-only diff header must not offer staging: %q", out)
+	}
+	if out := ansi.Strip(renderDiffHeader(DiffModel{Path: "a"}, 80)); !strings.Contains(out, "space stages") {
+		t.Fatalf("setup: the Changes diff header should still offer staging: %q", out)
+	}
+	ro := DiffModel{Path: "a", ReadOnly: true}
+	for _, line := range []DiffLine{{Kind: "add", Text: "x", SelIdx: 0}, {Kind: "add", Text: "x", SelIdx: 0, Selected: true}} {
+		out := renderDiffLine(ro, line, 40, true, true)
+		if strings.Contains(out, fgSGR(theme.GutterHoverBar)) || strings.Contains(out, theme.GlyphBar) {
+			t.Fatalf("a read-only line must never paint a stage bar: %q", out)
+		}
+	}
+	m := newHistoryTestMission()
+	m.focus = focusDiff
+	m.model.Diff.Lines = []DiffLine{{Kind: "add", Text: "x", NewNo: 1, SelIdx: 0}, {Kind: "hunk", Text: "@@ -1 +1 @@", SelIdx: -1}}
+	for _, k := range []tea.KeyPressMsg{{Code: tea.KeySpace}, {Code: 's', Text: "s"}, {Code: 'd', Text: "d"}} {
+		if _, cmd := m.diffKey(k); cmd != nil {
+			t.Fatalf("%q on a read-only diff must do nothing", k.String())
+		}
+	}
+	for _, x := range []int{0, diffGutterWidth + 2} {
+		if h := m.diffHit(x, 1, 60); h.kind != hitDiffLine {
+			t.Fatalf("a read-only diff line at x=%d must resolve to hitDiffLine, got %+v", x, h)
+		}
+	}
+	if h := m.diffHit(0, 2, 60); h.kind != hitDiffLine {
+		t.Fatalf("a read-only hunk row is not a toggle, got %+v", h)
+	}
+}
+
+// historyPaneX is the frame column of pane-relative column px.
+func historyPaneX(px int) int { return sidebarWidth + 1 + px }
+
+func TestHistoryPaneHitMapsHeaderFilesAndDiff(t *testing.T) {
+	m := newHistoryTestMission()
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	l := m.layout()
+	if h := m.hitTest(historyPaneX(10), l.topH); h.kind != hitHistoryExpander {
+		t.Fatalf("the pane's first row should be the expander, got %+v", h)
+	}
+	filesW := historyFilesWidth(m.diffWidth())
+	fileY := -1
+	for y, line := range lines {
+		if strings.Contains(ansi.Cut(line, historyPaneX(0), historyPaneX(filesW)), "lib/mission/model.ts") {
+			fileY = y
+			break
+		}
+	}
+	if fileY < 0 {
+		t.Fatal("the file row is not painted in the file column")
+	}
+	if h := m.hitTest(historyPaneX(3), fileY); h.kind != hitHistoryFile || h.idx != 0 {
+		t.Fatalf("the painted file row should resolve to hitHistoryFile 0, got %+v", h)
+	}
+	if h := m.hitTest(historyPaneX(3), fileY-1); h.kind != hitNone {
+		t.Fatalf("the \"N changed files\" row must be inert, got %+v", h)
+	}
+	if h := m.hitTest(historyPaneX(3), fileY+1); h.kind != hitNone {
+		t.Fatalf("the filler row below the last file must be inert, got %+v", h)
+	}
+	if h := m.hitTest(historyPaneX(filesW), fileY); h.kind != hitNone {
+		t.Fatalf("the column divider must be inert, got %+v", h)
+	}
+	for _, dx := range []int{1, diffGutterWidth + 2} {
+		if h := m.hitTest(historyPaneX(filesW+1+dx), fileY); h.kind != hitDiffLine || h.idx != 0 {
+			t.Fatalf("the first diff line at dx=%d should resolve to hitDiffLine 0, got %+v", dx, h)
+		}
+	}
+	if !strings.Contains(ansi.Cut(lines[fileY], historyPaneX(filesW+1), m.width), "x") {
+		t.Fatalf("setup: the first diff line should paint beside the first file row: %q", lines[fileY])
+	}
+}
+
+func TestEnterStepsFocusListFilesDiffAndEscBack(t *testing.T) {
+	m := newHistoryTestMission()
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	esc := tea.KeyPressMsg{Code: tea.KeyEscape}
+	for _, want := range []focusKind{focusHistoryFiles, focusDiff} {
+		m.Update(enter)
+		if m.focus != want {
+			t.Fatalf("enter should step focus to %v, got %v", want, m.focus)
+		}
+	}
+	for _, want := range []focusKind{focusHistoryFiles, focusList} {
+		m.Update(esc)
+		if m.focus != want {
+			t.Fatalf("esc should step focus back to %v, got %v", want, m.focus)
+		}
+	}
+}
+
+func TestExpandKeyTogglesHeader(t *testing.T) {
+	m := newHistoryTestMission()
+	x := historyPaneX(3)
+	m.View()
+	before, ok := findHitY(m, x, hitHistoryFile)
+	if !ok {
+		t.Fatal("no row resolves to the file row")
+	}
+	collapsed := len(historyHeaderLines(fixtureHeader(), false, false, m.diffWidth()))
+	expanded := len(historyHeaderLines(fixtureHeader(), true, false, m.diffWidth()))
+	m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if !m.historyExpanded {
+		t.Fatal("e should expand the header")
+	}
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	after, _ := findHitY(m, x, hitHistoryFile)
+	if after-before != expanded-collapsed || expanded <= collapsed {
+		t.Fatalf("the file row should move down by %d header lines, moved %d", expanded-collapsed, after-before)
+	}
+	if !strings.Contains(lines[after], "lib/mission/model.ts") {
+		t.Fatalf("the hit-test's file row must be where the render painted it: %q", lines[after])
+	}
+	m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if m.historyExpanded {
+		t.Fatal("a second e should collapse the header")
+	}
+}
+
+func twoFileHistoryModel() Model {
+	model := historyFixtureModel()
+	model.History.Files = []HistoryFileRow{{Path: "lib/mission/model.ts", Status: "modified"}, {Path: "lib/mission/driver.ts", Status: "new"}}
+	return model
+}
+
+func twoFileHistoryMission() *Mission {
+	m := New(nil)
+	m.width, m.height = 130, 38
+	_ = m.setModelValue(twoFileHistoryModel())
+	return m
+}
+
+// TestHistoryDownThenUpReSelectsNothing: the driver's select resets its file
+// cursor, so a move that settles back on the commit already showing must not
+// re-select it.
+func TestHistoryDownThenUpReSelectsNothing(t *testing.T) {
+	instantSelectTick(t)
+	m := newHistoryTestMission()
+	_, down := m.Update(downKey())
+	_, up := m.Update(upKey())
+	for i, cmd := range []tea.Cmd{down, up} {
+		if cmd == nil {
+			t.Fatalf("move %d should schedule a tick", i)
+		}
+		if _, emit := m.Update(cmd()); emit != nil {
+			t.Fatalf("tick %d re-selected the commit already showing", i)
+		}
+	}
+	_, down = m.Update(downKey())
+	if _, emit := m.Update(down()); emit == nil {
+		t.Fatal("a settled move away from the showing commit must still emit")
+	}
+}
+
+func TestHistoryClickBackToShowingCommitDuringDebounceReSelectsNothing(t *testing.T) {
+	instantSelectTick(t)
+	m := newHistoryTestMission()
+	_, down := m.Update(downKey())
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: m.layout().topH + historyFixedTopRows, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("clicking back onto the commit the driver still shows must not re-select it")
+	}
+	if _, emit := m.Update(down()); emit != nil {
+		t.Fatal("the pending tick must not re-select the showing commit either")
+	}
+}
+
+func TestHistoryFileDownThenUpReSelectsNothing(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	_, down := m.Update(downKey())
+	if m.historyFile != "lib/mission/driver.ts" {
+		t.Fatalf("down should move the file cursor, got %q", m.historyFile)
+	}
+	_, up := m.Update(upKey())
+	for i, cmd := range []tea.Cmd{down, up} {
+		if cmd == nil {
+			t.Fatalf("file move %d should schedule a tick", i)
+		}
+		if _, emit := m.Update(cmd()); emit != nil {
+			t.Fatalf("file tick %d re-selected the file already showing", i)
+		}
+	}
+	_, down = m.Update(downKey())
+	if _, emit := m.Update(down()); emit == nil {
+		t.Fatal("a settled file move must emit")
+	}
+	if _, cmd := m.Update(downKey()); cmd != nil {
+		t.Fatal("down on the last file changes nothing and must schedule nothing")
+	}
+}
+
+// TestFileClickKeepsPendingCommitSelect: the commit and file debounces are
+// independent, so a file click inside the commit debounce window must not
+// swallow the commit select.
+func TestFileClickKeepsPendingCommitSelect(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	_, down := m.Update(downKey())
+	m.View()
+	y, ok := findHitY(m, historyPaneX(3), hitHistoryFile)
+	if !ok {
+		t.Fatal("no file row to click")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: historyPaneX(3), Y: y + 1, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("clicking another file should emit mission:history-file")
+	}
+	if m.focus != focusHistoryFiles || m.historyFile != "lib/mission/driver.ts" {
+		t.Fatalf("a file click should focus the column and move its cursor, got focus=%v file=%q", m.focus, m.historyFile)
+	}
+	if _, emit := m.Update(down()); emit == nil {
+		t.Fatal("the pending commit select must survive a file click")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: historyPaneX(3), Y: y + 1, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("clicking the file already showing must not re-select it")
+	}
+}
+
+// TestFileCursorFollowsDriverSelection: the driver's commit select resets
+// its file to the first one, which may share a path with the file the view
+// last showed; outside a pending move the view's cursor follows the driver.
+func TestFileCursorFollowsDriverSelection(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	m.historyFile = "lib/mission/driver.ts"
+	if err := m.setModelValue(twoFileHistoryModel()); err != nil {
+		t.Fatal(err)
+	}
+	if m.historyFile != "lib/mission/model.ts" {
+		t.Fatalf("with no move pending the cursor should follow the driver's file, got %q", m.historyFile)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m.Update(downKey())
+	if err := m.setModelValue(twoFileHistoryModel()); err != nil {
+		t.Fatal(err)
+	}
+	if m.historyFile != "lib/mission/driver.ts" {
+		t.Fatalf("a push during a pending move must keep the view's cursor, got %q", m.historyFile)
+	}
+}
+
+func TestHistoryFileRowNeverWraps(t *testing.T) {
+	for _, path := range []string{"a.ts", strings.Repeat("dir/", 40) + "file.ts", "修正/修正する修正する修正する修正する修正する.ts"} {
+		for _, flags := range [][3]bool{{false, false, false}, {true, false, true}, {false, true, false}} {
+			out := renderHistoryFileRow(HistoryFileRow{Path: path, Status: "renamed"}, 29, flags[0], flags[1], flags[2])
+			if strings.Contains(out, "\n") || lipgloss.Width(out) != 29 {
+				t.Fatalf("file row for %q must be exactly 29 cells on one line, got %d: %q", path, lipgloss.Width(out), out)
+			}
+		}
+	}
+}
+
+func TestExpandedLongBodyKeepsPaneHeight(t *testing.T) {
+	m := newHistoryTestMission()
+	model := historyFixtureModel()
+	model.History.Header.Body = strings.Repeat("line\n", 60) + "last"
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	m.historyExpanded = true
+	out := m.View().Content
+	if got := lipgloss.Height(out); got != m.height {
+		t.Fatalf("an expanded 61-line description must not grow the frame past %d rows, got %d", m.height, got)
+	}
+	lines := strings.Split(ansi.Strip(out), "\n")
+	y, ok := findHitY(m, historyPaneX(3), hitHistoryFile)
+	if !ok || !strings.Contains(lines[y], "lib/mission/model.ts") {
+		t.Fatalf("the file row must stay reachable and hit where it paints, y=%d ok=%v", y, ok)
+	}
+	if !strings.Contains(out, "s1full") {
+		t.Fatal("a capped expanded header still keeps its meta line")
+	}
+}
+
+func TestHistoryHoverFileAndExpander(t *testing.T) {
+	m := newHistoryTestMission()
+	m.View()
+	y, _ := findHitY(m, historyPaneX(3), hitHistoryFile)
+	m.Update(tea.MouseMotionMsg{X: historyPaneX(3), Y: y})
+	if m.hoverHistoryFile != 0 {
+		t.Fatalf("motion over the file row should hover it, got %d", m.hoverHistoryFile)
+	}
+	m.historyFile = ""
+	filesW := historyFilesWidth(m.diffWidth())
+	if row := strings.Split(m.View().Content, "\n")[y]; !strings.Contains(ansi.Cut(row, historyPaneX(0), historyPaneX(filesW)), bgSGR(theme.HoverBg)) {
+		t.Fatalf("a hovered file row should paint HoverBg: %q", row)
+	}
+	top := m.layout().topH
+	m.Update(tea.MouseMotionMsg{X: historyPaneX(10), Y: top})
+	if !m.hoverExpander || m.hoverHistoryFile != -1 {
+		t.Fatalf("motion over the title row should hover the expander and clear the file hover, got expander=%v file=%d", m.hoverExpander, m.hoverHistoryFile)
+	}
+	if row := strings.Split(m.View().Content, "\n")[top]; !strings.Contains(ansi.Cut(row, historyPaneX(0), m.width), bgSGR(theme.HoverBg)) {
+		t.Fatalf("the hovered title row should paint HoverBg: %q", row)
+	}
+	m.Update(tea.MouseMotionMsg{X: 0, Y: 0})
+	if m.hoverExpander {
+		t.Fatal("leaving the title row should clear the expander hover")
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: historyPaneX(10), Y: top, Button: tea.MouseLeft}); cmd != nil || !m.historyExpanded {
+		t.Fatalf("clicking the title row should expand the header without emitting, expanded=%v", m.historyExpanded)
+	}
+}
+
+func TestHistoryWheelScrollsTheRegionUnderThePointer(t *testing.T) {
+	instantSelectTick(t)
+	m := twoFileHistoryMission()
+	m.View()
+	y, _ := findHitY(m, historyPaneX(3), hitHistoryFile)
+	_, cmd := m.Update(tea.MouseWheelMsg{X: historyPaneX(3), Y: y, Button: tea.MouseWheelDown})
+	if m.historyFile != "lib/mission/driver.ts" {
+		t.Fatalf("a wheel tick over the file column should move the file cursor, got %q", m.historyFile)
+	}
+	if _, ok := cmd().(historyDebounceMsg); !ok {
+		t.Fatal("a wheel move over the file column should route through the file debounce")
+	}
+	m.model.Diff.Lines = append(m.model.Diff.Lines, DiffLine{Kind: "context", Text: "y"}, DiffLine{Kind: "context", Text: "z"}, DiffLine{Kind: "context", Text: "w"})
+	filesW := historyFilesWidth(m.diffWidth())
+	m.Update(tea.MouseWheelMsg{X: historyPaneX(filesW + 5), Y: y, Button: tea.MouseWheelDown})
+	if m.diffCursor != wheelStep {
+		t.Fatalf("a wheel tick over the diff should move the diff cursor %d lines, got %d", wheelStep, m.diffCursor)
+	}
+}
+
+func TestFullFrameHistoryPaneStatesFullyPaintBackground(t *testing.T) {
+	m := twoFileHistoryMission()
+	model := twoFileHistoryModel()
+	model.History.Header.Body = "first\n\nthird"
+	model.History.Header.Tags = []string{"v0.9.1"}
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	m.historyExpanded = true
+	m.focus = focusHistoryFiles
+	m.View()
+	y, _ := findHitY(m, historyPaneX(3), hitHistoryFile)
+	m.Update(tea.MouseMotionMsg{X: historyPaneX(3), Y: y + 1})
+	assertFullyBgFilled(t, "history pane", m.View().Content, m.width)
+
+	m.Update(tea.MouseMotionMsg{X: historyPaneX(10), Y: m.layout().topH})
+	assertFullyBgFilled(t, "hovered title", m.View().Content, m.width)
+
+	model.History.Header.RangeCount = 2
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "range header", m.View().Content, m.width)
+
+	model.Diff = DiffModel{Kind: "none", ReadOnly: true}
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ansi.Strip(m.View().Content), "No file selected") {
+		t.Fatal("a History diff with files but none selected should read \"No file selected\"")
+	}
+	assertFullyBgFilled(t, "no file selected", m.View().Content, m.width)
+
+	model.History.Files = nil
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	if plain := ansi.Strip(m.View().Content); strings.Contains(plain, "No file selected") || strings.Contains(plain, "select a file") {
+		t.Fatal("a commit with no files suppresses the diff message")
+	}
+	assertFullyBgFilled(t, "no files", m.View().Content, m.width)
+
+	model.History.Header = nil
+	if err := m.setModelValue(model); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "slate", m.View().Content, m.width)
 }

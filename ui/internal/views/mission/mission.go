@@ -107,20 +107,31 @@ type Mission struct {
 
 	// History tab view state. historyCursor/historyAnchor are held by sha
 	// (the list reorders and grows across pushes); the anchor is "" unless a
-	// shift gesture opened a range. historyGen is the History debounce's
-	// generation, selectGen's counterpart. historyMoreFor is the list length
-	// the last mission:history-more went out for, -1 before any.
-	historyCursor    string
-	historyAnchor    string
-	historyTop       int
-	historyGen       int
-	historyMoreFor   int
-	hoverCommit      int
-	historyFile      string
-	historyFilesTop  int
-	hoverHistoryFile int
-	historyExpanded  bool
-	hoverExpander    bool
+	// shift gesture opened a range. historyMoreFor is the list length the
+	// last mission:history-more went out for, -1 before any.
+	//
+	// The commit and file debounces each mirror selectGen/selectPending/
+	// selectPendingBase: the first move of a settled cursor freezes the base
+	// at what the driver shows, and a tick emits only if its generation is
+	// still current and the cursor no longer matches that base. They keep
+	// separate generations so a file click cannot supersede a pending
+	// commit select.
+	historyCursor      string
+	historyAnchor      string
+	historyTop         int
+	historyGen         int
+	historyPending     bool
+	historyPendingBase string
+	historyMoreFor     int
+	hoverCommit        int
+	historyFile        string
+	historyFileGen     int
+	historyFilePending bool
+	historyFileBase    string
+	historyFilesTop    int
+	hoverHistoryFile   int
+	historyExpanded    bool
+	hoverExpander      bool
 
 	// lastTab is the tab the previous push showed; tabDiff holds each tab's
 	// diff position while the other tab owns the pane.
@@ -321,10 +332,7 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectPending = false
 		return m, m.selectPathCmd(m.selectPendingBase)
 	case historyDebounceMsg:
-		if v.generation != m.historyGen || v.kind != historyDebounceCommit {
-			return m, nil
-		}
-		return m, m.emitHistorySelect()
+		return m, m.settleHistory(v)
 	case tea.MouseClickMsg:
 		return m.mouseClick(v)
 	case tea.MouseMotionMsg:
@@ -346,7 +354,7 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case focusDiff:
 			return m.diffKey(v)
 		case focusHistoryFiles:
-			return m.historyListKey(v)
+			return m.historyFilesKey(v)
 		default:
 			if m.historyTab() {
 				return m.historyListKey(v)
@@ -733,7 +741,13 @@ func (m *Mission) View() tea.View {
 	bodyHeight := l.bodyH
 
 	sidebarPadded := m.renderSidebar(sidebarWidth, bodyHeight)
-	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(m.renderDiffPane(diffW, bodyHeight))
+	var pane string
+	if m.historyTab() {
+		pane = m.renderHistoryPane(diffW, bodyHeight)
+	} else {
+		pane = m.renderDiffPane(diffW, bodyHeight)
+	}
+	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(pane)
 
 	dividerLine := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render("│")
 	dividerLines := make([]string, bodyHeight)
@@ -847,8 +861,10 @@ func (m *Mission) hitTest(x, y int) hit {
 		return m.sidebarHit(x, bodyY, l.listRegionH)
 	case x == sidebarWidth:
 		return hit{}
+	case m.historyTab():
+		return m.historyPaneHit(x-sidebarWidth-1, bodyY)
 	default:
-		return m.diffHit(x-sidebarWidth-1, bodyY)
+		return m.diffHit(x-sidebarWidth-1, bodyY, m.diffWidth())
 	}
 }
 
@@ -989,13 +1005,15 @@ func fileRowHit(c ChangeRow, idx, x int) hit {
 }
 
 // diffHit mirrors renderDiffLines' own header-then-lines layout (diff.go):
-// diffX is relative to the diff pane's own left edge, y=0 is the header (no
-// click target yet), and every line after it maps through the same
-// diffTop/window math the last render left on m.diffTop. A hunk line has no
-// separate gutter -- its whole width IS the toggle, per diff.go's own
-// renderDiffLine comment -- so it resolves to hitDiffGutter across the full
-// content width instead of just diffGutterWidth.
-func (m *Mission) diffHit(diffX, y int) hit {
+// diffX is relative to the diff pane's own left edge, paneW is the width the
+// pane was rendered at, y=0 is the header (no click target yet), and every
+// line after it maps through the same diffTop/window math the last render
+// left on m.diffTop. A hunk line has no separate gutter -- its whole width
+// IS the toggle, per diff.go's own renderDiffLine comment -- so it resolves
+// to hitDiffGutter across the full content width instead of just
+// diffGutterWidth. A read-only diff toggles nothing, so every line is a
+// plain hitDiffLine.
+func (m *Mission) diffHit(diffX, y, paneW int) hit {
 	if y == 0 {
 		return hit{}
 	}
@@ -1004,9 +1022,12 @@ func (m *Mission) diffHit(diffX, y int) hit {
 	if idx < 0 || idx >= len(lines) {
 		return hit{}
 	}
-	contentW := m.diffWidth() - 1 // the scroll thumb's own reserved column
+	contentW := paneW - 1 // the scroll thumb's own reserved column
 	if diffX < 0 || diffX >= contentW {
 		return hit{}
+	}
+	if m.model.Diff.ReadOnly {
+		return hit{kind: hitDiffLine, idx: idx}
 	}
 	if lines[idx].Kind == "hunk" || diffX < diffGutterWidth {
 		return hit{kind: hitDiffGutter, idx: idx}
@@ -1106,6 +1127,10 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, m.emitTab("changes")
 	case hitCommitRow:
 		return m.clickCommitRow(h.idx, mouse.Mod&tea.ModShift != 0)
+	case hitHistoryFile:
+		return m.clickHistoryFile(h.idx)
+	case hitHistoryExpander:
+		m.historyExpanded = !m.historyExpanded
 	case hitFilterRow:
 		m.focus = focusFilter
 		m.filterText = m.model.Filter
@@ -1273,6 +1298,10 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 		m.hoverTab = true
 	case hitCommitRow:
 		m.hoverCommit = h.idx
+	case hitHistoryFile:
+		m.hoverHistoryFile = h.idx
+	case hitHistoryExpander:
+		m.hoverExpander = true
 	case hitFilterRow:
 		m.hoverFilterRow = true
 	case hitCommitSummary:
@@ -1321,6 +1350,9 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if mouse.X >= sidebarWidth {
+		if m.historyTab() && mouse.X-sidebarWidth-1 < historyFilesWidth(m.diffWidth()) {
+			return m, m.historyFileMove(delta)
+		}
 		m.moveDiffCursor(delta)
 		return m, nil
 	}

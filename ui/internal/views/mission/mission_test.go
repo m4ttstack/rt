@@ -927,6 +927,36 @@ func TestHistoryHoverCommitRowPaintsHoverBg(t *testing.T) {
 	s.Wait()
 }
 
+const historyOneFile = `"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}]`
+
+func TestHistoryEnterEnterDownEmitsFileSelect(t *testing.T) {
+	model := strings.Replace(historyModel, historyOneFile,
+		`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"},{"path":"lib/mission/driver.ts","origPath":"","status":"new"}]`, 1)
+	s := openMission(t, model, "2 changed files")
+	s.Type(keyEnter)
+	s.Type("\x1b[B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-file"`) || !strings.Contains(l, `"path":"lib/mission/driver.ts"`) {
+		t.Fatalf("history-file after enter, down: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestHistoryOversizedEnterEmitsShowOversized(t *testing.T) {
+	model := strings.Replace(historyModel, `"kind":"text"`, `"kind":"oversized"`, 1)
+	s := openMission(t, model, "enter shows")
+	s.Type(keyEnter)
+	s.Type(keyEnter)
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:history-file"`) || !strings.Contains(l, `"path":"lib/mission/model.ts"`) || !strings.Contains(l, `"showOversized":true`) {
+		t.Fatalf("history-file showOversized after enter on an oversized diff: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
 // Changes row (absolute y=12: topH(4) + the 8-row tabs/tabs-gap/filter/
 // master prefix).

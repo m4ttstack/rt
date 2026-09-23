@@ -5,6 +5,8 @@
 package mission
 
 import (
+	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
@@ -72,7 +74,11 @@ func (m *Mission) historyIndex(sha string) int {
 
 // clampHistory runs on every SetModel: the view's cursor survives a push
 // while its sha is still listed; once it falls off (a reload, a worktree
-// switch) the cursor adopts the driver's own selection.
+// switch) the cursor adopts the driver's own selection and drops any move
+// still pending against the old list. The file cursor follows the driver's
+// file except while a file move is pending: the driver's commit select
+// resets its file to the first one, which may share a path with the file
+// the view last showed.
 func (m *Mission) clampHistory() {
 	commits := m.model.History.Commits
 	if len(commits) == 0 {
@@ -86,20 +92,19 @@ func (m *Mission) clampHistory() {
 			}
 		}
 		m.historyAnchor = ""
+		m.historyPending = false
+		m.historyGen++
 	}
 	if m.historyAnchor != "" && m.historyIndex(m.historyAnchor) < 0 {
 		m.historyAnchor = ""
 	}
-	files := m.model.History.Files
-	found := false
-	for _, f := range files {
-		if f.Path == m.historyFile {
-			found = true
-			break
-		}
+	if m.historyFilePending && m.historyFileIndex() >= 0 {
+		return
 	}
-	if !found {
-		m.historyFile = m.model.History.SelectedFile
+	m.historyFile = m.model.History.SelectedFile
+	if m.historyFilePending {
+		m.historyFilePending = false
+		m.historyFileGen++
 	}
 }
 
@@ -138,9 +143,57 @@ func (m *Mission) historyInSelection(idx int) bool {
 	return idx >= min(a, c) && idx <= max(a, c)
 }
 
+// emitHistorySelect settles both debounces: the driver answers a commit
+// select with a new file list, so a pending file move belongs to the old one.
 func (m *Mission) emitHistorySelect() tea.Cmd {
 	m.historyGen++
+	m.historyPending = false
+	m.historyFileGen++
+	m.historyFilePending = false
 	return m.em.Emit(protocol.Intent{Name: "mission:history-select", Payload: mustPayload(historySelectPayload{Shas: m.historySelectionShas()})})
+}
+
+// shownSelectionKey is the selection the driver is showing: the base a
+// pending move started from, else the current selection.
+func (m *Mission) shownSelectionKey() string {
+	if m.historyPending {
+		return m.historyPendingBase
+	}
+	return m.historySelectionKey()
+}
+
+func (m *Mission) shownHistoryFile() string {
+	if m.historyFilePending {
+		return m.historyFileBase
+	}
+	return m.historyFile
+}
+
+// settleHistory answers a debounce tick. The driver's select resets its file
+// cursor, so a tick emits only when the selection differs from the one the
+// driver shows; a move away and back emits nothing.
+func (m *Mission) settleHistory(v historyDebounceMsg) tea.Cmd {
+	switch v.kind {
+	case historyDebounceCommit:
+		if v.generation != m.historyGen {
+			return nil
+		}
+		m.historyPending = false
+		if key := m.historySelectionKey(); key == "" || key == m.historyPendingBase {
+			return nil
+		}
+		return m.emitHistorySelect()
+	case historyDebounceFile:
+		if v.generation != m.historyFileGen {
+			return nil
+		}
+		m.historyFilePending = false
+		if m.historyFile == "" || m.historyFile == m.historyFileBase {
+			return nil
+		}
+		return m.emitHistoryFile()
+	}
+	return nil
 }
 
 // maybeRequestMore asks for the next page once per page: historyMoreFor
@@ -187,10 +240,13 @@ func (m *Mission) historyMove(delta int, extend bool) tea.Cmd {
 	}
 	i := max(0, min(n-1, m.historyIndex(m.historyCursor)+delta))
 	m.historyCursor = commits[i].Sha
-	// The driver's select resets its file cursor, so a move clamped at
-	// either end must not re-select what is already showing.
+	// A move clamped at either end changes nothing, so it leaves any pending
+	// tick to settle as it was.
 	if m.historySelectionKey() == before {
 		return m.maybeRequestMore()
+	}
+	if !m.historyPending {
+		m.historyPending, m.historyPendingBase = true, before
 	}
 	m.historyGen++
 	gen := m.historyGen
@@ -374,7 +430,7 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(commits) {
 		return m, nil
 	}
-	before := m.historySelectionKey()
+	shown := m.shownSelectionKey()
 	if shift {
 		if m.historyAnchor == "" {
 			m.historyAnchor = m.historyCursor
@@ -384,10 +440,287 @@ func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	m.historyCursor = commits[idx].Sha
 	m.focus = focusList
-	// Unchanged means a pending debounce, if any, already carries this
-	// selection, so it is left to settle rather than superseded.
-	if m.historySelectionKey() == before {
+	// A pending tick left in flight settles against the same base and finds
+	// nothing to emit either.
+	if m.historySelectionKey() == shown {
 		return m, m.maybeRequestMore()
 	}
 	return m, tea.Batch(m.emitHistorySelect(), m.maybeRequestMore())
+}
+
+// historyFilesWidth is a third of the pane clamped to [24, 40], never so
+// wide that the column divider falls off a narrow pane.
+func historyFilesWidth(paneW int) int {
+	return min(max(historyFilesMin, min(historyFilesMax, paneW/3)), max(paneW-1, 0))
+}
+
+// historyHeaderLines is GHD's expandable-commit-summary as terminal rows,
+// each exactly width cells. The title row is the expander, so hover fills
+// it like any other click target.
+func historyHeaderLines(h HistoryHeader, expanded, hover bool, width int) []string {
+	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+	row := func(on lipgloss.Style, content string) string {
+		return on.Width(width).Render(clipOn(content, max(width-1, 0), on))
+	}
+	textW := max(width-2, 0)
+	plain := func(col color.Color, text string) string {
+		return row(on, on.Render(" ")+on.Foreground(col).Render(clip(text, textW)))
+	}
+
+	if h.RangeCount > 1 {
+		return []string{row(on, on.Render(" ")+on.Foreground(theme.Text).Bold(true).Render(clip(fmt.Sprintf("Showing changes from %d commits", h.RangeCount), textW)))}
+	}
+
+	title := on
+	if hover {
+		title = on.Background(theme.HoverBg)
+	}
+	glyph := "⌄"
+	if expanded {
+		glyph = "⌃"
+	}
+	summary, summaryCol := h.Summary, theme.Text
+	if summary == "" {
+		summary, summaryCol = "Empty commit message", theme.Faint
+	}
+	summaryW := max(width-4, 0)
+	lines := []string{row(title, title.Render(" ")+title.Foreground(summaryCol).Bold(true).Width(summaryW).Render(clip(summary, summaryW))+title.Foreground(theme.Dimmer).Render(" "+glyph))}
+
+	if h.Body != "" {
+		body := strings.Split(h.Body, "\n")
+		if !expanded && len(body) > 2 {
+			body = body[:2]
+		}
+		for _, b := range body {
+			lines = append(lines, plain(theme.TextSoft, b))
+		}
+	}
+
+	sep := on.Foreground(theme.Faint).Render(" · ")
+	var meta string
+	if expanded {
+		for _, a := range h.Authors {
+			lines = append(lines, plain(theme.Dim, a))
+		}
+		meta = on.Foreground(theme.Dim).Render(h.Sha)
+		if h.LinesAdded != 0 || h.LinesDeleted != 0 {
+			meta += sep + on.Foreground(theme.Mint).Render(fmt.Sprintf("%d added lines", h.LinesAdded)) +
+				sep + on.Foreground(theme.Coral).Render(fmt.Sprintf("%d removed lines", h.LinesDeleted))
+		}
+	} else {
+		meta = on.Foreground(theme.Dim).Render(h.Byline) + sep + on.Foreground(theme.Dim).Render(h.ShortSha)
+		if h.LinesAdded != 0 || h.LinesDeleted != 0 {
+			meta += sep + on.Foreground(theme.Mint).Render(fmt.Sprintf("+%d", h.LinesAdded)) + on.Render(" ") + on.Foreground(theme.Coral).Render(fmt.Sprintf("−%d", h.LinesDeleted))
+		}
+	}
+	if len(h.Tags) > 0 {
+		meta += sep + on.Foreground(theme.Lav).Render(strings.Join(h.Tags, ", "))
+	}
+	return append(lines, row(on, on.Render(" ")+meta))
+}
+
+// historyHeader is the header as the pane paints it: an expanded
+// description taller than half the pane keeps its title and meta line and
+// drops the rows between, so the file column and diff stay on screen.
+// historyPaneHit measures this same slice.
+func (m *Mission) historyHeader(width, height int) []string {
+	lines := historyHeaderLines(*m.model.History.Header, m.historyExpanded, m.hoverExpander, width)
+	limit := max(height/2, 1)
+	switch {
+	case len(lines) <= limit:
+		return lines
+	case limit == 1:
+		return lines[:1]
+	}
+	return append(lines[:limit-1:limit-1], lines[len(lines)-1])
+}
+
+// historySlate is the single message the pane shows when there is nothing
+// to split into header, files, and diff; "" means render the full pane.
+func (m *Mission) historySlate() string {
+	h := m.model.History
+	switch {
+	case len(h.Commits) == 0 && h.Loading:
+		return "Loading history…"
+	case len(h.Commits) == 0:
+		return "No history"
+	case h.Header == nil:
+		return "No commit selected"
+	case h.Header.RangeCount > 1 && !h.Header.Contiguous:
+		return "Unable to display diff when multiple non-consecutive commits are selected."
+	}
+	return ""
+}
+
+// renderHistoryPane is History.png's right pane: the header, a rule, then
+// the file column beside the read-only diff.
+func (m *Mission) renderHistoryPane(width, height int) string {
+	if slate := m.historySlate(); slate != "" {
+		return centeredMessage(width, height, theme.Faint, clip(slate, width))
+	}
+	header := m.historyHeader(width, height)
+	filesW := historyFilesWidth(width)
+	diffW := max(width-filesW-1, 0)
+	bodyH := max(height-len(header)-1, 0)
+	ruleOn := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule)
+	rows := append(header, ruleOn.Render(strings.Repeat("─", filesW)+"┬"+strings.Repeat("─", diffW)))
+	if bodyH > 0 {
+		divider := strings.TrimSuffix(strings.Repeat(ruleOn.Render("│")+"\n", bodyH), "\n")
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, m.renderHistoryFiles(filesW, bodyH), divider, m.renderDiffPane(diffW, bodyH)))
+	}
+	return strings.Join(rows, "\n")
+}
+
+// renderHistoryFiles is GHD's file-list-header ("N changed files") over the
+// committed-file-item rows, status letter trailing like the Changes rows.
+func (m *Mission) renderHistoryFiles(width, height int) string {
+	files := m.model.History.Files
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	noun := "files"
+	if len(files) == 1 {
+		noun = "file"
+	}
+	lines := []string{on.Width(width).Foreground(theme.Dim).Render(clip(fmt.Sprintf(" %d changed %s", len(files), noun), width))}
+
+	listH := height - 1
+	rowW := max(width-1, 0)
+	top, vis := picker.Viewport(max(m.historyFileIndex(), 0), m.historyFilesTop, len(files), listH, listH, 0)
+	m.historyFilesTop = top
+	thumbTop, thumbH := picker.ThumbSpan(top, vis, len(files))
+	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
+	for i := 0; i < listH; i++ {
+		idx := top + i
+		line := on.Width(rowW).Render("")
+		if i < vis && idx < len(files) {
+			line = renderHistoryFileRow(files[idx], rowW, files[idx].Path == m.historyFile, idx == m.hoverHistoryFile, m.focus == focusHistoryFiles)
+		}
+		lines = append(lines, line+picker.ThumbCell(i, thumbTop, thumbH, thumbOn, on))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderHistoryFileRow is one committed-file-item row, exactly width cells:
+// the path clips in the middle so the filename survives.
+func renderHistoryFileRow(f HistoryFileRow, width int, cursor, hover, focused bool) string {
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	switch {
+	case cursor:
+		on = on.Background(theme.SelBg)
+	case hover:
+		on = on.Background(theme.HoverBg)
+	}
+	prefix := on.Render("  ")
+	if cursor && focused {
+		prefix = on.Foreground(theme.Pink).Render(theme.GlyphBar) + on.Render(" ")
+	}
+	letter, col := statusGlyph(f.Status)
+	pathW := max(width-2-1-lipgloss.Width(letter), 1)
+	line := prefix + on.Foreground(theme.Text).Width(pathW).Render(middleTruncate(f.Path, pathW)) + on.Render(" ") + on.Foreground(col).Render(letter)
+	return on.Width(width).Render(clipOn(line, width, on))
+}
+
+// historyPaneHit walks renderHistoryPane's rows in lockstep: the header
+// (its title row is the expander), the rule, then the file column, the
+// divider, and the diff pane.
+func (m *Mission) historyPaneHit(x, y int) hit {
+	if m.historySlate() != "" {
+		return hit{}
+	}
+	paneW := m.diffWidth()
+	headerH := len(m.historyHeader(paneW, m.layout().bodyH))
+	if y < headerH {
+		if y == 0 && m.model.History.Header.RangeCount <= 1 {
+			return hit{kind: hitHistoryExpander}
+		}
+		return hit{}
+	}
+	if y == headerH {
+		return hit{}
+	}
+	bodyY := y - headerH - 1
+	filesW := historyFilesWidth(paneW)
+	switch {
+	case x < filesW:
+		if bodyY == 0 {
+			return hit{}
+		}
+		if idx := m.historyFilesTop + bodyY - 1; idx < len(m.model.History.Files) {
+			return hit{kind: hitHistoryFile, idx: idx}
+		}
+		return hit{}
+	case x == filesW:
+		return hit{}
+	default:
+		return m.diffHit(x-filesW-1, bodyY, max(paneW-filesW-1, 0))
+	}
+}
+
+func (m *Mission) historyFileIndex() int {
+	for i, f := range m.model.History.Files {
+		if f.Path == m.historyFile {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Mission) emitHistoryFile() tea.Cmd {
+	m.historyFileGen++
+	m.historyFilePending = false
+	return m.em.Emit(protocol.Intent{Name: "mission:history-file", Payload: mustPayload(historyFilePayload{Path: m.historyFile})})
+}
+
+func (m *Mission) historyFileMove(delta int) tea.Cmd {
+	files := m.model.History.Files
+	if len(files) == 0 {
+		return nil
+	}
+	before := m.historyFile
+	i := max(0, min(len(files)-1, m.historyFileIndex()+delta))
+	m.historyFile = files[i].Path
+	if m.historyFile == before {
+		return nil
+	}
+	if !m.historyFilePending {
+		m.historyFilePending, m.historyFileBase = true, before
+	}
+	m.historyFileGen++
+	gen := m.historyFileGen
+	return selectTick(selectDebounceInterval, func(time.Time) tea.Msg {
+		return historyDebounceMsg{generation: gen, kind: historyDebounceFile}
+	})
+}
+
+func (m *Mission) historyFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch v.String() {
+	case "up":
+		return m, m.historyFileMove(-1)
+	case "down":
+		return m, m.historyFileMove(1)
+	case "enter":
+		m.focus = focusDiff
+	case "esc":
+		m.focus = focusList
+	case "e":
+		m.historyExpanded = !m.historyExpanded
+	case "1":
+		return m, m.emitTab("changes")
+	case "q":
+		return m.quit()
+	}
+	return m, nil
+}
+
+func (m *Mission) clickHistoryFile(idx int) (tea.Model, tea.Cmd) {
+	files := m.model.History.Files
+	if idx < 0 || idx >= len(files) {
+		return m, nil
+	}
+	shown := m.shownHistoryFile()
+	m.historyFile = files[idx].Path
+	m.focus = focusHistoryFiles
+	if m.historyFile == shown {
+		return m, nil
+	}
+	return m, m.emitHistoryFile()
 }
