@@ -15,9 +15,9 @@ let chooseSuggestionsChecks: [Check] = [
         c.expectEqual(ChooseSuggestions.matching("my-voice", in: ["my-voice", "my-voice-2"]), ["my-voice-2"])
         c.expectEqual(ChooseSuggestions.matching("My-Voice", in: ["my-voice", "my-voice-2"]), ["my-voice-2"])
     },
-    Check("ChooseSuggestions.matching: caps at limit") { c in
-        let all = ["a1", "a2", "a3", "a4"]
-        c.expectEqual(ChooseSuggestions.matching("a", in: all, limit: 2), ["a1", "a2"])
+    Check("ChooseSuggestions.matching: returns every match, uncapped") { c in
+        let all = (1...7).map { "acme:skill-\($0)" }
+        c.expectEqual(ChooseSuggestions.matching("acme:", in: all), all)
     },
     Check("ChooseSuggestions.matching: trims the input before matching") { c in
         c.expectEqual(ChooseSuggestions.matching("  my  ", in: ["my-voice"]), ["my-voice"])
