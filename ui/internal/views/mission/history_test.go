@@ -667,7 +667,7 @@ func TestDownOnLastLoadedRowStillRequestsMore(t *testing.T) {
 func TestScrolledHistoryHitMirrorsRenderedRows(t *testing.T) {
 	commits := make([]HistoryCommitRow, 40)
 	for i := range commits {
-		commits[i] = HistoryCommitRow{Sha: fmt.Sprintf("c%02d", i), Summary: fmt.Sprintf("subject-%02d", i), Byline: "Matt", When: "1 day ago"}
+		commits[i] = HistoryCommitRow{Sha: fmt.Sprintf("c%02d", i), Summary: fmt.Sprintf("subject-%02d", i), Byline: fmt.Sprintf("author-%02d", i), When: "1 day ago"}
 	}
 	m := pagingMission(t, commits)
 	m.historyCursor = "c30"
@@ -675,12 +675,8 @@ func TestScrolledHistoryHitMirrorsRenderedRows(t *testing.T) {
 	if m.historyTop == 0 {
 		t.Fatal("setup: the list should have scrolled")
 	}
-	first, ok := findHitY(m, 2, hitCommitRow)
-	if !ok || first != m.layout().topH+historyFixedTopRows {
-		t.Fatalf("the first list row should be the first commit hit, got y=%d ok=%v", first, ok)
-	}
-	if h := m.hitTest(2, first); h.idx != m.historyTop {
-		t.Fatalf("the first list row should resolve to historyTop %d, got %+v", m.historyTop, h)
+	if n := assertHistoryHitMatchesPaint(t, m, "scrolled"); n == 0 {
+		t.Fatal("setup: no commit rows painted")
 	}
 	seen := 0
 	for idx, c := range commits {
@@ -1396,6 +1392,9 @@ func sweepHistoryModel() Model {
 	model.History.Header.Body = "first line of the description that runs well past a narrow pane\nsecond\nthird\nfourth"
 	model.History.Header.Authors = []string{"Matt <m@x>", "Claude <c@x>"}
 	model.History.Header.Tags = []string{"v0.9.1"}
+	for i, g := range []string{"Today", "Today", "a date group label far longer than the sidebar is wide, which must clip"} {
+		model.History.Commits[i].Group = g
+	}
 	model.Diff = DiffModel{Path: "ui/internal/views/mission/history.go", Kind: "text", Stats: "+349 -16", ReadOnly: true, Lines: []DiffLine{
 		{Kind: "hunk", Text: "@@ -5,6 +5,8 @@ func (m *Mission) historyIndex(sha string) int {", SelIdx: -1},
 		{Kind: "context", Text: "package mission", OldNo: 5, NewNo: 5, SelIdx: -1},
@@ -1626,6 +1625,175 @@ func TestHistoryWheelScrollsTheRegionUnderThePointer(t *testing.T) {
 	if m.diffCursor != wheelStep {
 		t.Fatalf("a wheel tick over the diff should move the diff cursor %d lines, got %d", wheelStep, m.diffCursor)
 	}
+}
+
+// groupedCommits is n commits in runs of four per date group, each with a
+// summary and byline no other commit's starts with, so a painted row names
+// exactly one commit.
+func groupedCommits(n int) []HistoryCommitRow {
+	groups := []string{"Today", "Yesterday", "Earlier this week", "Last week", "August 2026"}
+	commits := make([]HistoryCommitRow, n)
+	for i := range commits {
+		commits[i] = HistoryCommitRow{
+			Sha: fmt.Sprintf("sha%02d", i), ShortSha: fmt.Sprintf("sh%02d", i),
+			Summary: fmt.Sprintf("subject-%02d", i), Byline: fmt.Sprintf("author-%02d", i), When: "1 day ago",
+			Group: groups[min(i/4, len(groups)-1)],
+		}
+	}
+	return commits
+}
+
+func groupedMission(t *testing.T, n int, hasMore bool) *Mission {
+	t.Helper()
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: groupedCommits(n), HasMore: hasMore}}); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// listRowText is a painted sidebar row without its thumb column or cursor
+// bar, trimmed.
+func listRowText(line string) string {
+	return strings.TrimSpace(strings.TrimLeft(ansi.Truncate(ansi.Strip(line), sidebarWidth-1, ""), "▌ "))
+}
+
+// assertHistoryHitMatchesPaint walks every list row of the painted frame and
+// checks the hit test resolves it to what the row shows: a commit's summary
+// or byline row to that commit, the action row to itself, and a header,
+// rule, notice, or filler row to nothing.
+func assertHistoryHitMatchesPaint(t *testing.T, m *Mission, label string) (seen int) {
+	t.Helper()
+	lines := strings.Split(m.View().Content, "\n")
+	l := m.layout()
+	commits := m.model.History.Commits
+	for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
+		text := listRowText(lines[y])
+		want := hit{}
+		for i, c := range commits {
+			if c.Summary != "" && strings.HasPrefix(text, c.Summary) || c.Byline != "" && strings.HasPrefix(text, c.Byline) {
+				want = hit{kind: hitCommitRow, idx: i}
+				seen++
+			}
+		}
+		if got := m.hitTest(2, y); got.kind != want.kind || got.idx != want.idx {
+			t.Fatalf("%s: frame row %d paints %q but hits %+v, want %+v", label, y, text, got, want)
+		}
+	}
+	return seen
+}
+
+func TestHistoryFilterBoxSitsUnderTheTabs(t *testing.T) {
+	m := newHistoryTestMission()
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	top := m.layout().topH
+	if !strings.Contains(sidebarPart(lines[top+5]), "Filter history") {
+		t.Fatalf("the History filter box should read \"Filter history\" under the tabs gap: %q", lines[top+5])
+	}
+	if h := m.hitTest(5, top+3); h.kind != hitNone {
+		t.Fatalf("the tabs gap stays inert, got %+v", h)
+	}
+	for y := top + 4; y <= top+6; y++ {
+		if h := m.hitTest(5, y); h.kind != hitFilterRow {
+			t.Fatalf("frame row %d is the filter box and should hit it, got %+v", y, h)
+		}
+	}
+	if !strings.Contains(sidebarPart(lines[top+7]), "Fix pty paint predicate") {
+		t.Fatalf("the commit list should start right under the filter box: %q", lines[top+7])
+	}
+	if h := m.hitTest(2, top+7); h.kind != hitCommitRow || h.idx != 0 {
+		t.Fatalf("the first list row should be commit 0, got %+v", h)
+	}
+	m.Update(tea.MouseMotionMsg{X: 5, Y: top + 5})
+	if !m.hoverFilterRow {
+		t.Fatal("motion over the History filter box should hover it")
+	}
+}
+
+func TestHistoryGroupHeadersOncePerRunAndInert(t *testing.T) {
+	m := groupedMission(t, 9, false)
+	m.height = 50
+	raw := strings.Split(m.View().Content, "\n")
+	counts := map[string]int{}
+	var headerYs []int
+	for y, line := range raw {
+		text := listRowText(line)
+		switch text {
+		case "Today", "Yesterday", "Earlier this week", "Last week", "August 2026":
+		default:
+			continue
+		}
+		counts[text]++
+		headerYs = append(headerYs, y)
+		part := sidebarPart(line)
+		if !strings.HasPrefix(ansi.Strip(part), "  "+text) {
+			t.Fatalf("a header sits two cells in: %q", ansi.Strip(part))
+		}
+		if !strings.Contains(part, "1;"+fgSGR(theme.Dim)) && !strings.Contains(part, fgSGR(theme.Dim)+";1") {
+			t.Fatalf("a header is bold Dim: %q", part)
+		}
+		if !strings.Contains(part, bgSGR(theme.Bg)) {
+			t.Fatalf("a header sits on Bg: %q", part)
+		}
+		if next := listRowText(raw[y+1]); !strings.HasPrefix(next, "subject-") {
+			t.Fatalf("a header should sit right above its run's first summary, got %q", next)
+		}
+	}
+	if counts["Today"] != 1 || counts["Yesterday"] != 1 || counts["Earlier this week"] != 1 || len(counts) != 3 {
+		t.Fatalf("one header per run, got %v", counts)
+	}
+	if first := listRowText(raw[m.layout().topH+historyFixedTopRows]); first != "Today" {
+		t.Fatalf("the list should open on its first run's header, got %q", first)
+	}
+	for _, y := range headerYs {
+		if h := m.hitTest(2, y); h.kind != hitNone {
+			t.Fatalf("header row %d must be inert, got %+v", y, h)
+		}
+		m.Update(tea.MouseMotionMsg{X: 2, Y: y})
+		if m.hoverCommit != -1 {
+			t.Fatalf("hovering header row %d must hover nothing, got %d", y, m.hoverCommit)
+		}
+		if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft}); cmd != nil || m.historyCursor != "sha00" {
+			t.Fatalf("clicking header row %d must do nothing, cursor %q", y, m.historyCursor)
+		}
+	}
+	if seen := assertHistoryHitMatchesPaint(t, m, "grouped"); seen != 18 {
+		t.Fatalf("all nine commits should paint two hit rows each, saw %d", seen)
+	}
+	assertFullyBgFilled(t, "grouped", m.View().Content, m.width)
+}
+
+// TestHistoryWindowKeepsTheCursorBlockAcrossHeaders scrolls a long grouped
+// list with the keyboard: the viewport counts header and rule lines, and the
+// cursor's summary, byline, and rule all stay painted.
+func TestHistoryWindowKeepsTheCursorBlockAcrossHeaders(t *testing.T) {
+	instantSelectTick(t)
+	m := groupedMission(t, 30, false)
+	for range 17 {
+		m.Update(downKey())
+	}
+	if m.historyCursor != "sha17" {
+		t.Fatalf("setup: seventeen downs should reach sha17, got %q", m.historyCursor)
+	}
+	lines := strings.Split(m.View().Content, "\n")
+	l := m.layout()
+	summaryY := -1
+	for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
+		if listRowText(lines[y]) == "subject-17" {
+			summaryY = y
+		}
+	}
+	if summaryY < 0 {
+		t.Fatal("the cursor's summary scrolled out of view")
+	}
+	if summaryY+2 >= l.topH+l.bodyH || !strings.HasPrefix(listRowText(lines[summaryY+1]), "author-17") || !strings.HasPrefix(listRowText(lines[summaryY+2]), "───") {
+		t.Fatal("the cursor's byline and rule should stay painted under its summary")
+	}
+	if strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "subject-00") {
+		t.Fatal("setup: the list should have scrolled past the first commit")
+	}
+	assertHistoryHitMatchesPaint(t, m, "scrolled")
 }
 
 func TestFullFrameHistoryPaneStatesFullyPaintBackground(t *testing.T) {

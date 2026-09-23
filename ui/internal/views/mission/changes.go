@@ -73,14 +73,14 @@ func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width
 	return pad + "\n" + top + "\n" + underline
 }
 
-// renderFilterRow paints the "❯ filter" box: the typed filter text, or the
-// Faint placeholder while empty. The border brightens to Pink while the
-// filter itself holds focus; hover gets GutterHoverBar instead (the same
-// dimmer-than-Pink tone the summary/description boxes use), never the
-// focus color itself -- all three sibling boxes share the one rule that a
-// hover reading as already-focused is wrong, focused still wins outright
+// renderFilterRow paints the "❯ filter" box for either tab: the typed filter
+// text, or the Faint placeholder while empty. The border brightens to Pink
+// while the filter itself holds focus; hover gets GutterHoverBar instead
+// (the same dimmer-than-Pink tone the summary/description boxes use), never
+// the focus color itself -- all three sibling boxes share the one rule that
+// a hover reading as already-focused is wrong, focused still wins outright
 // when both are true.
-func renderFilterRow(text string, focused, hovered bool, width int) string {
+func renderFilterRow(text, placeholder string, focused, hovered bool, width int) string {
 	inner := width - 4
 	if inner < 1 {
 		inner = 1
@@ -94,7 +94,7 @@ func renderFilterRow(text string, focused, hovered bool, width int) string {
 	body := text
 	bodyStyle := on.Foreground(theme.Text)
 	if body == "" {
-		body = "Filter changes"
+		body = placeholder
 		bodyStyle = on.Foreground(theme.Faint)
 	}
 	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))

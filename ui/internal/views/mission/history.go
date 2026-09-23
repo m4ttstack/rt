@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	// tabs(3, pad+label+underline) + the tabs-gap blank band row(1).
-	historyFixedTopRows = 4
+	// tabs(3, pad+label+underline) + the tabs-gap blank band row(1), then the
+	// filter box(3) from historyFilterTopRow.
+	historyFilterTopRow = 4
+	historyFixedTopRows = 7
 	// summary, byline, then the separator rule (GHD's row border).
 	historyRowHeight = 3
 	// Rows from the end at which the next page is requested.
@@ -310,54 +312,129 @@ func (m *Mission) historyTabKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // renderHistorySidebar is the History tab's sidebar (History.png): the tab
-// strip, the tabs-gap band, then the commit list to the bottom. No filter,
-// commit box, or undo strip: GHD's History sidebar has none of them.
+// strip, the tabs-gap band, the filter box, then the commit list to the
+// bottom. No commit box or undo strip: GHD's History sidebar has neither.
 func (m *Mission) renderHistorySidebar(width, height int) string {
 	listH := max(height-historyFixedTopRows, 0)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, "history", m.hoverTab, width),
 		blankRows(width, 1),
+		renderFilterRow("", "Filter history", false, m.hoverFilterRow, width),
 		m.renderCommitList(width, listH),
 	)
 }
 
+type historyLineKind int
+
+const (
+	historyLineHeader historyLineKind = iota
+	historyLineSummary
+	historyLineByline
+	historyLineRule
+)
+
+// historyLine is one painted row of the commit list: a date header (label),
+// or one of a commit's three rows (idx is its model index).
+type historyLine struct {
+	kind  historyLineKind
+	idx   int
+	label string
+}
+
+// historyVisible is the model indices the list shows, in list order.
+func (m *Mission) historyVisible() []int {
+	idx := make([]int, len(m.model.History.Commits))
+	for i := range idx {
+		idx[i] = i
+	}
+	return idx
+}
+
+// historyLines is the commit list top to bottom, one entry per painted row:
+// a header opens each run of equal Group, then every commit's summary,
+// byline, and rule.
+func (m *Mission) historyLines() []historyLine {
+	commits := m.model.History.Commits
+	visible := m.historyVisible()
+	var lines []historyLine
+	for i, idx := range visible {
+		c := commits[idx]
+		if c.Group != "" && (i == 0 || commits[visible[i-1]].Group != c.Group) {
+			lines = append(lines, historyLine{kind: historyLineHeader, label: c.Group})
+		}
+		lines = append(lines,
+			historyLine{kind: historyLineSummary, idx: idx},
+			historyLine{kind: historyLineByline, idx: idx},
+			historyLine{kind: historyLineRule, idx: idx})
+	}
+	return lines
+}
+
+// historyCursorLine is the line the viewport keeps in view: the cursor
+// commit's summary; scrolloff then keeps its byline and rule on screen too.
+func (m *Mission) historyCursorLine(lines []historyLine) int {
+	cursor := m.historyIndex(m.historyCursor)
+	for i, l := range lines {
+		if l.kind == historyLineSummary && l.idx == cursor {
+			return i
+		}
+	}
+	return 0
+}
+
+// historyWindow is the part of historyLines a height-row list paints, from
+// line top for vis rows. renderCommitList and historySidebarHit both take
+// their rows from here, so a hit always names the row the frame painted.
+func (m *Mission) historyWindow(height int) (lines []historyLine, top, vis int) {
+	lines = m.historyLines()
+	top, vis = picker.Viewport(m.historyCursorLine(lines), m.historyTop, len(lines), height, height, 0)
+	m.historyTop = top
+	return lines, top, vis
+}
+
 func (m *Mission) renderCommitList(width, height int) string {
 	commits := m.model.History.Commits
-	n := len(commits)
 	rowWidth := max(width-1, 0)
-	blank := lipgloss.NewStyle().Width(rowWidth).Background(theme.Bg).Render("")
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	blank := on.Width(rowWidth).Render("")
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
-	restOn := lipgloss.NewStyle().Background(theme.Bg)
-	if n == 0 {
-		lines := make([]string, height)
-		for i := range lines {
-			lines[i] = blank + restOn.Render(" ")
+	out := make([]string, height)
+	if len(commits) == 0 {
+		for i := range out {
+			out[i] = blank + on.Render(" ")
 		}
 		if height > 0 && m.model.History.Loading {
-			lines[0] = lipgloss.NewStyle().Width(rowWidth).Background(theme.Bg).Foreground(theme.Faint).Render(clip("  Loading history…", rowWidth)) + restOn.Render(" ")
+			out[0] = on.Width(rowWidth).Foreground(theme.Faint).Render(clip("  Loading history…", rowWidth)) + on.Render(" ")
 		}
-		return strings.Join(lines, "\n")
+		return strings.Join(out, "\n")
 	}
-	capRows := height / historyRowHeight
-	cursorIdx := max(m.historyIndex(m.historyCursor), 0)
-	top, vis := picker.Viewport(cursorIdx, m.historyTop, n, capRows, capRows, 0)
-	m.historyTop = top
-	thumbTop, thumbH := picker.ThumbSpan(top, vis, n)
+	lines, top, vis := m.historyWindow(height)
+	thumbTop, thumbH := picker.ThumbSpan(top, vis, len(lines))
+	rowIdx := -1
+	var rows [3]string
+	for i := range out {
+		row := blank
+		if i < vis {
+			switch l := lines[top+i]; l.kind {
+			case historyLineHeader:
+				row = renderHistoryGroupHeader(l.label, rowWidth)
+			default:
+				if l.idx != rowIdx {
+					c := commits[l.idx]
+					rows[0], rows[1], rows[2] = renderCommitRow(c, rowWidth, c.Sha == m.historyCursor, m.historyInSelection(l.idx), l.idx == m.hoverCommit)
+					rowIdx = l.idx
+				}
+				row = rows[l.kind-historyLineSummary]
+			}
+		}
+		out[i] = row + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, on)
+	}
+	return strings.Join(out, "\n")
+}
 
-	lines := make([]string, 0, height)
-	for i := 0; i < capRows; i++ {
-		idx := top + i
-		a, b, c := blank, blank, blank
-		if i < vis && idx < n {
-			a, b, c = renderCommitRow(commits[idx], rowWidth, commits[idx].Sha == m.historyCursor, m.historyInSelection(idx), idx == m.hoverCommit)
-		}
-		cell := picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
-		lines = append(lines, a+cell, b+cell, c+cell)
-	}
-	for len(lines) < height {
-		lines = append(lines, blank+restOn.Render(" "))
-	}
-	return strings.Join(lines, "\n")
+// renderHistoryGroupHeader is a date header row, exactly width cells.
+func renderHistoryGroupHeader(label string, width int) string {
+	return lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Dim).Bold(true).Width(width).Render(clip("  "+label, width))
 }
 
 // renderCommitRow is GHD's commit-list-item as three terminal rows: the
@@ -434,29 +511,34 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 	return line1, line2, rule
 }
 
-// historySidebarHit walks renderHistorySidebar's row sequence in lockstep.
+// historySidebarHit walks renderHistorySidebar's row sequence in lockstep;
+// the list's rows come from historyWindow, the same lines the render took.
+// Headers and separator rules never hover or click.
 func (m *Mission) historySidebarHit(x, y, listRegionH int) hit {
-	if y < 3 {
+	switch {
+	case y < 3:
 		if x < sidebarWidth/2 {
 			return hit{kind: hitTab, idx: 0}
 		}
 		return hit{}
-	}
-	if y < historyFixedTopRows {
+	case y < historyFilterTopRow:
 		return hit{}
+	case y < historyFixedTopRows:
+		return hit{kind: hitFilterRow}
 	}
 	row := y - historyFixedTopRows
-	if row >= listRegionH {
+	if row >= listRegionH || len(m.model.History.Commits) == 0 {
 		return hit{}
 	}
-	idx := m.historyTop + row/historyRowHeight
-	if row/historyRowHeight >= listRegionH/historyRowHeight || idx >= len(m.model.History.Commits) {
+	lines, top, vis := m.historyWindow(listRegionH)
+	if row >= vis {
 		return hit{}
 	}
-	if row%historyRowHeight == historyRowHeight-1 {
-		return hit{} // the separator rule: never hovers, never clicks
+	switch l := lines[top+row]; l.kind {
+	case historyLineSummary, historyLineByline:
+		return hit{kind: hitCommitRow, idx: l.idx}
 	}
-	return hit{kind: hitCommitRow, idx: idx}
+	return hit{}
 }
 
 func (m *Mission) clickCommitRow(idx int, shift bool) (tea.Model, tea.Cmd) {

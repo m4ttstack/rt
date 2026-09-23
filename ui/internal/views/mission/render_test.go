@@ -338,10 +338,10 @@ func TestRenderCommitButtonHoverBrightensOnlyWhenPressable(t *testing.T) {
 // GutterHoverBar, never Pink; focus keeps Pink and wins outright when both
 // are true. Hover must not change the box's rendered width.
 func TestRenderFilterRowHoverIsDistinctFromFocus(t *testing.T) {
-	rest := renderFilterRow("", false, false, sidebarWidth)
-	hovered := renderFilterRow("", false, true, sidebarWidth)
-	focused := renderFilterRow("", true, false, sidebarWidth)
-	focusedAndHovered := renderFilterRow("", true, true, sidebarWidth)
+	rest := renderFilterRow("", "Filter changes", false, false, sidebarWidth)
+	hovered := renderFilterRow("", "Filter changes", false, true, sidebarWidth)
+	focused := renderFilterRow("", "Filter changes", true, false, sidebarWidth)
+	focusedAndHovered := renderFilterRow("", "Filter changes", true, true, sidebarWidth)
 
 	if strings.Contains(rest, fgSGR(theme.Pink)) || strings.Contains(rest, fgSGR(theme.GutterHoverBar)) {
 		t.Fatalf("un-hovered, un-focused filter row must not wear either accent border: %q", rest)

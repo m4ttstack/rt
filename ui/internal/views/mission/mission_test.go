@@ -763,9 +763,9 @@ func TestMouseClickHistoryTabEmitsTabHistory(t *testing.T) {
 // historyModel mirrors history_test.go's historyFixtureModel on the wire.
 const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"main"},` +
 	`"history":{"commits":[` +
-	`{"sha":"s1","shortSha":"s1","summary":"Fix pty paint predicate","byline":"Matt","when":"3 hours ago","tags":[],"unpushed":true,"selected":true},` +
-	`{"sha":"s2","shortSha":"s2","summary":"Guard badges","byline":"Matt","when":"5 hours ago","tags":["v0.9.1"],"unpushed":false,"selected":false},` +
-	`{"sha":"s3","shortSha":"s3","summary":"","byline":"Matt, Claude","when":"1 day ago","tags":[],"unpushed":false,"selected":false}],` +
+	`{"sha":"s1","shortSha":"s1","summary":"Fix pty paint predicate","byline":"Matt","when":"3 hours ago","group":"Today","tags":[],"unpushed":true,"selected":true},` +
+	`{"sha":"s2","shortSha":"s2","summary":"Guard badges","byline":"Matt","when":"5 hours ago","group":"Today","tags":["v0.9.1"],"unpushed":false,"selected":false},` +
+	`{"sha":"s3","shortSha":"s3","summary":"","byline":"Matt, Claude","when":"1 day ago","group":"Yesterday","tags":[],"unpushed":false,"selected":false}],` +
 	`"hasMore":false,"loading":false,` +
 	`"header":{"summary":"Fix pty paint predicate","body":"","byline":"Matt","authors":["Matt <m@x>"],"sha":"s1full","shortSha":"s1","linesAdded":12,"linesDeleted":4,"tags":[],"rangeCount":1,"contiguous":true},` +
 	`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}],"selectedFile":"lib/mission/model.ts"},` +
@@ -774,13 +774,46 @@ const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"
 	`"stashCount":0,"notice":""}`
 
 // historyRowY is the frame row of commit idx's summary line: topH(4), then
-// the History sidebar's tabs(3) + tabs-gap(1), then three rows per commit
-// (summary, byline, separator rule).
-func historyRowY(idx int) int { return 4 + 4 + 3*idx }
+// the History sidebar's tabs(3) + tabs-gap(1) + filter box(3), then the
+// Today header over s1 and s2 and the Yesterday header over s3, and three
+// rows per commit (summary, byline, separator rule).
+func historyRowY(idx int) int {
+	headers := 1
+	if idx >= 2 {
+		headers = 2
+	}
+	return 4 + 7 + headers + 3*idx
+}
 
 func openHistory(t *testing.T) *testutil.Session {
 	t.Helper()
 	return openMission(t, historyModel, "Fix pty paint predicate")
+}
+
+// screenRow is one row of the session's screen as plain text.
+func screenRow(s *testutil.Session, y int) string {
+	return strings.Split(s.Screen(), "\n")[y]
+}
+
+// TestHistoryDateHeadersPaintAndStayInert drives the real binary: each run
+// of commits opens on its date header, and a click on a header emits
+// nothing.
+func TestHistoryDateHeadersPaintAndStayInert(t *testing.T) {
+	s := openHistory(t)
+	for y, want := range map[int]string{historyRowY(0) - 1: "Today", historyRowY(2) - 1: "Yesterday"} {
+		if row := screenRow(s, y); !strings.HasPrefix(row, "  "+want) {
+			t.Fatalf("screen row %d should open with the %q header: %q", y, want, row)
+		}
+	}
+	if row := screenRow(s, historyRowY(0)); !strings.Contains(row, "Fix pty paint predicate") {
+		t.Fatalf("setup: historyRowY(0) should be s1's summary: %q", row)
+	}
+	s.Type(sgrClick(0, 2, historyRowY(2)-1))
+	if l, ok := s.ReadLine(400 * time.Millisecond); ok {
+		t.Fatalf("clicking a date header must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
 }
 
 func TestPressTwoEmitsTabHistory(t *testing.T) {

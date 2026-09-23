@@ -592,7 +592,7 @@ func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, "changes", m.hoverTab, width),
 		blankRows(width, 1),
-		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, m.hoverFilterRow, width),
+		renderFilterRow(m.filterDisplayText(), "Filter changes", m.focus == focusFilter, m.hoverFilterRow, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
 	)
 }
@@ -726,7 +726,7 @@ func (m *Mission) layout() frameLayout {
 		l.sidebarTopH = historyFixedTopRows
 		l.bodyH = max(l.bodyH, historyFixedTopRows)
 		l.listRegionH = l.bodyH - historyFixedTopRows
-		l.sidebarFillerH = max(l.listRegionH-len(m.model.History.Commits)*historyRowHeight, 0)
+		l.sidebarFillerH = max(l.listRegionH-len(m.historyLines()), 0)
 		return l
 	}
 	l.sidebarTopH = sidebarFixedTopRows
@@ -1138,6 +1138,9 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	case hitHistoryExpander:
 		m.historyExpanded = !m.historyExpanded
 	case hitFilterRow:
+		if m.historyTab() {
+			return m, nil
+		}
 		m.focus = focusFilter
 		m.filterText = m.model.Filter
 	case hitFileCheckbox:
