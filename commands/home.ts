@@ -35,8 +35,8 @@
 import { existsSync, readdirSync, readFileSync, readlinkSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { fileURLToPath } from "url";
 import type { CommandContext } from "../lib/command-tree.ts";
+import { isCompiledRt } from "../lib/rt-self.ts";
 import { bold, dim, green, red, reset, yellow } from "../lib/ansi.ts";
 import { isSafeMachineKeySegment, machineKey, mattstackHome } from "../lib/rt-paths.ts";
 import { resolveInitialMachineKey } from "../lib/home/machine-id.ts";
@@ -395,7 +395,7 @@ function defaultMaterializeExec(): MaterializeExecSeam {
  * that's the honest dev-mode failure, not a silent `bun intercept install`.
  */
 function rtSelfBin(): string {
-  return fileURLToPath(import.meta.url).startsWith("/$bunfs") ? process.execPath : "rt";
+  return isCompiledRt() ? process.execPath : "rt";
 }
 
 /** Reads `~/.mattstack/deck/api.json` (port, pid) and probes deck's own `/healthz`. Injectable so tests never touch a real file or the network. */
