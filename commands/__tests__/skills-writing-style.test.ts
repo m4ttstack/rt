@@ -218,6 +218,31 @@ describe("new", () => {
     expect(await code([])).toBe("usage");
   });
 
+  test("a disabled mattstack plugin entry is refused no-plugin, even with an installPath", async () => {
+    homeRepo();
+    const installPath = join(home, "cache", "mattstack");
+    const dir = join(installPath, "skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: writing-style-sparse\ndescription: \"mattstack:writing-style-sparse\"\n---\n# Sparse\n");
+    const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: false, installPath }]);
+    out.length = 0;
+    await expect(writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("no-plugin");
+  });
+
+  test("resolves the preset through a plugin manifest's own (non-default) skills root", async () => {
+    homeRepo();
+    const installPath = join(home, "cache", "mattstack");
+    mkdirSync(join(installPath, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(installPath, ".claude-plugin", "plugin.json"), JSON.stringify({ skills: "./custom-skills" }));
+    const dir = join(installPath, "custom-skills", "writing-style-sparse");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: writing-style-sparse\ndescription: \"mattstack:writing-style-sparse\"\n---\n# Sparse\n");
+    const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
+    await writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "team-voice", "SKILL.md"))).toBe(true);
+  });
+
   test("CRLF preset SKILL.md yields a copy with normalized LF and retargeted frontmatter", async () => {
     homeRepo();
     const installPath = join(home, "cache", "mattstack");

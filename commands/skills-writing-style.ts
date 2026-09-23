@@ -12,7 +12,7 @@ import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
 import { execWithTimeout } from "../lib/setup/probes.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import { isValidSkillId, presetById, resolveWritingStyle, WRITING_STYLE_KEY, WRITING_STYLE_SOURCE_LABEL, type ResolvedWritingStyle } from "../lib/skills/writing-style.ts";
-import { isStyleUsable, linkPersonalSkills, listWritingStyles, parsePluginEntries, personalSkillsDir, readSkillInventory } from "../lib/skills/writing-style-sources.ts";
+import { isStyleUsable, linkPersonalSkills, listWritingStyles, parsePluginEntries, personalSkillsDir, pluginSkillRoots, readSkillInventory } from "../lib/skills/writing-style-sources.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
 export interface WritingStyleDeps {
@@ -194,8 +194,12 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
   if (existsSync(target)) return refuse(new UserActionableError("exists", `${target} already exists`), json, "new", deps);
 
   const stdout = await deps.pluginListStdout();
-  const mattstack = (stdout === null ? null : parsePluginEntries(stdout))?.find((p) => p.id.startsWith("mattstack@") && p.installPath);
-  const source = mattstack?.installPath ? join(mattstack.installPath, "skills", presetId.split(":")[1]!) : null;
+  const mattstack = (stdout === null ? null : parsePluginEntries(stdout))?.find((p) => p.id.startsWith("mattstack@") && p.enabled && p.installPath);
+  const source = mattstack?.installPath
+    ? pluginSkillRoots(mattstack.installPath)
+        .map((root) => join(root, presetId.split(":")[1]!))
+        .find((candidate) => existsSync(join(candidate, "SKILL.md"))) ?? null
+    : null;
   if (!source || !existsSync(join(source, "SKILL.md"))) {
     return refuse(new UserActionableError("no-plugin", "the mattstack plugin with the writing-style presets is not installed; run rt setup"), json, "new", deps);
   }

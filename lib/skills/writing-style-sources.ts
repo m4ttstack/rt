@@ -46,7 +46,7 @@ function skillDirNames(root: string): string[] {
 }
 
 /** Mirrors Claude Code: the manifest's `skills` roots, each scanned one level deep; `./skills` when absent. */
-function pluginSkillRoots(installPath: string): string[] {
+export function pluginSkillRoots(installPath: string): string[] {
   let roots: string[] = ["./skills"];
   try {
     const manifest = JSON.parse(readFileSync(join(installPath, ".claude-plugin", "plugin.json"), "utf8")) as { skills?: unknown };
