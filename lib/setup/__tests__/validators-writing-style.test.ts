@@ -22,9 +22,28 @@ describe("writingStyleRow", () => {
   test("after Install with nothing chosen: needs-you with the choose action", () => {
     const r = writingStyleRow({ homeReady: true, resolved: { skill: "mattstack:writing-style-conversational", source: "fallback" }, inventory: inv(), options: opts });
     expect(r.status).toBe("needs-you");
+    expect(r.detail).toBe("Not chosen yet");
     expect(r.action).toMatchObject({ type: "choose", verb: ["skills", "writing-style", "use"] });
     expect((r.action as { options: unknown[] }).options).toHaveLength(1);
     expect((r.action as { other?: { label: string } }).other?.label).toBe("Use my own skill…");
+  });
+
+  test("the choose action carries its sheet copy", () => {
+    const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory: inv(), options: opts });
+    const action = r.action as { subtitle?: string; footnote?: string };
+    expect(action.subtitle).toBe("The voice agents use for reviews, replies and PR descriptions posted under your name.");
+    expect(action.footnote).toBe("You can also choose from a terminal: rt skills writing-style use");
+  });
+
+  test("other.suggestions lists installed and personal ids not already offered as options, deduplicated and sorted", () => {
+    const inventory: SkillInventory = {
+      installed: new Set(["x:y", "mattstack:writing-style-sparse"]),
+      disabledPluginFor: new Map(),
+      personal: [{ name: "my-voice", dir: "/home/.mattstack/user/skills/my-voice" }],
+    };
+    const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory, options: opts });
+    const action = r.action as { other?: { suggestions?: string[] } };
+    expect(action.other?.suggestions).toEqual(["my-voice", "x:y"]);
   });
 
   test("a team default naming a preset is ready on a fresh Mac", () => {

@@ -18,14 +18,18 @@ const BASE = {
   recheck: "on-change" as const,
 };
 
-function chooseAction(options: WritingStyleOption[], selected?: string): Action {
+function chooseAction(options: WritingStyleOption[], inventory: SkillInventory, selected?: string): Action {
+  const optionIds = new Set(options.map((o) => o.id));
+  const suggestions = [...new Set([...inventory.installed, ...inventory.personal.map((p) => p.name)])].filter((id) => !optionIds.has(id)).sort();
   return {
     type: "choose",
     label: "Choose style…",
     verb: ["skills", "writing-style", "use"],
+    subtitle: "The voice agents use for reviews, replies and PR descriptions posted under your name.",
+    footnote: "You can also choose from a terminal: rt skills writing-style use",
     options: options.map(({ id, label, detail, sample }) => ({ id, label, detail, ...(sample ? { sample } : {}) })),
     ...(selected ? { selected } : {}),
-    other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." },
+    other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.", suggestions },
   };
 }
 
@@ -34,9 +38,9 @@ export function writingStyleRow(input: { homeReady: boolean; resolved: ResolvedW
   // use writes the user store inside the home repo, which does not exist until Install clones it.
   if (!homeReady) return row({ ...BASE, status: "needs-you", detail: "You'll choose this after Install" });
 
-  const action = chooseAction(options, resolved.source === "fallback" ? undefined : resolved.skill);
+  const action = chooseAction(options, inventory, resolved.source === "fallback" ? undefined : resolved.skill);
   if (resolved.source === "fallback") {
-    return row({ ...BASE, status: "needs-you", detail: "Choose how your reviews and replies read (or run rt skills writing-style use)", action });
+    return row({ ...BASE, status: "needs-you", detail: "Not chosen yet", action });
   }
   if (!isStyleUsable(resolved.skill, inventory)) {
     const plugin = inventory.disabledPluginFor.get(resolved.skill);

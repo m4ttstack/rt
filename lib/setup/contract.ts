@@ -34,7 +34,17 @@ export type Action =
   // startAt is where the panel opens, never a value rt writes.
   | { type: "choose-folder"; label: string; startAt: string | null }
   // The app appends the picked id and --json to verb; "other" collects a free-text id for the same verb.
-  | { type: "choose"; label: string; verb: string[]; options: ChooseOption[]; selected?: string; other?: { label: string; hint: string } };
+  // other.suggestions is the app's only source of completions for a typed id; it never scans the filesystem.
+  | {
+      type: "choose";
+      label: string;
+      verb: string[];
+      subtitle?: string;
+      footnote?: string;
+      options: ChooseOption[];
+      selected?: string;
+      other?: { label: string; hint: string; suggestions?: string[] };
+    };
 
 export interface Row {
   id: string;
