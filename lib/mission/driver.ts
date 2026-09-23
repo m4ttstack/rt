@@ -5,19 +5,23 @@
  * pixels only; every decision (guard checks, selection math, confirm
  * timers) lives here.
  */
+import { extname, join, normalize } from "node:path";
 import { createStackGuardRunners } from "../stack-guard.ts";
 import {
   DiffSelection,
   DiffSelectionType,
   type BranchInfo,
+  type ChangesetData,
   type GitClient,
   type RepoSnapshot,
   type StagingDiff,
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
+import type { ResolvedEditor } from "../../commands/code.ts";
 import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
+import type { FileActions } from "../file-actions.ts";
 import { canon } from "../fs-canon.ts";
 import type { getPullRebase, getRemoteDefaultBranch } from "../git-ops.ts";
 import { formatRelativeTime } from "../relative-time.ts";
@@ -80,6 +84,12 @@ export interface MissionDeps {
    * registry rows alone rather than emptying the list.
    */
   listGitWorktrees: ListGitWorktreesFn;
+  fileActions: FileActions;
+  /** Sync, same caching contract as resolveDefaultBranch: read once per refresh(), never from model()/push(). */
+  resolveEditor: (dir: string) => ResolvedEditor | null;
+  /** Must never inherit stdio or prompt: the board owns the terminal. */
+  launchEditor: (command: string, target: string) => Promise<boolean>;
+  pathExists: (absPath: string) => boolean;
 }
 
 interface StagePayload {
@@ -135,6 +145,13 @@ interface HistorySelectPayload {
 interface HistoryFilePayload {
   path: string;
   showOversized?: boolean;
+}
+
+interface MenuActionPayload {
+  action: string;
+  path?: string;
+  sha?: string;
+  name?: string;
 }
 
 interface DriverState extends MissionState {
@@ -250,6 +267,10 @@ export class MissionDriver {
   private readonly history = new HistoryStore();
   /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
   private historySyncs = 0;
+  /** Cached by refresh(), same contract as defaultBranch. */
+  private editor: ResolvedEditor | null = null;
+  /** Keyed by changeset identity so a push never stats the disk; every refresh drops it, since the tree may have changed under an unchanged changeset. */
+  private onDiskCache: { changeset: ChangesetData | null; paths: Set<string> } = { changeset: null, paths: new Set() };
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -336,7 +357,11 @@ export class MissionDriver {
   }
 
   private model(): MissionModel {
-    const history = buildHistoryModel(this.history, { now: this.deps.now(), loading: this.historySyncs > 0 && !this.history.loaded });
+    const history = buildHistoryModel(this.history, {
+      now: this.deps.now(),
+      loading: this.historySyncs > 0 && !this.history.loaded,
+      onDisk: this.onDisk(),
+    });
     const selectedFile = this.history.selectedFile;
     return buildModel({
       state: this.state,
@@ -359,7 +384,26 @@ export class MissionDriver {
         diff: this.history.diff,
         oversizedOverride: selectedFile ? this.history.isOversizedShown(selectedFile.path) : false,
       },
+      editorLabel: this.editor?.label ?? "",
     });
+  }
+
+  private onDisk(): (path: string) => boolean {
+    const changeset = this.history.changeset;
+    if (this.onDiskCache.changeset !== changeset) {
+      const root = this.state.currentWorktree;
+      const files = changeset?.files ?? [];
+      this.onDiskCache = {
+        changeset,
+        paths: new Set(files.filter((f) => this.deps.pathExists(join(root, f.path))).map((f) => f.path)),
+      };
+    }
+    const { paths } = this.onDiskCache;
+    return (path) => paths.has(path);
+  }
+
+  private clearOnDisk(): void {
+    this.onDiskCache = { changeset: null, paths: new Set() };
   }
 
   private worktreeRows(): WorktreeRow[] {
@@ -434,6 +478,8 @@ export class MissionDriver {
     // instead of calling this themselves.
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
+    this.editor = this.deps.resolveEditor(this.state.currentWorktree);
+    this.clearOnDisk();
     const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
@@ -495,6 +541,7 @@ export class MissionDriver {
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
     this.reconcileSelections();
+    this.clearOnDisk();
     this.stagingDiff = stagingDiff;
     this.recomputeAction();
     await this.syncHistory();
@@ -594,6 +641,9 @@ export class MissionDriver {
       case "mission:history-more":
         await this.history.loadNextBatch(this.deps.client(this.state.currentWorktree), this.historyBranch());
         this.push();
+        break;
+      case "mission:menu-action":
+        await this.handleMenuAction(intent.payload as MenuActionPayload | undefined);
         break;
       default:
         break;
@@ -1036,5 +1086,94 @@ export class MissionDriver {
     if (payload.showOversized === true && this.state.selectedPath) this.state.showOversized.add(this.state.selectedPath);
     if (payload.showOversized === false && this.state.selectedPath) this.state.showOversized.delete(this.state.selectedPath);
     this.push();
+  }
+
+  private async handleMenuAction(p: MenuActionPayload | undefined): Promise<void> {
+    if (!p || typeof p.action !== "string") return;
+    const root = this.state.currentWorktree;
+    const rel = typeof p.path === "string" ? p.path : null;
+    const abs = rel === null ? null : join(root, rel);
+    const client = this.deps.client(root);
+    let mutated = false;
+    try {
+      switch (p.action) {
+        case "copy-path":
+          if (abs) this.copy(abs);
+          break;
+        case "copy-relative-path":
+          if (rel) this.copy(normalize(rel));
+          break;
+        case "copy-sha":
+          if (typeof p.sha === "string") this.copy(p.sha);
+          break;
+        case "reveal":
+          if (abs) this.deps.fileActions.reveal(abs);
+          break;
+        case "reveal-repo":
+          this.deps.fileActions.reveal(root, "folder");
+          break;
+        case "open-default":
+          if (abs) this.deps.fileActions.open(abs);
+          break;
+        case "open-editor":
+        case "open-repo-editor": {
+          const target = p.action === "open-repo-editor" ? root : abs;
+          if (!target) break;
+          if (!this.editor) {
+            this.state.notice = "No editor set: run rt code once to pick one";
+            break;
+          }
+          if (!(await this.deps.launchEditor(this.editor.command, target))) {
+            this.state.notice = `Could not open ${this.editor.label}`;
+          }
+          break;
+        }
+        case "ignore-file":
+        case "ignore-folder":
+          if (rel) {
+            await client.appendIgnoreFile(rel);
+            mutated = true;
+          }
+          break;
+        case "ignore-extension": {
+          const ext = rel ? extname(rel) : "";
+          if (ext) {
+            await client.appendIgnoreRule(`*${ext}`);
+            mutated = true;
+          }
+          break;
+        }
+        case "discard-file": {
+          const file = rel ? this.snapshot.files.find((f) => f.path === rel) : undefined;
+          if (!file) {
+            if (rel) this.state.notice = `${rel} has no changes to discard`;
+            break;
+          }
+          // Set before the call: discardChanges can throw after it has
+          // already changed the tree, and the board must show that tree.
+          mutated = true;
+          await client.discardChanges([file]);
+          this.state.selections.delete(file.path);
+          break;
+        }
+        case "create-tag": {
+          const name = typeof p.name === "string" ? p.name.trim() : "";
+          if (typeof p.sha === "string" && name !== "") {
+            await client.createTag(name, { sha: p.sha });
+            mutated = true;
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      this.state.notice = err instanceof Error ? err.message : String(err);
+    }
+    if (mutated) await this.refresh();
+    this.push();
+  }
+
+  private copy(text: string): void {
+    this.deps.fileActions.copy(text);
+    this.state.notice = "Copied";
   }
 }

@@ -87,6 +87,9 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if m.model.StashCount != 1 || m.model.Notice != "" {
 		t.Fatalf("StashCount=%d Notice=%q", m.model.StashCount, m.model.Notice)
 	}
+	if m.model.EditorLabel != "Zed" {
+		t.Fatalf("EditorLabel: got %q want \"Zed\"", m.model.EditorLabel)
+	}
 }
 
 func TestDecodeHistoryFixture(t *testing.T) {
@@ -110,6 +113,9 @@ func TestDecodeHistoryFixture(t *testing.T) {
 	}
 	if !m.Diff.ReadOnly {
 		t.Fatalf("Diff.ReadOnly: expected true")
+	}
+	if len(m.History.Files) != 1 || !m.History.Files[0].OnDisk {
+		t.Fatalf("History.Files: expected one row with OnDisk true: %+v", m.History.Files)
 	}
 }
 

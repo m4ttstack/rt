@@ -227,6 +227,8 @@ export interface MissionHistoryFileRow {
   path: string;
   origPath: string;
   status: MissionChangeRow["status"];
+  /** The path exists in the current worktree, not just in the commit. */
+  onDisk: boolean;
 }
 
 export interface MissionHistoryModel {
@@ -293,6 +295,8 @@ export interface MissionModel {
   notice: string;
   tab: "changes" | "history";
   history: MissionHistoryModel;
+  /** `rt code`'s resolved editor for the current worktree ("Zed"), "" when none resolves. */
+  editorLabel: string;
 }
 
 export interface SessionHello {
@@ -325,6 +329,7 @@ const SESSION_INTENT_NAMES = [
   "mission:history-select",
   "mission:history-file",
   "mission:history-more",
+  "mission:menu-action",
 ] as const;
 
 export interface SessionIntent {

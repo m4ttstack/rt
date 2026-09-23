@@ -3,7 +3,9 @@
  * the gate and the wiring; the loop and state machine live in
  * lib/mission/driver.ts and the view paints in the bundled Go rt-ui helper.
  */
+import { existsSync } from "fs";
 import type { CommandContext } from "../lib/command-tree.ts";
+import { createFileActions } from "../lib/file-actions.ts";
 import { MissionDriver, type MissionDeps } from "../lib/mission/driver.ts";
 import { runAction } from "../lib/mission/git-actions.ts";
 import { interactive } from "../lib/ui/gate.ts";
@@ -15,6 +17,7 @@ import { buildWorktreeGuardMap, checkBranchGuard } from "../lib/branch-guard.ts"
 import { commitStaged, amendStaged } from "../lib/commit-ops.ts";
 import { getPullRebase, getRemoteDefaultBranch } from "../lib/git-ops.ts";
 import { listWorktreesAsync } from "../lib/worktree/git-async.ts";
+import { launchEditorDetached, resolveEditorForDir } from "./code.ts";
 
 export async function glitterCommand(_args: string[], ctx: CommandContext): Promise<void> {
   if (!interactive()) {
@@ -43,6 +46,10 @@ export async function glitterCommand(_args: string[], ctx: CommandContext): Prom
     readPullRebase: getPullRebase,
     buildGuards: buildWorktreeGuardMap,
     listGitWorktrees: listWorktreesAsync,
+    fileActions: createFileActions(),
+    resolveEditor: resolveEditorForDir,
+    launchEditor: launchEditorDetached,
+    pathExists: existsSync,
   };
 
   const driver = new MissionDriver(deps, {

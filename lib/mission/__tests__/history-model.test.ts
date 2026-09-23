@@ -79,8 +79,21 @@ describe("buildHistoryModel", () => {
     store.selectedFile = store.changeset.files[0]!;
     const model = buildHistoryModel(store, { now: NOW, loading: false });
     expect(model.header).toEqual({ summary: "fix it", body: "why", byline: "Pat", authors: ["Pat <pat@example.com>"], sha: "s1", shortSha: "s1", linesAdded: 5, linesDeleted: 2, tags: ["v1"], rangeCount: 1, contiguous: true });
-    expect(model.files).toEqual([{ path: "n.ts", origPath: "o.ts", status: "renamed" }]);
+    expect(model.files).toEqual([{ path: "n.ts", origPath: "o.ts", status: "renamed", onDisk: false }]);
     expect(model.selectedFile).toBe("n.ts");
+  });
+
+  test("file rows carry onDisk from the lookup, by repo-relative path", () => {
+    const store = new HistoryStore();
+    store.commits = [commit({ sha: "s1" })];
+    store.selection = ["s1"];
+    const file = (path: string) => ({ path, status: { kind: AppFileStatusKind.Modified as const }, commitish: "s1", parentCommitish: "s1^" });
+    store.changeset = { files: [file("kept.ts"), file("gone.ts")], linesAdded: 0, linesDeleted: 0 };
+    const model = buildHistoryModel(store, { now: NOW, loading: false, onDisk: (path) => path === "kept.ts" });
+    expect(model.files.map((f) => [f.path, f.onDisk])).toEqual([
+      ["kept.ts", true],
+      ["gone.ts", false],
+    ]);
   });
 
   test("a range header counts commits and unions authors", () => {

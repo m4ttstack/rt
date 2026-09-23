@@ -48,9 +48,9 @@ function toWireStatus(file: CommittedFileChange): MissionChangeRow["status"] {
   }
 }
 
-function fileRow(file: CommittedFileChange): MissionHistoryFileRow {
+function fileRow(file: CommittedFileChange, onDisk: (path: string) => boolean): MissionHistoryFileRow {
   const origPath = file.status.kind === AppFileStatusKind.Renamed || file.status.kind === AppFileStatusKind.Copied ? file.status.oldPath : "";
-  return { path: file.path, origPath, status: toWireStatus(file) };
+  return { path: file.path, origPath, status: toWireStatus(file), onDisk: onDisk(file.path) };
 }
 
 function buildHeader(store: HistoryStore): MissionHistoryHeader | null {
@@ -128,8 +128,12 @@ export function historyGroupLabel(date: Date, now: Date): string {
   return date.toLocaleString("en-US", { month: "long", year: "numeric" });
 }
 
-export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loading: boolean }): MissionHistoryModel {
+export function buildHistoryModel(
+  store: HistoryStore,
+  opts: { now: Date; loading: boolean; onDisk?: (path: string) => boolean },
+): MissionHistoryModel {
   const selected = new Set(store.selection);
+  const onDisk = opts.onDisk ?? (() => false);
   return {
     commits: store.commits.map((c) => ({
       sha: c.sha,
@@ -145,7 +149,7 @@ export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loadin
     hasMore: store.hasMore,
     loading: opts.loading,
     header: buildHeader(store),
-    files: (store.changeset?.files ?? []).map(fileRow),
+    files: (store.changeset?.files ?? []).map((file) => fileRow(file, onDisk)),
     selectedFile: store.selectedFile?.path ?? "",
   };
 }

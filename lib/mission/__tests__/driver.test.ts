@@ -346,6 +346,10 @@ function baseDeps(over: {
   readPullRebase?: MissionDeps["readPullRebase"];
   buildGuards?: MissionDeps["buildGuards"];
   listGitWorktrees?: MissionDeps["listGitWorktrees"];
+  fileActions?: MissionDeps["fileActions"];
+  resolveEditor?: MissionDeps["resolveEditor"];
+  launchEditor?: MissionDeps["launchEditor"];
+  pathExists?: MissionDeps["pathExists"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -377,6 +381,10 @@ function baseDeps(over: {
     // path by default rather than a happy path every other test would have to
     // opt out of.
     listGitWorktrees: over.listGitWorktrees ?? (async () => null),
+    fileActions: over.fileActions ?? { copy: () => {}, reveal: () => {}, open: () => {} },
+    resolveEditor: over.resolveEditor ?? (() => null),
+    launchEditor: over.launchEditor ?? (async () => false),
+    pathExists: over.pathExists ?? (() => false),
   };
 }
 

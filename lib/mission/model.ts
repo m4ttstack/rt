@@ -444,6 +444,7 @@ export function buildModel(input: {
   tab?: "changes" | "history";
   history?: MissionHistoryModel;
   historyDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
+  editorLabel?: string;
 }): MissionModel {
   const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff } = input;
   const tab = input.tab ?? "changes";
@@ -574,5 +575,6 @@ export function buildModel(input: {
     notice: state.notice,
     tab,
     history: input.history ?? EMPTY_HISTORY_MODEL,
+    editorLabel: input.editorLabel ?? "",
   };
 }

@@ -79,5 +79,6 @@
   "stashCount": 1,
   "notice": "",
   "tab": "changes",
-  "history": { "commits": [], "hasMore": false, "loading": false, "header": null, "files": [], "selectedFile": "" }
+  "history": { "commits": [], "hasMore": false, "loading": false, "header": null, "files": [], "selectedFile": "" },
+  "editorLabel": "Zed"
 } }
