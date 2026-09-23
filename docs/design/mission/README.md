@@ -74,6 +74,12 @@ shadows, no radii).
   shift-modified clicks: Ghostty and Terminal.app keep shift+click for
   their own text selection while mouse reporting is on. Shift+↑/↓ always
   works.
+- The History list's mouse wheel scrolls the view without moving the
+  selection, and paging is an explicit "Load 100 more commits" row rather
+  than GitHub Desktop's load-as-you-scroll.
+- History groups commits under date headers (Today, Yesterday, Earlier
+  this week, Last week, then by month) and has a `/` filter over loaded
+  commits; GitHub Desktop has neither.
 
 ## Deferred to v2
 
@@ -209,8 +215,10 @@ division.
 | TopBar | 56 | 2.15 | 3 | label row + value row + one blank BgSubtle band row (the board's own bottom breathing; its text block ends at 44px into the 56px band). Segment hover/open fills cover all 3 rows. |
 | BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
 | Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
-| History top rows | n/a | n/a | 4 (tabs 3 + gap 1) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline) plus one History-only blank band row before the commit list. |
-| History commit row | n/a | n/a | 3 each | `historyRowHeight`: GHD's commit-list-item as a bold summary line (tag pill and unpushed ↑ flush right), a Dimmer byline · time line whose byline truncates before the time does, and a Rule separator row standing in for GHD's row border. The separator is inert to hover and click. |
+| History top rows | n/a | n/a | 7 (tabs 3 + gap 1 + filter 3) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline), one blank band row, then the same 3-row filter box the Changes sidebar has ("Filter history"), directly above the commit list. |
+| History date header | n/a | n/a | 1 per run | One row before the first commit of each run of equal date group in the visible (filtered) list: the label two cells in, bold Dim on Bg. Inert to hover and click. |
+| History commit row | n/a | n/a | 3 each | GHD's commit-list-item as a bold summary line (tag pill and unpushed ↑ flush right), a Dimmer byline · time line whose byline truncates before the time does, and a Rule separator row standing in for GHD's row border. The separator is inert to hover and click. |
+| History action row | n/a | n/a | 1 | Closes the list while there is more to load: "Load 100 more commits", or "Search 100 more commits" under a filter, in Lav; a cursor stop with a commit row's cursor and hover treatments. While its page loads it reads "Loading…" in Faint and is inert. A filter that matches nothing centers a Faint "No matching commits" in the list, with this row below it. |
 | FilterRow | 34 | 1.31 | 3 | border / text / border — already correct: a bordered box is 3 physical rows regardless of its own px height. |
 | SummaryRow (master) | 24 | 0.92 | 1 | "N changed files · M staged". |
 | ChangesList row | 26 | 1.00 | 1 each | exact unit match. |
