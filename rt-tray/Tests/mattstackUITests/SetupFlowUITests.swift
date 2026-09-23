@@ -69,6 +69,16 @@ final class SetupFlowUITests: XCTestCase {
         waitForExpectations(timeout: timeout)
     }
 
+    /// A sheet's own existence check passes the instant its identifier lands
+    /// in the AX tree, well before the native sheet's slide-in presentation
+    /// animation settles; an interaction attempted in that window (a scroll,
+    /// a click by frame) can compute a hit point against a frame the sheet
+    /// has not actually reached on screen yet. Hittability is the real signal.
+    private func waitUntilHittable(_ id: String, _ timeout: TimeInterval = 10) {
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: el(id))
+        waitForExpectations(timeout: timeout)
+    }
+
     /// Finish closes the setup window; a click that does nothing would
     /// otherwise pass, since tearDown terminates the app either way.
     private func waitUntilGone(_ id: String, _ timeout: TimeInterval = 10) {
@@ -152,6 +162,13 @@ final class SetupFlowUITests: XCTestCase {
         XCTAssertFalse(el("setup.done.continue").isEnabled, "Finish waits on a chosen writing style")
         el("setup.done.beforeYouFinish.skills.writing-style.action").click()
         waitFor("setup.choose")
+        // The sheet's own identifier exists before its slide-in presentation
+        // animation settles; a scroll attempted that early computes a hit
+        // point against a frame the sheet has not visually reached yet (see
+        // "Unable to find hit point for ScrollView", confirmed against a real
+        // run 2026-09-23). A visible preset option becoming hittable is the
+        // sheet's own signal that it has actually finished presenting.
+        waitUntilHittable("setup.choose.option.mattstack:writing-style-sparse")
         // The own card sits at the bottom of the sheet's 420pt-tall scroll
         // region and is not reliably inside the visible/hittable viewport
         // right after the sheet appears; scroll it into view before clicking.
