@@ -49,6 +49,12 @@ enum AXID {
     static let connectSubmit = "setup.checklist.connect.submit"
     static let connectCancel = "setup.checklist.connect.cancel"
     static let stepsDone = "setup.checklist.steps.done"
+    static let chooseSheet = "setup.choose"
+    static func chooseOption(_ id: String) -> String { "setup.choose.option.\(id)" }
+    static let chooseOther = "setup.choose.other"
+    static let chooseError = "setup.choose.error"
+    static let chooseCancel = "setup.choose.cancel"
+    static let chooseSubmit = "setup.choose.submit"
 
     // Install
     static func installStep(_ id: String) -> String { "setup.install.step.\(id)" }
@@ -97,6 +103,9 @@ enum AXID {
     static let settingsFastBrowserSkipped = "settings.fastBrowser.skipped"
     static let settingsFastBrowserUnskip = "settings.fastBrowser.unskip"
     static let settingsFastBrowserError = "settings.fastBrowser.error"
+    static let settingsWritingStyleRow = "settings.writingStyle.row"
+    static let settingsWritingStyleRowAction = "settings.writingStyle.row.action"
+    static let settingsWritingStyleRowStatus = "settings.writingStyle.row.status"
     static let settingsTeamInviteHandle = "settings.team.inviteHandle"
     static let settingsTeamInvite = "settings.team.invite"
     static let settingsTeamCopyRemote = "settings.team.copyRemote"

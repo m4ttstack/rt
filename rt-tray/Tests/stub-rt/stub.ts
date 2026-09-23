@@ -49,6 +49,40 @@ function extensionRow() {
   };
 }
 
+// The writing-style scenario: a finish-gated row that cannot be waived,
+// rendered the way rt renders it before and after `skills writing-style use`.
+const WRITING_STYLE_ID = "skills.writing-style";
+const WRITING_STYLE_PRESETS = [
+  { id: "mattstack:writing-style-sparse", label: "Sparse",
+    detail: "Terse, lowercase for technical points, one tight paragraph per finding.",
+    sample: "**issue:** cache is keyed on userId alone, so two tenants share an entry. key on (tenant, id)?" },
+  { id: "mattstack:writing-style-conversational", label: "Conversational",
+    detail: "Short, friendly sentences in sentence case, like talking to a teammate.",
+    sample: "**issue:** The cache is keyed on userId alone, so two tenants can share an entry. Could we key on both?" },
+  { id: "mattstack:writing-style-structured", label: "Structured",
+    detail: "Labelled lines and short bullets for teams that like formal write-ups.",
+    sample: "**issue:** Settings leak across tenants. Why: the cache key omits the tenant. Suggestion: key on (tenant, id)." },
+];
+const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), "my-voice"];
+const SKILL_ID_RE = /^[a-z0-9][a-z0-9._-]*(:[a-z0-9._-]+)?$/;
+function writingStyleRow() {
+  const chosen = stateGet("style") > 0;
+  const idPath = join(stateDir, "style-id");
+  const selected = chosen ? (existsSync(idPath) ? readFileSync(idPath, "utf8") : WRITING_STYLE_PRESETS[0]!.id) : undefined;
+  const label = WRITING_STYLE_PRESETS.find((p) => p.id === selected)?.label ?? selected;
+  return {
+    ...row(WRITING_STYLE_ID, "tool", "Writing style",
+           "How the reviews, replies and PR descriptions agents post under your name read. Without one they read like an AI assistant.", false,
+           chosen ? "ready" : "needs-you",
+           chosen ? `${label} (yours)` : "Choose how your reviews and replies read (or run rt skills writing-style use)",
+           { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"], options: WRITING_STYLE_PRESETS,
+             ...(selected ? { selected } : {}),
+             other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." } }),
+    finishGated: true,
+    waivable: false,
+  };
+}
+
 function plan(): unknown {
   const fdaCalls = stateBump("plan-calls");
   const fdaGranted = scenario !== "perm-denied-then-granted" || fdaCalls >= 3;
@@ -84,13 +118,14 @@ function plan(): unknown {
   // Scenarios other than perm-denied-then-granted are installable out of the box so
   // flows can reach Install without connecting anything; perm-denied-then-granted
   // gates only on perm.fda so the second plan() call can flip canInstall to true.
-  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted", "finish-gate"].includes(scenario);
+  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted", "finish-gate", "writing-style"].includes(scenario);
   // accounts[0] and tools[1] are the fixed literal elements built above — non-null
   // is safe, not a runtime guess.
   if (installableScenario) { accounts[0]!.status = "ready"; accounts[0]!.detail = "token can see group acme"; tools[1]!.status = "ready"; tools[1]!.detail = "extension loaded"; }
-  const gated = scenario === "finish-gate" ? [extensionRow()] : [];
+  const gated: { id: string; status: string; waived?: boolean }[] =
+    scenario === "finish-gate" ? [extensionRow()] : scenario === "writing-style" ? [writingStyleRow()] : [];
   const requiredMissing = [...mac, ...accounts, ...access, ...tools].filter((r) => r.required && r.status !== "ready").map((r) => r.id);
-  const finishBlockedBy = gated.filter((r) => !r.waived).map((r) => r.id);
+  const finishBlockedBy = gated.filter((r) => r.status !== "ready" && !r.waived).map((r) => r.id);
   return {
     team: { slug: "acme", name: "Acme", mode },
     groups: [
@@ -172,6 +207,15 @@ else if (a0 === "setup" && (a1 === "waive" || a1 === "unwaive")) {
   const wasWaived = stateGet("waived") > 0;
   stateSet("waived", a1 === "waive" ? 1 : 0);
   emit({ ok: true, id: a2, changed: wasWaived !== (a1 === "waive"), waived: a1 === "waive" ? [a2] : [] });
+}
+else if (a0 === "skills" && a1 === "writing-style" && a2 === "use") {
+  const id = args[3];
+  if (id === undefined) fail("usage", "usage: rt skills writing-style use <skill-id> [--scope user|team] [--json]");
+  if (!SKILL_ID_RE.test(id)) fail("bad-id", `"${id}" is not a skill id`);
+  if (!INSTALLED_STYLES.includes(id)) fail("unknown-skill", `${id} is not installed here. Choose one of: ${INSTALLED_STYLES.join(", ")}`);
+  stateSet("style", 1);
+  writeFileSync(join(stateDir, "style-id"), id);
+  emit({ skill: id, scope: "user" });
 }
 else if (a0 === "setup" && a2 === "status") emit({ integration: a1, status: stateGet(`${a1}-connected`) ? "ready" : "missing", detail: null });
 else if (a0 === "setup" && a2 === "connect") {

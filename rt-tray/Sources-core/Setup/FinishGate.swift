@@ -125,12 +125,13 @@ public final class DoneModel: ObservableObject {
 
     private let readiness: ReadinessModel
     private let waivers: WaiverClient
+    public let choices: ChoiceClient
     private let checkTimeout: TimeInterval
     private var checkGeneration = 0
     private var forward: AnyCancellable?
 
-    public init(readiness: ReadinessModel, waivers: WaiverClient, checkTimeout: TimeInterval = DoneModel.defaultCheckTimeout) {
-        self.readiness = readiness; self.waivers = waivers; self.checkTimeout = checkTimeout
+    public init(readiness: ReadinessModel, waivers: WaiverClient, choices: ChoiceClient, checkTimeout: TimeInterval = DoneModel.defaultCheckTimeout) {
+        self.readiness = readiness; self.waivers = waivers; self.choices = choices; self.checkTimeout = checkTimeout
         forward = readiness.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 

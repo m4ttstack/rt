@@ -177,5 +177,60 @@ test("every other scenario keeps an open gate and no extension row", async () =>
     const res = await run(scenario, ["setup", "plan", "--json"]);
     expect(res.lines[0].finishBlockedBy).toEqual([]);
     expect(extensionRow(res.lines[0])).toBeUndefined();
+    expect(writingStyleRow(res.lines[0])).toBeUndefined();
   }
+});
+
+// The writing-style scenario feeds the ChooseSheet walkthrough on the
+// checklist, Done and Settings.
+const WRITING_STYLE = "skills.writing-style";
+const SPARSE = "mattstack:writing-style-sparse";
+const writingStyleRow = (plan: { groups: { rows: Record<string, unknown>[] }[] }) => plan.groups.flatMap((g) => g.rows).find((r) => r.id === WRITING_STYLE);
+type ChooseAction = { type: string; verb: string[]; selected?: string; options: { id: string; label: string; detail: string; sample?: string }[]; other: { label: string; hint: string } };
+
+test("writing-style: the row blocks Finish with a choose action until use picks a style", async () => {
+  const state = mkdtempSync(join(tmpdir(), "stub-"));
+  const first = await run("writing-style", ["setup", "plan", "--json"], "", state);
+  expect(first.code).toBe(0);
+  expect(first.lines[0].canInstall).toBe(true);
+  expect(first.lines[0].finishBlockedBy).toEqual([WRITING_STYLE]);
+  const row = writingStyleRow(first.lines[0])!;
+  expect(row).toMatchObject({ kind: "tool", status: "needs-you", required: false, finishGated: true, waivable: false });
+  const action = row.action as ChooseAction;
+  expect(action.type).toBe("choose");
+  expect(action.verb).toEqual(["skills", "writing-style", "use"]);
+  expect(action.selected).toBeUndefined();
+  expect(action.options.map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
+  expect(action.options.every((o) => o.label && o.detail && o.sample)).toBe(true);
+  expect(action.other).toEqual({ label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new." });
+
+  const used = await run("writing-style", ["skills", "writing-style", "use", SPARSE, "--json"], "", state);
+  expect(used.code).toBe(0);
+  expect(used.lines[0]).toMatchObject({ contract: 1, skill: SPARSE, scope: "user" });
+
+  const second = await run("writing-style", ["setup", "plan", "--json"], "", state);
+  expect(second.lines[0].finishBlockedBy).toEqual([]);
+  const ready = writingStyleRow(second.lines[0])!;
+  expect(ready).toMatchObject({ status: "ready", detail: "Sparse (yours)" });
+  expect((ready.action as ChooseAction).selected).toBe(SPARSE);
+});
+
+test("writing-style: use refuses a bad id and an unknown skill with exit 2 and changes nothing; an own skill id is accepted", async () => {
+  const state = mkdtempSync(join(tmpdir(), "stub-"));
+  const bad = await run("writing-style", ["skills", "writing-style", "use", "-rf", "--json"], "", state);
+  expect(bad.code).toBe(2);
+  expect(bad.lines[0].error).toEqual({ code: "bad-id", message: "\"-rf\" is not a skill id" });
+  const unknown = await run("writing-style", ["skills", "writing-style", "use", "not-installed", "--json"], "", state);
+  expect(unknown.code).toBe(2);
+  expect(unknown.lines[0].error.code).toBe("unknown-skill");
+  expect(unknown.lines[0].error.message).toStartWith("not-installed is not installed here. Choose one of: ");
+  const still = await run("writing-style", ["setup", "plan", "--json"], "", state);
+  expect(still.lines[0].finishBlockedBy).toEqual([WRITING_STYLE]);
+
+  const own = await run("writing-style", ["skills", "writing-style", "use", "my-voice", "--json"], "", state);
+  expect(own.code).toBe(0);
+  const after = await run("writing-style", ["setup", "plan", "--json"], "", state);
+  const ready = writingStyleRow(after.lines[0])!;
+  expect(ready).toMatchObject({ status: "ready", detail: "my-voice (yours)" });
+  expect((ready.action as ChooseAction).selected).toBe("my-voice");
 });

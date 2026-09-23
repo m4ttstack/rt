@@ -8,6 +8,7 @@ struct DoneScreen: View {
     let isOwner: Bool
     let onInvite: () -> Void
     @State private var steps: (title: String, steps: [String])?
+    @State private var choose: PlanRow?
 
     var body: some View {
         // No outer padding: the grouped Form insets its own boxes 20pt, and the
@@ -45,11 +46,13 @@ struct DoneScreen: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 RowView(row: row, isChecking: false, rowID: AXID.doneBeforeYouFinishRow(row.id),
                                         actionID: AXID.doneBeforeYouFinishRowAction(row.id), statusID: AXID.doneBeforeYouFinishRowStatus(row.id)) { show(row) }
-                                HStack {
-                                    Spacer()
-                                    Button(FinishGate.skipSheetConfirm) { model.requestSkip(row) }
-                                        .controlSize(.small)
-                                        .accessibilityIdentifier(AXID.doneSkipRow(row.id))
+                                if row.waivable {
+                                    HStack {
+                                        Spacer()
+                                        Button(FinishGate.skipSheetConfirm) { model.requestSkip(row) }
+                                            .controlSize(.small)
+                                            .accessibilityIdentifier(AXID.doneSkipRow(row.id))
+                                    }
                                 }
                             }
                         }
@@ -90,6 +93,13 @@ struct DoneScreen: View {
         .sheet(item: $model.skipTarget) { _ in
             SkipConfirmSheet(model: model)
         }
+        .sheet(item: $choose) { row in
+            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
+                let failure = await model.choices.choose(verb: row.action?.verb ?? [], id: id)
+                if failure == nil { await model.retryCheck() }
+                return failure
+            }
+        }
         // .contain: without it, the plain HStack's buttons (Open the board,
         // Invite teammates…) report THIS screen-level identifier instead of
         // their own -- same fix as InstallScreen's stepRow and ChecklistScreen.
@@ -107,22 +117,17 @@ struct DoneScreen: View {
     }
 
     private func show(_ row: PlanRow) {
-        guard let action = row.action else { return }
-        switch action.type {
-        case .openURL:
-            // Mirrors RowActionDispatcher's own rejection: an unsupported
-            // scheme does nothing rather than presenting a title with no steps.
-            guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return }
+        guard let action = row.action, let route = DoneActions.route(action) else { return }
+        switch route {
+        case .openURL(let url):
             NSWorkspace.shared.open(url)
             Task { await model.retryCheck() }
-        case .steps:
-            steps = (title: row.title, steps: action.steps ?? [])
-        case .run:
-            // The only run verb a Done row carries is a re-check; this screen
-            // re-reads the plan itself rather than spawning it a second way.
+        case .steps(let list):
+            steps = (title: row.title, steps: list)
+        case .recheck:
             Task { await model.retryCheck() }
-        default:
-            break
+        case .choose:
+            choose = row
         }
     }
 
