@@ -35,8 +35,6 @@ import {
 } from "../lib/variations.ts";
 import { bold, dim, reset, yellow, green } from "../lib/tui.ts";
 import {
-  isInsideHerdr,
-  launchInHerdr,
   launchFallback,
   type LaunchItem,
 } from "../lib/herdr-launch.ts";
@@ -356,6 +354,9 @@ export const __test__ = {
   recentScripts,
   footerActions,
   formatFlatHint,
+  selectPackageAndScript,
+  LAUNCH_ALL_SENTINEL,
+  SAVE_PRESET_SENTINEL,
 };
 
 /**
@@ -517,6 +518,7 @@ async function selectPackageAndScript(
 
         // Launch all
         if (val === LAUNCH_ALL_SENTINEL) {
+          if (board) return { seed: queueToSeed(q, worktreePath) };
           return QUEUE_LAUNCHED;
         }
 
@@ -559,7 +561,10 @@ async function selectPackageAndScript(
               initialValue: true,
               stderr: true,
             });
-            if (runNow) return QUEUE_LAUNCHED;
+            if (runNow) {
+              if (board) return { seed: queueToSeed(q, worktreePath) };
+              return QUEUE_LAUNCHED;
+            }
           }
           // User cancelled name or declined to run -- back to picker
           cameFromScript = true;
@@ -803,29 +808,34 @@ async function selectPackageAndScript(
 
 // ─── Queue launch ──────────────────────────────────────────────────────────
 
-async function launchQueue(
+/** Maps a launch queue's entries to runner seed rows, resolved against `worktreePath` -- the queue can be carried across a worktree switch, and qi.packagePath still points into the worktree where the item was queued. Pure (no spawning), so it stays directly testable. */
+export function queueToSeed(queue: QueuedItem[], worktreePath: string): SeedEntry[] {
+  return queue.map((qi) => ({
+    name: `${qi.script}${qi.variationName ? ` (${qi.variationName})` : ""}`,
+    command: qi.command,
+    cwd: join(worktreePath, qi.packageRelPath),
+    pkg: qi.packageLabel,
+    repo: basename(worktreePath),
+  }));
+}
+
+/** Resolve a launch queue's entries against the current worktree and open a seeded runner board (or run them in place when herdr isn't available). Mirrors launchPreset; exported for direct testing, same as queueToSeed. */
+export async function launchQueue(
   queue: QueuedItem[],
   worktreePath: string,
+  ctx: CommandContext,
 ): Promise<void> {
   if (queue.length === 0) return;
 
-  const items: LaunchItem[] = queue.map((qi) => {
-    // Re-resolve against the launch worktree (like launchPreset does) — the
-    // queue can be carried across a worktree switch, and qi.packagePath still
-    // points into the worktree where the item was queued.
-    const cwd = join(worktreePath, qi.packageRelPath);
-    const varSuffix = qi.variationName ? ` (${qi.variationName})` : "";
-    return {
-      label: `${qi.packageLabel} > ${qi.script}${varSuffix}`,
-      command: qi.command,
-      cwd,
-    };
-  });
-
-  process.stderr.write(`\n`);
-  if (isInsideHerdr()) {
-    await launchInHerdr(items);
+  if (interactive() && tmuxAvailable()) {
+    const seed = queueToSeed(queue, worktreePath);
+    await runSeededBoard(seed, ctx);
   } else {
+    const items: LaunchItem[] = queue.map((qi) => ({
+      label: `${qi.packageLabel} > ${qi.script}${qi.variationName ? ` (${qi.variationName})` : ""}`,
+      command: qi.command,
+      cwd: join(worktreePath, qi.packageRelPath),
+    }));
     launchFallback(items);
   }
 }
@@ -914,7 +924,7 @@ export async function resolveRun(
       const sel = await selectPackageAndScript(worktreePath, repoName, ctx, ctxLabel, queue, opts?.board);
       if (sel === QUEUE_LAUNCHED) {
         // Queue was built and user chose "Launch all" -- launch and exit
-        await launchQueue(queue, worktreePath);
+        await launchQueue(queue, worktreePath, ctx);
         return { kind: "launched" };
       }
       if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
@@ -1043,7 +1053,7 @@ export async function resolveRun(
               : repoLabel(selectedRepo.repoName);
             const sel = await selectPackageAndScript(worktreePath, repoName, ctx, wtCtx, queue, opts?.board);
             if (sel === QUEUE_LAUNCHED) {
-              await launchQueue(queue, worktreePath);
+              await launchQueue(queue, worktreePath, ctx);
               return { kind: "launched" };
             }
             if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
