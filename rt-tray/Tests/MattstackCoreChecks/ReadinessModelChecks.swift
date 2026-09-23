@@ -493,11 +493,20 @@ let readinessModelChecks: [Check] = [
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .error), "xmark.circle")
         c.expectEqual(StatusGlyph.symbol(for: .invalid), "xmark.circle")
-        c.expectEqual(StatusGlyph.symbol(for: .needsYou), "exclamationmark.triangle")
-        c.expectEqual(StatusGlyph.symbol(for: .missing), "exclamationmark.triangle")
+        c.expectEqual(StatusGlyph.symbol(for: .needsYou), "exclamationmark.triangle.fill")
+        c.expectEqual(StatusGlyph.symbol(for: .missing), "exclamationmark.triangle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .skipped), "circle.dotted")
         c.expectEqual(StatusGlyph.symbol(for: .checking), "progress")
         c.expectEqual(StatusGlyph.tint(for: .ready), .green)
         c.expectEqual(StatusGlyph.tint(for: .needsYou), .yellow)
+    },
+    Check("StatusGlyph.multicolor is true exactly for the yellow-tinted statuses") { c in
+        c.expectEqual(StatusGlyph.multicolor(for: .ready), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .error), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .invalid), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .needsYou), true)
+        c.expectEqual(StatusGlyph.multicolor(for: .missing), true)
+        c.expectEqual(StatusGlyph.multicolor(for: .skipped), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .checking), false)
     },
 ]

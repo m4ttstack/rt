@@ -9,6 +9,8 @@ struct StatusBadge: View {
         let badge = Group {
             if symbol == "progress" {
                 ProgressView().controlSize(.small)
+            } else if StatusGlyph.multicolor(for: status) {
+                Image(systemName: symbol).symbolRenderingMode(.multicolor)
             } else {
                 Image(systemName: symbol).foregroundStyle(color)
             }
