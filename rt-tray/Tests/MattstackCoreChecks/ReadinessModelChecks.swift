@@ -489,6 +489,24 @@ let readinessModelChecks: [Check] = [
             c.expect(!m.lastRefreshFailed)
         }
     },
+    Check("loadIfNeeded fetches only while groups is empty; a completed load makes a second call a no-op") { c in
+        let plans = FakePlans([makePlan()])
+        let m = await MainActor.run { ReadinessModel(plans: plans, permissions: FakePermissions(), ticker: FakeTicker()) }
+        await m.loadIfNeeded()
+        await m.loadIfNeeded()
+        c.expectEqual(plans.fetches, 1, "groups is non-empty after the first load; the second call must issue no plan fetch")
+    },
+    Check("loadIfNeeded called twice concurrently before either lands issues one plan call") { c in
+        let held = HeldPlans()
+        let m = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let first = Task { await m.loadIfNeeded() }
+        try c.require(await waitUntil { held.fetches == 1 }, "first loadIfNeeded never registered")
+        let second = Task { await m.loadIfNeeded() }
+        held.releaseNewest(makePlan())
+        await first.value
+        await second.value
+        c.expectEqual(held.fetches, 1, "a load already in flight must not trigger a second fetch")
+    },
     Check("StatusGlyph follows the spec's symbols") { c in
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .error), "xmark.circle")

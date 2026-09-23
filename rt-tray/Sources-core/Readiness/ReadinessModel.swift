@@ -90,6 +90,17 @@ public final class ReadinessModel: ObservableObject {
 
     public func load() async { await fetch() }
 
+    /// For a screen that may already share this model with one that loaded it
+    /// first (General is the default Settings tab): skips the `rt setup plan`
+    /// round trip, tool probes included, once `groups` is populated or a load
+    /// is already in flight. `isLoading` flips true before `fetch`'s first
+    /// await, so a concurrent second caller reads it on the same MainActor
+    /// turn and never starts a redundant fetch.
+    public func loadIfNeeded() async {
+        guard groups.isEmpty, !isLoading else { return }
+        await load()
+    }
+
     public func recheckAll() async {
         await probePermissions()
         await fetch()

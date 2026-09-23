@@ -78,7 +78,7 @@ struct GeneralPane: View {
             Section { LabeledContent("Version") { Text(env.version) } }
         }
         .formStyle(.grouped)
-        .task { await readiness.load() }
+        .task { await readiness.loadIfNeeded() }
         .sheet(item: $chooseRow) { row in
             ChooseSheet(row: row) { id in
                 let failure = await ChoiceClient(rt: env.rt).choose(verb: row.action?.verb ?? [], id: id)
