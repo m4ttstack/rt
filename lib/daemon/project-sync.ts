@@ -35,6 +35,7 @@ import { getProjectMRs, freshnessOf, type ProjectMRs, type ProjectMRStore } from
 import { loadRepoTracking, grants } from "../repo-tracking.ts";
 import { lazyChildLogger } from "../daemon-logger.ts";
 import { recordSyncFailure, recordSyncSuccess } from "./project-sync-health.ts";
+import { createExcludedTargetsCache, gitlabBranchSearch, readIgnoredMrs } from "./ignored-mrs.ts";
 
 const log = lazyChildLogger("project-sync");
 
@@ -123,8 +124,10 @@ export interface ProjectSyncOverrides {
   mode?: "auto" | "deep";
   fetchProject?: (repoName: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
   fetchDelta?: (repoName: string, updatedAfter: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
-  /** The default fetchDelta's provider and project path; production resolves them via getRepoContext. */
-  deltaContext?: (repoName: string) => Promise<{ provider: DeltaProvider; projectPath: string }>;
+  /** The default reads' provider and project path; production resolves them via getRepoContext. */
+  repoContext?: (repoName: string) => Promise<{ provider: SyncProvider; projectPath: string }>;
+  /** Exact target branches the default reads exclude; production expands the repo's rt.ignoredMrs globs. */
+  excludedTargets?: (repoName: string) => Promise<string[]>;
   fetchSingle?: (repoName: string, projectPath: string, iid: number) => Promise<PullRequest | null>;
   /** Scoped deep's fetch: every open MR by any of these authors. */
   fetchAuthors?: (repoName: string, authors: string[]) => Promise<{ projectPath: string; prs: PullRequest[] }>;
@@ -159,6 +162,11 @@ export const TOPUP_CONCURRENCY = 4;
 export const TOPUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export type DeltaProvider = Pick<GitLabProvider, "fetchPullRequests" | "fetchMergeRequestIndex" | "fetchSingleMR">;
+export type SyncProvider = DeltaProvider & Pick<GitLabProvider, "fetchApprovalRules" | "fetchCodeownerSections" | "restRequest">;
+
+/** A repo's expanded rt.ignoredMrs branch list is reused this long; a new deploy branch is caught by the store until then. */
+export const EXCLUDED_TARGETS_TTL_MS = 60 * 60 * 1000;
+const excludedTargetsCache = createExcludedTargetsCache({ ttlMs: EXCLUDED_TARGETS_TTL_MS });
 
 /**
  * The delta window's changed MRs. Only opened MRs are read at list weight:
@@ -174,9 +182,10 @@ export async function fetchDeltaFrom(
   projectPath: string,
   updatedAfter: string,
   stored: ProjectMRStore | undefined,
+  excludeTargetBranches: string[] = [],
 ): Promise<PullRequest[]> {
-  const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true });
-  const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"] });
+  const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true, excludeTargetBranches });
+  const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"], excludeTargetBranches });
   const rowIids = new Set(rows.map((row) => row.iid));
   const openBranches = new Set(opened.filter((pr) => !rowIids.has(pr.iid)).map((pr) => pr.sourceBranch));
   const newestStored = new Map<string, number>();
@@ -211,6 +220,46 @@ export async function fetchDeltaFrom(
   // One copy per iid: applyDelta skips a second copy of an iid it just wrote.
   const terminalIids = new Set(terminal.map((pr) => pr.iid));
   return [...opened.filter((pr) => !terminalIids.has(pr.iid)), ...terminal];
+}
+
+/** The default reads syncImpl and the backfills share, each carrying the repo's excluded target branches. */
+function defaultReads(deps: ProjectSyncDeps, overrides: ProjectSyncOverrides) {
+  const context = overrides.repoContext ?? ((repo: string) => getRepoContext(repo, deps.repoIndex()[repo]));
+  const excluded = overrides.excludedTargets ?? (async (repo: string) => {
+    const globs = readIgnoredMrs(repo).targetBranches;
+    if (globs.length === 0) return [];
+    const { provider, projectPath } = await context(repo);
+    return excludedTargetsCache.get(repo, globs, gitlabBranchSearch(provider, projectPath));
+  });
+  return {
+    fetchProject: overrides.fetchProject ?? (async (repo: string) => {
+      const { provider, projectPath } = await context(repo);
+      const prs = await provider.fetchPullRequests({ projectPath, state: "opened", listWeight: true, excludeTargetBranches: await excluded(repo) });
+      return { projectPath, prs };
+    }),
+    fetchAuthors: overrides.fetchAuthors ?? (async (repo: string, authors: string[]) => {
+      const { provider, projectPath } = await context(repo);
+      const prs = await provider.fetchPullRequests({ projectPath, authorUsernames: authors, state: "opened", excludeTargetBranches: await excluded(repo) });
+      return { projectPath, prs };
+    }),
+    fetchRules: overrides.fetchRules ?? (async (repo: string, opts: { updatedAfter?: string; iids?: number[] }) => {
+      const { provider, projectPath } = await context(repo);
+      const rules = await provider.fetchApprovalRules({ projectPath, ...opts, excludeTargetBranches: await excluded(repo) });
+      return { projectPath, rules };
+    }),
+    fetchSingle: overrides.fetchSingle ?? (async (repo: string, pp: string, iid: number) => {
+      const { provider } = await context(repo);
+      return provider.fetchSingleMR(pp, iid, null);
+    }),
+    fetchKnownSections: overrides.fetchKnownSections ?? (async (repo: string) => {
+      const { provider, projectPath } = await context(repo);
+      return provider.fetchCodeownerSections({ projectPath });
+    }),
+    fetchDeltaFor: (record: ProjectMRStore | undefined) => overrides.fetchDelta ?? (async (repo: string, ua: string) => {
+      const { provider, projectPath } = await context(repo);
+      return { projectPath, prs: await fetchDeltaFrom(provider, projectPath, ua, record, await excluded(repo)) };
+    }),
+  };
 }
 
 const syncInFlight = new Map<string, Promise<void>>();
@@ -253,21 +302,7 @@ async function syncImpl(
   const deepBackingOff = Date.now() - (deepFailedAt.get(repoName) ?? 0) < DEEP_RETRY_BACKOFF_MS;
   const isDeep = explicitDeep || (deepDue && (!record || !deepBackingOff));
 
-  // Shared by the deep section sweep below and the delta pipeline top-up
-  // further down, so each gets one declaration rather than two.
-  const fetchSingle = overrides.fetchSingle ?? (async (repo: string, pp: string, iid: number) => {
-    const { provider } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    return provider.fetchSingleMR(pp, iid, null);
-  });
-  const fetchRules = overrides.fetchRules ?? (async (repo: string, opts: { updatedAfter?: string; iids?: number[] }) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    const rules = await provider.fetchApprovalRules({ projectPath, ...opts });
-    return { projectPath, rules };
-  });
-  const fetchKnownSections = overrides.fetchKnownSections ?? (async (repo: string) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    return provider.fetchCodeownerSections({ projectPath });
-  });
+  const { fetchSingle, fetchRules, fetchKnownSections, fetchProject, fetchAuthors, fetchDeltaFor } = defaultReads(deps, overrides);
 
   if (isDeep) {
     const windowDays = overrides.windowDays ?? grants(loadRepoTracking(), repoName).projectMrsWindowDays;
@@ -288,16 +323,6 @@ async function syncImpl(
       scopeAuthors = effectiveAuthors(record, selfUsername);
     }
 
-    const fetchProject = overrides.fetchProject ?? (async (repo: string) => {
-      const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-      const prs = await provider.fetchPullRequests({ projectPath, state: "opened", listWeight: true });
-      return { projectPath, prs };
-    });
-    const fetchAuthors = overrides.fetchAuthors ?? (async (repo: string, authors: string[]) => {
-      const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-      const prs = await provider.fetchPullRequests({ projectPath, authorUsernames: authors, state: "opened" });
-      return { projectPath, prs };
-    });
 
     const syncStartedAt = Date.now();
     try {
@@ -414,13 +439,7 @@ async function syncImpl(
   // in-flight duration).
   const deltaStartedAt = Date.now();
   const updatedAfter = new Date(freshnessOf(record) - DELTA_OVERLAP_MS).toISOString();
-  const deltaContext = overrides.deltaContext ?? ((repo: string) => getRepoContext(repo, deps.repoIndex()[repo]));
-  const fetchDelta = overrides.fetchDelta ?? (async (repo: string, ua: string) => {
-    const { provider, projectPath } = await deltaContext(repo);
-    return { projectPath, prs: await fetchDeltaFrom(provider, projectPath, ua, record) };
-  });
-
-  let { projectPath, prs } = await fetchDelta(repoName, updatedAfter);
+  let { projectPath, prs } = await fetchDeltaFor(record)(repoName, updatedAfter);
 
   // Sections-delta: re-sweep approval rules over the same delta window so a
   // codeowner tag heals every cycle, not just on the once-a-day deep. A
@@ -563,11 +582,7 @@ export async function backfillAuthors(
   const windowDays = record?.scope?.windowDays
     ?? overrides.windowDays
     ?? grants(loadRepoTracking(), repoName).projectMrsWindowDays;
-  const fetchAuthors = overrides.fetchAuthors ?? (async (repo: string, names: string[]) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    const prs = await provider.fetchPullRequests({ projectPath, authorUsernames: names, state: "opened" });
-    return { projectPath, prs };
-  });
+  const { fetchAuthors } = defaultReads(deps, overrides);
 
   const { projectPath, prs } = await fetchAuthors(repoName, authors);
   const kept = withinWindow(prs, windowDays, Date.now());
@@ -621,19 +636,7 @@ export async function backfillSections(
   const windowDays = record?.scope?.windowDays
     ?? overrides.windowDays
     ?? grants(loadRepoTracking(), repoName).projectMrsWindowDays;
-  const fetchRules = overrides.fetchRules ?? (async (repo: string, opts: { updatedAfter?: string; iids?: number[] }) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    const rules = await provider.fetchApprovalRules({ projectPath, ...opts });
-    return { projectPath, rules };
-  });
-  const fetchSingle = overrides.fetchSingle ?? (async (repo: string, pp: string, iid: number) => {
-    const { provider } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    return provider.fetchSingleMR(pp, iid, null);
-  });
-  const fetchKnownSections = overrides.fetchKnownSections ?? (async (repo: string) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
-    return provider.fetchCodeownerSections({ projectPath });
-  });
+  const { fetchRules, fetchSingle, fetchKnownSections } = defaultReads(deps, overrides);
 
   const updatedAfter = new Date(Date.now() - windowDays * 86_400_000).toISOString();
   const { projectPath, rules } = await fetchRules(repoName, { updatedAfter });

@@ -51,12 +51,12 @@ describe("settings/registry", () => {
       }
     });
 
-    test("exactly 27 keys are migrated:true", () => {
+    test("exactly 28 keys are migrated:true", () => {
       const migrated = allDefs().filter((d) => d.migrated);
 
       expect(migrated.map((d) => d.key).sort()).toEqual(
         [
-          "rt.intercepts", "rt.repoIdentityOverrides", "rt.repoRoots", "rt.roles", "rt.worktrees", "rt.worktreeReadyApproval",
+          "rt.intercepts", "rt.ignoredMrs", "rt.repoIdentityOverrides", "rt.repoRoots", "rt.roles", "rt.worktrees", "rt.worktreeReadyApproval",
           "rt.notifications", "rt.cron", "rt.repoTracking", "rt.runsPruneDays", "rt.runaway", "rt.workspacePrefs",
           "rt.sync", "rt.branchNaming", "rt.variations", "rt.presets", "rt.dopplerTemplate",
           "rt.homeSnapshot", "rt.teamSnapshot", "rt.worktreeApp", "rt.sdmEnrichment", "rt.logRetentionDays", "rt.logLevel", "rt.gitStatus", "rt.integrations", "rt.hooks",
@@ -259,10 +259,10 @@ describe("settings/registry", () => {
       expect(def?.merge).toBe("replace");
     });
 
-    test("has exactly the 27 migrated:true keys and the 49 suite keys", () => {
+    test("has exactly the 28 migrated:true keys and the 49 suite keys", () => {
       const migratedFalseKeys: string[] = [];
       const migratedTrueKeys = [
-        "rt.roles", "rt.intercepts", "rt.worktrees", "rt.worktreeReadyApproval", "rt.repoIdentityOverrides", "rt.repoRoots",
+        "rt.roles", "rt.intercepts", "rt.ignoredMrs", "rt.worktrees", "rt.worktreeReadyApproval", "rt.repoIdentityOverrides", "rt.repoRoots",
         "rt.notifications", "rt.cron", "rt.repoTracking", "rt.runsPruneDays", "rt.runaway", "rt.workspacePrefs",
         "rt.sync", "rt.branchNaming", "rt.variations", "rt.presets", "rt.dopplerTemplate",
         "rt.homeSnapshot", "rt.teamSnapshot", "rt.worktreeApp", "rt.sdmEnrichment", "rt.logRetentionDays", "rt.logLevel", "rt.gitStatus", "rt.integrations", "rt.hooks",

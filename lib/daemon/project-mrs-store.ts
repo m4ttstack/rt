@@ -32,6 +32,7 @@ import type { PullRequest } from "@mattstack/glance";
 import { getStateDb, LEGACY_IMPORTS } from "../state/db.ts";
 import { persistOrWarn } from "../state/busy.ts";
 import { rekeyTableColumn, type RekeyReport } from "../state/identity-migrate.ts";
+import { isIgnoredMr, readIgnoredMrs } from "./ignored-mrs.ts";
 
 /**
  * One-shot: re-key legacy NAME-keyed rows onto serialized identities, one
@@ -153,7 +154,15 @@ function loadAll(db: Database): Record<string, ProjectMRStore> {
   return data;
 }
 
-export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMRs {
+export interface ProjectMRsOptions {
+  /** The repo's ignore predicate, asked once per write; every write path drops what it matches. */
+  ignoreFor?: (repoName: string) => (pr: PullRequest) => boolean;
+}
+
+const IGNORE_NOTHING = () => () => false;
+
+export function createProjectMRs(db: Database = getStateDb("daemon"), opts: ProjectMRsOptions = {}): ProjectMRs {
+  const ignoreFor = opts.ignoreFor ?? IGNORE_NOTHING;
   const data = loadAll(db);
 
   const upsertMrStmt = db.query(`
@@ -204,6 +213,7 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     const existing = data[repoName];
     const path = projectPath ?? existing?.projectPath;
     if (!path) return []; // never synced and caller has no path: no record to attach to
+    if (ignoreFor(repoName)(pr)) return [];
     const store = existing ?? emptyStore(path, source);
     store.projectPath = path;
     const existingEntry = store.mrs[pr.iid];
@@ -235,12 +245,14 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     syncStartedAt: number,
   ): number[] {
     const store = data[repoName] ?? emptyStore(projectPath);
+    const ignored = ignoreFor(repoName);
     const changed: number[] = [];
     const incoming = new Set<number>();
     const toWrite: Array<{ iid: number; pr: PullRequest; fetchedAt: number }> = [];
     const toDelete: number[] = [];
 
     for (const pr of prs) {
+      if (ignored(pr)) continue;
       incoming.add(pr.iid);
       const existing = store.mrs[pr.iid];
       // (a) a concurrent event/mutation upsert is NEWER than this sync's
@@ -312,8 +324,12 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     deltaStartedAt: number,
   ): number[] {
     const store = data[repoName] ?? emptyStore(projectPath);
+    const ignored = ignoreFor(repoName);
     const changed: number[] = [];
     const toWrite: Array<{ iid: number; pr: PullRequest; fetchedAt: number }> = [];
+    // Entries the rules now ignore go on the next delta, not the next daily
+    // deep, so turning rt.ignoredMrs on takes effect within one cycle.
+    const toDelete = Object.values(store.mrs).filter((e) => ignored(e.pr)).map((e) => e.pr.iid);
     // Unlike fullSync, a delta is a window of updated MRs, not the whole
     // set: nothing to prune. But the same two write rules apply. An entry
     // written AFTER the delta's fetch began (event/mutation upsert racing
@@ -322,6 +338,7 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     // value from an event-fed fetch must survive. fetchedAt is "now" — a
     // delta result is fresher than the window start it was queried from.
     for (const pr of prs) {
+      if (ignored(pr)) continue;
       const existing = store.mrs[pr.iid];
       if (existing && existing.fetchedAt > deltaStartedAt) continue;
       const prevDiverged = (existing?.pr as { divergedCommitsCount?: number | null } | undefined)?.divergedCommitsCount;
@@ -343,13 +360,24 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     store.deltaSyncedAt = deltaStartedAt;
     data[repoName] = store;
 
-    persistOrWarn("project-mrs", () => {
+    const persisted = persistOrWarn("project-mrs", () => {
       const run = db.transaction(() => {
         for (const w of toWrite) upsertMrStmt.run(repoName, w.iid, JSON.stringify(w.pr), w.fetchedAt);
+        for (const iid of toDelete) {
+          deleteMrStmt.run(repoName, iid);
+          deleteSectionStmt.run(repoName, iid);
+        }
         writeMeta(repoName, store);
       });
       run();
     }, { repo: repoName, op: "applyDelta" });
+
+    if (persisted) {
+      for (const iid of toDelete) {
+        delete store.mrs[iid];
+        changed.push(iid);
+      }
+    }
 
     return changed;
   }
@@ -501,7 +529,14 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
 let singleton: ProjectMRs | null = null;
 
 export function getProjectMRs(): ProjectMRs {
-  if (!singleton) singleton = createProjectMRs();
+  if (!singleton) {
+    singleton = createProjectMRs(undefined, {
+      ignoreFor: (repoName) => {
+        const rules = readIgnoredMrs(repoName);
+        return (pr) => isIgnoredMr(pr, rules);
+      },
+    });
+  }
   return singleton;
 }
 

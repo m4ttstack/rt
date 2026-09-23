@@ -656,3 +656,52 @@ describe("rekeyProjectMrsTable / rekeyProjectMrsMetaTable / rekeyProjectMrDemand
     expect(warnSpy).toHaveBeenCalled();
   });
 });
+
+describe("ignored MRs (ignoreFor)", () => {
+  const deploy = (iid: number) => pr(iid, { targetBranch: "deployments/qa" });
+  let rulesOn = true;
+  const ignoringDeploys = () => {
+    const db = tmpDb();
+    const asked: string[] = [];
+    const store = createProjectMRs(db, {
+      ignoreFor: (repo) => {
+        asked.push(repo);
+        return (p) => rulesOn && p.targetBranch.startsWith("deployments/");
+      },
+    });
+    return { store, db, asked };
+  };
+  beforeEach(() => { rulesOn = true; });
+
+  test("fullSync never stores an ignored MR", () => {
+    const { store } = ignoringDeploys();
+    const changed = store.fullSync("repo", "g/p", [pr(1), deploy(2)], Date.now());
+    expect(Object.keys(store.read("repo")!.mrs)).toEqual(["1"]);
+    expect(changed).toEqual([1]);
+  });
+
+  test("applyDelta skips ignored MRs and removes any already stored, reporting them as changed", () => {
+    const { store, db } = ignoringDeploys();
+    rulesOn = false;
+    store.fullSync("repo", "g/p", [pr(1), deploy(2)], Date.now() - 1000);
+    rulesOn = true;
+    const changed = store.applyDelta("repo", "g/p", [deploy(3), pr(4)], Date.now() - 500);
+    expect(Object.keys(store.read("repo")!.mrs).sort()).toEqual(["1", "4"]);
+    expect(changed.sort()).toEqual([2, 4]);
+    const rows = db.query("SELECT iid FROM project_mrs WHERE repo = 'repo' ORDER BY iid").all() as Array<{ iid: number }>;
+    expect(rows.map((r) => r.iid)).toEqual([1, 4]);
+  });
+
+  test("upsert writes nothing for an ignored MR", () => {
+    const { store } = ignoringDeploys();
+    store.fullSync("repo", "g/p", [pr(1)], Date.now());
+    expect(store.upsert("repo", "g/p", deploy(5), "events")).toEqual([]);
+    expect(store.read("repo")!.mrs[5]).toBeUndefined();
+  });
+
+  test("rules are read once per write, per repo", () => {
+    const { store, asked } = ignoringDeploys();
+    store.applyDelta("repo", "g/p", [pr(1), pr(2), deploy(3)], Date.now());
+    expect(asked).toEqual(["repo"]);
+  });
+});

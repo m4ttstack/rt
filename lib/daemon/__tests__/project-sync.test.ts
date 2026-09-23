@@ -6,7 +6,7 @@ import { syncProjectMRs, fetchDeltaFrom, backfillAuthors, backfillSections, effe
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { readSyncHealth, recordSyncFailure } from "../project-sync-health.ts";
-import type { FetchMergeRequestIndexOptions, FetchPullRequestsOptions, MergeRequestIndexRow, PullRequest } from "@mattstack/glance";
+import type { FetchApprovalRulesOptions, FetchMergeRequestIndexOptions, FetchPullRequestsOptions, MergeRequestIndexRow, PullRequest } from "@mattstack/glance";
 
 function pr(iid: number, over: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -1581,14 +1581,19 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
     const pulls: FetchPullRequestsOptions[] = [];
     const indexCalls: FetchMergeRequestIndexOptions[] = [];
     const singleCalls: number[] = [];
+    const ruleCalls: FetchApprovalRulesOptions[] = [];
     return {
       pulls,
       indexCalls,
       singleCalls,
+      ruleCalls,
       provider: {
         fetchPullRequests: async (o?: FetchPullRequestsOptions) => { pulls.push(o!); return open; },
         fetchMergeRequestIndex: async (o: FetchMergeRequestIndexOptions) => { indexCalls.push(o); return index; },
         fetchSingleMR: async (_pp: string, iid: number) => { singleCalls.push(iid); return singles[iid] ?? null; },
+        fetchApprovalRules: async (o: FetchApprovalRulesOptions) => { ruleCalls.push(o); return []; },
+        fetchCodeownerSections: async () => null,
+        restRequest: async () => new Response("[]"),
       },
     };
   }
@@ -1602,8 +1607,15 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
   test("asks for list-weight fields on opened MRs only, and the index for merged/closed", async () => {
     const fake = fakeProvider([], []);
     await fetchDeltaFrom(fake.provider, "g/p", UA, undefined);
-    expect(fake.pulls).toEqual([{ projectPath: "g/p", state: "opened", updatedAfter: UA, listWeight: true }]);
-    expect(fake.indexCalls).toEqual([{ projectPaths: ["g/p"], updatedAfter: UA, states: ["merged", "closed"] }]);
+    expect(fake.pulls).toEqual([{ projectPath: "g/p", state: "opened", updatedAfter: UA, listWeight: true, excludeTargetBranches: [] }]);
+    expect(fake.indexCalls).toEqual([{ projectPaths: ["g/p"], updatedAfter: UA, states: ["merged", "closed"], excludeTargetBranches: [] }]);
+  });
+
+  test("passes the excluded target branches to both reads", async () => {
+    const fake = fakeProvider([], []);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, undefined, ["deployments/qa"]);
+    expect(fake.pulls[0]!.excludeTargetBranches).toEqual(["deployments/qa"]);
+    expect(fake.indexCalls[0]!.excludeTargetBranches).toEqual(["deployments/qa"]);
   });
 
   test("moves a stored open MR to its terminal state and keeps its stored fields", async () => {
@@ -1688,7 +1700,7 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
     const fake = fakeProvider([], [row(3)]);
     await syncProjectMRs({ repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} }, "repo", {
       store,
-      deltaContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
+      repoContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
     });
     expect(fake.pulls.map((o) => o.state)).toEqual(["opened"]);
     expect(store.read("repo")!.mrs[3]!.pr.state).toBe("merged");
@@ -1701,10 +1713,52 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
     const singles: number[] = [];
     await syncProjectMRs({ repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} }, "repo", {
       store,
-      deltaContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
+      repoContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
       fetchSingle: async (_r, _pp, iid) => { singles.push(iid); return pr(iid, { state: "merged", pipeline: { status: "success" } } as Partial<PullRequest>); },
     });
     expect(singles).toEqual([4]);
     expect(store.read("repo")!.mrs[4]!.pr).toMatchObject({ state: "merged", pipeline: { status: "success" } });
+  });
+
+  describe("every default read carries the repo's excluded target branches", () => {
+    const EXCLUDED = ["deployments/qa"];
+    const deps = { repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} };
+    const seams = (fake: ReturnType<typeof fakeProvider>) => ({
+      repoContext: async () => ({ provider: fake.provider, projectPath: "g/p" }),
+      excludedTargets: async () => EXCLUDED,
+    });
+
+    test("delta", async () => {
+      const store = tmpStore();
+      store.fullSync("repo", "g/p", [pr(1)], Date.now() - 1000);
+      const fake = fakeProvider([], []);
+      await syncProjectMRs(deps, "repo", { store, ...seams(fake) });
+      expect(fake.pulls.map((o) => o.excludeTargetBranches)).toEqual([EXCLUDED]);
+      expect(fake.indexCalls.map((o) => o.excludeTargetBranches)).toEqual([EXCLUDED]);
+    });
+
+    test("unscoped deep", async () => {
+      const fake = fakeProvider([], []);
+      await syncProjectMRs(deps, "repo", { store: tmpStore(), ...seams(fake) });
+      expect(fake.pulls).toEqual([{ projectPath: "g/p", state: "opened", listWeight: true, excludeTargetBranches: EXCLUDED }]);
+    });
+
+    test("scoped deep", async () => {
+      const fake = fakeProvider([], []);
+      await syncProjectMRs(deps, "repo", { store: tmpStore(), selfUsername: "ada", windowDays: 30, ...seams(fake) });
+      expect(fake.pulls).toEqual([{ projectPath: "g/p", authorUsernames: ["ada"], state: "opened", excludeTargetBranches: EXCLUDED }]);
+    });
+
+    test("backfillAuthors", async () => {
+      const fake = fakeProvider([], []);
+      await backfillAuthors(deps, "repo", ["bo"], { store: tmpStore(), selfUsername: null, windowDays: 30, ...seams(fake) });
+      expect(fake.pulls).toEqual([{ projectPath: "g/p", authorUsernames: ["bo"], state: "opened", excludeTargetBranches: EXCLUDED }]);
+    });
+
+    test("backfillSections", async () => {
+      const fake = fakeProvider([], []);
+      await backfillSections(deps, "repo", ["Pod"], { store: tmpStore(), windowDays: 30, ...seams(fake) });
+      expect(fake.ruleCalls.map((o) => o.excludeTargetBranches)).toEqual([EXCLUDED]);
+    });
   });
 });
