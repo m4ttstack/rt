@@ -132,10 +132,16 @@ final class SetupCoordinator {
 struct RtPlanSource: PlanSource {
     let rt: RtRunning
     let verb: [String]
+    /// The setup UI shows plain copy for a failed fetch, so the raw error is logged here, where every fetch passes.
     func fetchPlan() async throws -> Plan {
-        let r = try await rt.run(verb, stdin: nil)
-        if let e = r.userError { throw e }
-        return try r.decode(Plan.self)
+        do {
+            let r = try await rt.run(verb, stdin: nil)
+            if let e = r.userError { throw e }
+            return try r.decode(Plan.self)
+        } catch {
+            TrayLog.warn("plan fetch failed", ["verb": verb.joined(separator: " "), "err": String(describing: error)])
+            throw error
+        }
     }
 }
 

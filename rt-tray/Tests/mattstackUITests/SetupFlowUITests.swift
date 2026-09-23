@@ -147,7 +147,7 @@ final class SetupFlowUITests: XCTestCase {
         el("setup.team.card.create").click()
         el("setup.team.create.name").click()
         el("setup.team.create.name").typeText("Acme Claims")
-        XCTAssertTrue(app.staticTexts["acme-svc"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Slug: acme-claims"].waitForExistence(timeout: 3))
         // The stub always answers `setup github status` as ready, so
         // TeamChoiceModel.loadGitHubStatus() flips useGhRepo on and the
         // plain remote-URL field never renders; canContinue is already

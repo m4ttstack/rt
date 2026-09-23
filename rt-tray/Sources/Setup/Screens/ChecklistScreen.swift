@@ -11,8 +11,14 @@ struct ChecklistScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let e = model.lastError {
-                Label("Couldn't compute the checklist: \(e)", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red).padding(8)
+            if model.lastError != nil {
+                // A failed refresh keeps the last loaded plan on screen, and Install may still be enabled under it.
+                Label(model.groups.isEmpty ? "Couldn't load the checklist, so Install can't start yet. Re-check to try again."
+                                           : "Couldn't refresh the checklist. Re-check to try again.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.top, 12)
             }
             Form {
                 ForEach(model.groups) { group in
@@ -36,8 +42,7 @@ struct ChecklistScreen: View {
             }
             .formStyle(.grouped)
             HStack {
-                Text(model.canInstall ? "Everything required is ready." : "\(model.requiredMissing.count) required item(s) left.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(footerText).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Re-check") { actionError = nil; Task { await model.recheckAll() } }.controlSize(.small).accessibilityIdentifier(AXID.checklistRecheck)
             }
@@ -60,6 +65,13 @@ struct ChecklistScreen: View {
         // -- same fix as InstallScreen's stepRow.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AXID.checklistScreen)
+    }
+
+    private var footerText: String {
+        if model.groups.isEmpty { return model.lastError == nil ? "Checking…" : "" }
+        if model.canInstall { return "Everything required is ready." }
+        let n = model.requiredMissing.count
+        return n == 1 ? "1 required item left." : "\(n) required items left."
     }
 
     private func perform(_ row: PlanRow) {

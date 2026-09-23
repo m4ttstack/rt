@@ -10,21 +10,23 @@ struct ConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.headline)
-            Form {
-                ForEach(fields, id: \.name) { f in
-                    VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Connect \(title)").font(.headline)
+            ForEach(fields, id: \.name) { f in
+                SetupField(label: f.label, note: f.hint) {
+                    Group {
                         if f.secret {
-                            SecureField(f.label, text: binding(f.name)).accessibilityIdentifier(AXID.connectField(f.name))
+                            SecureField("", text: binding(f.name))
                         } else {
-                            TextField(f.label, text: binding(f.name)).accessibilityIdentifier(AXID.connectField(f.name))
+                            TextField("", text: binding(f.name))
                         }
-                        if let h = f.hint { Text(h).font(.caption).foregroundStyle(.secondary) }
                     }
+                    .labelsHidden()
+                    .accessibilityLabel(f.label)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier(AXID.connectField(f.name))
                 }
             }
-            .formStyle(.grouped)
             HStack {
                 ForEach(alternatives, id: \.id) { alt in
                     Button(alt.label) { onSubmit(nil, alt.id); dismiss() }.accessibilityIdentifier(AXID.connectAlternative(alt.id))
