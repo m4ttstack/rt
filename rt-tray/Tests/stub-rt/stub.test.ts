@@ -1,13 +1,14 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { personalSkillsDir } from "../../../lib/skills/writing-style-sources.ts";
 
 const STUB = join(import.meta.dir, "stub.ts");
 
-async function run(scenario: string, args: string[], stdin = "", stateDir?: string) {
+async function run(scenario: string, args: string[], stdin = "", stateDir?: string, extraEnv: Record<string, string> = {}) {
   const proc = Bun.spawn(["bun", STUB, ...args], {
-    env: { ...process.env, RT_STUB_SCENARIO: scenario, RT_STUB_STATE_DIR: stateDir ?? mkdtempSync(join(tmpdir(), "stub-")) },
+    env: { ...process.env, RT_STUB_SCENARIO: scenario, RT_STUB_STATE_DIR: stateDir ?? mkdtempSync(join(tmpdir(), "stub-")), ...extraEnv },
     stdin: new Blob([stdin]),
     stdout: "pipe",
   });
@@ -248,4 +249,94 @@ test("writing-style: use refuses a bad id and an unknown skill with exit 2 and c
   const ready = writingStyleRow(after.lines[0])!;
   expect(ready).toMatchObject({ status: "ready", detail: "team-voice (yours)" });
   expect((ready.action as ChooseAction).selected).toBe("team-voice");
+});
+
+// RT_STUB_REAL_WRITING_STYLE=1 judges the picker against the operator's real
+// skills, read through the same lib/skills code the app ships with, against a
+// fixture home only; it must never touch the real machine or write anywhere.
+function buildRealFixture(): { home: string; claudeBin: string } {
+  const home = mkdtempSync(join(tmpdir(), "stub-real-home-"));
+
+  const personalDir = join(personalSkillsDir(home), "team-voice");
+  mkdirSync(personalDir, { recursive: true });
+  writeFileSync(join(personalDir, "SKILL.md"), "---\nname: team-voice\ndescription: personal voice\n---\nbody\n");
+
+  const claudeSkillsDir = join(home, ".claude", "skills", "x:custom-note");
+  mkdirSync(claudeSkillsDir, { recursive: true });
+  writeFileSync(join(claudeSkillsDir, "SKILL.md"), "---\nname: x:custom-note\ndescription: not a writing style\n---\nbody\n");
+
+  const pluginInstallPath = join(home, "plugins", "acme");
+  mkdirSync(join(pluginInstallPath, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(pluginInstallPath, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version: "1.0.0" }));
+  const pluginSkillDir = join(pluginInstallPath, "skills", "team-writing-style");
+  mkdirSync(pluginSkillDir, { recursive: true });
+  writeFileSync(join(pluginSkillDir, "SKILL.md"), "---\nname: team-writing-style\ndescription: acme's team voice\n---\nbody\n");
+
+  const claudeBin = join(home, "fixture-claude");
+  writeFileSync(claudeBin, [
+    "#!/usr/bin/env bun",
+    `console.log(JSON.stringify([{ id: "acme@marketplace", enabled: true, installPath: ${JSON.stringify(pluginInstallPath)} }]));`,
+    "",
+  ].join("\n"));
+  chmodSync(claudeBin, 0o755);
+
+  return { home, claudeBin };
+}
+
+function snapshotTree(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, prefix: string) => {
+    for (const name of readdirSync(d).sort()) {
+      const full = join(d, name);
+      const rel = prefix ? `${prefix}/${name}` : name;
+      const st = statSync(full);
+      if (st.isDirectory()) walk(full, rel);
+      else out.push(`${rel}:${st.size}:${st.mtimeMs}`);
+    }
+  };
+  walk(dir, "");
+  return out;
+}
+
+// Each call below is a fresh stub process that itself spawns the fixture
+// claude binary, so the cold starts stack up; a generous timeout keeps this
+// from flaking under load rather than proving anything about the code.
+test("writing-style real-data mode: options and suggestions come from the fixture home, use accepts a fixture id and rejects an unknown one, and nothing is written", async () => {
+  const { home, claudeBin } = buildRealFixture();
+  const state = mkdtempSync(join(tmpdir(), "stub-"));
+  const extraEnv = { RT_STUB_REAL_WRITING_STYLE: "1", RT_STUB_REAL_HOME: home, RT_STUB_CLAUDE_BIN: claudeBin };
+  const before = snapshotTree(home);
+
+  const first = await run("writing-style", ["setup", "plan", "--json"], "", state, extraEnv);
+  expect(first.code).toBe(0);
+  const row = writingStyleRow(first.lines[0])!;
+  expect(row).toMatchObject({ status: "needs-you", detail: "Not chosen yet", finishGated: true, waivable: false });
+  const action = row.action as ChooseAction;
+  const ids = action.options.map((o) => o.id);
+  expect(ids.slice(0, 3)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
+  expect(ids[3]).toBe("team-voice");
+  expect(ids).toContain("acme:team-writing-style");
+  expect(action.other.suggestions).toContain("x:custom-note");
+  expect(action.other.suggestions).not.toContain("acme:team-writing-style");
+
+  const badShape = await run("writing-style", ["skills", "writing-style", "use", "-rf", "--json"], "", state, extraEnv);
+  expect(badShape.code).toBe(2);
+  expect(badShape.lines[0].error.code).toBe("bad-id");
+
+  const unknown = await run("writing-style", ["skills", "writing-style", "use", "nobody:not-real", "--json"], "", state, extraEnv);
+  expect(unknown.code).toBe(2);
+  expect(unknown.lines[0].error.code).toBe("unknown-skill");
+
+  const used = await run("writing-style", ["skills", "writing-style", "use", "team-voice", "--json"], "", state, extraEnv);
+  expect(used.code).toBe(0);
+  expect(used.lines[0]).toMatchObject({ skill: "team-voice", scope: "user" });
+
+  expect(snapshotTree(home)).toEqual(before);
+}, 20000);
+
+test("every other scenario ignores RT_STUB_REAL_WRITING_STYLE (only the writing-style scenario reads it)", async () => {
+  const { home, claudeBin } = buildRealFixture();
+  const extraEnv = { RT_STUB_REAL_WRITING_STYLE: "1", RT_STUB_REAL_HOME: home, RT_STUB_CLAUDE_BIN: claudeBin };
+  const res = await run("join-happy", ["setup", "plan", "--json"], "", undefined, extraEnv);
+  expect(writingStyleRow(res.lines[0])).toBeUndefined();
 });

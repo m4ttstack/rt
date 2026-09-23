@@ -4,7 +4,14 @@
 // retried) lives in RT_STUB_STATE_DIR so every call is a fresh process like
 // the real rt.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
+import { resolveClaudeBin } from "../../../lib/claude-bin.ts";
+import { FALLBACK_WRITING_STYLE, isPresetId, isValidSkillId } from "../../../lib/skills/writing-style.ts";
+import {
+  listWritingStyles, parsePluginEntries, readSkillInventory, type SkillInventory,
+} from "../../../lib/skills/writing-style-sources.ts";
+import { writingStyleRow as buildWritingStyleRow } from "../../../lib/setup/validators/writing-style.ts";
 
 const scenario = process.env.RT_STUB_SCENARIO ?? "join-happy";
 const stateDir = process.env.RT_STUB_STATE_DIR ?? join(import.meta.dir, ".state", scenario);
@@ -71,7 +78,41 @@ const WRITING_STYLE_SUGGESTIONS = ["acme:review-voice", "superpowers:brainstormi
 const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
 const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
 const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_OPTION_ROWS.map((o) => o.id), ...WRITING_STYLE_SUGGESTIONS];
-const SKILL_ID_RE = /^[a-z0-9][a-z0-9._-]*(:[a-z0-9._-]+)?$/;
+// RT_STUB_REAL_WRITING_STYLE=1 judges the picker against the operator's own
+// skills, read through the same code the app ships with, and never writes
+// there: the resolved style stays stub state, and no linkPersonalSkills or
+// setSetting call ever runs against realHome.
+const REAL_WRITING_STYLE = scenario === "writing-style" && process.env.RT_STUB_REAL_WRITING_STYLE === "1";
+
+function realHome(): string {
+  return process.env.RT_STUB_REAL_HOME ?? userInfo().homedir;
+}
+
+// A failed or missing claude binary reads as "no plugins", not an error: the
+// inventory still carries ~/.claude/skills and personal skills.
+function realInventory(): SkillInventory {
+  const home = realHome();
+  const bin = process.env.RT_STUB_CLAUDE_BIN ?? resolveClaudeBin() ?? "claude";
+  let plugins = null;
+  try {
+    const res = Bun.spawnSync([bin, "plugin", "list", "--json"], { env: { ...process.env, HOME: home } });
+    if (res.exitCode === 0) plugins = parsePluginEntries(res.stdout.toString());
+  } catch {
+    plugins = null;
+  }
+  return readSkillInventory(home, plugins);
+}
+
+function realWritingStyleRow() {
+  const inventory = realInventory();
+  const chosen = stateGet("style") > 0;
+  const idPath = join(stateDir, "style-id");
+  const styleId = chosen && existsSync(idPath) ? readFileSync(idPath, "utf8") : undefined;
+  const resolved = styleId ? { skill: styleId, source: "user" as const } : { skill: FALLBACK_WRITING_STYLE, source: "fallback" as const };
+  const options = listWritingStyles(inventory, resolved).options;
+  return { ...buildWritingStyleRow({ homeReady: true, resolved, inventory, options }), waivable: false };
+}
+
 function writingStyleRow() {
   const chosen = stateGet("style") > 0;
   const idPath = join(stateDir, "style-id");
@@ -132,7 +173,9 @@ function plan(): unknown {
   // is safe, not a runtime guess.
   if (installableScenario) { accounts[0]!.status = "ready"; accounts[0]!.detail = "token can see group acme"; tools[1]!.status = "ready"; tools[1]!.detail = "extension loaded"; }
   const gated: { id: string; status: string; waived?: boolean }[] =
-    scenario === "finish-gate" ? [extensionRow()] : scenario === "writing-style" ? [writingStyleRow()] : [];
+    scenario === "finish-gate" ? [extensionRow()]
+    : scenario === "writing-style" ? [REAL_WRITING_STYLE ? realWritingStyleRow() : writingStyleRow()]
+    : [];
   const requiredMissing = [...mac, ...accounts, ...access, ...tools].filter((r) => r.required && r.status !== "ready").map((r) => r.id);
   const finishBlockedBy = gated.filter((r) => r.status !== "ready" && !r.waived).map((r) => r.id);
   return {
@@ -220,8 +263,14 @@ else if (a0 === "setup" && (a1 === "waive" || a1 === "unwaive")) {
 else if (a0 === "skills" && a1 === "writing-style" && a2 === "use") {
   const id = args[3];
   if (id === undefined) fail("usage", "usage: rt skills writing-style use <skill-id> [--scope user|team] [--json]");
-  if (!SKILL_ID_RE.test(id)) fail("bad-id", `"${id}" is not a skill id`);
-  if (!INSTALLED_STYLES.includes(id)) fail("unknown-skill", `${id} is not installed here. Choose one of: ${INSTALLED_STYLES.join(", ")}`);
+  if (!isValidSkillId(id)) fail("bad-id", `"${id}" is not a skill id`);
+  if (REAL_WRITING_STYLE) {
+    const inventory = realInventory();
+    const known = isPresetId(id) || inventory.installed.has(id) || inventory.personal.some((p) => p.name === id);
+    if (!known) fail("unknown-skill", `${id} is not installed here.`);
+  } else if (!INSTALLED_STYLES.includes(id)) {
+    fail("unknown-skill", `${id} is not installed here. Choose one of: ${INSTALLED_STYLES.join(", ")}`);
+  }
   stateSet("style", 1);
   writeFileSync(join(stateDir, "style-id"), id);
   emit({ skill: id, scope: "user" });
