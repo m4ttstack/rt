@@ -199,6 +199,8 @@ export interface MissionHistoryCommitRow {
   byline: string;
   /** Driver-computed relative author date. */
   when: string;
+  /** Date header the row sits under: "Today", "Yesterday", "Earlier this week", "Last week", or "September 2026". */
+  group: string;
   tags: string[];
   unpushed: boolean;
   /** The driver's selection; the view adopts it when its own cursor falls off the list. */

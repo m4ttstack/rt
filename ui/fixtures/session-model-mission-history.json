@@ -106,6 +106,7 @@
           "summary": "Add parser support",
           "byline": "Alex Rivera",
           "when": "2 days ago",
+          "group": "Last week",
           "tags": [
             "v1.2.0"
           ],
@@ -118,6 +119,7 @@
           "summary": "Initial commit",
           "byline": "Sam Lee",
           "when": "4 days ago",
+          "group": "Last week",
           "tags": [],
           "unpushed": false,
           "selected": false

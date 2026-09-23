@@ -100,6 +100,11 @@ func TestDecodeHistoryFixture(t *testing.T) {
 	if len(m.History.Commits) != 2 {
 		t.Fatalf("History.Commits: expected 2, got %d: %+v", len(m.History.Commits), m.History.Commits)
 	}
+	for i, c := range m.History.Commits {
+		if c.Group != "Last week" {
+			t.Fatalf("History.Commits[%d].Group: got %q want \"Last week\"", i, c.Group)
+		}
+	}
 	if m.History.Header == nil {
 		t.Fatalf("History.Header: expected non-nil")
 	}

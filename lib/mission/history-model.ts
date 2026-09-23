@@ -74,6 +74,21 @@ function buildHeader(store: HistoryStore): MissionHistoryHeader | null {
   };
 }
 
+/**
+ * The date header a commit sits under in the History list, on the machine's
+ * local calendar with weeks starting Monday. A date after now (clock skew)
+ * reads "Today".
+ */
+export function historyGroupLabel(date: Date, now: Date): string {
+  const startOfDay = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+  const sinceMonday = (now.getDay() + 6) % 7;
+  if (date >= startOfDay(0)) return "Today";
+  if (date >= startOfDay(1)) return "Yesterday";
+  if (date >= startOfDay(sinceMonday)) return "Earlier this week";
+  if (date >= startOfDay(sinceMonday + 7)) return "Last week";
+  return date.toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
 export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loading: boolean }): MissionHistoryModel {
   const selected = new Set(store.selection);
   return {
@@ -83,6 +98,7 @@ export function buildHistoryModel(store: HistoryStore, opts: { now: Date; loadin
       summary: c.summary,
       byline: formatByline(commitAuthors(c)),
       when: formatRelativeTime(c.author.date.toISOString(), opts.now),
+      group: historyGroupLabel(c.author.date, opts.now),
       tags: c.tags,
       unpushed: store.localShas.has(c.sha),
       selected: selected.has(c.sha),

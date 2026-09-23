@@ -75,6 +75,7 @@ type HistoryCommitRow struct {
 	Summary  string   `json:"summary"`
 	Byline   string   `json:"byline"` // GHD's commit-attribution: "A", "A, B", or "N people"
 	When     string   `json:"when"`   // driver-computed relative author date
+	Group    string   `json:"group"`  // date header: "Today", "Yesterday", "Earlier this week", "Last week", or "September 2026"
 	Tags     []string `json:"tags"`
 	Unpushed bool     `json:"unpushed"`
 	Selected bool     `json:"selected"` // the driver's selection; the view adopts it when its own cursor falls off the list
