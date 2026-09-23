@@ -608,7 +608,7 @@ export function Board() {
     [launch]
   );
 
-  // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
+  // A gate's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
   // the row would use -- the server-side dedup (existing tabId + in-flight
   // status) re-focuses that pane, and the focus intent makes a gone pane a

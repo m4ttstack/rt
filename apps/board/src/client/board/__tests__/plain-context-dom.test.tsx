@@ -1,7 +1,8 @@
 /** A gate context that is not a structured gate-ctx shape renders as plain
-    markdown in the modal's Decision context pane: no section markers lifted
-    onto a question, no bracketed-line grouping, no raw JSON. A review@1
-    context flattens to prose; every other shape is left to its own card. */
+    markdown in the rail's decision context card, open or answered: no
+    section markers lifted onto a question, no bracketed-line grouping, no
+    raw JSON. A review@1 context flattens to prose; every other shape is
+    left to its own card. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -80,7 +81,7 @@ async function renderModal(row: GateRow) {
 const $ = (selector: string) => document.body.querySelector(selector);
 
 const paneText = () =>
-  $('.tui-triage-sheet [data-part="scrollpane-body"]')?.textContent ?? '';
+  $('.tui-sheet-context-card .tui-sheet-context-reasoning')?.textContent ?? '';
 
 test('section markers render verbatim in the pane: nothing is lifted onto a question', async () => {
   await renderModal(

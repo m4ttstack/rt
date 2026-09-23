@@ -1,8 +1,9 @@
 /** A respond-plan question whose context parses as thread@1 renders as a
-    thread card: file:line, severity and "thread N of M" in the head; the
-    claim, its points, the verdict and the reply box in the body; the plan
-    on the fix option's subtitle. A thread context that fails the parse
-    renders as prose, exactly as before. */
+    thread card on the stage sheet (a respond gate with no plan context
+    lands there): file:line and severity in the head; the claim, its
+    points, the verdict and the reply box in the body; the plan on the fix
+    option's subtitle. A thread context that fails the parse renders as
+    prose. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -10,8 +11,7 @@ import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
 
 import type { GateRow } from '../../../gates/store.ts';
-import type { BoardMRWithReview } from '../../types.ts';
-import { GateForm, useGateForm } from '../GateForm.tsx';
+import { DecisionQueueModal } from '../DecisionQueueModal.tsx';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -22,8 +22,6 @@ afterAll(async () => {
 (
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-
-const MR = { iid: 87 } as unknown as BoardMRWithReview;
 
 type Question = GateRow['questions'][number];
 
@@ -111,13 +109,22 @@ afterEach(async () => {
 });
 
 async function renderGate(row: GateRow) {
-  function Host() {
-    const form = useGateForm(row, () => {});
-    return <GateForm gate={row} mr={MR} form={form} onFocusPane={() => {}} />;
-  }
   await React.act(async () => {
-    root.render(<Host />);
+    root.render(
+      <DecisionQueueModal
+        gate={row}
+        position={1}
+        states={['active']}
+        onClose={() => {}}
+        onNext={() => {}}
+        onBack={() => {}}
+        onFocusPane={() => {}}
+        onAnswered={() => {}}
+        onContinue={() => {}}
+      />
+    );
   });
+  expect(container.querySelector('.tui-stage-sheet')).not.toBeNull();
 }
 
 test('a thread@1 question renders claim, points, verdict and reply, never the raw JSON', async () => {
@@ -143,7 +150,7 @@ test('a thread@1 question renders claim, points, verdict and reply, never the ra
   expect(container.textContent).not.toContain('gate-ctx');
 });
 
-test('the head carries file:line, the severity pill, and thread N of M by position', async () => {
+test('the head carries file:line and the severity pill', async () => {
   await renderGate(
     gate({
       questions: [
@@ -153,10 +160,6 @@ test('the head carries file:line, the severity pill, and thread N of M by positi
       ],
     })
   );
-  const ords = [...container.querySelectorAll('.tui-gate-question-ord')].map(
-    n => n.textContent
-  );
-  expect(ords).toEqual(['thread 1 of 2', 'thread 2 of 2']);
   const heads = [
     ...container.querySelectorAll(
       '.tui-gate-question[data-gate-ctx="thread"] .tui-gate-question-head'
@@ -166,8 +169,7 @@ test('the head carries file:line, the severity pill, and thread N of M by positi
   expect(
     heads[0]!.querySelector('[data-severity]')!.getAttribute('data-severity')
   ).toBe('blocking');
-  for (const progress of container.querySelectorAll('.tui-gate-progress'))
-    expect(progress.textContent ?? '').not.toContain('Question');
+  expect(heads).toHaveLength(2);
 });
 
 test('each severity renders its own pill', async () => {

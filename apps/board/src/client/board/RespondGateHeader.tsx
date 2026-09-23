@@ -1,9 +1,5 @@
-import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
-import { ago, cleanTitle } from './format.ts';
 import type { PlanCtx, PostCtx } from './gate-ctx.ts';
-import { forgeNoun, MrLinks } from './MrLinks.tsx';
-import { PersonLead } from './PersonLead.tsx';
 
 export interface HeaderChip {
   key: string;
@@ -84,6 +80,22 @@ export function reviewerName(
   );
 }
 
+/** A person's full name for a handle: the team roster first, then the MR's
+    author, then its assigned reviewers and approvers, else the handle. */
+export function personName(
+  handle: string,
+  mr?: BoardMRWithReview,
+  people?: ReadonlyMap<string, string>
+): string {
+  return (
+    people?.get(handle) ??
+    (mr?.author?.username === handle
+      ? mr.author.name || undefined
+      : undefined) ??
+    reviewerName(handle, mr, people)
+  );
+}
+
 /** `!<n>` from an `mr:<url>` subject: the object line's stand-in when the
     board has no row for the MR, so the card never waits on the join. */
 export function subjectRef(subject: string): string {
@@ -91,51 +103,24 @@ export function subjectRef(subject: string): string {
   return m ? `!${m[1]}` : subject;
 }
 
-/** A respond gate's identity card: the invader, who is being answered and
-    the MR's links share the top line; the MR title, the meta line, the
-    branch and the chips each take the card's full width below it. */
-export function RespondGateHeader({
-  gate,
-  mr,
+/** A respond context's prose facts and chips, under its reviewer line in
+    the rail. */
+export function RespondCtxFacts({
   ctx,
-  people,
+  posting,
 }: {
-  gate: GateRow;
-  mr?: BoardMRWithReview;
   ctx: PlanCtx | PostCtx;
-  people?: ReadonlyMap<string, string>;
+  /** A post gate's reply count as its submit will post it; see
+      `headerChips`. */
+  posting?: number;
 }) {
-  const author = mr?.author?.name || mr?.author?.username;
-  const meta = [
-    author,
-    ago(new Date(gate.openedAt).toISOString(), Date.now()),
-    ...headerMeta(ctx),
-  ].filter(Boolean);
   return (
-    <div className="tui-id-card tui-respond-head" data-shape={ctx.shape}>
-      <PersonLead
-        id={ctx.reviewer}
-        name={reviewerName(ctx.reviewer, mr, people)}
-        trailing={mr && <MrLinks mr={mr} />}
-      >
-        reviewed your {forgeNoun(mr, gate.subject)}
-      </PersonLead>
-      {mr && <p className="tui-id-card-title">{cleanTitle(mr.title)}</p>}
-      <p className="tui-id-card-meta">
-        <span className="tui-id-card-ref">
-          {mr ? `!${mr.iid}` : subjectRef(gate.subject)}
-        </span>
-        {meta.map(m => (
-          <span key={m}>· {m}</span>
-        ))}
-      </p>
-      {mr?.sourceBranch && (
-        <p className="tui-id-card-branch" title={mr.sourceBranch}>
-          {mr.sourceBranch}
-        </p>
+    <>
+      {headerMeta(ctx).length > 0 && (
+        <p className="tui-sheet-context-meta">{headerMeta(ctx).join(' · ')}</p>
       )}
       <div className="tui-respond-chips">
-        {headerChips(ctx).map(chip => (
+        {headerChips(ctx, posting).map(chip => (
           <span
             key={chip.key}
             className="tui-respond-chip"
@@ -146,6 +131,6 @@ export function RespondGateHeader({
           </span>
         ))}
       </div>
-    </div>
+    </>
   );
 }

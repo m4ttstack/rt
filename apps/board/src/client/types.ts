@@ -251,7 +251,8 @@ export interface RowContext {
   onResumeRespond: (mr: BoardMR, note?: string) => void;
   /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
       the same dedup-and-focus path launching that domain again already takes
-      (see GateForm's "focus pane" button), not a distinct endpoint. */
+      (see the review sheet's and pane notice's "focus pane"), not a
+      distinct endpoint. */
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
   onLaunch: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   onReReview: (mr: BoardMR, note?: string) => void;

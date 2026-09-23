@@ -1,8 +1,8 @@
 /** DOM-level test for the review-post routing predicate: a
     structured review-post gate whose context and every findings chunk
     join one-to-one opens the review sheet; any mismatch, or a legacy
-    prose-context gate, falls through to the generic decision-queue
-    modal. Mirrors respond-header-dom.test.tsx's direct-mount harness. */
+    prose-context gate, falls through to the generic stage sheet. Mirrors
+    respond-header-dom.test.tsx's direct-mount harness. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -121,7 +121,7 @@ function withFindings(patch: Partial<GateQuestion>): GateRow {
 test('a structured review-post gate opens the review sheet', async () => {
   await renderModal(reviewGate());
   expect($('.tui-review-sheet')).not.toBeNull();
-  expect($('.tui-triage-sheet')).toBeNull();
+  expect($('.tui-stage-sheet')).toBeNull();
 });
 
 test('an entry with no option routes the whole gate to the generic modal', async () => {
@@ -138,7 +138,7 @@ test('an entry with no option routes the whole gate to the generic modal', async
     })
   );
   expect($('.tui-review-sheet')).toBeNull();
-  expect($('.tui-triage-sheet')).not.toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
 });
 
 test('an option with no entry routes the whole gate to the generic modal', async () => {
@@ -152,7 +152,7 @@ test('an option with no entry routes the whole gate to the generic modal', async
     })
   );
   expect($('.tui-review-sheet')).toBeNull();
-  expect($('.tui-triage-sheet')).not.toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
 });
 
 test('a legacy review-post gate (prose context, pinned-format options) renders in the generic modal', async () => {
@@ -166,5 +166,5 @@ test('a legacy review-post gate (prose context, pinned-format options) renders i
     })
   );
   expect($('.tui-review-sheet')).toBeNull();
-  expect($('.tui-triage-sheet')).not.toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
 });

@@ -1,7 +1,7 @@
-/** The queue sheet's chrome: the step nav renders inline in the gate body,
-    and the head is one row -- title, compact (size="sm") focus pane, then
-    the queue nav (previous gate, pips, gate count, next gate), the tag and
-    close. */
+/** The queue sheet's chrome: a gate's questions render at once with the
+    submit docked in the rail, and the head is one row -- title, compact
+    (size="sm") focus pane, then the queue nav (previous gate, pips, gate
+    count, next gate), the tag and close. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -24,7 +24,7 @@ afterAll(async () => {
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function stepped(): GateRow {
+function twoQuestions(): GateRow {
   return {
     gateId: 'g-steps',
     subject: 'mr:https://gitlab.example.com/demo/app/-/merge_requests/51',
@@ -118,23 +118,22 @@ async function click(el: Element | null) {
   });
 }
 
-const navButton = (text: string) =>
-  [...document.body.querySelectorAll('.tui-gate-actions button')].find(
-    b => b.textContent?.trim() === text && !b.hasAttribute('hidden')
-  ) ?? null;
-
-test('the step nav renders in the gate body, never in the head', async () => {
-  await renderModal(stepped());
-  expect($('.tui-triage-body .tui-gate-actions')).not.toBeNull();
-  expect($('.tui-gate-sheet-head .tui-gate-actions')).toBeNull();
+test('every question renders at once, with no step nav anywhere', async () => {
+  await renderModal(twoQuestions());
+  expect(
+    document.body.querySelectorAll('.tui-sheet-main .tui-gate-question')
+  ).toHaveLength(2);
+  expect(document.body.querySelectorAll('.tui-sheet-main button')).toHaveLength(
+    0
+  );
+  expect($('.tui-sheet-dock .tui-sheet-submit')).not.toBeNull();
 });
 
-test('the nav still drives the form: pick, next, pick, submit posts both answers', async () => {
-  await renderModal(stepped());
+test('the docked submit posts both answers once both are picked', async () => {
+  await renderModal(twoQuestions());
   await click($('input[value="keep"]'));
-  await click(navButton('next'));
   await click($('input[value="yes"]'));
-  await click(navButton('submit'));
+  await click($('.tui-sheet-submit'));
   const answer = posts.find(p => p.url === '/gate/answer');
   expect(answer?.body).toMatchObject({
     gateId: 'g-steps',
@@ -142,15 +141,15 @@ test('the nav still drives the form: pick, next, pick, submit posts both answers
   });
 });
 
-test('reset in the gate body clears the picks', async () => {
-  await renderModal(stepped());
+test('reset in the dock clears the picks', async () => {
+  await renderModal(twoQuestions());
   await click($('input[value="keep"]'));
-  await click(navButton('reset'));
+  await click($('.tui-sheet-reset'));
   expect(($('input[value="keep"]') as HTMLInputElement).checked).toBe(false);
 });
 
 test('the head is one row: title, compact focus pane, then close -- no skip chip', async () => {
-  await renderModal(stepped());
+  await renderModal(twoQuestions());
   const head = $('.tui-gate-sheet-head')!;
   expect(head.querySelector('.tui-gate-sheet-title')?.textContent).toBe(
     'decision queue'
@@ -166,7 +165,7 @@ test('the head is one row: title, compact focus pane, then close -- no skip chip
 });
 
 test('the head queue nav holds a previous-gate control, the count stacked over the pips, and a next-gate control', async () => {
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 2,
     states: ['done', 'active', 'todo'],
   });
@@ -187,18 +186,18 @@ test('the head queue nav holds a previous-gate control, the count stacked over t
   expect(prev.getAttribute('title')).toBe('previous gate');
   expect(next.getAttribute('aria-label')).toBe('next gate');
   expect(next.getAttribute('title')).toBe('next gate');
-  // Distinct from the in-gate step nav's text buttons ("previous"/"next").
+  // Icon-only chevrons, never text buttons.
   expect(prev.textContent?.trim()).not.toBe('previous');
   expect(next.textContent?.trim()).not.toBe('next');
 });
 
 test('the previous-gate control is disabled on the first gate and enabled past it', async () => {
-  await renderModal(stepped(), undefined, { position: 1 });
+  await renderModal(twoQuestions(), undefined, { position: 1 });
   expect(
     ($('[aria-label="previous gate"]') as HTMLButtonElement).disabled
   ).toBe(true);
 
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 2,
     states: ['done', 'active'],
   });
@@ -208,7 +207,7 @@ test('the previous-gate control is disabled on the first gate and enabled past i
 });
 
 test('the next-gate control is disabled on the last gate, so navigating never lands on the done face', async () => {
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 3,
     states: ['done', 'todo', 'active'],
   });
@@ -216,7 +215,7 @@ test('the next-gate control is disabled on the last gate, so navigating never la
     true
   );
 
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 2,
     states: ['done', 'active', 'todo'],
   });
@@ -226,7 +225,7 @@ test('the next-gate control is disabled on the last gate, so navigating never la
 });
 
 test('a chevron with no gate to land on is disabled even mid-queue', async () => {
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 2,
     states: ['done', 'active', 'done'],
     canBack: false,
@@ -243,7 +242,7 @@ test('a chevron with no gate to land on is disabled even mid-queue', async () =>
 test('the previous-gate control calls onBack, the next-gate control calls onNext', async () => {
   let backCalls = 0;
   let nextCalls = 0;
-  await renderModal(stepped(), undefined, {
+  await renderModal(twoQuestions(), undefined, {
     position: 2,
     states: ['done', 'active', 'todo'],
     onBack: () => {
@@ -263,9 +262,8 @@ test('the previous-gate control calls onBack, the next-gate control calls onNext
   expect(posts.length).toBe(posts0);
 });
 
-test('there is no peek row; the next-gate title rides the count tooltip', async () => {
-  await renderModal(stepped(), '!52 · add retry to the fetch queue');
-  expect($('.tui-triage-peek')).toBeNull();
+test('the next-gate title rides the count tooltip', async () => {
+  await renderModal(twoQuestions(), '!52 · add retry to the fetch queue');
   expect($('.tui-gate-queue-pos')?.getAttribute('title')).toBe(
     'next: !52 · add retry to the fetch queue'
   );

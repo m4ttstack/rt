@@ -471,7 +471,7 @@ test('decision queue: paging to the next gate does not bleed its selection into 
   }
 });
 
-test('a stuck-delivery gate: the row reads the stuck message and its answer verb opens the queue on the retry face', async () => {
+test('a stuck-delivery gate: the row reads the stuck message and its answer verb opens the queue on the answered sheet', async () => {
   servedData = withAnsweredGate({
     delivery: { outcome: 'stuck', at: 2 },
     origin: { paneId: 'pane-1', worktree: 'widgets' },
@@ -503,10 +503,17 @@ test('a stuck-delivery gate: the row reads the stuck message and its answer verb
       '[role="dialog"][aria-label="decision queue"]'
     );
     expect(dialog).not.toBeNull();
+    expect(dialog?.classList.contains('tui-answered-sheet')).toBe(true);
+    expect(dialog?.querySelector('.tui-sheet-list-title')?.textContent).toBe(
+      'Answer not delivered'
+    );
     expect(
-      dialog?.querySelector('[data-gate-delivery-state="stuck"]')
+      findByText(
+        dialog!.querySelector('.tui-sheet-dock')!,
+        'button',
+        'focus pane'
+      )
     ).not.toBeNull();
-    expect(findByText(dialog!, 'button', 'focus pane')).not.toBeNull();
   } finally {
     await React.act(async () => {
       root.unmount();

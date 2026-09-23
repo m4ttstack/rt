@@ -1,7 +1,7 @@
 /** DOM-level test for the decision queue's non-MR section (task 13): a
     `queueExtras` pane-attention gate joins the same queue as MR gates, with
-    no `mr` at all -- covering the sidebar count, the four-button attention
-    face, its `/gate/answer` POST, and the escalated chip -- plus the row
+    no `mr` at all -- covering the sidebar count, the pane notice's four
+    actions, its `/gate/answer` POST, and the escalated chip -- plus the row
     side of the same reconciler story: an interrupted row's `clear` verb
     tombstoning its orphan. Mirrors decision-queue-dom.test.tsx's
     real-Board-render pattern rather than mounting DecisionQueueModal alone,
@@ -202,7 +202,7 @@ test('sidebar decision-queue count includes queueExtras', async () => {
   }
 });
 
-test('a pane-attention queue entry renders the four attention actions and an escalated chip, with no MR strip', async () => {
+test('a pane-attention queue entry docks its four actions and an escalated chip, with no MR card', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -212,16 +212,19 @@ test('a pane-attention queue entry renders the four attention actions and an esc
     });
     const dialog = await openQueue(container);
 
-    expect(dialog.textContent).toContain('pane needs attention');
+    expect(dialog.querySelector('.tui-gate-sheet-tag')?.textContent).toBe(
+      'pane blocked'
+    );
     expect(buttonByText(dialog, 'focus pane')).not.toBeNull();
     expect(buttonByText(dialog, 'resume')).not.toBeNull();
     expect(buttonByText(dialog, 'clear')).not.toBeNull();
     expect(buttonByText(dialog, 'dismiss')).not.toBeNull();
 
-    // No MR strip: nothing that would only exist on an MR-attached card.
-    expect(dialog.querySelector('.tui-mr-iid')).toBeNull();
-    expect(dialog.querySelector('.tui-branch')).toBeNull();
-    expect(dialog.textContent).toContain('agent:pane-1');
+    // No MR card: the dock names the gate's own subject instead.
+    expect(dialog.querySelector('.tui-mr-card')).toBeNull();
+    expect(dialog.querySelector('.tui-sheet-dock-heading')?.textContent).toBe(
+      'Pane on agent:pane-1'
+    );
 
     expect(dialog.querySelector('[data-gate="escalated"]')).not.toBeNull();
     expect(dialog.textContent).toContain('escalated');

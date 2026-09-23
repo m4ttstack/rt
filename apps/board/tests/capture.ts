@@ -214,16 +214,15 @@ try {
       await shoot(page, `reviewmodal-${theme}`);
       await page.keyboard.press('Escape');
     }
-    // A legacy review-post gate (prose context, tier options) in the generic
-    // modal: its context renders as plain markdown, wherever it sits in the
-    // queue. The first gate may be the review sheet, so either face counts
-    // as open.
+    // A legacy review-post gate (prose context, tier options) in the stage
+    // sheet: its context renders as plain markdown in the rail, wherever it
+    // sits in the queue. The first gate may be the review sheet, so either
+    // face counts as open.
     await page.click('.tui-dq-open');
     await page.waitForSelector('.tui-gate-sheet');
-    const legacy = page.locator(
-      '.tui-triage-sheet [data-part="scrollpane-body"]',
-      { hasText: '[Important] Dropped guard' }
-    );
+    const legacy = page.locator('.tui-stage-sheet .tui-sheet-context-card', {
+      hasText: '[Important] Dropped guard',
+    });
     for (let i = 0; i < 10 && !(await legacy.count()); i++) {
       await page.getByRole('button', { name: 'next gate' }).click();
       await page.waitForTimeout(120);

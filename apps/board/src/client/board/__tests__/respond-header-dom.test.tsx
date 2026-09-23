@@ -5,7 +5,7 @@
     the thread chips), the MR's status, and what the submit will do; the
     parked and escalated chips on the head's action strip; and neither the
     MR strip nor the "Decision context" pane. Prose and malformed contexts
-    keep today's strip and pane. */
+    open the stage sheet instead. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -16,7 +16,6 @@ import type { GateRow } from '../../../gates/store.ts';
 import type { BoardMRWithReview } from '../../types.ts';
 import { DecisionQueueModal } from '../DecisionQueueModal.tsx';
 import type { PlanCtx, PostCtx } from '../gate-ctx.ts';
-import { GateForm, useGateForm } from '../GateForm.tsx';
 import {
   headerChips,
   headerMeta,
@@ -164,7 +163,6 @@ test('an open plan@1 gate opens the respond sheet: threads left; MR card, decisi
     )
   ).toHaveLength(1);
   expect($('.tui-sheet-main .tui-thread-card')).not.toBeNull();
-  expect($('.tui-triage-strip')).toBeNull();
   expect($('.tui-triage-sheet')).toBeNull();
   const text = document.body.textContent ?? '';
   expect(text).not.toContain('gate-ctx');
@@ -254,13 +252,13 @@ test('parked and escalated chips move onto the action strip', async () => {
   expect($('.tui-gate-sheet-actions [data-gate="escalated"]')).not.toBeNull();
 });
 
-test('a prose gate keeps its parked chip in the MR strip', async () => {
+test('a prose gate carries its parked chip on the action strip', async () => {
   await renderModal(
     gate({ status: 'parked', context: 'Two threads from renee, both valid.' }),
     MR
   );
-  expect($('.tui-triage-strip [data-gate="parked"]')).not.toBeNull();
-  expect($('.tui-gate-sheet-actions [data-gate="parked"]')).toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
+  expect($('.tui-gate-sheet-actions [data-gate="parked"]')).not.toBeNull();
 });
 
 test('with no MR row there is no MR card and the rail names the subject reference', async () => {
@@ -269,27 +267,28 @@ test('with no MR row there is no MR card and the rail names the subject referenc
   expect($('.tui-sheet-dock-heading')!.textContent).toBe('Responses on !87');
 });
 
-test('a prose respond gate keeps the MR strip and the context pane', async () => {
+test('a prose respond gate opens the stage sheet with its context in the rail', async () => {
   await renderModal(
     gate({ context: 'Two threads from renee, both valid.' }),
     MR
   );
-  expect($('.tui-respond-head')).toBeNull();
-  expect($('.tui-triage-strip')).not.toBeNull();
-  expect(
-    $('.tui-triage-sheet [data-part="scrollpane"]')!.textContent
-  ).toContain('Two threads from renee, both valid.');
-  expect($('.tui-triage-body[data-respond]')).toBeNull();
+  expect($('.tui-respond-sheet')).toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
+  expect($('.tui-sheet-rail .tui-mr-card')).not.toBeNull();
+  expect($('.tui-sheet-context-card')!.textContent).toContain(
+    'Two threads from renee, both valid.'
+  );
 });
 
-test('a malformed plan context keeps the MR strip and the context pane', async () => {
+test('a malformed plan context opens the stage sheet beside the MR card', async () => {
   await renderModal(
     gate({ context: JSON.stringify({ 'gate-ctx': 'plan@1' }) }),
     MR
   );
-  expect($('.tui-respond-head')).toBeNull();
-  expect($('.tui-triage-strip')).not.toBeNull();
-  expect($('.tui-triage-sheet [data-part="scrollpane"]')).not.toBeNull();
+  expect($('.tui-respond-sheet')).toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
+  expect($('.tui-sheet-rail .tui-mr-card')).not.toBeNull();
+  expect($('.tui-sheet-context-card')).not.toBeNull();
 });
 
 test('a respond gate whose contexts were dropped still renders its questions and options', async () => {
@@ -310,8 +309,8 @@ test('a respond gate whose contexts were dropped still renders its questions and
     }),
     MR
   );
-  expect($('.tui-respond-head')).toBeNull();
-  expect($('.tui-triage-strip')).not.toBeNull();
+  expect($('.tui-respond-sheet')).toBeNull();
+  expect($('.tui-stage-sheet')).not.toBeNull();
   const text = document.body.textContent ?? '';
   expect(text).toContain('queue/enqueue.ts:88');
   expect(text).toContain('reply');
@@ -352,30 +351,17 @@ test('a GitHub MR links GitHub, and no ticket means no Linear link', async () =>
   ]);
 });
 
-test('a prose gate carries the same links on its MR strip', async () => {
+test('a prose gate carries the same links on its MR card', async () => {
   const mr = {
     ...MR,
     webUrl: 'https://gitlab.example.com/demo/app/-/merge_requests/87',
   } as BoardMRWithReview;
   await renderModal(gate({ context: 'Two threads from renee.' }), mr);
-  expect($('.tui-triage-strip .tui-mr-links')).not.toBeNull();
+  expect($('.tui-mr-card .tui-mr-links')).not.toBeNull();
   expect(linkLabels().map(([label]) => label)).toEqual([
     'open !87 in GitLab',
     'open DEMO-12 in Linear',
   ]);
-});
-
-test('a bare GateForm host never pours a structured gate context out raw', async () => {
-  const row = gate({});
-  function Host() {
-    const form = useGateForm(row, () => {});
-    return <GateForm gate={row} mr={MR} form={form} onFocusPane={() => {}} />;
-  }
-  await React.act(async () => {
-    root.render(<Host />);
-  });
-  expect(container.querySelector('.tui-gate-context-raw')).toBeNull();
-  expect(container.textContent).not.toContain('gate-ctx');
 });
 
 const plan = (over: Partial<PlanCtx> = {}): PlanCtx => ({

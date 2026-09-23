@@ -111,9 +111,6 @@ body {
   letter-spacing: 0.02em;
   margin: 0;
 }
-.tui-prompt {
-  color: var(--text-accent-small);
-}
 .tui-sub {
   margin: 0.15rem 0 0;
 }
@@ -2033,9 +2030,7 @@ body {
   width: calc(var(--stack-indent) + 1px - var(--check-size) / 2);
 }
 
-/* review gate card: the questions a review pane opened on this row, answered
-   inline in the triage modal. */
-.tui-gate-card,
+/* The decision queue's sheet scope. */
 .tui-gate-sheet {
   /* Card ground needs its own edge in dark: --border and --border-soft sit
      too close to --card there, so this scope re-points them (and
@@ -2060,39 +2055,11 @@ body {
   --gate-radius-card: var(--radius-xl);
   --gate-radius-control: var(--radius-lg);
   --gate-radius-btn: var(--radius-md);
-  margin-top: 8px;
-  padding: 0.7rem 0.9rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
 }
-.tui-gate-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.tui-gate-title {
-  font: 600 0.72rem/1.4 var(--font-sans);
-  color: var(--text-4);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-/* The questionnaire Item renders as a <fieldset>, so the UA groove border,
-   padding and inline margin have to be cleared here; min-inline-size resets
-   the fieldset's min-content default, which otherwise refuses to shrink.
-   The primitive hides every non-active item with the `hidden` attribute,
-   and an author `display` rule beats the UA [hidden] rule, hence the
-   explicit override. `.tui-gate-items` is a plain scroll container, not a
-   flex container, so this card is never given a constrained height and
-   always renders at its natural size: the head, the choices, the note and
-   the error line need no protecting, since nothing ever asks them to
-   shrink. Only the card's context (prose or a thread card, see
+/* A question card always renders at its natural height inside its scrolling
+   column; only its context (prose or a thread card, see
    `.tui-gate-question-context` / `.tui-thread-card`) carries its own
-   viewport-relative cap; whatever the card's own natural height does not
-   fit in `.tui-gate-items`'s box is what that scrolls past. */
+   viewport-relative cap. */
 .tui-gate-question {
   display: flex;
   flex-direction: column;
@@ -2103,9 +2070,6 @@ body {
   margin: 0;
   padding: var(--gate-pad-card);
   min-inline-size: 0;
-}
-.tui-gate-question[hidden] {
-  display: none;
 }
 /* Bleeds through the card padding to the frame, a shade under the ground,
    sealed with a soft rule. */
@@ -2126,56 +2090,6 @@ body {
   font-weight: 600;
   line-height: 1.35;
   color: var(--text-1);
-}
-/* The form itself never scrolls or gets clipped by an ancestor: the
-   question area below is the one flexible child, shrinking to whatever
-   height the modal leaves it and scrolling internally past that, so the
-   nav (outside this flex item, fixed) always stays on screen. */
-.tui-gate-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gate-gap-inner);
-  min-width: 0;
-  max-width: 36rem;
-  min-height: 0;
-}
-.tui-gate-items {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.tui-gate-progress {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-3);
-}
-.tui-gate-qdots {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.tui-gate-qdot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-.tui-gate-qdot[data-state='done'] {
-  background: color-mix(in srgb, var(--fg) 55%, transparent);
-}
-.tui-gate-qdot[data-state='active'] {
-  background: var(--fill-accent);
-  outline: 2px solid color-mix(in srgb, var(--fill-accent) 35%, transparent);
-  outline-offset: 1px;
-}
-.tui-gate-qdot[data-state='todo'] {
-  background: transparent;
-  border: 1px solid var(--border);
 }
 .tui-gate-choices {
   display: flex;
@@ -2208,6 +2122,14 @@ body {
   border-color: var(--fill-accent);
   background: color-mix(in srgb, var(--fill-accent) 10%, transparent);
 }
+/* A recorded answer reads as the pick it was, not as a live control. */
+.tui-gate-question[data-readonly]
+  :is(.tui-gate-choice, .tui-gate-choice-input) {
+  cursor: default;
+}
+.tui-gate-question[data-readonly] .tui-gate-choice:not([data-checked]):hover {
+  background: transparent;
+}
 .tui-gate-choice:has(> input:focus-visible) {
   outline: 2px solid var(--fill-accent);
   outline-offset: 1px;
@@ -2217,9 +2139,8 @@ body {
    with zero rules on the input itself (Field.module.css only lays out the
    option row), so there is no existing look to reuse here. This draws the
    control by hand instead: appearance:none plus a checked fill from the
-   tokens already used across this block. The primitive sets data-type to
-   "radio" or "checkbox" on every choice input on its own, so one class
-   covers both shapes. */
+   tokens already used across this block. Every choice input carries
+   data-type "radio" or "checkbox", so one class covers both shapes. */
 .tui-gate-choice-input {
   appearance: none;
   margin: 0;
@@ -2254,10 +2175,13 @@ body {
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+/* Wraps so a narrow column moves the chip under the label instead of
+   squeezing the label to one letter per line. */
 .tui-gate-choice-label-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
 }
 /* An option's own `description`, one line under its label -- matching the
    pane's AskUserQuestion layout (label line, one-liner beneath). It reads
@@ -2268,32 +2192,6 @@ body {
   font-size: var(--gate-font-meta);
   line-height: 1.4;
   color: var(--text-2);
-}
-/* No `display` here on purpose: the primitive hides the hint with the
-   `hidden` attribute when an option has no key. */
-.tui-gate-key {
-  margin-left: auto;
-  flex-shrink: 0;
-  font: 500 var(--gate-font-micro) / 1 var(--font-mono);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  box-sizing: border-box;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-4);
-  background: var(--surface-inset);
-  pointer-events: none;
-}
-.tui-gate-question-ord {
-  flex-shrink: 0;
-  font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-4);
 }
 /* A question's own `context` field, rendered with its card above its
    choices. It is the material the choice is made on, so it reads in ink.
@@ -2346,18 +2244,10 @@ body {
 .tui-respond-pill-sha {
   text-transform: none;
 }
-/* A structured thread's head: file:line and its severity lead, the
-   ordinal and the step dots hold the right edge. */
+/* A structured thread's head: file:line and its severity lead. */
 .tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-head {
   justify-content: flex-start;
   align-items: center;
-}
-.tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-ord {
-  margin-left: auto;
-  font: 400 var(--gate-font-meta) / 1.4 var(--font-sans);
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--text-2);
 }
 /* Same role as `.tui-gate-question-context`, for a structured thread's
    claim / points / verdict / reply instead of plain prose: the whole card
@@ -2557,16 +2447,15 @@ body {
 }
 /* The recommended choice is marked only while its question has no pick,
    so the eye lands on it before the pointer does; once anything is picked,
-   the pick is the only highlighted choice. */
-:is(.tui-gate-question, .tui-sheet-dock-question):not(:has([data-checked]))
+   the pick is the only highlighted choice. A recorded answer never marks
+   it. */
+:is(.tui-gate-question, .tui-sheet-dock-question):not(
+    :has([data-checked]),
+    [data-readonly]
+  )
   .tui-gate-choice[data-recommended] {
   border-color: color-mix(in srgb, var(--fill-accent) 55%, var(--border));
   background: color-mix(in srgb, var(--fill-accent) 7%, transparent);
-}
-.tui-gate-invalid {
-  margin: 0;
-  font-size: var(--gate-font-meta);
-  color: var(--text-bad-small);
 }
 .tui-gate-note {
   width: 100%;
@@ -2586,20 +2475,6 @@ body {
 .tui-gate-note:focus-visible {
   outline: 2px solid var(--fill-accent);
   outline-offset: 1px;
-}
-.tui-gate-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 0.2rem;
-}
-.tui-gate-actions-end {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .tui-gate-error {
   margin-right: auto;
@@ -2643,102 +2518,6 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* ── gate triage modal ────────────────────────────────────────────── */
-/* Context sits ABOVE the form, the way a real pane reads: transcript on
-   top, prompt below. Nothing here scrolls the body itself, and the nav is
-   never compressed or pushed below the fold: a container that can outgrow
-   its box owns its own scroll instead. The pane and the form's own question
-   area below (`.tui-gate-items`, see `.tui-gate-form`) are not equal
-   competitors: the choices are what the reviewer is at the gate to act on,
-   the pane is reference, so the pane's flex-shrink is set far above the
-   form column's (200 to 1): the pane absorbs about 200/201 of any deficit,
-   the question area the remaining ~0.5%, so in practice the pane reaches
-   its floor first. The law this buys: if `.tui-gate-items` scrolls, the
-   pane is already at its floor. */
-.tui-triage-body {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--gate-gap);
-  min-height: 0;
-}
-/* The floor is the pane's header band plus a couple lines of prose, so a
-   shrunk pane still reads as a pane, never just its own title. */
-.tui-triage-body > [data-part='scrollpane'] {
-  flex: 0 200 auto;
-  min-height: 6.75rem;
-}
-/* No floor of its own: the nav below `.tui-gate-items` is what must never
-   be pushed off screen, and it is protected structurally (a fixed sibling
-   after the one flexible child), not by a minimum height on the form. The
-   low flex-shrink (against the pane's 200) is what keeps this the second
-   thing to give, not the first. */
-.tui-triage-body > .tui-triage-form-col {
-  flex: 0 1 auto;
-  min-height: 0;
-}
-.tui-triage-form-col {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gate-gap-inner);
-}
-.tui-triage-form-col .tui-gate-form {
-  width: 100%;
-  max-width: none;
-}
-.tui-attention-card {
-  width: 100%;
-  max-width: 34rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gate-gap-inner);
-}
-.tui-attention-reason {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--gate-font-meta);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.tui-attention-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-.tui-subject {
-  flex: 0 0 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--gate-font-meta);
-  color: var(--text-3);
-}
-/* The queue's face for an answered gate stuck on delivery or left
-   execution-unassigned -- same column shape as .tui-attention-card, in
-   place of the plain answered-chip summary. */
-.tui-gate-delivery-status {
-  width: 100%;
-  max-width: 30rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gate-gap-inner);
-}
-.tui-gate-delivery-message {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--gate-font-meta);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-/* The respond gate's header card, in place of the MR strip when the
-   gate-level context is structured: who is being answered leads, the MR is
-   the object line, the operator plumbing (pane, worktree) is gone. */
 /* The identity card each sheet leads its rail with. Only the top line is a
    row (invader, lead, links); everything below spans the card's full
    width, so nothing wraps under a prefix or an avatar column. */
@@ -2814,9 +2593,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tui-id-card .tui-respond-chips {
-  margin-top: 6px;
-}
 .tui-respond-chips {
   display: flex;
   flex-wrap: wrap;
@@ -2830,43 +2606,6 @@ body {
   font: 500 11px / 1.2 var(--font-sans);
   color: var(--text-2);
   background: color-mix(in srgb, var(--fg) 7%, transparent);
-}
-.tui-triage-strip {
-  display: flex;
-  flex-direction: column;
-  padding: var(--gate-pad-chrome);
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  background: var(--panel);
-}
-/* The strip separates its facts with this glyph; rows carry no separators. */
-.tui-triage-strip .tui-row-sep {
-  color: var(--text-3);
-  opacity: 0.5;
-}
-/* One size for the whole line, and the branch gives up the row's flex
-   stretch so age and origin stay clustered left instead of stranding at the
-   far edge of a 760px strip. */
-.tui-triage-strip .tui-row-2 {
-  align-items: baseline;
-  font-size: var(--gate-font-meta);
-}
-.tui-triage-strip .tui-row-2 .tui-author-tag {
-  font-size: var(--gate-font-meta);
-}
-.tui-triage-strip .tui-row-2 .tui-branch {
-  flex: 0 0 auto;
-}
-/* The strip is the MR row users already scan, verbatim classes
-   (.tui-title/.tui-row-2/...), minus main-view status chips and badges. */
-.tui-triage-row-1 {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-}
-.tui-triage-row-1 .tui-title {
-  font-size: var(--gate-font-body);
 }
 .tui-triage-done {
   display: flex;
@@ -2986,109 +2725,6 @@ body {
 }
 .tui-triage-done-action {
   margin-top: 0.5rem;
-}
-.tui-gate-question legend.tui-gate-question-label {
-  padding: 0;
-}
-/* Gate context, rendered as markdown -- same prose recipe as .tui-cd-note-body
-   (see its own comment for why the first/last-child margin collapse has to
-   key on [data-part="markdown"] rather than a bare `>` selector), sized down
-   to sit quietly inside the kit ScrollPane instead of the wider comments
-   drawer. Scoped under .tui-triage-sheet since [data-part='scrollpane-body']
-   is a generic kit hook, not unique to the gate context pane. */
-.tui-triage-sheet [data-part='scrollpane'] {
-  border-color: var(--border-soft);
-}
-.tui-triage-sheet [data-part='scrollpane-head'] {
-  border-bottom-color: var(--border-soft);
-}
-.tui-triage-sheet [data-part='scrollpane-body'] {
-  font: inherit;
-  color: inherit;
-  overflow-wrap: anywhere;
-}
-.tui-triage-sheet
-  [data-part='scrollpane-body']
-  [data-part='markdown']
-  > :first-child {
-  margin-top: 0;
-}
-.tui-triage-sheet
-  [data-part='scrollpane-body']
-  [data-part='markdown']
-  > :last-child {
-  margin-bottom: 0;
-}
-/* Pane context is often transcript-shaped plain text: markdown treats its
-   single newlines as soft breaks and runs the lines together, so the pane
-   honors them (and indent runs) instead. */
-.tui-triage-sheet [data-part='scrollpane-body'] p,
-.tui-triage-sheet [data-part='scrollpane-body'] li {
-  white-space: pre-wrap;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] p {
-  margin: 0 0 0.4rem;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] a {
-  color: var(--text-accent-small);
-}
-.tui-triage-sheet [data-part='scrollpane-body'] code {
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 3px;
-  padding: 0.05em 0.3em;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] pre {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  overflow-x: auto;
-  margin: 0 0 0.4rem;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] pre code {
-  background: none;
-  padding: 0;
-  font-size: 0.85em;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] ul,
-.tui-triage-sheet [data-part='scrollpane-body'] ol {
-  margin: 0 0 0.4rem;
-  padding-left: 1.1rem;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] li {
-  margin: 0.1rem 0;
-}
-/* Quotes read on the CARD ground; border-left uses the on-card border role
-   so it doesn't sit too close to the card fill in dark. */
-.tui-triage-sheet [data-part='scrollpane-body'] blockquote {
-  margin: 0 0 0.4rem;
-  padding-left: 0.6rem;
-  border-left: 2px solid var(--border-on-card);
-  color: var(--text-3);
-}
-.tui-triage-sheet [data-part='scrollpane-body'] h1,
-.tui-triage-sheet [data-part='scrollpane-body'] h2,
-.tui-triage-sheet [data-part='scrollpane-body'] h3,
-.tui-triage-sheet [data-part='scrollpane-body'] h4,
-.tui-triage-sheet [data-part='scrollpane-body'] h5,
-.tui-triage-sheet [data-part='scrollpane-body'] h6 {
-  margin: 0.35rem 0 0.25rem;
-  font-size: 0.95em;
-  font-weight: 700;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] table {
-  border-collapse: collapse;
-  margin: 0 0 0.4rem;
-  font-size: 0.95em;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] th,
-.tui-triage-sheet [data-part='scrollpane-body'] td {
-  border: 1px solid var(--border-soft);
-  padding: 0.15rem 0.35rem;
-}
-.tui-triage-sheet [data-part='scrollpane-body'] img {
-  max-width: 100%;
 }
 /* The header's slack filter glyph (Controls.tsx's SlackPostedMark); rows
    carry their own `.tui-mark` marks instead. */
@@ -3684,9 +3320,6 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--text-accent-small);
 }
-.tui-tabs .tui-chip {
-  margin-left: auto;
-}
 @media (prefers-reduced-motion: reduce) {
   .tui-tab {
     transition: none;
@@ -4003,9 +3636,7 @@ body {
   display: flex;
   min-height: 0;
 }
-/* A non-review gate reads at the width its cards were designed for,
-   centred in the frame; this column is the height `.tui-triage-body`'s
-   pane-then-question yield order sizes against. */
+/* The finished queue's recap reads as one centred column. */
 .tui-triage-sheet-body {
   flex: 1;
   min-height: 0;
@@ -4118,9 +3749,11 @@ body {
   max-height: none;
   overflow: visible;
 }
-/* The rail's secondary action: sending the plan back is rarer and heavier
-   than submitting it, so it reads as a link under the primary button. */
-.tui-sheet-revise {
+/* The rail's secondary actions: sending the plan back, or a pane notice's
+   other answers, are rarer than the primary button, so they read as links
+   under it. */
+.tui-sheet-revise,
+.tui-sheet-text-action {
   align-self: center;
   border: none;
   background: none;
@@ -4129,9 +3762,24 @@ body {
   color: var(--text-2);
   cursor: pointer;
 }
-.tui-sheet-revise:hover {
+.tui-sheet-revise:hover,
+.tui-sheet-text-action:hover:enabled {
   color: var(--text-accent-small);
   text-decoration: underline;
+}
+.tui-sheet-text-action:disabled {
+  cursor: default;
+  color: var(--text-4);
+}
+.tui-sheet-text-actions {
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--gate-font-meta);
+  color: var(--text-4);
 }
 .tui-sheet-dock-next {
   margin: 0;
@@ -4543,4 +4191,72 @@ body {
   flex-direction: column;
   gap: 10px;
   padding: 22px 26px;
+}
+/* A stage gate's pick can be any option's label, so the chip column sizes
+   to the widest pick (clipping a long one) instead of the fixed verb width,
+   and every row's text still starts at one edge. */
+.tui-sheet-card-list[data-card='answers'] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 10px;
+}
+.tui-sheet-card-list[data-card='answers'] > .tui-sheet-card-row {
+  display: contents;
+}
+/* The question already heads its card in the main column; the dock only
+   needs enough of it to tell the rows apart. */
+.tui-sheet-card-list[data-card='answers'] .tui-sheet-card-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-sheet-card-list[data-card='answers'] .tui-sheet-card-chip {
+  display: block;
+  width: auto;
+  min-width: 46px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A stage gate's context is often line-shaped plain text: markdown treats
+   its single newlines as soft breaks and runs the lines together, so the
+   rail card honors them instead. */
+.tui-stage-sheet .tui-sheet-context-reasoning {
+  overflow-wrap: anywhere;
+}
+.tui-stage-sheet .tui-sheet-context-reasoning :is(p, li) {
+  white-space: pre-wrap;
+}
+/* A pane's screen reads as the terminal drew it: its own line breaks and
+   indentation, never reflowed as prose. */
+.tui-pane-screen {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--gate-font-meta);
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tui-pane-earlier {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+}
+.tui-pane-earlier > .tui-disclosure-head {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+}
+.tui-pane-earlier .tui-pane-screen {
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--gate-radius-control);
+  color: var(--text-2);
 }

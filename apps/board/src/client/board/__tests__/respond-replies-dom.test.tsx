@@ -1,7 +1,9 @@
-/** A respond-post question whose context parses as replies@1 joins each
-    entry to its checkbox option by thread id: a joined option shows the
-    file, a verb tag and the full reply text; an entry with no option is
-    not rendered; an option with no entry renders exactly as before. */
+/** A respond-post question whose context parses as replies@1, on the stage
+    sheet (a respond-post gate with no post context and no per-thread
+    questions lands there), joins each entry to its checkbox option by
+    thread id: a joined option shows the file, a verb tag and the full
+    reply text; an entry with no option is not rendered; an option with no
+    entry keeps its plain label and description. */
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -9,8 +11,7 @@ import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
 
 import type { GateRow } from '../../../gates/store.ts';
-import type { BoardMRWithReview } from '../../types.ts';
-import { GateForm, useGateForm } from '../GateForm.tsx';
+import { DecisionQueueModal } from '../DecisionQueueModal.tsx';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -21,8 +22,6 @@ afterAll(async () => {
 (
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-
-const MR = { iid: 87 } as unknown as BoardMRWithReview;
 
 const FIX_TEXT =
   'Good call. enqueue() now drops non-retryable jobs; added the check and a test that enqueues a permanent failure twice and asserts the second call is a no-op.';
@@ -121,13 +120,22 @@ afterEach(async () => {
 });
 
 async function renderGate(row: GateRow) {
-  function Host() {
-    const form = useGateForm(row, () => {});
-    return <GateForm gate={row} mr={MR} form={form} onFocusPane={() => {}} />;
-  }
   await React.act(async () => {
-    root.render(<Host />);
+    root.render(
+      <DecisionQueueModal
+        gate={row}
+        position={1}
+        states={['active']}
+        onClose={() => {}}
+        onNext={() => {}}
+        onBack={() => {}}
+        onFocusPane={() => {}}
+        onAnswered={() => {}}
+        onContinue={() => {}}
+      />
+    );
   });
+  expect(container.querySelector('.tui-stage-sheet')).not.toBeNull();
 }
 
 function repliesItem(): Element {
@@ -158,7 +166,7 @@ test('an entry whose thread matches no option is not rendered', async () => {
   expect(container.textContent).not.toContain('queue/orphan.ts:1');
 });
 
-test('an option with no entry renders as today, label and description unchanged', async () => {
+test('an option with no entry keeps its plain label and description', async () => {
   await renderGate(postGate(REPLIES));
   const item = repliesItem();
   expect(item.textContent).toContain('queue/retry.ts:40');

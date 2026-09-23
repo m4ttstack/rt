@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { fireEvent, within } from 'storybook/test';
 
 import type { GateSelections } from '@mattstack/gate-kit';
 import { gateDraftKey } from '@mattstack/gate-kit/react';
@@ -19,13 +18,13 @@ import {
 } from './DecisionQueueModal.tsx';
 
 /**
- * Sign-off catalog for the triage-queue modal (the gate-kit design pass's
- * ratified direction): the kit Modal hosting GateForm, with queue chrome
- * around it -- the head is one row (title, gate-level actions, close), the
- * step nav stays inline in GateForm's own body, and the footer carries only
- * queue-scope chrome (pips, gate count). The Modal recipe is fixed-position,
- * so each story renders inside a tall stage that the overlay covers; drafts
- * seed via the same `gateDraftKey()` localStorage write `useGateDraft` reads.
+ * Sign-off catalog for the decision queue's stage sheet and pane notice:
+ * every question of a gate stacked in the main column, the MR card and the
+ * decision context in the rail, and the answer docked under them; the head
+ * is one row (title, gate-level actions, queue nav, tag, close). The sheet is
+ * fixed-position, so each story renders inside a tall stage it covers;
+ * drafts seed via the same `gateDraftKey()` localStorage write
+ * `useGateDraft` reads.
  */
 function BoardStage({
   scheme,
@@ -84,6 +83,8 @@ const boardMr = {
   title: 'themed gate controls',
   author: { id: 'gitlab:7', username: 'paul', name: 'Paul', avatarUrl: null },
   sourceBranch: 'board-28-themed-gate-controls',
+  targetBranch: 'main',
+  createdAt: '2026-09-22T12:00:00Z',
 } as unknown as BoardMRWithReview;
 
 function seedDraft(
@@ -223,17 +224,41 @@ export const LastGateSubmit: Story = {
   },
 };
 
-// --- ErrorState -------------------------------------------------------------
+// --- ShipGate ---------------------------------------------------------------
 
-/** Cmd/Ctrl+Enter on the unanswered required item calls the primitive's real
-    `validate()` without submitting, flipping its computed `invalid` state. */
-const errorGate: GateRow = { ...lastGate, gateId: 'triage-error' };
+/** A Runs stage gate on no MR: the rail opens on the decision context, and
+    an option that carries its "(Recommended)" marker mid-label reads as the
+    label, the recommended chip, and the rest as its subtitle. */
+const shipGate: GateRow = {
+  gateId: 'triage-ship',
+  subject: 'run:20260923-120115-widgets',
+  kind: 'ship',
+  label: 'ship',
+  status: 'open',
+  openedAt: 1788964320000,
+  context:
+    'Three commits are ready on a clean tree. The after screenshots are still outstanding, so I recommend a draft.\n\n- Branch: `themed-gate-controls`\n- Target: `main`',
+  questions: [
+    question('handoff', 'How do we hand off?', false, [
+      {
+        value: 'hand-back',
+        label:
+          'Hand back (Recommended). I give you the branch, the target and the description.',
+      },
+      { value: 'hold', label: 'Hold the run here.' },
+    ]),
+    question('preview', 'Which preview environments?', true, [
+      { value: 'preview-a', label: 'preview-a (Recommended)' },
+      { value: 'preview-b', label: 'preview-b' },
+    ]),
+  ],
+  origin: { paneId: 'pane-1', worktree: 'widgets' },
+};
 
-export const ErrorState: Story = {
+export const ShipGate: Story = {
   render: () => (
     <DecisionQueueModal
-      gate={errorGate}
-      mr={boardMr}
+      gate={shipGate}
       position={3}
       states={['done', 'done', 'active', 'todo', 'todo']}
       nextPeek="widgets!44 · retry loop"
@@ -245,12 +270,6 @@ export const ErrorState: Story = {
       onContinue={noop}
     />
   ),
-  play: async ({ canvasElement }) => {
-    const item = within(canvasElement.ownerDocument.body)
-      .getAllByText('Ready to merge?')[0]
-      ?.closest('.tui-gate-question');
-    if (item) fireEvent.keyDown(item, { key: 'Enter', ctrlKey: true });
-  },
 };
 
 // --- ParkedGate -------------------------------------------------------------
@@ -283,9 +302,8 @@ export const ParkedGate: Story = {
 
 // --- WithContext ------------------------------------------------------------
 
-/** The modal's reason to exist over the row card: the gate's context renders
-    OPEN in its own pane beside the form (the card only offers a collapsed
-    disclosure). A context gate takes the wide frame. */
+/** The gate's context renders open in the rail's decision context card,
+    beside every question. */
 const contextBody = `The reviewer left two threads on this MR.
 
 **Thread 1 · \`lib/retry.ts:41\` · naming**
@@ -338,8 +356,8 @@ export const WithContext: Story = {
 
 // --- LongContextScroll ------------------------------------------------------
 
-/** Context taller than the pane's 56vh cap: the pane scrolls on its own
-    while the form column stays put. */
+/** Context taller than the rail: the rail scrolls above the docked
+    answer, which never moves. */
 const longContextGate: GateRow = {
   ...firstGate,
   gateId: 'triage-context-long',
@@ -419,6 +437,127 @@ export const WriteInAnswer: Story = {
     );
   },
 };
+
+// --- PaneBlocked / PaneGone ------------------------------------------------
+
+const paneScreen = [
+  'The fix is in and the suite is green, so I will resume the review.',
+  '',
+  'Entering worktree(~/worktrees/widgets/harbor)',
+  '\u2500'.repeat(80),
+  ' Tool use',
+  '',
+  '   Entering worktree(~/worktrees/widgets/harbor)',
+  '',
+  ' Do you want to proceed?',
+  ' \u276f 1. Yes',
+  '   2. No',
+].join('\n');
+
+const paneGate = (reason: 'blocked' | 'gone'): GateRow => ({
+  gateId: `triage-pane-${reason}`,
+  subject: 'mr:gitlab.example.com/acme/widgets/-/merge_requests/31',
+  kind: 'pane-attention',
+  label: 'pane-attention',
+  status: 'open',
+  openedAt: 1788964320000,
+  context: paneScreen,
+  meta: { agentId: 'agent-7', paneRef: 'w4:p2', reason },
+  questions: [
+    question('action', 'Pane needs attention', false, [
+      'focus-pane',
+      'resume',
+      'clear',
+      'dismiss',
+    ]),
+  ],
+});
+
+/** A blocked pane: its prompt as terminal text, earlier output folded away,
+    focus pane as the one big action and the rest as text actions. */
+export const PaneBlocked: Story = {
+  render: () => (
+    <DecisionQueueModal
+      gate={paneGate('blocked')}
+      mr={boardMr}
+      position={2}
+      states={['done', 'active', 'todo']}
+      onClose={noop}
+      onNext={noop}
+      onBack={noop}
+      onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
+    />
+  ),
+};
+
+/** A gone pane: its last screen, with resume as the big action. */
+export const PaneGone: Story = {
+  render: () => (
+    <DecisionQueueModal
+      gate={paneGate('gone')}
+      mr={boardMr}
+      position={3}
+      states={['done', 'done', 'active']}
+      onClose={noop}
+      onNext={noop}
+      onBack={noop}
+      onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
+    />
+  ),
+};
+
+// --- AnsweredGate / AnswerStuck / AgentNotRunning --------------------------
+
+const answeredShip: GateRow = {
+  ...shipGate,
+  gateId: 'answered-ship',
+  subject: 'mr:gitlab.example.com/acme/widgets/-/merge_requests/31',
+  status: 'answered',
+  answers: {
+    handoff: { value: 'hand-back', note: 'Push after the standup.' },
+    preview: ['preview-a'],
+  },
+  answeredBy: 'paul',
+  answeredAt: 1788964500000,
+};
+
+const answeredStory = (gate: GateRow): Story => ({
+  render: () => (
+    <DecisionQueueModal
+      gate={gate}
+      mr={boardMr}
+      position={2}
+      states={['done', 'active', 'todo']}
+      onClose={noop}
+      onNext={noop}
+      onBack={noop}
+      onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
+    />
+  ),
+});
+
+/** A recorded answer, read-only: every pick checked, nothing to press. */
+export const AnsweredGate = answeredStory(answeredShip);
+
+/** The pane never picked the answer up: focus pane is the one action. */
+export const AnswerStuck = answeredStory({
+  ...answeredShip,
+  gateId: 'answered-stuck',
+  delivery: { outcome: 'stuck', at: 1788964600000 },
+});
+
+/** No agent was left to run the answer: retry posts it again. */
+export const AgentNotRunning = answeredStory({
+  ...answeredShip,
+  gateId: 'answered-unassigned',
+  execution: 'unassigned',
+});
 
 // --- QueueComplete ----------------------------------------------------------
 

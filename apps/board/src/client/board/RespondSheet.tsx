@@ -10,7 +10,6 @@ import {
 import {
   CODE_CHANGES_QUESTION_ID,
   CODE_CHANGES_SENTINEL,
-  effectiveSelections,
   gateAnswerPayload,
   optionDisplayFor,
   optionValue,
@@ -18,11 +17,11 @@ import {
   type GateSelections,
 } from '@mattstack/gate-kit';
 import type { GateItemDisplay } from '@mattstack/gate-kit/react';
-import { Button, Chip, Markdown } from '@mattstack/tui-kit';
+import { Button, Chip } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { parseGateCtx, type PlanCtx, type PostCtx } from './gate-ctx.ts';
-import { AnsweredChip, type GateFormState } from './GateForm.tsx';
+import type { GateFormState } from './GateForm.tsx';
 import { MrCard } from './MrCard.tsx';
 import { forgeNoun } from './MrLinks.tsx';
 import { PersonLead, PersonTag } from './PersonLead.tsx';
@@ -53,164 +52,20 @@ import {
   ThreadOutcome,
 } from './RespondCards.tsx';
 import {
-  headerChips,
-  headerMeta,
+  RespondCtxFacts,
   reviewerName,
   subjectRef,
 } from './RespondGateHeader.tsx';
-
-/** The wire answer from the sheet's own selections, built the way
-    `answersFromForm` builds it from a form: only a displayed single-select
-    counts (a hidden code-changes pick is stale and yields to the
-    sentinel), every multi submits an array, a trimmed note wraps its
-    question's value, and an edited reply's trimmed text rides alongside as
-    `text`. Null while any required question is unanswered. */
-function sheetAnswers(
-  gate: GateRow,
-  shown: Set<string>,
-  selections: GateSelections,
-  notes: Record<string, string>,
-  texts: Record<string, string> = {}
-): { answers: GateAnswers } | null {
-  const sel: GateSelections = {};
-  for (const q of gate.questions) {
-    const v = selections[q.id];
-    if (q.multi) sel[q.id] = shown.has(q.id) && Array.isArray(v) ? v : [];
-    else if (shown.has(q.id) && typeof v === 'string' && v) sel[q.id] = v;
-  }
-  const payload = gateAnswerPayload(
-    gate.questions,
-    effectiveSelections(gate.kind, gate.questions, sel)
-  );
-  if (!payload) return null;
-  const answers: GateAnswers = {};
-  for (const [id, value] of Object.entries(payload.answers)) {
-    const note = id in sel ? (notes[id] ?? '').trim() : '';
-    const text = texts[id];
-    answers[id] =
-      note || text
-        ? { value, ...(note ? { note } : {}), ...(text ? { text } : {}) }
-        : value;
-  }
-  return { answers };
-}
-
-function RecommendedChip() {
-  return (
-    <Chip
-      intent="ok"
-      variant="outline"
-      uppercase
-      data-gate="recommended"
-      className="tui-gate-recommended"
-    >
-      recommended
-    </Chip>
-  );
-}
-
-function Choices({
-  q,
-  form,
-  renderLabel,
-}: {
-  q: GateItemDisplay;
-  form: GateFormState;
-  renderLabel?: (value: string, chip: ReactNode) => ReactNode;
-}) {
-  const current = form.selections[q.name];
-  const picked = new Set(Array.isArray(current) ? current : []);
-  return (
-    <div
-      className="tui-gate-choices"
-      role={q.multiple ? 'group' : 'radiogroup'}
-      aria-label={q.prompt}
-    >
-      {q.choices.map(choice => {
-        const checked = q.multiple
-          ? picked.has(choice.value)
-          : current === choice.value;
-        const chip = choice.recommended ? <RecommendedChip /> : null;
-        return (
-          <label
-            className="tui-gate-choice"
-            data-checked={checked || undefined}
-            data-recommended={choice.recommended ? 'true' : undefined}
-            key={choice.value}
-          >
-            <input
-              type={q.multiple ? 'checkbox' : 'radio'}
-              className="tui-gate-choice-input"
-              data-type={q.multiple ? 'checkbox' : 'radio'}
-              data-checked={checked ? '' : undefined}
-              name={q.name}
-              value={choice.value}
-              checked={checked}
-              onChange={e =>
-                q.multiple
-                  ? form.toggleMulti(
-                      q.name,
-                      choice.value,
-                      e.currentTarget.checked
-                    )
-                  : form.setSingle(q.name, choice.value)
-              }
-            />
-            <span className="tui-gate-choice-label">
-              {renderLabel ? (
-                renderLabel(choice.value, chip)
-              ) : (
-                <>
-                  <span className="tui-gate-choice-label-row">
-                    <span title={choice.description}>{choice.label}</span>
-                    {chip}
-                  </span>
-                  {choice.subtitle && (
-                    <span className="tui-gate-choice-subtitle">
-                      {choice.subtitle}
-                    </span>
-                  )}
-                </>
-              )}
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
-
-function Note({ q, form }: { q: GateItemDisplay; form: GateFormState }) {
-  return (
-    <input
-      type="text"
-      className="tui-gate-note"
-      aria-label={`Note for ${q.prompt}`}
-      placeholder="Add a note"
-      value={form.notes[q.name] ?? ''}
-      onChange={e => form.setNote(q.name, e.currentTarget.value)}
-    />
-  );
-}
-
-/** A question's own context when it is prose; a structured context that
-    has no card here renders nothing rather than raw JSON. */
-function ProseContext({
-  q,
-  structured,
-}: {
-  q: GateItemDisplay;
-  structured: boolean;
-}) {
-  if (!q.context || structured) return null;
-  return (
-    <div className="tui-gate-question-context">
-      <Markdown unstyled linkTargetBlank>
-        {q.context}
-      </Markdown>
-    </div>
-  );
-}
+import { sheetAnswers } from './sheet-payload.ts';
+import {
+  Choices,
+  Note,
+  ProseContext,
+  SheetLost,
+  SheetRows,
+  type RowChip,
+  type SheetRow,
+} from './SheetParts.tsx';
 
 /** A post-step thread's decision: post its final reply or hold it. Both
     write the replies checklist the gate answers with. */
@@ -498,10 +353,6 @@ function reviseAnswers(
   return { answers };
 }
 
-type RowChip = { text: string; intent: 'ok' | 'muted' | 'accent' } | null;
-
-type ResponseRow = { key: string; text: string; chips: RowChip[] };
-
 /** A thread in plan order for the dock rows: one this gate offers, or one
     that posts with this step on Gate 1's word. */
 type RowThread = { threadId: string; label: string; postsWithStep: boolean };
@@ -521,7 +372,7 @@ function ResponseRows({
   form: GateFormState;
   plan?: RowThread[] | null;
 }) {
-  const offered: ResponseRow[] = mainQs.flatMap(q => {
+  const offered: SheetRow[] = mainQs.flatMap(q => {
     const v = form.selections[q.name];
     const pick = picks.find(p => p.name === q.name);
     if (pick) {
@@ -567,7 +418,7 @@ function ResponseRows({
     q => q.multiple && !picks.some(p => p.name === q.name)
   );
   const rows = plan
-    ? plan.flatMap((j): ResponseRow[] => {
+    ? plan.flatMap((j): SheetRow[] => {
         const pick = picks.find(p => p.threadId === j.threadId);
         const key = pick
           ? pick.name
@@ -585,34 +436,7 @@ function ResponseRows({
         ];
       })
     : offered;
-  return (
-    <div className="tui-sheet-card-list" data-card="responses">
-      {rows.map(r => (
-        <div className="tui-sheet-card-row" key={r.key}>
-          {r.chips.map((c, i) =>
-            c ? (
-              <Chip
-                key={c.text}
-                intent={c.intent}
-                variant="outline"
-                uppercase
-                className="tui-sheet-card-chip"
-              >
-                {c.text}
-              </Chip>
-            ) : (
-              <span
-                key={`slot-${i}`}
-                className="tui-sheet-card-chip-slot"
-                aria-hidden="true"
-              />
-            )
-          )}
-          <span className="tui-sheet-card-text">{r.text}</span>
-        </div>
-      ))}
-    </div>
-  );
+  return <SheetRows card="responses" rows={rows} />;
 }
 
 /** The MR's merge blockers as the board row reads them, so the rail and the
@@ -1168,28 +992,7 @@ function RespondSheetBody({
       </section>
       <aside className="tui-sheet-rail">
         {form.lost ? (
-          <div className="tui-sheet-lost">
-            <span className="tui-gate-error">answered elsewhere</span>
-            <AnsweredChip
-              startOpen
-              row={{
-                subject: gate.subject,
-                kind: gate.kind,
-                status: 'answered',
-                questions: gate.questions,
-                answer: { answers: form.lost.answers, by: form.lost.by },
-              }}
-            />
-            <Button
-              type="button"
-              variant="filled"
-              intent="accent"
-              size="lg"
-              onClick={onContinue}
-            >
-              continue
-            </Button>
-          </div>
+          <SheetLost gate={gate} lost={form.lost} onContinue={onContinue} />
         ) : (
           <>
             <div className="tui-sheet-rail-scroll">
@@ -1208,23 +1011,7 @@ function RespondSheetBody({
                 ) : (
                   frame && <p className="tui-sheet-context-meta">{frame}</p>
                 )}
-                {headerMeta(ctx).length > 0 && (
-                  <p className="tui-sheet-context-meta">
-                    {headerMeta(ctx).join(' · ')}
-                  </p>
-                )}
-                <div className="tui-respond-chips">
-                  {headerChips(ctx, railPosting).map(chip => (
-                    <span
-                      key={chip.key}
-                      className="tui-respond-chip"
-                      data-hue={chip.hue}
-                      data-chip={chip.key}
-                    >
-                      {chip.text}
-                    </span>
-                  ))}
-                </div>
+                <RespondCtxFacts ctx={ctx} posting={railPosting} />
               </div>
               {mr && <MrStatusCard mr={mr} />}
             </div>
@@ -1329,4 +1116,4 @@ function RespondSheetBody({
   );
 }
 
-export { RespondSheetBody, sheetAnswers };
+export { RespondSheetBody };
