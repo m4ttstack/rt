@@ -235,6 +235,9 @@ function makeFakeClient(overrides: {
       return oneHunkDiff(file.path);
     },
     commitRangeDiff: async (file) => ({ path: file.path, kind: "text", untracked: false, hunks: [] }),
+    appendIgnoreRule: async () => {},
+    appendIgnoreFile: async () => {},
+    discardChanges: async () => {},
   };
   return Object.assign(client, { calls });
 }

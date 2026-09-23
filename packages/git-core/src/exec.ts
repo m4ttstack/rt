@@ -4,6 +4,18 @@ export interface RawGitOpts {
   signal?: AbortSignal; // kills the child and rejects promptly on abort
 }
 
+// Set only on the exit-code-classification throw below, so a caller can
+// narrow on a specific code without re-parsing the message; a spawn failure
+// (bad cwd, missing binary) or an aborted-before-exit rejection carries no
+// exit code at all and so never matches any `isGitExitCode` check.
+export interface GitExitError extends Error {
+  exitCode: number;
+}
+
+export function isGitExitCode(error: unknown, code: number): error is GitExitError {
+  return error instanceof Error && "exitCode" in error && (error as GitExitError).exitCode === code;
+}
+
 // GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE inherited from the parent process
 // (real exposure: a git hook sets GIT_DIR) redirect a git invocation at a
 // repository other than the one named by `dir`, silently. Every spawn in
@@ -62,7 +74,9 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
       proc.exited,
     ]);
     if (!ok.has(code)) {
-      throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
+      const error = new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`) as GitExitError;
+      error.exitCode = code;
+      throw error;
     }
     return out;
   })();

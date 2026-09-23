@@ -2,7 +2,7 @@ import { constants as FS_CONSTANTS } from "node:fs";
 import { lstat, open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import type { ClientContext } from "./client.ts";
-import { rawGit } from "./exec.ts";
+import { isGitExitCode, rawGit } from "./exec.ts";
 
 const SYMBOLIC_LINK_ERROR_MESSAGE = "Cannot use a symbolic link as the root .gitignore file";
 
@@ -10,8 +10,8 @@ function createSymbolicLinkError(): Error {
   return new Error(SYMBOLIC_LINK_ERROR_MESSAGE);
 }
 
-// GHD errno-exception.ts's isErrnoException also checks `syscall`; the task
-// brief narrows that to this shape for the port.
+// GHD errno-exception.ts's isErrnoException also checks `syscall`; only
+// `code` is needed to distinguish ENOENT/ELOOP below.
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
@@ -121,9 +121,16 @@ export function escapeGitSpecialCharacters(pattern: string): string {
   return pattern.replaceAll(specialCharacters, (match) => "\\" + match);
 }
 
+// Git exits 1 for a key with no value at all -- the only case that means
+// "unset". An explicitly empty value still exits 0 and must come back as
+// "", not be folded into the unset case.
 async function getConfigValue(ctx: ClientContext, key: string): Promise<string | null> {
-  const out = (await rawGit(ctx.dir, ["config", "--get", key], { okCodes: [1] })).trim();
-  return out === "" ? null : out;
+  try {
+    return (await rawGit(ctx.dir, ["config", "--get", key])).trim();
+  } catch (error) {
+    if (isGitExitCode(error, 1)) return null;
+    throw error;
+  }
 }
 
 // GHD gitignore.ts formatGitIgnoreContents, byte for byte: the autocrlf+safecrlf

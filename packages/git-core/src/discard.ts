@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ClientContext } from "./client.ts";
-import { rawGit } from "./exec.ts";
+import { isGitExitCode, rawGit } from "./exec.ts";
 import type { ChangedFile } from "./types.ts";
 
 const NULL_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -57,25 +57,18 @@ function getNoRenameIndexStatus(status: string): NoRenameIndexStatus {
   return parsed;
 }
 
-// exec.ts's rawGit reports failure only by throwing, with no way for a caller
-// to read the raw exit code back out (by design, and out of this task's
-// scope) -- so the exit-128 gate GHD reads off `result.exitCode` is
-// approximated here by catching the thrown error instead. Both call sites
-// below only ever see 128 from a real repo (an unresolvable HEAD, or git
-// giving up on `submodule status`), so the two are behaviorally equivalent.
-async function rawGitOrNull(dir: string, args: string[]): Promise<string | null> {
-  try {
-    return await rawGit(dir, args);
-  } catch {
-    return null;
-  }
-}
-
 /** GHD diff-index.ts's getIndexChanges: staged changes vs HEAD (or the null tree, for an unborn HEAD). */
-async function getIndexChanges(ctx: ClientContext): Promise<Map<string, NoRenameIndexStatus>> {
+export async function getIndexChanges(ctx: ClientContext): Promise<Map<string, NoRenameIndexStatus>> {
   const args = ["diff-index", "--cached", "--name-status", "--no-renames", "-z"];
-  const stdout =
-    (await rawGitOrNull(ctx.dir, [...args, "HEAD", "--"])) ?? (await rawGit(ctx.dir, [...args, NULL_TREE_SHA]));
+  let stdout: string;
+  try {
+    stdout = await rawGit(ctx.dir, [...args, "HEAD", "--"]);
+  } catch (error) {
+    // Exit 128 alone means an unborn HEAD; anything else (a spawn failure,
+    // a signal, a real git error) is not that, and must not be read as one.
+    if (!isGitExitCode(error, 128)) throw error;
+    stdout = await rawGit(ctx.dir, [...args, NULL_TREE_SHA]);
+  }
 
   const map = new Map<string, NoRenameIndexStatus>();
   const pieces = stdout.split("\0");
@@ -112,7 +105,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /** GHD submodule.ts's listSubmodules: top-level submodule paths, [] when the repo has none. */
-async function listSubmodules(ctx: ClientContext): Promise<ReadonlyArray<{ path: string }>> {
+export async function listSubmodules(ctx: ClientContext): Promise<ReadonlyArray<{ path: string }>> {
   const [submodulesFile, submodulesDir] = await Promise.all([
     pathExists(join(ctx.dir, ".gitmodules")),
     pathExists(join(ctx.dir, ".git", "modules")),
@@ -132,8 +125,16 @@ async function listSubmodules(ctx: ClientContext): Promise<ReadonlyArray<{ path:
     }
   }
 
-  const stdout = await rawGitOrNull(ctx.dir, ["submodule", "status", "--"]);
-  if (stdout === null) return [];
+  let stdout: string;
+  try {
+    stdout = await rawGit(ctx.dir, ["submodule", "status", "--"]);
+  } catch (error) {
+    // Exit 128 alone means git gave up parsing submodules; anything else
+    // must surface, since a wrongly-empty result here can send a real
+    // submodule's whole working directory to the Trash as a plain file.
+    if (!isGitExitCode(error, 128)) throw error;
+    return [];
+  }
 
   const submodules: { path: string }[] = [];
   const statusRe = /^.([^ ]+) (.+) \((.+?)\)$/gm;
@@ -149,12 +150,43 @@ async function resetSubmodulePaths(ctx: ClientContext, paths: ReadonlyArray<stri
   await rawGit(ctx.dir, ["submodule", "update", "--recursive", "--force", "--", ...paths]);
 }
 
+// Shared by discardChanges' normal completion and its partial-failure
+// recovery below: resets and checks out exactly the paths already trashed
+// (or, for a Deleted file, never needing the Trash at all).
+async function runDiscardGitSteps(
+  ctx: ClientContext,
+  submodules: ReadonlyArray<{ path: string }>,
+  pathsToCheckout: ReadonlyArray<string>,
+  pathsToReset: ReadonlyArray<string>,
+): Promise<void> {
+  const changedFilesInIndex = await getIndexChanges(ctx);
+
+  const necessaryPathsToReset = pathsToReset.filter((x) => changedFilesInIndex.has(x));
+
+  const submodulePaths = pathsToCheckout.filter((p) => submodules.some((s) => s.path === p));
+
+  // GHD's own filter, kept verbatim: a submodule path is excluded from
+  // checkout only when its current index status is Added -- newly staged,
+  // so there is no prior committed gitlink to check out.
+  const necessaryPathsToCheckout = pathsToCheckout.filter(
+    (x) => submodulePaths.indexOf(x) === -1 || changedFilesInIndex.get(x) !== IndexStatus.Added,
+  );
+
+  if (submodulePaths.length > 0) {
+    await resetSubmodulePaths(ctx, submodulePaths);
+  }
+  await resetPaths(ctx, "HEAD", necessaryPathsToReset);
+  await checkoutIndex(ctx, necessaryPathsToCheckout);
+}
+
 /**
  * GHD GitStore.discardChanges (app/src/lib/stores/git-store.ts 1545-1650),
  * with moveToTrash always on and no permanent-delete fallback: GHD catches a
  * Trash failure and falls back to `rm` for an untracked file, or silently
- * leaves a tracked one; this port lets the failure propagate instead, before
- * any of the reset/checkout-index steps below run.
+ * leaves a tracked one. This port instead finishes the reset/checkout-index
+ * steps for every file already moved to the Trash before the failing one,
+ * then rethrows -- each file ends either fully discarded or fully untouched,
+ * never left trashed with its index/working-tree state stale.
  */
 export async function discardChanges(
   ctx: ClientContext,
@@ -171,7 +203,12 @@ export async function discardChanges(
     const isSubmodule = submodules.some((s) => s.path === file.path);
 
     if (file.kind !== "deleted" && !isSubmodule) {
-      await moveToTrash(join(ctx.dir, file.path));
+      try {
+        await moveToTrash(join(ctx.dir, file.path));
+      } catch (error) {
+        await runDiscardGitSteps(ctx, submodules, pathsToCheckout, pathsToReset);
+        throw error;
+      }
     }
 
     if (file.kind === "renamed" && file.originalPath !== undefined) {
@@ -187,23 +224,7 @@ export async function discardChanges(
     }
   }
 
-  const changedFilesInIndex = await getIndexChanges(ctx);
-
-  const necessaryPathsToReset = pathsToReset.filter((x) => changedFilesInIndex.has(x));
-
-  const submodulePaths = pathsToCheckout.filter((p) => submodules.some((s) => s.path === p));
-
-  // GHD's own filter, kept verbatim: a submodule path is skipped only when
-  // the index reset above would have just staged it as newly Added.
-  const necessaryPathsToCheckout = pathsToCheckout.filter(
-    (x) => submodulePaths.indexOf(x) === -1 || changedFilesInIndex.get(x) !== IndexStatus.Added,
-  );
-
-  if (submodulePaths.length > 0) {
-    await resetSubmodulePaths(ctx, submodulePaths);
-  }
-  await resetPaths(ctx, "HEAD", necessaryPathsToReset);
-  await checkoutIndex(ctx, necessaryPathsToCheckout);
+  await runDiscardGitSteps(ctx, submodules, pathsToCheckout, pathsToReset);
 }
 
 async function trashItem(absPath: string): Promise<void> {

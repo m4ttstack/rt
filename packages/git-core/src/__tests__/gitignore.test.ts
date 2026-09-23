@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFile, symlink, writeFile } from "node:fs/promises";
+import { readFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient, escapeGitSpecialCharacters } from "../index.ts";
@@ -43,13 +43,11 @@ describe("appendIgnoreRule / appendIgnoreFile", () => {
     }
   });
 
-  // GHD's formatGitIgnoreContents is called three times end to end here: once
-  // for the existing contents and once for the appended text inside
-  // appendIgnoreRule, then once more inside saveGitIgnore on that already
-  // -formatted result. Its autocrlf+safecrlf branch always appends a fresh
-  // trailing CRLF regardless of what the text already ends with, so the
-  // third pass adds a second one -- verified against GHD's actual source by
-  // running the three calls directly, not by hand.
+  // formatGitIgnoreContents runs three times end to end here: once for the
+  // existing contents and once for the appended text inside appendIgnoreRule,
+  // then once more inside saveGitIgnore on that already-formatted result. Its
+  // autocrlf+safecrlf branch always appends a fresh trailing CRLF regardless
+  // of what the text already ends with, so the third pass adds a second one.
   it("with core.autocrlf and core.safecrlf both true normalizes every line to CRLF", async () => {
     const sb = await makeSandbox();
     try {
@@ -58,6 +56,17 @@ describe("appendIgnoreRule / appendIgnoreFile", () => {
       await sb.write(".gitignore", "a\nb\n");
       await createGitClient(sb.dir).appendIgnoreRule("c");
       expect(await readFile(join(sb.dir, ".gitignore"), "utf8")).toBe("a\r\nb\r\n\r\nc\r\n\r\n");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("an empty core.autocrlf value is not treated as unset (GHD's own getConfigValue)", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.git(["config", "core.autocrlf", ""]);
+      await createGitClient(sb.dir).appendIgnoreRule("*.tmp");
+      expect(await readFile(join(sb.dir, ".gitignore"), "utf8")).toBe("*.tmp\r\n");
     } finally {
       await sb.cleanup();
     }

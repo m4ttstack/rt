@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { makeSandbox, type Sandbox } from "../../test-support/sandbox.ts";
+import type { ClientContext } from "../client.ts";
+import { getIndexChanges, listSubmodules } from "../discard.ts";
 import { createGitClient } from "../index.ts";
 
 async function fakeTrash(): Promise<{ moveToTrash: (abs: string) => Promise<void>; moved: string[] }> {
@@ -123,5 +125,63 @@ describe("discardChanges (GHD GitStore.discardChanges)", () => {
     } finally {
       await sb.cleanup();
     }
+  });
+
+  it("a failing Trash on the second file finishes the first and still rethrows", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.write("b.txt", "1\n");
+      await sb.commitAll("first");
+      await sb.write("a.txt", "2\n");
+      await sb.write("b.txt", "2\n");
+      const trash = await fakeTrash();
+      const failingSecond = {
+        moveToTrash: async (abs: string) => {
+          if (basename(abs) === "b.txt") throw new Error("Trash is full");
+          await trash.moveToTrash(abs);
+        },
+      };
+      await expect(
+        createGitClient(sb.dir).discardChanges(
+          [
+            { path: "a.txt", kind: "modified", staged: false, unstaged: true },
+            { path: "b.txt", kind: "modified", staged: false, unstaged: true },
+          ],
+          failingSecond,
+        ),
+      ).rejects.toThrow("Trash is full");
+      expect(await readFile(join(sb.dir, "a.txt"), "utf8")).toBe("1\n");
+      expect(await readFile(join(sb.dir, "b.txt"), "utf8")).toBe("2\n");
+      expect(await status(sb)).toBe(" M b.txt\n");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("discards a staged new file in a repo with no commits yet (getIndexChanges' null-tree retry)", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("new.txt", "x\n");
+      await sb.git(["add", "new.txt"]);
+      const trash = await fakeTrash();
+      await createGitClient(sb.dir).discardChanges([{ path: "new.txt", kind: "added", staged: true, unstaged: false }], trash);
+      expect(existsSync(join(sb.dir, "new.txt"))).toBe(false);
+      expect(await status(sb)).toBe("");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+});
+
+describe("getIndexChanges / listSubmodules exit-code gate", () => {
+  it("a spawn failure in getIndexChanges propagates instead of being read as an unborn HEAD", async () => {
+    const ctx = { dir: join(tmpdir(), `git-core-missing-${Date.now()}`) } as ClientContext;
+    await expect(getIndexChanges(ctx)).rejects.toThrow(/ENOENT/);
+  });
+
+  it("a spawn failure in listSubmodules propagates instead of returning no submodules", async () => {
+    const ctx = { dir: join(tmpdir(), `git-core-missing-${Date.now()}`) } as ClientContext;
+    await expect(listSubmodules(ctx)).rejects.toThrow(/ENOENT/);
   });
 });
