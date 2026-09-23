@@ -123,6 +123,8 @@ export interface ProjectSyncOverrides {
   mode?: "auto" | "deep";
   fetchProject?: (repoName: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
   fetchDelta?: (repoName: string, updatedAfter: string) => Promise<{ projectPath: string; prs: PullRequest[] }>;
+  /** The default fetchDelta's provider and project path; production resolves them via getRepoContext. */
+  deltaContext?: (repoName: string) => Promise<{ provider: DeltaProvider; projectPath: string }>;
   fetchSingle?: (repoName: string, projectPath: string, iid: number) => Promise<PullRequest | null>;
   /** Scoped deep's fetch: every open MR by any of these authors. */
   fetchAuthors?: (repoName: string, authors: string[]) => Promise<{ projectPath: string; prs: PullRequest[] }>;
@@ -156,26 +158,44 @@ export const TOPUP_CONCURRENCY = 4;
  */
 export const TOPUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+export type DeltaProvider = Pick<GitLabProvider, "fetchPullRequests" | "fetchMergeRequestIndex" | "fetchSingleMR">;
+
 /**
  * The delta window's changed MRs. Only opened MRs are read at list weight:
  * GitLab evaluates approval rules on read, and on a large merged MR (a
  * ~1,000-file deploy MR against a big CODEOWNERS) that alone runs past the
  * 60s request limit, failing the whole page. Merged/closed MRs come from the
- * cheap index instead and only move entries the store already holds; an MR
- * never stored has no open-state consumer, and mr:by-branch fetches misses.
+ * cheap index instead and only move entries the store already holds. A
+ * never-stored one is fetched in full only when it would become its branch's
+ * findBySourceBranch answer; otherwise nothing reads it.
  */
 export async function fetchDeltaFrom(
-  provider: Pick<GitLabProvider, "fetchPullRequests" | "fetchMergeRequestIndex">,
+  provider: DeltaProvider,
   projectPath: string,
   updatedAfter: string,
   stored: ProjectMRStore | undefined,
 ): Promise<PullRequest[]> {
   const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true });
   const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"] });
+  const branches = new Map<string, { open: boolean; maxIid: number }>();
+  for (const { pr } of Object.values(stored?.mrs ?? {})) {
+    const b = branches.get(pr.sourceBranch) ?? { open: false, maxIid: 0 };
+    branches.set(pr.sourceBranch, { open: b.open || pr.state === "opened", maxIid: Math.max(b.maxIid, pr.iid) });
+  }
   const terminal: PullRequest[] = [];
   for (const row of rows) {
     const existing = stored?.mrs[row.iid]?.pr;
-    if (!existing) continue;
+    if (!existing) {
+      const branch = branches.get(row.sourceBranch);
+      if (!branch || branch.open || row.iid < branch.maxIid) continue;
+      try {
+        const full = await provider.fetchSingleMR(projectPath, row.iid, null);
+        if (full) terminal.push(full);
+      } catch (err) {
+        log.warn({ err, projectPath, iid: row.iid }, "branch-reuse fetch failed");
+      }
+      continue;
+    }
     if (existing.state === row.state && existing.updatedAt === row.updatedAt) continue;
     terminal.push({ ...existing, state: row.state, updatedAt: row.updatedAt, mergedAt: row.mergedAt, title: row.title });
   }
@@ -385,8 +405,9 @@ async function syncImpl(
   // in-flight duration).
   const deltaStartedAt = Date.now();
   const updatedAfter = new Date(freshnessOf(record) - DELTA_OVERLAP_MS).toISOString();
+  const deltaContext = overrides.deltaContext ?? ((repo: string) => getRepoContext(repo, deps.repoIndex()[repo]));
   const fetchDelta = overrides.fetchDelta ?? (async (repo: string, ua: string) => {
-    const { provider, projectPath } = await getRepoContext(repo, deps.repoIndex()[repo]);
+    const { provider, projectPath } = await deltaContext(repo);
     return { projectPath, prs: await fetchDeltaFrom(provider, projectPath, ua, record) };
   });
 
@@ -471,8 +492,10 @@ async function syncImpl(
   const afterDelta = store.read(repoName);
   for (const [iidStr, entry] of Object.entries(afterDelta?.mrs ?? {})) {
     const iid = Number(iidStr);
-    if (deltaIids.has(iid)) continue;
-    if (entry.pr.state !== "opened") continue;
+    // A terminal copy the delta just built carries its open-era pipeline
+    // (fetchDeltaFrom), so it is refreshed rather than exempt.
+    const justMovedToTerminal = deltaIids.has(iid) && entry.pr.state !== "opened";
+    if (!justMovedToTerminal && (deltaIids.has(iid) || entry.pr.state !== "opened")) continue;
     const status = (entry.pr as { pipeline?: { status?: string } | null }).pipeline?.status;
     if (!status || !IN_FLIGHT_PIPELINE.has(status)) continue;
     const updatedAt = Date.parse(entry.pr.updatedAt ?? "");
