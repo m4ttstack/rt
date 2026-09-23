@@ -227,6 +227,9 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		m.tabDiff[tabKey(m.lastTab)] = diffScroll{cursor: m.diffCursor, top: m.diffTop, path: m.diffPath}
 		restored := m.tabDiff[tab]
 		m.diffCursor, m.diffTop, m.diffPath = restored.cursor, restored.top, restored.path
+		// The pointer that hovered the old inactive half now rests on the
+		// active one, and no motion arrives to clear it.
+		m.hoverTab = false
 		if m.modal == nil {
 			m.focus = focusList
 		}

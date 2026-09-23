@@ -546,6 +546,30 @@ func TestClickCommitRowSelectsAndShiftClickExtends(t *testing.T) {
 	}
 }
 
+// TestTabSwitchClearsStaleTabHover: the pointer that clicked the inactive
+// half now rests on the active one, and no motion arrives to clear hoverTab,
+// so the push that switches tabs must not repaint HoverBg on the half that
+// just became inactive.
+func TestTabSwitchClearsStaleTabHover(t *testing.T) {
+	m := newMouseTestMission()
+	y := m.layout().topH + 1
+	m.Update(tea.MouseMotionMsg{X: sidebarWidth - 2, Y: y})
+	if _, cmd := m.Update(tea.MouseClickMsg{X: sidebarWidth - 2, Y: y, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("setup: clicking the History half should emit mission:tab")
+	}
+	if err := m.setModelValue(historyFixtureModel()); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(m.View().Content, "\n")
+	for _, row := range []int{y - 1, y} {
+		for x, bg := range cellBackgrounds(lines[row])[:sidebarWidth] {
+			if bg == bgSGR(theme.HoverBg) {
+				t.Fatalf("frame row %d col %d: the switch left a stale tab hover on the new inactive half", row, x)
+			}
+		}
+	}
+}
+
 func TestClickTabEmitsTabSwitch(t *testing.T) {
 	m := newHistoryTestMission()
 	if _, cmd := m.Update(tea.MouseClickMsg{X: 1, Y: m.layout().topH + 1, Button: tea.MouseLeft}); cmd == nil {

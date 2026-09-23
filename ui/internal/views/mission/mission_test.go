@@ -838,6 +838,28 @@ func TestHistoryClickCommitRowEmitsImmediately(t *testing.T) {
 	s.Wait()
 }
 
+// TestTabSwitchPushClearsTabHover hovers and clicks the History half, then
+// pushes the History model as the driver would: with no further motion the
+// Changes half, now the inactive one, must repaint in Bg, not HoverBg.
+func TestTabSwitchPushClearsTabHover(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrMotion(30, 5))
+	s.Type(sgrClick(0, 30, 5))
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"tab":"history"`) {
+		t.Fatalf("setup: History tab click intent: %q", l)
+	}
+	s.Send(`{"t":"model","model":` + historyModel + `}`)
+	s.WaitForPaint("Fix pty paint predicate")
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	for _, y := range []int{4, 5} {
+		if got := testutil.CellBackground(s.TTY(), 1, y); !sameRGB(got, themeBg) {
+			t.Fatalf("Changes half cell (1,%d) should be Bg after the switch, got %#v", y, got)
+		}
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // TestHistoryShiftClickEmitsRange sends a left press with the SGR shift bit
 // (4) set.
 func TestHistoryShiftClickEmitsRange(t *testing.T) {
