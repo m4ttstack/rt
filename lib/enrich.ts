@@ -35,6 +35,7 @@ import {
 } from "@mattstack/glance";
 import { green, blue, red, reset, dim, yellow, cyan } from "./tui.ts";
 import { resolveGithubToken } from "./github-token.ts";
+import { remoteDefaultRef, runGit } from "./worktree/git-async.ts";
 import {
   loadSecrets,
   extractLinearId,
@@ -89,6 +90,19 @@ export async function forgeTokenFor(
   if (isGitLabRemote(remoteUrl)) return { forge: "gitlab", token: secrets.gitlabToken ?? null };
   if (isGitHubRemote(remoteUrl)) return { forge: "github", token: (await resolveGithubToken(secrets.githubToken))?.token ?? null };
   return null;
+}
+
+/**
+ * The default branch is never sent as a head ref (same rule as the daemon's
+ * selectEnrichmentBranches): it has no MR of its own, a GitHub head-ref match
+ * picks up fork PRs opened from their own default branch, and on GitLab it ran
+ * the all-states query past the LB limit.
+ */
+export async function defaultBranchOf(cwd: string | undefined): Promise<string | undefined> {
+  if (!cwd) return undefined;
+  const head = await runGit(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  const ref = head.exitCode === 0 ? head.stdout.trim() : await remoteDefaultRef(cwd);
+  return ref.replace(/^origin\//, "") || undefined;
 }
 
 /** loadSecrets with githubToken filled from the gh session, asked only for a GitHub remote so other repos never pay the spawn. */
@@ -495,15 +509,13 @@ async function fetchAndCache(
 
   const remote = remoteUrl ? parseRemoteUrl(remoteUrl) : null;
   if (remote) {
-    const branchNames = branches.map(b => b.branch).filter(b => b !== "");
+    const defaultBranch = await defaultBranchOf(branches[0]?.path);
+    const branchNames = branches.map(b => b.branch).filter(b => b !== "" && b !== defaultBranch);
     if (branchNames.length > 0) {
       try {
         if (secrets.gitlabToken && isGitLabRemote(remoteUrl)) {
           const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
-          // Open only: this list can carry the default branch, which pushed the
-          // daemon's all-states GitLab query past GitLab's LB limit (see
-          // selectEnrichmentBranches). The daemon refresh supplies merged state.
-          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
+          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, "all");
           mrFetchSucceeded = true;
         } else if (secrets.githubToken && isGitHubRemote(remoteUrl)) {
           const provider = new GitHubProvider(remote.host, secrets.githubToken);

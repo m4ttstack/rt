@@ -144,6 +144,22 @@ describe("stale-claim sweep", () => {
     expect(typeof kept[0]!.fields.refusal).toBe("string");
   });
 
+  test("a tree that stops being stale and later comes back logs its refusal again", async () => {
+    const rec = claimedTree(repo, repoName, "foxtrot2", "feat-foxtrot2", { claimedAgoMs: 8 * DAY_MS, push: false });
+    const infos: string[] = [];
+    const log = { ...fakeLog(), info: (_f: unknown, msg: string) => infos.push(msg) } as unknown as Logger;
+    const setActive = (agoMs: number) =>
+      saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, lastActiveAt: new Date(Date.now() - agoMs).toISOString() } : t)));
+
+    await sweep(cfgWith(7), { log });
+    setActive(0);
+    await sweep(cfgWith(7), { log });
+    setActive(8 * DAY_MS);
+    await sweep(cfgWith(7), { log });
+
+    expect(infos.filter((m) => m === "stale claim kept: dispose refused")).toHaveLength(2);
+  });
+
   test("a stale claim with unpushed commits is refused and stays claimed", async () => {
     const rec = claimedTree(repo, repoName, "delta", "feat-delta", { claimedAgoMs: 8 * DAY_MS, push: false });
 
