@@ -74,7 +74,9 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
             if resubmitHandDeckLabel && plist.label == HandDeckAgent.label {
                 // Registered while the hand job held the label, so launchd never
                 // loaded it; a plain register() would answer already-registered.
-                try? svc.unregister()
+                do { try svc.unregister() } catch {
+                    TrayLog.warn("deck helper resubmit: unregister failed", ["label": plist.label, "err": String(describing: error)])
+                }
             }
             do {
                 try svc.register()
