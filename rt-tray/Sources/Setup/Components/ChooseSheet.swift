@@ -18,6 +18,8 @@ struct ChooseSheet: View {
     @State private var ownId = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var suggestionsOpen = false
+    @State private var pickedSuggestion = false
     @FocusState private var ownFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
@@ -65,10 +67,6 @@ struct ChooseSheet: View {
                 .onChange(of: choice) { _, new in
                     if new == .own { withAnimation { proxy.scrollTo(Choice.own, anchor: .bottom) } }
                 }
-                // The own card grows as suggestions appear; keep its field and hint in view.
-                .onChange(of: ownId) { _, _ in
-                    if choice == .own { proxy.scrollTo(Choice.own, anchor: .bottom) }
-                }
             }
             .frame(maxHeight: 420)
             if let error {
@@ -84,11 +82,33 @@ struct ChooseSheet: View {
         .frame(width: 560)
         // The cards use the Team screen's control-background fill, which only reads against the window background.
         .background(Color(nsColor: .windowBackgroundColor))
+        // Hosted at the sheet's root so the dropdown floats over the scroll view's edge and the buttons
+        // without taking layout space: nothing around the field moves when it opens or closes.
+        .overlayPreferenceValue(OwnFieldBounds.self) { anchor in
+            GeometryReader { proxy in
+                if suggestionsOpen, let anchor, !ownMatches.isEmpty {
+                    let field = proxy[anchor]
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.contentShape(Rectangle()).onTapGesture { suggestionsOpen = false }
+                        SuggestionList(matches: ownMatches, pick: pickSuggestion)
+                            .frame(width: field.width)
+                            .offset(x: field.minX, y: field.maxY + 4)
+                    }
+                }
+            }
+            .allowsHitTesting(suggestionsOpen)
+        }
         .onChange(of: choice) { _, new in
             error = nil
+            suggestionsOpen = false
             ownFocused = new == .own
         }
-        .onChange(of: ownId) { _, _ in error = nil }
+        .onChange(of: ownId) { _, _ in
+            error = nil
+            if pickedSuggestion { pickedSuggestion = false; return }
+            suggestionsOpen = ownFocused && !ownMatches.isEmpty
+        }
+        .onChange(of: ownFocused) { _, focused in if !focused { suggestionsOpen = false } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AXID.chooseSheet)
     }
@@ -141,25 +161,27 @@ struct ChooseSheet: View {
                         .font(.system(.body, design: .monospaced))
                         .focused($ownFocused)
                         .onSubmit(submit)
+                        .onKeyPress(.escape) {
+                            guard suggestionsOpen else { return .ignored }
+                            suggestionsOpen = false
+                            return .handled
+                        }
+                        .anchorPreference(key: OwnFieldBounds.self, value: .bounds) { $0 }
                         .accessibilityLabel(other.label)
                         .accessibilityIdentifier(AXID.chooseOther)
-                    let matches = ChooseSuggestions.matching(ownId, in: other.suggestions ?? [])
-                    if !matches.isEmpty {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 0) {
-                                ForEach(matches, id: \.self) { s in
-                                    SuggestionRow(id: s) { ownId = s }
-                                }
-                            }
-                            .padding(4)
-                        }
-                        // Every match stays reachable: short lists size to fit, long ones scroll past about six rows.
-                        .frame(height: min(CGFloat(matches.count) * SuggestionRow.height + 8, 6.5 * SuggestionRow.height + 8))
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
-                    }
                 }
             }
         }
+    }
+
+    private var ownMatches: [String] {
+        ChooseSuggestions.matching(ownId, in: other?.suggestions ?? [])
+    }
+
+    private func pickSuggestion(_ id: String) {
+        pickedSuggestion = true
+        suggestionsOpen = false
+        ownId = id
     }
 
     private func card<Title: View, Content: View>(selected: Bool, id: String, select: @escaping () -> Void,
@@ -216,6 +238,30 @@ struct ChooseSheet: View {
             busy = false
             if let failure { error = failure } else { dismiss() }
         }
+    }
+}
+
+private struct OwnFieldBounds: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+private struct SuggestionList: View {
+    let matches: [String]
+    let pick: (String) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(matches, id: \.self) { s in SuggestionRow(id: s) { pick(s) } }
+            }
+            .padding(4)
+        }
+        // Short lists size to fit; long ones scroll past about six rows so every match stays reachable.
+        .frame(height: min(CGFloat(matches.count) * SuggestionRow.height + 8, 6.5 * SuggestionRow.height + 8))
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
     }
 }
 
