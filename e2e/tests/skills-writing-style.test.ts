@@ -16,3 +16,17 @@ describe("rt skills writing-style show", () => {
     }
   });
 });
+
+describe("rt skills writing-style use", () => {
+  test("a leading-dash id reaches the handler as an id, not a flag", async () => {
+    const { path: home, cleanup } = createTestHome();
+    try {
+      const res = await rt(["skills", "writing-style", "use", "-rf", "--json"], { home });
+      expect(res.exitCode).toBe(2);
+      const body = JSON.parse(res.stdout);
+      expect(body.error.code).toBe("bad-id");
+    } finally {
+      cleanup();
+    }
+  });
+});

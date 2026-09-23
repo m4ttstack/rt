@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writingStyleList, writingStyleShow, type WritingStyleDeps } from "../skills-writing-style.ts";
+import { writingStyleList, writingStyleShow, writingStyleUse, type WritingStyleDeps } from "../skills-writing-style.ts";
 
 class Exit extends Error { constructor(public code: number) { super(`exit ${code}`); } }
 
@@ -47,5 +47,69 @@ describe("list", () => {
     expect(body.options.slice(0, 3).map((o: { id: string }) => o.id)).toEqual([
       "mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured",
     ]);
+  });
+});
+
+describe("use", () => {
+  const homeRepo = () => mkdirSync(join(home, ".mattstack", "user", ".git"), { recursive: true });
+
+  test("refuses before Install and writes nothing", async () => {
+    await expect(writingStyleUse(["mattstack:writing-style-sparse", "--json"], {}, fakeDeps())).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("no-home-repo");
+    expect(writes).toEqual([]);
+    expect(existsSync(join(home, ".mattstack", "user"))).toBe(false);
+  });
+
+  test("writes a preset at user scope with the plugin absent", async () => {
+    homeRepo();
+    await writingStyleUse(["mattstack:writing-style-sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => null }));
+    expect(writes).toEqual([{ key: "skills.writingStyle", value: "mattstack:writing-style-sparse", scope: "user" }]);
+    const body = JSON.parse(out[0]!);
+    expect(body.skill).toBe("mattstack:writing-style-sparse");
+    expect(body.scope).toBe("user");
+  });
+
+  test("--scope team writes the team default", async () => {
+    homeRepo();
+    await writingStyleUse(["mattstack:writing-style-structured", "--scope", "team", "--json"], {}, fakeDeps());
+    expect(writes[0]!.scope).toBe("team");
+  });
+
+  test("a bad id shape is bad-id; an unknown skill is unknown-skill listing the choices", async () => {
+    homeRepo();
+    await expect(writingStyleUse(["-rf", "--json"], {}, fakeDeps())).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("bad-id");
+    out.length = 0;
+    await expect(writingStyleUse(["nobody:writing-style-x", "--json"], {}, fakeDeps())).rejects.toThrow("exit 2");
+    const e = JSON.parse(out[0]!).error;
+    expect(e.code).toBe("unknown-skill");
+    expect(e.message).toContain("mattstack:writing-style-sparse");
+    expect(writes).toEqual([]);
+  });
+
+  test("a bad id is refused before the home-repo check or any lookup", async () => {
+    let listed = false;
+    await expect(writingStyleUse(["-rf", "--json"], {}, fakeDeps({ pluginListStdout: async () => { listed = true; return "[]"; } }))).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("bad-id");
+    expect(listed).toBe(false);
+  });
+
+  test("a personal skill is linked, then accepted", async () => {
+    homeRepo();
+    const dir = join(home, ".mattstack", "user", "skills", "my-voice");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: my-voice\ndescription: x\n---\nbody\n");
+    await writingStyleUse(["my-voice", "--json"], {}, fakeDeps());
+    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+    expect(writes[0]!.value).toBe("my-voice");
+  });
+
+  test("no id without a TTY is usage; with a TTY it picks", async () => {
+    homeRepo();
+    await expect(writingStyleUse(["--json"], {}, fakeDeps())).rejects.toThrow("exit 2");
+    expect(JSON.parse(out[0]!).error.code).toBe("usage");
+    out.length = 0;
+    await writingStyleUse([], {}, fakeDeps({ isTTY: () => true, pick: async () => "mattstack:writing-style-conversational" }));
+    expect(writes[0]!.value).toBe("mattstack:writing-style-conversational");
   });
 });

@@ -2214,6 +2214,17 @@ export const TREE: Record<string, CommandNode> = {
             fn: "writingStyleList",
             args: [SETUP_JSON_ARG],
           },
+          use: {
+            description: "Choose the writing style for prose posted under your name",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleUse",
+            omitBehavior: "picker",
+            args: [
+              { name: "Skill", type: "text", placeholder: "mattstack:writing-style-sparse", hint: "A preset or any installed skill id; omit to pick" },
+              { name: "Scope", flag: "--scope", type: "select", options: [{ value: "user", label: "user" }, { value: "team", label: "team" }], default: "user", hint: "user (just you) or team (the team default)" },
+              SETUP_JSON_ARG,
+            ],
+          },
         },
       },
     },
