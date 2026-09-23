@@ -314,6 +314,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     description: "One herd: jobs, panes, gates, subscription, unread",
     module: "./commands/herd.ts",
     fn: "status",
+    agentSafe: true,
     omitBehavior: "list",
     args: [
       { name: "Herd", flag: "--herd", type: "text", placeholder: "hd-1a2b3c4d", hint: "Herd id (default: HERD_ID, else the single active herd)" },
@@ -564,6 +565,7 @@ const endpointSubcommands: Record<string, CommandNode> = {
     description: "Does this worktree hold a dev-endpoint claim for a role?",
     module: "./commands/endpoint.ts",
     fn: "endpointLookup",
+    agentSafe: true,
     omitBehavior: "picker",
     args: [
       { name: "Role", type: "text", placeholder: "backend", hint: "Role name declared in the repo's endpoint config" },
@@ -1290,6 +1292,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "List worktrees",
         module: "./commands/worktree.ts",
         fn: "worktreeList",
+        agentSafe: true,
         args: [
           { name: "Repo", flag: "--repo", type: "text", placeholder: "repo-tools", hint: "Narrow to this registered repo (default: every registered repo)" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the raw result as JSON" },

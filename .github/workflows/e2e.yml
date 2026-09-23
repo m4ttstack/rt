@@ -64,7 +64,7 @@ jobs:
           fi
 
       - name: Build rt binary
-        run: bun build --compile ./cli.ts --outfile dist/rt --define 'RT_VERSION="e2e-test"'
+        run: bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv ./cli.ts --outfile dist/rt --define 'RT_VERSION="e2e-test"'
 
       - name: Codesign binary (ad-hoc with JIT entitlements)
         run: |
@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Build rt binary
-        run: bun build --compile ./cli.ts --outfile dist/rt --define 'RT_VERSION="e2e-test"'
+        run: bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv ./cli.ts --outfile dist/rt --define 'RT_VERSION="e2e-test"'
 
       - name: Codesign binary (ad-hoc with JIT entitlements)
         run: |

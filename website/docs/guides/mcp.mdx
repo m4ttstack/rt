@@ -17,7 +17,7 @@ Install seeds the MCP server's namespace (`mcp__plugin_mattstack_mattstack`) int
 
 ## Tools
 
-The server exposes tools in four groups:
+The server exposes tools in four daemon-backed groups, plus one tool that runs rt itself.
 
 ### Gates
 
@@ -58,9 +58,17 @@ Chat tools require `rt chat sign-in` first. If no signed-in session exists, the 
 | `herd_answer` | Read the answer to a gate previously opened with `herd_ask`. |
 | `herd_report` | Post a status report to this worker's herd room. |
 
+### rt_verb
+
+| Tool | What it does |
+| --- | --- |
+| `rt_verb` | Run one read-only rt verb and return its `--json` result. |
+
+Unlike the other tools, `rt_verb` does not itself connect to the daemon; it runs rt as a child process instead of calling the daemon's Unix socket directly. The verb it runs may still talk to the daemon internally (today's three do: `worktree list`, `endpoint lookup` and `herd status` are all daemon-backed reads), so `rt_verb` is not a way to reach these commands while the daemon is down, only a way to run them without a direct socket connection from the MCP server process. Only verbs marked agent-safe are allowed to run through it. Anything else is refused, and the refusal message lists the verbs that do run. Pass `args` without the leading `rt` (e.g. `["worktree", "list"]`), and pass `cwd` when the verb depends on the current repo, since the server's own working directory is fixed at session start and does not follow `cd` or `EnterWorktree`.
+
 ## When the daemon is down
 
-Every tool connects to the daemon over its Unix socket. When the daemon is not running, tools return an error with a human-readable explanation. Chat tools also fail early if no signed-in session exists.
+Every daemon-backed tool connects over its Unix socket. When the daemon is not running, those tools return an error with a human-readable explanation. Chat tools also fail early if no signed-in session exists. `rt_verb` does not connect to the daemon itself, but the verb it runs can still fail for the same reason if that verb needs the daemon.
 
 ## See also
 

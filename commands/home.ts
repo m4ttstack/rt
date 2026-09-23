@@ -35,8 +35,8 @@
 import { existsSync, readdirSync, readFileSync, readlinkSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { fileURLToPath } from "url";
 import type { CommandContext } from "../lib/command-tree.ts";
+import { isCompiledRt } from "../lib/rt-self.ts";
 import { bold, dim, green, red, reset, yellow } from "../lib/ansi.ts";
 import { isSafeMachineKeySegment, machineKey, mattstackHome } from "../lib/rt-paths.ts";
 import { resolveInitialMachineKey } from "../lib/home/machine-id.ts";
@@ -384,18 +384,13 @@ function defaultMaterializeExec(): MaterializeExecSeam {
 }
 
 /**
- * The argv[0] rt-own materialize steps self-invoke. Mirrors
- * commands/post-install.ts's `spawnSync(process.execPath, ["daemon",
- * "install"], ...)`: `bun build --compile` embeds this module's resources
- * under `/$bunfs`, and `process.execPath` for a running compiled binary IS
- * that binary's own path — the same self-invocation `rt --daemon` already
- * relies on (cli.ts). Running from source (`bun run cli.ts`/`bun test`),
- * `import.meta.url` is a real file:// path, `process.execPath` is `bun`
- * itself (not rt), so this keeps the bare "rt" name — on PATH or not,
- * that's the honest dev-mode failure, not a silent `bun intercept install`.
+ * The argv[0] rt-own materialize steps self-invoke. From source,
+ * `process.execPath` is `bun` itself, not rt, so this returns the bare "rt"
+ * name instead: on PATH or not, that is the honest dev-mode failure, not a
+ * silent `bun intercept install`.
  */
 function rtSelfBin(): string {
-  return fileURLToPath(import.meta.url).startsWith("/$bunfs") ? process.execPath : "rt";
+  return isCompiledRt() ? process.execPath : "rt";
 }
 
 /** Reads `~/.mattstack/deck/api.json` (port, pid) and probes deck's own `/healthz`. Injectable so tests never touch a real file or the network. */

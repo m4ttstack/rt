@@ -29,6 +29,7 @@ import type { RepoIdentity } from "./repo.ts";
 import { MODULE_REGISTRY } from "./module-registry.ts";
 import { BackNavigation } from "./back-navigation.ts";
 import type { SelectOption } from "./rt-render.ts";
+import { lookupChild } from "./command-tree-resolve.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,19 @@ export interface CommandNode {
    *    brand-new paths) or verbs that must be pointed at explicitly.
    */
   omitBehavior?: OmitBehavior;
+
+  /**
+   * An agent may run this leaf through the mattstack MCP server's `rt_verb`
+   * tool with no permission prompt, including from a pane reading untrusted
+   * text (an MR under review). The bar: no state change the caller directs,
+   * under any flag the leaf declares. It never deletes, and never writes
+   * settings, secrets, worktrees, runs, or another agent's state. Housekeeping
+   * the implementation does on any read (a legacy import, a self-healing index
+   * row) is not a caller-directed change and does not disqualify a leaf.
+   * Set it only on a leaf that declares --json. Guarded by
+   * lib/__tests__/agent-safe.test.ts.
+   */
+  agentSafe?: true;
 }
 
 /** See CommandNode.omitBehavior. */
@@ -652,25 +666,11 @@ export function walkTree(
 }
 
 function resolveNode(tree: Record<string, CommandNode>, name: string): CommandNode | null {
-  // Direct match
-  if (tree[name]) return tree[name]!;
-
-  // Alias match
-  for (const [key, node] of Object.entries(tree)) {
-    if (node.aliases?.includes(name)) return node;
-  }
-
-  return null;
+  return lookupChild(tree, name)?.node ?? null;
 }
 
 function resolveNodeName(tree: Record<string, CommandNode>, name: string): string {
-  if (tree[name]) return name;
-
-  for (const [key, node] of Object.entries(tree)) {
-    if (node.aliases?.includes(name)) return key;
-  }
-
-  return name;
+  return lookupChild(tree, name)?.key ?? name;
 }
 
 async function resolveHandler(node: CommandNode, baseDir?: string): Promise<(args: string[], ctx: CommandContext) => Promise<void>> {

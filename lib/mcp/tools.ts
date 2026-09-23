@@ -1,8 +1,10 @@
 /**
  * The MCP tool roster: one McpToolDef per tool, each a thin wrapper over an
- * existing daemon command. No MCP SDK import here, and no import of
- * commands/herd.ts or commands/chat.ts (both pull in TUI-adjacent modules
- * that lib/mcp must stay clear of).
+ * existing daemon command, except rt_verb, which runs agent-safe CLI leaves
+ * (some reads, a setting or a file, need no daemon, and putting one in their
+ * path would make a daemon outage cost the caller the read). No MCP SDK
+ * import here, and no import of commands/herd.ts or commands/chat.ts (both
+ * pull in TUI-adjacent modules that lib/mcp must stay clear of).
  */
 import {
   chatAck, chatClaim, chatDm, chatPost, chatRelease,
@@ -18,6 +20,7 @@ import { repoLabel } from "../repo-label.ts";
 import { reverseLookupByName } from "../repo-name-lookup.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import { explainError } from "../explain-error.ts";
+import { runRtVerb } from "./rt-verb.ts";
 
 export interface McpToolDef {
   name: string;
@@ -540,6 +543,23 @@ export function mcpTools(): McpToolDef[] {
         const bad = checkRequired(input, [{ name: "body", type: "string" }]);
         if (bad) return err(bad);
         return fromResponse(await herdReport({ herd: j.herd, job: j.job, body: input.body as string }));
+      },
+    },
+    {
+      name: "rt_verb",
+      description: "Run one read-only rt verb and return its --json result. Only verbs marked agent-safe run; anything else is refused with the list of verbs that do. Pass args without the leading \"rt\" (e.g. [\"worktree\", \"list\"]) and cwd when the verb depends on the current repo, since this server's working directory is fixed at session start and does not follow cd or EnterWorktree.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          args: { type: "array", items: { type: "string" }, minItems: 1 },
+          cwd: { type: "string", description: "Absolute directory to run in; defaults to the server's own." },
+        },
+        required: ["args"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const r = await runRtVerb(input);
+        return r.ok ? ok(r.body) : err(r.error);
       },
     },
   ];
