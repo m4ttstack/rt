@@ -8,7 +8,8 @@
  * fake HOME per-test keep doing so on top of this; e2e fixtures pass their
  * own explicit HOME when spawning the binary, so this never reaches them.
  */
-import { mkdtempSync } from "fs";
+import { afterAll } from "bun:test";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
@@ -23,4 +24,35 @@ guardTestDaemonEnv();
 // the GitHub token fallback (lib/github-token.ts) needs its own off switch.
 process.env.RT_GH_TOKEN_FALLBACK = "off";
 
-process.env.HOME = mkdtempSync(join(tmpdir(), "rt-test-home-"));
+// Every run gets its own directory under one shared parent, and TMPDIR
+// points into it, so nothing a test (or a child it spawns) makes under
+// tmpdir() lands in the machine's TMPDIR: hundreds of thousands of leftover
+// mkdtemp dirs there once made every file create on the machine slow. HOME
+// is a sibling, not nested, to keep socket paths under it inside macOS's
+// 104 bytes. bun test never fires process "exit", so removal is a global
+// afterAll; a run killed before it leaves its dirs behind, and the next
+// start sweeps every dir whose run pid is gone.
+const testRoot = join(tmpdir(), "rt-tests");
+mkdirSync(testRoot, { recursive: true });
+for (const name of readdirSync(testRoot)) {
+  const pid = Number(name.split("-")[0]);
+  if (Number.isInteger(pid) && pid > 0 && pidIsAlive(pid)) continue;
+  rmSync(join(testRoot, name), { recursive: true, force: true });
+}
+const runTmp = mkdtempSync(join(testRoot, `${process.pid}-run-`));
+const home = mkdtempSync(join(testRoot, `${process.pid}-home-`));
+process.env.TMPDIR = runTmp;
+process.env.HOME = home;
+afterAll(() => {
+  rmSync(runTmp, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+});
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
