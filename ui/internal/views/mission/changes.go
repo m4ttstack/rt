@@ -381,8 +381,15 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 	}
 	if lipgloss.Width(left) > maxLeft {
 		// left already carries its own fg+bg per fragment (justify's
-		// callers), so its ellipsis must too -- clipOn, not clip.
-		left = clipOn(left, maxLeft, on)
+		// callers), so its ellipsis must too -- clipOn, not clip. clipOn
+		// fills exactly to its budget, so clipping straight to maxLeft would
+		// leave right's own PlaceHorizontal with no cells to pad with --
+		// left and right would touch with no separating space.
+		clipWidth := maxLeft - 1
+		if clipWidth < 0 {
+			clipWidth = 0
+		}
+		left = clipOn(left, clipWidth, on)
 	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {

@@ -228,7 +228,14 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	if historyReloaded(m.model.History.Commits, decoded.History.Commits) {
+	// historyReloaded only catches a shorter list or a new first sha. Two
+	// other paths leave the list at exactly historyMoreFor's length with
+	// hasMore still true: a history-more that threw (a notice, list
+	// unchanged) and a worktree switch to a tree at the same tip (pool
+	// worktrees commonly share one), so each needs its own re-arm check.
+	if historyReloaded(m.model.History.Commits, decoded.History.Commits) ||
+		decoded.Current.Worktree != m.model.Current.Worktree ||
+		(decoded.Notice != "" && len(decoded.History.Commits) == m.historyMoreFor) {
 		m.historyMoreFor = -1
 	}
 	m.model = decoded

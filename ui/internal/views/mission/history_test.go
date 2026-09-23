@@ -400,6 +400,38 @@ func TestPagingReArmsAfterReload(t *testing.T) {
 	if _, cmd := m.Update(downKey()); batchSize(t, cmd) != 2 {
 		t.Fatal("a list that shrank back to one batch must re-arm paging")
 	}
+
+	// A history-more that threw lands as a notice with the list unchanged at
+	// the exact length the request went out for; historyReloaded sees neither
+	// a shorter list nor a new first sha, so it alone would leave paging dead.
+	m = pagingMission(t, pagingCommits(30))
+	m.historyCursor = "c24"
+	m.Update(downKey())
+	if m.historyMoreFor != 30 {
+		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if err := m.setModelValue(Model{Tab: "history", History: HistoryModel{Commits: pagingCommits(30), HasMore: true}, Notice: "history-more failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, cmd := m.Update(downKey()); m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+		t.Fatalf("a notice with the list unchanged at historyMoreFor's length must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
+	}
+
+	// A worktree switch to a tree at the same tip (common across pool
+	// worktrees) reloads to the identical 100 commits with the same first
+	// sha, so historyReloaded also sees nothing here.
+	m = pagingMission(t, pagingCommits(30))
+	m.historyCursor = "c24"
+	m.Update(downKey())
+	if m.historyMoreFor != 30 {
+		t.Fatalf("setup: the first page request should go out, historyMoreFor=%d", m.historyMoreFor)
+	}
+	if err := m.setModelValue(Model{Tab: "history", Current: Current{Worktree: "/other/tree"}, History: HistoryModel{Commits: pagingCommits(30), HasMore: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, cmd := m.Update(downKey()); m.historyMoreFor != 30 || batchSize(t, cmd) != 2 {
+		t.Fatalf("a worktree switch to a same-tip tree must re-arm paging, historyMoreFor=%d", m.historyMoreFor)
+	}
 }
 
 func TestPagingSilentWithoutMoreOrWhileLoading(t *testing.T) {
@@ -688,6 +720,33 @@ func TestChangesKeybarKeepsTabKeyAtNarrowWidth(t *testing.T) {
 	out := ansi.Strip(renderKeybar(100, "changes"))
 	if !strings.Contains(out, "2 history") {
 		t.Fatalf("at 100 columns the Changes keybar must still show \"2 history\":\n%s", out)
+	}
+}
+
+// TestJustifyClippedLeftLeavesGapBeforeRight pins a real repro: at 100
+// columns the Changes keybar's left side clips to exactly maxLeft, which
+// left no cells for right's own PlaceHorizontal to pad with -- the ellipsis
+// ran straight into "q quit" with no separating space.
+func TestJustifyClippedLeftLeavesGapBeforeRight(t *testing.T) {
+	out := ansi.Strip(renderKeybar(100, "changes"))
+	idx := strings.Index(out, "…")
+	if idx == -1 {
+		t.Fatalf("setup: expected the left side clipped with an ellipsis at 100 columns:\n%s", out)
+	}
+	rest := out[idx+len("…"):]
+	if !strings.HasPrefix(rest, " ") {
+		t.Fatalf("a clipped left must leave a space before the right hint, got %q", out[idx:])
+	}
+}
+
+// TestJustifyWideWidthUnchanged pins the other half: once left already fits
+// (no clipping), justify's output must stay exactly what it always was.
+func TestJustifyWideWidthUnchanged(t *testing.T) {
+	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+	out := justify(on, 130, "left text", "right text")
+	want := on.Render("  ") + "left text" + lipgloss.PlaceHorizontal(130-3-len("left text"), lipgloss.Right, "right text", lipgloss.WithWhitespaceStyle(on)) + on.Render(" ")
+	if out != want {
+		t.Fatalf("a wide-width strip where left already fits must be byte-identical:\ngot  %q\nwant %q", out, want)
 	}
 }
 
