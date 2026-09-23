@@ -53,7 +53,9 @@ Headless declarations for composite keys (`stringList`, `pairList`,
 `stringMap`, `leaves`, and `external` for editors another app owns) plus
 the helpers a settings UI needs: `rowKind` picks a control, `summarize`
 gives the collapsed line, `targetScope` says where an edit lands (the
-winning layer when allowed, else the key's first scope).
+winning layer when allowed, else the key's first scope). A deep-merged
+`leaves` row counts only fields some store layer sets (`effective.authored`),
+so a registry default alone reads as "0 of N set".
 
 Pass `allowComposite: "shaped"` to `settingsHandler` to admit composite
 writes only for keys `SHAPES` declares, and only with a matching value;

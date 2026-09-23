@@ -175,8 +175,16 @@ describe("summarize", () => {
   test("stringMap and pairList count entries", () => {
     expect(summarize(def({ key: "rt.repoIdentityOverrides", type: "object", effective: { scope: "machine", file: null, value: { a: "b" } } }))).toBe("1 entry");
   });
-  test("leaves count set fields", () => {
+  test("replace-merged leaves count fields in the effective value", () => {
     expect(summarize(def({ key: "rt.gitStatus", type: "object", effective: { scope: "default", file: null, value: { sweep: true } } }))).toBe("1 of 3 set");
+  });
+  test("deep-merged leaves count only the fields a store layer authored", () => {
+    const effective = { scope: "machine", file: "/f", value: { sweep: true, sweepIntervalSec: 60, fetchIntervalSec: 30 }, authored: { sweep: true } };
+    expect(summarize(def({ key: "rt.gitStatus", type: "object", merge: "deep", effective }))).toBe("1 of 3 set");
+  });
+  test("deep-merged leaves with no authored layer read as none set", () => {
+    const effective = { scope: "default", file: null, value: { sweep: true, sweepIntervalSec: 60, fetchIntervalSec: 30 } };
+    expect(summarize(def({ key: "rt.gitStatus", type: "object", merge: "deep", effective }))).toBe("0 of 3 set");
   });
   test("no shape falls back to a generic count", () => {
     expect(summarize(def({ key: "rt.cron", type: "object", effective: { scope: "machine", file: null, value: { a: 1, b: 2 } } }))).toBe("2 fields");

@@ -236,7 +236,8 @@ export function summarize(def: SettingDefWire): string {
       return count(isRecord(v) ? Object.keys(v).length : 0, "entry", "entries");
     case "leaves": {
       const paths = Object.keys(shape.fields);
-      const set = paths.filter((p) => getLeaf(v, p) !== undefined).length;
+      const source = def.merge === "deep" && def.type === "object" ? def.effective.authored : v;
+      const set = paths.filter((p) => getLeaf(source, p) !== undefined).length;
       return `${set} of ${paths.length} set`;
     }
   }
