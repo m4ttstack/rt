@@ -101,7 +101,9 @@ The handler:
    reviewable, so a flag the handler parses without declaring would otherwise
    pass through unreviewed.
 5. Refuses a `cwd` that is not an absolute path to an existing directory.
-6. Spawns this same rt with `rest` plus `--json` (appended once when absent).
+6. Spawns `[...rtSelfArgv(), ...path, ...rest]` plus `--json` (appended once
+   when absent), where `path` is the resolved command path from
+   `resolveLeaf` with aliases replaced by canonical names.
    Whether rt is compiled is decided the way `rtSelfBin` in
    `commands/home.ts` decides it (`import.meta.url` under `/$bunfs`), never by
    `process.execPath`'s basename. That check moves to a shared
@@ -143,7 +145,9 @@ off the launch set rather than changed here.
 - **Flag gate:** the snapshot, and the leaf, json, devOnly, hidden and TTY
   checks.
 - **Handler:** unit tests with an injected spawn:
-  - an agent-safe leaf runs with `--json`, `RT_BATCH` and the given `cwd`
+  - an agent-safe leaf runs with the given `cwd`, `RT_BATCH=1`, and the full
+    argv asserted exactly: `["worktree", "list", "--repo", "x"]` spawns
+    `[...rtSelfArgv(), "worktree", "list", "--repo", "x", "--json"]`
   - `--json` is not doubled when the caller passes it
   - an alias resolves
   - a non-agent-safe leaf, a branch node, and an unknown verb are refused,

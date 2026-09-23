@@ -99,9 +99,15 @@ failure shape the app renders as readable copy.
 | Verb | Success body | Refusals (exit 2, `error.code`) |
 | --- | --- | --- |
 | `show` | `{skill, source}` | none |
-| `list` | `{options: [{id, label, detail, sample?, kind, installed}]}` | none |
-| `use` | `{skill, scope}` | `bad-id` (shape), `unknown-skill` (not installed; message lists the choices), `no-home-repo` |
-| `new` | `{name, path, from}` | `bad-name`, `exists`, `no-plugin` (the mattstack plugin is not installed), `no-home-repo` |
+| `list` | `{current: {skill, source}, options: [{id, label, detail, sample?, kind, installed}]}` | none |
+| `use` | `{skill, scope}` | `usage` (no id without a TTY), `bad-id` (shape), `unknown-skill` (not installed; message lists the choices), `no-home-repo` |
+| `new` | `{name, path, from}` | `usage` (no name without a TTY), `bad-name`, `bad-preset` (`--from` is not a catalog preset), `exists`, `no-plugin` (the mattstack plugin is not installed), `no-home-repo` |
+
+An option's `kind` is `preset` (a catalog entry), `personal` (a skill in
+`~/.mattstack/user/skills/`), or `installed` (any other installed skill whose
+id contains `writing-style`). Each id is listed once: a catalog preset found
+installed stays `kind: "preset"`. `current` is the resolver's answer, so the
+current value is visible even when it is not one of the options.
 
 `use` and `new` refuse with `no-home-repo` while `~/.mattstack/user/.git` is
 absent (`homeGitDir` in `lib/setup/steps/home.ts`), the same guard
@@ -395,7 +401,7 @@ release after the next one, whose scope is already fixed.
   - Decode tests for `choose`, for an unknown type, and for a finish-gated row
     with no `waivable` (reads `true`).
   - Dispatcher tests for the picked and "own skill" paths.
-  - Every finish-gated row's action type is handled on Done.
+  - Every finish-gated row's non-null action type is handled on Done.
   - The sheet rendered and screenshotted in both schemes from the checklist,
     Done and Settings.
 - **Presets** (superpowers:writing-skills, test-first). Fixtures: a diff with a
