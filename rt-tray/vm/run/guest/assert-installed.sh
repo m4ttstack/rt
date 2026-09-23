@@ -92,6 +92,12 @@ else
       *tool.fast-browser-extension*) ok "setup.waived holds tool.fast-browser-extension after Skip for now";;
       *) bad "Skip for now was confirmed but setup.waived does not hold the id: $WAIVED";;
     esac
+  else
+    WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
+    case "$WAIVED" in
+      *tool.fast-browser-extension*) bad "fast-browser-extension was not skipped on the Done screen but setup.waived holds the id: $WAIVED";;
+      *) ok "setup.waived does not hold tool.fast-browser-extension (it was not skipped)";;
+    esac
   fi
   STYLE_LINE=$(grep '^writing-style=' "$GATE_FILE" || true)
   if [ -n "$STYLE_LINE" ]; then

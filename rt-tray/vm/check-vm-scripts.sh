@@ -158,6 +158,8 @@ t "assert-installed.sh parses finish-gate.txt's per-row line format, not just sk
   'grep -q "fast-browser-extension=skipped" run/guest/assert-installed.sh \
    && grep -q "writing-style=" run/guest/assert-installed.sh \
    && grep -q "writing-style show --json" run/guest/assert-installed.sh'
+t "assert-installed.sh asserts setup.waived is empty when no fast-browser-extension=skipped line is present" bash -c \
+  'grep -q "was not skipped on the Done screen but setup.waived holds the id" run/guest/assert-installed.sh'
 t "ax_enabled_or_fail names a missing axid"             env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; out=$( (ax_enabled_or_fail setup.done.continue) 2>&1 ); [ $? -ne 0 ] && printf "%s" "$out" | grep -q "setup.done.continue not found"'
 t "assert-installed.sh asserts setup.waived"            bash -c 'grep -q "rt settings get setup.waived --json" run/guest/assert-installed.sh'
 t "assert-installed.sh takes a backup and asserts the .age plus the LFS filter" bash -c \
