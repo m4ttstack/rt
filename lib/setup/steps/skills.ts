@@ -18,6 +18,7 @@ import type { StepDef, StepOutcome } from "../apply.ts";
 import { installCronTrigger, resolveBoardTriage, triageTrigger } from "../cron-install.ts";
 import { linkBundledSkills } from "../skills-link-bundled.ts";
 import { materializeSkills } from "../skills-materialize.ts";
+import { linkPersonalSkills } from "../../skills/writing-style-sources.ts";
 import { forgeLogin } from "../../team/forge.ts";
 import { resolveForge } from "./forge-identity.ts";
 import { repoBasename } from "./repos.ts";
@@ -55,20 +56,24 @@ export const skillsMaterializeStep: StepDef = {
 // ─── skills.link ─────────────────────────────────────────────────────────────
 
 async function skillsLinkRun(ctx: ApplyContext): Promise<StepOutcome> {
+  const personal = linkPersonalSkills(ctx.p.home);
+  const personalCount = personal?.actions.filter((a) => a.kind === "create" || a.kind === "relink" || a.kind === "ok").length ?? 0;
+  const personalNote = personal ? `, ${personalCount} personal` : "";
+
   const root = appBundlePath(ctx.p);
-  if (!root) return { state: "skipped", detail: "not running from an app bundle" };
+  if (!root) return personal ? { state: "done", detail: `linked personal skills only (not running from an app bundle)${personalNote}` } : { state: "skipped", detail: "not running from an app bundle" };
 
   const results = linkBundledSkills({
     skillsRoot: join(root, HELPERS_DIR, "skills"),
     claudeSkillsDir: join(ctx.p.home, ".claude", "skills"),
     isBundled: (app) => bundledToolPath(ctx.p, app) !== null,
   });
-  if (results.length === 0) return { state: "skipped", detail: "bundle ships no skills" };
+  if (results.length === 0) return personal ? { state: "done", detail: `bundle ships no skills${personalNote}` } : { state: "skipped", detail: "bundle ships no skills" };
 
   for (const r of results.filter((x) => x.skipped)) ctx.log("skills.link", `${r.app}: ${r.skipped}`);
   const linked = results.filter((r) => !r.skipped);
   const total = linked.reduce((n, r) => n + r.linked, 0);
-  return { state: "done", detail: `linked ${total} skill(s) from ${linked.length} app(s)` };
+  return { state: "done", detail: `linked ${total} skill(s) from ${linked.length} app(s)${personalNote}` };
 }
 
 async function skillsLinkRunSafe(ctx: ApplyContext): Promise<StepOutcome> {
