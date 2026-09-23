@@ -10,6 +10,7 @@ describe("unwrapGateAnswerValue", () => {
   test("bare values pass through", () => expect(unwrapGateAnswerValue("yes")).toBe("yes"));
   test("note form unwraps", () => expect(unwrapGateAnswerValue({ value: "yes", note: "x" })).toBe("yes"));
   test("arrays pass through", () => expect(unwrapGateAnswerValue(["a"])).toEqual(["a"]));
+  test("text form unwraps", () => expect(unwrapGateAnswerValue({ value: ["a"], text: "x" })).toEqual(["a"]));
 });
 
 describe("validateGateAnswers", () => {
@@ -42,5 +43,17 @@ describe("validateGateAnswers", () => {
   });
   test("note-form values validate by inner value", () => {
     expect(validateGateAnswers([single], { verdict: { value: "yes", note: "hold on" } })).toBeNull();
+  });
+  test("text-form values validate by inner value", () => {
+    expect(validateGateAnswers([multi], { tiers: { value: ["a"], text: "edited reply" } })).toBeNull();
+  });
+  test("text rides beside a note", () => {
+    expect(validateGateAnswers([single], { verdict: { value: "yes", note: "n", text: "t" } })).toBeNull();
+  });
+  test("non-string text", () => {
+    expect(validateGateAnswers([single], { verdict: { value: "yes", text: 5 } })).toBe("question verdict text must be a string");
+  });
+  test("whitespace-only text is empty", () => {
+    expect(validateGateAnswers([single], { verdict: { value: "yes", text: "  \n" } })).toBe("question verdict text must not be empty");
   });
 });

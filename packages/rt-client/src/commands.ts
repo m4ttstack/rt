@@ -133,7 +133,7 @@ export { gateOptionValue, gateOptionLabel } from "./gate-options.ts";
     doorbell it would otherwise send back to the writer. Optional: a caller
     that supplies none (the board status-bin answers `by: "pane"` with no
     session) still matches self by `by === GATE_BY_PANE`. */
-export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number; overridden?: boolean; session?: string }
+export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string; text?: string }>; by: string; answeredAt: number; overridden?: boolean; session?: string }
 export interface GateRow {
   id: string; subject: string; kind: string;
   questions: GateQuestion[]; meta: Record<string, unknown> | null;

@@ -139,6 +139,7 @@ const ANSWER_VALUE_SCHEMA = {
       properties: {
         value: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
         note: { type: "string" },
+        text: { type: "string" },
       },
       required: ["value"],
       additionalProperties: false,
