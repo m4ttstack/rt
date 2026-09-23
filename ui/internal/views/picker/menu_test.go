@@ -311,7 +311,13 @@ func TestMenuNameStepSubmitsATrimmedName(t *testing.T) {
 
 func TestMenuNameStepEscReturnsToTheUnfilteredRows(t *testing.T) {
 	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
-	mn := NewMenu("fix the thing", []MenuItem{{ID: "copy", Label: "Copy SHA"}, tag}, nil)
+	mn := NewMenu("fix the thing", []MenuItem{{ID: "sha", Label: "Copy SHA"}, {ID: "path", Label: "Copy Path"}, tag}, nil)
+	for _, r := range "co" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if mn.query != "co" || len(mn.matches) != 2 {
+		t.Fatalf("setup: query %q, %d matches, want the root narrowed to the two Copy rows", mn.query, len(mn.matches))
+	}
 	mn.Key(tea.KeyPressMsg{Code: tea.KeyDown})
 	mn.AskName("Create a Tag", "Name", tag)
 	for _, r := range "zz" {
@@ -320,11 +326,11 @@ func TestMenuNameStepEscReturnsToTheUnfilteredRows(t *testing.T) {
 	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape}); out.Kind != MenuStay {
 		t.Fatalf("esc in a name step = %+v, want MenuStay", out)
 	}
-	if mn.query != "" || len(mn.matches) != 2 {
+	if mn.query != "co" || len(mn.matches) != 2 {
 		t.Fatalf("typing a name leaked into the rows' filter: query %q, %d matches", mn.query, len(mn.matches))
 	}
-	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuChosen || out.Item.ID != "tag" {
-		t.Fatalf("after esc the rows keep their cursor, got %+v", out)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuChosen || out.Item.ID != "path" {
+		t.Fatalf("after esc the rows keep their filtered cursor, got %+v", out)
 	}
 }
 
