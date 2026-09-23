@@ -35,6 +35,7 @@ import { join, dirname, resolve } from "path";
 import { spawnSync as realSpawnSync } from "child_process";
 import { homedir } from "os";
 import { openDirectoryInEditor as realOpenDirectoryInEditor } from "./code.ts";
+import { createFileActions } from "../lib/file-actions.ts";
 import { runNavPicker, type NavOption } from "../lib/navigate.ts";
 import {
   listEntries, startDirWatch as realStartDirWatch,
@@ -225,6 +226,7 @@ function targetOf(cwd: string, value: string): { kind: ItemKind; target: string 
 async function runNavSession(state: SessionState, deps: NavDeps): Promise<SessionOutcome> {
   let { cwd, showHidden, sort } = state;
   let empty = false;
+  const files = createFileActions(deps.spawnSync);
   // A ref object, not a bare `let`: the watcher is only ever assigned from
   // inside rearmWatch's closure, and TS won't carry that assignment's
   // narrowing back out to the read at session end otherwise.
@@ -277,7 +279,7 @@ async function runNavSession(state: SessionState, deps: NavDeps): Promise<Sessio
           rearmWatch(handle);
         } else {
           // Returns immediately; browsing continues.
-          deps.spawnSync("open", [target], { stdio: "ignore" });
+          files.open(target);
         }
         return;
       }
@@ -300,19 +302,19 @@ async function runNavSession(state: SessionState, deps: NavDeps): Promise<Sessio
         return;
       }
       case "finder": {
-        deps.spawnSync("open", [cwd], { stdio: "ignore" });
+        files.open(cwd);
         return;
       }
       case "reveal": {
         if (!evt.value || evt.value === EMPTY_VALUE) return;
         const { kind, target } = targetOf(cwd, evt.value);
-        deps.spawnSync("open", kind === "file" ? ["-R", target] : [target], { stdio: "ignore" });
+        files.reveal(target, kind);
         return;
       }
       case "copy-path": {
         if (!evt.value || evt.value === EMPTY_VALUE) return;
         const { target } = targetOf(cwd, evt.value);
-        deps.spawnSync("pbcopy", [], { input: target });
+        files.copy(target);
         return;
       }
     }
@@ -341,7 +343,7 @@ async function runNavSession(state: SessionState, deps: NavDeps): Promise<Sessio
         } else {
           // ctrl-o on a file has no editor-specific meaning; opening it with
           // its default app matches what enter would have done.
-          deps.spawnSync("open", [target], { stdio: "ignore" });
+          files.open(target);
         }
       }
       return { type: "resume", cwd, showHidden, sort, resumeValue: result.value ?? undefined, initialQuery: result.query || undefined };
