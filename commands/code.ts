@@ -356,18 +356,25 @@ export function resolveEditorForDir(dir: string): ResolvedEditor | null {
 }
 
 // glitter owns the terminal, so the launch must neither inherit stdio nor
-// block the driver the way launchEditor's execSync does.
-export async function launchEditorDetached(command: string, target: string): Promise<boolean> {
-  for (const cmd of [command, appBundleFallback(command)]) {
-    if (!cmd) continue;
-    const proc = Bun.spawn(["/bin/sh", "-c", `${cmd} "$1"`, "sh", target], {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    if ((await proc.exited) === 0) return true;
-  }
-  return false;
+// block the driver the way launchEditor's execSync does. The target goes in
+// as "$1", never spliced into the command string.
+async function spawnEditor(command: string, target: string): Promise<boolean> {
+  const proc = Bun.spawn(["/bin/sh", "-c", `${command} "$1"`, "sh", target], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return (await proc.exited) === 0;
+}
+
+export async function launchEditorDetached(
+  command: string,
+  target: string,
+  fallback: (command: string) => string | null = appBundleFallback,
+): Promise<boolean> {
+  if (await spawnEditor(command, target)) return true;
+  const alternate = fallback(command);
+  return alternate ? spawnEditor(alternate, target) : false;
 }
 
 // ─── Shared opener (used by rt nav) ─────────────────────────────────────────

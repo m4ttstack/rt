@@ -30,6 +30,16 @@ export class HistoryStore {
   private generation = 0;
   private pendingBatch: Promise<void> | null = null;
   private pendingBase: readonly Commit[] | null = null;
+  private reloadRequested = false;
+
+  /**
+   * Makes the next syncTip re-read every loaded commit even though HEAD has
+   * not moved: a new tag changes a commit's decoration, never the tip. GHD
+   * refreshes tags right after createTag for the same reason.
+   */
+  requestReload(): void {
+    this.reloadRequested = true;
+  }
 
   reset(): void {
     this.commits = [];
@@ -42,6 +52,7 @@ export class HistoryStore {
     this.selectedFile = null;
     this.diff = null;
     this.oversizedShown = new Set();
+    this.reloadRequested = false;
     this.generation++;
   }
 
@@ -55,7 +66,10 @@ export class HistoryStore {
     if (this.generation !== entry) return false;
     // GHD's refreshHistorySection reloads local commits on every refresh: a
     // push or publish empties the unpushed set without moving HEAD.
-    if (this.loaded && head === this.tip) return this.refreshLocalShas(client, branch, entry);
+    if (this.loaded && head === this.tip) {
+      return this.reloadRequested ? this.reloadLoaded(client, branch) : this.refreshLocalShas(client, branch, entry);
+    }
+    this.reloadRequested = false;
     const gen = ++this.generation;
     const [batch, local] = await Promise.all([client.commits("HEAD", COMMIT_BATCH_SIZE, 0), client.localCommits(branch)]);
     if (gen !== this.generation) return false;
@@ -66,6 +80,22 @@ export class HistoryStore {
     this.tip = batch[0]?.sha ?? null;
     this.loaded = true;
     this.hasMore = batch.length === COMMIT_BATCH_SIZE;
+    await this.updateOrSelectFirstCommit(client);
+    return true;
+  }
+
+  /** One read as deep as the list has paged, so paging depth and the selection both survive. */
+  private async reloadLoaded(client: GitClient, branch: HistoryBranch): Promise<boolean> {
+    this.reloadRequested = false;
+    const count = this.commits.length;
+    if (count === 0) return false;
+    const gen = ++this.generation;
+    const [batch, local] = await Promise.all([client.commits("HEAD", count, 0), client.localCommits(branch)]);
+    if (gen !== this.generation) return false;
+    this.commits = batch;
+    this.localShas = new Set(local.map((c) => c.sha));
+    this.tip = batch[0]?.sha ?? null;
+    if (batch.length < count) this.hasMore = false;
     await this.updateOrSelectFirstCommit(client);
     return true;
   }

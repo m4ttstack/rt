@@ -5,7 +5,7 @@
  * pixels only; every decision (guard checks, selection math, confirm
  * timers) lives here.
  */
-import { extname, join, normalize } from "node:path";
+import { basename, extname, join, normalize } from "node:path";
 import { createStackGuardRunners } from "../stack-guard.ts";
 import {
   DiffSelection,
@@ -85,10 +85,15 @@ export interface MissionDeps {
    */
   listGitWorktrees: ListGitWorktreesFn;
   fileActions: FileActions;
-  /** Sync, same caching contract as resolveDefaultBranch: read once per refresh(), never from model()/push(). */
+  /**
+   * Sync and slow (prefs, a git subprocess, up to nine `which` probes): read
+   * at start, on every worktree change, and on mission:refresh only, never
+   * from refresh()/model()/push().
+   */
   resolveEditor: (dir: string) => ResolvedEditor | null;
-  /** Must never inherit stdio or prompt: the board owns the terminal. */
+  /** Must never inherit stdio or prompt: the board owns the terminal. The driver never awaits it. */
   launchEditor: (command: string, target: string) => Promise<boolean>;
+  /** Sync stat, called once per History changeset (the cache drops on every refresh and git-status sweep), never per push. */
   pathExists: (absPath: string) => boolean;
 }
 
@@ -267,7 +272,7 @@ export class MissionDriver {
   private readonly history = new HistoryStore();
   /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
   private historySyncs = 0;
-  /** Cached by refresh(), same contract as defaultBranch. */
+  /** See MissionDeps.resolveEditor for when this is re-read. */
   private editor: ResolvedEditor | null = null;
   /** Keyed by changeset identity so a push never stats the disk; every refresh drops it, since the tree may have changed under an unchanged changeset. */
   private onDiskCache: { changeset: ChangesetData | null; paths: Set<string> } = { changeset: null, paths: new Set() };
@@ -293,6 +298,7 @@ export class MissionDriver {
   }
 
   async run(): Promise<void> {
+    this.resolveEditor();
     await this.refresh();
     const session = await this.deps.openSession("mission", this.model());
     this.session = session;
@@ -406,6 +412,10 @@ export class MissionDriver {
     this.onDiskCache = { changeset: null, paths: new Set() };
   }
 
+  private resolveEditor(): void {
+    this.editor = this.deps.resolveEditor(this.state.currentWorktree);
+  }
+
   private worktreeRows(): WorktreeRow[] {
     return joinWorktreeRows(mergeWorktreeTrees(this.trees, this.gitWorktrees, this.state.currentRepo, (path) => this.treeCanon.get(path) ?? path), this.currentRepoBadges());
   }
@@ -478,7 +488,6 @@ export class MissionDriver {
     // instead of calling this themselves.
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
-    this.editor = this.deps.resolveEditor(this.state.currentWorktree);
     this.clearOnDisk();
     const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
@@ -644,6 +653,11 @@ export class MissionDriver {
         break;
       case "mission:menu-action":
         await this.handleMenuAction(intent.payload as MenuActionPayload | undefined);
+        break;
+      case "mission:refresh":
+        this.resolveEditor();
+        await this.refresh();
+        this.push();
         break;
       default:
         break;
@@ -977,6 +991,7 @@ export class MissionDriver {
     this.state.currentWorktree = path;
     this.state.settling = settling;
     this.history.reset();
+    this.resolveEditor();
   }
 
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
@@ -1107,13 +1122,13 @@ export class MissionDriver {
           if (typeof p.sha === "string") this.copy(p.sha);
           break;
         case "reveal":
-          if (abs) this.deps.fileActions.reveal(abs);
+          if (abs && !this.deps.fileActions.reveal(abs)) this.state.notice = `Could not reveal ${rel}`;
           break;
         case "reveal-repo":
-          this.deps.fileActions.reveal(root, "folder");
+          if (!this.deps.fileActions.reveal(root, "folder")) this.state.notice = `Could not reveal ${basename(root)}`;
           break;
         case "open-default":
-          if (abs) this.deps.fileActions.open(abs);
+          if (abs && !this.deps.fileActions.open(abs)) this.state.notice = `Could not open ${rel}`;
           break;
         case "open-editor":
         case "open-repo-editor": {
@@ -1123,9 +1138,7 @@ export class MissionDriver {
             this.state.notice = "No editor set: run rt code once to pick one";
             break;
           }
-          if (!(await this.deps.launchEditor(this.editor.command, target))) {
-            this.state.notice = `Could not open ${this.editor.label}`;
-          }
+          this.launchInBackground(this.editor, target);
           break;
         }
         case "ignore-file":
@@ -1144,14 +1157,20 @@ export class MissionDriver {
           break;
         }
         case "discard-file": {
-          const file = rel ? this.snapshot.files.find((f) => f.path === rel) : undefined;
+          if (!rel) break;
+          // The cached snapshot can lag the tree (a file deleted then
+          // recreated keeps kind "deleted" until a sweep notices), and
+          // discardChanges picks Trash versus checkout from the kind.
+          this.snapshot = await client.snapshot();
+          // Set before the lookup: the fresh read can differ from what the
+          // board shows, and discardChanges can throw after it has already
+          // changed the tree.
+          mutated = true;
+          const file = this.snapshot.files.find((f) => f.path === rel);
           if (!file) {
-            if (rel) this.state.notice = `${rel} has no changes to discard`;
+            this.state.notice = `${rel} has no changes to discard`;
             break;
           }
-          // Set before the call: discardChanges can throw after it has
-          // already changed the tree, and the board must show that tree.
-          mutated = true;
           await client.discardChanges([file]);
           this.state.selections.delete(file.path);
           break;
@@ -1160,6 +1179,7 @@ export class MissionDriver {
           const name = typeof p.name === "string" ? p.name.trim() : "";
           if (typeof p.sha === "string" && name !== "") {
             await client.createTag(name, { sha: p.sha });
+            this.history.requestReload();
             mutated = true;
           }
           break;
@@ -1173,7 +1193,17 @@ export class MissionDriver {
   }
 
   private copy(text: string): void {
-    this.deps.fileActions.copy(text);
-    this.state.notice = "Copied";
+    this.state.notice = this.deps.fileActions.copy(text) ? "Copied" : "Could not copy";
+  }
+
+  /** Never awaited: an editor CLI that waits for its window must not hold up the intent loop. */
+  private launchInBackground(editor: ResolvedEditor, target: string): void {
+    const failed = (): void => {
+      this.state.notice = `Could not open ${editor.label}`;
+      this.push();
+    };
+    this.deps.launchEditor(editor.command, target).then((ok) => {
+      if (!ok) failed();
+    }, failed);
   }
 }

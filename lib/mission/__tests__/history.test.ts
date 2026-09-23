@@ -18,9 +18,10 @@ function shas(prefix: string, n: number): string[] {
 
 type HistoryClient = Pick<GitClient, "commits" | "localCommits" | "changedFiles" | "commitRangeChangedFiles" | "commitDiff" | "commitRangeDiff">;
 
-function fakeClient(opts: { history: string[]; local?: string[]; files?: Record<string, string[]> }) {
+function fakeClient(opts: { history: string[]; local?: string[]; files?: Record<string, string[]>; tags?: Record<string, string[]> }) {
   const calls = { commits: [] as Array<{ range?: string; limit?: number; skip?: number }>, local: [] as Array<number | undefined>, changed: [] as string[], range: [] as string[][], diff: [] as string[] };
-  const byShas = (list: string[], limit = list.length, skip = 0) => list.slice(skip, skip + limit).map((s) => fakeCommit(s));
+  const byShas = (list: string[], limit = list.length, skip = 0) =>
+    list.slice(skip, skip + limit).map((s) => ({ ...fakeCommit(s), tags: opts.tags?.[s] ?? [] }));
   const client: HistoryClient = {
     commits: async (range, limit, skip) => {
       calls.commits.push({ range, limit, skip });
@@ -71,6 +72,38 @@ describe("HistoryStore", () => {
     const before = calls.commits.filter((c) => c.limit === 100).length;
     expect(await store.syncTip(client, BRANCH)).toBe(false);
     expect(calls.commits.filter((c) => c.limit === 100).length).toBe(before);
+  });
+
+  test("a requested reload re-reads every loaded commit in place, keeping paging depth and the selection", async () => {
+    const opts = { history: shas("c", 250), tags: {} as Record<string, string[]> };
+    const { client, calls } = fakeClient(opts);
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    await store.loadNextBatch(client, BRANCH);
+    await store.select(client, ["c150"]);
+    const changesetLoads = calls.changed.length;
+
+    opts.tags.c150 = ["v1"];
+    store.requestReload();
+    expect(await store.syncTip(client, BRANCH)).toBe(true);
+
+    expect(calls.commits.at(-1)).toEqual({ range: "HEAD", limit: 200, skip: 0 });
+    expect(store.commits.length).toBe(200);
+    expect(store.commits.find((c) => c.sha === "c150")!.tags).toEqual(["v1"]);
+    expect(store.selection).toEqual(["c150"]);
+    expect(store.hasMore).toBe(true);
+    expect(calls.changed.length).toBe(changesetLoads);
+  });
+
+  test("a requested reload is served once: the next unchanged-tip sync does not reload again", async () => {
+    const { client, calls } = fakeClient({ history: shas("c", 3) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    store.requestReload();
+    await store.syncTip(client, BRANCH);
+    const reads = calls.commits.length;
+    expect(await store.syncTip(client, BRANCH)).toBe(false);
+    expect(calls.commits.length).toBe(reads + 1);
   });
 
   test("a new tip reloads and keeps a selection that is still present", async () => {

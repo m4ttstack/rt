@@ -165,7 +165,7 @@ function realDeps(sandbox: Sandbox, session: LiveSession, opened: (model: Missio
     readPullRebase: getPullRebase,
     buildGuards: async () => new Map(),
     listGitWorktrees: listWorktreesAsync,
-    fileActions: { copy: () => {}, reveal: () => {}, open: () => {} },
+    fileActions: { copy: () => true, reveal: () => true, open: () => true },
     resolveEditor: () => null,
     launchEditor: async () => false,
     pathExists: existsSync,
