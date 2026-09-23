@@ -7,14 +7,18 @@ import { __test__ as gate } from "../../lib/ui/gate.ts";
 import { __test__ as pickTest, type PickHandle } from "../../lib/ui/pick.ts";
 import type { PickRequest, PickResult } from "../../lib/ui/protocol.ts";
 
-/** A real git repo with two workspace packages, so getWorkspacePackages inside
-    selectPackageAndScript returns 2+ and the manual package picker (with the
-    queue rows) actually renders instead of auto-selecting a lone package. */
+/** A real git repo with a neutral remote (so deriveRepoIdentity yields a
+    remote identity savePreset can write under) and two workspace packages,
+    so getWorkspacePackages inside selectPackageAndScript returns 2+ and the
+    manual package picker (with the queue rows) actually renders instead of
+    auto-selecting a lone package. */
 function makeQueueRepoFixture(container: string): string {
   const root = join(container, "fixture");
   mkdirSync(root, { recursive: true });
-  const r = Bun.spawnSync(["git", "-C", root, "init", "-q"]);
-  if (r.exitCode !== 0) throw new Error(`git init failed: ${r.stderr.toString()}`);
+  for (const args of [["init", "-q"], ["remote", "add", "origin", "https://example.com/acme/fixture.git"]]) {
+    const r = Bun.spawnSync(["git", "-C", root, ...args]);
+    if (r.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr.toString()}`);
+  }
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fixture", workspaces: ["packages/*"] }));
   for (const pkg of ["a", "b"]) {
     const dir = join(root, "packages", pkg);
