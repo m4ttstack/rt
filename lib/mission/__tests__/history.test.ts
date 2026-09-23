@@ -131,6 +131,31 @@ describe("HistoryStore", () => {
     expect(store.commits.length).toBe(120);
     expect(store.localShas.size).toBe(120);
     expect(new Set(store.commits.map((c) => c.sha)).size).toBe(120);
+    // Pushed commits still follow a short local page.
+    expect(store.hasMore).toBe(true);
+  });
+
+  test("a git page shorter than a full batch ends paging", async () => {
+    const { client } = fakeClient({ history: shas("c", 150) });
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    await store.loadNextBatch(client, BRANCH);
+    expect(store.commits.length).toBe(150);
+    expect(store.hasMore).toBe(false);
+  });
+
+  test("an unchanged tip still refreshes the unpushed set, as GHD's refreshHistorySection does", async () => {
+    const opts = { history: shas("c", 3), local: ["c000", "c001"] };
+    const { client, calls } = fakeClient(opts);
+    const store = new HistoryStore();
+    await store.syncTip(client, BRANCH);
+    expect(store.localShas.size).toBe(2);
+    opts.local = [];
+    const reloads = calls.commits.filter((c) => c.limit === 100).length;
+    expect(await store.syncTip(client, BRANCH)).toBe(true);
+    expect(store.localShas.size).toBe(0);
+    expect(calls.commits.filter((c) => c.limit === 100).length).toBe(reloads);
+    expect(await store.syncTip(client, BRANCH)).toBe(false);
   });
 
   test("two concurrent loadNextBatch calls collapse into a single in-flight request", async () => {

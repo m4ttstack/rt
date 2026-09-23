@@ -53,7 +53,9 @@ export class HistoryStore {
     // loaded/tip mean; proceeding past it would apply this call's own
     // (now unrelated) worktree/client data onto whatever state reset left.
     if (this.generation !== entry) return false;
-    if (this.loaded && head === this.tip) return false;
+    // GHD's refreshHistorySection reloads local commits on every refresh: a
+    // push or publish empties the unpushed set without moving HEAD.
+    if (this.loaded && head === this.tip) return this.refreshLocalShas(client, branch, entry);
     const gen = ++this.generation;
     const [batch, local] = await Promise.all([client.commits("HEAD", COMMIT_BATCH_SIZE, 0), client.localCommits(branch)]);
     if (gen !== this.generation) return false;
@@ -65,6 +67,15 @@ export class HistoryStore {
     this.loaded = true;
     this.hasMore = batch.length === COMMIT_BATCH_SIZE;
     await this.updateOrSelectFirstCommit(client);
+    return true;
+  }
+
+  private async refreshLocalShas(client: GitClient, branch: HistoryBranch, entry: number): Promise<boolean> {
+    const local = await client.localCommits(branch);
+    if (this.generation !== entry) return false;
+    const next = new Set(local.map((c) => c.sha));
+    if (next.size === this.localShas.size && [...next].every((sha) => this.localShas.has(sha))) return false;
+    this.localShas = next;
     return true;
   }
 
@@ -132,7 +143,9 @@ export class HistoryStore {
     const known = new Set(base.map((c) => c.sha));
     const fresh = newCommits.filter((c) => !known.has(c.sha));
     this.commits = [...base, ...fresh];
-    this.hasMore = fresh.length > 0;
+    // A short local page can still be followed by pushed commits; a short
+    // git page is the end of history.
+    this.hasMore = fresh.length > 0 && (localAdditions.length > 0 || newCommits.length === COMMIT_BATCH_SIZE);
   }
 
   isContiguous(): boolean {
