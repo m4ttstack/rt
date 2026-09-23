@@ -109,12 +109,12 @@ let planModelsChecks: [Check] = [
          "subtitle":"The voice agents use for reviews, replies and PR descriptions posted under your name.",
          "footnote":"You can also choose from a terminal: rt skills writing-style use",
          "options":[{"id":"mattstack:writing-style-sparse","label":"Sparse","detail":"Terse."}],
-         "other":{"label":"Use my own skill…","hint":"Any installed skill id.","suggestions":["x:y","my-voice"]}}
+         "other":{"label":"Use my own skill…","hint":"Any installed skill id.","suggestions":["x:y","team-voice"]}}
         """
         let a = try JSONDecoder().decode(RowAction.self, from: Data(json.utf8))
         c.expectEqual(a.subtitle, "The voice agents use for reviews, replies and PR descriptions posted under your name.")
         c.expectEqual(a.footnote, "You can also choose from a terminal: rt skills writing-style use")
-        c.expectEqual(a.other?.suggestions, ["x:y", "my-voice"])
+        c.expectEqual(a.other?.suggestions, ["x:y", "team-voice"])
         let again = try JSONDecoder().decode(RowAction.self, from: JSONEncoder().encode(a))
         c.expectEqual(again, a)
     },

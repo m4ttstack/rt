@@ -39,11 +39,11 @@ describe("writingStyleRow", () => {
     const inventory: SkillInventory = {
       installed: new Set(["x:y", "mattstack:writing-style-sparse"]),
       disabledPluginFor: new Map(),
-      personal: [{ name: "my-voice", dir: "/home/.mattstack/user/skills/my-voice" }],
+      personal: [{ name: "team-voice", dir: "/home/.mattstack/user/skills/team-voice" }],
     };
     const r = writingStyleRow({ homeReady: true, resolved: { skill: "x", source: "fallback" }, inventory, options: opts });
     const action = r.action as { other?: { suggestions?: string[] } };
-    expect(action.other?.suggestions).toEqual(["my-voice", "x:y"]);
+    expect(action.other?.suggestions).toEqual(["team-voice", "x:y"]);
   });
 
   test("a team default naming a preset is ready on a fresh Mac", () => {
@@ -59,8 +59,8 @@ describe("writingStyleRow", () => {
   });
 
   test("preferences.md and personal choices read ready with their source", () => {
-    expect(writingStyleRow({ homeReady: true, resolved: { skill: "matt:matts-writing-style", source: "preferences" }, inventory: inv(["matt:matts-writing-style"]), options: opts }).detail).toBe("matt:matts-writing-style (from preferences.md)");
-    expect(writingStyleRow({ homeReady: true, resolved: { skill: "my-voice", source: "user" }, inventory: inv(["my-voice"]), options: opts }).detail).toBe("my-voice (yours)");
+    expect(writingStyleRow({ homeReady: true, resolved: { skill: "acme:team-writing-style", source: "preferences" }, inventory: inv(["acme:team-writing-style"]), options: opts }).detail).toBe("acme:team-writing-style (from preferences.md)");
+    expect(writingStyleRow({ homeReady: true, resolved: { skill: "team-voice", source: "user" }, inventory: inv(["team-voice"]), options: opts }).detail).toBe("team-voice (yours)");
   });
 
   test("every action this row can carry is one the Done screen handles", () => {

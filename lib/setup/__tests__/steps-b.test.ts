@@ -821,16 +821,16 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
 
   describe("skills.link", () => {
     test("no app bundle, a personal skill present: links it and reports done", async () => {
-      const dir = join(personalSkillsDir(home), "my-voice");
+      const dir = join(personalSkillsDir(home), "team-voice");
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "SKILL.md"), "---\nname: my-voice\ndescription: x\n---\nbody\n");
+      writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
 
       const p = fakeProbes({ home });
       const { ctx } = makeCtx(p);
       const outcome = await skillsLinkStep.run(ctx);
 
       expect(outcome.state).toBe("done");
-      expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+      expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
     });
 
     test("no app bundle, no personal skills: skipped as before", async () => {

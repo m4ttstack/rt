@@ -209,11 +209,11 @@ test("writing-style: the row blocks Finish with a choose action until use picks 
   expect(action.subtitle).toBe(CHOOSE_SUBTITLE);
   expect(action.footnote).toBe(CHOOSE_FOOTNOTE);
   expect(action.options.map((o) => o.id)).toEqual([
-    SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured", "my-voice", "matt:matts-writing-style",
+    SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured", "team-voice", "acme:team-writing-style",
   ]);
   expect(action.options.filter((o) => o.sample).map((o) => o.id)).toEqual([SPARSE, "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
-  expect(action.options.find((o) => o.id === "my-voice")).toEqual({ id: "my-voice", label: "my-voice", detail: "Your own style, in your home repo" });
-  expect(action.options.find((o) => o.id === "matt:matts-writing-style")).toEqual({ id: "matt:matts-writing-style", label: "matt:matts-writing-style", detail: "An installed skill" });
+  expect(action.options.find((o) => o.id === "team-voice")).toEqual({ id: "team-voice", label: "team-voice", detail: "Your own style, in your home repo" });
+  expect(action.options.find((o) => o.id === "acme:team-writing-style")).toEqual({ id: "acme:team-writing-style", label: "acme:team-writing-style", detail: "An installed skill" });
   expect(action.other).toEqual({
     label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.",
     suggestions: ["acme:review-voice", "superpowers:brainstorming", "superpowers:writing-plans", "team:team-writing-style"],
@@ -242,10 +242,10 @@ test("writing-style: use refuses a bad id and an unknown skill with exit 2 and c
   const still = await run("writing-style", ["setup", "plan", "--json"], "", state);
   expect(still.lines[0].finishBlockedBy).toEqual([WRITING_STYLE]);
 
-  const own = await run("writing-style", ["skills", "writing-style", "use", "my-voice", "--json"], "", state);
+  const own = await run("writing-style", ["skills", "writing-style", "use", "team-voice", "--json"], "", state);
   expect(own.code).toBe(0);
   const after = await run("writing-style", ["setup", "plan", "--json"], "", state);
   const ready = writingStyleRow(after.lines[0])!;
-  expect(ready).toMatchObject({ status: "ready", detail: "my-voice (yours)" });
-  expect((ready.action as ChooseAction).selected).toBe("my-voice");
+  expect(ready).toMatchObject({ status: "ready", detail: "team-voice (yours)" });
+  expect((ready.action as ChooseAction).selected).toBe("team-voice");
 });

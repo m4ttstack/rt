@@ -51,11 +51,11 @@ describe("readSkillInventory", () => {
   });
 
   test("~/.claude/skills entries are installed; personal skills are listed", () => {
-    skill(join(home, ".claude", "skills", "matt:matts-writing-style"), "matt:matts-writing-style");
-    skill(join(personalSkillsDir(home), "my-voice"), "my-voice");
+    skill(join(home, ".claude", "skills", "acme:team-writing-style"), "acme:team-writing-style");
+    skill(join(personalSkillsDir(home), "team-voice"), "team-voice");
     const inv = readSkillInventory(home, null);
-    expect(inv.installed.has("matt:matts-writing-style")).toBe(true);
-    expect(inv.personal.map((s) => s.name)).toEqual(["my-voice"]);
+    expect(inv.installed.has("acme:team-writing-style")).toBe(true);
+    expect(inv.personal.map((s) => s.name)).toEqual(["team-voice"]);
   });
 });
 
@@ -67,27 +67,27 @@ describe("isStyleUsable and listWritingStyles", () => {
 
   test("lists presets, personal and installed styles once each, with current", () => {
     const mattstack = plugin("mattstack@mattstack", true, ["writing-style-sparse"]);
-    skill(join(home, ".claude", "skills", "matt:matts-writing-style"), "matt:matts-writing-style");
-    skill(join(personalSkillsDir(home), "my-voice"), "my-voice");
+    skill(join(home, ".claude", "skills", "acme:team-writing-style"), "acme:team-writing-style");
+    skill(join(personalSkillsDir(home), "team-voice"), "team-voice");
     const inv = readSkillInventory(home, [mattstack]);
-    const out = listWritingStyles(inv, { skill: "matt:matts-writing-style", source: "user" });
-    expect(out.current).toEqual({ skill: "matt:matts-writing-style", source: "user" });
+    const out = listWritingStyles(inv, { skill: "acme:team-writing-style", source: "user" });
+    expect(out.current).toEqual({ skill: "acme:team-writing-style", source: "user" });
     const ids = out.options.map((o) => o.id);
     expect(ids.slice(0, 3)).toEqual(["mattstack:writing-style-sparse", "mattstack:writing-style-conversational", "mattstack:writing-style-structured"]);
     expect(ids.filter((id) => id === "mattstack:writing-style-sparse")).toHaveLength(1);
     expect(out.options.find((o) => o.id === "mattstack:writing-style-sparse")?.kind).toBe("preset");
-    expect(out.options.find((o) => o.id === "my-voice")?.kind).toBe("personal");
-    expect(out.options.find((o) => o.id === "matt:matts-writing-style")?.kind).toBe("installed");
+    expect(out.options.find((o) => o.id === "team-voice")?.kind).toBe("personal");
+    expect(out.options.find((o) => o.id === "acme:team-writing-style")?.kind).toBe("installed");
   });
 });
 
 describe("linkPersonalSkills", () => {
   test("links personal skill directories into ~/.claude/skills and ignores plain files", () => {
     const dir = personalSkillsDir(home);
-    skill(join(dir, "my-voice"), "my-voice");
+    skill(join(dir, "team-voice"), "team-voice");
     writeFileSync(join(dir, "preferences.md"), "## Writing style\n");
     linkPersonalSkills(home);
-    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
     expect(existsSync(join(home, ".claude", "skills", "preferences.md"))).toBe(false);
   });
 

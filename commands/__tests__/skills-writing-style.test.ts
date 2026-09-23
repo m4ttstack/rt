@@ -96,12 +96,12 @@ describe("use", () => {
 
   test("a personal skill is linked, then accepted", async () => {
     homeRepo();
-    const dir = join(home, ".mattstack", "user", "skills", "my-voice");
+    const dir = join(home, ".mattstack", "user", "skills", "team-voice");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "SKILL.md"), "---\nname: my-voice\ndescription: x\n---\nbody\n");
-    await writingStyleUse(["my-voice", "--json"], {}, fakeDeps());
-    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
-    expect(writes[0]!.value).toBe("my-voice");
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+    await writingStyleUse(["team-voice", "--json"], {}, fakeDeps());
+    expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
+    expect(writes[0]!.value).toBe("team-voice");
   });
 
   test("no id without a TTY is usage; with a TTY it picks", async () => {
@@ -138,16 +138,16 @@ describe("new", () => {
   test("copies the preset into the home repo, strips compiler comments, renames, links", async () => {
     homeRepo();
     const list = mattstackPlugin();
-    await writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
-    const dir = join(home, ".mattstack", "user", "skills", "my-voice");
+    await writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
+    const dir = join(home, ".mattstack", "user", "skills", "team-voice");
     const text = readFileSync(join(dir, "SKILL.md"), "utf8");
-    expect(text).toContain("name: my-voice");
-    expect(text).toContain("names my-voice.");
+    expect(text).toContain("name: team-voice");
+    expect(text).toContain("names team-voice.");
     expect(text).not.toContain("<!-- ");
     expect(readFileSync(join(dir, "pr-description.md"), "utf8")).toContain("PR descriptions");
-    expect(lstatSync(join(home, ".claude", "skills", "my-voice")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
     const body = JSON.parse(out[0]!);
-    expect(body).toMatchObject({ name: "my-voice", from: "mattstack:writing-style-sparse" });
+    expect(body).toMatchObject({ name: "team-voice", from: "mattstack:writing-style-sparse" });
   });
 
   test("refusals: no-home-repo, bad-name, bad-preset, exists, no-plugin, usage", async () => {
@@ -156,11 +156,11 @@ describe("new", () => {
       await expect(writingStyleNew([...args, "--json"], {}, fakeDeps(over))).rejects.toThrow("exit 2");
       return JSON.parse(out[0]!).error.code;
     };
-    expect(await code(["my-voice"])).toBe("no-home-repo");
+    expect(await code(["team-voice"])).toBe("no-home-repo");
     homeRepo();
     expect(await code(["../x"])).toBe("bad-name");
-    expect(await code(["my-voice", "--from", "loud"])).toBe("bad-preset");
-    expect(await code(["my-voice"], { pluginListStdout: async () => "[]" })).toBe("no-plugin");
+    expect(await code(["team-voice", "--from", "loud"])).toBe("bad-preset");
+    expect(await code(["team-voice"], { pluginListStdout: async () => "[]" })).toBe("no-plugin");
     const list = mattstackPlugin();
     mkdirSync(join(home, ".mattstack", "user", "skills", "taken"), { recursive: true });
     expect(await code(["taken"], { pluginListStdout: async () => list })).toBe("exists");
@@ -175,9 +175,9 @@ describe("new", () => {
     const crlfContent = "---\r\nname: writing-style-sparse\r\ndescription: \"Use only mattstack:writing-style-sparse\"\r\n---\r\n\r\n# Sparse\r\n";
     writeFileSync(join(dir, "SKILL.md"), crlfContent);
     const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
-    await writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
-    const text = readFileSync(join(home, ".mattstack", "user", "skills", "my-voice", "SKILL.md"), "utf8");
-    expect(text).toContain("name: my-voice");
+    await writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }));
+    const text = readFileSync(join(home, ".mattstack", "user", "skills", "team-voice", "SKILL.md"), "utf8");
+    expect(text).toContain("name: team-voice");
     expect(text).not.toContain("\r\n");
   });
 
@@ -189,9 +189,9 @@ describe("new", () => {
     writeFileSync(join(dir, "SKILL.md"), "# No frontmatter\nJust content\n");
     const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
     out.length = 0;
-    await expect(writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow("exit 2");
+    await expect(writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow("exit 2");
     expect(JSON.parse(out[0]!).error.code).toBe("no-plugin");
-    expect(existsSync(join(home, ".mattstack", "user", "skills", "my-voice"))).toBe(false);
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "team-voice"))).toBe(false);
   });
 
   test("unreadable pr-description.md (directory) fails without leaving skills directory behind", async () => {
@@ -209,7 +209,7 @@ describe("new", () => {
     mkdirSync(join(dir, "pr-description.md"));
     const list = JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
     out.length = 0;
-    await expect(writingStyleNew(["my-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow();
-    expect(existsSync(join(home, ".mattstack", "user", "skills", "my-voice"))).toBe(false);
+    await expect(writingStyleNew(["team-voice", "--from", "sparse", "--json"], {}, fakeDeps({ pluginListStdout: async () => list }))).rejects.toThrow();
+    expect(existsSync(join(home, ".mattstack", "user", "skills", "team-voice"))).toBe(false);
   });
 });

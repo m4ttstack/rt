@@ -78,8 +78,8 @@ let rowActionChecks: [Check] = [
         let opts = [ChooseOption(id: "mattstack:writing-style-sparse", label: "Sparse", detail: "Terse.")]
         let a = RowAction(type: .choose, label: "Choose style…", verb: ["skills", "writing-style", "use"], options: opts, other: ChooseOther(label: "Use my own skill…", hint: "h"))
         c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseOption(options: opts, other: ChooseOther(label: "Use my own skill…", hint: "h")))
-        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: ["id": "my-voice"], alternative: nil),
-                      .rtVerb(args: ["skills", "writing-style", "use", "my-voice", "--json"], stdin: nil))
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: ["id": "team-voice"], alternative: nil),
+                      .rtVerb(args: ["skills", "writing-style", "use", "team-voice", "--json"], stdin: nil))
         c.expectEqual(RowActionDispatcher.dispatch(RowAction(type: .choose, label: "x"), fieldValues: ["id": "a"], alternative: nil), .none)
     },
 ]
