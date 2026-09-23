@@ -62,6 +62,10 @@ export type ExplainRowWire = Pick<
 export interface EffectiveWire {
   scope: string | null;
   value?: unknown;
+  /** For a `merge: "deep"` object key, the overlay of every present, valid,
+      non-default layer, weakest to strongest (arrays replace). Omitted when
+      no store layer sets the key; never set for secrets. */
+  authored?: unknown;
   file: string | null;
   invalid?: string;
 }
@@ -191,11 +195,14 @@ export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): Effectiv
   if (def.secret === true) return wire;
   if (def.merge === "deep" && def.type === "object") {
     let merged: unknown = undefined;
+    let authored: unknown = undefined;
     for (const r of live) {
       if (r.invalid || !("value" in r)) continue;
       merged = merged === undefined ? r.value : overlay(merged, r.value);
+      if (r.scope !== "default") authored = authored === undefined ? r.value : overlay(authored, r.value);
     }
     wire.value = merged;
+    if (authored !== undefined) wire.authored = authored;
   } else if ("value" in top) {
     wire.value = top.value;
   }

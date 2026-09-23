@@ -48,6 +48,32 @@ describe("effectiveFromRows", () => {
     expect(eff.value).toEqual({ b: 2 });
   });
 
+  test("a deep-merged object reports the store layers alone as authored", () => {
+    const d = def({ type: "object", merge: "deep", default: { enabled: true, sweep: false } });
+    const eff = effectiveFromRows(d, [row("default", { enabled: true, sweep: false }), row("team"), row("user"), row("machine", { enabled: false })]);
+    expect(eff.value).toEqual({ enabled: false, sweep: false });
+    expect(eff.authored).toEqual({ enabled: false });
+  });
+
+  test("a deep-merged object with only its default carries no authored", () => {
+    const d = def({ type: "object", merge: "deep", default: { enabled: true } });
+    const eff = effectiveFromRows(d, [row("default", { enabled: true }), row("user"), row("machine")]);
+    expect(eff.value).toEqual({ enabled: true });
+    expect("authored" in eff).toBe(false);
+  });
+
+  test("authored overlays every store layer weakest to strongest", () => {
+    const d = def({ type: "object", merge: "deep", default: { c: 3 } });
+    const eff = effectiveFromRows(d, [row("default", { c: 3 }), row("user", { a: 1 }), row("machine", { b: 2 })]);
+    expect(eff.authored).toEqual({ a: 1, b: 2 });
+  });
+
+  test("a deep-merged secret carries no authored", () => {
+    const d = def({ type: "object", merge: "deep", secret: true });
+    const eff = effectiveFromRows(d, [row("user", { a: 1 })]);
+    expect("authored" in eff).toBe(false);
+  });
+
   test("secrets never carry a value", () => {
     const eff = effectiveFromRows(def({ secret: true }), [row("user", "s3cret")]);
     expect(eff).toEqual({ scope: "user", file: "/stores/user.jsonc" });
