@@ -48,6 +48,53 @@ public final class WaiverClient {
     }
 }
 
+/// Runs a choose row's verb for the Done screen and Settings, which have no
+/// verb runner of their own, so a refusal can be shown inside the sheet.
+@MainActor
+public final class ChoiceClient {
+    private let rt: RtRunning
+    public init(rt: RtRunning) { self.rt = rt }
+
+    /// nil once the verb succeeded; otherwise the user-facing failure copy.
+    public func choose(verb: [String], id: String) async -> String? {
+        let args = verb + [id, "--json"]
+        do {
+            let result = try await rt.run(args, stdin: nil)
+            if let e = result.userError { return e.message }
+            if result.exitCode != 0 { return result.failureCopy(verb: args.dropLast().joined(separator: " ")) }
+        } catch {
+            return (error as? RtClientError)?.copy ?? "rt \(verb.joined(separator: " ")) failed to start."
+        }
+        return nil
+    }
+}
+
+public enum DoneRoute: Equatable, Sendable {
+    case openURL(URL)
+    case steps([String])
+    case recheck
+    case choose
+}
+
+/// The Done screen's only routing; the types it routes are pinned to
+/// DONE_ACTION_TYPES in lib/setup/contract.ts.
+public enum DoneActions {
+    public static func route(_ action: RowAction) -> DoneRoute? {
+        switch action.type {
+        case .openURL:
+            // Mirrors RowActionDispatcher: an unsupported scheme does nothing.
+            guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return nil }
+            return .openURL(url)
+        case .steps: return .steps(action.steps ?? [])
+        // The only run verb a Done row carries is a re-check; Done re-reads the plan itself.
+        case .run: return .recheck
+        case .choose: return .choose
+        case .openSettings, .requestPermission, .connect, .oauth, .install, .ownerOnce, .linkBundled, .chooseFolder, .unknown:
+            return nil
+        }
+    }
+}
+
 /// The Done screen's state: which rows block Finish, which are merely still
 /// to do, and the Skip for now sheet. Nothing is listed until the
 /// post-install re-check lands, since the model still holds the pre-Install

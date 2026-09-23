@@ -279,4 +279,18 @@ let doneModelChecks: [Check] = [
             c.expectEqual(m.finishEnabled, true)
         }
     },
+    Check("Done routes exactly the contract's DONE_ACTION_TYPES (lib/setup/contract.ts)") { c in
+        let sample = { (t: ActionType) in RowAction(type: t, label: "x", verb: ["a"], steps: ["s"], url: "https://example.com") }
+        let routed = Set(ActionType.allCases.filter { DoneActions.route(sample($0)) != nil })
+        c.expectEqual(routed, Set([ActionType.openURL, .steps, .run, .choose]))
+    },
+    Check("ChoiceClient: nil on success; the exit-2 envelope's message on refusal") { c in
+        let rt = ScriptedRt()
+        rt.answers["skills writing-style use a"] = (0, #"{"contract":1,"at":"x","skill":"a","scope":"user"}"#)
+        rt.answers["skills writing-style use -rf"] = (2, #"{"contract":1,"at":"x","error":{"code":"bad-id","message":"\"-rf\" is not a skill id"}}"#)
+        let client = await ChoiceClient(rt: rt)
+        c.expect(await client.choose(verb: ["skills", "writing-style", "use"], id: "a") == nil)
+        c.expectEqual(await client.choose(verb: ["skills", "writing-style", "use"], id: "-rf"), "\"-rf\" is not a skill id")
+        c.expectEqual(rt.calls.last?.args, ["skills", "writing-style", "use", "-rf", "--json"])
+    },
 ]

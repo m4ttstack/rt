@@ -47,10 +47,10 @@ public enum RecheckPolicy: String, Codable, Equatable, Sendable {
     }
 }
 
-public enum ActionType: String, Codable, Equatable, Sendable {
+public enum ActionType: String, Codable, Equatable, Sendable, CaseIterable {
     case openSettings = "open-settings"
     case requestPermission = "request-permission"
-    case connect, oauth, install, steps, run
+    case connect, oauth, install, steps, run, choose
     case ownerOnce = "owner-once"
     case linkBundled = "link-bundled"
     case openURL = "open-url"
@@ -60,6 +60,22 @@ public enum ActionType: String, Codable, Equatable, Sendable {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = ActionType(rawValue: raw) ?? .unknown
     }
+}
+
+public struct ChooseOption: Codable, Equatable, Sendable {
+    public var id: String
+    public var label: String
+    public var detail: String
+    public var sample: String?
+    public init(id: String, label: String, detail: String, sample: String? = nil) {
+        self.id = id; self.label = label; self.detail = detail; self.sample = sample
+    }
+}
+
+public struct ChooseOther: Codable, Equatable, Sendable {
+    public var label: String
+    public var hint: String
+    public init(label: String, hint: String) { self.label = label; self.hint = hint }
 }
 
 public struct ActionField: Codable, Equatable, Sendable {
@@ -106,14 +122,18 @@ public struct RowAction: Codable, Equatable, Sendable {
     public var steps: [String]?
     public var url: String?
     public var startAt: String?
+    public var options: [ChooseOption]?
+    public var selected: String?
+    public var other: ChooseOther?
     public init(type: ActionType, label: String, target: String? = nil, which: String? = nil,
                 integration: String? = nil, fields: [ActionField]? = nil,
                 alternatives: [ActionAlternative]? = nil, verb: [String]? = nil, tool: String? = nil,
-                via: String? = nil, steps: [String]? = nil, url: String? = nil, startAt: String? = nil) {
+                via: String? = nil, steps: [String]? = nil, url: String? = nil, startAt: String? = nil,
+                options: [ChooseOption]? = nil, selected: String? = nil, other: ChooseOther? = nil) {
         self.type = type; self.label = label; self.target = target; self.which = which
         self.integration = integration; self.fields = fields; self.alternatives = alternatives
         self.verb = verb; self.tool = tool; self.via = via; self.steps = steps; self.url = url
-        self.startAt = startAt
+        self.startAt = startAt; self.options = options; self.selected = selected; self.other = other
     }
 }
 
@@ -134,12 +154,17 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
     /// Skipped on this Mac by `rt setup waive`; the state the Un-skip
     /// affordance keys on, never the note's wording.
     public var waived: Bool
+    /// Whether this row offers Skip at all; an rt that predates this field
+    /// keeps Fast Browser's Skip by decoding as `finishGated`.
+    public var waivable: Bool
     public init(id: String, kind: RowKind, title: String, why: String, required: Bool,
                 optionalNote: String? = nil, status: RowStatus, detail: String? = nil,
-                action: RowAction? = nil, recheck: RecheckPolicy, finishGated: Bool = false, waived: Bool = false) {
+                action: RowAction? = nil, recheck: RecheckPolicy, finishGated: Bool = false, waived: Bool = false,
+                waivable: Bool? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.why = why; self.required = required
         self.optionalNote = optionalNote; self.status = status; self.detail = detail
         self.action = action; self.recheck = recheck; self.finishGated = finishGated; self.waived = waived
+        self.waivable = waivable ?? finishGated
     }
     /// `finishGated` and `waived` are newer than the rest of the contract: an
     /// rt that predates them omits the keys, and that must read as "not
@@ -158,6 +183,8 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
         recheck = try c.decode(RecheckPolicy.self, forKey: .recheck)
         finishGated = try c.decodeIfPresent(Bool.self, forKey: .finishGated) ?? false
         waived = try c.decodeIfPresent(Bool.self, forKey: .waived) ?? false
+        // An rt that predates `waivable` offered Skip on every finish-gated row.
+        waivable = try c.decodeIfPresent(Bool.self, forKey: .waivable) ?? finishGated
     }
 }
 

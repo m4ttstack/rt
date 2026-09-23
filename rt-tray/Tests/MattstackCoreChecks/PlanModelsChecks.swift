@@ -84,4 +84,28 @@ let planModelsChecks: [Check] = [
         c.expectEqual(bare.secret, false)
         c.expectEqual(bare.hint, nil)
     },
+    Check("choose action decodes options and other; unknown type still decodes") { c in
+        let json = """
+        {"type":"choose","label":"Choose style…","verb":["skills","writing-style","use"],
+         "options":[{"id":"mattstack:writing-style-sparse","label":"Sparse","detail":"Terse.","sample":"**issue:** x"}],
+         "selected":"mattstack:writing-style-sparse",
+         "other":{"label":"Use my own skill…","hint":"Any installed skill id."}}
+        """
+        let a = try JSONDecoder().decode(RowAction.self, from: Data(json.utf8))
+        c.expectEqual(a.type, .choose)
+        c.expectEqual(a.selected, "mattstack:writing-style-sparse")
+        c.expectEqual(a.options?.first?.id, "mattstack:writing-style-sparse")
+        c.expectEqual(a.options?.first?.sample, "**issue:** x")
+        c.expectEqual(a.other?.label, "Use my own skill…")
+        let u = try JSONDecoder().decode(RowAction.self, from: Data(#"{"type":"future-thing","label":"?"}"#.utf8))
+        c.expectEqual(u.type, .unknown)
+    },
+    Check("waivable: absent on a finish-gated row reads true; present is honored") { c in
+        func row(_ extra: String) -> String {
+            #"{"id":"r","kind":"tool","title":"t","why":"w","required":false,"status":"needs-you","recheck":"on-change""# + extra + "}"
+        }
+        c.expectEqual(try JSONDecoder().decode(PlanRow.self, from: Data(row(#","finishGated":true"#).utf8)).waivable, true)
+        c.expectEqual(try JSONDecoder().decode(PlanRow.self, from: Data(row(#","finishGated":true,"waivable":false"#).utf8)).waivable, false)
+        c.expectEqual(try JSONDecoder().decode(PlanRow.self, from: Data(row("").utf8)).waivable, false)
+    },
 ]

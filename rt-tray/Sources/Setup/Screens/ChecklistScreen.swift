@@ -133,7 +133,7 @@ struct ChecklistScreen: View {
             steps = (row.title, list)
         case .collectFields(let fields, _, let alternatives):
             connect = (row, fields, alternatives)
-        case .none:
+        case .none, .chooseOption:
             break
         }
     }
