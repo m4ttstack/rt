@@ -140,7 +140,7 @@ no longer point at the same content; GHD's own fix (and rt's) is to
 downgrade it to None rather than carry it forward or reseed it to All,
 so the user reviews what's left rather than it silently riding along.
 
-RT-221's own "line-level unstage is impossible" residual dissolves
+The old "line-level unstage is impossible" residual dissolves
 under this model: unchecking a line was always just deselecting it,
 once staging stopped being a git call at all.
 
@@ -209,6 +209,8 @@ division.
 | TopBar | 56 | 2.15 | 3 | label row + value row + one blank BgSubtle band row (the board's own bottom breathing; its text block ends at 44px into the 56px band). Segment hover/open fills cover all 3 rows. |
 | BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
 | Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
+| History top rows | n/a | n/a | 4 (tabs 3 + gap 1) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline) plus one History-only blank band row before the commit list. |
+| History commit row | n/a | n/a | 2 each | `historyRowHeight`: GHD's two-line commit-list-item, subject line over tags/timestamp/unpushed line. |
 | FilterRow | 34 | 1.31 | 3 | border / text / border — already correct: a bordered box is 3 physical rows regardless of its own px height. |
 | SummaryRow (master) | 24 | 0.92 | 1 | "N changed files · M staged". |
 | ChangesList row | 26 | 1.00 | 1 each | exact unit match. |

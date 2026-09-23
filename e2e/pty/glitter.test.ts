@@ -134,4 +134,13 @@ describe("rt glitter through a pty", () => {
     expect(status).toContain("config.json");
     expect(status).toContain("src/parser.ts");
   });
+
+  test("the History tab lists the sandbox's commit and shows its diff", async () => {
+    // History changes no git state, so the screen is the only observable.
+    const { session } = await openBoard();
+    await session.press("2");
+    await session.waitForText("seed the sandbox", PAINT_TIMEOUT);
+    await session.waitForText("changed files", PAINT_TIMEOUT);
+    await session.waitForText('"maxTokens": 2048', PAINT_TIMEOUT);
+  });
 });

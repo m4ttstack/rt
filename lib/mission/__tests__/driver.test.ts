@@ -620,7 +620,7 @@ describe("MissionDriver: badge resolution", () => {
   });
 });
 
-describe("MissionDriver: real remote name, pull.rebase, and guards (RT-219)", () => {
+describe("MissionDriver: real remote name, pull.rebase, and guards", () => {
   test("a repo with no remote shows Publish repository in the action segment", async () => {
     const session = new FakeSession([{ t: "intent", name: "quit" }]);
     let opened: MissionModel | null = null;
@@ -919,7 +919,7 @@ describe("MissionDriver: commit", () => {
     expect(last.notice).toBe("main is a stack root; amend refused");
   });
 
-  // RT-221: the view clears its own local summary/description drafts the
+  // The view clears its own local summary/description drafts the
   // moment it emits mission:commit (the only point a non-empty local draft
   // can ever go back to empty -- see mission.go's emitCommit/SetModel). A
   // refusal or failure must echo the rejected text back onto the wire
