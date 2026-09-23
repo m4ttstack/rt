@@ -58,7 +58,7 @@
       "archive": "npm", "extract": "package", "bundlePath": "Contents/Helpers/fast-browser",
       "exec": ["Contents/Helpers/node/bin/node", "Contents/Helpers/fast-browser/bin/fast-browser.mjs"],
       "exposeByDefault": true, "entitlements": "none", "status": "bundled", "kind": "helper" },
-    { "name": "deck", "version": "1.0.5", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/deck", "url": "https://github.com/m4ttstack/apps/releases/download/deck-v1.0.5/deck-darwin-arm64.tgz", "sha256": "e203addd2d4b7a2e6cbbc02e57dfe81c14d6f70fc317e4a380410c271bbc6dc0",
+    { "name": "deck", "version": "1.0.6", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/deck", "url": "https://github.com/m4ttstack/apps/releases/download/deck-v1.0.6/deck-darwin-arm64.tgz", "sha256": "b9856b68c40732a01c289d8aea73afa66d11a25accd4d1404f762b9c36466dcd",
       "archive": "tar.gz", "extract": "deck", "bundlePath": "Contents/Helpers/deck", "exec": ["Contents/Helpers/deck"],
       "exposeByDefault": true, "entitlements": "jit", "status": "bundled", "kind": "helper" },
     { "name": "board", "version": "0.1.4", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/board", "url": "https://github.com/m4ttstack/apps/releases/download/board-v0.1.4/board-darwin-arm64.tgz", "sha256": "6f7f072176e7a6153a52324905ee62b2f8a4b4b9c14d624fece2d1b0644b3b2d",
