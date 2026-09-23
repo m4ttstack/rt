@@ -125,10 +125,24 @@ t "ax_shot skips instantly under --no-graphics"   env GUEST_RUN=/tmp/vmcheck-ax 
 # 10s of headroom still catches a genuine hang without being a coin flip.
 t "ax_admin_auth_once returns fast with no SecurityAgent" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x bash -c 'source run/guest/ax.sh; s=$SECONDS; ax_admin_auth_once; rc=$?; [ "$rc" -eq 1 ] && [ $((SECONDS-s)) -le 10 ]'
 t "ax_set_field escapes an embedded quote/backslash" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; ( ax_set_field setup.team.create.name "weird\"value\\here" ) 2>/dev/null; [ $? -eq 1 ] && ! grep -qi "script error\|Expected \|syntax error" "$AX_LOG"'
-t "ax finish-gate helpers source + fail clean against no app" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh && declare -F ax_enabled ax_wait_enabled ax_wait_text ax_click_sheet_button >/dev/null && ! ax_enabled x >/dev/null 2>&1 && ! ax_wait_enabled x 1 && ! ax_wait_text "Skip the Fast Browser extension?" 1 && ! ax_click_sheet_button "Skip for now" && ! grep -qi "script error\|Expected \|syntax error" "$AX_LOG"'
+t "ax finish-gate helpers source + fail clean against no app" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh && declare -F ax_enabled ax_wait_enabled ax_wait_text ax_click_sheet_button ax_find_sheet_id ax_click_sheet_id >/dev/null && ! ax_enabled x >/dev/null 2>&1 && ! ax_wait_enabled x 1 && ! ax_wait_text "Skip the Fast Browser extension?" 1 && ! ax_click_sheet_button "Skip for now" && ! ax_find_sheet_id x >/dev/null 2>&1 && ! ax_click_sheet_id x >/dev/null 2>&1 && ! grep -qi "script error\|Expected \|syntax error" "$AX_LOG"'
 t "drive-setup.sh drives Skip for now by its wording"   bash -c 'grep -q "ax_click_sheet_button \"Skip for now\"" run/guest/drive-setup.sh && grep -q "Skip the Fast Browser extension?" run/guest/drive-setup.sh'
 t "drive-setup.sh records the finish-gate outcome"      bash -c 'grep -q "finish-gate.txt" run/guest/drive-setup.sh && grep -q "finish-gate.txt" run/guest/assert-installed.sh'
 t "drive-setup.sh waits for the Done gate to settle before branching" bash -c 'grep -q "ax_wait_done_gate 60" run/guest/drive-setup.sh && grep -q "^ax_wait_done_gate()" run/guest/ax.sh'
+# Every finish-gated row is probed and handled by its own .action id; neither
+# row may be inferred from the other or from the section merely showing --
+# a VM guest with only the writing-style row (no Chrome) must not fail on a
+# missing Fast Browser row the way the old unconditional ax_fail did.
+t "drive-setup.sh probes each finish-gated row by its own .action id" bash -c \
+  'grep -q "setup.done.beforeYouFinish.tool.fast-browser-extension.action" run/guest/drive-setup.sh \
+   && grep -q "setup.done.beforeYouFinish.skills.writing-style.action" run/guest/drive-setup.sh'
+t "drive-setup.sh never requires the Fast Browser row just because the section shows" bash -c \
+  '! grep -q "Before you finish is shown without the extension row" run/guest/drive-setup.sh'
+t "drive-setup.sh takes the writing-style row through the choose sheet by option id" bash -c \
+  'grep -q "ax_click_sheet_id \"setup.choose.option.\$style\"" run/guest/drive-setup.sh \
+   && grep -q "ax_click_sheet_id setup.choose.submit" run/guest/drive-setup.sh'
+t "ax.sh gained sheet-scoped AXIdentifier helpers alongside ax_click_sheet_button" bash -c \
+  'grep -q "^ax_find_sheet_id()" run/guest/ax.sh && grep -q "^ax_click_sheet_id()" run/guest/ax.sh'
 t "ax_enabled_or_fail names a missing axid"             env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; out=$( (ax_enabled_or_fail setup.done.continue) 2>&1 ); [ $? -ne 0 ] && printf "%s" "$out" | grep -q "setup.done.continue not found"'
 t "assert-installed.sh asserts setup.waived"            bash -c 'grep -q "rt settings get setup.waived --json" run/guest/assert-installed.sh'
 t "assert-installed.sh takes a backup and asserts the .age plus the LFS filter" bash -c \

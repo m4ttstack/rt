@@ -335,6 +335,38 @@ end tell" >/dev/null || return 1
 #
 # AX_TRUST_DECLINE=1 cancels it instead, which is the second scenario's whole
 # point: the install must survive a user who says no to the certificate.
+# The AXIdentifier counterparts to ax_click_sheet_button: window 1's own
+# elements are never candidates, since a sheet floats its own identified
+# content (ChooseSheet's option cards, its own submit button) over the row
+# that opened it, and ax_click/ax_find never descend into a sheet.
+ax_find_sheet_id() {  # <axid>
+  local id; id=$(ax_esc "$1")
+  ax_osa "$AX_WALK_AS
+    tell application \"System Events\" to tell process \"$AX_APP\"
+      set r to missing value
+      repeat with s in (every sheet of window 1)
+        if r is missing value then set r to my walk(s, \"$id\")
+      end repeat
+      if r is missing value then error \"sheet axid not found: $id\"
+      return (class of r as text)
+    end tell" 2>/dev/null
+}
+
+ax_click_sheet_id() {  # <axid> -- returns 1 on failure, like ax_click_sheet_button; callers ax_fail
+  local id; id=$(ax_esc "$1")
+  ax_osa "$AX_WALK_AS
+    tell application \"System Events\" to tell process \"$AX_APP\"
+      set frontmost to true
+      set r to missing value
+      repeat with s in (every sheet of window 1)
+        if r is missing value then set r to my walk(s, \"$id\")
+      end repeat
+      if r is missing value then error \"sheet axid not found: $id\"
+      click r
+    end tell" >/dev/null || return 1
+  ax_log "clicked sheet id $1"
+}
+
 ax_admin_auth_once() {
   local u p windows trust other; u=$(ax_esc "$VM_ADMIN_USER"); p=$(ax_esc "$VM_ADMIN_PASS")
   # One probe answers "is a dialog up, and which window is which": the

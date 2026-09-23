@@ -189,30 +189,47 @@ screen_install() {
 screen_done() {
   ax_wait_screen done 10 || ax_fail "setup.done.screen did not appear"
   ax_shot 05-done
-  # The Fast Browser extension gates Finish on a Mac with Chrome and no
-  # extension loaded. A guest without Chrome reports the row skipped and the
-  # gate open, so the skip path is driven only when the gate is closed; the
-  # outcome is recorded for assert-installed.sh either way. Neither state can
-  # be read until the screen's own re-check lands, hence the wait.
+  # Neither the section showing, nor one gated row's presence, says anything
+  # about another: this guest may carry the Fast Browser row (gated when
+  # Chrome is missing), the writing-style row, both, or neither, and each is
+  # handled on its own. A row's own container id never surfaces (confirmed by
+  # a host-side XCUITest run, 2026-09-23) -- only its .action/.status children
+  # do -- so presence is always probed by the .action id, never by the bare
+  # row id or by "the section is showing".
   ax_wait_done_gate 60 || ax_fail "Done never settled: no Before you finish section and Finish still disabled (or a refresh error is up)"
-  if ax_find setup.done.beforeYouFinish >/dev/null 2>&1; then
-    ax_find setup.done.beforeYouFinish.tool.fast-browser-extension >/dev/null 2>&1 || ax_fail "Before you finish is shown without the extension row"
-    [ "$(ax_enabled_or_fail setup.done.continue)" = false ] || ax_fail "Finish is enabled while Before you finish lists a row"
+  : > "$GUEST_RUN/logs/finish-gate.txt"
+
+  if ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1; then
     ax_click setup.done.skip.tool.fast-browser-extension
     ax_wait_text "Skip the Fast Browser extension?" 10 || ax_fail "skip confirm sheet did not appear"
     ax_wait_text "Without the Fast Browser extension, agents cannot capture screenshots or annotate evidence from your browser. You can load it later from Settings." 5 || ax_fail "skip confirm sheet body is not the pinned copy"
     ax_shot 05-skip-confirm
     ax_click_sheet_button "Skip for now" || ax_fail "could not click Skip for now in the sheet"
-    ax_wait_enabled setup.done.continue 30 || ax_fail "Finish did not enable after Skip for now"
-    ax_find setup.done.beforeYouFinish >/dev/null 2>&1 && ax_fail "Before you finish is still shown after Skip for now"
+    local n=30
+    while [ "$n" -gt 0 ] && ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1; do sleep 1; n=$((n-1)); done
+    ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1 && ax_fail "the Fast Browser row is still under Before you finish after Skip for now"
     ax_find setup.done.stillToDo.tool.fast-browser-extension >/dev/null 2>&1 || ax_fail "the skipped row did not move to Still to do"
     ax_shot 05-skipped
-    echo skipped > "$GUEST_RUN/logs/finish-gate.txt"
-  else
-    [ "$(ax_enabled_or_fail setup.done.continue)" = true ] || ax_fail "Finish is disabled with no Before you finish section"
-    ax_find setup.done.refreshError >/dev/null 2>&1 && ax_fail "Done fell open on a failed re-check: $(ax_texts | grep -F "Couldn't confirm the checklist" | head -1)"
-    echo open > "$GUEST_RUN/logs/finish-gate.txt"
+    echo "fast-browser-extension=skipped" >> "$GUEST_RUN/logs/finish-gate.txt"
   fi
+
+  if ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1; then
+    local style="mattstack:writing-style-conversational"
+    ax_click setup.done.beforeYouFinish.skills.writing-style.action
+    ax_find_sheet_id "setup.choose.option.$style" >/dev/null 2>&1 || ax_fail "the writing-style choose sheet did not open with the $style option"
+    ax_shot 05-writing-style-choose
+    ax_click_sheet_id "setup.choose.option.$style" || ax_fail "could not click the $style option in the choose sheet"
+    ax_click_sheet_id setup.choose.submit || ax_fail "could not click Use this style in the choose sheet"
+    local n=30
+    while [ "$n" -gt 0 ] && ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1; do sleep 1; n=$((n-1)); done
+    ax_find setup.done.beforeYouFinish.skills.writing-style.action >/dev/null 2>&1 && ax_fail "the writing-style row is still under Before you finish after Use this style"
+    ax_shot 05-writing-style-chosen
+    echo "writing-style=$style" >> "$GUEST_RUN/logs/finish-gate.txt"
+  fi
+
+  ax_wait_enabled setup.done.continue 30 || ax_fail "Finish did not enable after resolving the Before you finish rows"
+  ax_find setup.done.refreshError >/dev/null 2>&1 && ax_fail "Done fell open on a failed re-check: $(ax_texts | grep -F "Couldn't confirm the checklist" | head -1)"
+  [ -s "$GUEST_RUN/logs/finish-gate.txt" ] || echo open > "$GUEST_RUN/logs/finish-gate.txt"
   ax_click setup.done.continue
 }
 
