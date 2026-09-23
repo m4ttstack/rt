@@ -177,27 +177,36 @@ export async function fetchDeltaFrom(
 ): Promise<PullRequest[]> {
   const opened = await provider.fetchPullRequests({ projectPath, state: "opened", updatedAfter, listWeight: true });
   const rows = await provider.fetchMergeRequestIndex({ projectPaths: [projectPath], updatedAfter, states: ["merged", "closed"] });
-  const branches = new Map<string, { open: boolean; maxIid: number }>();
+  const rowIids = new Set(rows.map((row) => row.iid));
+  const openBranches = new Set(opened.filter((pr) => !rowIids.has(pr.iid)).map((pr) => pr.sourceBranch));
+  const newestStored = new Map<string, number>();
   for (const { pr } of Object.values(stored?.mrs ?? {})) {
-    const b = branches.get(pr.sourceBranch) ?? { open: false, maxIid: 0 };
-    branches.set(pr.sourceBranch, { open: b.open || pr.state === "opened", maxIid: Math.max(b.maxIid, pr.iid) });
+    if (pr.state === "opened" && !rowIids.has(pr.iid)) openBranches.add(pr.sourceBranch);
+    newestStored.set(pr.sourceBranch, Math.max(newestStored.get(pr.sourceBranch) ?? 0, pr.iid));
   }
+  // Mirrors syncImpl's scope filter: a terminal stranger is never section-tagged.
+  const scopeAuthors = stored?.scope?.authors;
+  const reuse = new Map<string, number>();
   const terminal: PullRequest[] = [];
   for (const row of rows) {
     const existing = stored?.mrs[row.iid]?.pr;
     if (!existing) {
-      const branch = branches.get(row.sourceBranch);
-      if (!branch || branch.open || row.iid < branch.maxIid) continue;
-      try {
-        const full = await provider.fetchSingleMR(projectPath, row.iid, null);
-        if (full) terminal.push(full);
-      } catch (err) {
-        log.warn({ err, projectPath, iid: row.iid }, "branch-reuse fetch failed");
-      }
+      const newest = newestStored.get(row.sourceBranch);
+      if (newest === undefined || openBranches.has(row.sourceBranch) || row.iid < newest) continue;
+      if (scopeAuthors && row.authorUsername && !scopeAuthors.includes(row.authorUsername)) continue;
+      reuse.set(row.sourceBranch, Math.max(reuse.get(row.sourceBranch) ?? 0, row.iid));
       continue;
     }
     if (existing.state === row.state && existing.updatedAt === row.updatedAt) continue;
     terminal.push({ ...existing, state: row.state, updatedAt: row.updatedAt, mergedAt: row.mergedAt, title: row.title });
+  }
+  for (const iid of reuse.values()) {
+    try {
+      const full = await provider.fetchSingleMR(projectPath, iid, null);
+      if (full) terminal.push(full);
+    } catch (err) {
+      log.warn({ err, projectPath, iid }, "branch-reuse fetch failed");
+    }
   }
   // One copy per iid: applyDelta skips a second copy of an iid it just wrote.
   const terminalIids = new Set(terminal.map((pr) => pr.iid));

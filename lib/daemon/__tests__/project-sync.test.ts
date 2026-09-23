@@ -1650,6 +1650,38 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
     expect(fake.singleCalls).toEqual([]);
   });
 
+  test("leaves a never-stored terminal MR alone when a stored entry on its branch is newer", async () => {
+    const stored = storedWith(pr(12, { state: "merged", sourceBranch: "fix" }));
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([]);
+  });
+
+  test("fetches only the newest never-stored terminal MR per branch", async () => {
+    const stored = storedWith(pr(3, { state: "merged", sourceBranch: "fix" }));
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix" }), row(11, { sourceBranch: "fix" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([11]);
+  });
+
+  test("skips a never-stored terminal MR whose author the scope filter would drop", async () => {
+    const store = tmpStore();
+    store.fullSync("repo", "g/p", [pr(3, { state: "merged", sourceBranch: "fix" })], Date.now());
+    store.setScope("repo", { authors: ["ada"], windowDays: 30 });
+    const fake = fakeProvider([], [row(9, { sourceBranch: "fix", authorUsername: "deploy-bot" })]);
+    await fetchDeltaFrom(fake.provider, "g/p", UA, store.read("repo"));
+    expect(fake.singleCalls).toEqual([]);
+  });
+
+  test("a branch whose open entry merges in the same window no longer counts as open", async () => {
+    const stored = storedWith(pr(3, { sourceBranch: "fix" }));
+    const full = pr(9, { state: "merged", sourceBranch: "fix" });
+    const fake = fakeProvider([], [row(3, { sourceBranch: "fix" }), row(9, { sourceBranch: "fix" })], { 9: full });
+    const prs = await fetchDeltaFrom(fake.provider, "g/p", UA, stored);
+    expect(fake.singleCalls).toEqual([9]);
+    expect(prs.map((p) => [p.iid, p.state])).toEqual([[3, "merged"], [9, "merged"]]);
+  });
+
   test("the default fetchDelta reads opened MRs at list weight and moves stored ones via the index", async () => {
     const store = tmpStore();
     store.fullSync("repo", "g/p", [pr(3)], Date.now() - 1000);
@@ -1665,7 +1697,7 @@ describe("fetchDeltaFrom (terminal MRs via the index)", () => {
   test("a terminal copy the delta just built is refreshed while its pipeline was in flight", async () => {
     const store = tmpStore();
     store.fullSync("repo", "g/p", [pr(4, { pipeline: { status: "running" } } as Partial<PullRequest>)], Date.now() - 1000);
-    const fake = fakeProvider([], [row(4)]);
+    const fake = fakeProvider([], [row(4, { updatedAt: new Date().toISOString() })]);
     const singles: number[] = [];
     await syncProjectMRs({ repoIndex: () => ({ repo: "/tmp/repo" }), broadcast: () => {} }, "repo", {
       store,
