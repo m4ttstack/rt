@@ -32,7 +32,7 @@ Ratified with the operator on 2026-09-22.
 | Lookup call | Skills call `skills writing-style show` through the mattstack MCP server's curated rt-verb tool (RT-244, its own spec, shipping in the same rt release). No `BASE_PERMISSIONS` entry |
 | Unset fallback | `mattstack:writing-style-conversational` (in the resolver, never in the registry row) |
 | Presets | Three, shipped in the mattstack plugin: sparse, conversational, structured, plus one shared rules include |
-| Own style | Any installed skill id; personal skills can live in the home repo and travel; a scaffold verb copies a preset to start from |
+| Own style | Any installed skill id; personal skills can live in the home repo (backed up, and restored onto a new Mac); a scaffold verb copies a preset to start from |
 | Setup | A checklist row with a native picker; it blocks Finish and cannot be waived |
 | Existing installs | A Writing style section in Settings › General hosts the same row and sheet |
 | Ownership | Built by one lane, reviewed by the distribution lane |
@@ -88,8 +88,33 @@ every review and respond run calls it.
 | --- | --- |
 | `show [--json]` | Prints the resolved `{skill, source}`. The one call every drafting skill makes. |
 | `list [--json]` | The pickable styles: the three presets (from a catalog in rt with id, label, one-line description, sample line), every installed skill whose id contains `writing-style`, every personal skill in the home repo, and the current value. Each entry carries `installed`. |
-| `use [<id>] [--scope user\|team]` | Links personal skills, checks the id is installed, then `setSetting` at the given scope (default `user`). No id on a TTY opens the picker over `list`; `omitBehavior: "picker"`, gated `isTTY && !json && !RT_BATCH`. An unknown id exits with the list. |
-| `new <name> [--from <preset>]` | Copies a preset's compiled `SKILL.md` and `pr-description.md` into `~/.mattstack/user/skills/<name>/`, strips compiler comments, rewrites the frontmatter `name`, links it, and prints the `use` command. `omitBehavior: "prompt"`. |
+| `use [<id>] [--scope user\|team] [--json]` | Links personal skills, checks the id, then `setSetting` at the given scope (default `user`). No id on a TTY opens the picker over `list`; `omitBehavior: "picker"`, gated `isTTY && !json && !RT_BATCH`. |
+| `new <name> [--from <preset>] [--json]` | Copies a preset's compiled `SKILL.md` and `pr-description.md` into `~/.mattstack/user/skills/<name>/`, strips compiler comments, rewrites the frontmatter `name`, links it, and prints the `use` command. `omitBehavior: "prompt"`. |
+
+Every `--json` output is the setup `envelope(...)` every `rt setup` verb
+prints, and every refusal is exit 2 with the user-error envelope
+(`userErrorPayload`, `{error: {code, message}}` on stdout), which is the only
+failure shape the app renders as readable copy.
+
+| Verb | Success body | Refusals (exit 2, `error.code`) |
+| --- | --- | --- |
+| `show` | `{skill, source}` | none |
+| `list` | `{options: [{id, label, detail, sample?, kind, installed}]}` | none |
+| `use` | `{skill, scope}` | `bad-id` (shape), `unknown-skill` (not installed; message lists the choices), `no-home-repo` |
+| `new` | `{name, path, from}` | `bad-name`, `exists`, `no-plugin` (the mattstack plugin is not installed), `no-home-repo` |
+
+`use` and `new` refuse with `no-home-repo` while `~/.mattstack/user/.git` is
+absent (`homeGitDir` in `lib/setup/steps/home.ts`), the same guard
+`setup repo-root set` applies. `setSetting` creates the store directory
+itself and `new` writes under `~/.mattstack/user/skills/`, and either write
+before `home.init` or `home.restore` clones would make that clone fail on a
+non-empty target.
+
+`new` copies from the installed mattstack plugin: its `installPath` from
+`claude plugin list --json` (the parser in `lib/setup/pack-cache.ts` drops
+that field today, so the plugin-list reader used here keeps it), then
+`skills/writing-style-<preset>/`. `<name>` must match
+`^[a-z0-9][a-z0-9._-]*$`, so it cannot escape the skills directory.
 
 "Installed" means a `~/.claude/skills/<id>` entry, a skill directory of an
 enabled plugin, or a linked personal skill. Plugin skill directories come from
@@ -107,25 +132,36 @@ The new command module gets its `lib/module-registry.ts` thunk.
 
 `show` is marked agent-safe on its command node, so the curated rt-verb tool
 on the mattstack MCP server (RT-244) can run it. That server is allowed at
-server level on every machine, so a board pane in default permission mode
-never stops on a prompt at the style lookup, existing installs included. A
-Bash call would prompt there, and an allowlist entry would reach new installs
-only. `use`, `list` and `new` stay CLI-only: they are for people, the setup row
-and the app, not for agents.
+server level on every install set up since RT-174, and the tool ships inside
+rt, so a board pane in default permission mode never stops on a prompt at the
+style lookup. A machine set up before RT-174 that never reran setup still
+prompts once for the server (RT-245 covers that class); a denied prompt fails
+the call into section 7's failure path. A Bash call would prompt on every
+default-mode pane, and a new allowlist entry would reach new installs only.
+`use`, `list` and `new` stay CLI-only: they are for people, the setup row and
+the app, not for agents.
 
 ### 3. Personal styles in the home repo
 
 A personal style lives at `~/.mattstack/user/skills/<name>/SKILL.md`. The home
-repo is backed up and syncs to the user's other Macs, so the style follows
-them. rt links that directory into `~/.claude/skills` with the existing
+repo is backed up off-machine, and a restore onto a new Mac brings the style
+and the user-scope setting with it. The home repo never pulls on an
+already-set-up Mac (only team clones pull), so there is no later sync to
+catch up with.
+
+rt links that directory into `~/.claude/skills` with the existing
 `reconcileSkillLinks` (its ownership boundary already keeps it to links it
 owns). Linking runs in setup's `skills.link` step, in `new`, and in `use`.
+In `skills.link` it runs before the step's "not running from an app bundle"
+early return, so a restore through a dev checkout links it too.
 `preferences.md` and `overrides.jsonc` sit in the same directory as plain
 files and are ignored, since only directories with a `SKILL.md` link.
 
 ### 4. Setup row
 
-`skills.writing-style` in the tools group, `finishGated: true`.
+`skills.writing-style` in the tools group, `kind: "tool"`, `finishGated: true`.
+Its `choose` options are the `list` output: the three presets always, plus
+every discovered style.
 
 | State | When | Detail | Action |
 | --- | --- | --- | --- |
@@ -189,14 +225,17 @@ structure and tokens. Three places open it:
 - **Done:** `DoneScreen.show(row)` handles `choose` (today it handles only
   `openURL`, `steps` and `run`, and anything else falls through). Done's Skip
   button is gated on `waivable`, and the skip sheet's copy stays bound to the
-  Fast Browser row. A test asserts every finish-gated row's action type is
-  handled on Done, so a user can never reach Done with a blocker whose button
-  does nothing.
+  Fast Browser row. A test asserts every finish-gated row's non-null action
+  type is handled on Done, so a user can never reach Done with a blocker whose
+  button does nothing (a row with no action, like this one before Install,
+  shows no button at all).
 - **Settings › General:** a Writing style section hosting the same row and
   sheet. It's the native path for installs that finished setup before this
-  row existed. Nothing nags them: only the wizard's Done screen and
-  `rt setup`'s status line read finish blockers, and `verify` already excludes
-  finish-gated rows.
+  row existed. Those installs are not nagged by the app: only the wizard's
+  Done screen reads finish blockers. On the CLI they will see
+  `Finish: blocked by: skills.writing-style` in `rt setup` status and a `warn`
+  line from `rt verify` (`commands/verify.ts:97` keeps finish-gated rows out
+  of critical failures but still reports them) until they choose.
 
 Built into a scratch directory, never over a blessed bundle, and screenshotted
 in light and dark (checklist, Done and Settings) before it is called done.
@@ -207,14 +246,25 @@ In mattstack-skills, as compiled verbs of the mattstack pack itself, because
 `{{include:}}` resolves only at compile time and includes cannot nest.
 
 ```
-attachments/writing-style/
-  floor/SKILL.md            include: writing-style-floor
-  lookup/SKILL.md           include: writing-style-lookup (section 7)
-  sparse/SKILL.md           engine; {{include:writing-style-floor}} + voice
-  sparse/pr-description.md
-  conversational/…          same shape
-  structured/…              same shape
+attachments/writing-style-floor/SKILL.md                    include
+attachments/writing-style-lookup/SKILL.md                   include (section 7)
+attachments/writing-style/writing-style-sparse/SKILL.md     engine
+attachments/writing-style/writing-style-sparse/pr-description.md
+attachments/writing-style/writing-style-conversational/…    same shape
+attachments/writing-style/writing-style-structured/…        same shape
 ```
+
+The directory names are what the compiler resolves, so they are exact:
+
+- `loadInclude` (`lib/skills/sources.ts`) finds an include only at
+  `attachments/<name>/`, flat, so both includes sit at the top level.
+- `loadStepSource` finds an engine at `attachments/<engine>/` or one group
+  level down at `attachments/<group>/<engine>/`, matching the directory name.
+  So each engine's directory is named `writing-style-<preset>`, the stub says
+  `"engine": "writing-style-<preset>"`, and the group directory
+  `writing-style/` never collides with a compiled verb's
+  `attachments/<verb>/` output (the collision `tests/stubs-no-source-collision.sh`
+  guards against).
 
 `pack/stubs.jsonc` rosters `writing-style-sparse`,
 `writing-style-conversational` and `writing-style-structured`, compiled to
@@ -257,25 +307,32 @@ and `tests/repo-purity.sh` enforce this.
 
 `writing-style-lookup` holds the one instruction every drafting skill carries:
 
-> Before drafting, call the mattstack rt-verb tool with
-> `skills writing-style show` and load the skill its `skill` names. That load
-> is step one: compose in that voice from the first word, never as a pass over
-> a finished draft. If the tool is unavailable or fails, load the skill named
-> on the `writing-style:` line of `~/.mattstack/user/skills/preferences.md` if
-> there is one. If that is missing too, or the skill will not load, load
+> Before drafting, call `mcp__plugin_mattstack_mattstack__rt_verb` with
+> `{"args": ["skills", "writing-style", "show"]}` and load the skill its
+> `skill` names. That load is step one: compose in that voice from the first
+> word, never as a pass over a finished draft. If the tool is unavailable,
+> refused, or fails, load the skill named on the `writing-style:` line of
+> `~/.mattstack/user/skills/preferences.md` if there is one. If that is
+> missing too, or the skill will not load, load
 > `mattstack:writing-style-conversational`.
 
-The exact tool name and argument shape come from the RT-244 spec. The failure
-path repeats one rung of the order on purpose. Plugin and pack updates travel
-apart from rt's own updates, so a Mac can hold the new skills and an rt
-without the tool, and that Mac should still keep a style declared in
-`preferences.md`. The failure path reads a file and never shells out, so it
-cannot raise a prompt either.
+The failure path repeats one rung of the order on purpose. Plugin and pack
+updates travel apart from rt's own updates, so a Mac can hold the new skills
+and an rt without the tool, and that Mac should still keep a style declared in
+`preferences.md`. Reading that file sits outside the pane's working
+directory, so in default permission mode it may prompt; a denied read falls
+through to conversational.
+
+`review-posting` is itself an include target (`{{include:review-posting}}` in
+the `review` engine), and an include target must be inert, so the lookup
+cannot go inside it. It goes into the `review` engine body instead, on the
+line before `{{include:review-posting}}`.
 
 | Where | Change |
 | --- | --- |
-| mattstack `review-posting` | The `## Writing style` section becomes `{{include:writing-style-lookup}}` |
-| mattstack `receive-review` | The Voice bullet becomes the include |
+| mattstack `review` engine | `{{include:writing-style-lookup}}` added on the line before `{{include:review-posting}}` |
+| mattstack `review-posting` | Its `## Writing style` section is deleted |
+| mattstack `receive-review` | The Voice bullet becomes `{{include:writing-style-lookup}}` (an engine, so the include is legal) |
 | team pack `review-criteria`, `reply-rules` | Voice sections deleted; the engine now covers review and respond |
 | team pack `ship-domain` | Step 10 includes the lookup; the structure rule becomes "keep the repo MR template's sections" |
 | mattstack-apps board `review`, `respond` | The generic no-domain-skill path gains the same instruction as hand-written text |
@@ -292,7 +349,9 @@ release after the next one, whose scope is already fixed.
    bump, `rt skills sync --pack mattstack`. They're inert until something
    names them, so this merges first.
 2. **repo-tools:** setting, resolver, verbs, personal-skill linking, setup row,
-   `choose` contract, app (checklist, Done, Settings). The rt release that
+   `choose` contract, app (checklist, Done, Settings). Marking `show`
+   agent-safe needs RT-244's `CommandNode.agentSafe` field and snapshot test,
+   so that one line lands after the RT-244 lane merges. The rt release that
    ships the row must also carry a marketplace catalog pin (the release's
    catalog refresh step) that includes the presets. Otherwise the row offers
    presets the installed plugin lacks.
@@ -311,6 +370,13 @@ release after the next one, whose scope is already fixed.
   - `use` refuses an unknown id and lists the choices, and refuses a bad id
     shape (a leading dash included) before any lookup.
   - `use` accepts a catalog preset with the mattstack plugin absent.
+  - `use` and `new` refuse with `no-home-repo` and write nothing while
+    `~/.mattstack/user/.git` is absent.
+  - `use --json` prints `{skill, scope}`; each refusal is exit 2 with its
+    `error.code` from the table in section 2.
+  - `new` refuses a bad name (`../x`), an existing directory, and a missing
+    mattstack plugin.
+  - `skills.link` links personal skills when not running from an app bundle.
   - `use` with a personal skill links it first.
   - `new` output has no compiler comments and has the right `name`.
   - The `show --json` envelope in an e2e test.
