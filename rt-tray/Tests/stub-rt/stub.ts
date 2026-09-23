@@ -67,7 +67,7 @@ const WRITING_STYLE_OPTION_ROWS = [
   { id: "my-voice", label: "my-voice", detail: "Your own style, in your home repo" },
   { id: "matt:matts-writing-style", label: "matt:matts-writing-style", detail: "An installed skill" },
 ];
-const WRITING_STYLE_SUGGESTIONS = ["team:team-writing-style"];
+const WRITING_STYLE_SUGGESTIONS = ["acme:review-voice", "superpowers:brainstorming", "superpowers:writing-plans", "team:team-writing-style"];
 const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
 const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
 const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_OPTION_ROWS.map((o) => o.id), ...WRITING_STYLE_SUGGESTIONS];

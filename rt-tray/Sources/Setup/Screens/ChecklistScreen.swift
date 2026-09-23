@@ -62,7 +62,7 @@ struct ChecklistScreen: View {
             if let s = steps { StepsSheet(title: s.title, steps: s.steps) }
         }
         .sheet(item: $choose) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
+            ChooseSheet(row: row) { id in
                 let failure = await ChoiceClient(rt: rt).choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await model.afterAction(rowId: row.id) }
                 return failure

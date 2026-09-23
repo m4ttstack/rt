@@ -216,7 +216,7 @@ test("writing-style: the row blocks Finish with a choose action until use picks 
   expect(action.options.find((o) => o.id === "matt:matts-writing-style")).toEqual({ id: "matt:matts-writing-style", label: "matt:matts-writing-style", detail: "An installed skill" });
   expect(action.other).toEqual({
     label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.",
-    suggestions: ["team:team-writing-style"],
+    suggestions: ["acme:review-voice", "superpowers:brainstorming", "superpowers:writing-plans", "team:team-writing-style"],
   });
 
   const used = await run("writing-style", ["skills", "writing-style", "use", SPARSE, "--json"], "", state);

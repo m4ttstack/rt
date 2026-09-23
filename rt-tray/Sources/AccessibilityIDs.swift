@@ -51,7 +51,9 @@ enum AXID {
     static let stepsDone = "setup.checklist.steps.done"
     static let chooseSheet = "setup.choose"
     static func chooseOption(_ id: String) -> String { "setup.choose.option.\(id)" }
+    static let chooseOwn = "setup.choose.own"
     static let chooseOther = "setup.choose.other"
+    static func chooseSuggestion(_ id: String) -> String { "setup.choose.suggestion.\(id)" }
     static let chooseError = "setup.choose.error"
     static let chooseCancel = "setup.choose.cancel"
     static let chooseSubmit = "setup.choose.submit"

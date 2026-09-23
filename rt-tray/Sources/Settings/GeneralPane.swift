@@ -80,7 +80,7 @@ struct GeneralPane: View {
         .formStyle(.grouped)
         .task { await readiness.load() }
         .sheet(item: $chooseRow) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
+            ChooseSheet(row: row) { id in
                 let failure = await ChoiceClient(rt: env.rt).choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await readiness.recheckAll() }
                 return failure

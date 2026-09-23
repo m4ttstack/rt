@@ -94,7 +94,7 @@ struct DoneScreen: View {
             SkipConfirmSheet(model: model)
         }
         .sheet(item: $choose) { row in
-            ChooseSheet(title: row.title, options: row.action?.options ?? [], selected: row.action?.selected, other: row.action?.other) { id in
+            ChooseSheet(row: row) { id in
                 let failure = await model.choices.choose(verb: row.action?.verb ?? [], id: id)
                 if failure == nil { await model.retryCheck() }
                 return failure
