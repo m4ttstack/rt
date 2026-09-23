@@ -175,4 +175,10 @@ export interface GitClient {
   commitDiff(file: CommittedFileChange, sha: string): Promise<StagingDiff>;
   /** shas oldest first. */
   commitRangeDiff(file: CommittedFileChange, shas: ReadonlyArray<string>): Promise<StagingDiff>;
+  /** GHD appendIgnoreRule: patterns appended verbatim to the root .gitignore. */
+  appendIgnoreRule(patterns: string | string[]): Promise<void>;
+  /** GHD appendIgnoreFile: paths escaped (escapeGitSpecialCharacters) then appended. */
+  appendIgnoreFile(paths: string | string[]): Promise<void>;
+  /** GHD GitStore.discardChanges: Trash first, then reset and checkout-index only what needs it. */
+  discardChanges(files: ChangedFile[], opts?: { moveToTrash?: (absPath: string) => Promise<void> }): Promise<void>;
 }
