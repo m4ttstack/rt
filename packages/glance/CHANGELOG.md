@@ -1,5 +1,17 @@
 # @mattstack/glance
 
+## 0.27.0
+
+### Minor Changes
+
+- `blockers.hasUnresolvedDiscussions` now follows GitLab's
+  DISCUSSIONS_NOT_RESOLVED mergeability check instead of the raw thread
+  count. On a project without "all threads must be resolved", open threads no
+  longer set the flag or `blockers.any`, so a mergeable MR stops reading as
+  blocked. FAILED sets it, INACTIVE and SUCCESS clear it, and an absent or
+  undecided check (GitHub, CHECKING) falls back to the old count rule.
+  `unresolvedThreadCount` is unchanged.
+
 ## 0.26.0
 
 ### Minor Changes

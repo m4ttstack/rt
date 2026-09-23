@@ -407,6 +407,13 @@ export interface MRDashboardProps {
     pipelineFailing: boolean;
     pipelineRunning: boolean;
     awaitingApprovals: boolean;
+    /**
+     * Open threads stop this merge. On GitLab that is the
+     * DISCUSSIONS_NOT_RESOLVED check, so a project that does not require
+     * resolution reads false with threads open; `unresolvedThreadCount` still
+     * carries the count. Falls back to that count when the check is absent
+     * (GitHub) or undecided.
+     */
     hasUnresolvedDiscussions: boolean;
     hasMergeError: boolean;
     mergeError: string | null;

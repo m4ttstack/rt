@@ -93,9 +93,19 @@ export function getMRDashboardProps(
   const pipelineRunning =
     mr.pipeline?.status === 'running' || mr.pipeline?.status === 'pending';
   const awaitingApprovals = !mr.approved;
-  // An unknown thread count (null) is not a blocker: we cannot claim threads
-  // are outstanding any more than we can claim they are all resolved.
-  const hasUnresolvedDiscussions = (mr.unresolvedThreadCount ?? 0) > 0;
+  // Open threads only block where the project requires resolution, which
+  // GitLab reports as the DISCUSSIONS_NOT_RESOLVED check (INACTIVE when the
+  // setting is off). Without a decided check, fall back to the count; an
+  // unknown count (null) is not a blocker, since we cannot claim threads are
+  // outstanding any more than we can claim they are all resolved.
+  const discussionCheck = (mr.mergeabilityChecks ?? []).find(
+    (c) => c.identifier === 'DISCUSSIONS_NOT_RESOLVED'
+  )?.status;
+  const hasUnresolvedDiscussions =
+    discussionCheck === 'FAILED' ||
+    (discussionCheck !== 'INACTIVE' &&
+      discussionCheck !== 'SUCCESS' &&
+      (mr.unresolvedThreadCount ?? 0) > 0);
   const hasMergeError = mr.mergeError != null;
 
   const anyBlocker =
