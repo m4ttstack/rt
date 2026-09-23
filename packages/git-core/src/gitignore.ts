@@ -121,9 +121,10 @@ export function escapeGitSpecialCharacters(pattern: string): string {
   return pattern.replaceAll(specialCharacters, (match) => "\\" + match);
 }
 
-// Git exits 1 for a key with no value at all -- the only case that means
-// "unset". An explicitly empty value still exits 0 and must come back as
-// "", not be folded into the unset case.
+// Git exits 1 only when the key is absent from the config entirely. A key
+// present with an empty value, or written with no value at all (a
+// valueless boolean-style key), both exit 0 and must come back as "", not
+// be folded into the unset case.
 async function getConfigValue(ctx: ClientContext, key: string): Promise<string | null> {
   try {
     return (await rawGit(ctx.dir, ["config", "--get", key])).trim();

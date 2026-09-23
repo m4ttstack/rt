@@ -57,18 +57,27 @@ function getNoRenameIndexStatus(status: string): NoRenameIndexStatus {
   return parsed;
 }
 
+/**
+ * Runs `rawGit`, treating exit 128 (git's generic fatal code) as an absent
+ * result rather than a value: GHD's own `getIndexChanges` and
+ * `listSubmodules` each retry or give up on exactly this code, and only
+ * this code -- anything else (a spawn failure, a signal, a real git error)
+ * must reach the caller instead of being read as "nothing here."
+ */
+export async function rawGitOr128(dir: string, args: string[]): Promise<string | null> {
+  try {
+    return await rawGit(dir, args);
+  } catch (error) {
+    if (!isGitExitCode(error, 128)) throw error;
+    return null;
+  }
+}
+
 /** GHD diff-index.ts's getIndexChanges: staged changes vs HEAD (or the null tree, for an unborn HEAD). */
 export async function getIndexChanges(ctx: ClientContext): Promise<Map<string, NoRenameIndexStatus>> {
   const args = ["diff-index", "--cached", "--name-status", "--no-renames", "-z"];
-  let stdout: string;
-  try {
-    stdout = await rawGit(ctx.dir, [...args, "HEAD", "--"]);
-  } catch (error) {
-    // Exit 128 alone means an unborn HEAD; anything else (a spawn failure,
-    // a signal, a real git error) is not that, and must not be read as one.
-    if (!isGitExitCode(error, 128)) throw error;
-    stdout = await rawGit(ctx.dir, [...args, NULL_TREE_SHA]);
-  }
+  const stdout =
+    (await rawGitOr128(ctx.dir, [...args, "HEAD", "--"])) ?? (await rawGit(ctx.dir, [...args, NULL_TREE_SHA]));
 
   const map = new Map<string, NoRenameIndexStatus>();
   const pieces = stdout.split("\0");
@@ -125,16 +134,8 @@ export async function listSubmodules(ctx: ClientContext): Promise<ReadonlyArray<
     }
   }
 
-  let stdout: string;
-  try {
-    stdout = await rawGit(ctx.dir, ["submodule", "status", "--"]);
-  } catch (error) {
-    // Exit 128 alone means git gave up parsing submodules; anything else
-    // must surface, since a wrongly-empty result here can send a real
-    // submodule's whole working directory to the Trash as a plain file.
-    if (!isGitExitCode(error, 128)) throw error;
-    return [];
-  }
+  const stdout = await rawGitOr128(ctx.dir, ["submodule", "status", "--"]);
+  if (stdout === null) return [];
 
   const submodules: { path: string }[] = [];
   const statusRe = /^.([^ ]+) (.+) \((.+?)\)$/gm;
@@ -179,14 +180,31 @@ async function runDiscardGitSteps(
   await checkoutIndex(ctx, necessaryPathsToCheckout);
 }
 
+// The paths files[fromIndex..] still own: none of them reached the Trash
+// (the one at fromIndex is the one that just failed; every one after it was
+// never attempted), so a rename's originalPath counts as owned too -- the
+// recovery below must never reset or check out anything in this set, even
+// when an earlier, already-trashed file's own recipe names the same path.
+function unprocessedPaths(files: ReadonlyArray<ChangedFile>, fromIndex: number): Set<string> {
+  const paths = new Set<string>();
+  for (let i = fromIndex; i < files.length; i++) {
+    const file = files[i]!;
+    paths.add(file.path);
+    if (file.originalPath !== undefined) paths.add(file.originalPath);
+  }
+  return paths;
+}
+
 /**
  * GHD GitStore.discardChanges (app/src/lib/stores/git-store.ts 1545-1650),
  * with moveToTrash always on and no permanent-delete fallback: GHD catches a
  * Trash failure and falls back to `rm` for an untracked file, or silently
  * leaves a tracked one. This port instead finishes the reset/checkout-index
- * steps for every file already moved to the Trash before the failing one,
- * then rethrows -- each file ends either fully discarded or fully untouched,
- * never left trashed with its index/working-tree state stale.
+ * steps for every file already moved to the Trash before the failing one --
+ * excluding any path a not-yet-trashed file still owns -- then rethrows the
+ * original Trash error (a failure in that recovery step attaches as its
+ * `cause` rather than replacing it). Each already-trashed file ends fully
+ * discarded; every other file is left exactly as it was.
  */
 export async function discardChanges(
   ctx: ClientContext,
@@ -199,14 +217,25 @@ export async function discardChanges(
 
   const submodules = await listSubmodules(ctx);
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]!;
     const isSubmodule = submodules.some((s) => s.path === file.path);
 
     if (file.kind !== "deleted" && !isSubmodule) {
       try {
         await moveToTrash(join(ctx.dir, file.path));
       } catch (error) {
-        await runDiscardGitSteps(ctx, submodules, pathsToCheckout, pathsToReset);
+        const stillOwned = unprocessedPaths(files, i);
+        try {
+          await runDiscardGitSteps(
+            ctx,
+            submodules,
+            pathsToCheckout.filter((p) => !stillOwned.has(p)),
+            pathsToReset.filter((p) => !stillOwned.has(p)),
+          );
+        } catch (recoveryError) {
+          if (error instanceof Error) error.cause = recoveryError;
+        }
         throw error;
       }
     }

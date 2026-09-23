@@ -45,11 +45,21 @@ verbatim ports of the same commit above.
 | `../../gitignore.ts` | `app/src/lib/git/gitignore.ts` | `ensureGitIgnoreIsNotSymbolicLink`, `openExistingGitIgnore`, `readGitIgnoreAtRoot`, `saveGitIgnore`, `appendIgnoreRule`, `appendIgnoreFile`, `escapeGitSpecialCharacters`, `formatGitIgnoreContents` (plus `getConfigValue` from `app/src/lib/git/config.ts`, narrowed to a single key lookup) |
 | `../../discard.ts` | `app/src/lib/stores/git-store.ts` (`GitStore.discardChanges`, lines 1545-1650) | `discardChanges`, and its helpers from `app/src/lib/git/diff-index.ts` (`getIndexChanges`, `IndexStatus`, `getNoRenameIndexStatus`), `reset.ts` (`resetPaths`, narrowed to Mixed mode), `checkout-index.ts` (`checkoutIndex`), `submodule.ts` (`listSubmodules`, `resetSubmodulePaths`) |
 
-Deviations from GHD in `discard.ts`: `moveToTrash` is always on with no
-permanent-delete fallback (a Trash failure throws before any reset/checkout
-step runs, where GHD falls back to `rm` for an untracked file or silently
-skips a tracked one); the exit-128 retry gate in `getIndexChanges` and
-`listSubmodules` (GHD reads `result.exitCode` off its `git()` wrapper) is
-approximated with a catch on the default (0-only) exit set, since this
-package's one raw runner (`exec.ts`'s `rawGit`) does not surface exit codes
-to its callers.
+Deviations from GHD in `discard.ts`:
+
+- `moveToTrash` is always on with no permanent-delete fallback: GHD catches
+  a Trash failure and falls back to `rm` for an untracked file, or silently
+  leaves a tracked one. This port instead finishes the reset/checkout-index
+  steps for every file already moved to the Trash before the failing one
+  (excluding any path a not-yet-trashed file still owns, including a
+  rename's `originalPath`), then rethrows the original Trash error -- a
+  failure in that recovery step attaches to it as `.cause` rather than
+  replacing it.
+- The exit-128 gate in `getIndexChanges` and `listSubmodules` (GHD reads
+  `result.exitCode` off its `git()` wrapper) is exact, not approximated:
+  `exec.ts`'s `rawGit` sets a real `exitCode` on the error it throws, and
+  one shared helper (`rawGitOr128`) checks it for both call sites.
+- `listSubmodules` spawns `git rev-parse --absolute-git-dir` to resolve the
+  git directory, where GHD reads the already-known `repository.resolvedGitDir`
+  off its `Repository` model -- this port has no equivalent pre-resolved
+  value to read, so it asks git directly instead.
