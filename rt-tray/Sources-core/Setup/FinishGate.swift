@@ -148,6 +148,12 @@ public final class DoneModel: ObservableObject {
 
     public var hasCheckedSincePostInstall: Bool { checkState == .checked }
     private var showsRows: Bool { hasCheckedSincePostInstall || (checkState == .checking && showsConfirmedRowsWhileChecking) }
+    /// True once blockedRows/stillToDoRows hold real, confirmed data rather
+    /// than the empty placeholder they read as before the first post-install
+    /// check lands -- the headline and its glyph must never read as success
+    /// while this is false, since an empty blockedRows here means "not known
+    /// yet", not "nothing is wrong".
+    public var hasConfirmedRows: Bool { showsRows }
     public var blockedRows: [PlanRow] { showsRows ? readiness.finishBlockedRows : [] }
     public var stillToDoRows: [PlanRow] { showsRows ? readiness.outstandingManualRows : [] }
     /// True after a post-install check failed or timed out and no later one succeeded.
@@ -168,6 +174,7 @@ public final class DoneModel: ObservableObject {
     }
 
     public var headline: String {
+        guard hasConfirmedRows else { return "Checking…" }
         let blocked = blockedRows.count
         if blocked > 0 { return FinishGate.headline(blocked: blocked) }
         let outstanding = stillToDoRows.count

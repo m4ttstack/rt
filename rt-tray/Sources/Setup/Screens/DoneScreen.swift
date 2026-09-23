@@ -16,7 +16,14 @@ struct DoneScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Group {
-                    if isBlocked {
+                    // blockedRows/stillToDoRows read as empty before the first
+                    // post-install check confirms them (see hasConfirmedRows),
+                    // which would otherwise draw the success glyph on a plan
+                    // that is about to come back blocked. The spinner is the
+                    // same checking treatment RowView/StatusBadge already use.
+                    if !model.hasConfirmedRows {
+                        ProgressView().controlSize(.large)
+                    } else if isBlocked {
                         Image(systemName: headlineSymbol).symbolRenderingMode(.multicolor)
                     } else {
                         Image(systemName: headlineSymbol).foregroundStyle(headlineTint)

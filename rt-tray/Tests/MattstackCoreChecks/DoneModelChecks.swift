@@ -133,6 +133,8 @@ let doneModelChecks: [Check] = [
             c.expectEqual(m.blockedRows.map(\.id), [])
             c.expectEqual(m.stillToDoRows.map(\.id), [])
             c.expectEqual(m.finishEnabled, false, "unchecked is closed, never open")
+            c.expectEqual(m.hasConfirmedRows, false, "nothing is confirmed before the first check lands")
+            c.expectEqual(m.headline, "Checking…", "the plan names a blocker, but that isn't known yet -- the headline must not read as success before the check confirms it")
         }
         await m.checkPostInstall()
         await MainActor.run {
@@ -176,10 +178,12 @@ let doneModelChecks: [Check] = [
     },
     Check("no blockers after the check: Finish enabled, headline reads as installed") { c in
         let (m, _, _, _) = await doneFixture(plans: [makeManualPlan(extensionStatus: .ready)])
+        await MainActor.run { c.expectEqual(m.headline, "Checking…", "success is never the first frame, even for a plan that will turn out clean") }
         await m.checkPostInstall()
         await MainActor.run {
             c.expectEqual(m.blockedRows.map(\.id), [])
             c.expectEqual(m.finishEnabled, true)
+            c.expectEqual(m.hasConfirmedRows, true)
             c.expectEqual(m.headline, "Everything's working")
         }
     },
