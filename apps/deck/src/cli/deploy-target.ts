@@ -10,7 +10,12 @@ import { getRecord } from '../registry/records.ts';
  * leaves the restart running the stale build. Reading the record instead of
  * hardcoding either directory keeps deploy correct on every install shape.
  */
-export function deployTarget(): string {
+export function deployTarget(helperOwned = false): string {
+  if (helperOwned) {
+    throw new Error(
+      "the mattstack app owns deck here and its helper runs the bundle's pinned release, so `bun run deploy` has nothing to replace"
+    );
+  }
   const self = getRecord('deck');
   const program = self?.command?.[0];
   if (!program) {

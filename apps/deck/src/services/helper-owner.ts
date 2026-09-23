@@ -62,6 +62,18 @@ async function printJob(
   };
 }
 
+/** The label of the SMAppService-submitted deck job, under either flavor. */
+async function helperLabel(
+  probe: Probe,
+  userId: number
+): Promise<string | null> {
+  for (const label of HELPER_LABELS) {
+    const job = await printJob(probe, label, userId);
+    if (job?.managedBy === SMAPPSERVICE) return label;
+  }
+  return null;
+}
+
 /** True when this process is the bundle helper, or launchd reports an
     SMAppService-submitted deck job under either flavor's label. */
 export async function bundleHelperOwnsDeck(
@@ -70,11 +82,58 @@ export async function bundleHelperOwnsDeck(
   userId: number = uid()
 ): Promise<boolean> {
   if (bundleRoot) return true;
+  return (await helperLabel(probe, userId)) !== null;
+}
+
+/** How to bring deck up, for a message that follows "Deck isn't running."
+    `deck setup` refuses on a helper-owned machine, so it is never offered there. */
+export async function deckStartHint(
+  probe: Probe,
+  bundleRoot: string | null,
+  userId: number = uid()
+): Promise<string> {
+  const label = await helperLabel(probe, userId);
+  if (label) {
+    return `Open the mattstack app, or restart its deck helper with \`launchctl kickstart -k gui/${userId}/${label}\`.`;
+  }
+  if (bundleRoot) return 'Open or restart the mattstack app; it owns deck.';
+  return 'Start it with `deck serve` or install it with `deck setup`.';
+}
+
+/** Who supervises deck, as the API and CLI flows need to know it. */
+export interface DeckOwner {
+  helperOwned(): Promise<boolean>;
+  /** The launchd label of the deck serving right now; null when launchd reports none. */
+  runningLabel(): Promise<string | null>;
+}
+
+/** The label launchd runs `pid` under, the dev helper's or the bare one the
+    prod helper and a hand agent share. With no job serving as `pid`, the
+    first label launchd reports running; null when neither has a process. */
+export async function runningDeckLabel(
+  probe: Probe,
+  pid: number | null,
+  userId: number = uid()
+): Promise<string | null> {
+  let firstRunning: string | null = null;
   for (const label of HELPER_LABELS) {
     const job = await printJob(probe, label, userId);
-    if (job?.managedBy === SMAPPSERVICE) return true;
+    if (job?.pid == null) continue;
+    if (job.pid === pid) return label;
+    firstRunning ??= label;
   }
-  return false;
+  return firstRunning;
+}
+
+export function liveDeckOwner(
+  bundleRoot: string | null,
+  pid: number | null,
+  probe: Probe = liveProbe
+): DeckOwner {
+  return {
+    helperOwned: () => bundleHelperOwnsDeck(probe, bundleRoot),
+    runningLabel: () => runningDeckLabel(probe, pid),
+  };
 }
 
 export interface RetireDeps {

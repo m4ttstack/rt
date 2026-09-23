@@ -1,6 +1,6 @@
 // src/cli/commands.ts
 import pkg from '../../package.json';
-import { apiJson } from './client.ts';
+import { apiJson, deckNotRunning } from './client.ts';
 import { configInit } from './config-init.ts';
 
 export const VERSION = pkg.version;
@@ -388,9 +388,7 @@ export async function runCommand(
             io.out(JSON.stringify({ adopted: false, error: DECK_NOT_RUNNING }));
             return 1;
           }
-          io.err(
-            "Deck isn't running. Start it with `deck serve` or install it with `deck setup`."
-          );
+          io.err(await deckNotRunning());
           return 1;
         }
         if (status !== 200) {

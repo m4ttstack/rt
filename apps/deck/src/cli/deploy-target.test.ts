@@ -37,3 +37,21 @@ test('throws when there is no self record to deploy over', async () => {
   reloadRegistry();
   expect(() => deployTarget()).toThrow(/deck setup/);
 });
+
+test('refuses on a machine the mattstack app owns: its helper runs the bundle, not this binary', async () => {
+  const { putRecord, reloadRegistry } = await import('../registry/records.ts');
+  const { deployTarget } = await import('./deploy-target.ts');
+  reloadRegistry();
+  putRecord({
+    name: 'deck',
+    managedBy: 'deck',
+    port: 11007,
+    kind: 'service',
+    createdAt: 'x',
+    label: 'com.mattstack.deck',
+    command: ['/Users/someone/.local/bin/deck', 'serve'],
+    workingDirectory: '/Users/someone/.mattstack/deck',
+  });
+  expect(() => deployTarget(true)).toThrow(/mattstack app owns deck/);
+  expect(() => deployTarget(true)).not.toThrow(/deck setup/);
+});

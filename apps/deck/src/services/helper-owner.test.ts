@@ -13,8 +13,10 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   bundleHelperOwnsDeck,
+  deckStartHint,
   prepareHelperBoot,
   retireHandAgent,
+  runningDeckLabel,
   type Probe,
 } from './helper-owner.ts';
 
@@ -78,6 +80,80 @@ describe('bundleHelperOwnsDeck', () => {
     const probe = probeOf({ 'com.mattstack.deck': handAgent('/u/Library') });
 
     expect(await bundleHelperOwnsDeck(probe, null)).toBe(false);
+  });
+});
+
+describe('runningDeckLabel', () => {
+  const devHelper = (pid?: number) =>
+    SMAPP_DEV.replace(
+      '\tstate = running\n',
+      pid
+        ? `\tstate = running\n\tpid = ${pid}\n`
+        : '\tstate = spawn scheduled\n'
+    );
+
+  test('the dev helper serving as this pid is the running deck', async () => {
+    const probe = probeOf({ 'com.mattstack.deck.dev': devHelper(900) });
+
+    expect(await runningDeckLabel(probe, 900, 501)).toBe(
+      'com.mattstack.deck.dev'
+    );
+  });
+
+  test('a hand agent holding the ports beats a crash-looping helper with no pid', async () => {
+    const probe = probeOf({
+      'com.mattstack.deck.dev': devHelper(),
+      'com.mattstack.deck': handAgent('/u/Library', 4242),
+    });
+
+    expect(await runningDeckLabel(probe, 4242, 501)).toBe('com.mattstack.deck');
+  });
+
+  test('without a pid to match, the first job launchd reports running wins', async () => {
+    const probe = probeOf({
+      'com.mattstack.deck.dev': devHelper(900),
+      'com.mattstack.deck': handAgent('/u/Library', 4242),
+    });
+
+    expect(await runningDeckLabel(probe, null, 501)).toBe(
+      'com.mattstack.deck.dev'
+    );
+  });
+
+  test('nothing running under either label is null', async () => {
+    const probe = probeOf({ 'com.mattstack.deck.dev': devHelper() });
+
+    expect(await runningDeckLabel(probe, 900, 501)).toBeNull();
+  });
+});
+
+describe('deckStartHint', () => {
+  test('a helper-owned machine is told to use the app or kickstart the helper launchd reports', async () => {
+    const probe = probeOf({ 'com.mattstack.deck.dev': SMAPP_DEV });
+
+    const hint = await deckStartHint(probe, null, 501);
+
+    expect(hint).toContain('mattstack app');
+    expect(hint).toContain(
+      '`launchctl kickstart -k gui/501/com.mattstack.deck.dev`'
+    );
+    expect(hint).not.toContain('deck setup');
+  });
+
+  test('a bundle process launchd reports no job for points at the app alone', async () => {
+    const hint = await deckStartHint(probeOf({}), '/Applications/m.app', 501);
+
+    expect(hint).toContain('mattstack app');
+    expect(hint).not.toContain('launchctl');
+    expect(hint).not.toContain('deck setup');
+  });
+
+  test('without a helper, deck serve and deck setup are still the way in', async () => {
+    const probe = probeOf({ 'com.mattstack.deck': handAgent('/u/Library') });
+
+    expect(await deckStartHint(probe, null, 501)).toBe(
+      'Start it with `deck serve` or install it with `deck setup`.'
+    );
   });
 });
 

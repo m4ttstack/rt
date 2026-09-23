@@ -2,6 +2,8 @@ import { chmodSync, mkdtempSync, renameSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
 
+import { PLATFORM_LABEL } from '../services/manager.ts';
+
 /** Deck ships from the apps monorepo: releases are app-prefixed tags on
     m4ttstack/apps, so "latest" must be resolved by tag prefix, never by the
     repo-wide latest release (that is whichever app released most recently). */
@@ -37,10 +39,16 @@ export function pickDeckAssetUrl(
 /** Self-update: resolve the latest deck release on the monorepo, download its
     tarball, swap the extracted binary over the running one, then kickstart
     the service. */
-export async function update(io: {
-  out(s: string): void;
-  err(s: string): void;
-}): Promise<number> {
+export async function update(
+  io: { out(s: string): void; err(s: string): void },
+  helperOwned: () => Promise<boolean> = liveHelperOwned
+): Promise<number> {
+  if (await helperOwned()) {
+    io.err(
+      "the mattstack app owns deck here; it updates deck's pinned release with the app"
+    );
+    return 1;
+  }
   if (basename(process.execPath).startsWith('bun')) {
     io.err('this is a checkout — update with git pull');
     return 1;
@@ -103,7 +111,33 @@ export async function update(io: {
   }
   io.out('updated. restarting the platform service ...');
   const { LaunchdManager } = await import('../services/launchd.ts');
-  const { PLATFORM_LABEL } = await import('../services/manager.ts');
-  await new LaunchdManager().kickstart(PLATFORM_LABEL);
+  const { readApiInfo } = await import('../api/state.ts');
+  const { bundleRootFromExec } = await import('../services/bundle-layout.ts');
+  const { liveDeckOwner } = await import('../services/helper-owner.ts');
+  const manager = new LaunchdManager();
+  const owner = liveDeckOwner(bundleRootFromExec(), readApiInfo()?.pid ?? null);
+  if (
+    !(await restartPlatform(
+      label => manager.kickstart(label),
+      owner.runningLabel
+    ))
+  ) {
+    io.err('updated, but the platform service did not restart');
+    return 1;
+  }
   return 0;
+}
+
+async function liveHelperOwned(): Promise<boolean> {
+  const { bundleRootFromExec } = await import('../services/bundle-layout.ts');
+  const { bundleHelperOwnsDeck, liveProbe } =
+    await import('../services/helper-owner.ts');
+  return bundleHelperOwnsDeck(liveProbe, bundleRootFromExec());
+}
+
+export async function restartPlatform(
+  kickstart: (label: string) => Promise<boolean>,
+  runningLabel: () => Promise<string | null>
+): Promise<boolean> {
+  return await kickstart((await runningLabel()) ?? PLATFORM_LABEL);
 }

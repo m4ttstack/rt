@@ -16,11 +16,14 @@ expected).
 
 On a machine with the mattstack app installed, the app's SMAppService helper
 (`com.mattstack.deck.dev`, or `com.mattstack.deck` in prod) owns deck and runs
-the bundle's pinned release, not `~/.local/bin/deck`. There `deck setup`
-refuses, and the helper's boot retires a hand-installed agent
-(`src/services/helper-owner.ts`). The helper starts on launchd's bare PATH, so
-it composes its own; Bun spawns with the PATH it started on, so any new spawn
-of a non-OS binary must pass `env: process.env`.
+the bundle's pinned release, not `~/.local/bin/deck`. There `deck setup` and
+`bun run deploy` refuse, `deck restart deck` kickstarts the helper's label,
+and the helper's boot retires a hand-installed agent
+(`src/services/helper-owner.ts`) and moves deck's self record and `deck.*`
+routes to the port it serves on (`src/registry/self-port.ts`). The helper
+starts on launchd's bare PATH, so it composes its own; Bun spawns with the PATH
+it started on, so any new spawn of a non-OS binary must pass
+`env: process.env`.
 
 ## Manifest-first
 

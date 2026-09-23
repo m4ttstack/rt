@@ -20,8 +20,10 @@ import { CloudflaredCli } from './edge/tunnel.ts';
 import { bindGatewayOrExit } from './gateway-boot.ts';
 import { migrateManagedDevShape } from './registry/migrate-dev-shape.ts';
 import { listRecords } from './registry/records.ts';
+import { reconcileSelfPort } from './registry/self-port.ts';
 import { bundleRootFromExec } from './services/bundle-layout.ts';
 import {
+  liveDeckOwner,
   liveProbe,
   liveRun,
   prepareHelperBoot,
@@ -45,8 +47,9 @@ const APP_NAME =
 const CANARY_INTERVAL_MS = 5 * 60_000;
 
 export async function serve(): Promise<void> {
+  const bundleRoot = bundleRootFromExec();
   await prepareHelperBoot({
-    bundleRoot: bundleRootFromExec(),
+    bundleRoot,
     env: process.env,
     retire: {
       probe: liveProbe,
@@ -122,6 +125,7 @@ export async function serve(): Promise<void> {
       autoHeal: () => autoHeal,
       onRouteWrite: () => setTimeout(runCanaryCheck, 500),
       tunnel: new CloudflaredCli(),
+      deckOwner: liveDeckOwner(bundleRoot, process.pid),
     });
   } catch (err) {
     console.error('api failed to start, exiting so launchd retries:', err);
@@ -150,6 +154,19 @@ export async function serve(): Promise<void> {
     }
   } catch (err) {
     console.error('registry dev-shape migration failed:', err);
+  }
+
+  if (bundleRoot) {
+    try {
+      const moved = reconcileSelfPort(PORT);
+      if (moved.record || moved.routes.length) {
+        console.log(
+          `[helper] deck serves on ${PORT}: moved ${[...(moved.record ? ['self record'] : []), ...moved.routes].join(', ')}`
+        );
+      }
+    } catch (err) {
+      console.error('self port reconcile failed:', err);
+    }
   }
 
   // Ownership-driven TLD rehome: every managed record (mattstack product)

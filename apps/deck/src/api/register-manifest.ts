@@ -92,10 +92,10 @@ export async function applyManifest(
     !existing &&
     (manifest.name === PLATFORM_NAME || manifest.name === LEGACY_PLATFORM_NAME)
   ) {
-    return {
-      status: 400,
-      body: { error: 'run deck setup first; the platform registers itself' },
-    };
+    const error = (await drivers.deckOwner?.helperOwned())
+      ? 'deck has no self record to link, and `deck setup` will not write one while the mattstack app owns deck'
+      : 'run deck setup first; the platform registers itself';
+    return { status: 400, body: { error } };
   }
   if (existing && existing.managedBy !== 'user') {
     if (isPlatformManagedBy(existing.managedBy)) {

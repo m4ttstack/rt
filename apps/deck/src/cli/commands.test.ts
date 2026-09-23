@@ -296,7 +296,7 @@ test('no running platform gives a clear error', async () => {
   process.env.LOCAL_STATE_DIR = savedInfo;
   rmSync(emptyDir, { recursive: true, force: true });
   expect(code).toBe(1);
-  expect(x.lines.join('\n')).toContain('deck serve');
+  expect(x.lines.join('\n')).toContain("Deck isn't running.");
 });
 
 test('adopt --json: rename + ownership flip, idempotent re-run, frozen error strings', async () => {

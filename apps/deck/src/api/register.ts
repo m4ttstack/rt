@@ -41,6 +41,7 @@ import {
 } from '../registry/serve-shape.ts';
 import { serviceEnv } from '../registry/service-env.ts';
 import { composeServicePath, resolveProgram } from '../services/exec-env.ts';
+import type { DeckOwner } from '../services/helper-owner.ts';
 import {
   readInstalledEnvironment,
   readInstalledProgramArguments,
@@ -49,6 +50,7 @@ import {
 import {
   isPlatformManagedBy,
   LABEL_PREFIX,
+  PLATFORM_NAME,
   type ServiceManager,
   type ServiceSpec,
 } from '../services/manager.ts';
@@ -66,6 +68,8 @@ export interface Drivers {
   dns?: CfDns;
   /** Only needed for the edge teardown call in `deck uninstall`; see src/cli/setup.ts. */
   tunnel?: TunnelDriver;
+  /** Live launchd view in production; absent means a hand-installed deck under its record's label. */
+  deckOwner?: DeckOwner;
 }
 
 export interface RegisterInput {
@@ -370,6 +374,28 @@ export async function unregisterApp(
   };
 }
 
+/** Deck's own record keeps the label `deck setup` installed, which a
+    helper-owned machine no longer loads, so the platform restarts under
+    whichever deck launchd reports running. */
+export async function kickstartLabelFor(
+  record: AppRecord,
+  drivers: Drivers
+): Promise<string | undefined> {
+  if (!isPlatformManagedBy(record.managedBy)) return record.label;
+  return (await drivers.deckOwner?.runningLabel()) ?? record.label;
+}
+
+/** A helper-only machine may have no self record at all, and deck still restarts. */
+export async function restartLabelFor(
+  name: string,
+  drivers: Drivers
+): Promise<string | undefined> {
+  const record = getRecord(name);
+  if (record) return kickstartLabelFor(record, drivers);
+  if (name !== PLATFORM_NAME) return undefined;
+  return (await drivers.deckOwner?.runningLabel()) ?? undefined;
+}
+
 /**
  * Bulk lifecycle verb behind `deck restart --managed`: the app calls this on
  * its own version-change kickstart (installer spec §8), so it targets every
@@ -379,7 +405,9 @@ export async function unregisterApp(
 export async function restartManagedApps(
   drivers: Drivers
 ): Promise<FlowResult> {
-  const managed = listRecords().filter(r => r.managedBy !== 'user');
+  const managed = listRecords().filter(
+    r => r.managedBy !== 'user' && !isPlatformManagedBy(r.managedBy)
+  );
   const restarted: string[] = [];
   const failed: Array<{ name: string; error: string }> = [];
   for (const record of managed) {
@@ -488,7 +516,9 @@ export async function reresolveManagedApps(
  * record deck supervises. Same implicit-authority model as restartManagedApps.
  */
 export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
-  const managed = listRecords().filter(r => r.managedBy !== 'user');
+  const managed = listRecords().filter(
+    r => r.managedBy !== 'user' && !isPlatformManagedBy(r.managedBy)
+  );
   const removed: string[] = [];
   const failed: string[] = [];
   for (const record of managed) {

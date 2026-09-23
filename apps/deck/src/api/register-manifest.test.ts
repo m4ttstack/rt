@@ -494,6 +494,29 @@ test('a manifest named deck with no self record is refused, nothing created', as
   expect(getRecord('deck')).toBeUndefined();
 });
 
+test('with no self record on a machine the mattstack app owns, the refusal never offers deck setup', async () => {
+  scratch();
+  const { FakeServiceManager } = await import('../services/fake.ts');
+  const { FakeEdgeProxy } = await import('../edge/portless.ts');
+  const { reloadRegistry, getRecord } = await import('../registry/records.ts');
+  const { applyManifest } = await import('./register-manifest.ts');
+  reloadRegistry();
+  const dir = appRepo({ name: 'deck', commands: { deploy: 'd' } });
+  const r = await applyManifest(dir, undefined, {
+    manager: new FakeServiceManager(),
+    edge: new FakeEdgeProxy(),
+    deckOwner: {
+      helperOwned: async () => true,
+      runningLabel: async () => 'com.mattstack.deck.dev',
+    },
+  });
+  const error = String((r.body as { error?: unknown }).error);
+  expect(r.status).toBe(400);
+  expect(error).toContain('mattstack app');
+  expect(error).not.toContain('run deck setup');
+  expect(getRecord('deck')).toBeUndefined();
+});
+
 function managedRecord(commandPath: string) {
   return {
     name: 'chat',

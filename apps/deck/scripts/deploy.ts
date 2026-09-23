@@ -5,11 +5,18 @@ import { $ } from 'bun';
 import { logsDir } from '../src/api/state.ts';
 import { resolveApiInfo } from '../src/cli/api-info.ts';
 import { deployTarget } from '../src/cli/deploy-target.ts';
+import { bundleRootFromExec } from '../src/services/bundle-layout.ts';
+import {
+  bundleHelperOwnsDeck,
+  liveProbe,
+} from '../src/services/helper-owner.ts';
 
 // The plist's ProgramArguments[0], read from deck's own registry record rather
 // than hardcoded: kickstart re-execs that exact path, so the new binary must
 // land there or the restart below keeps running the stale build.
-const target = deployTarget();
+const target = deployTarget(
+  await bundleHelperOwnsDeck(liveProbe, bundleRootFromExec())
+);
 await $`bun run build`;
 await $`bun run build:board`;
 await $`mkdir -p ${dirname(target)}`;
