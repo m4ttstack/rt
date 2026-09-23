@@ -1134,9 +1134,11 @@ func (m *Mission) modalHitTest(x, y int) hit {
 // to. The right button only ever opens the file-row context notice; every
 // other kind is a left-click's concern.
 func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	m.localNotice = ""
 	mouse := msg.Mouse()
+	// The notice strip shortens the body, so the hit resolves against the
+	// frame that painted it before clearing it changes the geometry.
 	h := m.hitTest(mouse.X, mouse.Y)
+	m.localNotice = ""
 	if mouse.Button == tea.MouseRight {
 		if h.kind == hitFileRow || h.kind == hitFileCheckbox {
 			m.localNotice = "menu lands with polish"

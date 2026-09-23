@@ -2328,6 +2328,85 @@ func TestHistoryFilteredRangeSpansRealHistory(t *testing.T) {
 	}
 }
 
+// TestClickAfterLocalNoticeHitsThePaintedRow: a click clears the one-row
+// local notice, which lengthens the list; the click must still land on the
+// row the noticed frame painted, whether the list follows the cursor at its
+// end or holds where the wheel left it.
+func TestClickAfterLocalNoticeHitsThePaintedRow(t *testing.T) {
+	instantSelectTick(t)
+	for _, wheel := range []bool{false, true} {
+		m := New(nil)
+		m.width, m.height = 130, 38
+		commits := groupedCommits(40)
+		commits[0].Selected = true
+		if err := m.setModelValue(Model{Tab: "history", Current: Current{Repo: "r", Detached: true}, History: HistoryModel{Commits: commits, HasMore: true}}); err != nil {
+			t.Fatal(err)
+		}
+		for range 40 {
+			if wheel {
+				wheelOverList(m, tea.MouseWheelDown)
+			} else {
+				m.Update(downKey())
+			}
+		}
+		m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+		if m.noticeText() == "" {
+			t.Fatal("setup: b on a detached HEAD posts a local notice")
+		}
+		lines := strings.Split(m.View().Content, "\n")
+		l := m.layout()
+		checked := 0
+		for y := l.topH + historyFixedTopRows; y < l.topH+l.bodyH; y++ {
+			text := listRowText(lines[y])
+			save := *m
+			m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft})
+			switch {
+			case strings.HasSuffix(text, "more commits"):
+				if m.historyMoreFor != len(commits) {
+					t.Fatalf("wheel=%v: a click on the painted action row (frame row %d) should request a page", wheel, y)
+				}
+				checked++
+			case strings.HasPrefix(text, "subject-") || strings.HasPrefix(text, "author-"):
+				if got := m.model.History.Commits[m.historyIndex(m.historyCursor)]; !strings.HasPrefix(text, got.Summary) && !strings.HasPrefix(text, got.Byline) {
+					t.Fatalf("wheel=%v: a click on frame row %d painting %q selected %q", wheel, y, text, got.Summary)
+				}
+				checked++
+			default:
+				if m.historyCursor != save.historyCursor || m.historyMoreFor != save.historyMoreFor {
+					t.Fatalf("wheel=%v: a click on inert frame row %d painting %q changed the selection to %q", wheel, y, text, m.historyCursor)
+				}
+			}
+			*m = save
+		}
+		if checked < 10 {
+			t.Fatalf("wheel=%v: setup: only %d clickable rows painted", wheel, checked)
+		}
+	}
+}
+
+// TestChangesClickAfterLocalNoticeHitsThePaintedRow: the docked commit box
+// sits one row higher while the notice shows, so a click on the painted
+// description box's top border must focus the description, not the summary
+// box painted above it.
+func TestChangesClickAfterLocalNoticeHitsThePaintedRow(t *testing.T) {
+	m := newMouseTestMission()
+	m.localNotice = "menu lands with polish"
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	y := -1
+	for i, line := range lines {
+		if strings.Contains(sidebarPart(line), "Description") {
+			y = i
+		}
+	}
+	if y < 1 {
+		t.Fatal("setup: the description box is not painted")
+	}
+	m.Update(tea.MouseClickMsg{X: 5, Y: y - 1, Button: tea.MouseLeft})
+	if m.focus != focusDescription {
+		t.Fatalf("a click on the painted description box border should focus the description, got focus %v", m.focus)
+	}
+}
+
 func TestFullFrameHistoryPaneStatesFullyPaintBackground(t *testing.T) {
 	m := twoFileHistoryMission()
 	model := twoFileHistoryModel()
