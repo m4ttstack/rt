@@ -20,6 +20,13 @@ describe("lookupChild", () => {
     expect(lookupChild(tree, "wt")?.key).toBe("worktree");
     expect(lookupChild(tree, "nope")).toBeNull();
   });
+
+  test("prototype keys never resolve", () => {
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(lookupChild(tree, name), name).toBeNull();
+      expect(resolveLeaf(tree, [name]), name).toBeNull();
+    }
+  });
 });
 
 describe("resolveLeaf", () => {

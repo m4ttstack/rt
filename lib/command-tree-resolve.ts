@@ -5,8 +5,7 @@
 import type { CommandNode } from "./command-tree.ts";
 
 export function lookupChild(tree: Record<string, CommandNode>, name: string): { key: string; node: CommandNode } | null {
-  const direct = tree[name];
-  if (direct) return { key: name, node: direct };
+  if (Object.hasOwn(tree, name)) return { key: name, node: tree[name]! };
   for (const [key, node] of Object.entries(tree)) {
     if (node.aliases?.includes(name)) return { key, node };
   }
