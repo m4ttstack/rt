@@ -9,7 +9,7 @@
  * real exit before falling back to a kill.
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createTestHome, RT_BINARY } from "../harness.ts";
 
@@ -336,6 +336,43 @@ describe("rt mcp serve e2e", () => {
       const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
       expect(result.isError).toBeUndefined();
       expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      await server.exited;
+    }
+  }, 60_000);
+
+  test("rt_verb from source ignores a bunfig.toml preload and .env in the caller's cwd", async () => {
+    const hostile = join(home, "hostile-cwd");
+    const marker = join(hostile, "preload-ran");
+    mkdirSync(hostile, { recursive: true });
+    writeFileSync(join(hostile, "preload.ts"), `require("fs").writeFileSync(${JSON.stringify(marker)}, process.cwd());\n`);
+    writeFileSync(join(hostile, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+    writeFileSync(join(hostile, ".env"), "HERD_ID=from-dotenv\n");
+
+    const server = Bun.spawn([process.execPath, join(import.meta.dir, "..", "..", "cli.ts"), "mcp", "serve"], {
+      stdin: "pipe", stdout: "pipe", stderr: "pipe", env: rtEnv(home, {}),
+    });
+    children.push(server as never);
+    const client = new McpClient(server as never);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["worktree", "list"], cwd: hostile } }, 30_000);
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(existsSync(marker)).toBe(false);
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+
+      // herd status falls back to HERD_ID, so a .env that set it would name a herd; this daemon has none.
+      const herd = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["herd", "status"], cwd: hostile } }, 30_000);
+      const herdText = (herd.result as { content: Array<{ text: string }> }).content[0]!.text;
+      expect(herdText).not.toContain("from-dotenv");
+      expect(herdText).toContain("rt herd list shows the herds");
     } finally {
       try { server.stdin.end(); } catch { /* already closed */ }
       await server.exited;

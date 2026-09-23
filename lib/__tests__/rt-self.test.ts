@@ -17,7 +17,12 @@ describe("rtSelfArgv", () => {
   test("compiled: the binary alone", () => {
     expect(rtSelfArgv({ compiled: true, execPath: "/Apps/mattstack.app/Contents/Helpers/rt" })).toEqual(["/Apps/mattstack.app/Contents/Helpers/rt"]);
   });
-  test("source: bun plus the entry script", () => {
-    expect(rtSelfArgv({ compiled: false, execPath: "/opt/bun", main: "/repo/cli.ts" })).toEqual(["/opt/bun", "/repo/cli.ts"]);
+  test("source: bun pinned to rt's own bunfig and no .env, then the entry script", () => {
+    expect(rtSelfArgv({ compiled: false, execPath: "/opt/bun", main: "/repo/cli.ts" })).toEqual([
+      "/opt/bun",
+      "--no-env-file",
+      "--config=/repo/bunfig.toml",
+      "/repo/cli.ts",
+    ]);
   });
 });
