@@ -48,6 +48,8 @@ import { classifyDirtyAsync, disposeTree, type DisposeDeps } from "../../worktre
 import type { RunningRunScan } from "../../runs/store.ts";
 import { restoreTree } from "../../worktree/restore.ts";
 import { mergeCleanupGap, type MergeCleanupGap } from "../../worktree/merge-cleanup-gap.ts";
+import { loadSecrets } from "../../linear.ts";
+import { loadRepoTracking, type RepoTracking } from "../../repo-tracking.ts";
 import { branchOf, composeKey } from "../../state/branch-cache.ts";
 import { isTreeLocked, withTreeLock } from "../../worktree/locks.ts";
 import {
@@ -681,13 +683,19 @@ export function createWorktreeHandlers(
       const dormantRepos: string[] = [];
       const readyHeldRepos: string[] = [];
       const mergeCleanupOff: Array<{ repo: string; path: string } & MergeCleanupGap> = [];
+      // Read once per call, and only if some repo has claims; a failed secrets
+      // read skips the check rather than reporting every repo as tokenless.
+      let gapInputs: { tracking: RepoTracking; secrets: Awaited<ReturnType<typeof loadSecrets>> } | null | undefined;
 
       for (const [repoName, repoPath] of repos) {
         if (await worktreePoolDormant(repoName, repoPath)) dormantRepos.push(repoName);
         if (await worktreeReadyHeld(repoName, repoPath)) readyHeldRepos.push(repoName);
         const trees = loadRegistry(repoName);
         if (trees.some((t) => t.kind === "ephemeral" && t.state === "claimed")) {
-          const gap = await mergeCleanupGap(repoName, repoPath);
+          if (gapInputs === undefined) {
+            gapInputs = await loadSecrets().then((secrets) => ({ tracking: loadRepoTracking(), secrets }), () => null);
+          }
+          const gap = gapInputs && await mergeCleanupGap(repoName, repoPath, gapInputs.tracking, gapInputs.secrets);
           if (gap) mergeCleanupOff.push({ repo: repoName, path: repoPath, ...gap });
         }
         const branchCounts = new Map<string, number>();

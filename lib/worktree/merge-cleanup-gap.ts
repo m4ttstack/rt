@@ -6,23 +6,21 @@
  */
 
 import { forgeTokenFor, type Forge } from "../enrich.ts";
-import { loadSecrets } from "../linear.ts";
-import { grants, loadRepoTracking } from "../repo-tracking.ts";
+import { grants, type RepoTracking } from "../repo-tracking.ts";
 import { runCapture } from "../subprocess.ts";
 
 export type MergeCleanupGap = { reason: "untracked"; forge: Forge } | { reason: "no-token"; forge: Forge };
 
-export async function mergeCleanupGap(repoName: string, repoPath: string): Promise<MergeCleanupGap | null> {
+export async function mergeCleanupGap(
+  repoName: string,
+  repoPath: string,
+  tracking: RepoTracking,
+  secrets: { gitlabToken?: string; githubToken?: string },
+): Promise<MergeCleanupGap | null> {
   const remote = await runCapture(["git", "config", "--get", "remote.origin.url"], { cwd: repoPath, timeoutMs: 5000 });
   const remoteUrl = remote.exitCode === 0 ? remote.stdout.trim() || undefined : undefined;
-  let secrets: Awaited<ReturnType<typeof loadSecrets>>;
-  try {
-    secrets = await loadSecrets();
-  } catch {
-    return null;
-  }
   const forge = await forgeTokenFor(remoteUrl, secrets);
   if (!forge) return null;
-  if (!grants(loadRepoTracking(), repoName).caches.has("branches")) return { reason: "untracked", forge: forge.forge };
+  if (!grants(tracking, repoName).caches.has("branches")) return { reason: "untracked", forge: forge.forge };
   return forge.token ? null : { reason: "no-token", forge: forge.forge };
 }

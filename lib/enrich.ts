@@ -500,7 +500,10 @@ async function fetchAndCache(
       try {
         if (secrets.gitlabToken && isGitLabRemote(remoteUrl)) {
           const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
-          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, "all");
+          // Open only: this list can carry the default branch, which pushed the
+          // daemon's all-states GitLab query past GitLab's LB limit (see
+          // selectEnrichmentBranches). The daemon refresh supplies merged state.
+          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
           mrFetchSucceeded = true;
         } else if (secrets.githubToken && isGitHubRemote(remoteUrl)) {
           const provider = new GitHubProvider(remote.host, secrets.githubToken);
