@@ -175,7 +175,12 @@ describe("new", () => {
       "# Sparse",
       "",
     ].join("\n"));
-    writeFileSync(join(dir, "pr-description.md"), "# PR descriptions (sparse)\n");
+    writeFileSync(join(dir, "pr-description.md"), [
+      "<!-- compiled by rt skills compile from the sources below; slots pre-resolved; edits here are working-tree drift (rt skills promote) -->",
+      "<!-- part: step source=mattstack:writing-style-sparse version=0.18.0 path=x lines=1-9 -->",
+      "# PR descriptions (sparse)",
+      "",
+    ].join("\n"));
     return JSON.stringify([{ id: "mattstack@mattstack", enabled: true, installPath }]);
   }
 
@@ -188,7 +193,9 @@ describe("new", () => {
     expect(text).toContain("name: team-voice");
     expect(text).toContain("names team-voice.");
     expect(text).not.toContain("<!-- ");
-    expect(readFileSync(join(dir, "pr-description.md"), "utf8")).toContain("PR descriptions");
+    const prDesc = readFileSync(join(dir, "pr-description.md"), "utf8");
+    expect(prDesc).toContain("PR descriptions");
+    expect(prDesc).not.toContain("<!-- ");
     expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
     const body = JSON.parse(out[0]!);
     expect(body).toMatchObject({ name: "team-voice", from: "mattstack:writing-style-sparse" });

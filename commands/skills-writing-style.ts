@@ -206,7 +206,7 @@ export async function writingStyleNew(args: string[], _ctx: CommandContext = {},
     const rawSkill = readFileSync(join(source, "SKILL.md"), "utf8");
     skillContent = retarget(stripCompilerComments(rawSkill), presetId, name);
     if (existsSync(join(source, "pr-description.md"))) {
-      prDescContent = readFileSync(join(source, "pr-description.md"), "utf8");
+      prDescContent = stripCompilerComments(readFileSync(join(source, "pr-description.md"), "utf8"));
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
