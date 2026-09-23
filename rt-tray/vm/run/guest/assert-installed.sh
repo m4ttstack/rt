@@ -71,25 +71,47 @@ else
   bad "no tray socket at $SOCK"
 fi
 
-# The finish gate: drive-setup.sh records whether it had to skip the Fast
-# Browser extension on the Done screen. Skipped means the machine store must
-# hold the id (written only through rt, never a hand edit); open means nothing
-# was waived. `rt settings get --json` is the one undecorated read of the store.
-GATE=$(cat "$LOGS/finish-gate.txt" 2>/dev/null || echo "")
-WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
-case "$GATE" in
-  skipped)
+# The finish gate: drive-setup.sh probes and drives each finish-gated Done
+# row on its own (Fast Browser, writing-style, either, or neither), writing
+# one line per row it resolved, or the single word "open" when it found none.
+# `rt settings get`/`rt skills writing-style show --json` are the one
+# undecorated reads of the store either row's own record lives in.
+GATE_FILE="$LOGS/finish-gate.txt"
+if [ ! -f "$GATE_FILE" ]; then
+  if [ "$HEADLESS" = 1 ]; then ok "finish gate not driven (headless)"; else bad "no finish-gate.txt from drive-setup.sh"; fi
+elif [ "$(cat "$GATE_FILE")" = "open" ]; then
+  WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
+  case "$WAIVED" in
+    *tool.fast-browser-extension*) bad "nothing was skipped on the Done screen but setup.waived holds the id: $WAIVED";;
+    *) ok "setup.waived is empty (the gate never closed)";;
+  esac
+else
+  if grep -qx 'fast-browser-extension=skipped' "$GATE_FILE"; then
+    WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
     case "$WAIVED" in
       *tool.fast-browser-extension*) ok "setup.waived holds tool.fast-browser-extension after Skip for now";;
       *) bad "Skip for now was confirmed but setup.waived does not hold the id: $WAIVED";;
-    esac;;
-  open)
+    esac
+  else
+    WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
     case "$WAIVED" in
-      *tool.fast-browser-extension*) bad "nothing was skipped on the Done screen but setup.waived holds the id: $WAIVED";;
-      *) ok "setup.waived is empty (the gate never closed)";;
-    esac;;
-  *) if [ "$HEADLESS" = 1 ]; then ok "finish gate not driven (headless)"; else bad "no finish-gate.txt from drive-setup.sh"; fi;;
-esac
+      *tool.fast-browser-extension*) bad "fast-browser-extension was not skipped on the Done screen but setup.waived holds the id: $WAIVED";;
+      *) ok "setup.waived does not hold tool.fast-browser-extension (it was not skipped)";;
+    esac
+  fi
+  STYLE_LINE=$(grep '^writing-style=' "$GATE_FILE" || true)
+  if [ -n "$STYLE_LINE" ]; then
+    STYLE_ID="${STYLE_LINE#writing-style=}"
+    SHOW=$(rt skills writing-style show --json 2>/dev/null)
+    SHOW_SKILL=$(printf '%s' "$SHOW" | "$JQ" -r '.skill // empty' 2>/dev/null)
+    SHOW_SOURCE=$(printf '%s' "$SHOW" | "$JQ" -r '.source // empty' 2>/dev/null)
+    if [ "$SHOW_SKILL" = "$STYLE_ID" ] && [ "$SHOW_SOURCE" = "user" ]; then
+      ok "writing style persisted end to end: $STYLE_ID (source user)"
+    else
+      bad "writing style did not persist: wanted $STYLE_ID at source user, got $SHOW_SKILL at source $SHOW_SOURCE"
+    fi
+  fi
+fi
 
 # mattstack.appPath (V3): the app records where it runs from. --json is the only stable, undecorated form of `rt settings get`.
 AP=$(rt settings get mattstack.appPath --json 2>/dev/null)

@@ -5,8 +5,9 @@ import { join } from "path";
 import { getDef, validateValue } from "../../settings/registry.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { setSetting } from "../../settings/write.ts";
+import { FINISH_GATED_ROW_IDS, WAIVABLE_ROW_IDS, finishBlockers, row } from "../contract.ts";
 import { UserActionableError } from "../errors.ts";
-import { WAIVED_SETTING_KEY, readWaived, realWaiverStore, unwaiveRow, waiveRow } from "../finish-gate.ts";
+import { WAIVED_SETTING_KEY, applyFinishGate, readWaived, realWaiverStore, unwaiveRow, waiveRow } from "../finish-gate.ts";
 
 let home: string;
 let prevHome: string | undefined;
@@ -110,5 +111,34 @@ describe("waiveRow / unwaiveRow", () => {
     expect(getSetting(WAIVED_SETTING_KEY).provenance.map((p) => p.scope)).toEqual(["machine"]);
     unwaiveRow("tool.fast-browser-extension", store);
     expect(readWaived()).toEqual([]);
+  });
+});
+
+describe("non-waivable finish gates", () => {
+  const style = row({ id: "skills.writing-style", kind: "tool", title: "Writing style", why: "x", required: false, status: "needs-you", detail: "d", finishGated: true });
+  const ext = row({ id: "tool.fast-browser-extension", kind: "tool", title: "Ext", why: "x", required: false, status: "needs-you", detail: "d", finishGated: true });
+  const groups = [{ id: "tools" as const, title: "Tools", rows: [style, ext] }];
+
+  test("only the Fast Browser row is waivable", () => {
+    expect(WAIVABLE_ROW_IDS).toEqual(["tool.fast-browser-extension"]);
+  });
+
+  test("a stored waiver for a non-waivable row is ignored where the gate is read", () => {
+    const waived = ["skills.writing-style", "tool.fast-browser-extension"];
+    expect(finishBlockers(groups, waived)).toEqual(["skills.writing-style"]);
+    const applied = applyFinishGate(groups, "status", waived)[0]!.rows;
+    expect(applied.find((r) => r.id === "skills.writing-style")?.waived).toBeFalsy();
+    expect(applied.find((r) => r.id === "tool.fast-browser-extension")?.waived).toBe(true);
+  });
+
+  test("every finish-gated row carries waivable", () => {
+    const applied = applyFinishGate(groups, "plan", [])[0]!.rows;
+    expect(applied.map((r) => [r.id, r.waivable])).toEqual([["skills.writing-style", false], ["tool.fast-browser-extension", true]]);
+  });
+
+  test("waive refuses a finish-gated row that is not waivable", () => {
+    const store = { ids: [] as string[], read() { return this.ids; }, write(ids: string[]) { this.ids = ids; } };
+    expect(() => waiveRow("skills.writing-style", store)).toThrow(UserActionableError);
+    expect(store.ids).toEqual([]);
   });
 });

@@ -13,6 +13,13 @@ public enum FinishGate {
     public static func headline(blocked: Int) -> String {
         blocked == 1 ? "One step left before you finish" : "\(blocked) steps left before you finish"
     }
+
+    /// A blocker always wins the symbol; the multicolor warning triangle
+    /// matches StatusGlyph's own needsYou/missing rendering.
+    public static func headlineSymbol(blocked: Bool, allDone: Bool) -> String {
+        if blocked { return "exclamationmark.triangle.fill" }
+        return allDone ? "checkmark.seal.fill" : "checkmark.seal"
+    }
 }
 
 public extension PlanRow {
@@ -48,6 +55,57 @@ public final class WaiverClient {
     }
 }
 
+/// Runs a choose row's verb for the Done screen and Settings, which have no
+/// verb runner of their own, so a refusal can be shown inside the sheet.
+@MainActor
+public final class ChoiceClient {
+    private let rt: RtRunning
+    public init(rt: RtRunning) { self.rt = rt }
+
+    /// nil once the verb succeeded; otherwise the user-facing failure copy.
+    /// An empty verb refuses without spawning rt: `verb + [id, "--json"]`
+    /// would otherwise run `rt <id> --json`, a nonconforming rt's row shape
+    /// making the app execute an arbitrary id as a top-level rt command.
+    public func choose(verb: [String], id: String) async -> String? {
+        guard !verb.isEmpty else { return "This choice has no command to run." }
+        let args = verb + [id, "--json"]
+        do {
+            let result = try await rt.run(args, stdin: nil)
+            if let e = result.userError { return e.message }
+            if result.exitCode != 0 { return result.failureCopy(verb: args.dropLast().joined(separator: " ")) }
+        } catch {
+            return (error as? RtClientError)?.copy ?? "rt \(verb.joined(separator: " ")) failed to start."
+        }
+        return nil
+    }
+}
+
+public enum DoneRoute: Equatable, Sendable {
+    case openURL(URL)
+    case steps([String])
+    case recheck
+    case choose
+}
+
+/// The Done screen's only routing; the types it routes are pinned to
+/// DONE_ACTION_TYPES in lib/setup/contract.ts.
+public enum DoneActions {
+    public static func route(_ action: RowAction) -> DoneRoute? {
+        switch action.type {
+        case .openURL:
+            // Mirrors RowActionDispatcher: an unsupported scheme does nothing.
+            guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return nil }
+            return .openURL(url)
+        case .steps: return .steps(action.steps ?? [])
+        // The only run verb a Done row carries is a re-check; Done re-reads the plan itself.
+        case .run: return .recheck
+        case .choose: return .choose
+        case .openSettings, .requestPermission, .connect, .oauth, .install, .ownerOnce, .linkBundled, .chooseFolder, .unknown:
+            return nil
+        }
+    }
+}
+
 /// The Done screen's state: which rows block Finish, which are merely still
 /// to do, and the Skip for now sheet. Nothing is listed until the
 /// post-install re-check lands, since the model still holds the pre-Install
@@ -78,17 +136,24 @@ public final class DoneModel: ObservableObject {
 
     private let readiness: ReadinessModel
     private let waivers: WaiverClient
+    public let choices: ChoiceClient
     private let checkTimeout: TimeInterval
     private var checkGeneration = 0
     private var forward: AnyCancellable?
 
-    public init(readiness: ReadinessModel, waivers: WaiverClient, checkTimeout: TimeInterval = DoneModel.defaultCheckTimeout) {
-        self.readiness = readiness; self.waivers = waivers; self.checkTimeout = checkTimeout
+    public init(readiness: ReadinessModel, waivers: WaiverClient, choices: ChoiceClient, checkTimeout: TimeInterval = DoneModel.defaultCheckTimeout) {
+        self.readiness = readiness; self.waivers = waivers; self.choices = choices; self.checkTimeout = checkTimeout
         forward = readiness.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     public var hasCheckedSincePostInstall: Bool { checkState == .checked }
     private var showsRows: Bool { hasCheckedSincePostInstall || (checkState == .checking && showsConfirmedRowsWhileChecking) }
+    /// True once blockedRows/stillToDoRows hold real, confirmed data rather
+    /// than the empty placeholder they read as before the first post-install
+    /// check lands -- the headline and its glyph must never read as success
+    /// while this is false, since an empty blockedRows here means "not known
+    /// yet", not "nothing is wrong".
+    public var hasConfirmedRows: Bool { showsRows }
     public var blockedRows: [PlanRow] { showsRows ? readiness.finishBlockedRows : [] }
     public var stillToDoRows: [PlanRow] { showsRows ? readiness.outstandingManualRows : [] }
     /// True after a post-install check failed or timed out and no later one succeeded.
@@ -109,6 +174,7 @@ public final class DoneModel: ObservableObject {
     }
 
     public var headline: String {
+        guard hasConfirmedRows else { return "Checking…" }
         let blocked = blockedRows.count
         if blocked > 0 { return FinishGate.headline(blocked: blocked) }
         let outstanding = stillToDoRows.count

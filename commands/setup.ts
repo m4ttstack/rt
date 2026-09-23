@@ -24,7 +24,7 @@ import { listTeams } from "../lib/settings/stores.ts";
 import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import { createApplyContext, runApplyWith, type ApplyContext, type CreateApplyContextDeps, type StepDef } from "../lib/setup/apply.ts";
-import { envelope, FINISH_GATED_ROW_IDS, STEP_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
+import { envelope, STEP_IDS, WAIVABLE_ROW_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
 import { createHumanEmitter, createNdjsonEmitter } from "../lib/setup/emit.ts";
 import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
 import { realWaiverStore, unwaiveRow, waiveRow, type WaiverChange, type WaiverStore } from "../lib/setup/finish-gate.ts";
@@ -96,7 +96,12 @@ export function renderPlanHuman(plan: Plan): string[] {
   const lines: string[] = [];
   for (const group of plan.groups) {
     lines.push(group.title);
-    for (const r of group.rows) lines.push(`  ${GLYPH_COLOR[r.status]}${GLYPH[r.status]}${reset} ${r.title}  ${r.detail}`);
+    for (const r of group.rows) {
+      lines.push(`  ${GLYPH_COLOR[r.status]}${GLYPH[r.status]}${reset} ${r.title}  ${r.detail}`);
+      // The row's own detail stays one line; the choose sheet's terminal alternative is
+      // the only thing a --json-less, no-app user has for reaching that action's verb.
+      if (r.action?.type === "choose" && r.action.footnote) lines.push(`  ${dim}${r.action.footnote}${reset}`);
+    }
   }
   lines.push(plan.canInstall ? "Install: ready" : `Install: blocked by: ${plan.requiredMissing.join(", ")}`);
   return lines;
@@ -909,7 +914,7 @@ async function runWaiver(args: string[], deps: WaiveDeps, verb: "waive" | "unwai
   if (!id) {
     // unwaive can only act on rows already skipped here; an empty set falls
     // through to the usage error rather than an empty picker.
-    const candidates = verb === "waive" ? [...FINISH_GATED_ROW_IDS] : deps.store.read();
+    const candidates = verb === "waive" ? [...WAIVABLE_ROW_IDS] : deps.store.read();
     if (deps.isTTY() && !json && !process.env.RT_BATCH && candidates.length > 0) {
       id = (await deps.pick(verb === "waive" ? "Skip which row on this Mac?" : "Re-arm which row on this Mac?", candidates)) ?? undefined;
       if (!id) return deps.exit(0);

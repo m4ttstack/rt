@@ -8,6 +8,7 @@ public enum DispatchedAction: Equatable, Sendable {
     case showSteps([String])
     case chooseFolder(startAt: String?)
     case collectFields([ActionField], integration: String, alternatives: [ActionAlternative])
+    case chooseOption(options: [ChooseOption], other: ChooseOther?)
     case none
 }
 
@@ -46,6 +47,10 @@ public enum RowActionDispatcher {
                 return .rtVerb(args: ["setup", "repo-root", "set", "--json"], stdin: json(["root": path]))
             }
             return .chooseFolder(startAt: action.startAt)
+        case .choose:
+            guard let verb = action.verb, !verb.isEmpty else { return .none }
+            if let id = fieldValues?["id"] { return .rtVerb(args: verb + [id, "--json"], stdin: nil) }
+            return .chooseOption(options: action.options ?? [], other: action.other)
         case .unknown: return .none
         }
     }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { basename, dirname, join } from "path";
 import { HELPERS_DIR, RT_BUNDLE_PATH, __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
@@ -19,7 +19,8 @@ import type { Probes } from "../probes.ts";
 
 import { servicesRegisterStep, proxyInstallStep, PORTLESS_LAUNCHD_PLIST, PROXY_VERSION_PATH } from "../steps/services.ts";
 import { deckManagedStep } from "../steps/deck.ts";
-import { skillsMaterializeStep, boardKeysStep, cronTriageStep } from "../steps/skills.ts";
+import { skillsMaterializeStep, skillsLinkStep, boardKeysStep, cronTriageStep } from "../steps/skills.ts";
+import { personalSkillsDir } from "../../skills/writing-style-sources.ts";
 
 // ─── shared fakes (same shapes as steps-a.test.ts; none of steps B's bodies
 // touch secrets/relay, so these stay trivial no-ops) ────────────────────────
@@ -813,6 +814,46 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
         state: "done",
         detail: "board adopted (repointed); gitq already registered (managed); console not registered: not bundled; chat not registered: not bundled",
       });
+    });
+  });
+
+  // ─── skills.link ────────────────────────────────────────────────────────
+
+  describe("skills.link", () => {
+    test("no app bundle, a personal skill present: links it and reports done", async () => {
+      const dir = join(personalSkillsDir(home), "team-voice");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+
+      const p = fakeProbes({ home });
+      const { ctx } = makeCtx(p);
+      const outcome = await skillsLinkStep.run(ctx);
+
+      expect(outcome.state).toBe("done");
+      expect(lstatSync(join(home, ".claude", "skills", "team-voice")).isSymbolicLink()).toBe(true);
+    });
+
+    test("no app bundle, no personal skills: skipped as before", async () => {
+      const p = fakeProbes({ home });
+      const { ctx } = makeCtx(p);
+      const outcome = await skillsLinkStep.run(ctx);
+      expect(outcome).toEqual({ state: "skipped", detail: "not running from an app bundle" });
+    });
+
+    test("a personal skill link conflict is logged, not silently dropped", async () => {
+      const dir = join(personalSkillsDir(home), "team-voice");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "SKILL.md"), "---\nname: team-voice\ndescription: x\n---\nbody\n");
+      // A real (non-symlink) directory already occupies the link name, so
+      // linkPersonalSkills reports a conflict instead of linking it.
+      mkdirSync(join(home, ".claude", "skills", "team-voice"), { recursive: true });
+
+      const p = fakeProbes({ home });
+      const { ctx, logs } = makeCtx(p);
+      const outcome = await skillsLinkStep.run(ctx);
+
+      expect(outcome.state).toBe("done");
+      expect(logs.some((l) => l.id === "skills.link" && l.line.includes("team-voice"))).toBe(true);
     });
   });
 

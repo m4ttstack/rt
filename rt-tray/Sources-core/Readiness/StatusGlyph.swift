@@ -8,7 +8,7 @@ public enum StatusGlyph {
         switch status {
         case .ready: return "checkmark.circle.fill"
         case .error, .invalid: return "xmark.circle"
-        case .needsYou, .missing: return "exclamationmark.triangle"
+        case .needsYou, .missing: return "exclamationmark.triangle.fill"
         case .skipped: return "circle.dotted"
         case .checking: return "progress"
         }
@@ -21,5 +21,10 @@ public enum StatusGlyph {
         case .skipped: return .grey
         case .checking: return .none
         }
+    }
+    /// True for the yellow-tinted statuses: the view then renders the system's
+    /// own multicolor warning (yellow fill, dark "!"), the same as System Settings.
+    public static func multicolor(for status: RowStatus) -> Bool {
+        tint(for: status) == .yellow
     }
 }

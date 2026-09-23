@@ -72,12 +72,12 @@ describe("rt setup waive", () => {
     expect(t.lines).toEqual(["setup waive: tool.fast-browser-extension skipped on this Mac"]);
   });
 
-  test("an id that is not finish-gated exits 2 with the error envelope and writes nothing", async () => {
+  test("an id that is not waivable exits 2 with the error envelope and writes nothing", async () => {
     const t = deps();
     expect(await exitCode(() => setupWaive(["tool.chrome", "--json"], {}, t.d))).toBe(2);
     expect(t.writes).toEqual([]);
     const body = JSON.parse(t.lines[0]!);
-    expect(body.error.code).toBe("not-finish-gated");
+    expect(body.error.code).toBe("not-waivable");
     expect(body.error.message).toContain("tool.fast-browser-extension");
   });
 

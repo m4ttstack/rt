@@ -4,6 +4,8 @@ import MattstackCore
 
 struct GeneralPane: View {
     let env: SettingsEnvironment
+    @ObservedObject private var readiness: ReadinessModel
+    @State private var chooseRow: PlanRow?
     @State private var startAtLogin = SMAppService.mainApp.status == .enabled
     @State private var autoUpdates = false
     @State private var devModeBusy = false
@@ -13,11 +15,27 @@ struct GeneralPane: View {
 
     init(env: SettingsEnvironment) {
         self.env = env
+        self.readiness = env.readiness
         _devModeOn = State(initialValue: env.isDevBuild)
     }
 
     var body: some View {
         Form {
+            Section("Writing style") {
+                if let row = readiness.row("skills.writing-style") {
+                    RowView(row: row, isChecking: readiness.checkingRowIds.contains(row.id), rowID: AXID.settingsWritingStyleRow,
+                            actionID: AXID.settingsWritingStyleRowAction, statusID: AXID.settingsWritingStyleRowStatus) {
+                        if row.action?.type == .choose { chooseRow = row }
+                    }
+                    if readiness.lastRefreshFailed, let e = readiness.lastError {
+                        Text("Couldn't re-read the checklist: \(e)").font(.caption).foregroundStyle(.red)
+                    }
+                } else if let e = readiness.lastError {
+                    Text("Couldn't read the checklist: \(e)").font(.caption).foregroundStyle(.red)
+                } else {
+                    Text(readiness.isLoading ? "Checking…" : "No writing-style row in this checklist.").foregroundStyle(.secondary)
+                }
+            }
             Section("Startup") {
                 Toggle("Start mattstack at login", isOn: $startAtLogin).toggleStyle(.switch).controlSize(.small)
                     .onChange(of: startAtLogin) { _, on in toggleLogin(on) }
@@ -60,6 +78,14 @@ struct GeneralPane: View {
             Section { LabeledContent("Version") { Text(env.version) } }
         }
         .formStyle(.grouped)
+        .task { await readiness.loadIfNeeded() }
+        .sheet(item: $chooseRow) { row in
+            ChooseSheet(row: row) { id in
+                let failure = await ChoiceClient(rt: env.rt).choose(verb: row.action?.verb ?? [], id: id)
+                if failure == nil { await readiness.recheckAll() }
+                return failure
+            }
+        }
         .onAppear {
             autoUpdates = env.updater.automaticallyChecks
             startAtLogin = SMAppService.mainApp.status == .enabled

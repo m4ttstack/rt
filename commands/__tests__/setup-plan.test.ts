@@ -5,7 +5,7 @@ import { writeIntent } from "../../lib/setup/intent.ts";
 import type { SecretPresence } from "../../lib/setup/validators/accounts.ts";
 import { fakeProbes, missing, ok } from "../../lib/setup/__tests__/fakes.ts";
 import type { ExecScript } from "../../lib/setup/__tests__/fakes.ts";
-import { green, red, reset } from "../../lib/ansi.ts";
+import { dim, green, red, reset, yellow } from "../../lib/ansi.ts";
 
 /** setupPlan/setupStatus call process.exit(2) on a user-actionable error; the sentinel throw stops it from actually killing the test process, and the caller reads the exit code off the spy. */
 async function runExpectingExit(fn: () => Promise<void>): Promise<number | undefined> {
@@ -189,6 +189,78 @@ describe("renderPlanHuman", () => {
     };
     expect(renderPlanHuman(plan).at(-1)).toBe("Install: ready");
   });
+
+  test("a choose row's footnote renders on its own line under the row, dim-styled", () => {
+    const plan: Plan = {
+      contract: 1,
+      at: "2026-08-21T00:00:00.000Z",
+      team: { slug: "acme", name: "Acme", mode: "join" },
+      groups: [
+        {
+          id: "tools",
+          title: "Tools",
+          rows: [
+            {
+              id: "skills.writing-style", kind: "tool", title: "Writing style", why: "x", required: false, optionalNote: null,
+              status: "needs-you", detail: "Not chosen yet",
+              action: {
+                type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"], options: [],
+                footnote: "You can also choose from a terminal: rt skills writing-style use",
+              },
+              recheck: "on-change",
+            },
+          ],
+        },
+      ],
+      canInstall: true,
+      requiredMissing: [],
+      finishBlockedBy: [],
+    };
+
+    const lines = renderPlanHuman(plan);
+    expect(lines[1]).toBe(`  ${yellow}!${reset} Writing style  Not chosen yet`);
+    expect(lines[2]).toBe(`  ${dim}You can also choose from a terminal: rt skills writing-style use${reset}`);
+    expect(lines.at(-1)).toBe("Install: ready");
+  });
+
+  test("a choose row without a footnote, and a non-choose action, render no extra line", () => {
+    const plan: Plan = {
+      contract: 1,
+      at: "2026-08-21T00:00:00.000Z",
+      team: { slug: "acme", name: "Acme", mode: "join" },
+      groups: [
+        {
+          id: "tools",
+          title: "Tools",
+          rows: [
+            {
+              id: "skills.writing-style", kind: "tool", title: "Writing style", why: "x", required: false, optionalNote: null,
+              status: "needs-you", detail: "Not chosen yet",
+              action: { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"], options: [] },
+              recheck: "on-change",
+            },
+            {
+              id: "tool.chrome", kind: "tool", title: "Google Chrome", why: "x", required: false, optionalNote: null,
+              status: "ready", detail: "installed",
+              action: { type: "open-url", label: "Download", url: "https://example.com" },
+              recheck: "manual",
+            },
+          ],
+        },
+      ],
+      canInstall: true,
+      requiredMissing: [],
+      finishBlockedBy: [],
+    };
+
+    const lines = renderPlanHuman(plan);
+    expect(lines).toEqual([
+      "Tools",
+      `  ${yellow}!${reset} Writing style  Not chosen yet`,
+      `  ${green}✓${reset} Google Chrome  installed`,
+      "Install: ready",
+    ]);
+  });
 });
 
 describe("renderFinishLine", () => {
@@ -209,7 +281,8 @@ describe("setupStatus Finish line", () => {
     await setupStatus([], {}, deps);
     const install = deps.lines.findIndex((l) => l.startsWith("Install: "));
     expect(install).toBeGreaterThan(0);
-    expect(deps.lines[install + 1]).toBe("Finish: ready");
+    // The fake home has no home repo, so skills.writing-style blocks Finish here.
+    expect(deps.lines[install + 1]).toBe("Finish: blocked by: skills.writing-style");
   });
 
   test("setup plan (human) prints no Finish line", async () => {

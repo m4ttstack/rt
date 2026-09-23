@@ -99,6 +99,15 @@ describe("settings/registry", () => {
       expect(def!.default).toBe(10);
     });
 
+    test("skills.writingStyle is a user+team string with no default (unset is what makes the setup row ask)", () => {
+      const def = getDef("skills.writingStyle");
+      expect(def).toBeDefined();
+      expect(def!.type).toBe("string");
+      expect(def!.scopes).toEqual(["user", "team"]);
+      expect(def!.merge).toBe("replace");
+      expect(def!.default).toBeUndefined();
+    });
+
     test.each([
       ["herd.watchdog.enabled", "boolean", true],
       ["herd.watchdog.fastMins", "number", 2],
@@ -334,6 +343,7 @@ describe("settings/registry", () => {
         "rt.daemonPath",
         "rt.notify.eventBridges",
         "rt.gates.escalationTtlMinutes",
+        "skills.writingStyle",
         "herd.watchdog.enabled",
         "herd.watchdog.fastMins",
         "herd.watchdog.shepherdFastMins",
@@ -345,7 +355,7 @@ describe("settings/registry", () => {
         "herd.watchdog.midRunTrustAccept",
         "panes.relocationAutoAccept",
       ];
-      expect(suiteKeys).toHaveLength(75);
+      expect(suiteKeys).toHaveLength(76);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),

@@ -7,6 +7,7 @@ struct ChecklistScreen: View {
     let rt: RtRunning
     @State private var connect: (row: PlanRow, fields: [ActionField], alternatives: [ActionAlternative])?
     @State private var steps: (title: String, steps: [String])?
+    @State private var choose: PlanRow?
     @State private var actionError: (rowId: String, message: String)?
 
     var body: some View {
@@ -60,6 +61,13 @@ struct ChecklistScreen: View {
         .sheet(isPresented: Binding(get: { steps != nil }, set: { if !$0 { steps = nil } })) {
             if let s = steps { StepsSheet(title: s.title, steps: s.steps) }
         }
+        .sheet(item: $choose) { row in
+            ChooseSheet(row: row) { id in
+                let failure = await ChoiceClient(rt: rt).choose(verb: row.action?.verb ?? [], id: id)
+                if failure == nil { await model.afterAction(rowId: row.id) }
+                return failure
+            }
+        }
         // .contain: without it, the footer HStack's only interactive child
         // (Re-check) reports THIS screen-level identifier instead of its own
         // -- same fix as InstallScreen's stepRow.
@@ -69,9 +77,8 @@ struct ChecklistScreen: View {
 
     private var footerText: String {
         if model.groups.isEmpty { return model.lastError == nil ? "Checking…" : "" }
-        if model.canInstall { return "Everything required is ready." }
-        let n = model.requiredMissing.count
-        return n == 1 ? "1 required item left." : "\(n) required items left."
+        return ChecklistFooter.text(canInstall: model.canInstall, requiredMissingCount: model.requiredMissing.count,
+                                    owedBeforeFinish: ChecklistFooter.owedBeforeFinish(model.allRows))
     }
 
     private func perform(_ row: PlanRow) {
@@ -133,6 +140,8 @@ struct ChecklistScreen: View {
             steps = (row.title, list)
         case .collectFields(let fields, _, let alternatives):
             connect = (row, fields, alternatives)
+        case .chooseOption:
+            choose = row
         case .none:
             break
         }

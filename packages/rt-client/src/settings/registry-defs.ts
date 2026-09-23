@@ -852,4 +852,15 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "replace",
     description: "Whether the daemon may answer Claude Code's EnterWorktree permission-root relocation prompt on a blocked pane by itself (RT-200). Unlike the trust dialog, the prompt names the worktree path in its own body, and the daemon accepts only when that exact path is in rt's worktree registry, so this is on by default. Read by both the herd watchdog and the executor reconciler.",
   },
+
+  // --- skills (writing style) ----------------------------------------------
+  // No `default`: an unset key is what makes the setup row read needs-you.
+  // The conversational fallback lives in the resolver, never in this row.
+  {
+    key: "skills.writingStyle",
+    type: "string",
+    scopes: ["user", "team"],
+    merge: "replace",
+    description: "Skill id that sets the voice for prose posted under your name (reviews, replies, PR descriptions). A team value is the default a member's user value overrides.",
+  },
 ];

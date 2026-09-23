@@ -3,8 +3,14 @@
 // State that must change between invocations (a permission granted, a step
 // retried) lives in RT_STUB_STATE_DIR so every call is a fresh process like
 // the real rt.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveClaudeBin } from "../../../lib/claude-bin.ts";
+import { FALLBACK_WRITING_STYLE, isPresetId, isValidSkillId } from "../../../lib/skills/writing-style.ts";
+import {
+  listWritingStyles, parsePluginEntries, readSkillInventory, type SkillInventory,
+} from "../../../lib/skills/writing-style-sources.ts";
+import { writingStyleRow as buildWritingStyleRow } from "../../../lib/setup/validators/writing-style.ts";
 
 const scenario = process.env.RT_STUB_SCENARIO ?? "join-happy";
 const stateDir = process.env.RT_STUB_STATE_DIR ?? join(import.meta.dir, ".state", scenario);
@@ -49,6 +55,99 @@ function extensionRow() {
   };
 }
 
+// The writing-style scenario: a finish-gated row that cannot be waived,
+// rendered the way rt renders it before and after `skills writing-style use`.
+const WRITING_STYLE_ID = "skills.writing-style";
+const WRITING_STYLE_PRESETS = [
+  { id: "mattstack:writing-style-sparse", label: "Sparse",
+    detail: "Terse, lowercase for technical points, one tight paragraph per finding.",
+    sample: "**issue:** cache is keyed on userId alone, so two tenants share an entry. key on (tenant, id)?" },
+  { id: "mattstack:writing-style-conversational", label: "Conversational",
+    detail: "Short, friendly sentences in sentence case, like talking to a teammate.",
+    sample: "**issue:** The cache is keyed on userId alone, so two tenants can share an entry. Could we key on both?" },
+  { id: "mattstack:writing-style-structured", label: "Structured",
+    detail: "Labelled lines and short bullets for teams that like formal write-ups.",
+    sample: "**issue:** Settings leak across tenants. Why: the cache key omits the tenant. Suggestion: key on (tenant, id)." },
+];
+// Not part of the choose action's own options list; carried only so the
+// ready-detail label lookup below can resolve a suggestion id to a label.
+const WRITING_STYLE_OPTION_ROWS = [
+  { id: "team-voice", label: "team-voice", detail: "Your own style, in your home repo" },
+  { id: "acme:team-writing-style", label: "acme:team-writing-style", detail: "An installed skill" },
+];
+const WRITING_STYLE_SUGGESTIONS = [
+  "acme:review-voice", "acme:team-writing-style", "superpowers:brainstorming", "superpowers:writing-plans", "team-voice", "team:team-writing-style",
+];
+const CHOOSE_SUBTITLE = "The voice agents use for reviews, replies and PR descriptions posted under your name.";
+const CHOOSE_FOOTNOTE = "You can also choose from a terminal: rt skills writing-style use";
+const INSTALLED_STYLES = [...WRITING_STYLE_PRESETS.map((p) => p.id), ...WRITING_STYLE_SUGGESTIONS];
+// RT_STUB_REAL_WRITING_STYLE=1 judges the picker against the operator's own
+// skills, read through the same code the app ships with, and never writes
+// there: the resolved style stays stub state, and no linkPersonalSkills or
+// setSetting call ever runs against realHome.
+const REAL_WRITING_STYLE = scenario === "writing-style" && process.env.RT_STUB_REAL_WRITING_STYLE === "1";
+
+// No fallback: Bun's os.userInfo().homedir honors HOME, and the app runs the
+// stub under a throwaway HOME, so a default here would silently read that
+// throwaway home instead of the operator's real one.
+function realHome(): string {
+  const home = process.env.RT_STUB_REAL_HOME;
+  if (!home || !existsSync(home) || !statSync(home).isDirectory()) {
+    fail("no-real-home", "RT_STUB_REAL_HOME must be set to an existing directory in real-data mode");
+  }
+  return home;
+}
+
+// A failed or missing claude binary reads as "no plugins", not an error: the
+// inventory still carries ~/.claude/skills and personal skills.
+function realInventory(): SkillInventory {
+  const home = realHome();
+  const bin = process.env.RT_STUB_CLAUDE_BIN ?? resolveClaudeBin() ?? "claude";
+  let plugins = null;
+  try {
+    const res = Bun.spawnSync([bin, "plugin", "list", "--json"], { env: { ...process.env, HOME: home } });
+    if (res.exitCode === 0) plugins = parsePluginEntries(res.stdout.toString());
+  } catch {
+    plugins = null;
+  }
+  return readSkillInventory(home, plugins);
+}
+
+function realWritingStyleRow() {
+  const inventory = realInventory();
+  const chosen = stateGet("style") > 0;
+  const idPath = join(stateDir, "style-id");
+  const styleId = chosen && existsSync(idPath) ? readFileSync(idPath, "utf8") : undefined;
+  const resolved = styleId ? { skill: styleId, source: "user" as const } : { skill: FALLBACK_WRITING_STYLE, source: "fallback" as const };
+  // Real rt's `use` links a chosen personal skill into ~/.claude/skills before
+  // returning; this mode never writes to realHome, so a stub-chosen personal
+  // name is instead added to the in-memory installed set, matching what the
+  // real pipeline would show without ever linking anything on disk.
+  if (styleId && inventory.personal.some((p) => p.name === styleId)) inventory.installed.add(styleId);
+  const options = listWritingStyles(inventory, resolved).options;
+  return { ...buildWritingStyleRow({ homeReady: true, resolved, inventory, options }), waivable: false };
+}
+
+function writingStyleRow() {
+  const chosen = stateGet("style") > 0;
+  const idPath = join(stateDir, "style-id");
+  const selected = chosen ? (existsSync(idPath) ? readFileSync(idPath, "utf8") : WRITING_STYLE_PRESETS[0]!.id) : undefined;
+  const lookup = [...WRITING_STYLE_PRESETS, ...WRITING_STYLE_OPTION_ROWS];
+  const label = lookup.find((o) => o.id === selected)?.label ?? selected;
+  return {
+    ...row(WRITING_STYLE_ID, "tool", "Writing style",
+           "How the reviews, replies and PR descriptions agents post under your name read. Without one they read like an AI assistant.", false,
+           chosen ? "ready" : "needs-you",
+           chosen ? `${label} (yours)` : "Not chosen yet",
+           { type: "choose", label: "Choose style…", verb: ["skills", "writing-style", "use"],
+             subtitle: CHOOSE_SUBTITLE, footnote: CHOOSE_FOOTNOTE, options: WRITING_STYLE_PRESETS,
+             ...(selected ? { selected } : {}),
+             other: { label: "Use my own skill…", hint: "Any installed skill id. Start one with rt skills writing-style new.", suggestions: WRITING_STYLE_SUGGESTIONS } }),
+    finishGated: true,
+    waivable: false,
+  };
+}
+
 function plan(): unknown {
   const fdaCalls = stateBump("plan-calls");
   const fdaGranted = scenario !== "perm-denied-then-granted" || fdaCalls >= 3;
@@ -84,13 +183,16 @@ function plan(): unknown {
   // Scenarios other than perm-denied-then-granted are installable out of the box so
   // flows can reach Install without connecting anything; perm-denied-then-granted
   // gates only on perm.fda so the second plan() call can flip canInstall to true.
-  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted", "finish-gate"].includes(scenario);
+  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted", "finish-gate", "writing-style"].includes(scenario);
   // accounts[0] and tools[1] are the fixed literal elements built above — non-null
   // is safe, not a runtime guess.
   if (installableScenario) { accounts[0]!.status = "ready"; accounts[0]!.detail = "token can see group acme"; tools[1]!.status = "ready"; tools[1]!.detail = "extension loaded"; }
-  const gated = scenario === "finish-gate" ? [extensionRow()] : [];
+  const gated: { id: string; status: string; waived?: boolean }[] =
+    scenario === "finish-gate" ? [extensionRow()]
+    : scenario === "writing-style" ? [REAL_WRITING_STYLE ? realWritingStyleRow() : writingStyleRow()]
+    : [];
   const requiredMissing = [...mac, ...accounts, ...access, ...tools].filter((r) => r.required && r.status !== "ready").map((r) => r.id);
-  const finishBlockedBy = gated.filter((r) => !r.waived).map((r) => r.id);
+  const finishBlockedBy = gated.filter((r) => r.status !== "ready" && !r.waived).map((r) => r.id);
   return {
     team: { slug: "acme", name: "Acme", mode },
     groups: [
@@ -172,6 +274,21 @@ else if (a0 === "setup" && (a1 === "waive" || a1 === "unwaive")) {
   const wasWaived = stateGet("waived") > 0;
   stateSet("waived", a1 === "waive" ? 1 : 0);
   emit({ ok: true, id: a2, changed: wasWaived !== (a1 === "waive"), waived: a1 === "waive" ? [a2] : [] });
+}
+else if (a0 === "skills" && a1 === "writing-style" && a2 === "use") {
+  const id = args[3];
+  if (id === undefined) fail("usage", "usage: rt skills writing-style use <skill-id> [--scope user|team] [--json]");
+  if (!isValidSkillId(id)) fail("bad-id", `"${id}" is not a skill id`);
+  if (REAL_WRITING_STYLE) {
+    const inventory = realInventory();
+    const known = isPresetId(id) || inventory.installed.has(id) || inventory.personal.some((p) => p.name === id);
+    if (!known) fail("unknown-skill", `${id} is not installed here.`);
+  } else if (!INSTALLED_STYLES.includes(id)) {
+    fail("unknown-skill", `${id} is not installed here. Choose one of: ${INSTALLED_STYLES.join(", ")}`);
+  }
+  stateSet("style", 1);
+  writeFileSync(join(stateDir, "style-id"), id);
+  emit({ skill: id, scope: "user" });
 }
 else if (a0 === "setup" && a2 === "status") emit({ integration: a1, status: stateGet(`${a1}-connected`) ? "ready" : "missing", detail: null });
 else if (a0 === "setup" && a2 === "connect") {

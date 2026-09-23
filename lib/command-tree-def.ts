@@ -2199,6 +2199,46 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Print what would change without writing" },
         ],
       },
+      "writing-style": {
+        description: "Show, list, choose, or start the voice for prose posted under your name",
+        subcommands: {
+          show: {
+            description: "The writing style your reviews and replies use, and where it comes from",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleShow",
+            agentSafe: true,
+            args: [SETUP_JSON_ARG],
+          },
+          list: {
+            description: "The three presets, plus your own and installed styles you can type as suggestions",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleList",
+            args: [SETUP_JSON_ARG],
+          },
+          use: {
+            description: "Choose the writing style for prose posted under your name",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleUse",
+            omitBehavior: "picker",
+            args: [
+              { name: "Skill", type: "text", placeholder: "mattstack:writing-style-sparse", hint: "A preset or any installed skill id; omit to pick" },
+              { name: "Scope", flag: "--scope", type: "select", options: [{ value: "user", label: "user" }, { value: "team", label: "team" }], default: "user", hint: "user (just you) or team (the team default)" },
+              SETUP_JSON_ARG,
+            ],
+          },
+          new: {
+            description: "Start your own writing style from a preset, in your home repo",
+            module: "./commands/skills-writing-style.ts",
+            fn: "writingStyleNew",
+            omitBehavior: "prompt",
+            args: [
+              { name: "Name", type: "text", placeholder: "my-voice", hint: "Lowercase name for the new skill" },
+              { name: "From", flag: "--from", type: "select", options: [{ value: "sparse", label: "sparse" }, { value: "conversational", label: "conversational" }, { value: "structured", label: "structured" }], default: "conversational", hint: "Preset to start from" },
+              SETUP_JSON_ARG,
+            ],
+          },
+        },
+      },
     },
   },
 

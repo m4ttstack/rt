@@ -489,15 +489,42 @@ let readinessModelChecks: [Check] = [
             c.expect(!m.lastRefreshFailed)
         }
     },
+    Check("loadIfNeeded fetches only while groups is empty; a completed load makes a second call a no-op") { c in
+        let plans = FakePlans([makePlan()])
+        let m = await MainActor.run { ReadinessModel(plans: plans, permissions: FakePermissions(), ticker: FakeTicker()) }
+        await m.loadIfNeeded()
+        await m.loadIfNeeded()
+        c.expectEqual(plans.fetches, 1, "groups is non-empty after the first load; the second call must issue no plan fetch")
+    },
+    Check("loadIfNeeded called twice concurrently before either lands issues one plan call") { c in
+        let held = HeldPlans()
+        let m = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let first = Task { await m.loadIfNeeded() }
+        try c.require(await waitUntil { held.fetches == 1 }, "first loadIfNeeded never registered")
+        let second = Task { await m.loadIfNeeded() }
+        held.releaseNewest(makePlan())
+        await first.value
+        await second.value
+        c.expectEqual(held.fetches, 1, "a load already in flight must not trigger a second fetch")
+    },
     Check("StatusGlyph follows the spec's symbols") { c in
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .error), "xmark.circle")
         c.expectEqual(StatusGlyph.symbol(for: .invalid), "xmark.circle")
-        c.expectEqual(StatusGlyph.symbol(for: .needsYou), "exclamationmark.triangle")
-        c.expectEqual(StatusGlyph.symbol(for: .missing), "exclamationmark.triangle")
+        c.expectEqual(StatusGlyph.symbol(for: .needsYou), "exclamationmark.triangle.fill")
+        c.expectEqual(StatusGlyph.symbol(for: .missing), "exclamationmark.triangle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .skipped), "circle.dotted")
         c.expectEqual(StatusGlyph.symbol(for: .checking), "progress")
         c.expectEqual(StatusGlyph.tint(for: .ready), .green)
         c.expectEqual(StatusGlyph.tint(for: .needsYou), .yellow)
+    },
+    Check("StatusGlyph.multicolor is true exactly for the yellow-tinted statuses") { c in
+        c.expectEqual(StatusGlyph.multicolor(for: .ready), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .error), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .invalid), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .needsYou), true)
+        c.expectEqual(StatusGlyph.multicolor(for: .missing), true)
+        c.expectEqual(StatusGlyph.multicolor(for: .skipped), false)
+        c.expectEqual(StatusGlyph.multicolor(for: .checking), false)
     },
 ]

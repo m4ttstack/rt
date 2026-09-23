@@ -74,4 +74,12 @@ let rowActionChecks: [Check] = [
         let a = RowAction(type: .chooseFolder, label: "Choose folder…", startAt: nil)
         c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseFolder(startAt: nil))
     },
+    Check("choose: sheet first, then the verb with the picked id and --json") { c in
+        let opts = [ChooseOption(id: "mattstack:writing-style-sparse", label: "Sparse", detail: "Terse.")]
+        let a = RowAction(type: .choose, label: "Choose style…", verb: ["skills", "writing-style", "use"], options: opts, other: ChooseOther(label: "Use my own skill…", hint: "h"))
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseOption(options: opts, other: ChooseOther(label: "Use my own skill…", hint: "h")))
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: ["id": "team-voice"], alternative: nil),
+                      .rtVerb(args: ["skills", "writing-style", "use", "team-voice", "--json"], stdin: nil))
+        c.expectEqual(RowActionDispatcher.dispatch(RowAction(type: .choose, label: "x"), fieldValues: ["id": "a"], alternative: nil), .none)
+    },
 ]

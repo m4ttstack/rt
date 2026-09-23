@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  DONE_ACTION_TYPES,
   STEP_IDS,
   envelope,
   finalizePlan,
@@ -121,5 +122,11 @@ describe("STEP_IDS", () => {
     // or the cache it just wrote reads back as stale.
     expect(STEP_IDS.indexOf("intercepts.install")).toBeGreaterThan(STEP_IDS.indexOf("repos.clone"));
     expect(STEP_IDS.indexOf("intercepts.install")).toBeGreaterThan(STEP_IDS.indexOf("cron.triage"));
+  });
+});
+
+describe("DONE_ACTION_TYPES", () => {
+  test("matches the app's DoneActions.handled", () => {
+    expect([...DONE_ACTION_TYPES]).toEqual(["open-url", "steps", "run", "choose"]);
   });
 });
