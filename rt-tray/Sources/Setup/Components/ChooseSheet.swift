@@ -241,6 +241,7 @@ struct ChooseSheet: View {
 
     private func submit() {
         guard let id = chosenId, !busy else { return }
+        suggestionsOpen = false
         busy = true
         error = nil
         Task { @MainActor in
