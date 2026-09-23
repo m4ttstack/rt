@@ -693,6 +693,10 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             emit("event", { id: eventId, topic, payload, emittedAt });
           },
           log,
+          herds: {
+            shepherdPane: (id) => herdStore.get(id)?.shepherdPane ?? null,
+            quietMs: () => watchdogConfig().notifyQuietMins * 60_000,
+          },
         });
         reconciler = createReconciler({
           store: gatesStore,
