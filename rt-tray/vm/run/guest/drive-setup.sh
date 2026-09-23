@@ -208,7 +208,10 @@ screen_done() {
     local n=30
     while [ "$n" -gt 0 ] && ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1; do sleep 1; n=$((n-1)); done
     ax_find setup.done.beforeYouFinish.tool.fast-browser-extension.action >/dev/null 2>&1 && ax_fail "the Fast Browser row is still under Before you finish after Skip for now"
-    ax_find setup.done.stillToDo.tool.fast-browser-extension >/dev/null 2>&1 || ax_fail "the skipped row did not move to Still to do"
+    # The bare row id can be absent from the tree the same way a row's own
+    # container id can (see the beforeYouFinish finding above); its .status
+    # child always surfaces.
+    ax_find setup.done.stillToDo.tool.fast-browser-extension.status >/dev/null 2>&1 || ax_fail "the skipped row did not move to Still to do"
     ax_shot 05-skipped
     echo "fast-browser-extension=skipped" >> "$GUEST_RUN/logs/finish-gate.txt"
   fi
