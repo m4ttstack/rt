@@ -1,13 +1,46 @@
 package picker
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"rt-ui/internal/theme"
 )
+
+func fgSGRFor(c color.Color) string {
+	return "38;2;" + rgbKey(c)
+}
+
+// dottedParent is an 80x24 frame of non-blank cells: the compositor trims
+// trailing blank cells, which would read an untouched all-space line back as
+// narrower than the frame.
+func dottedParent() string {
+	return strings.TrimSuffix(strings.Repeat(strings.Repeat(".", 80)+"\n", 24), "\n")
+}
+
+// boxContentLines returns the raw frame lines painted between the box's top
+// and bottom border.
+func boxContentLines(frame string) []string {
+	var out []string
+	inside := false
+	for _, line := range strings.Split(frame, "\n") {
+		plain := ansi.Strip(line)
+		switch {
+		case strings.Contains(plain, "╭"):
+			inside = true
+		case strings.Contains(plain, "╰"):
+			return out
+		case inside:
+			out = append(out, line)
+		}
+	}
+	return out
+}
 
 func menuItems() []MenuItem {
 	return []MenuItem{
@@ -58,12 +91,9 @@ func TestMenuRuleSeparatesSections(t *testing.T) {
 	}
 }
 
-// The parent is non-blank because the compositor trims trailing blank cells,
-// which would read an untouched all-space line back as zero wide.
 func TestMenuSlidesInsideTheFrame(t *testing.T) {
-	parent := strings.TrimSuffix(strings.Repeat(strings.Repeat(".", 80)+"\n", 24), "\n")
 	mn := NewMenu("x.go", menuItems(), &MenuAnchor{X: 78, Y: 22})
-	frame := mn.Render(parent, 80)
+	frame := mn.Render(dottedParent(), 80)
 	for i, line := range strings.Split(frame, "\n") {
 		if w := lipgloss.Width(line); w != 80 {
 			t.Fatalf("line %d is %d wide, want 80", i, w)
@@ -123,5 +153,215 @@ func TestMenuFilterKeepsEachSectionContiguous(t *testing.T) {
 	// The filter line's own rule plus exactly one section rule.
 	if rules != 2 {
 		t.Fatalf("painted %d rules inside the box, want 2", rules)
+	}
+}
+
+func TestMenuCursorSkipsDisabledRows(t *testing.T) {
+	items := []MenuItem{
+		{ID: "a", Label: "Reveal in Finder", Disabled: true},
+		{ID: "b", Label: "Open in Zed"},
+		{ID: "c", Label: "Open with Default Program", Disabled: true},
+		{ID: "d", Label: "Copy File Path", Section: 1},
+	}
+	mn := NewMenu("x.go", items, nil)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Item.ID != "b" {
+		t.Fatalf("the first cursor stop is %q, want b", out.Item.ID)
+	}
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyDown})
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Item.ID != "d" {
+		t.Fatalf("down from b lands on %q, want d", out.Item.ID)
+	}
+}
+
+func TestMenuCursorHoldsWhenNoEnabledRowLiesThatWay(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{{ID: "a", Label: "Reveal in Finder", Disabled: true}, {ID: "b", Label: "Open in Zed"}}, nil)
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyUp})
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Item.ID != "b" {
+		t.Fatalf("up over only disabled rows moved the cursor to %q, want b", out.Item.ID)
+	}
+	mn = NewMenu("x.go", []MenuItem{{ID: "a", Label: "Reveal in Finder", Disabled: true}}, nil)
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyDown})
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuStay {
+		t.Fatalf("enter with every row disabled = %+v, want MenuStay", out)
+	}
+}
+
+func TestMenuDisabledRowIsInertToClickAndHover(t *testing.T) {
+	parent := strings.TrimSuffix(strings.Repeat(strings.Repeat(" ", 80)+"\n", 24), "\n")
+	items := []MenuItem{{ID: "a", Label: "Reveal in Finder", Disabled: true}, {ID: "b", Label: "Open in Zed"}}
+	mn := NewMenu("x.go", items, &MenuAnchor{X: 4, Y: 4})
+	lines := strings.Split(ansi.Strip(mn.Render(parent, 80)), "\n")
+	found := false
+	for y, line := range lines {
+		if x := strings.Index(line, "Reveal in Finder"); x >= 0 {
+			found = true
+			cx := lipgloss.Width(line[:x])
+			if out := mn.Click(cx, y); out.Kind != MenuStay {
+				t.Fatalf("click on a disabled row = %+v, want MenuStay", out)
+			}
+			mn.Motion(cx, y)
+			if mn.hover != -1 {
+				t.Fatal("a disabled row never takes hover")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Reveal in Finder never painted")
+	}
+}
+
+func TestMenuDisabledRowPaintsFaint(t *testing.T) {
+	items := []MenuItem{{ID: "a", Label: "Reveal in Finder", Disabled: true}, {ID: "b", Label: "Open in Zed"}}
+	mn := NewMenu("x.go", items, nil)
+	frame := mn.Render(strings.TrimSuffix(strings.Repeat(strings.Repeat(" ", 80)+"\n", 24), "\n"), 80)
+	line := ""
+	for _, l := range strings.Split(frame, "\n") {
+		if strings.Contains(ansi.Strip(l), "Reveal in Finder") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, fgSGRFor(theme.Faint)) {
+		t.Fatal("a disabled row's label paints Faint")
+	}
+}
+
+func TestMenuPushedStepEscReturnsToTheRows(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{{ID: "discard", Label: "Discard Changes…"}}, nil)
+	mn.Push("Discard all changes to x.go?", []MenuItem{{ID: "yes", Label: "Discard Changes"}, {ID: "no", Label: "Cancel"}})
+	if mn.Title() != "Discard all changes to x.go?" {
+		t.Fatalf("title = %q", mn.Title())
+	}
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape}); out.Kind != MenuStay {
+		t.Fatalf("esc in a step = %+v, want MenuStay", out)
+	}
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Item.ID != "discard" {
+		t.Fatalf("after esc the root rows are back, got %q", out.Item.ID)
+	}
+}
+
+func TestMenuClickOutsideAStepClosesTheWholeMenu(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{{ID: "discard", Label: "Discard Changes…"}}, &MenuAnchor{X: 10, Y: 5})
+	mn.Push("Discard all changes to x.go?", []MenuItem{{ID: "yes", Label: "Discard Changes"}})
+	mn.Render(dottedParent(), 80)
+	if out := mn.Click(0, 0); out.Kind != MenuClosed {
+		t.Fatalf("click outside a step = %+v, want MenuClosed", out)
+	}
+}
+
+func TestMenuPushedStepKeepsEachSectionContiguous(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{{ID: "ignore", Label: "Ignore Folder…"}}, nil)
+	mn.Push("Ignore Folder", []MenuItem{
+		{ID: "file", Label: "open file", Section: 0},
+		{ID: "editor", Label: "open in editor", Section: 0},
+		{ID: "open", Label: "open", Section: 1},
+		{ID: "tabs", Label: "open all tabs", Section: 1},
+	})
+	for _, r := range "open" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	var order []string
+	for _, mt := range mn.matches {
+		order = append(order, mn.rows[mt.Index].id)
+	}
+	if got := strings.Join(order, ","); got != "file,editor,open,tabs" {
+		t.Fatalf("a step's filtered order = %s, want each section contiguous", got)
+	}
+}
+
+func TestMenuHeaderReadsEscBackInsideAStep(t *testing.T) {
+	header := func(mn *Menu) string {
+		return ansi.Strip(boxContentLines(mn.Render(dottedParent(), 80))[0])
+	}
+	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
+	mn := NewMenu("x.go", []MenuItem{tag}, nil)
+	if h := header(mn); !strings.Contains(h, "esc dismiss") {
+		t.Fatalf("root header = %q, want esc dismiss", h)
+	}
+	mn.Push("Discard all changes to x.go?", []MenuItem{{ID: "yes", Label: "Discard Changes"}})
+	if h := header(mn); !strings.Contains(h, "esc back") || strings.Contains(h, "dismiss") {
+		t.Fatalf("question step header = %q, want esc back", h)
+	}
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	mn.AskName("Create a Tag", "Name", tag)
+	if h := header(mn); !strings.Contains(h, "esc back") || strings.Contains(h, "dismiss") {
+		t.Fatalf("name step header = %q, want esc back", h)
+	}
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if h := header(mn); !strings.Contains(h, "esc dismiss") {
+		t.Fatalf("header back at the root = %q, want esc dismiss", h)
+	}
+}
+
+func TestMenuNameStepSubmitsATrimmedName(t *testing.T) {
+	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
+	mn := NewMenu("fix the thing", []MenuItem{tag}, nil)
+	mn.AskName("Create a Tag", "Name", tag)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuStay {
+		t.Fatalf("enter on a blank name = %+v, want MenuStay", out)
+	}
+	for _, r := range " v1.2.0 " {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if out.Kind != MenuNamed || out.Name != "v1.2.0" || out.Item.ID != "tag" {
+		t.Fatalf("got %+v", out)
+	}
+}
+
+func TestMenuNameStepEscReturnsToTheUnfilteredRows(t *testing.T) {
+	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
+	mn := NewMenu("fix the thing", []MenuItem{{ID: "copy", Label: "Copy SHA"}, tag}, nil)
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyDown})
+	mn.AskName("Create a Tag", "Name", tag)
+	for _, r := range "zz" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape}); out.Kind != MenuStay {
+		t.Fatalf("esc in a name step = %+v, want MenuStay", out)
+	}
+	if mn.query != "" || len(mn.matches) != 2 {
+		t.Fatalf("typing a name leaked into the rows' filter: query %q, %d matches", mn.query, len(mn.matches))
+	}
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuChosen || out.Item.ID != "tag" {
+		t.Fatalf("after esc the rows keep their cursor, got %+v", out)
+	}
+}
+
+func TestMenuNameStepPaintsOnlyTheHeaderAndTheNameLine(t *testing.T) {
+	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
+	mn := NewMenu("fix the thing", []MenuItem{tag}, &MenuAnchor{X: 10, Y: 5})
+	mn.AskName("Create a Tag", "Name", tag)
+	lines := boxContentLines(mn.Render(dottedParent(), 80))
+	if len(lines) != 2 {
+		t.Fatalf("a name step paints %d lines inside the box, want the header and the name line", len(lines))
+	}
+	if plain := ansi.Strip(lines[1]); !strings.Contains(plain, theme.GlyphChevron+" Name") {
+		t.Fatalf("empty name line = %q, want the chevron then the placeholder", plain)
+	}
+	if !strings.Contains(lines[1], fgSGRFor(theme.Faint)) {
+		t.Fatal("the placeholder paints Faint")
+	}
+	if len(mn.zones.byY) != 0 {
+		t.Fatalf("a name step records row zones: %+v", mn.zones.byY)
+	}
+	for _, r := range "v2.11.0" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	lines = boxContentLines(mn.Render(dottedParent(), 80))
+	if plain := ansi.Strip(lines[1]); !strings.Contains(plain, theme.GlyphChevron+" v2.11.0") {
+		t.Fatalf("typed name line = %q, want the chevron then the name", plain)
+	}
+	if !strings.Contains(lines[1], fgSGRFor(theme.Text)) {
+		t.Fatal("a typed name paints Text")
+	}
+}
+
+func TestMenuStepsKeepTheBoxInsideTheFrame(t *testing.T) {
+	mn := NewMenu("x.go", []MenuItem{{ID: "a", Label: "Discard Changes…"}}, &MenuAnchor{X: 79, Y: 23})
+	mn.Push(strings.Repeat("Discard all changes to a/very/long/path/", 4)+"x.go?", []MenuItem{{ID: "yes", Label: "Discard Changes"}})
+	for _, line := range strings.Split(mn.Render(dottedParent(), 80), "\n") {
+		if w := lipgloss.Width(line); w != 80 {
+			t.Fatalf("a step's frame line is %d wide, want 80", w)
+		}
 	}
 }

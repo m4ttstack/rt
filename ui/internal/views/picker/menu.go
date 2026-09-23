@@ -59,17 +59,40 @@ func (r menuRow) item() MenuItem {
 	return MenuItem{ID: r.id, Label: r.text, Hint: r.hint, Section: r.section, Quiet: r.quiet, Disabled: r.disabled, Value: r.value}
 }
 
+func menuRows(items []MenuItem) []menuRow {
+	rows := make([]menuRow, len(items))
+	for i, it := range items {
+		rows[i] = menuRow{text: it.Label, hint: it.Hint, section: it.Section, quiet: it.Quiet, disabled: it.Disabled, id: it.ID, value: it.Value}
+	}
+	return rows
+}
+
+// menuLevel is one step of a Menu: its root rows, or a follow-up question,
+// list, or name field pushed over them. A naming level has no rows; its
+// filter line edits name instead of query. cursor is -1 when no enabled row
+// matches.
+type menuLevel struct {
+	title       string
+	rows        []menuRow
+	query       string
+	matches     []Match
+	cursor      int
+	naming      bool
+	nameFor     MenuItem
+	name        string
+	placeholder string
+}
+
 // Menu is an anchored, filterable overlay box composited over a dimmed
 // parent frame. It carries its own query/cursor so typing narrows its rows
 // exactly like the picker's main list, and its own hit record so a caller
 // routes mouse events through Click/Motion without re-deriving the box's
 // placement.
 type Menu struct {
-	title   string
-	rows    []menuRow
-	query   string
-	matches []Match
-	cursor  int
+	menuLevel
+	// stack holds the levels Push and AskName covered, innermost last; esc
+	// restores the top one with its query and cursor intact.
+	stack []menuLevel
 	// anchor is the frame cell the box's top-left corner lands on (see
 	// origin). Nil centers the box.
 	anchor *MenuAnchor
@@ -85,11 +108,7 @@ type Menu struct {
 }
 
 func NewMenu(title string, items []MenuItem, anchor *MenuAnchor) *Menu {
-	rows := make([]menuRow, len(items))
-	for i, it := range items {
-		rows[i] = menuRow{text: it.Label, hint: it.Hint, section: it.Section, quiet: it.Quiet, disabled: it.Disabled, id: it.ID, value: it.Value}
-	}
-	mn := &Menu{title: title, rows: rows, anchor: anchor, hover: -1}
+	mn := &Menu{menuLevel: menuLevel{title: title, rows: menuRows(items)}, anchor: anchor, hover: -1}
 	mn.refilter()
 	return mn
 }
@@ -97,6 +116,39 @@ func NewMenu(title string, items []MenuItem, anchor *MenuAnchor) *Menu {
 func (mn *Menu) Title() string { return mn.title }
 
 func (mn *Menu) SetAnchor(a *MenuAnchor) { mn.anchor = a }
+
+// Push swaps in a follow-up step (a question or a list); esc returns to the
+// rows it replaced, and a click outside still closes the whole menu.
+func (mn *Menu) Push(title string, items []MenuItem) {
+	mn.pushLevel(menuLevel{title: title, rows: menuRows(items)})
+	mn.refilter()
+}
+
+// AskName turns the filter line into a name field for item; enter with a
+// non-blank name returns MenuNamed{Item: item, Name: trimmed}, esc returns
+// to the rows.
+func (mn *Menu) AskName(title, placeholder string, item MenuItem) {
+	mn.pushLevel(menuLevel{title: title, naming: true, nameFor: item, placeholder: placeholder, cursor: -1})
+}
+
+func (mn *Menu) pushLevel(next menuLevel) {
+	mn.stack = append(mn.stack, mn.menuLevel)
+	mn.menuLevel = next
+	mn.hover = -1
+}
+
+// back pops to the level the current step covered, or closes the menu from
+// the root.
+func (mn *Menu) back() MenuOutcome {
+	n := len(mn.stack)
+	if n == 0 {
+		return MenuOutcome{Kind: MenuClosed}
+	}
+	mn.menuLevel = mn.stack[n-1]
+	mn.stack = mn.stack[:n-1]
+	mn.hover = -1
+	return MenuOutcome{Kind: MenuStay}
+}
 
 // refilter re-ranks the menu's rows against its own query, reusing the same
 // fzf-backed Rank the main list filters with so a menu with many rows
@@ -112,20 +164,22 @@ func (mn *Menu) refilter() {
 		sections[i] = strconv.Itoa(r.section)
 	}
 	mn.matches = GroupContiguous(Rank(mn.query, targets, false), sections)
-	mn.cursor = 0
+	mn.cursor = -1
+	mn.moveCursor(1)
 }
 
+func (mn *Menu) matchDisabled(i int) bool {
+	return mn.rows[mn.matches[i].Index].disabled
+}
+
+// moveCursor steps to the next enabled match in delta's direction and holds
+// still when there is none that way.
 func (mn *Menu) moveCursor(delta int) {
-	n := len(mn.matches)
-	if n == 0 {
-		return
-	}
-	mn.cursor += delta
-	if mn.cursor < 0 {
-		mn.cursor = 0
-	}
-	if mn.cursor >= n {
-		mn.cursor = n - 1
+	for i := mn.cursor + delta; i >= 0 && i < len(mn.matches); i += delta {
+		if !mn.matchDisabled(i) {
+			mn.cursor = i
+			return
+		}
 	}
 }
 
@@ -138,12 +192,36 @@ func (mn *Menu) chosen() MenuOutcome {
 	return MenuOutcome{Kind: MenuChosen, Item: mn.rows[mn.matches[mn.cursor].Index].item()}
 }
 
+func (mn *Menu) named() MenuOutcome {
+	name := strings.TrimSpace(mn.name)
+	if name == "" {
+		return MenuOutcome{Kind: MenuStay}
+	}
+	return MenuOutcome{Kind: MenuNamed, Item: mn.nameFor, Name: name}
+}
+
+// field is the text the filter line edits: the name in a naming step, the
+// query everywhere else.
+func (mn *Menu) field() *string {
+	if mn.naming {
+		return &mn.name
+	}
+	return &mn.query
+}
+
+func (mn *Menu) edited() {
+	if !mn.naming {
+		mn.refilter()
+	}
+}
+
 // Key handles a key press while the menu is open: navigation and typing
-// stay local, esc closes, enter chooses the cursor row.
+// stay local, esc steps back (closing from the root), enter chooses the
+// cursor row or submits the name.
 func (mn *Menu) Key(msg tea.KeyPressMsg) MenuOutcome {
 	switch msg.String() {
 	case "esc":
-		return MenuOutcome{Kind: MenuClosed}
+		return mn.back()
 	case "down":
 		mn.moveCursor(1)
 		return MenuOutcome{Kind: MenuStay}
@@ -151,17 +229,21 @@ func (mn *Menu) Key(msg tea.KeyPressMsg) MenuOutcome {
 		mn.moveCursor(-1)
 		return MenuOutcome{Kind: MenuStay}
 	case "enter":
+		if mn.naming {
+			return mn.named()
+		}
 		return mn.chosen()
 	case "backspace":
-		if r := []rune(mn.query); len(r) > 0 {
-			mn.query = string(r[:len(r)-1])
-			mn.refilter()
+		if f := mn.field(); *f != "" {
+			r := []rune(*f)
+			*f = string(r[:len(r)-1])
+			mn.edited()
 		}
 		return MenuOutcome{Kind: MenuStay}
 	}
 	if msg.Text != "" {
-		mn.query += msg.Text
-		mn.refilter()
+		*mn.field() += msg.Text
+		mn.edited()
 		return MenuOutcome{Kind: MenuStay}
 	}
 	// A key that types nothing is never filter input, so the caller may fire
@@ -171,13 +253,13 @@ func (mn *Menu) Key(msg tea.KeyPressMsg) MenuOutcome {
 	return MenuOutcome{Kind: MenuPassthrough, Key: canonicalKey(msg)}
 }
 
-// Click routes a press against the box Render last painted: a press on a row
-// chooses it through the same path enter takes (set the cursor, then
-// choose), a press anywhere outside the box closes the menu, and a press
-// inside the box but off any row stays.
+// Click routes a press against the box Render last painted: a press on an
+// enabled row chooses it through the same path enter takes (set the cursor,
+// then choose), a press anywhere outside the box closes the whole menu
+// whatever step it is on, and any other press inside the box stays.
 func (mn *Menu) Click(x, y int) MenuOutcome {
-	if zone, ok := mn.zones.at(x, y); ok && zone.kind == zoneModalRow {
-		mn.cursor = zone.row
+	if row, ok := mn.enabledRowAt(x, y); ok {
+		mn.cursor = row
 		return mn.chosen()
 	}
 	if !mn.box.contains(x, y) {
@@ -186,14 +268,25 @@ func (mn *Menu) Click(x, y int) MenuOutcome {
 	return MenuOutcome{Kind: MenuStay}
 }
 
-// Motion tracks which row the pointer is over. It sets hover and never the
-// keyboard cursor, so moving the mouse across the menu can never steal it.
+// Motion tracks which enabled row the pointer is over. It sets hover and
+// never the keyboard cursor, so moving the mouse across the menu can never
+// steal it.
 func (mn *Menu) Motion(x, y int) {
-	if zone, ok := mn.zones.at(x, y); ok && zone.kind == zoneModalRow {
-		mn.hover = zone.row
-	} else {
-		mn.hover = -1
+	mn.hover = -1
+	if row, ok := mn.enabledRowAt(x, y); ok {
+		mn.hover = row
 	}
+}
+
+// enabledRowAt bounds-checks the zone's row because zones are only rebuilt
+// on paint, and a keystroke can refilter or swap the level before the next
+// one.
+func (mn *Menu) enabledRowAt(x, y int) (int, bool) {
+	zone, ok := mn.zones.at(x, y)
+	if !ok || zone.kind != zoneModalRow || zone.row >= len(mn.matches) || mn.matchDisabled(zone.row) {
+		return 0, false
+	}
+	return zone.row, true
 }
 
 // Render composites the menu over the already-rendered parent frame: the
@@ -330,8 +423,11 @@ func modalBoxLines(mn *Menu, inner, hover int) (lines []string, rowLines []int) 
 	lines = []string{
 		modalHeaderLine(mn, inner),
 		modalFilterLine(mn, inner),
-		modalRuleLine(inner),
 	}
+	if mn.naming {
+		return lines, nil
+	}
+	lines = append(lines, modalRuleLine(inner))
 	if len(mn.matches) == 0 {
 		lines = append(lines, modalNoMatchLine(inner))
 		return lines, nil
@@ -378,7 +474,10 @@ func modalContentWidth(mn *Menu, maxInner int) int {
 	if titleW > modalTitleCap {
 		titleW = modalTitleCap
 	}
-	need := titleW + lipgloss.Width("esc dismiss") + 4
+	need := titleW + lipgloss.Width(mn.escHint()) + 4
+	if mn.naming {
+		need = max(need, modalFieldPrefix+lipgloss.Width(mn.placeholder), modalFieldPrefix+lipgloss.Width(mn.name))
+	}
 	for _, r := range mn.rows {
 		w := 2 + lipgloss.Width(r.text)
 		if r.hint != "" {
@@ -411,14 +510,14 @@ func modalJustify(width int, bg lipgloss.Style, left, right string) string {
 }
 
 // modalHeaderLine clips mn.title to what's actually left of width once the
-// margin, the "esc dismiss" hint, and a gap column ahead of it are spoken
+// margin, the esc hint (escHint), and a gap column ahead of it are spoken
 // for. modalContentWidth already sizes the box for the title in the common
 // case, but caps at maxInner, and the title is caller-supplied text with no
 // length bound -- one long enough to hit that cap would otherwise render
 // past width uncapped, the one line in the box modalRowLine's own clipping
 // convention didn't already cover.
 func modalHeaderLine(mn *Menu, width int) string {
-	const rightText = "esc dismiss"
+	rightText := mn.escHint()
 	titleBudget := width - 1 - 1 - lipgloss.Width(rightText)
 	if titleBudget < 0 {
 		titleBudget = 0
@@ -433,13 +532,34 @@ func modalHeaderLine(mn *Menu, width int) string {
 	return modalJustify(width, surfaceBg, left, right)
 }
 
-func modalFilterLine(mn *Menu, width int) string {
-	left := surfaceBg.Render(" ") + sfg(theme.Pink).Render(theme.GlyphChevron+" ")
-	if mn.query == "" {
-		left += sfg(theme.Faint).Render("filter…")
-	} else {
-		left += sfg(theme.Text).Render(mn.query)
+// escHint is the header's right text: esc steps back out of a pushed level
+// and dismisses only from the root.
+func (mn *Menu) escHint() string {
+	if len(mn.stack) > 0 {
+		return "esc back"
 	}
+	return "esc dismiss"
+}
+
+// modalFieldPrefix is the filter line's cells ahead of its text: the margin,
+// the chevron, and a gap.
+var modalFieldPrefix = lipgloss.Width(" " + theme.GlyphChevron + " ")
+
+// modalFilterLine paints the query, or in a naming step the name, after the
+// chevron; empty, it shows the placeholder in Faint.
+func modalFilterLine(mn *Menu, width int) string {
+	text, style := *mn.field(), sfg(theme.Text)
+	if text == "" {
+		text, style = "filter…", sfg(theme.Faint)
+		if mn.naming {
+			text = mn.placeholder
+		}
+	}
+	kept, truncated := clipRunes(text, width-modalFieldPrefix)
+	if truncated {
+		kept += "…"
+	}
+	left := surfaceBg.Render(" ") + sfg(theme.Pink).Render(theme.GlyphChevron+" ") + style.Render(kept)
 	return modalJustify(width, surfaceBg, left, "")
 }
 
@@ -459,8 +579,12 @@ func modalNoMatchLine(width int) string {
 // than the item-scope ones a caller declared for this row.
 // A hovered non-cursor row carries HoverBg, the same mouse hint the base
 // list paints (see rowLineWidth); the keyboard cursor's SelBg always wins,
-// so hover and cursor never both style one row.
+// so hover and cursor never both style one row. A disabled row paints its
+// label and hint Faint and never takes either.
 func modalRowLine(row menuRow, width int, cursor, hover bool) string {
+	if row.disabled {
+		cursor, hover = false, false
+	}
 	rowBg := surfaceBg
 	gutterGlyph := " "
 	gutterStyle := surfaceBg
@@ -474,8 +598,11 @@ func modalRowLine(row menuRow, width int, cursor, hover bool) string {
 	}
 	gutter := gutterStyle.Render(gutterGlyph)
 
-	textColor := theme.TextSoft
-	if row.quiet {
+	textColor, hintColor := theme.TextSoft, theme.KeybarKey
+	switch {
+	case row.disabled:
+		textColor, hintColor = theme.Faint, theme.Faint
+	case row.quiet:
 		textColor = theme.Dimmer
 	}
 
@@ -495,7 +622,7 @@ func modalRowLine(row menuRow, width int, cursor, hover bool) string {
 
 	hint := ""
 	if row.hint != "" {
-		hint = rowBg.Foreground(theme.KeybarKey).Render(row.hint)
+		hint = rowBg.Foreground(hintColor).Render(row.hint)
 	}
 
 	left := gutter + rowBg.Foreground(textColor).Render(text)
