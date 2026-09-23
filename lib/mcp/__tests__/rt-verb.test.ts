@@ -39,7 +39,16 @@ describe("runRtVerb", () => {
   test("does not double --json and canonicalizes aliases", async () => {
     const calls: { argv: string[]; opts: unknown }[] = [];
     await runRtVerb({ args: ["wt", "list", "--json", "--repo=x"] }, deps(ok("{}"), calls));
-    expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "list", "--json", "--repo=x"]);
+    expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "list", "--json", "--repo", "x"]);
+  });
+
+  test("refuses --name=value on a boolean flag and a dash-leading value after =", async () => {
+    for (const args of [["worktree", "list", "--repo=-x"], ["worktree", "list", "--json=false"]]) {
+      const calls: { argv: string[]; opts: unknown }[] = [];
+      const r = await runRtVerb({ args }, deps(ok("{}"), calls));
+      expect(r.ok, args.join(" ")).toBe(false);
+      expect(calls).toEqual([]);
+    }
   });
 
   test("refuses a leading flag before any lookup", async () => {

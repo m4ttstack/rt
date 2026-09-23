@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "fs";
 import { isAbsolute } from "path";
 import { TREE } from "../command-tree-def.ts";
-import type { CommandNode } from "../command-tree.ts";
+import type { CommandArg, CommandNode } from "../command-tree.ts";
 import { listAgentSafe, resolveLeaf } from "../command-tree-resolve.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 import { execWithTimeout, type ExecResult } from "../setup/probes.ts";
@@ -63,11 +63,29 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   if (!leaf || leaf.node.subcommands || !leaf.node.agentSafe) return fail(`"${args.join(" ")}" is not an agent-safe rt verb. ${allowed}`);
 
   const verb = `rt ${leaf.path.join(" ")}`;
-  const declared = new Set(["--json", ...(leaf.node.args ?? []).flatMap((a) => (a.flag ? [a.flag] : []))]);
+  const flagTypes = new Map<string, CommandArg["type"]>();
+  for (const a of leaf.node.args ?? []) if (a.flag) flagTypes.set(a.flag, a.type);
+  flagTypes.set("--json", "boolean");
+  const declared = `Declared flags: ${[...flagTypes.keys()].join(", ")}`;
+  const forwarded: string[] = [];
   for (const arg of leaf.rest) {
-    if (!arg.startsWith("-")) continue;
-    const name = arg.split("=")[0]!;
-    if (!declared.has(name)) return fail(`${verb} does not declare ${name}. Declared flags: ${[...declared].join(", ")}`);
+    if (!arg.startsWith("-")) {
+      forwarded.push(arg);
+      continue;
+    }
+    const eq = arg.indexOf("=");
+    const name = eq < 0 ? arg : arg.slice(0, eq);
+    const type = flagTypes.get(name);
+    if (!type) return fail(`${verb} does not declare ${name}. ${declared}`);
+    if (eq < 0) {
+      forwarded.push(arg);
+      continue;
+    }
+    // Some verbs parse only `--name value` and silently ignore `--name=value`, so it is split here.
+    if (type === "boolean") return fail(`${name} is a switch and takes no value; pass it as ${name}`);
+    const value = arg.slice(eq + 1);
+    if (value.startsWith("-")) return fail(`the value of ${name} must not start with "-"`);
+    forwarded.push(name, value);
   }
 
   let cwd: string | undefined;
@@ -78,7 +96,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     cwd = input.cwd;
   }
 
-  const rest = leaf.rest.includes("--json") ? leaf.rest : [...leaf.rest, "--json"];
+  const rest = forwarded.includes("--json") ? forwarded : [...forwarded, "--json"];
   const res = await deps.spawn([...deps.selfArgv(), ...leaf.path, ...rest], {
     cwd,
     env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" },
