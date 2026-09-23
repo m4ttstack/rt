@@ -74,10 +74,12 @@ type Mission struct {
 	// modal is the open repo/branch/worktree foldout, nil when none is open.
 	modal *modalState
 	// menu is the open context menu, nil when none is open. menuTarget is the
-	// row it opened for, held fixed while it is open: a push never retargets
-	// it. menuPrevFocus is where closing it returns.
+	// row it opened for and menuOnHistory the tab it opened on, both held
+	// fixed while it is open: a push never retargets it. menuPrevFocus is
+	// where closing it returns.
 	menu          *picker.Menu
 	menuTarget    menuTarget
+	menuOnHistory bool
 	menuPrevFocus focusKind
 	// localNotice is a client-only refusal cue (the detached-HEAD branch
 	// guard), kept separate from the wire model's own Notice field: that one
@@ -714,6 +716,11 @@ func (m *Mission) renderSidebar(width, height int) string {
 		return m.renderHistorySidebar(width, height)
 	}
 	listRegionH := m.listRegionHeight(width, height)
+	// JoinVertical counts an empty block as one line, which would push the
+	// docked block a row below where sidebarHit finds it.
+	if listRegionH == 0 {
+		return lipgloss.JoinVertical(lipgloss.Left, m.sidebarFixedTop(width), m.sidebarDocked(width))
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.sidebarFixedTop(width),
 		m.renderChangesList(width, listRegionH),
@@ -1234,11 +1241,12 @@ func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.C
 	}
 	switch h.kind {
 	case hitFileRow, hitFileCheckbox:
-		model, cmd := m.clickFileRow(h.idx)
-		// A right-click is never the first half of a double click.
-		m.lastClickPath = ""
+		// A right-click neither completes a pending double click nor starts
+		// one: it drops the last click and selects without recording itself.
+		m.lastClickPath, m.lastClickAt = "", time.Time{}
+		cmd := m.selectFileRow(h.idx)
 		m.openMenu(m.changeTarget(m.selected), anchor)
-		return model, cmd
+		return m, cmd
 	case hitCommitRow:
 		if m.historyRange() && m.historyInSelection(h.idx) {
 			m.openMenu(menuTarget{}, anchor)
@@ -1281,18 +1289,28 @@ func (m *Mission) clickFileRow(idx int) (tea.Model, tea.Cmd) {
 	now := m.now()
 	isDouble := path == m.lastClickPath && !m.lastClickAt.IsZero() && now.Sub(m.lastClickAt) <= doubleClickWindow
 
-	prev := m.selected
-	m.selected = path
-	m.focus = focusList
+	cmd := m.selectFileRow(idx)
 	if isDouble {
 		m.lastClickPath = ""
 		m.lastClickAt = time.Time{}
 		m.focus = focusDiff
-		return m, m.selectPathCmd(prev)
+		return m, cmd
 	}
 	m.lastClickPath = path
 	m.lastClickAt = now
-	return m, m.selectPathCmd(prev)
+	return m, cmd
+}
+
+// selectFileRow moves the Changes cursor to idx's row and loads its diff,
+// with no part in pairing clicks into a double click.
+func (m *Mission) selectFileRow(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(m.model.Changes) {
+		return nil
+	}
+	prev := m.selected
+	m.selected = m.model.Changes[idx].Path
+	m.focus = focusList
+	return m.selectPathCmd(prev)
 }
 
 // clickCheckbox always emits the row's stage intent; when the click also
@@ -1424,7 +1442,8 @@ func (m *Mission) setHover(x, y int) {
 // pane's line cursor, or the Changes list's row cursor, each moving the same
 // cursor the arrow keys do. The History commit list is the exception: the
 // wheel scrolls its view and never its selection (historyScroll). An open
-// menu makes the wheel inert (it has no scroll region). A modal
+// menu takes every tick: over its box they scroll a row region too tall to
+// fit, and nowhere do they reach the board beneath it. A modal
 // claims every row like hitTest's own first check; otherwise the tick must
 // land inside the body's Y range (between the topbar and the keybar/notice
 // strip) -- mirroring hitTest's bodyY bound -- or a tick over the
@@ -1442,6 +1461,7 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.menu != nil {
+		m.menu.Wheel(mouse.X, mouse.Y, delta)
 		return m, nil
 	}
 	if m.modal != nil {

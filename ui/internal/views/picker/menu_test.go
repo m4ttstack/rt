@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 	"testing"
@@ -353,6 +354,153 @@ func TestMenuNameStepPaintsOnlyTheHeaderAndTheNameLine(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], fgSGRFor(theme.Text)) {
 		t.Fatal("a typed name paints Text")
+	}
+}
+
+// dottedFrame is a width x height frame of non-blank cells (see dottedParent).
+func dottedFrame(width, height int) string {
+	return strings.TrimSuffix(strings.Repeat(strings.Repeat(".", width)+"\n", height), "\n")
+}
+
+func longMenuItems(n int) []MenuItem {
+	items := make([]MenuItem, n)
+	for i := range items {
+		items[i] = MenuItem{ID: fmt.Sprintf("r%02d", i), Label: fmt.Sprintf("row %02d", i), Section: i / 5}
+	}
+	return items
+}
+
+// paintedRowAt returns the frame cell a painted label starts at, ok false
+// when the label is not on screen.
+func paintedRowAt(frame, label string) (x, y int, ok bool) {
+	for row, line := range strings.Split(ansi.Strip(frame), "\n") {
+		if i := strings.Index(line, label); i >= 0 {
+			return lipgloss.Width(line[:i]), row, true
+		}
+	}
+	return 0, 0, false
+}
+
+// boxWidth is the painted box's outer width, corner to corner.
+func boxWidth(t *testing.T, frame string) int {
+	t.Helper()
+	for _, line := range strings.Split(ansi.Strip(frame), "\n") {
+		if i := strings.Index(line, "╭"); i >= 0 {
+			return lipgloss.Width(line[i : strings.Index(line, "╮")+len("╮")])
+		}
+	}
+	t.Fatal("no box painted")
+	return 0
+}
+
+func TestAFittedMenuTallerThanTheParentPaintsItsHeightWithAThumb(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 3})
+	mn.FitParentHeight()
+	frame := mn.Render(dottedFrame(80, 12), 80)
+	lines := strings.Split(frame, "\n")
+	if len(lines) != 12 {
+		t.Fatalf("a fitted menu paints %d lines over a 12-line parent", len(lines))
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != 80 {
+			t.Fatalf("line %d is %d wide", i, w)
+		}
+	}
+	if !strings.Contains(strings.Join(boxContentLines(frame), "\n"), bgSGR(theme.Panel)) {
+		t.Fatal("an overflowing row region paints a Panel thumb")
+	}
+	if _, _, ok := paintedRowAt(frame, "row 19"); ok {
+		t.Fatal("the last row is below the window until the cursor gets there")
+	}
+}
+
+func TestAMenuWithoutFitKeepsEveryRow(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(20), nil)
+	frame := mn.Render(dottedFrame(80, 12), 80)
+	if _, _, ok := paintedRowAt(frame, "row 19"); !ok {
+		t.Fatal("an unfitted menu paints every row, as the picker's growing frame expects")
+	}
+	if strings.Contains(strings.Join(boxContentLines(frame), "\n"), bgSGR(theme.Panel)) {
+		t.Fatal("an unfitted menu never paints a thumb")
+	}
+}
+
+func TestAFittedMenuScrollsToKeepTheCursorInView(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(20), nil)
+	mn.FitParentHeight()
+	mn.Render(dottedFrame(80, 12), 80)
+	for range 19 {
+		mn.Key(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	frame := mn.Render(dottedFrame(80, 12), 80)
+	x, y, ok := paintedRowAt(frame, "row 19")
+	if !ok {
+		t.Fatal("down past the window scrolls the last row into view")
+	}
+	if out := mn.Click(x, y); out.Kind != MenuChosen || out.Item.ID != "r19" {
+		t.Fatalf("a click on the scrolled-in row = %+v", out)
+	}
+}
+
+func TestAFittedMenuWheelScrollsTheRows(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 0})
+	mn.FitParentHeight()
+	frame := mn.Render(dottedFrame(80, 12), 80)
+	x, y, _ := paintedRowAt(frame, "row 01")
+	for range 6 {
+		mn.Wheel(x, y, 3)
+	}
+	frame = mn.Render(dottedFrame(80, 12), 80)
+	if _, _, ok := paintedRowAt(frame, "row 00"); ok {
+		t.Fatal("the wheel scrolls the first row out of the window")
+	}
+	x, y, ok := paintedRowAt(frame, "row 19")
+	if !ok {
+		t.Fatal("the wheel reaches the last row")
+	}
+	if out := mn.Click(x, y); out.Kind != MenuChosen || out.Item.ID != "r19" {
+		t.Fatalf("a click on a wheel-scrolled row = %+v", out)
+	}
+	mn = NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 0})
+	mn.FitParentHeight()
+	mn.Render(dottedFrame(80, 12), 80)
+	for range 6 {
+		mn.Wheel(x, y, 3)
+	}
+	mn.Render(dottedFrame(80, 12), 80)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuChosen {
+		t.Fatalf("enter after the wheel = %+v", out)
+	} else if _, _, ok := paintedRowAt(mn.Render(dottedFrame(80, 12), 80), out.Item.Label); !ok {
+		t.Fatalf("the wheel left the cursor on %q, a row the window does not show", out.Item.Label)
+	}
+}
+
+func TestAWheelOutsideTheBoxScrollsNothing(t *testing.T) {
+	mn := NewMenu("x.go", longMenuItems(20), &MenuAnchor{X: 10, Y: 0})
+	mn.FitParentHeight()
+	mn.Render(dottedFrame(80, 12), 80)
+	mn.Wheel(79, 11, 3)
+	if _, _, ok := paintedRowAt(mn.Render(dottedFrame(80, 12), 80), "row 00"); !ok {
+		t.Fatal("a wheel tick outside the box leaves the rows where they were")
+	}
+}
+
+func TestAPushedStepKeepsTheWidthOfTheLevelItReplaced(t *testing.T) {
+	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
+	mn := NewMenu("fix the thing", []MenuItem{{ID: "i", Label: "Ignore All .go Files (Add to .gitignore)"}, tag}, nil)
+	root := boxWidth(t, mn.Render(dottedParent(), 80))
+	mn.AskName("Create a Tag", "Name", tag)
+	if w := boxWidth(t, mn.Render(dottedParent(), 80)); w != root {
+		t.Fatalf("the name step is %d wide, want the %d-wide box it replaced", w, root)
+	}
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	mn.Push("Discard all changes to a-rather-long-file-name.go?", []MenuItem{{ID: "yes", Label: "Discard Changes"}})
+	if w := boxWidth(t, mn.Render(dottedParent(), 80)); w <= root {
+		t.Fatalf("a step that needs more room grows past %d, got %d", root, w)
+	}
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if w := boxWidth(t, mn.Render(dottedParent(), 80)); w != root {
+		t.Fatalf("back at the root the box is %d wide, want %d", w, root)
 	}
 }
 

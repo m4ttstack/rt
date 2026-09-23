@@ -3,6 +3,7 @@ package mission
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -217,8 +218,72 @@ func TestRightClickWithAFoldoutOpenOnlyClosesIt(t *testing.T) {
 	m := newMouseTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	m.Update(tea.MouseClickMsg{X: 12, Y: changesRowY(m, 1), Button: tea.MouseRight})
-	if m.menu != nil {
+	if m.menu != nil || m.modal != nil {
 		t.Fatal("a right-click outside an open foldout only closes the foldout")
+	}
+}
+
+// boxCorner is the frame cell of the menu box's top-left corner.
+func boxCorner(t *testing.T, m *Mission) (x, y int) {
+	t.Helper()
+	for row, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+		if i := strings.LastIndex(line, "╭"); i >= 0 && strings.Contains(line[i:], "╮") && lipgloss.Width(line[:i]) >= 12 {
+			return lipgloss.Width(line[:i]), row
+		}
+	}
+	t.Fatal("no menu box painted")
+	return 0, 0
+}
+
+func TestRightClickAnchorsTheBoxAtThePointer(t *testing.T) {
+	m := newMouseTestMission()
+	m.height = 50
+	y := changesRowY(m, 1)
+	m.Update(tea.MouseClickMsg{X: 12, Y: y, Button: tea.MouseRight})
+	if x, top := boxCorner(t, m); x != 12 || top != y {
+		t.Fatalf("the box's corner is at (%d,%d), want the pointer (12,%d)", x, top, y)
+	}
+	m = newMouseTestMission()
+	y = changesRowY(m, 1)
+	m.Update(tea.MouseClickMsg{X: 12, Y: y, Button: tea.MouseRight})
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if x, top := boxCorner(t, m); x != 12 || top >= y || !strings.Contains(lines[len(lines)-1], "╰") {
+		t.Fatalf("near the bottom the box slides up only as far as it must, corner (%d,%d)", x, top)
+	}
+}
+
+func TestAClickOutsideTheMenuIsConsumed(t *testing.T) {
+	m := newMouseTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	m.View()
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 2, Y: changesRowY(m, 2), Button: tea.MouseLeft}); cmd != nil || m.menu != nil || m.selected != "a.go" {
+		t.Fatalf("a click outside only closes the menu, selected %q", m.selected)
+	}
+}
+
+func TestANestedGitignoreGreysItsIgnoreFolderRow(t *testing.T) {
+	m := newMouseTestMission()
+	_, items := m.menuItems(menuTarget{kind: targetChange, path: "a/.gitignore", status: "modified"})
+	got := strings.Join(labels(items), "|")
+	if !strings.Contains(got, "Ignore Folder (Add to .gitignore)… (disabled)") || strings.Contains(got, "Ignore All") {
+		t.Fatalf("rows %q", got)
+	}
+}
+
+func TestARightClickNeverCompletesADoubleClick(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	step := func() time.Time { now = now.Add(100 * time.Millisecond); return now }
+	m := newMouseTestMission()
+	m.nowFn = step
+	m.Update(tea.MouseClickMsg{X: 12, Y: changesRowY(m, 1), Button: tea.MouseLeft})
+	m.Update(tea.MouseClickMsg{X: 12, Y: changesRowY(m, 1), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.focus != focusList {
+		t.Fatalf("left then right on one row must not read as a double click, focus %v", m.focus)
+	}
+	m.Update(tea.MouseClickMsg{X: 12, Y: changesRowY(m, 1), Button: tea.MouseLeft})
+	if m.focus != focusList {
+		t.Fatalf("right then left on one row must not read as a double click, focus %v", m.focus)
 	}
 }
 
@@ -415,11 +480,143 @@ func TestAPushWhileTheMenuIsOpenKeepsItsTarget(t *testing.T) {
 	}
 }
 
-func TestTheWheelIsInertWhileTheMenuIsOpen(t *testing.T) {
+func TestTheWheelNeverReachesTheBoardUnderAMenu(t *testing.T) {
 	m := newMouseTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
 	if _, cmd := m.Update(tea.MouseWheelMsg{X: 12, Y: changesRowY(m, 0), Button: tea.MouseWheelDown}); cmd != nil || m.selected != "a.go" {
 		t.Fatal("the wheel moves nothing under an open menu")
+	}
+}
+
+func TestTheShortestChangesFramePaintsItsHeightAndHitsItsDock(t *testing.T) {
+	m := newMouseTestMission()
+	m.height = 27
+	m.model.Commit.LastCommit = &LastCommit{Summary: "x", When: "now", Undoable: true}
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("a frame with no room for a Changes row is %d lines, want %d", len(lines), m.height)
+	}
+	for y, line := range lines {
+		if x := strings.Index(line, "Undo"); x >= 0 && strings.Contains(line, "Committed") {
+			if h := m.hitTest(lipgloss.Width(line[:x]), y); h.kind != hitUndoChip {
+				t.Fatalf("the Undo chip paints on row %d but hits %+v there", y, h)
+			}
+			return
+		}
+	}
+	t.Fatal("the undo strip never painted")
+}
+
+// tallMenuMission is the Changes tab at 27 rows, the shortest frame its
+// docked commit block fits in, with a nested file and Undo showing: the
+// file's menu is 28 lines, one more than the frame.
+func tallMenuMission(width int) *Mission {
+	m := newMouseTestMission()
+	m.width, m.height = width, 27
+	m.model.Action.Title = "Fetch origin"
+	m.model.Commit.LastCommit = &LastCommit{Summary: "x", When: "now", Undoable: true}
+	m.model.Changes[0].Path = "src/a.go"
+	m.selected = "src/a.go"
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	return m
+}
+
+func paintedAt(m *Mission, label string) (x, y int, ok bool) {
+	for row, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+		if i := strings.Index(line, label); i >= 0 {
+			return lipgloss.Width(line[:i]), row, true
+		}
+	}
+	return 0, 0, false
+}
+
+func TestAMenuTallerThanTheFrameFitsAndScrollsAtEveryWidth(t *testing.T) {
+	const last = "Reveal Repository in Finder"
+	for width := 80; width <= 200; width += 7 {
+		m := tallMenuMission(width)
+		lines := strings.Split(m.View().Content, "\n")
+		if len(lines) != m.height {
+			t.Fatalf("width %d: the frame is %d lines with the menu open, want %d", width, len(lines), m.height)
+		}
+		for y, line := range lines {
+			if w := lipgloss.Width(line); w != width {
+				t.Fatalf("width %d: line %d is %d wide", width, y, w)
+			}
+		}
+		if _, _, ok := paintedAt(m, last); ok {
+			t.Fatalf("width %d: the last board row starts below the window", width)
+		}
+		for range 30 {
+			m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		if _, _, ok := paintedAt(m, last); !ok {
+			t.Fatalf("width %d: the keyboard never scrolled the last board row into view", width)
+		}
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+			t.Fatalf("width %d: enter on the last board row runs it", width)
+		}
+
+		m = tallMenuMission(width)
+		x, y, _ := paintedAt(m, "Discard Changes…")
+		for range 4 {
+			m.Update(tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
+		}
+		x, y, ok := paintedAt(m, last)
+		if !ok {
+			t.Fatalf("width %d: the wheel never scrolled the last board row into view", width)
+		}
+		m.Update(tea.MouseMotionMsg{X: x, Y: y})
+		if row := strings.Split(m.View().Content, "\n")[y]; !strings.Contains(row, bgSGR(theme.HoverBg)) {
+			t.Fatalf("width %d: hovering the scrolled-in row did not paint HoverBg on it", width)
+		}
+		if _, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}); cmd == nil || m.menu != nil {
+			t.Fatalf("width %d: a click on the scrolled-in row runs it", width)
+		}
+	}
+}
+
+func TestAnAnchoredMenuFitsAShortHistoryFrame(t *testing.T) {
+	m := newHistoryTestMission()
+	m.height = 20
+	m.model.Action.Title = "Fetch origin"
+	m.model.Commit.LastCommit = &LastCommit{Summary: "x", When: "now", Undoable: true}
+	m.Update(tea.MouseClickMsg{X: 4, Y: historyRowFrameY(t, m, "Fix pty paint predicate"), Button: tea.MouseRight})
+	if lines := strings.Split(m.View().Content, "\n"); len(lines) != m.height {
+		t.Fatalf("the frame is %d lines with a right-click menu open, want %d", len(lines), m.height)
+	}
+	for range 20 {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if _, _, ok := paintedAt(m, "Reveal Repository in Finder"); !ok {
+		t.Fatal("the keyboard reaches the last board row of an anchored menu")
+	}
+}
+
+func TestAKeyRowRunsTheKeyOfTheTabItOpenedOn(t *testing.T) {
+	m := newMouseTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	model := mouseFixtureModel()
+	model.Tab = "history"
+	pushModel(t, m, model)
+	for _, r := range "commit" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.focus != focusSummary {
+		t.Fatalf("a Changes menu's Commit row runs Changes' c even after a tab switch, focus %v", m.focus)
+	}
+}
+
+func TestAHistoryKeyRowKeepsTheFocusTheKeyWould(t *testing.T) {
+	m := newHistoryTestMission()
+	m.focus = focusHistoryFiles
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	for _, r := range "expand" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.historyExpanded || m.focus != focusHistoryFiles {
+		t.Fatalf("Expand from the file column toggles and keeps focus there, as e does: expanded %v focus %v", m.historyExpanded, m.focus)
 	}
 }
 

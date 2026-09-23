@@ -78,7 +78,7 @@ func (m *Mission) menuItems(t menuTarget) (string, []picker.MenuItem) {
 	case targetCommit:
 		title = t.summary
 		if title == "" {
-			title = "Empty commit message"
+			title = emptyCommitSummary
 		}
 		items = m.commitItems(t)
 	default:
@@ -135,7 +135,8 @@ func (m *Mission) commitItems(t menuTarget) []picker.MenuItem {
 }
 
 // boardItems mirrors listKey and historyTabKey: each keyed row replays its
-// key through the same handler, so the two lists must change together.
+// key through the handler of the tab the menu opened on, so the lists must
+// change together.
 func (m *Mission) boardItems() []picker.MenuItem {
 	key := func(k, label string) picker.MenuItem {
 		return picker.MenuItem{ID: "key:" + k, Label: label, Hint: k, Section: boardSection, Quiet: true}
@@ -164,7 +165,9 @@ func (m *Mission) openMenu(t menuTarget, anchor *picker.MenuAnchor) {
 	title, items := m.menuItems(t)
 	m.blurCommitInputs()
 	m.menu = picker.NewMenu(title, items, anchor)
+	m.menu.FitParentHeight()
 	m.menuTarget = t
+	m.menuOnHistory = m.historyTab()
 	m.menuPrevFocus = m.focus
 	m.focus = focusMenu
 }
@@ -253,11 +256,12 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 	t := m.menuTarget
 	if k, ok := strings.CutPrefix(it.ID, "key:"); ok {
 		m.closeMenu()
-		m.focus = focusList
 		press := tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
-		if m.historyTab() {
-			return m.historyListKey(press)
+		if m.menuOnHistory {
+			return m.historyTabKey(press)
 		}
+		// The Changes diff binds none of these keys; the list binds them all.
+		m.focus = focusList
 		return m.listKey(press)
 	}
 	if folder, ok := strings.CutPrefix(it.ID, "ignore-folder:"); ok {
@@ -289,6 +293,9 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 	case "undo":
 		m.closeMenu()
 		return m, m.em.Emit(protocol.Intent{Name: "mission:undo"})
+	case "reveal-repo", "open-repo-editor":
+		m.closeMenu()
+		return m, m.emitMenuAction(it.ID, menuTarget{}, "")
 	}
 	m.closeMenu()
 	return m, m.emitMenuAction(it.ID, t, "")

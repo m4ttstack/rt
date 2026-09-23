@@ -63,7 +63,7 @@ function savePrefs(prefs: Prefs): void {
   }
 }
 
-export const __test__ = { loadPrefs, savePrefs, savedEditor };
+export const __test__ = { loadPrefs, savePrefs, savedEditor, editorLabelFor };
 
 // ─── Editor detection ────────────────────────────────────────────────────────
 
@@ -296,7 +296,14 @@ async function resolveWorkspaceTarget(dirPath: string, prefs: Prefs): Promise<st
 function editorLabelFor(command: string): string {
   return KNOWN_EDITORS.find(e => e.command === command)?.label
     || KNOWN_APPS.find(a => a.command === command)?.label
+    || appNameOf(command)
     || command;
+}
+
+/** The app a bare `open -a App` launch opens, quoted or not; null for any other command. */
+function appNameOf(command: string): string | null {
+  const m = command.trim().match(/^open\s+-a\s+(?:"([^"]+)"|'([^']+)'|(\S+))$/);
+  return m ? (m[1] ?? m[2] ?? m[3])! : null;
 }
 
 /**

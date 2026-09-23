@@ -1308,6 +1308,23 @@ func TestCtrlKOnTheHistoryListCopiesTheCursorSha(t *testing.T) {
 	s.Wait()
 }
 
+// TestRepoRowsFromACommitMenuCarryNoTarget: Reveal Repository in Finder acts
+// on the worktree, so choosing it from a commit's menu sends no sha.
+func TestRepoRowsFromACommitMenuCarryNoTarget(t *testing.T) {
+	s := openHistory(t)
+	s.Type(keyCtrlK)
+	s.WaitForPaint("Copy SHA")
+	s.Type("r", "e", "v", "e", "a", "l", " ", "r", "e", "p", "o")
+	s.WaitForGone("Copy SHA")
+	s.Type(keyEnter)
+	l := waitIntent(t, s, "mission:menu-action")
+	if !strings.Contains(l, `"action":"reveal-repo"`) || strings.Contains(l, `"sha"`) || strings.Contains(l, `"path"`) {
+		t.Fatalf("reveal-repo intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 func TestCreateTagEmitsTheTypedNameAndSha(t *testing.T) {
 	s := openHistory(t)
 	s.Type(keyCtrlK)
