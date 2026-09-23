@@ -75,7 +75,7 @@ export interface RunRowProps {
 }
 
 export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
-  const { bg, text, border } = useSchemeColors();
+  const { text } = useSchemeColors();
   const clipboard = useClipboard();
   const queryClient = useQueryClient();
   const detailHref = `/runs/${run.repo}/${run.id}`;
@@ -149,13 +149,10 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
       wrap="nowrap"
       justify="space-between"
       align="center"
-      bg={bg.monochrome}
       px="xxl"
       py="xl"
       onClick={() => navigate(detailHref)}
       style={{
-        borderRadius: 'var(--mantine-radius-lg)',
-        border: `1px solid ${border.default}`,
         cursor: 'pointer',
         // Seen rows sink to the bottom of their band, which is the real
         // de-emphasis. A light touch of transparency on top of that is all

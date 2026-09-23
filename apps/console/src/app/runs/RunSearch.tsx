@@ -12,6 +12,7 @@ import { Icons } from '@mattstack/app-kit/icons';
 import { PAGE_ROW_HEIGHT } from '../chrome';
 import type { BoardRun } from './bands';
 import { CommandProvenance } from './CommandProvenance';
+import classes from './RunPanel.module.css';
 import { RunRow } from './RunRow';
 import { matchRun, parseQuery } from './search';
 import { useRunList, useRunsPruneDays, useSeen } from './useRuns';
@@ -81,11 +82,14 @@ export function RunSearch() {
             {query.trim() ? 'No runs match.' : 'No retained runs yet.'}
           </Text>
         ) : (
-          <Stack gap="xs" data-testid="run-search-results">
+          <div
+            className={`${classes.panel} ${classes.divided}`}
+            data-testid="run-search-results"
+          >
             {results.map(run => (
               <RunRow key={run.id} run={run} />
             ))}
-          </Stack>
+          </div>
         )}
       </Stack>
     </PageShell>

@@ -3,7 +3,6 @@ import {
   Anchor,
   Collapse,
   GenericError,
-  Group,
   PageShell,
   Stack,
   Text,
@@ -16,6 +15,7 @@ import { Link } from 'wouter';
 import { PAGE_ROW_HEIGHT } from '../chrome';
 import { BAND_ORDER, computeBandIds, type Band, type BoardRun } from './bands';
 import { CommandProvenance } from './CommandProvenance';
+import classes from './RunPanel.module.css';
 import { RunRow } from './RunRow';
 import {
   useRunEvents,
@@ -133,7 +133,7 @@ export function RunBoard() {
         <CommandProvenance command="rt runs" asOf={runsQuery.dataUpdatedAt} />
       }
     >
-      <Stack gap="xl" data-testid="run-board">
+      <Stack gap="lg" data-testid="run-board">
         {BAND_ORDER.map(band => {
           const bandRuns = bands[band];
           const capped =
@@ -142,53 +142,72 @@ export function RunBoard() {
           const collapsible = band === 'finished';
           const opened = collapsible ? finishedOpened : true;
 
-          const content = (
+          const title = (
             <>
-              {bandRuns.length === 0 ? (
-                <Text c={text.muted} size="sm">
-                  {BAND_META[band].empty}
-                </Text>
-              ) : (
-                <Stack gap="sm">
-                  {displayRuns.map(run => (
-                    <RunRow
-                      key={run.id}
-                      run={run}
-                      pruneDays={pruneDaysQuery.data}
-                      enrichment={
-                        run.branch ? enrichQuery.data?.[run.branch] : undefined
-                      }
-                    />
-                  ))}
-                </Stack>
-              )}
-              {capped && (
-                <Anchor component={Link} href="/search" size="sm">
-                  See all {bandRuns.length} finished runs in search →
-                </Anchor>
-              )}
+              <Text fw={700} fz={14}>
+                {BAND_META[band].title}
+              </Text>
+              <Text c={text.muted} fz={13}>
+                {bandRuns.length}
+              </Text>
             </>
           );
 
-          return (
-            <Stack key={band} gap="sm" data-testid={`band-${band}`}>
-              <Group justify="space-between">
-                {collapsible ? (
-                  <UnstyledButton
-                    data-testid="band-finished-toggle"
-                    onClick={() => onCollapseClick()}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <AnimatedChevron opened={opened} size={16} />
-                    <Text fw={700}>{BAND_META[band].title}</Text>
-                  </UnstyledButton>
-                ) : (
-                  <Text fw={700}>{BAND_META[band].title}</Text>
-                )}
-                <Text c={text.muted} size="sm">
-                  {bandRuns.length}
+          const content = (
+            <div className={classes.divided}>
+              {bandRuns.length === 0 ? (
+                <Text c={text.muted} fz={13} className={classes.inset}>
+                  {BAND_META[band].empty}
                 </Text>
-              </Group>
+              ) : (
+                displayRuns.map(run => (
+                  <RunRow
+                    key={run.id}
+                    run={run}
+                    pruneDays={pruneDaysQuery.data}
+                    enrichment={
+                      run.branch ? enrichQuery.data?.[run.branch] : undefined
+                    }
+                  />
+                ))
+              )}
+              {capped && (
+                <Anchor
+                  component={Link}
+                  href="/search"
+                  fz={13}
+                  display="block"
+                  className={classes.inset}
+                >
+                  See all {bandRuns.length} finished runs in search →
+                </Anchor>
+              )}
+            </div>
+          );
+
+          return (
+            <div
+              key={band}
+              className={`${classes.panel} ${classes.divided}`}
+              data-testid={`band-${band}`}
+            >
+              {collapsible ? (
+                <UnstyledButton
+                  data-testid="band-finished-toggle"
+                  aria-expanded={opened}
+                  className={classes.header}
+                  onClick={() => onCollapseClick()}
+                >
+                  {title}
+                  <AnimatedChevron
+                    opened={opened}
+                    size={16}
+                    style={{ marginLeft: 'auto' }}
+                  />
+                </UnstyledButton>
+              ) : (
+                <div className={classes.header}>{title}</div>
+              )}
               {collapsible ? (
                 <Collapse expanded={opened} keepMountedMode="display-none">
                   {content}
@@ -196,7 +215,7 @@ export function RunBoard() {
               ) : (
                 content
               )}
-            </Stack>
+            </div>
           );
         })}
       </Stack>
