@@ -18,6 +18,7 @@ export {
   isSet,
   parseScalar,
   setLeaf,
+  targetScope,
   type LeafType,
 } from '@mattstack/settings-kit/shapes';
 

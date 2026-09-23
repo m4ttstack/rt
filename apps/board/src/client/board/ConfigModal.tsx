@@ -27,6 +27,7 @@ import {
   rowKind,
   scopeLabel,
   slugTabId,
+  targetScope,
   type CompositeShape,
   type ConfigDef,
   type LeafType,
@@ -43,7 +44,7 @@ function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const scope = def.scopes[0] ?? 'user';
+  const scope = targetScope(def);
   const run = async (op: () => Promise<string | null>) => {
     setBusy(true);
     setError(null);
@@ -1182,7 +1183,7 @@ function SettingRow({
         <InfoTip text={help} about={def.key} />
       </span>
       <span className="tui-config-badge">
-        {def.secret ? 'secret' : scopeLabel(def.scopes[0] ?? 'user')}
+        {def.secret ? 'secret' : scopeLabel(row.scope)}
       </span>
       {set && kind !== 'roster' && kind !== 'tabs' && (
         <button
