@@ -293,4 +293,11 @@ let doneModelChecks: [Check] = [
         c.expectEqual(await client.choose(verb: ["skills", "writing-style", "use"], id: "-rf"), "\"-rf\" is not a skill id")
         c.expectEqual(rt.calls.last?.args, ["skills", "writing-style", "use", "-rf", "--json"])
     },
+    Check("ChoiceClient: an empty verb refuses without spawning rt") { c in
+        let rt = ScriptedRt()
+        let client = await ChoiceClient(rt: rt)
+        let failure = await client.choose(verb: [], id: "a")
+        c.expect(failure != nil, "a nonconforming rt with no verb on the row must never be run")
+        c.expectEqual(rt.calls.count, 0, "must not spawn rt <id> --json when the verb is empty")
+    },
 ]

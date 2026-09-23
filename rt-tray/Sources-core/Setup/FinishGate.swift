@@ -56,7 +56,11 @@ public final class ChoiceClient {
     public init(rt: RtRunning) { self.rt = rt }
 
     /// nil once the verb succeeded; otherwise the user-facing failure copy.
+    /// An empty verb refuses without spawning rt: `verb + [id, "--json"]`
+    /// would otherwise run `rt <id> --json`, a nonconforming rt's row shape
+    /// making the app execute an arbitrary id as a top-level rt command.
     public func choose(verb: [String], id: String) async -> String? {
+        guard !verb.isEmpty else { return "This choice has no command to run." }
         let args = verb + [id, "--json"]
         do {
             let result = try await rt.run(args, stdin: nil)
