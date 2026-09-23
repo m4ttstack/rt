@@ -142,6 +142,15 @@ describe("gate-escalation herd summary", () => {
     expect(summaries().map((e) => e.payload.paneId).sort()).toEqual(["p-a", "p-b"]);
   });
 
+  test("a collision-suffixed herd id still reads as its bare name", () => {
+    const herd = "cv-sentry-20260923-123200-2";
+    liveShepherd(herd);
+    openFor(herd, "plan");
+    clock = start + 12 * MIN;
+    make({ [herd]: "p" }).sweep();
+    expect(summaries()[0]!.payload.headline).toBe("cv-sentry is waiting on its shepherd");
+  });
+
   test("a single gate reads singular", () => {
     liveShepherd("solo-20260923-000001");
     openFor("solo-20260923-000001", "evidence");

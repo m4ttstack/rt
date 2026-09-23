@@ -5,10 +5,9 @@
  * knowable by re-checking the clock and the subscription table, not by
  * reacting to a single event.
  *
- * Each gate still emits its own gate/escalated/<id> event, but the human
- * notification is the per-herd herd/gates-waiting/<herd> summary: one
- * banner per herd that points at the shepherd's pane, never at the worker
- * that raised the gate.
+ * Each gate emits its own gate/escalated/<id> event; the human-facing one is
+ * the per-herd herd/gates-waiting/<herd> summary, which points at the
+ * shepherd's pane, never at the worker that raised the gate.
  */
 
 import type { Logger } from "pino";
@@ -36,9 +35,9 @@ function gateLabel(row: GateRow): string {
   return typeof row.meta?.label === "string" ? row.meta.label : row.kind;
 }
 
-/** mintHerdId appends a -YYYYMMDD-HHMMSS stamp; the banner reads better without it. */
+/** mintHerdId appends a -YYYYMMDD-HHMMSS stamp (plus -N from uniqueHerdId on a collision); the banner reads better without it. */
 function herdName(herdId: string): string {
-  return herdId.replace(/-\d{8}-\d{6}$/, "");
+  return herdId.replace(/-\d{8}-\d{6}(-\d+)?$/, "");
 }
 
 function labelList(rows: GateRow[]): string {
