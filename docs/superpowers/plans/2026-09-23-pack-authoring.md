@@ -1459,7 +1459,7 @@ S=/private/tmp/claude-501/pack-scratch
 mkdir -p $S/.claude $S/repos $S/marketplace/.claude-plugin
 cat > $S/marketplace/.claude-plugin/marketplace.json <<'EOF'
 {
-  "name": "scratch-mattstack",
+  "name": "mattstack",
   "owner": { "name": "scratch" },
   "plugins": [
     {
@@ -1475,19 +1475,21 @@ export HOME=$S CLAUDE_CONFIG_DIR=$S/.claude
 
 Every command in this task runs with those two variables set (prefix each with `env HOME=$S CLAUDE_CONFIG_DIR=$S/.claude` when not in one shell). Never run these against the real HOME. The worktree-isolated rt session refuses `git -C` to other repos; run the `git worktree add` from a plain terminal.
 
+The scratch marketplace is named `mattstack` on purpose: `findMergeManifests` (`lib/setup/skills-materialize.ts`) looks for `merge-manifests.sh` only under `<home>/.claude/plugins/cache/mattstack/mattstack/<version>/`, and the cache path is `cache/<marketplace>/<plugin>/<version>`. Any other marketplace name leaves `materializeSkills` skipped and every init at `materialize-failed`.
+
 - [ ] **Step 2: Log in, then install the mattstack and superpowers plugins into the scratch config**
 
 A fresh `CLAUDE_CONFIG_DIR` has no credentials: the first `claude` invocation asks for a login. Matt does that login by hand in this shell (`claude` once, complete the browser flow, exit) before anything below. Then:
 
 ```bash
 claude plugin marketplace add $S/marketplace
-claude plugin install mattstack@scratch-mattstack
+claude plugin install mattstack@mattstack
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin install superpowers@claude-plugins-official
 claude plugin list --json | jq '.[].id'
 ```
 
-Expected: `mattstack@scratch-mattstack` and `superpowers@claude-plugins-official` listed. The mattstack cache under `$S/.claude/plugins/cache/scratch-mattstack/mattstack/<version>/` exists.
+Expected: `mattstack@mattstack` and `superpowers@claude-plugins-official` listed. The mattstack cache under `$S/.claude/plugins/cache/mattstack/mattstack/<version>/` exists.
 
 - [ ] **Step 3: Clone the throwaway repo and start a scratch daemon**
 
@@ -1513,7 +1515,7 @@ Expected: `"ok": true`, `"pack": { "name": "scratch", ... }`, `tryNext: "/scratc
 
 ```bash
 ls $S/.mattstack/teams/scratch/mattstack/packs/scratch/{pack,skills,attachments}
-head -3 $S/.mattstack/repos/*/skills.jsonc
+grep '<- scratch@' $S/.mattstack/repos/*/skills.jsonc
 bun run cli.ts skills check --pack scratch
 bun run cli.ts skills composition --pack scratch
 claude plugin list --json | jq '.[] | select(.id | startswith("scratch@"))'
@@ -1734,8 +1736,8 @@ Expected: every rep of every scenario picks the expected skill.
 Commit the draft skill in the worktree (Step 5's commit, amended later if the wording changes), then under the scratch environment:
 
 ```bash
-claude plugin update mattstack@scratch-mattstack
-claude plugin list --json | jq '.[] | select(.id == "mattstack@scratch-mattstack") | .version'
+claude plugin update mattstack@mattstack
+claude plugin list --json | jq '.[] | select(.id == "mattstack@mattstack") | .version'
 ```
 
 The scratch marketplace clones the worktree at ref `pack-authoring`, so the update carries the new skill. Start a fresh `claude` in `$S/repos/api` with the pack state reset (Task 8 Step 4) and give the same prompt as the baseline. Expected: the agent invokes `creating-a-pack`, runs `rt skills init --json`, stops at the restart with `tryNext`, and asks the rules question once. Record the run under the baseline file's "With the skill" heading; if it deviates, tighten the recipe, commit, update the plugin, and re-run.
@@ -1936,7 +1938,7 @@ Expected: all pass, including the earlier `editing-skills` scenarios.
 
 - [ ] **Step 4: GREEN run**
 
-Commit (Step 5), `claude plugin update mattstack@scratch-mattstack` under the scratch environment, then the same scratch setup and prompt as Task 10. Expected: the agent sorts the ask to `ship-domain@1`, runs a RED pass, writes `attachments/ship-lint/SKILL.md` (or similar) with the fixed frontmatter, binds to `mattstack:stage-ship`, confirms the fragment carries the binding, certifies, checks, and hands to `editing-skills`. Record under the baseline's "With the skill" heading; tighten, commit, update, and re-run on deviation.
+Commit (Step 5), `claude plugin update mattstack@mattstack` under the scratch environment, then the same scratch setup and prompt as Task 10. Expected: the agent sorts the ask to `ship-domain@1`, runs a RED pass, writes `attachments/ship-lint/SKILL.md` (or similar) with the fixed frontmatter, binds to `mattstack:stage-ship`, confirms the fragment carries the binding, certifies, checks, and hands to `editing-skills`. Record under the baseline's "With the skill" heading; tighten, commit, update, and re-run on deviation.
 
 - [ ] **Step 5: Commit**
 

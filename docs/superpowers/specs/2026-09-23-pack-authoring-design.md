@@ -132,7 +132,7 @@ Steps, in order. Every refusal fires before anything is written.
    what rt's default-manifest lookup matches against the pack name; the two
    agree because the pack is named after the namespace.
 6. **Compile and check** through the existing `skillsCompile` and
-   `skillsCheck` code paths (`--pack <pack>`). A failure here is reported
+   `skillsCheck` code paths (with `--pack-dir` and `--manifest` passed explicitly). A failure here is reported
    verbatim and the files stay in place for the author to fix; exit 1.
 7. **Install:** `claude plugin marketplace add <zone dir>` when the zone's
    marketplace name is not yet listed, then
@@ -183,7 +183,7 @@ baseline, see Testing):
 1. **Prerequisites, checked and stated, stop on any miss:** rt with a
    running daemon (`rt daemon status`), the mattstack plugin installed,
    `superpowers` installed, a GitLab remote on the repo.
-2. **Run** `rt skills init --pack <name> --json` from the repo. Read the
+2. **Run** `rt skills init --json` from the repo. Read the
    envelope; on a refusal, relay the remedy and stop.
 3. **Restart.** `restartNeeded` in a herdr pane: `rt:herdr-inject`;
    otherwise tell the author to restart and what to type next.
@@ -275,13 +275,16 @@ per-repo manifest is regenerated on every materialize.
    scratch HOME, so it never squats the live one; stopped afterwards). A
    fresh config dir has no credentials: the first `claude` call asks for a
    login, which the operator does by hand before anything else runs. The
-   mattstack plugin installs from a scratch marketplace whose entry is a
-   `file://` URL to the mattstack-skills worktree, so the GREEN runs later
-   pick up the new skills with `claude plugin update` instead of a second
-   plugin loaded by `--plugin-dir` beside the installed one.
+   mattstack plugin installs from a scratch marketplace named `mattstack`
+   whose entry is a `file://` URL to the mattstack-skills worktree, so the
+   GREEN runs later pick up the new skills with `claude plugin update`
+   instead of a second plugin loaded by `--plugin-dir` beside the installed
+   one. The marketplace name matters: `materializeSkills` finds
+   `merge-manifests.sh` only under `plugins/cache/mattstack/mattstack/`, so
+   any other name leaves init at `materialize-failed`.
    A throwaway GitLab project from the harness credentials, cloned into the
    scratch HOME. `rt team create` with a second throwaway project as the
-   remote, then `rt skills init --pack scratch --repo <clone> --json`.
+   remote, then `rt skills init --repo <clone> --json`.
    Assert the file set, `rt skills check` clean, the plugin listed in the
    scratch config. Then a fresh Claude session under that environment runs
    `/scratch:work` on a toy task (add a README line) through provision,
