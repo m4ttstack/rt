@@ -31,7 +31,7 @@ let triageChecks: [Check] = [
         c.expectEqual(rows.map { TriageTone.tone(for: $0) }, [.risk, .safe, .held, .broken, .kept])
     },
     Check("the menu badge shows needsDecision only when above zero") { c in
-        c.expectEqual(TriageMenu.badge(TriageCounts(needsDecision: 4, safe: 2, waiting: 1, kept: 0)), "4")
+        c.expectEqual(TriageMenu.badge(TriageCounts(needsDecision: 4, safe: 2, waiting: 1, kept: 0)), 4)
         c.expectEqual(TriageMenu.badge(TriageCounts(needsDecision: 0, safe: 0, waiting: 3, kept: 1)), nil)
         c.expectEqual(TriageMenu.badge(nil), nil)
     },

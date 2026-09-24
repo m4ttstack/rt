@@ -126,9 +126,9 @@ public enum MRTone: String, Sendable {
 }
 
 public enum TriageMenu {
-    public static func badge(_ counts: TriageCounts?) -> String? {
+    public static func badge(_ counts: TriageCounts?) -> Int? {
         guard let n = counts?.needsDecision, n > 0 else { return nil }
-        return "\(n)"
+        return n
     }
 }
 

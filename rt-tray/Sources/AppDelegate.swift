@@ -1376,18 +1376,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private static func worktreesMenuTitle(_ counts: TriageCounts?) -> String {
-        TriageMenu.badge(counts).map { "Worktrees…  \($0)" } ?? "Worktrees…"
-    }
-
     private static func applyWorktreesBadge(_ item: NSMenuItem?, _ counts: TriageCounts?) {
-        guard let item else { return }
-        if #available(macOS 14.0, *) {
-            item.title = "Worktrees…"
-            item.badge = TriageMenu.badge(counts).flatMap(Int.init).map { NSMenuItemBadge(count: $0) }
-        } else {
-            item.title = worktreesMenuTitle(counts)
-        }
+        item?.badge = TriageMenu.badge(counts).map { NSMenuItemBadge(count: $0) }
     }
 
     /// Never awaited by the menu build: the menu opens with the last known

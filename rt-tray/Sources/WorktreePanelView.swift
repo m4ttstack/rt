@@ -89,15 +89,22 @@ enum TriageLabels {
 
     static func mrState(_ state: String) -> String { state == "opened" ? "open" : state }
 
-    static func shortDate(_ iso: String?) -> String? {
-        guard let iso else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = withFraction.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return nil }
+    private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
+    private static let monthDay: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d"
-        return f.string(from: date)
+        return f
+    }()
+
+    static func shortDate(_ iso: String?) -> String? {
+        guard let iso, let date = isoFractional.date(from: iso) ?? isoPlain.date(from: iso) else { return nil }
+        return monthDay.string(from: date)
     }
 
     static func push(_ push: TriageRow.Push) -> (text: String, icon: String) {
@@ -446,7 +453,7 @@ struct TriageRowView: View {
                 Text("next pass").font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
             }
             moreMenu
-                .disabled(busy)
+                .disabled(busy || primaryDisabled)
                 .opacity(busy ? 0.35 : 1)
         }
     }
@@ -460,21 +467,27 @@ struct TriageRowView: View {
             .contentShape(Rectangle())
     }
 
+    private var menuKeep: Bool { row.actions.contains("keep") && primary != "keep" }
+    private var menuUnkeep: Bool { row.actions.contains("unkeep") && primary != "unkeep" }
+    private var menuDisposeAnyway: Bool { row.group == "only-copy" }
+
     @ViewBuilder private var moreMenu: some View {
         if isSnapshot {
             menuLabel
         } else {
             Menu {
-                if row.actions.contains("keep") && primary != "keep" {
+                if menuKeep {
                     Button { onAction("keep") } label: { Label("Keep", systemImage: "bookmark") }
                 }
-                if row.actions.contains("unkeep") && primary != "unkeep" {
+                if menuUnkeep {
                     Button { onAction("unkeep") } label: { Label("Un-keep", systemImage: "bookmark.slash") }
                 }
-                if row.group == "only-copy" {
+                if menuDisposeAnyway {
                     Button(role: .destructive) { onAction("dispose-anyway") } label: { Label("Dispose anyway", systemImage: "trash") }
                 }
-                Divider()
+                if menuKeep || menuUnkeep || menuDisposeAnyway {
+                    Divider()
+                }
                 if row.actions.contains("open-finder") {
                     Button { onAction("open-finder") } label: { Label("Open in Finder", systemImage: "folder") }
                 }
@@ -491,6 +504,7 @@ struct TriageRowView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .onHover { menuHover = $0 }
+            .accessibilityLabel("More")
         }
     }
 }
@@ -517,9 +531,12 @@ struct TriageChip: View {
 
 /// Opens `url` on click and shows the arrow and pointing-hand cursor on
 /// hover; a nil `url` is a plain, inert chip.
+/// The cursor push is tracked so a chip that disappears under the pointer
+/// (window closed, row dropped by a poll) still pops what it pushed.
 private struct ChipLink: ViewModifier {
     let url: String?
     @Binding var hovering: Bool
+    @State private var pushed = false
     func body(content: Content) -> some View {
         if let target = url.flatMap(URL.init(string:)) {
             content
@@ -527,7 +544,11 @@ private struct ChipLink: ViewModifier {
                 .onTapGesture { NSWorkspace.shared.open(target) }
                 .onHover { inside in
                     hovering = inside
-                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                    if inside, !pushed { NSCursor.pointingHand.push(); pushed = true }
+                    if !inside, pushed { NSCursor.pop(); pushed = false }
+                }
+                .onDisappear {
+                    if pushed { NSCursor.pop(); pushed = false }
                 }
                 .accessibilityAddTraits(.isLink)
         } else {

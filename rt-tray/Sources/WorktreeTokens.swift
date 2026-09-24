@@ -5,7 +5,7 @@ import SwiftUI
 /// Each resolves against the drawing appearance, so the live window and the
 /// offscreen snapshot pick the same side.
 enum WT {
-    static func ns(_ light: UInt32, _ dark: UInt32) -> NSColor {
+    private static func ns(_ light: UInt32, _ dark: UInt32) -> NSColor {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let v = isDark ? dark : light
