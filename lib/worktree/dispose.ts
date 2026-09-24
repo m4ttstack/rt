@@ -10,6 +10,7 @@
  * `force` overrides guards 2-6 and never guard 1: "main" and "unmanaged" trees
  * are categorically not rt's to delete, no matter what the caller asks for.
  * `acceptDirty` skips guard 2 alone; the dirt travels into the trash with the tree.
+ * `requireRetention` refuses "no-trash" rather than ever fall back to an unretained reap.
  */
 
 import { existsSync } from "fs";
@@ -20,7 +21,7 @@ import { hasFreshAttendantLease } from "./lease.ts";
 import { loadSyncConfig, matchRule } from "../sync-config.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
 import { killWorktreeProcesses } from "../daemon/worktree-process-kill.ts";
-import { RETENTION_MS, reapTrashDir, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
+import { RETENTION_MS, reapTrashDir, retentionAvailable, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
 import type { RunningRunScan } from "../runs/store.ts";
 
 /** Merge-reactor disposals ignore claims younger than this (stale-event protection). */
@@ -193,7 +194,7 @@ async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
 export async function disposeTree(
   deps: DisposeDeps,
   rec: TreeRecord,
-  opts: { force?: boolean; auto?: boolean; acceptDirty?: boolean },
+  opts: { force?: boolean; auto?: boolean; acceptDirty?: boolean; requireRetention?: boolean },
 ): Promise<DisposeOutcome> {
   const { repoName, repoPath, emit, log } = deps;
   const force = opts.force === true;
@@ -281,6 +282,8 @@ export async function disposeTree(
     }
   }
 
+  if (opts.requireRetention === true && !(await retentionAvailable(rec.path))) return refuse("no-trash");
+
   if (deps.killProcesses) {
     const { terminated } = await killWorktreeProcesses(rec.path, { callerPids: deps.callerPids });
     if (terminated.length > 0) {
@@ -297,12 +300,13 @@ export async function disposeTree(
 
   // One atomic rename, not a recursive unlink: see trash.ts. Everything below
   // is fast, so the verb returns in seconds however large the tree was.
-  const trashed = await retireTree(rec.path, rec.name, repoPath);
+  const trashed = await retireTree(rec.path, rec.name, repoPath, { requireRetention: opts.requireRetention === true });
   if (!trashed.ok) {
     log.warn(
       { repo: repoName, tree: rec.name, path: rec.path, err: trashed.err },
       "worktree trash rename failed during dispose",
     );
+    if (trashed.noRetention) return refuse("no-trash");
     // A directory that is already gone is the expected failure and disposal
     // continues (the registry row is the thing left to clean up). A tree still
     // at rec.path means the rename genuinely failed — held directory,

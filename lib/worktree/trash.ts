@@ -20,7 +20,8 @@
  * sweeps on a later pass — a crash costs disk, never correctness.
  */
 
-import { mkdir, readdir, readFile, rename, writeFile } from "fs/promises";
+import { constants } from "fs";
+import { access, mkdir, readdir, readFile, rename, stat, writeFile } from "fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "path";
 import { ensureInfoExclude } from "./git-async.ts";
 
@@ -117,7 +118,25 @@ export function retainedTrashRoot(poolRoot: string): string {
 
 export type RetireResult =
   | { ok: true; trashPath: string; retained: boolean }
-  | { ok: false; err: unknown };
+  | { ok: false; err: unknown; noRetention?: true };
+
+/**
+ * Whether `path` could be retired into its retention store right now: the
+ * tree exists, the store is (or can be made) a writable directory, and it
+ * shares the tree's volume. The tree is stat'd first so a missing tree never
+ * creates its pool root as a side effect.
+ */
+export async function retentionAvailable(path: string): Promise<boolean> {
+  try {
+    const treeDev = (await stat(path)).dev;
+    const root = retainedTrashRoot(dirname(path));
+    await mkdir(root, { recursive: true });
+    await access(root, constants.W_OK);
+    return (await stat(root)).dev === treeDev;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Rename the tree into a retention store beside the pool root it actually
@@ -129,12 +148,15 @@ export type RetireResult =
  * When the store can't be used (unwritable, or the rename would cross a
  * volume), falls back to the sibling `.trash-*` rename... the caller sees
  * `retained: false` and reaps it the old way, so disposal never gets stuck
- * behind the retention feature. Never throws.
+ * behind the retention feature. `requireRetention` forbids that fallback: an
+ * unusable store returns `noRetention` with the tree left where it was.
+ * Never throws.
  */
 export async function retireTree(
   path: string,
   name: string,
   repoPath: string,
+  opts: { requireRetention?: boolean } = {},
 ): Promise<RetireResult> {
   let trashPath: string;
   try {
@@ -152,7 +174,8 @@ export async function retireTree(
     const root = retainedTrashRoot(poolRoot);
     await mkdir(root, { recursive: true });
     trashPath = join(root, `${name}-${Date.now()}`);
-  } catch {
+  } catch (err) {
+    if (opts.requireRetention) return { ok: false, err, noRetention: true };
     const fallback = await trashTree(path, name);
     return fallback.ok ? { ...fallback, retained: false } : fallback;
   }
@@ -161,6 +184,7 @@ export async function retireTree(
     return { ok: true, trashPath, retained: true };
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "EXDEV") {
+      if (opts.requireRetention) return { ok: false, err, noRetention: true };
       const fallback = await trashTree(path, name);
       return fallback.ok ? { ...fallback, retained: false } : fallback;
     }

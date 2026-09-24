@@ -572,6 +572,32 @@ describe("disposeTree", () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  test("requireRetention refuses \"no-trash\" when the retention store is unusable, touching nothing", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    writeFileSync(join(path, "gen.txt"), "alpha\nbeta\ngamma\n");
+    writeFileSync(join(repo, ".worktrees", ".trash"), "not a directory");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, { acceptDirty: true, requireRetention: true });
+    expect(result).toEqual({ disposed: false, refusal: "no-trash" });
+    expect(readFileSync(join(path, "gen.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
+    expect(loadRegistry(repoName).length).toBe(1);
+
+    const forced = await disposeTree(makeDeps(), rec, { force: true, requireRetention: true });
+    expect(forced).toEqual({ disposed: false, refusal: "no-trash" });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("without requireRetention an unusable retention store still falls back to the sibling trash", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    writeFileSync(join(repo, ".worktrees", ".trash"), "not a directory");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, {});
+    expect(result).toEqual({ disposed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
   test("guard order: unpushed is reported before running-run", async () => {
     const path = addTree(repo, "tree-a", "feature-a");
     commitIn(path, "new.txt", "local only\n");
