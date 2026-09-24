@@ -5,6 +5,7 @@ import {
   beforeAll,
   beforeEach,
   expect,
+  jest,
   test,
 } from 'bun:test';
 
@@ -17,6 +18,7 @@ GlobalRegistrator.register({ url: 'http://localhost/' });
 let React: typeof import('react');
 let createRoot: typeof import('react-dom/client').createRoot;
 let StatusLine: typeof import('../StatusLine.tsx').StatusLine;
+let MERGE_ARM_MS: number;
 type RowContext = import('../../types.ts').RowContext;
 type BoardMRWithReview = import('../../types.ts').BoardMRWithReview;
 type RowStatus = import('../row-status.ts').RowStatus;
@@ -24,7 +26,7 @@ type RowStatus = import('../row-status.ts').RowStatus;
 beforeAll(async () => {
   React = await import('react');
   ({ createRoot } = await import('react-dom/client'));
-  ({ StatusLine } = await import('../StatusLine.tsx'));
+  ({ StatusLine, MERGE_ARM_MS } = await import('../StatusLine.tsx'));
 });
 
 afterAll(async () => {
@@ -331,20 +333,27 @@ test('merge takes two clicks: the first arms it as "really merge?", the second m
   expect(merge().textContent).toBe('merge');
 });
 
-test('leaving the line disarms merge', async () => {
-  const merged: number[] = [];
-  await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
-  const merge = () =>
-    container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
-  await React.act(async () => merge().click());
-  await React.act(async () => {
-    container
-      .querySelector('.tui-status')!
-      .dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
-  });
-  expect(merge().textContent).toBe('merge');
-  await React.act(async () => merge().click());
-  expect(merged).toEqual([]);
+test('an armed merge outlives the pointer leaving and disarms on a timer', async () => {
+  jest.useFakeTimers();
+  try {
+    const merged: number[] = [];
+    await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
+    const merge = () =>
+      container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
+    await React.act(async () => merge().click());
+    await React.act(async () => {
+      container
+        .querySelector('.tui-status')!
+        .dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+    expect(merge().textContent).toBe('really merge?');
+    await React.act(async () => jest.advanceTimersByTime(MERGE_ARM_MS));
+    expect(merge().textContent).toBe('merge');
+    await React.act(async () => merge().click());
+    expect(merged).toEqual([]);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('a board that is not local hides merge, as the row menu does; the next verb leads', async () => {

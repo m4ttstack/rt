@@ -838,15 +838,12 @@ body {
 .tui-status-verb[data-verb='merge'] {
   color: var(--text-1);
 }
-/* An armed merge is a decision waiting on its second click: the decide hue,
-   and the wash stays on at rest so it reads as a different state, not a
-   hover. */
+/* An armed merge is a decision waiting on its second click: merge's own
+   neutral, with the wash held on at rest and deeper than the hover tint, so
+   it reads as a different state, not a hover. */
 .tui-status-verb[data-armed] {
-  --verb: var(--text-warn-vivid);
-  --verb-wash: var(--fill-warn);
-  color: var(--verb);
-  font-weight: 600;
-  background: color-mix(in srgb, var(--verb-wash) 18%, transparent);
+  --verb-wash: var(--muted);
+  background: color-mix(in srgb, var(--verb-wash) 30%, transparent);
 }
 .tui-status-sun {
   display: inline-flex;

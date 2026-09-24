@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { clauseOf } from './clause.ts';
@@ -6,6 +6,9 @@ import { AgentGlyph, Sun } from './icons.tsx';
 import type { RowStatus, Verb, VerbKind } from './row-status.ts';
 
 type Lane = 'review' | 'respond' | 'doctor';
+
+/** How long an armed merge waits for its second click. */
+export const MERGE_ARM_MS = 4000;
 
 /** The lane an agent verb launches, re-runs or jumps into. The color of the
     verb is the lane, so a reader knows which agent a click starts before
@@ -107,8 +110,14 @@ export function StatusLine({
 }) {
   const { line, more } = status;
   // Merge is the one irreversible verb: the first click arms it, the second
-  // fires, and leaving the line disarms it, the row menu's item made inline.
+  // fires, and an unanswered arm lapses on a timer rather than on the pointer
+  // leaving, so a drift off the button does not eat the confirmation.
   const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), MERGE_ARM_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
   // /mr/action refuses a non-local request, so a remote board never shows
   // merge, the same as the row menu's gitlab section.
   const verbs = ctx.local
@@ -117,11 +126,7 @@ export function StatusLine({
   const hot = line.tone === 'bad' || line.tone === 'warn';
   const detail = line.detail ? clauseOf(line.detail) : null;
   return (
-    <div
-      className="tui-status"
-      data-tone={line.tone}
-      onMouseLeave={() => setArmed(false)}
-    >
+    <div className="tui-status" data-tone={line.tone}>
       <span className="tui-status-word">{line.word}</span>
       {line.spin && <span className="tui-status-ring" aria-hidden />}
       {line.tone === 'clear' && (
