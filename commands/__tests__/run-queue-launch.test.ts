@@ -42,22 +42,26 @@ afterEach(() => {
 
 // ─── queueToSeed ─────────────────────────────────────────────────────────────
 
-test("queueToSeed keeps queue order, carries pkg/repo/command, and re-resolves cwd against the launch worktree", () => {
+test("queueToSeed keeps queue order and pkg/repo, rebuilds a plain item's command against the launch worktree, and keeps a variation's stored command", () => {
   const queue = [
     {
       packageRelPath: "apps/web",
       // A different worktree than the one being launched into -- cwd must
-      // come from packageRelPath + worktreePath, never this stale path.
+      // come from packageRelPath + worktreePath, never this stale path, and
+      // neither must the package-manager prefix baked into a plain item's
+      // stored command (it was detected at QUEUE time, against this path).
       packagePath: "/queued/from/some/other/worktree/apps/web",
       packageLabel: "web",
       script: "dev",
-      command: "bun run dev",
+      command: "yarn run dev",
     },
     {
       packageRelPath: "apps/api",
       packagePath: "/queued/from/some/other/worktree/apps/api",
       packageLabel: "api",
       script: "start",
+      // A variation's command is a user-authored override, not a detected
+      // package-manager prefix -- it must survive verbatim.
       command: "node server.js",
       variationName: "debug",
     },
@@ -66,9 +70,12 @@ test("queueToSeed keeps queue order, carries pkg/repo/command, and re-resolves c
   const seed = queueToSeed(queue, "/home/me/repo");
 
   expect(seed).toEqual([
-    { name: "dev", command: "bun run dev", cwd: "/home/me/repo/apps/web", pkg: "web", repo: "repo" },
+    { name: "dev", command: expect.stringContaining("run dev"), cwd: "/home/me/repo/apps/web", pkg: "web", repo: "repo" },
     { name: "start (debug)", command: "node server.js", cwd: "/home/me/repo/apps/api", pkg: "api", repo: "repo" },
   ]);
+  // Not just a loose match: the plain item's stale, queued-from command must
+  // actually be replaced, not merely happen to contain "run dev".
+  expect(seed[0]!.command).not.toBe("yarn run dev");
 });
 
 // ─── The board path: selectPackageAndScript ─────────────────────────────────
@@ -249,11 +256,20 @@ test("launchQueue falls back to running sequentially, naming tmux, when interact
       packageRelPath: "apps/web",
       // A different worktree than the one being launched into -- the
       // fallback item's cwd must come from packageRelPath + worktreePath,
-      // never this stale path.
+      // and so must a plain item's package-manager prefix, never this
+      // stale queued-from path.
       packagePath: "/queued/from/some/other/worktree/apps/web",
       packageLabel: "web",
       script: "dev",
-      command: "bun run dev",
+      command: "yarn run dev",
+    },
+    {
+      packageRelPath: "apps/api",
+      packagePath: "/queued/from/some/other/worktree/apps/api",
+      packageLabel: "api",
+      script: "start",
+      command: "node server.js",
+      variationName: "debug",
     },
   ];
   await launchQueue(queue, "/home/me/repo", {} as never);
@@ -261,9 +277,12 @@ test("launchQueue falls back to running sequentially, naming tmux, when interact
   expect(boardCalled).toBe(false);
   expect(fallbackCalls).toHaveLength(1);
   expect(fallbackCalls[0]!.reason).toContain("tmux");
-  expect(fallbackCalls[0]!.items).toEqual([
-    { label: "web → dev", command: "bun run dev", cwd: "/home/me/repo/apps/web" },
-  ]);
+  const items = fallbackCalls[0]!.items as Array<{ label: string; command: string; cwd: string }>;
+  expect(items).toHaveLength(2);
+  expect(items[0]).toMatchObject({ label: "web → dev", cwd: "/home/me/repo/apps/web" });
+  expect(items[0]!.command).not.toBe("yarn run dev");
+  expect(items[0]!.command).toContain("run dev");
+  expect(items[1]).toEqual({ label: "api → start (debug)", command: "node server.js", cwd: "/home/me/repo/apps/api" });
 });
 
 test("launchQueue is a no-op on an empty queue", async () => {

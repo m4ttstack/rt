@@ -131,6 +131,42 @@ test("non-interactive caller with herdr available falls back instead of routing 
   expect(exitSpy).not.toHaveBeenCalled();
 });
 
+// Pins the review's Important finding for the preset path too: inside herdr
+// with no tmux on PATH is a reachable fallback (interactive is true), so the
+// banner must name tmux, never "not inside herdr" (never even checked once
+// the gate became interactive() && tmuxAvailable()).
+test("launchPreset falls back to running sequentially, naming tmux, when interactive but tmux is missing", async () => {
+  gate.setInteractive(() => true);
+  const fallbackCalls: Array<{ items: unknown; reason: unknown }> = [];
+  let boardCalled = false;
+  mock.module("../../lib/herdr-launch.ts", () => ({
+    ...realHerdrLaunch,
+    launchFallback: (items: unknown, reason: unknown) => {
+      fallbackCalls.push({ items, reason });
+    },
+  }));
+  mock.module("../runner.ts", () => ({
+    ...realRunner,
+    tmuxAvailable: () => false,
+    runSeededBoard: async () => {
+      boardCalled = true;
+    },
+  }));
+
+  const preset: Preset = {
+    name: "backend-lite",
+    entries: [
+      { packageRelPath: "apps/web", packageLabel: "web", script: "dev" },
+    ],
+  };
+
+  await launchPreset(preset, "/home/me/repo", {} as never);
+
+  expect(boardCalled).toBe(false);
+  expect(fallbackCalls).toHaveLength(1);
+  expect(fallbackCalls[0]!.reason).toContain("tmux");
+});
+
 // Pins the fix for the nested-board bug: a live board's resolve used to hit
 // launchPreset, which opened a SECOND seeded board on the tmux default --
 // silently abandoning a --herdr board's bg server and leaking its claim.

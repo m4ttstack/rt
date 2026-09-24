@@ -367,6 +367,7 @@ export const __test__ = {
  * Returns null when the user backs out of the package picker (ctrl-up).
  * Returns ScriptSelection when a script (or variation) is selected.
  * Returns QUEUE_LAUNCHED when the user built a multi-pick queue and launched it.
+ * Returns { seed } when a preset or queue resolved under the board option instead of launching.
  */
 async function selectPackageAndScript(
   worktreePath: string,
@@ -821,11 +822,16 @@ function fallbackReason(): string {
   return !interactive() ? "not running in an interactive terminal" : "tmux is not on PATH";
 }
 
+/** The command a queue item runs at launch: a variation's is a user-authored override, kept verbatim; a plain item's is rebuilt against the launch worktree, mirroring presetToSeed's `e.command ?? ...` fallback -- qi.command was detected at QUEUE time, against wherever it was queued, and would otherwise carry a stale package-manager prefix across a worktree switch. Shared by queueToSeed and the fallback items below. */
+function queueCommand(qi: QueuedItem, worktreePath: string): string {
+  return qi.variationName ? qi.command : `${detectPackageManager(join(worktreePath, qi.packageRelPath))} run ${qi.script}`;
+}
+
 /** Maps a launch queue's entries to runner seed rows, resolved against `worktreePath` -- the queue can be carried across a worktree switch, and qi.packagePath still points into the worktree where the item was queued. Pure (no spawning), so it stays directly testable. */
 export function queueToSeed(queue: QueuedItem[], worktreePath: string): SeedEntry[] {
   return queue.map((qi) => ({
     name: `${qi.script}${qi.variationName ? ` (${qi.variationName})` : ""}`,
-    command: qi.command,
+    command: queueCommand(qi, worktreePath),
     cwd: join(worktreePath, qi.packageRelPath),
     pkg: qi.packageLabel,
     repo: basename(worktreePath),
@@ -846,7 +852,7 @@ export async function launchQueue(
   } else {
     const items: LaunchItem[] = queue.map((qi) => ({
       label: launchLabel(qi.packageLabel, qi.script, qi.variationName),
-      command: qi.command,
+      command: queueCommand(qi, worktreePath),
       cwd: join(worktreePath, qi.packageRelPath),
     }));
     launchFallback(items, fallbackReason());
