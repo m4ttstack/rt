@@ -1,4 +1,4 @@
-import { describe, test, expect, spyOn } from "bun:test";
+import { afterEach, describe, test, expect, spyOn } from "bun:test";
 import { servicesList, servicesRegister, servicesRestart, type ServicesDeps } from "../services.ts";
 import { fakeProbes, fakeTray } from "../../lib/setup/__tests__/fakes.ts";
 
@@ -97,7 +97,30 @@ describe("servicesList", () => {
 });
 
 describe("servicesRegister", () => {
+  afterEach(() => { process.env.MATTSTACK_FLAVOR = "prod"; });
+
+  test("no --plist given, dev process: registers the dev app's plists", async () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
+    const calls: unknown[] = [];
+    const deps = baseDeps({
+      probes: fakeProbes({
+        home: "/home/x",
+        tray: fakeTray({
+          "POST /services/register": (body) => {
+            calls.push(body);
+            return { status: 200, json: { ok: true, results: [] } };
+          },
+        }),
+      }),
+    });
+
+    await servicesRegister(["--json"], {}, deps);
+
+    expect(calls).toEqual([{ plists: ["com.mattstack.daemon.dev.plist"] }]);
+  });
+
   test("no --plist given: registers the default plists (daemon only, deck not bundled) and warns once", async () => {
+    process.env.MATTSTACK_FLAVOR = "prod";
     const calls: unknown[] = [];
     const deps = baseDeps({
       probes: fakeProbes({

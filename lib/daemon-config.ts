@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { rtDir } from "./rt-paths.ts";
-import { currentMode } from "./dev-mode.ts";
+import { daemonLabelFor, processFlavor } from "./flavor.ts";
 import { getSetting } from "./settings/resolve.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -52,15 +52,9 @@ export const LAUNCHD_PLIST_PATH = join(
 );
 export const LAUNCHD_LABEL = "com.mattstack.daemon";
 
-/**
- * The launchd label of whichever daemon flavor is ACTIVE right now
- * (MAT-383 §1) — dev builds run under a separate label so the two flavors'
- * daemon agents never fight over the same job. currentMode() (lib/dev-mode.ts)
- * is the only flavor signal; dev-mode.json's existence is deliberately not
- * one (see that module's docblock).
- */
+/** The launchd label of this process's own flavor's daemon job. */
 export function activeLaunchdLabel(): string {
-  return currentMode() === "dev" ? "com.mattstack.daemon.dev" : "com.mattstack.daemon";
+  return daemonLabelFor(processFlavor());
 }
 export const TRAY_SOCK_PATH = join(RT_DIR, "tray.sock");
 // NOTE: NOTIFY_QUEUE_PATH removed (RT-48) — the notification queue is the

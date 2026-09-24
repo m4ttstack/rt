@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from "fs";
 import { basename, isAbsolute, join } from "path";
 import { markDaemonUninstalled } from "../daemon-config.ts";
-import { currentMode } from "../dev-mode.ts";
+import { processFlavor } from "../flavor.ts";
 import { DEFAULT_EXPOSED, isOurLink, unlink } from "../deps/links.ts";
 import { appBundlePath, resolveTool } from "../deps/resolve.ts";
 import { detectEditors, type DetectedEditor } from "../editors.ts";
@@ -115,7 +115,7 @@ interface ActionResult {
 }
 
 async function servicesUnregisterRun(ctx: ApplyContext): Promise<ActionResult> {
-  const { plists, deckOmitted } = servicePlists(currentMode(), ctx.p);
+  const { plists, deckOmitted } = servicePlists(processFlavor(), ctx.p);
   if (deckOmitted) ctx.log("services.unregister", "deck not bundled yet — only the daemon is unregistered");
 
   const reply = await ctx.need("services.unregister", { type: "app-unregister-services", plists });

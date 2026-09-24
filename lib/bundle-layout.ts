@@ -6,7 +6,7 @@
  */
 import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import { basename, dirname, isAbsolute, join } from "path";
-import { currentMode } from "./dev-mode.ts";
+import { processFlavor } from "./flavor.ts";
 import { DEV_TRAY_APP_BUNDLE, TRAY_APP_BUNDLE, installedTrayAppPath } from "./rt-paths.ts";
 
 export type DepsLockArchive = "raw" | "tar.gz" | "tar.xz" | "zip" | "npm" | "go-src" | "make-src";
@@ -161,8 +161,8 @@ export function bundleRootFromExec(execPath: string = process.execPath): string 
 let appBundleRootMemo: string | null = null;
 
 /**
- * The bundle rt belongs to: the one it runs from, else the installed active
- * flavor. Memoized per process on success only, and ONLY for the true
+ * The bundle rt belongs to: the one it runs from, else the installed bundle
+ * of this process's flavor. Memoized per process on success only, and ONLY for the true
  * default (`exists === existsSync`, i.e. a zero-arg call) — this sits on the
  * rt-ui picker/prompt hot path (`lib/ui/resolve.ts`'s `bundleRoot` seam →
  * appBundleRoot() with no args, on every spawn) and that path is the memo's
@@ -185,7 +185,7 @@ export function appBundleRoot(exists: (p: string) => boolean = existsSync): stri
   if (fromExec) {
     value = fromExec;
   } else {
-    const bundle = currentMode() === "dev" ? DEV_TRAY_APP_BUNDLE : TRAY_APP_BUNDLE;
+    const bundle = processFlavor() === "dev" ? DEV_TRAY_APP_BUNDLE : TRAY_APP_BUNDLE;
     value = installedTrayAppPath(bundle, exists);
   }
   if (usingDefaultExists && value) appBundleRootMemo = value;

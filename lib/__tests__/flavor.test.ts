@@ -17,9 +17,9 @@ describe("processFlavor", () => {
     expect(processFlavor({ MATTSTACK_FLAVOR: "" }, "dev")).toBe("dev");
   });
 
-  test("the test preload strips an ambient MATTSTACK_FLAVOR, so a source run reads dev", () => {
-    expect(process.env.MATTSTACK_FLAVOR).toBeUndefined();
-    expect(processFlavor()).toBe("dev");
+  test("the test preload pins prod whatever the ambient environment says", () => {
+    expect(process.env.MATTSTACK_FLAVOR).toBe("prod");
+    expect(processFlavor()).toBe("prod");
   });
 });
 

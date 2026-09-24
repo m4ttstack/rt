@@ -10,7 +10,7 @@
 
 import type { CommandContext } from "../lib/command-tree.ts";
 import { flagValues } from "../lib/cli-args.ts";
-import { currentMode } from "../lib/dev-mode.ts";
+import { processFlavor } from "../lib/flavor.ts";
 import { envelope } from "../lib/setup/contract.ts";
 import { UserActionableError, exitUserError } from "../lib/setup/errors.ts";
 import { servicePlists } from "../lib/setup/need.ts";
@@ -81,7 +81,7 @@ export async function servicesRegister(args: string[], _ctx: CommandContext = {}
   if (explicit.length > 0) {
     plists = explicit;
   } else {
-    const defaults = servicePlists(currentMode(), deps.probes);
+    const defaults = servicePlists(processFlavor(), deps.probes);
     plists = defaults.plists;
     if (defaults.deckOmitted) deps.warn("deck not bundled yet — only the daemon is registered");
   }

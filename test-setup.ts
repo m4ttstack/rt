@@ -26,8 +26,9 @@ guardTestDaemonEnv();
 process.env.RT_GH_TOKEN_FALLBACK = "off";
 
 // A pane spawned under a live daemon inherits its launchd MATTSTACK_FLAVOR,
-// which would otherwise decide every flavor-dependent path under test.
-delete process.env.MATTSTACK_FLAVOR;
+// and a source run is dev by build; pin the prod app's flavor, the one every
+// test assumes unless it sets its own.
+process.env.MATTSTACK_FLAVOR = "prod";
 
 // Every run gets its own directory under one shared parent, and TMPDIR
 // points into it, so nothing a test (or a child it spawns) makes under
