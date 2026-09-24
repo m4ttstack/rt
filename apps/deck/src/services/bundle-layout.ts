@@ -8,15 +8,25 @@
  */
 
 import { existsSync, realpathSync } from 'fs';
-import { basename, dirname, join } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
+
+/** The shim in the dev bundle runs deck under bun, where execPath is bun
+    itself, so it passes the bundle root explicitly. Trusted only when it
+    names a real bundle. */
+function bundleRootFromEnv(value: string | undefined): string | null {
+  if (!value || !isAbsolute(value) || !value.endsWith('.app')) return null;
+  return existsSync(join(value, 'Contents', 'Info.plist')) ? value : null;
+}
 
 /** The .app root containing execPath (resolved through symlinks), or null outside a bundle. */
-export function bundleRootFromExec(
-  execPath: string = process.execPath
-): string | null {
+export function bundleRootFromExec(execPath?: string): string | null {
+  if (execPath === undefined) {
+    const fromEnv = bundleRootFromEnv(process.env.DECK_BUNDLE_ROOT);
+    if (fromEnv) return fromEnv;
+  }
   let real: string;
   try {
-    real = realpathSync(execPath);
+    real = realpathSync(execPath ?? process.execPath);
   } catch {
     return null;
   }
@@ -32,9 +42,7 @@ export function bundleRootFromExec(
 }
 
 /** Absolute path to the bundle's Helpers directory, or null outside a bundle. */
-export function bundleHelpersDir(
-  execPath: string = process.execPath
-): string | null {
+export function bundleHelpersDir(execPath?: string): string | null {
   const root = bundleRootFromExec(execPath);
   return root ? join(root, 'Contents', 'Helpers') : null;
 }

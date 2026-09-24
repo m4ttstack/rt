@@ -8,17 +8,30 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterAll, beforeEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test';
 
 const scratch = mkdtempSync(join(tmpdir(), 'local-state-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-const { stateDir, adoptLegacyStateDir, claimApiInfo } =
-  await import('./state.ts');
+const {
+  stateDir,
+  adoptLegacyStateDir,
+  claimApiInfo,
+  writeApiInfo,
+  readApiRunMode,
+  runModeFromEnv,
+} = await import('./state.ts');
 
 beforeEach(() => {
   delete process.env.LOCAL_STATE_DIR;
   delete process.env.LOCAL_LEGACY_STATE_DIR;
+  delete process.env.DECK_RUN_MODE;
+  delete process.env.DECK_RUN_REASON;
+});
+
+afterEach(() => {
+  delete process.env.DECK_RUN_MODE;
+  delete process.env.DECK_RUN_REASON;
 });
 
 test("adoptLegacyStateDir renames the pre-rename dir into place when the new one doesn't exist yet", () => {
@@ -115,7 +128,11 @@ test('claimApiInfo writes api.json when none exists', async () => {
     answers: async () => true,
   });
   expect(wrote).toBe(true);
-  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
 });
 
 test('claimApiInfo overwrites an api.json whose pid is dead', async () => {
@@ -125,7 +142,11 @@ test('claimApiInfo overwrites an api.json whose pid is dead', async () => {
     answers: async () => true,
   });
   expect(wrote).toBe(true);
-  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
 });
 
 test('claimApiInfo overwrites an api.json whose live pid does not answer on its port', async () => {
@@ -135,7 +156,11 @@ test('claimApiInfo overwrites an api.json whose live pid does not answer on its 
     answers: async () => false,
   });
   expect(wrote).toBe(true);
-  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
 });
 
 test('claimApiInfo leaves an api.json alone while its writer is alive and answering', async () => {
@@ -160,5 +185,49 @@ test('claimApiInfo overwrites an api.json naming its own port, whose live pid mu
     answers: async () => true,
   });
   expect(wrote).toBe(true);
-  expect(apiJsonIn(dir)).toEqual({ port: 7940, pid: process.pid });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
+});
+
+test('runModeFromEnv maps the shim variables', () => {
+  expect(runModeFromEnv({})).toEqual({ runMode: 'standalone' });
+  expect(runModeFromEnv({ DECK_RUN_MODE: 'source' })).toEqual({
+    runMode: 'source',
+  });
+  expect(
+    runModeFromEnv({ DECK_RUN_MODE: 'pinned', DECK_RUN_REASON: 'bun missing' })
+  ).toEqual({ runMode: 'pinned', runReason: 'bun missing' });
+  expect(runModeFromEnv({ DECK_RUN_MODE: 'weird' })).toEqual({
+    runMode: 'standalone',
+  });
+});
+
+test('writeApiInfo records the run mode and readApiRunMode reads it back', () => {
+  const dir = seededStateDir();
+  process.env.DECK_RUN_MODE = 'pinned';
+  process.env.DECK_RUN_REASON = 'no deck dev.workingDirectory';
+  writeApiInfo(7940);
+  expect(readApiRunMode()).toEqual({
+    runMode: 'pinned',
+    runReason: 'no deck dev.workingDirectory',
+  });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'pinned',
+    runReason: 'no deck dev.workingDirectory',
+  });
+});
+
+test('an api.json without runMode reads as standalone', () => {
+  seededStateDir({ port: 7940, pid: 1 });
+  expect(readApiRunMode()).toEqual({ runMode: 'standalone' });
+});
+
+test('readApiRunMode is null with no api.json', () => {
+  seededStateDir();
+  expect(readApiRunMode()).toBeNull();
 });

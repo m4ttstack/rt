@@ -73,7 +73,11 @@ test('a deck that binds every port replaces a dead api.json with its own', async
       }
       await new Promise(r => setTimeout(r, 100));
     }
-    expect(recorded).toEqual({ port: 47973, pid: proc.pid });
+    expect(recorded).toEqual({
+      port: 47973,
+      pid: proc.pid,
+      runMode: 'standalone',
+    });
   } finally {
     proc.kill();
     await proc.exited;

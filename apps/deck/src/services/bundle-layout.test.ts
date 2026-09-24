@@ -92,3 +92,50 @@ test('bundleHelpersDir joins the resolved root with Contents/Helpers', () => {
 test('bundleHelpersDir returns null outside a bundle', () => {
   expect(bundleHelpersDir('/no/such/binary')).toBeNull();
 });
+
+test('an unargumented call honors a valid DECK_BUNDLE_ROOT', () => {
+  const { appRoot } = tmpApp();
+  const prev = process.env.DECK_BUNDLE_ROOT;
+  process.env.DECK_BUNDLE_ROOT = appRoot;
+  try {
+    expect(bundleRootFromExec()).toBe(appRoot);
+    expect(bundleHelpersDir()).toBe(join(appRoot, 'Contents', 'Helpers'));
+  } finally {
+    if (prev === undefined) delete process.env.DECK_BUNDLE_ROOT;
+    else process.env.DECK_BUNDLE_ROOT = prev;
+  }
+});
+
+test('an invalid DECK_BUNDLE_ROOT is ignored', () => {
+  const { appRoot } = tmpApp();
+  const prev = process.env.DECK_BUNDLE_ROOT;
+  try {
+    for (const bad of [
+      'relative/mattstack.app',
+      join(TMPDIR, 'not-a-bundle'),
+      join(TMPDIR, 'missing.app'),
+    ]) {
+      process.env.DECK_BUNDLE_ROOT = bad;
+      expect(bundleRootFromExec()).not.toBe(bad);
+    }
+    process.env.DECK_BUNDLE_ROOT = join(appRoot, 'Contents');
+    expect(bundleRootFromExec()).not.toBe(join(appRoot, 'Contents'));
+  } finally {
+    if (prev === undefined) delete process.env.DECK_BUNDLE_ROOT;
+    else process.env.DECK_BUNDLE_ROOT = prev;
+  }
+});
+
+test('an explicit execPath ignores DECK_BUNDLE_ROOT', () => {
+  const a = tmpApp();
+  const b = tmpApp();
+  const prev = process.env.DECK_BUNDLE_ROOT;
+  process.env.DECK_BUNDLE_ROOT = a.appRoot;
+  try {
+    expect(bundleRootFromExec(b.exec)).toBe(b.appRoot);
+    expect(bundleRootFromExec(join(TMPDIR, 'nowhere', 'deck'))).toBeNull();
+  } finally {
+    if (prev === undefined) delete process.env.DECK_BUNDLE_ROOT;
+    else process.env.DECK_BUNDLE_ROOT = prev;
+  }
+});

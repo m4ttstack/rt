@@ -54,12 +54,29 @@ export function logsDir(): string {
   return join(stateDir(), 'logs');
 }
 
+export type RunMode = 'source' | 'pinned' | 'standalone';
+
+/** DECK_RUN_MODE and DECK_RUN_REASON are set only by the dev bundle's shim;
+    a deck started any other way is standalone. */
+export function runModeFromEnv(env: Record<string, string | undefined>): {
+  runMode: RunMode;
+  runReason?: string;
+} {
+  if (env.DECK_RUN_MODE === 'source') return { runMode: 'source' };
+  if (env.DECK_RUN_MODE === 'pinned') {
+    return env.DECK_RUN_REASON
+      ? { runMode: 'pinned', runReason: env.DECK_RUN_REASON }
+      : { runMode: 'pinned' };
+  }
+  return { runMode: 'standalone' };
+}
+
 /** Where the CLI finds a running platform. Written at serve boot. */
 export function writeApiInfo(port: number): void {
   mkdirSync(stateDir(), { recursive: true });
   writeFileSync(
     join(stateDir(), 'api.json'),
-    JSON.stringify({ port, pid: process.pid })
+    JSON.stringify({ port, pid: process.pid, ...runModeFromEnv(process.env) })
   );
 }
 
@@ -71,6 +88,23 @@ export function readApiInfo(): { port: number; pid: number } | null {
     return Number.isInteger(parsed.port) && Number.isInteger(parsed.pid)
       ? { port: parsed.port, pid: parsed.pid }
       : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readApiRunMode(): {
+  runMode: RunMode;
+  runReason?: string;
+} | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(join(stateDir(), 'api.json'), 'utf8')
+    );
+    return runModeFromEnv({
+      DECK_RUN_MODE: parsed.runMode,
+      DECK_RUN_REASON: parsed.runReason,
+    });
   } catch {
     return null;
   }
