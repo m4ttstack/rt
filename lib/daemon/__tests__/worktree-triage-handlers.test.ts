@@ -410,7 +410,7 @@ describe("triage action verbs", () => {
   test("dispose anyway refuses a run it can't rule out, and one it sees going live", async () => {
     const pending: RunningRunScan[] = [];
     const scan = (): RunningRunScan => pending.shift() ?? { kind: "none" };
-    const h = buildHandlers(entries, liveRuns, liveCwds, { findRunningRunByWorktree: scan });
+    const h: any = buildHandlers(entries, liveRuns, liveCwds, { findRunningRunByWorktree: scan });
     const rec = stuck("xray", { push: false });
     const r = (await h["worktree:triage"]({ repoName })).data.rows.find((x: any) => x.tree === "xray");
     expect(r.group).toBe("only-copy");
