@@ -238,7 +238,7 @@ export async function disposeTree(
     //    the local head diverged from whatever landed, so every local ancestry
     //    or patch-id check against the TARGET reads "unpushed" for work that
     //    demonstrably merged. But merged-state alone is trusted only when the
-    //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead) —
+    //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead)...
     //    a reused branch's stale merged entry must fall through to the anchor,
     //    which a rebased-then-merged branch escapes only via the
     //    patch-identical check below (see patchIdenticalToMr).

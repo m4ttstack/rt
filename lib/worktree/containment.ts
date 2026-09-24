@@ -21,7 +21,7 @@ async function hasObject(treePath: string, sha: string): Promise<boolean> {
  * has no piped-stdin support, so the same SIGTERM-then-SIGKILL escalation is
  * reimplemented here. Spawn failure or a blown deadline fails closed (null).
  */
-async function runPatchId(treePath: string, input: string): Promise<string | null> {
+export async function runPatchId(treePath: string, input: string): Promise<string | null> {
   // A local no-arg closure, not `Bun.spawn(...)` inline under a pre-declared
   // `let proc: ReturnType<typeof Bun.spawn>` -- that widens stdin's inferred
   // type to `number | FileSink` and loses the FileSink narrowing the write
@@ -46,9 +46,16 @@ async function runPatchId(treePath: string, input: string): Promise<string | nul
 
   const captured: Promise<string | null> = (async () => {
     try {
+      // Started before the write settles: draining stdout only after stdin
+      // is fully written risks the classic pipe deadlock if the child ever
+      // interleaves reading input with writing output faster than a
+      // then-unread pipe can hold, since the child would then block on its
+      // own stdout write, stop reading stdin, and this write would never
+      // resolve either.
+      const reading = Promise.all([new Response(proc.stdout as ReadableStream).text(), proc.exited]);
       await proc.stdin.write(input);
       await proc.stdin.end();
-      const [out, code] = await Promise.all([new Response(proc.stdout as ReadableStream).text(), proc.exited]);
+      const [out, code] = await reading;
       return code === 0 ? out : null;
     } catch {
       return null;
