@@ -1,31 +1,30 @@
-import { getSetting } from '@mattstack/rt-client';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-// rt's machine-flavor setting, written by `rt settings dev-mode`. Read through
-// rt-client only, never by touching ~/.mattstack/rt files directly.
-const MODE_KEY = 'mattstack.mode';
-const DEV_MODE_TTL_MS = 2000;
+import { bundleRootFromExec } from '../services/bundle-layout.ts';
 
-function defaultRead(): string | undefined {
-  return getSetting<string>(MODE_KEY).value;
-}
+// rt-tray's build.sh stamps MSDevBuild into both flavors' Info.plist: true in
+// mattstack-dev.app, false in mattstack.app. The running bundle is the only
+// dev/prod switch; outside a bundle deck runs as production (fail closed).
+const DEV_BUILD = /<key>MSDevBuild<\/key>\s*<true\s*\/>/;
 
-let cached: { at: number; dev: boolean } | null = null;
-
-export function resetDevModeCache(): void {
-  cached = null;
-}
-
-export function isDevMode(
-  deps: { read?: () => string | undefined } = {}
+export function isDevBundle(
+  bundleRoot: string | null = bundleRootFromExec()
 ): boolean {
-  const now = Date.now();
-  if (cached && now - cached.at < DEV_MODE_TTL_MS) return cached.dev;
-  let dev = false;
+  if (!bundleRoot) return false;
   try {
-    dev = (deps.read ?? defaultRead)() === 'dev';
+    return DEV_BUILD.test(
+      readFileSync(join(bundleRoot, 'Contents', 'Info.plist'), 'utf8')
+    );
   } catch {
-    dev = false; // fail closed: a failed read counts as production
+    return false;
   }
-  cached = { at: now, dev };
-  return dev;
+}
+
+let memo: boolean | undefined;
+
+/** The running process's flavor, which cannot change without a restart. */
+export function isDevMode(): boolean {
+  memo ??= isDevBundle();
+  return memo;
 }

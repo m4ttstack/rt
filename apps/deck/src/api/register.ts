@@ -55,7 +55,6 @@ import {
   type ServiceSpec,
 } from '../services/manager.ts';
 import { renderedEnvironment } from '../services/plist.ts';
-import { resetDevModeCache } from './dev-mode.ts';
 import { getPlatformSettings } from './platform-settings.ts';
 import { logsDir } from './state.ts';
 import { reconcileMattstackTld } from './tld-reconcile.ts';
@@ -427,10 +426,10 @@ export async function restartManagedApps(
 }
 
 /**
- * Selective restart behind a mattstack dev/prod mode flip: rt pokes this after
- * `rt settings dev-mode` changes, so every managed app must re-resolve its
- * shape, but only the ones whose resolved command actually moved get torn
- * down and rebuilt. The diff is against the installed plist (ProgramArguments,
+ * Selective restart after the dev/prod flavor may have moved: deck runs this
+ * at boot, since switching between mattstack-dev.app and mattstack.app starts
+ * a different deck, so every managed app must re-resolve its shape, but only
+ * the ones whose resolved command actually moved get torn down and rebuilt. The diff is against the installed plist (ProgramArguments,
  * WorkingDirectory, EnvironmentVariables), not any last-resolved value on the
  * record, so a flip and a flip-back reads as the same "unchanged" outcome
  * both times.
@@ -438,10 +437,6 @@ export async function restartManagedApps(
 export async function reresolveManagedApps(
   drivers: Drivers
 ): Promise<FlowResult> {
-  // rt writes mattstack.mode then pokes this route immediately; a status poll
-  // in the preceding 2s can have already warmed isDevMode's cache with the
-  // OLD mode, which would resolve every shape below unchanged.
-  resetDevModeCache();
   const restarted: string[] = [];
   const unchanged: string[] = [];
   const failed: Array<{ name: string; error: string }> = [];

@@ -64,9 +64,8 @@ const cannedAccessFetch = (async (
   return Response.json({ success: true, result: { id: 'pol-1' } });
 }) as typeof fetch;
 
-// A dev-gated server: devMode: () => true unlocks the action-command routes
-// regardless of the real machine's mattstack.mode, which this test environment
-// can never set to "dev" (rt-client 0.3.0 does not register that key).
+// A dev-gated server: devMode: () => true unlocks the action-command routes,
+// which a test process (never inside mattstack-dev.app) would otherwise refuse.
 const DEV_PORT = 18923;
 let devServer: ReturnType<typeof startApi>;
 
