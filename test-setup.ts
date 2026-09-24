@@ -25,6 +25,10 @@ guardTestDaemonEnv();
 // the GitHub token fallback (lib/github-token.ts) needs its own off switch.
 process.env.RT_GH_TOKEN_FALLBACK = "off";
 
+// A pane spawned under a live daemon inherits its launchd MATTSTACK_FLAVOR,
+// which would otherwise decide every flavor-dependent path under test.
+delete process.env.MATTSTACK_FLAVOR;
+
 // Every run gets its own directory under one shared parent, and TMPDIR
 // points into it, so nothing a test (or a child it spawns) makes under
 // tmpdir() lands in the machine's TMPDIR: hundreds of thousands of leftover
