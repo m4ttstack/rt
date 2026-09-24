@@ -987,14 +987,25 @@ async function connectCredential(id: Integration, args: string[], deps: ConnectD
 
   // A team can declare a self-hosted forge/switchboard, but that declaration
   // is never sent a credential on its own — the user confirms it once, here,
-  // by passing --host; ctxFor then only ever trusts the confirmed value.
-  const hostFlag = id === "gitlab" || id === "switchboard" ? flagValue(args, "--host") : undefined;
+  // by passing --host (or, for switchboard, by redeeming an invite that
+  // carries a board token, see lib/team/join.ts); ctxFor then only ever
+  // trusts the confirmed value.
+  let hostFlag = id === "gitlab" || id === "switchboard" ? flagValue(args, "--host") : undefined;
+  // The app's Confirm sheet has no flag to pass, so switchboard (the one
+  // fieldless integration) reads the host from the same stdin channel every
+  // credential field uses: a `host` field, or a bare string. A TTY caller
+  // still passes --host.
+  if (hostFlag === undefined && id === "switchboard" && !deps.isTTY()) {
+    const input = await deps.stdin();
+    const given = typeof input === "string" ? input : isPlainObject(input) && typeof input.host === "string" ? input.host : "";
+    if (given.trim() !== "") hostFlag = given.trim();
+  }
   if (hostFlag !== undefined && !hostFlagValid(id, hostFlag)) {
     throw new UserActionableError(
       "bad-host",
       id === "gitlab"
         ? `--host must be a bare hostname (e.g. gitlab.example.com), got "${hostFlag}"`
-        : `--host must be a valid https URL (e.g. https://switchboard.example.com), got "${hostFlag}"`,
+        : `the switchboard URL must be a valid https URL (e.g. https://switchboard.example.com), got "${hostFlag}"`,
     );
   }
   const overrides = overridesFor(deps);

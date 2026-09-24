@@ -104,6 +104,17 @@ describe("mcpTools", () => {
       expect(tool.description).toContain("rt gate wait");
     });
 
+    // A form gate told to background a wait never reaches the pane's form:
+    // the wait is the wait branch only.
+    test("description branches on the returned presentation: form asks in the pane, only wait backgrounds rt gate wait", () => {
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      expect(tool.description).toContain("act on the returned presentation");
+      expect(tool.description).toContain("form: ask it in the pane with AskUserQuestion");
+      expect(tool.description).toContain("rt gate answer <id> --answers <json> --by pane");
+      expect(tool.description).toContain("wait: run `rt gate wait <id>` as background bash and end the turn");
+      expect(tool.description.indexOf("rt gate wait")).toBeGreaterThan(tool.description.indexOf("wait:"));
+    });
+
     // RT-177: the description is where a caller learns not to self-censor the
     // context, which is what produced the bare form in the board.
     test("description tells callers to always pass context and that oversize is reported back", () => {

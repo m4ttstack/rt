@@ -281,8 +281,10 @@ rt settings extension          # install the rt-context extension into local edi
 rt settings dev-mode           # toggle between local source and the installed binary
 ```
 
-Every key any mattstack app reads goes through one settings resolver, with
-user, team, and machine scopes layered weakest first:
+Every key any mattstack app reads goes through one settings resolver, which
+layers scopes as `default < team < user < team.repo < user.repo < machine <
+machine.repo`, so a user value outranks the team default and a machine value
+outranks both:
 
 ```bash
 rt settings list                            # every registered setting and its resolved value
@@ -455,7 +457,9 @@ Issues and pull requests are welcome at
 
 Before opening one:
 
-- Run `bun run test`, `bunx tsc --noEmit`, and `bun run picker:check`.
+- Run `bun run test:all`, `bunx tsc --noEmit`, and `bun run picker:check`.
+  `test:all` runs the unit, e2e, and pty suites; `bun run test` alone skips
+  the last two.
 - Run `scripts/repo-purity.sh`. This repo is public, and the gate keeps
   employer, customer, and internal-system references out of the tracked tree.
   Use neutral placeholders such as `acme`, `ACME-1234`, and

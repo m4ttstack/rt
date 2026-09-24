@@ -50,6 +50,7 @@ export {
   reconcilerClear,
   gateOpen,
   gateAsk,
+  gateForkCheck,
   gateAnswer,
   gateWait,
   gateList,

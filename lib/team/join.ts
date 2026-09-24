@@ -256,6 +256,8 @@ export interface JoinRedeemSeams {
   writeLocalSecret: (key: string, value: string) => Promise<void>;
   /** Machine-scope settings write. The board reads its switchboard URL only from `board.switchboardUrl`, so a stored token with no URL there peers nothing. */
   writeMachineSetting: (key: string, value: unknown) => void;
+  /** User-scope settings write, for the `rt.integrations` latch rt's own setup rows read. */
+  writeUserSetting: (key: string, value: unknown) => void;
   warn: (message: string) => void;
 }
 
@@ -274,6 +276,10 @@ function defaultWarn(message: string): void {
   console.error(message);
 }
 
+function sameUrl(a: string, b: string): boolean {
+  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+}
+
 /** Writes the URL the stored switchboard token belongs to where the board looks for it. False (with a warning) when the write fails, so peering is never reported applied for a board that cannot reach its switchboard. */
 function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
   try {
@@ -282,6 +288,33 @@ function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
   } catch (err) {
     seams.warn(`board peering: stored the switchboard token but could not set board.switchboardUrl (${err instanceof Error ? err.message : String(err)})`);
     return false;
+  }
+}
+
+/**
+ * Confirms the switchboard URL for rt's own setup rows (`account.switchboard`
+ * is required whenever the team declares one, and reads unconfirmed until
+ * `rt.integrations.switchboardUrl` names it). Redeeming the invite is the
+ * user's own act, and a token sealed into it or minted against the declared
+ * URL is what `rt setup switchboard connect --host` records by hand; the
+ * probe behind the row is unauthenticated either way. A URL the user
+ * confirmed to something else is never overwritten, and a failed write only
+ * costs that row: the board's own URL and token are already in place.
+ */
+function confirmSwitchboardForRt(seams: JoinRedeemSeams, url: string): void {
+  const remedy = `rt setup switchboard connect --host ${url}`;
+  try {
+    const overrides = readUserIntegrationOverrides({ read: seams.read, warn: seams.warn });
+    // A latch the rows themselves would ignore (empty, not https) is as good as unset.
+    const confirmed = overrides.switchboardUrl && isValidHttpsUrl(overrides.switchboardUrl) ? overrides.switchboardUrl : undefined;
+    if (confirmed !== undefined && sameUrl(confirmed, url)) return;
+    if (confirmed !== undefined) {
+      seams.warn(`switchboard: rt's setup rows are confirmed for ${confirmed}, not this team's ${url}; leaving that alone. To switch: ${remedy}`);
+      return;
+    }
+    seams.writeUserSetting("rt.integrations", { ...overrides, switchboardUrl: url });
+  } catch (err) {
+    seams.warn(`switchboard: could not confirm ${url} for rt's setup rows (${err instanceof Error ? err.message : String(err)}); confirm it yourself: ${remedy}`);
   }
 }
 
@@ -295,6 +328,7 @@ export function realJoinRedeemSeams(): JoinRedeemSeams {
     forgeToken: storedForgeToken,
     writeLocalSecret: (key, value) => writeSecret("rt", key, value, { ageKeySeam, execSeam: createRealSecretsExecSeam() }),
     writeMachineSetting: (key, value) => setSetting(key, value, "machine"),
+    writeUserSetting: (key, value) => setSetting(key, value, "user"),
     warn: defaultWarn,
   };
 }
@@ -488,6 +522,7 @@ export async function joinRedeem(
         await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
         if (pointBoardAt(seams, declaredUrl)) peering = "applied";
         else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
+        confirmSwitchboardForRt(seams, declaredUrl);
       } catch (err) {
         seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
       }
@@ -521,6 +556,7 @@ export async function joinRedeem(
             await seams.writeLocalSecret("switchboardToken", token);
             if (pointBoardAt(seams, declaredUrl)) peering = "applied";
             else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
+            confirmSwitchboardForRt(seams, declaredUrl);
           }
         }
       }

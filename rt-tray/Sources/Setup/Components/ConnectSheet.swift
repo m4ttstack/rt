@@ -6,8 +6,16 @@ struct ConnectSheet: View {
     let fields: [ActionField]
     let alternatives: [ActionAlternative]
     let onSubmit: ([String: String]?, String?) -> Void   // (values, alternativeId)
-    @State private var values: [String: String] = [:]
+    @State private var values: [String: String]
     @Environment(\.dismiss) private var dismiss
+
+    init(title: String, fields: [ActionField], alternatives: [ActionAlternative],
+         onSubmit: @escaping ([String: String]?, String?) -> Void) {
+        self.title = title; self.fields = fields; self.alternatives = alternatives; self.onSubmit = onSubmit
+        var prefilled: [String: String] = [:]
+        for f in fields { if let v = f.value, !v.isEmpty { prefilled[f.name] = v } }
+        _values = State(initialValue: prefilled)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

@@ -65,7 +65,7 @@ export function parseOriginUrl(gitConfig: string): string | null {
   return match ? match[1]! : null;
 }
 
-/** `rt.integrations` (user scope) — the only source a credential fetch or a reachability probe may treat as a confirmed destination; a joined team's own declaration (`TeamSnapshot.integrations`) is shown to the user but never substitutes for this. Written only by an explicit `rt setup <id> connect --host` that has already re-validated a real credential against the host. */
+/** `rt.integrations` (user scope) — the only source a credential fetch or a reachability probe may treat as a confirmed destination; a joined team's own declaration (`TeamSnapshot.integrations`) is shown to the user but never substitutes for this. Written by an explicit `rt setup <id> connect --host` that has re-validated the host, and, for `switchboardUrl` only and only when unset, by `rt team join` once an invite the user redeemed has stored a board token for the declared URL. */
 export interface UserIntegrationOverrides {
   forgeHost?: string;
   switchboardUrl?: string;

@@ -387,7 +387,9 @@ export function createGateHandlers(
         per-worktree match. */
     runWorktree?: (runId: string) => string | null;
   } = {},
-): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
+): GateSiblingHandlers
+  & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> }
+  & { "gate:fork-check": (payload: unknown) => Promise<CommandResult<"gate:fork-check">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
   const runSpawnedBy = deps.runSpawnedBy;
@@ -825,5 +827,68 @@ export function createGateHandlers(
     };
   };
 
-  return { ...handlers, "gate:ask": gateAsk };
+  // Rules run cheapest first: the launch subject and the open-gate scans
+  // read gates.db alone, while the session rule walks every run DB.
+  //
+  // Parked counts for the launch subject only; every other rule takes open
+  // gates, since a parked gate is not live until its owner resumes the pane.
+  // A pane-attention gate is the reconciler reporting on the pane, filed
+  // under the launch subject, never a question the pane may ask, so no rule
+  // counts one.
+  //
+  // herdr reuses pane ids and a dead pane's gate stays open, so the pane
+  // rule's real guard is the session: when both sides carry one, the gate's
+  // nudge session must be one of the caller's. Executor "gone" is a weaker
+  // extra: the reconciler clears it once any live agent resolves to the
+  // gate's pane, which a reused pane does. Delivery outcomes are no signal
+  // here: they are recorded only after an answer or close, so no open row
+  // carries one. Only form gates count, so a wait gate never licenses an
+  // in-pane form.
+  const gateForkCheck = async (rawPayload: unknown): Promise<CommandResult<"gate:fork-check">> => {
+    const payload = rawPayload as Commands["gate:fork-check"]["payload"] | undefined;
+    const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    const sessionIds = [...new Set(
+      (Array.isArray(payload?.sessionIds) ? payload!.sessionIds : []).map(text).filter((s): s is string => s !== undefined),
+    )];
+    const paneId = text(payload?.paneId);
+    const launchSubject = text(payload?.subject);
+    const worktrees = new Set(
+      (Array.isArray(payload?.worktrees) ? payload!.worktrees : []).filter((w): w is string => typeof w === "string" && w.length > 0),
+    );
+    const allowOn = (match: "session" | "subject" | "pane" | "worktree", gate: GateRow): CommandResult<"gate:fork-check"> =>
+      ({ ok: true as const, data: { allow: true, match, gateId: gate.id } });
+    const askable = (g: GateRow): boolean => g.kind !== "pane-attention";
+
+    if (launchSubject) {
+      const hit = store.list({ subjectPrefix: launchSubject }).gates
+        .find((g) => g.subject === launchSubject && askable(g) && (g.status === "open" || g.status === "parked"));
+      if (hit) return allowOn("subject", hit);
+    }
+
+    const openGates = store.list({ open: true }).gates.filter(askable);
+    const byPane = paneId
+      ? openGates.find((g) =>
+        g.origin?.presentation === "form"
+        && (g.origin.paneId || g.pane) === paneId
+        && g.executor !== "gone"
+        && !(sessionIds.length > 0 && g.nudge?.session && !sessionIds.includes(g.nudge.session)))
+      : undefined;
+    if (byPane) return allowOn("pane", byPane);
+    const byTree = openGates.find((g) =>
+      g.subject.startsWith("run:") && g.origin?.worktree !== undefined && worktrees.has(g.origin.worktree));
+    if (byTree) return allowOn("worktree", byTree);
+
+    let askSubject: string | undefined;
+    for (const sessionId of sessionIds) {
+      const resolved = await resolveSubject({ sessionId });
+      if (!resolved.ok) continue;
+      askSubject ??= resolved.subject;
+      const bySession = openGates.find((g) => g.subject === resolved.subject);
+      if (bySession) return allowOn("session", bySession);
+    }
+
+    return { ok: true as const, data: { allow: false, ...(askSubject ? { subject: askSubject } : {}) } };
+  };
+
+  return { ...handlers, "gate:ask": gateAsk, "gate:fork-check": gateForkCheck };
 }

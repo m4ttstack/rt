@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import {
-  gateOpen, gateAsk, gateAnswer, gateWait, gateList, gatePark, gateClose, gateSubscribe, gateUnsubscribe,
+  gateOpen, gateAsk, gateForkCheck, gateAnswer, gateWait, gateList, gatePark, gateClose, gateSubscribe, gateUnsubscribe,
   gateSubscriptions,
 } from "../src/client.ts";
 import type { GateRow, GateSubscription } from "../src/commands.ts";
@@ -47,6 +47,27 @@ describe("gateAsk", () => {
     const res = await gateAsk(payload, { sockPath: sock });
     expect(res.ok).toBe(true);
     expect(seen).toEqual([{ cmd: "gate:ask", payload }]);
+  });
+});
+
+describe("gateForkCheck", () => {
+  test("carries every identity field through to the daemon payload, types the reply", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "gate:fork-check": { ok: true, data: { allow: true, match: "pane", gateId: "gt-1" } },
+    });
+    stops.push(stop);
+    const payload = { sessionIds: ["sess-hook", "sess-env"], paneId: "wKW:p2", subject: "herd:x/y", worktrees: ["/wt/a", "/private/wt/a"] };
+    const res = await gateForkCheck(payload, { sockPath: sock });
+    expect(res.ok).toBe(true);
+    expect(res.data).toEqual({ allow: true, match: "pane", gateId: "gt-1" });
+    expect(seen).toEqual([{ cmd: "gate:fork-check", payload }]);
+  });
+
+  test("omits absent fields rather than sending them undefined", async () => {
+    const { sock, seen, stop } = fakeDaemon({ "gate:fork-check": { ok: true, data: { allow: false } } });
+    stops.push(stop);
+    await gateForkCheck({ subject: "herd:x/y" }, { sockPath: sock });
+    expect(seen).toEqual([{ cmd: "gate:fork-check", payload: { subject: "herd:x/y" } }]);
   });
 });
 

@@ -5,137 +5,26 @@
 # this hook's env; RT_DAEMON_SOCK reaches `rt` itself by plain inheritance
 # (packages/rt-client/src/transport.ts honors it).
 #
-# Decision order: daemon unreachable -> allow (degraded mode stays legal);
-# an open or parked gate already exists for the subject -> allow (that is
-# the wrapper's native-form face of a real gate); otherwise -> deny, so an
-# improvised fork must become a gate instead.
+# The decision is `rt gate fork-check`'s, made daemon-side with the subject
+# resolver `rt gate ask` files gates under, so the two cannot drift apart.
+# This wrapper only keeps the fallbacks that must hold when rt cannot give a
+# verdict at all: no rt, a crash, or an rt that predates the verb all allow
+# (degraded mode stays legal).
 set -u
-
-# Claude Code sends the tool-call payload on stdin; the decision never reads
-# it, but leaving it undrained can block the caller on a full pipe.
-cat >/dev/null 2>&1
 
 allow() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}\n'
   exit 0
 }
 
-# One JSON string escaper for both consumers: the deny payload (where a raw
-# control byte is invalid JSON) and the grep -F patterns, which compare
-# against rows `commands/gate.ts` printed with JSON.stringify -- so the
-# spelling here has to be JSON.stringify's own, byte for byte: \b \f \n \r \t
-# and \u00XX for every other C0 control.
-#
-# awk, not sed: BSD sed reads `\t` in a pattern as a literal `t`. LC_ALL=C
-# makes length/substr walk BYTES, so a multi-byte UTF-8 character passes
-# through a byte at a time and comes out unchanged, exactly as JSON.stringify
-# leaves it. The appended "." is a sentinel: awk's records drop a FINAL
-# newline in the value (there is no record after it to join), and the
-# sentinel turns that newline into an interior one; escaping never rewrites
-# a plain ".", so stripping the last byte restores the value.
-json_escape() {
-  escaped=$(printf '%s.' "$1" | LC_ALL=C awk '
-    BEGIN {
-      spelled[8] = "\\b"; spelled[9] = "\\t"; spelled[12] = "\\f"; spelled[13] = "\\r"
-      for (i = 1; i <= 31; i++) {
-        c = sprintf("%c", i)
-        esc[c] = (i in spelled) ? spelled[i] : sprintf("\\u%04x", i)
-      }
-    }
-    {
-      if (NR > 1) printf "\\n"
-      n = length($0)
-      for (i = 1; i <= n; i++) {
-        c = substr($0, i, 1)
-        if (c == "\\") printf "\\\\"
-        else if (c == "\"") printf "\\\""
-        else if (c in esc) printf "%s", esc[c]
-        else printf "%s", c
-      }
-    }
-  ')
-  printf '%s' "${escaped%.}"
-}
-
-deny() {
-  # The two backslash-quote pairs put a literal `"` around the subject in
-  # the decoded JSON string; RT_GATE_SUBJECT itself is escaped first so an
-  # embedded quote, backslash, or control character can never break out of
-  # the JSON string.
-  esc_subject=$(json_escape "$RT_GATE_SUBJECT")
-  # shellcheck disable=SC2016 # %s is a printf format spec, not a shell expansion
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate ask --questions <json>` (the daemon resolves this pane'\''s subject on its own; this pane'\''s recorded subject is \\"%s\\"; add --context for the decision material), then background `rt gate wait <id>` per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
-  exit 0
-}
+# Read the whole payload before any exit path: leaving stdin undrained can
+# block Claude Code on a full pipe.
+payload=$(cat 2>/dev/null)
 
 command -v rt >/dev/null 2>&1 || allow
-[ -n "${RT_GATE_SUBJECT:-}" ] || allow
 
-# `timeout`/`gtimeout` aren't guaranteed (BSD/macOS ships neither by
-# default); fall back to no wrapper rather than hand-rolling a POSIX sh
-# watchdog -- `rt gate list` already carries its own daemon-request timeout.
-TIMEOUT_BIN=""
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="gtimeout"
-fi
-
-if [ -n "$TIMEOUT_BIN" ]; then
-  gates_json=$("$TIMEOUT_BIN" 5 rt gate list --subject-prefix "$RT_GATE_SUBJECT" 2>/dev/null) || allow
-else
-  gates_json=$(rt gate list --subject-prefix "$RT_GATE_SUBJECT" 2>/dev/null) || allow
-fi
-[ -n "$gates_json" ] || allow
-
-# `rt gate list` has no exact-subject filter, only a prefix one, so a
-# same-prefix sibling subject (e.g. "mr:1" vs "mr:10") can share this
-# payload. Split gate ROWS onto their own line before grepping so a
-# sibling's status can never be attributed to this subject's gate. Anchor
-# the split on `{"id":"...","subject":` (a gate row's own first two
-# fields, in that order) rather than on every `},{` boundary: a multi-
-# question gate's own questions/options arrays contain `},{` boundaries
-# of their own (and each question object starts with its own "id" field
-# too), so splitting there would land a row's subject and status on
-# different lines and misread every multi-question gate as unanswerable.
-gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
-subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$(json_escape "$RT_GATE_SUBJECT")\"")
-
-printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
-
-# A pipeline gate opened by a run in THIS worktree is this worker's own
-# gate under a run: subject the exact-subject check cannot see (RT-162
-# finding 2). Same row-split discipline as above; worktree matching is
-# exact-string on the JSON-escaped cwd, checked for both $PWD and the
-# physical pwd so a symlinked worktree path still matches.
-#
-# The match is per-worktree, not per-caller, on purpose: any pane in a tree
-# with an open run gate inherits this allow. Narrowing it to the gate's own
-# origin.paneId would deny a relaunched pane whose gate still carries the
-# pane id it had before the relaunch, and this hook degrades to allow
-# everywhere else it cannot verify something.
-if [ -n "$TIMEOUT_BIN" ]; then
-  run_json=$("$TIMEOUT_BIN" 5 rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
-else
-  run_json=$(rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
-fi
-# Empty output is unverifiable, and unverifiable degrades to allow, the
-# same posture as the first list branch ([ -n "$gates_json" ] || allow).
-# A daemon that really has zero run gates prints a non-empty envelope
-# ({"ok":true,"gates":[],"cursor":0}), which correctly falls through.
-[ -n "$run_json" ] || allow
-# --open is a server-side status=open filter (not "unanswered, unparked" as
-# a whole -- parked rows are excluded), so a parked run gate never appears
-# here and cannot allow through this branch: it is deliberately not-live,
-# the same contract a form-presentation gate enforces. The owner resumes
-# the pane first. This also keeps the page under the daemon's un-flagged
-# list cap (500 rows, oldest first): --open bounds it to the live count
-# instead of the whole run: history, which would otherwise grow past the
-# cap and silently stop seeing the newest (live) row.
-run_lines=$(printf '%s' "$run_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
-for dir in "$PWD" "$(pwd -P)"; do
-  esc_dir=$(json_escape "$dir")
-  printf '%s\n' "$run_lines" | grep -F "\"worktree\":\"$esc_dir\"" | grep -Eq '"status":"open"' && allow
-done
-
-deny
+decision=$(printf '%s' "$payload" | rt gate fork-check 2>/dev/null) || allow
+case "$decision" in
+  '{"hookSpecificOutput":'*) printf '%s\n' "$decision" ;;
+  *) allow ;;
+esac

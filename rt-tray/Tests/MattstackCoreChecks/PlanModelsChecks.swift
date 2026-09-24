@@ -42,6 +42,15 @@ let planModelsChecks: [Check] = [
         c.expectEqual(plan.requiredMissing, ["perm.fda", "account.gitlab"])
         c.expectEqual(plan.canInstall, false)
     },
+    Check("a connect field carries the app's prefill value, and reads nil when rt sends none") { c in
+        let prefilled = try JSONDecoder().decode(
+            ActionField.self,
+            from: Data(#"{"name":"host","label":"Switchboard URL","secret":false,"value":"https://sw.example.com"}"#.utf8))
+        c.expectEqual(prefilled.value, "https://sw.example.com")
+        let bare = try JSONDecoder().decode(ActionField.self, from: Data(#"{"name":"token","label":"Token"}"#.utf8))
+        c.expectEqual(bare.value, nil)
+        c.expectEqual(bare.secret, false)
+    },
     Check("unknown action type, status, and kind degrade instead of failing the whole plan") { c in
         func chromeRow(_ json: String) throws -> PlanRow {
             let plan = try JSONDecoder().decode(Plan.self, from: Data(json.utf8))

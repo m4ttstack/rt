@@ -14,7 +14,7 @@
  */
 import { join } from "path";
 import type { ApplyContext, StepDef, StepOutcome } from "../apply.ts";
-import { missingPermissions, readClaudeSettings, withPermissions, writeClaudeSettings } from "../claude-permissions.ts";
+import { missingDefaultMode, missingPermissions, readClaudeSettings, withPermissions, writeClaudeSettings } from "../claude-permissions.ts";
 import type { Probes } from "../probes.ts";
 import { claudeConfigDirs } from "../tools-install.ts";
 import { toFailedOutcome } from "./step-utils.ts";
@@ -39,7 +39,7 @@ export function applyBaselinePermissions(p: Pick<Probes, "readFile" | "exists" |
   // file is there, and the write below replaces whatever is at the path.
   const settings = read.ok ? read.settings : {};
   const toAdd = missingPermissions(settings);
-  if (toAdd.length === 0) return { path, wrote: false };
+  if (toAdd.length === 0 && !missingDefaultMode(settings)) return { path, wrote: false };
 
   writeClaudeSettings(p, path, withPermissions(settings, toAdd));
   return { path, wrote: true };
