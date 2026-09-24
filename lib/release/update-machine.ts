@@ -471,7 +471,26 @@ export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): 
   if (kick.exitCode !== 0) {
     return { sha, result: errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}, but \`${kickstart.join(" ")}\` failed: ${execTail(kick)}`) };
   }
-  return { sha, result: okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}; deck helper restarted`) };
+
+  // Managed apps run the bundle's Helpers/bun; one still running the binary
+  // deleted with the old bundle loses its privacy grants (EPERM reading
+  // ~/Documents). Retry only while the restarted deck is not answering:
+  // restart --managed also fails when one app fails, and retrying that would
+  // re-kill every healthy app each time.
+  const deckCli = `${DEV_APP_PATH}/Contents/Helpers/deck`;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    if ((await seams.exec([deckCli, "list", "--json"])).exitCode === 0) break;
+    await seams.sleep(1000);
+  }
+  const managed: [string, ...string[]] = [deckCli, "restart", "--managed"];
+  const restart = await seams.exec(managed);
+  if (restart.exitCode !== 0) {
+    return {
+      sha,
+      result: errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}; deck helper restarted, but \`${managed.join(" ")}\` failed: ${execTail(restart)}`),
+    };
+  }
+  return { sha, result: okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}; deck helper and managed apps restarted`) };
 }
 
 async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {

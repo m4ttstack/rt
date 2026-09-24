@@ -86,6 +86,7 @@ private struct TopTabBar: View {
             }
             .frame(height: barHeight)
             Spacer(minLength: 0)
+            NewBuildPill()
             DeckMini(model: model)
         }
         .frame(height: barHeight)
@@ -210,6 +211,57 @@ private struct TabButton: View {
                         .foregroundColor(.white)
                 )
         }
+    }
+}
+
+/// Dev flavor only: shown while a staged build differs from the running one.
+private struct NewBuildPill: View {
+    @ObservedObject private var state = TrayState.shared
+
+    var body: some View {
+        if state.devRebuild == .building {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("Building \(state.devRebuildTree ?? "")…")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(inactiveLabelColor)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Capsule().stroke(separatorColor))
+            .fixedSize()
+            .padding(.trailing, 10)
+            .help("Building the dev app; the restart button appears here when it is ready")
+        } else if state.devRebuild == .failed {
+            pill("exclamationmark.triangle", "Rebuild failed · Log", fill: badgeFill,
+                 help: "Open the build log (\(DevBuildWatcher.shared.buildLogPath))") {
+                NSWorkspace.shared.open(URL(fileURLWithPath: DevBuildWatcher.shared.buildLogPath))
+            }
+        } else if let stamp = state.stagedBuildStamp {
+            pill("arrow.clockwise", "New build · Restart", fill: tabAccentColor,
+                 help: "Quit and reopen mattstack-dev on the staged build (\(stamp))") {
+                NotificationCenter.default.post(name: .rtDevRestartIntoStaged, object: nil)
+            }
+            .accessibilityIdentifier(AXID.windowDevRestart)
+        }
+    }
+
+    private func pill(_ symbol: String, _ title: String, fill: Color, help: String,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(badgeText)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Capsule().fill(fill))
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 10)
+        .help(help)
     }
 }
 

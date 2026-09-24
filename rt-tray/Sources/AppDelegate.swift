@@ -164,6 +164,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(restartIntoStagedBuild), name: .rtDevRestartIntoStaged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(devRebuildChanged), name: .rtDevRebuildChanged, object: nil)
+        DevBuildWatcher.shared.start()
         // The process panel's own gear-menu "Quit mattstack" (distinct from
         // the tray menu's, which calls quitFromTray() directly) posts this
         // instead of calling NSApp.terminate itself, so it goes through the
@@ -749,6 +754,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             NotificationCenter.default.post(name: .showMattstackWindow, object: nil)
         })
         menu.addItem(.separator())
+        if BundleFlavor.isDevBuild {
+            addDevBuildItems(to: menu)
+            menu.addItem(.separator())
+        }
         let status = NSMenuItem(title: TrayState.shared.statusText, action: nil, keyEquivalent: "")
         status.isEnabled = false
         status.setAccessibilityIdentifier(AXID.trayStatus)
@@ -784,6 +793,109 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @MainActor
+    private func addDevBuildItems(to menu: NSMenu) {
+        let state = TrayState.shared
+        let watcher = DevBuildWatcher.shared
+        watcher.check()
+        // A ready build replaces the rebuild items: restarting into it is the
+        // one next step. (A build mid-stage is about to replace it, so it
+        // only counts once the rebuild has finished.)
+        if let stamp = state.stagedBuildStamp, state.devRebuild != .building {
+            menu.addItem(ActionMenuItem("New build · Restart (\(stamp))", axid: AXID.trayDevRestart) { [weak self] in
+                self?.restartIntoStagedBuild()
+            })
+            return
+        }
+        let last = watcher.lastSource
+        if let tree = last {
+            let name = (tree as NSString).lastPathComponent
+            let title: String
+            switch state.devRebuild {
+            case .idle: title = "Rebuild (\(name))"
+            case .building: title = "Building \(name)…"
+            case .failed: title = "Rebuild (\(name)), last try failed"
+            }
+            let item = ActionMenuItem(title, axid: AXID.trayDevRebuild) { watcher.rebuild() }
+            item.isEnabled = state.devRebuild != .building
+            menu.addItem(item)
+        }
+        guard state.devRebuild != .building else { return }
+        let from = NSMenuItem(title: "Rebuild from", action: nil, keyEquivalent: "")
+        from.setAccessibilityIdentifier(AXID.trayDevRebuildFrom)
+        let sub = NSMenu()
+        populateRebuildFrom(sub, last: last)
+        // Menus can be edited while open, so a list that arrives late fills
+        // the submenu in place.
+        watcher.onSourcesChanged = { [weak self, weak sub] in
+            guard let self, let sub else { return }
+            self.populateRebuildFrom(sub, last: DevBuildWatcher.shared.lastSource)
+        }
+        from.submenu = sub
+        menu.addItem(from)
+        watcher.refreshSources()
+    }
+
+    /// Grouped so a pile of worktrees stays out of the way: the main
+    /// checkout, the few most recently active trees, and the rest one level
+    /// down.
+    @MainActor
+    private func populateRebuildFrom(_ menu: NSMenu, last: String?) {
+        menu.removeAllItems()
+        let watcher = DevBuildWatcher.shared
+        let groups = RebuildSources.group(watcher.sources, recentLimit: 5)
+        func item(_ source: RebuildSource) -> NSMenuItem {
+            let label = source.branch.map { $0 == source.name ? source.name : "\(source.name) · \($0)" } ?? source.name
+            let it = ActionMenuItem(label, state: source.path == last ? .on : .off, axid: AXID.trayDevRebuildSource) {
+                watcher.rebuild(from: source.path)
+            }
+            return it
+        }
+        if watcher.sources.isEmpty {
+            let title = switch watcher.sourcesState {
+            case .loading: "Loading worktrees…"
+            case .unreachable: "rt daemon not answering"
+            case .loaded: "No repo-tools worktrees"
+            }
+            let loading = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            loading.isEnabled = false
+            menu.addItem(loading)
+            return
+        }
+        if !groups.main.isEmpty {
+            menu.addItem(.sectionHeader(title: "Main checkout"))
+            groups.main.forEach { menu.addItem(item($0)) }
+        }
+        if !groups.recent.isEmpty {
+            menu.addItem(.sectionHeader(title: "Recent worktrees"))
+            groups.recent.forEach { menu.addItem(item($0)) }
+        }
+        let older = groups.moreRt + groups.moreOther
+        if !older.isEmpty {
+            menu.addItem(.separator())
+            let more = NSMenuItem(title: "More worktrees (\(older.count))", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            if !groups.moreRt.isEmpty {
+                sub.addItem(.sectionHeader(title: "rt worktrees"))
+                groups.moreRt.forEach { sub.addItem(item($0)) }
+            }
+            if !groups.moreOther.isEmpty {
+                sub.addItem(.sectionHeader(title: "Other"))
+                groups.moreOther.forEach { sub.addItem(item($0)) }
+            }
+            more.submenu = sub
+            menu.addItem(more)
+        }
+    }
+
+    @MainActor @objc private func devRebuildChanged() {
+        updateMenuBarTitle(status: TrayState.shared.health)
+    }
+
+    @MainActor @objc private func restartIntoStagedBuild() {
+        DevBuildWatcher.shared.restartIntoStaged { [weak self] in self?.quitFromTray() }
+    }
+
+    @MainActor
     private var trayUpdateMenuTitle: String {
         if let tag = TrayState.shared.updateAvailable {
             return "Update Available: \(tag)"
@@ -814,6 +926,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         quitConfirmed = true
         NSApp.terminate(nil)
     }
+
+    /// Dark text on the dev orange (the splash's dev mark color): the pair
+    /// holds its contrast whatever the menu bar shows through.
+    private static let devMarkImage: NSImage = {
+        let text = NSAttributedString(string: "dev", attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .bold),
+            .foregroundColor: NSColor(calibratedRed: 0.10, green: 0.07, blue: 0.02, alpha: 1),
+        ])
+        let textSize = text.size()
+        let size = NSSize(width: ceil(textSize.width) + 8, height: 13)
+        return NSImage(size: size, flipped: false) { rect in
+            NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.28, alpha: 1).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 3.5, yRadius: 3.5).fill()
+            text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2, y: (rect.height - textSize.height) / 2))
+            return true
+        }
+    }()
 
     /// Update the menu bar button with "m" text + colored status dot.
     private func updateMenuBarTitle(status: DaemonHealth) {
@@ -865,11 +994,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // prod trays are otherwise identical in the menu bar, and mistaking
         // one for the other is how you debug the wrong daemon.
         if BundleFlavor.isDevBuild {
-            let devAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.systemOrange,
-            ]
-            attributed.append(NSAttributedString(string: " dev", attributes: devAttrs))
+            // A filled pill, not colored text: the menu bar is translucent,
+            // so orange text washed out on light wallpapers.
+            let pill = NSTextAttachment()
+            pill.image = Self.devMarkImage
+            let mark = NSMutableAttributedString(attributedString: NSAttributedString(attachment: pill))
+            mark.addAttribute(.baselineOffset, value: -2.5, range: NSRange(location: 0, length: mark.length))
+            attributed.append(NSAttributedString(string: " "))
+            attributed.append(mark)
+            // The status button is only ever touched on main.
+            let (rebuild, staged) = MainActor.assumeIsolated {
+                (TrayState.shared.devRebuild, TrayState.shared.stagedBuildStamp)
+            }
+            let status: (String, NSColor)? = switch (rebuild, staged) {
+            case (.building, _): (" building…", .secondaryLabelColor)
+            case (.failed, _): (" build failed", .systemRed)
+            case (.idle, .some): (" new build ready", .systemBlue)
+            case (.idle, .none): nil
+            }
+            if let (text, color) = status {
+                attributed.append(NSAttributedString(string: text, attributes: [
+                    .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+                    .foregroundColor: color,
+                ]))
+            }
         }
 
         // Space

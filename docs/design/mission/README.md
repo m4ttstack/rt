@@ -125,27 +125,26 @@ shadows, no radii).
 ## Deferred to v2
 
 The features v1 ships a placeholder for, or does not ship at all. This
-list is the in-repo half of a pair: each line has a ticket on the
-"glitter v2" milestone of the mission-control project, and the ids live
-only there because the repo is public and the purity gate rejects them
-in source. Adding a "lands in v2" notice to the code means adding a
-line here and a ticket there; removing one means removing all three.
+list is the in-repo half of a pair: each line names its ticket on the
+"glitter v2" milestone of the mission-control project. Adding a "lands
+in v2" notice to the code means adding a line here and a ticket there;
+removing one means removing all three.
 
-- **Branch compare.** GitHub Desktop's "Select Branch to Compare" box
-  atop History, with ahead/behind against another branch and the merge
-  call-to-action. Not built.
-- **Hide whitespace.** GitHub Desktop's `-w` diff option. glitter has no
-  diff options on either tab yet.
-- **Commit actions follow-up.** Reset to commit, checkout, reorder, revert,
-  cherry-pick, copy tag, delete tag, and the multi-commit menu. Not built;
-  Undo Commit, Create Branch from Commit, Create Tag, and Copy SHA ship on
-  the commit row's context menu.
-- **Publish repository.** The action segment renders the state for
-  parity; activating it answers "publishing a repository is not wired
+- **Branch compare** (RT-238). GitHub Desktop's "Select Branch to
+  Compare" box atop History, with ahead/behind against another branch and
+  the merge call-to-action. Not built.
+- **Hide whitespace** (RT-239). GitHub Desktop's `-w` diff option.
+  glitter has no diff options on either tab yet.
+- **Commit actions follow-up** (RT-240). Reset to commit, checkout,
+  reorder, revert, cherry-pick, copy tag, delete tag, and the multi-commit
+  menu. Not built; Undo Commit, Create Branch from Commit, Create Tag, and
+  Copy SHA ship on the commit row's context menu.
+- **Publish repository** (RT-229). The action segment renders the state
+  for parity; activating it answers "publishing a repository is not wired
   yet".
-- **Not copied from GitHub Desktop at all:** the Pull Requests tab and
-  its merge-into footer, image diffs (submodule diffs collapse into the
-  binary message today), drag-and-drop cherry-pick, and clone or
+- **Not copied from GitHub Desktop at all** (RT-230): the Pull Requests
+  tab and its merge-into footer, image diffs (submodule diffs collapse
+  into the binary message today), drag-and-drop cherry-pick, and clone or
   create-repository flows.
 
 ## Staging model: rt adopts GitHub Desktop's own (ratified 2026-09-21)
