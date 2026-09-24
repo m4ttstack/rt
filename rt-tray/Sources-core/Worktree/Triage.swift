@@ -131,3 +131,52 @@ public enum TriageMenu {
         return "\(n)"
     }
 }
+
+extension TriageFingerprint {
+    /// For `JSONSerialization` bodies, which throw on a boxed `Optional.none`.
+    /// `NSNull` keeps `mrState` present as JSON `null` for the same reason
+    /// `encode(to:)` does.
+    public var jsonObject: [String: Any] {
+        ["headSha": headSha, "dirtHash": dirtHash, "mrState": mrState.map { $0 as Any } ?? NSNull()]
+    }
+}
+
+/// Daemon refusal codes as the tail of a "<tree>: ..." status line. Codes
+/// may carry a ":<detail>" suffix; anything unrecognised is shown verbatim.
+public enum TriageRefusal {
+    public static func explain(_ error: String?) -> String {
+        guard let error else { return "couldn't reach the daemon." }
+        let parts = error.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let code = String(parts[0])
+        let detail = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        switch code {
+        case "changed": return "it changed since this list loaded. Refreshed."
+        case "only-copy": return "this is the only copy. Push it first, or use Dispose anyway."
+        case "review-first": return "review the uncommitted files first."
+        case "discard-not-allowed": return "only its build leftovers can be discarded."
+        case "not-disposable": return detail.isEmpty ? "it can't be disposed right now." : "it can't be disposed while it's \(detail)."
+        case "not-keepable": return detail.isEmpty ? "it can't be kept right now." : "it can't be kept while it's \(detail)."
+        case "in-use": return "a process is still running inside it. Stop it first."
+        case "cwds-unreadable": return "couldn't check for processes inside it. Try again."
+        case "no-trash": return "the trash isn't available, so nothing was touched."
+        case "remove-failed": return "couldn't move it to the trash."
+        case "mount-unavailable": return "its volume isn't mounted right now."
+        case "not-broken": return "it isn't broken anymore."
+        case "not-held": return "nothing is holding it anymore."
+        case "busy": return "another action is already working on it. Try again in a moment."
+        case "tree-unknown": return "it no longer exists."
+        case "repo-unknown": return "its repo isn't tracked anymore."
+        case "running-run": return detail.isEmpty ? "a run is still active in it." : "a run is still active in it (\(detail))."
+        case "runs-unreadable": return "couldn't confirm no run is active in it."
+        case "attended": return "someone is attending its MR right now."
+        case "grace": return "it was claimed moments ago. Try again shortly."
+        case "unpushed": return "it has commits that aren't pushed."
+        case "dirty": return "it has uncommitted changes."
+        case "detached": return "it has no branch to push."
+        case "diff-failed": return "couldn't read its changes."
+        case "push-failed": return detail.isEmpty ? "the push failed." : "the push failed: \(detail)"
+        case "commit-failed": return detail.isEmpty ? "the commit failed." : "the commit failed: \(detail)"
+        default: return error
+        }
+    }
+}

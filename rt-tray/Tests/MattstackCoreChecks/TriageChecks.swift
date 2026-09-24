@@ -45,4 +45,21 @@ let triageChecks: [Check] = [
         let out = String(decoding: data, as: UTF8.self)
         c.expect(out.contains(#""mrState":null"#), "expected \"mrState\":null in \(out)")
     },
+    Check("a fingerprint request body sends a nil mrState as JSON null") { c in
+        let fp = TriageFingerprint(headSha: "h", dirtHash: "d", mrState: nil)
+        let data = try JSONSerialization.data(withJSONObject: ["fingerprint": fp.jsonObject], options: [.sortedKeys])
+        let out = String(decoding: data, as: UTF8.self)
+        c.expectEqual(out, #"{"fingerprint":{"dirtHash":"d","headSha":"h","mrState":null}}"#)
+        let merged = TriageFingerprint(headSha: "h", dirtHash: "d", mrState: "merged")
+        let mData = try JSONSerialization.data(withJSONObject: merged.jsonObject, options: [.sortedKeys])
+        c.expectEqual(String(decoding: mData, as: UTF8.self), #"{"dirtHash":"d","headSha":"h","mrState":"merged"}"#)
+    },
+    Check("refusal codes read as plain sentences; details survive; unknown codes pass through") { c in
+        c.expectEqual(TriageRefusal.explain(nil), "couldn't reach the daemon.")
+        c.expectEqual(TriageRefusal.explain("only-copy"), "this is the only copy. Push it first, or use Dispose anyway.")
+        c.expectEqual(TriageRefusal.explain("not-disposable:waiting"), "it can't be disposed while it's waiting.")
+        c.expectEqual(TriageRefusal.explain("push-failed:rejected: non-fast-forward"), "the push failed: rejected: non-fast-forward")
+        c.expectEqual(TriageRefusal.explain("attended"), "someone is attending its MR right now.")
+        c.expectEqual(TriageRefusal.explain("something-new:x"), "something-new:x")
+    },
 ]
