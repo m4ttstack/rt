@@ -362,7 +362,7 @@ func renderKeybar(width int, mode string) string {
 	// survive a narrow terminal.
 	pairs := [][2]string{
 		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"⌃k", "menu"}, {"c", "commit"}, {"f", "action"},
-		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
+		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"}, {"S", "stash"}, {"h", "show stash"},
 	}
 	switch mode {
 	case "history":
