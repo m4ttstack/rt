@@ -19,7 +19,15 @@ export function createWorktreeTriageHandlers(
   ctx: { repoIndex: () => Record<string, string>; cache: { entries: Record<string, any> }; log: Logger },
   opts: WorktreeTriageOpts,
 ) {
-  const deps = () => ({ cacheEntries: ctx.cache.entries, jobTreeHold: opts.jobTreeHold, findRunningRun: opts.findRunningRunByWorktree });
+  // No network: a live poll (the tray, every 10s) must never block on a real
+  // `git fetch`. containmentOf's default fetch runs one; this refusal makes
+  // an unfetchable MR sha read as "none" (only-copy) instead of stalling.
+  const deps = () => ({
+    cacheEntries: ctx.cache.entries,
+    jobTreeHold: opts.jobTreeHold,
+    findRunningRun: opts.findRunningRunByWorktree,
+    fetch: async () => false,
+  });
   return {
     "worktree:triage": async (payload: any) => {
       const repos = targetRepos(ctx, payload?.repoName);
