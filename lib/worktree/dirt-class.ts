@@ -1,10 +1,9 @@
 /**
  * Uncommitted-state classifier for the triage panel. Sorts a tree's dirty
  * files into none, junk (untracked, matches the repo's declared globs),
- * lockfile (a package-manager lockfile whose only tracked change is a
- * workspace version bump) or real. Only `junk` and `lockfile` ever populate
- * `discardable`; later tasks use that set to decide what `discard:
- * "classified"` may remove.
+ * lockfile (a workspace-own version bump in bun.lock) or real.
+ * `discardable` is empty for every kind except junk and lockfile, where it
+ * is the exact set `discard: "classified"` may remove.
  */
 
 import { runGit } from "./git-async.ts";
@@ -12,7 +11,12 @@ import { runGit } from "./git-async.ts";
 export type DirtKind = "none" | "junk" | "lockfile" | "real";
 export interface DirtClass { kind: DirtKind; files: string[]; discardable: string[] }
 
-const LOCKFILES = new Set(["bun.lock", "pnpm-lock.yaml"]);
+// pnpm-lock.yaml has no workspace-own version line: every per-dependency entry
+// there also has a "version: x.y.z" line, so a version-only pnpm diff is
+// always a dependency bump, never safely discardable. bun.lock is the only
+// lockfile whose version-only diff form (workspace version, own package)
+// stays exclusively self-referential.
+const LOCKFILES = new Set(["bun.lock"]);
 const VERSION_LINE = /^[+-]\s*"?version"?:\s*"?[^"\s]+"?,?\s*$/;
 
 export function isVersionOnlyLockDiff(unifiedDiff: string): boolean {

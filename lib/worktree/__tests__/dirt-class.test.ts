@@ -73,6 +73,16 @@ describe("classifyDirtForTriage", () => {
     expect((await classifyDirtForTriage(tree, DEFAULT_JUNK_GLOBS)).kind).toBe("real");
   });
 
+  test("a pnpm-lock.yaml whose only change is a dependency version bump is real", async () => {
+    const PNPM_LOCK = "lockfileVersion: '6.0'\n\ndependencies:\n  jsonc-parser:\n    specifier: ^3.3.1\n    version: 3.3.1\n";
+    writeFileSync(join(tree, "pnpm-lock.yaml"), PNPM_LOCK);
+    sh(`git add -A && git ${GIT_ID} commit -q -m "add pnpm-lock"`, tree);
+    writeFileSync(join(tree, "pnpm-lock.yaml"), PNPM_LOCK.replace("version: 3.3.1", "version: 3.3.2"));
+    const d = await classifyDirtForTriage(tree, DEFAULT_JUNK_GLOBS);
+    expect(d.kind).toBe("real");
+    expect(d.discardable).toEqual([]);
+  });
+
   test("a lockfile change plus junk is still discardable, as lockfile", async () => {
     writeFileSync(join(tree, "bun.lock"), LOCK.replace('"version": "0.28.0"', '"version": "0.29.0"'));
     mkdirSync(join(tree, ".visual"));
