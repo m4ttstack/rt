@@ -35,14 +35,24 @@ Verified against live data and a full code trace on 2026-09-23:
 | MR gates (`mr:`) owned by Matt | Board decision queue | Board tab |
 | Pane-attention gates, open 2+ min, owned by Matt | Board decision queue | Board tab |
 | :work gates (`run:`, owner human, run exists) | Console run row and run page | Console tab |
-| Shepherd workers' gates (`run:`, owner `herd:*`) | Console run row ("blocked"); shepherd pane form | No |
-| Escalated shepherd gates (all `run:` today) | Console run row; notification to the shepherd pane | No. A "shepherd is slow" signal the shepherd resolves. |
+| Shepherd workers' gates (`run:`, owner `herd:*`) | Console run row ("waiting on shepherd"); shepherd pane form | No |
+| Escalated shepherd gates (all `run:` today) | Console run row ("waiting on shepherd"); notification to the shepherd pane | No. A "shepherd is slow" signal the shepherd resolves. |
 | Board queue items for `execution: unassigned` or `delivery: stuck` | Board decision queue | No. They mean an answer did not land, not a decision waiting. They stay in the queue. |
-| A blocked pane with no gate | Console attention band; becomes a pane-attention gate after 2 reconciler sweeps for tracked agents | Only once it becomes a pane-attention gate (above) |
+| A blocked pane with no gate | Console attention band; becomes a pane-attention gate after 2 reconciler sweeps for tracked agents | Only once it becomes a pane-attention gate (above). With 60s sweeps, 2-sweep debounce, and the 2-minute age, a wedged pane badges 3 to 4 minutes after it wedges. |
 | Orphan `run:` gate whose run is gone | Nowhere | No (daemon cleanup is RT-259) |
 
 Out of scope: chat unread, CI results on Matt's MRs, info notifications, and
 app health (the menubar dot owns health).
+
+A pane-attention gate answered with focus-pane while the pane stays blocked
+clears from the badge, and the next sweep opens a fresh gate, so it returns
+about 3 minutes later. A dismissed one stays suppressed while the pane's
+state is unchanged.
+
+Owner values: legacy rows carry `owner` null and count the same as `human`.
+`rt gate list --json` rewrites null to `"human"` (`commands/gate.ts`), so
+never use the CLI to validate the owner rule; read the daemon or an app's
+API.
 
 Known limit: MR gates on a hidden team member's MR are not attached to a
 visible row (`visibleMrsFor`, `apps/board/src/data.ts`) and are not counted.
@@ -85,12 +95,25 @@ The board's gate cache must be correct before its count can be:
 - `GateCache.applyOpened` (`src/gates/cache.ts`) takes `owner` from the
   `gate/opened` payload instead of hard-coding null. Today a pane-attention
   gate opened while the board runs is excluded from `queueExtras` until the
-  next board restart. Add a test that feeds a relay frame, not a full row.
+  next board restart. When a row with the same id is already cached, keep
+  its `openedAt` so a duplicate frame cannot restart the 2-minute clock.
+- The board's client `GateRow` (`src/gates/store.ts`) gains `owner`, copied
+  by both `attachGates` (`cache.ts`) and `buildQueueExtras` (`ingest.ts`).
+  Without it the predicate cannot exclude herd-owned rows, and an escalated
+  herd-owned pane-attention gate (which `buildQueueExtras` admits) would be
+  counted.
 - The cache reconciles on every relay reconnect and on a 60s timer, using
   the same two `gateList` calls boot uses (`reconcileGatesOnBoot`,
   `reconcileAttentionGatesOnBoot`). Today it reconciles only at boot, so a
   daemon restart (one happened 2026-09-23 19:02) loses every frame in the
-  gap and the count sticks high or misses gates.
+  gap and the count sticks high or misses gates. Reconnect is detected from
+  the `mr:status` frame the daemon sends on every socket open
+  (`lib/daemon/api-server.ts`), so rt-client needs no change. That frame
+  also fires on connection-state changes; the extra reconciles are cheap
+  and idempotent.
+- Tests: a relay `gate/opened` frame for a human-owned pane-attention gate
+  lands in `queueExtras` with its owner; an escalated herd-owned attention
+  row is in `queueExtras` but not counted.
 
 Then the count:
 
@@ -108,9 +131,11 @@ Then the count:
   `listRuns`, under the rule above, excluding `kind: pane-attention` (the
   board owns those; counting them here would double-count a wedged run).
   `url` points at the run page of the oldest counted gate.
-- `hasOpenGate` (`src/app/runs/useGates.ts`) changes to the same rule
-  (open or parked, owner human or null), so the waiting marker on a run row
-  agrees with the tab count. Today it has no owner test and skips parked.
+- The run row marker (`hasOpenGate`, `src/app/runs/useGates.ts`, painted by
+  `RunRow.tsx`) shows for any `open` or `parked` gate, labeled by owner:
+  "blocked" when the gate is Matt's (counted), "waiting on shepherd" when
+  it is `herd:*`. Today it marks only `open` gates, with no owner label.
+  The rows marked "blocked" are exactly the tab count's gates.
 - Declare `"badge": "/api/badge"` in `apps/console/mattstack.deck.json`.
 
 ### Deck (`mattstack-apps/apps/deck`)
@@ -137,12 +162,18 @@ Then the count:
 - `WindowModel` holds `badges: [String: (count: Int, url: URL?)]`.
 - **Tab:** `TabButton` (`Window/MattstackWindowView.swift`) shows a count
   pill after the label when the count is above 0, and nothing at 0. Colors
-  come from the window's existing tokens, in both schemes. Clicking a tab
-  keeps today's behavior (it does not navigate the webview).
+  come from the window's existing tokens, in both schemes. Clicking the tab
+  label keeps today's behavior (it does not navigate the webview). Clicking
+  the pill itself selects the tab and loads its `url` (the oldest counted
+  decision), through `WindowModel.open(OpenRequest)`.
 - **Dock:** `NSApp.dockTile.badgeLabel` is the sum of all counts, or `nil`
   at 0. Counts above 99 render as `99+` on both the tab and the dock. When
   the window is closed and the dock sum is above 0, clicking the dock icon
-  opens the window on the first badged tab (in tab order) at its `url`.
+  opens the window on the first badged tab (in tab order) at its `url`
+  (`applicationShouldHandleReopen`, keeping the `suppressReopenShowUntil`
+  guard). With the window open, a dock click just activates it with no
+  navigation. With a sum of 0, a dock click behaves as today. Tab order is
+  deck's displayName sort (Board before Console).
 - The app is a Dock app for the whole run (`main.swift`) and warms the
   catalog at launch, so the dock badge works with the window closed.
 
@@ -153,10 +184,10 @@ Then the count:
 | One slow or failed fetch | Last count held |
 | App down, 3rd consecutive failure | That tab's badge clears; the dock sum leaves it out |
 | Daemon down | Console's badge endpoint fails and clears after the hold; the board serves its cached count until its reconcile reconnects |
-| Daemon restarts | Board reconciles on relay reconnect; counts correct within one tick |
+| Daemon restarts | Board reconciles on relay reconnect (the `mr:status` open frame); counts correct within one tick |
 | Deck catalog unavailable | Last cached catalog is used, as today |
 | App has no `badge` in its manifest | Never polled, never badged |
-| Gate answered on any surface | The app's count drops on its next computation; the badge follows within one tick (10s) |
+| Gate answered on any surface | The app's count drops on its next computation; the badge follows within one tick (10s). If the board never cached that gate, its 60s reconcile catches it: worst case about 70s. |
 
 ## Rollout
 
@@ -166,18 +197,18 @@ console with deck, then relaunch the tray.
 
 ## Testing
 
-- **Board:** a relay `gate/opened` frame for a human-owned pane-attention
-  gate lands in `queueExtras` with its owner; reconcile on reconnect
-  replaces the cache; the badge predicate (open and parked counted;
+- **Board:** the two cache tests above; reconcile on the `mr:status` frame
+  replaces the cache; a duplicate opened frame keeps `openedAt`; the badge predicate (open and parked counted;
   answered, closed, herd-owned, unassigned-only, stuck-only excluded;
   pane-attention counted only at 2+ minutes); `/api/badge` count and `url`.
 - **Console:** `/api/badge` counts open and parked human gates on existing
   runs, and excludes herd-owned, pane-attention, answered, and missing-run
-  gates; `hasOpenGate` follows the same rule.
+  gates; the row marker shows "blocked" for counted gates and "waiting on
+  shepherd" for herd-owned ones.
 - **Deck:** discovery passes `badge` through when present and omits it when
   absent.
 - **Tray:** `MattstackCoreChecks` for parsing, the 2-failure hold, summing,
-  `99+` formatting, and the dock-click target.
+  `99+` formatting, the pill-click target, and the dock-click target.
 - **Real check:** in a scratch-built dev app (never the installed or
   blessed bundles), under an isolated HOME wherever the rt binary runs:
   open a real human-owned gate on the board and a real `run:` gate on the
