@@ -327,6 +327,29 @@ describe("worktree CLI identity plumbing", () => {
     expect(row).not.toContain("on-deck");
   });
 
+  test("list names why a disposable tree stayed and why a merged claim is held", async () => {
+    installFakeDaemon({
+      ok: true,
+      data: {
+        trees: [
+          { name: "beacon", path: "/nonexistent/beacon", kind: "ephemeral", state: "disposable", disposableReason: "dirty", branch: "team-step-cards", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "smaug", path: "/nonexistent/smaug", kind: "ephemeral", state: "claimed", heldReason: "pid 75703 (xctest) has its cwd inside", branch: "daemon-restart-truth", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+        ],
+      },
+    });
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+    try {
+      await worktreeList([], {});
+    } finally {
+      console.log = origLog;
+    }
+    const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+    expect(plain.find((l) => l.includes("/beacon "))).toContain("disposable (dirty)");
+    expect(plain.find((l) => l.includes("/smaug "))).toContain("held: pid 75703 (xctest) has its cwd inside");
+  });
+
   test("freshen's picker offers the golden alongside on-deck members", async () => {
     const { installFakePick } = await import("../../lib/ui/pick-fake.ts");
     const origIsTTY = process.stdin.isTTY;
