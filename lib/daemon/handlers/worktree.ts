@@ -175,9 +175,9 @@ export function targetRepos(ctx: Pick<HandlerContext, "repoIndex">, repoName?: s
   return Object.entries(index);
 }
 
-function disposeDeps(
-  ctx: Pick<HandlerContext, "cache" | "log">,
-  opts: WorktreeHandlerOpts,
+export function disposeDeps(
+  ctx: { cache: Pick<HandlerContext["cache"], "entries">; log: HandlerContext["log"] },
+  opts: Pick<WorktreeHandlerOpts, "emit" | "findRunningRunByWorktree">,
   repoName: string,
   repoPath: string,
   callerPids?: number[],

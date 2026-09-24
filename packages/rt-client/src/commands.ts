@@ -536,6 +536,9 @@ export interface WorktreeTriageData {
   >;
   counts: TriageCounts;
 }
+export type TriageFingerprint = TriageRow["fingerprint"];
+export interface WorktreeTriageDisposeData { disposed: true; trash?: { path: string; keptUntil: string } }
+export interface WorktreeTriageDiffFile { path: string; status: "modified" | "untracked"; diff: string; truncated: boolean }
 
 /** Duplicated shape on purpose: mirrors lib/endpoint/store.ts's EndpointClaim. */
 export interface EndpointClaim { worktree: string; role: string; port: number; ts: number }
@@ -904,6 +907,15 @@ export interface Commands {
   "worktree:freshen": { payload: { repoName?: string; tree?: string }; data: WorktreeFreshenData };
   "worktree:adopt": { payload: { repoName: string; claim?: boolean }; data: WorktreeAdoptData };
   "worktree:triage": { payload: { repoName?: string }; data: WorktreeTriageData };
+  /** Refuses `changed` when the tree no longer matches `fingerprint`; only an
+      `only-copy` row with `confirmOnlyCopy` is ever force-disposed. */
+  "worktree:triage-dispose": { payload: { repoName: string; tree: string; fingerprint: TriageFingerprint; discard?: "classified" | "all"; confirmOnlyCopy?: boolean }; data: WorktreeTriageDisposeData };
+  "worktree:keep": { payload: { repoName: string; tree: string; fingerprint: TriageFingerprint }; data: { tree: string } };
+  "worktree:unkeep": { payload: { repoName: string; tree: string }; data: { tree: string } };
+  "worktree:push-branch": { payload: { repoName: string; tree: string; fingerprint: TriageFingerprint; commitDirty?: boolean; message?: string }; data: { row: TriageRow } };
+  "worktree:triage-diff": { payload: { repoName: string; tree: string }; data: { files: WorktreeTriageDiffFile[] } };
+  "worktree:triage-remove": { payload: { repoName: string; tree: string }; data: { removed: true } };
+  "worktree:stop-holders": { payload: { repoName: string; tree: string }; data: { terminated: Array<{ pid: number; label: string }> } };
 
   // ─── Background server (daemon-owned background herdr session) ──────────
   "bg:ensure": { payload: { claim?: string }; data: { socket: string; started: boolean; parity: { ok: boolean; drift: string[] } | null } };
@@ -1029,6 +1041,13 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "worktree:freshen",
   "worktree:adopt",
   "worktree:triage",
+  "worktree:triage-dispose",
+  "worktree:keep",
+  "worktree:unkeep",
+  "worktree:push-branch",
+  "worktree:triage-diff",
+  "worktree:triage-remove",
+  "worktree:stop-holders",
 
   "bg:ensure",
   "bg:status",
