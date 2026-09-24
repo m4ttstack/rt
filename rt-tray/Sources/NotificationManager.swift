@@ -406,6 +406,8 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             NotificationCenter.default.post(name: .showKeyboardConflict, object: nil)
         case .showProcessPanel:
             NotificationCenter.default.post(name: .showProcessPanel, object: nil)
+        case .showWorktreePanel:
+            NotificationCenter.default.post(name: .showWorktreePanel, object: nil)
         case .openURL(let urlStr):
             if let urlObj = URL(string: urlStr) { openURL(urlObj) }
         case .focusPane(let paneId):
@@ -525,4 +527,5 @@ extension Notification.Name {
     static let showProcessPanel = Notification.Name("showProcessPanel")
     static let detachProcessPanel = Notification.Name("detachProcessPanel")
     static let showKeyboardConflict = Notification.Name("showKeyboardConflict")
+    static let showWorktreePanel = Notification.Name("showWorktreePanel")
 }

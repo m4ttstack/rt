@@ -11,10 +11,12 @@ public enum NotificationClick {
     /// banner returns to the pane that is driving the work, and the URL
     /// moves to the Open action button.
     public static let gatePaneCategory = "gate_pane"
+    public static let worktreeTriageCategory = "worktree_triage"
 
     public enum Route: Equatable, Sendable {
         case showKeyboardConflict
         case showProcessPanel
+        case showWorktreePanel
         case openURL(String)
         case focusPane(String)
         case none
@@ -27,7 +29,7 @@ public enum NotificationClick {
         public var suppressesActivationShow: Bool {
             switch self {
             case .focusPane, .none: return true
-            case .showKeyboardConflict, .showProcessPanel, .openURL: return false
+            case .showKeyboardConflict, .showProcessPanel, .showWorktreePanel, .openURL: return false
             }
         }
     }
@@ -40,6 +42,7 @@ public enum NotificationClick {
     public static func bannerRoute(category: String, url: String?, paneId: String?) -> Route {
         if category == keyboardConflictCategory { return .showKeyboardConflict }
         if category == readyHeldCategory { return .showProcessPanel }
+        if category == worktreeTriageCategory { return .showWorktreePanel }
         if category == gatePaneCategory { return focusPaneRoute(url: url, paneId: paneId) }
         return openRoute(url: url, paneId: paneId)
     }
