@@ -675,8 +675,12 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   await runGatedLeg("prod-app", PROD_APP_LABEL, () => runProdAppLeg(seams, ctx));
   let devNotRunning = false;
   await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx, () => { devNotRunning = true; }));
-  if (devNotRunning) legs.push(skippedLeg("daemon", DAEMON_LABEL, `not run: ${DEV_NOT_RUNNING}`));
-  else await runGatedLeg("daemon", DAEMON_LABEL, () => runDaemonLeg(seams, ctx));
+  if (devNotRunning) {
+    legs.push(skippedLeg("daemon", DAEMON_LABEL,
+      `not run: ${DEV_NOT_RUNNING}; mattstack.app keeps running the previous build until it is relaunched`));
+  } else {
+    await runGatedLeg("daemon", DAEMON_LABEL, () => runDaemonLeg(seams, ctx));
+  }
 
   let witness: RestartWitness | null = null;
   await runGatedLeg("served-suite", SERVED_SUITE_LABEL, async () => {

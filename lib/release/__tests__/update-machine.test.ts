@@ -506,6 +506,7 @@ describe("rt release update-machine", () => {
       const daemonLeg = report.legs.find((l) => l.id === "daemon")!;
       expect(daemonLeg.status).toBe("skipped");
       expect(daemonLeg.detail).toContain("dev app was not running");
+      expect(daemonLeg.detail).toContain("mattstack.app keeps running the previous build until it is relaunched");
       expect(calls).not.toContain("rt daemon restart");
       const verify = report.legs.find((l) => l.id === "verify")!;
       expect(verify.status).toBe("ok");
