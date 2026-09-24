@@ -18,6 +18,9 @@ jobs:
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
+      # --frozen-lockfile passes a stale workspace package version, which every
+      # worktree's ready-step install then rewrites and leaves as dirt.
+      - run: bun install && git diff --exit-code -- bun.lock
       # Regenerating must reproduce what's checked in byte-for-byte: a diff
       # here means the emitter drifted, a generated file was hand-edited, or
       # the committed font copy diverged from the canonical source.
