@@ -23,7 +23,11 @@ The board itself always renders via rt-ui in the current terminal.
 
 Press `a` to add a command. The board drops to the normal screen and shows the picker chain (repo, worktree, package, script). After selecting, the board reappears with the new row in "starting" state. Pressing Escape cancels and returns to the board unchanged.
 
-If the picked entry is a preset (a group of commands), all its rows land on the board at once.
+If the picked entry is a preset (a group of commands) or a queue built from multiple picks ("Launch all"), all its rows land on the board at once.
+
+## Seeding from a host
+
+`rt runner --seed-file <path>` opens the board pre-seeded from a file instead of starting empty: one JSON line, `{"seed":[{"name":"dev","command":"pnpm run dev","cwd":"/abs/path/packages/web","pkg":"web","repo":"acme"}]}` -- the same envelope `rt run --resolve-only` prints for a preset or a queued "Launch all" pick. `pkg` and `repo` are optional. The file is read once at start; rt never deletes it, so the host owns its lifecycle. `--seed-file` composes with `--herdr`. A missing, unreadable or invalid file is a one-line error on stderr and exit 1, before any board or daemon work.
 
 ## Keys
 

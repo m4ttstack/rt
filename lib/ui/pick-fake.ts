@@ -108,3 +108,35 @@ export function installFakePick(script: PickFakeStep[]): PickFake {
     },
   };
 }
+
+export interface SequentialPick {
+  /** The fully stamped request runPick sent, one per runPick() call, in order. */
+  calls: PickRequest[];
+  /** Restores the real spawn-based impl. Safe to call more than once. */
+  restore(): void;
+}
+
+/**
+ * One scripted PickResult per runPick() call, in order: the first call gets
+ * results[0], the second gets results[1], and so on, holding the last entry
+ * once the list runs out. Unlike installFakePick's script (replayed in full
+ * against every call, for one picker's own event/modal sequence), this is
+ * for flows that make several DIFFERENT runPick calls back to back -- a
+ * package picker, then the next level down -- where each call just needs a
+ * single canned answer.
+ */
+export function installSequentialPick(results: Array<Omit<PickResult, "t">>): SequentialPick {
+  const calls: PickRequest[] = [];
+  let i = 0;
+  pickTest.setImpl((req) => {
+    calls.push(req);
+    const r = results[i] ?? results[results.length - 1]!;
+    i++;
+    return {
+      update() {},
+      modal: async () => null,
+      result: Promise.resolve({ t: "result", ...r }),
+    } satisfies PickHandle;
+  });
+  return { calls, restore: () => pickTest.setImpl(undefined) };
+}

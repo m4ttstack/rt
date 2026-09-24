@@ -2,8 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { __test__ as pickTest, type PickHandle } from "../../lib/ui/pick.ts";
-import type { PickRequest, PickResult } from "../../lib/ui/protocol.ts";
+import { installSequentialPick } from "../../lib/ui/pick-fake.ts";
 import { updateRepoIndex } from "../../lib/repo-index.ts";
 import { RunAborted, resolveRun } from "../run.ts";
 
@@ -23,23 +22,6 @@ test("resolveRun with no known repos and no context resolves cancelled, never ex
 });
 
 // ─── Back-navigation out of a cwd-resolved context ───────────────────────────
-
-/** One scripted PickResult per runPick call, in order. Local to this file: lib/ui/pick-fake.ts's installFakePick replays its whole script on every call, which cannot express "first picker, then the next one". */
-function installSequentialPick(results: Array<Omit<PickResult, "t">>): { calls: PickRequest[]; restore: () => void } {
-  const calls: PickRequest[] = [];
-  let i = 0;
-  pickTest.setImpl((req) => {
-    calls.push(req);
-    const r = results[i] ?? results[results.length - 1]!;
-    i++;
-    return {
-      update() {},
-      modal: async () => null,
-      result: Promise.resolve({ t: "result", ...r }),
-    } satisfies PickHandle;
-  });
-  return { calls, restore: () => pickTest.setImpl(undefined) };
-}
 
 /** A repo getKnownRepos' single-worktree fast path accepts: a real .git DIRECTORY with a HEAD ref, no git subprocess needed. Nested under a caller-owned container because getKnownRepos scans each known repo's PARENT for unregistered siblings -- fixtures placed directly in tmpdir make that scan enumerate every stale test repo the machine has ever left there (83k, ~70s, on the machine this was written). */
 function makeRepoFixture(container: string, name: string, pkgNames: string[]): string {

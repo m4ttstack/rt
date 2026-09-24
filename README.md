@@ -393,7 +393,7 @@ through a fuzzy picker.
 |---|---|
 | macOS on Apple silicon | Required. rt ships an arm64 build only; Intel Macs are not supported |
 | Xcode Command Line Tools | Required. `rt verify` reports a missing installation |
-| `tmux` | Optional. Only `rt runner`'s default backend needs it; `rt runner --herdr` does not |
+| `tmux` | Optional. Needed by `rt runner`'s default backend, and by `rt run`'s saved presets and queued launches (to run their scripts in parallel); `rt runner --herdr` needs neither |
 | `chafa` | Optional. Renders image previews in `rt nav` as colored character art |
 | `kitten` | Optional. Upgrades `rt nav` previews to true pixels on Kitty-protocol terminals such as Ghostty |
 

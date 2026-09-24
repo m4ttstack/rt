@@ -1,72 +1,44 @@
-import { describe, it, expect } from "bun:test";
-import { isInsideHerdr, splitPane } from "../herdr-launch.ts";
+/**
+ * launchFallback (lib/herdr-launch.ts): the real banner text, not a mock of
+ * it. Every launchQueue/launchPreset test elsewhere mocks this function
+ * away, so nothing pins what it actually writes to stderr.
+ */
+import { afterEach, expect, test } from "bun:test";
+import { launchFallback, type LaunchItem } from "../herdr-launch.ts";
 
-describe("herdr-launch", () => {
-  it("isInsideHerdr returns false when HERDR_ENV is unset", () => {
-    const prev = process.env.HERDR_ENV;
-    delete process.env.HERDR_ENV;
-    expect(isInsideHerdr()).toBe(false);
-    if (prev) process.env.HERDR_ENV = prev;
-  });
+/** Strips ANSI so assertions read as plain text (matches run-report-save.test.ts's convention). */
+// eslint-disable-next-line no-control-regex
+const plain = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
-  it("isInsideHerdr returns true when HERDR_ENV=1", () => {
-    const prev = process.env.HERDR_ENV;
-    process.env.HERDR_ENV = "1";
-    expect(isInsideHerdr()).toBe(true);
-    if (prev) process.env.HERDR_ENV = prev;
-    else delete process.env.HERDR_ENV;
-  });
+const REAL_WRITE = process.stderr.write;
+
+afterEach(() => {
+  process.stderr.write = REAL_WRITE;
 });
 
-describe("splitPane", () => {
-  it("a 102x81 parent rect drives a --direction down split", () => {
-    const calls: string[] = [];
-    const exec = (cmd: string) => {
-      calls.push(cmd);
-      if (cmd.includes("pane layout")) {
-        return JSON.stringify({ result: { layout: { panes: [{ pane_id: "ws1:%0", rect: { width: 102, height: 81, x: 0, y: 0 } }] } } });
-      }
-      if (cmd.includes("pane split")) return JSON.stringify({ result: { pane: { pane_id: "ws1:%9" } } });
-      throw new Error(`unexpected exec: ${cmd}`);
-    };
-    expect(splitPane("ws1:%0", exec)).toBe("ws1:%9");
-    expect(calls[0]).toBe("herdr pane layout --pane ws1:%0");
-    expect(calls[1]).toBe("herdr pane split ws1:%0 --direction down --no-focus");
-  });
+test("launchFallback's banner names the caller's reason verbatim, then one line per item", () => {
+  const writes: string[] = [];
+  process.stderr.write = ((c: string | Uint8Array) => { writes.push(String(c)); return true; }) as typeof process.stderr.write;
 
-  it("a tiny parent rect drives a tab create", () => {
-    const calls: string[] = [];
-    const exec = (cmd: string) => {
-      calls.push(cmd);
-      if (cmd.includes("pane layout")) {
-        return JSON.stringify({ result: { layout: { panes: [{ pane_id: "ws1:%0", rect: { width: 40, height: 20, x: 0, y: 0 } }] } } });
-      }
-      if (cmd.includes("tab create")) return JSON.stringify({ result: { root_pane: { pane_id: "ws1:%new" } } });
-      throw new Error(`unexpected exec: ${cmd}`);
-    };
-    expect(splitPane("ws1:%0", exec)).toBe("ws1:%new");
-    expect(calls[1]).toBe("herdr tab create --workspace ws1 --no-focus");
-  });
+  const items: LaunchItem[] = [
+    { label: "web → dev", command: "true", cwd: process.cwd() },
+    { label: "api → start", command: "true", cwd: process.cwd() },
+  ];
+  launchFallback(items, "tmux is not on PATH");
 
-  it("a layout lookup failure falls back to a right split (parity with the old default)", () => {
-    const calls: string[] = [];
-    const exec = (cmd: string) => {
-      calls.push(cmd);
-      if (cmd.includes("pane layout")) throw new Error("herdr: pane not found");
-      if (cmd.includes("pane split")) return JSON.stringify({ result: { pane: { pane_id: "ws1:%9" } } });
-      throw new Error(`unexpected exec: ${cmd}`);
-    };
-    expect(splitPane("ws1:%0", exec)).toBe("ws1:%9");
-    expect(calls[1]).toBe("herdr pane split ws1:%0 --direction right --no-focus");
-  });
+  const plainWrites = writes.map(plain);
+  expect(plainWrites[0]).toBe("\n  tmux is not on PATH, running sequentially\n\n");
+  expect(plainWrites[1]).toBe("  web → dev\n");
+  expect(plainWrites[2]).toBe("  api → start\n");
+});
 
-  it("throws when the split reply carries no pane_id", () => {
-    const exec = (cmd: string) => {
-      if (cmd.includes("pane layout")) {
-        return JSON.stringify({ result: { layout: { panes: [{ pane_id: "ws1:%0", rect: { width: 102, height: 81, x: 0, y: 0 } }] } } });
-      }
-      return JSON.stringify({ result: { pane: {} } });
-    };
-    expect(() => splitPane("ws1:%0", exec)).toThrow("herdr pane split did not return a pane_id");
-  });
+test("launchFallback names a non-zero exit against the item's own label", () => {
+  const writes: string[] = [];
+  process.stderr.write = ((c: string | Uint8Array) => { writes.push(String(c)); return true; }) as typeof process.stderr.write;
+
+  const items: LaunchItem[] = [{ label: "web → dev", command: "exit 7", cwd: process.cwd() }];
+  launchFallback(items, "not running in an interactive terminal");
+
+  const joined = plain(writes.join(""));
+  expect(joined).toContain("web → dev exited 7");
 });

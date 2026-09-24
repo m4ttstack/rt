@@ -2,7 +2,7 @@ import { afterEach, test, expect, mock } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { presetToSeed, launchPreset, resolveRun } from "../run.ts";
+import { presetToSeed, launchPreset, resolveRun, runCommand } from "../run.ts";
 import { savePreset, type Preset } from "../../lib/run-presets.ts";
 import { deriveRepoIdentity } from "../../lib/settings/identity.ts";
 import { __test__ as gate } from "../../lib/ui/gate.ts";
@@ -131,6 +131,42 @@ test("non-interactive caller with herdr available falls back instead of routing 
   expect(exitSpy).not.toHaveBeenCalled();
 });
 
+// Pins the review's Important finding for the preset path too: inside herdr
+// with no tmux on PATH is a reachable fallback (interactive is true), so the
+// banner must name tmux, never "not inside herdr" (never even checked once
+// the gate became interactive() && tmuxAvailable()).
+test("launchPreset falls back to running sequentially, naming tmux, when interactive but tmux is missing", async () => {
+  gate.setInteractive(() => true);
+  const fallbackCalls: Array<{ items: unknown; reason: unknown }> = [];
+  let boardCalled = false;
+  mock.module("../../lib/herdr-launch.ts", () => ({
+    ...realHerdrLaunch,
+    launchFallback: (items: unknown, reason: unknown) => {
+      fallbackCalls.push({ items, reason });
+    },
+  }));
+  mock.module("../runner.ts", () => ({
+    ...realRunner,
+    tmuxAvailable: () => false,
+    runSeededBoard: async () => {
+      boardCalled = true;
+    },
+  }));
+
+  const preset: Preset = {
+    name: "backend-lite",
+    entries: [
+      { packageRelPath: "apps/web", packageLabel: "web", script: "dev" },
+    ],
+  };
+
+  await launchPreset(preset, "/home/me/repo", {} as never);
+
+  expect(boardCalled).toBe(false);
+  expect(fallbackCalls).toHaveLength(1);
+  expect(fallbackCalls[0]!.reason).toContain("tmux");
+});
+
 // Pins the fix for the nested-board bug: a live board's resolve used to hit
 // launchPreset, which opened a SECOND seeded board on the tmux default --
 // silently abandoning a --herdr board's bg server and leaking its claim.
@@ -187,4 +223,79 @@ test("resolveRun with a preset arg WITHOUT the board option still launches the s
   } finally {
     rmSync(container, { recursive: true, force: true });
   }
+});
+
+// A host (flock) runs `rt run <preset> --resolve-only` in a pane it owns and
+// reads stdout: it wants the seed rows to run on its own runner, not a tmux
+// board opened inside its pane. "Resolve only" must mean launch nothing.
+test("runCommand with a preset arg and --resolve-only prints the seed envelope to stdout and launches nothing", async () => {
+  gate.setInteractive(() => true);
+  let boardCalled = false;
+  mock.module("../runner.ts", () => ({
+    ...realRunner,
+    tmuxAvailable: () => true,
+    runSeededBoard: async () => { boardCalled = true; },
+  }));
+
+  const container = mkdtempSync(join(tmpdir(), "rt-run-preset-resolveonly-"));
+  const root = makeRemoteRepoFixture(container);
+  await savePresetFor(root, "resolve-only-preset");
+
+  const outs: string[] = [];
+  const realWrite = process.stdout.write;
+  process.stdout.write = ((c: string | Uint8Array) => { outs.push(String(c)); return true; }) as typeof process.stdout.write;
+
+  try {
+    const ctx = {
+      identity: { repoName: "fixture", identity: "resolve-only-fixture", repoRoot: root, dataDir: "", remoteUrl: "", baseUrl: "" },
+    } as never;
+    await runCommand(["resolve-only-preset", "--resolve-only"], ctx);
+  } finally {
+    process.stdout.write = realWrite;
+    rmSync(container, { recursive: true, force: true });
+  }
+
+  expect(boardCalled).toBe(false);
+  expect(outs).toHaveLength(1);
+  expect(JSON.parse(outs[0]!)).toEqual({
+    seed: presetToSeed(
+      { name: "resolve-only-preset", entries: [{ packageRelPath: "apps/web", packageLabel: "web", script: "dev" }] },
+      root,
+    ),
+  });
+});
+
+// The existing single-script RunResolveResult envelope is unchanged: the
+// board option only ever redirects a preset or queue pick, never a plain
+// script resolve.
+test("runCommand with --resolve-only on a single script still prints RunResolveResult, unchanged", async () => {
+  const container = mkdtempSync(join(tmpdir(), "rt-run-single-resolveonly-"));
+  const root = join(container, "fixture");
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fixture", scripts: { dev: "vite" } }));
+
+  const outs: string[] = [];
+  const realWrite = process.stdout.write;
+  process.stdout.write = ((c: string | Uint8Array) => { outs.push(String(c)); return true; }) as typeof process.stdout.write;
+
+  try {
+    const ctx = {
+      identity: { repoName: "fixture", identity: `test-single-resolveonly-${Date.now()}`, repoRoot: root, dataDir: "", remoteUrl: "", baseUrl: "" },
+    } as never;
+    await runCommand(["--resolve-only"], ctx);
+  } finally {
+    process.stdout.write = realWrite;
+    rmSync(container, { recursive: true, force: true });
+  }
+
+  expect(outs).toHaveLength(1);
+  const printed = JSON.parse(outs[0]!);
+  expect(printed.seed).toBeUndefined();
+  expect(printed).toMatchObject({
+    targetDir: root,
+    packageLabel: "root",
+    worktree: root,
+    commandTemplate: expect.stringContaining("run dev"),
+    script: "dev",
+  });
 });

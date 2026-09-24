@@ -1014,7 +1014,9 @@ export const TREE: Record<string, CommandNode> = {
     context: "worktree",
     requiresTTY: true,
     fullscreen: true,
-    args: [],
+    args: [
+      { name: "Seed file", flag: "--seed-file", type: "text", placeholder: "/tmp/seed.json", hint: 'Open the board pre-seeded from this file\'s {"seed":[...]} rows (the envelope `rt run --resolve-only` prints) instead of starting empty' },
+    ],
   },
 
   glitter: {

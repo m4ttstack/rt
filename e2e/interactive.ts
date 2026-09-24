@@ -169,9 +169,9 @@ export async function startInteractive(
   const bunDir = join(process.execPath, "..");
 
   const env: Record<string, string> = {
-    // HERDR_* must never reach the binary under test: rt's herdr-launch path
-    // would drive the developer's live herdr session (split panes, type into
-    // the focused pane) instead of staying inside the test sandbox.
+    // HERDR_* must never reach the binary under test: HERDR_SOCKET_PATH,
+    // HERDR_WORKSPACE_ID and HERDR_PANE_ID would point it at the developer's
+    // live herdr session (its socket, its panes) instead of the test sandbox.
     ...Object.fromEntries(
       Object.entries(process.env).filter(
         (e): e is [string, string] => e[1] != null && !e[0].startsWith("HERDR_"),

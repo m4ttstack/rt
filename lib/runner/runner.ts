@@ -201,10 +201,11 @@ export class Runner {
     if (!s) return;
     await this.closeSession(s);
 
-    // The picker runs in this process with the terminal to itself. A
-    // "launched" result means the user picked a preset or queue, which
-    // rt run launched into their own herdr panes; the board reopens
-    // unchanged either way, as it does when the picker throws.
+    // The picker runs in this process with the terminal to itself. This
+    // deps.resolve() always passes the board option, so a preset or queue
+    // pick comes back as "seed" (handled below), never "launched" -- that
+    // branch is a defensive catch-all alongside "cancelled". Either way the
+    // board reopens unchanged, as it does when the picker throws.
     let res: RunResolution;
     try {
       res = await this.deps.resolve();

@@ -35,8 +35,6 @@ import {
 } from "../lib/variations.ts";
 import { bold, dim, reset, yellow, green } from "../lib/tui.ts";
 import {
-  isInsideHerdr,
-  launchInHerdr,
   launchFallback,
   type LaunchItem,
 } from "../lib/herdr-launch.ts";
@@ -64,11 +62,13 @@ export class RunAborted extends Error {
 export type RunResolution =
   | { kind: "resolved"; result: RunResolveResult }
   | { kind: "launched" }
-  // A preset resolved FOR a live board: the entries land on the board that
-  // asked, on its own engine. resolveRun launching a nested seeded board
-  // here instead is the bug this kind exists to prevent -- the nested board
-  // is hard-wired to the tmux default, abandoning a --herdr board's bg
-  // server and leaking its claim.
+  // A queue or preset resolved under the board option: for a live board's
+  // own add flow the entries land on that board, on its own engine --
+  // resolveRun launching a nested seeded board here instead is the bug this
+  // kind exists to prevent, since the nested board is hard-wired to the tmux
+  // default, abandoning a --herdr board's bg server and leaking its claim.
+  // `rt run --resolve-only` sets the same option for the opposite reason: a
+  // host wants the rows on stdout, not a board at all.
   | { kind: "seed"; entries: SeedEntry[] }
   | { kind: "cancelled"; code: number };
 
@@ -356,6 +356,9 @@ export const __test__ = {
   recentScripts,
   footerActions,
   formatFlatHint,
+  selectPackageAndScript,
+  LAUNCH_ALL_SENTINEL,
+  SAVE_PRESET_SENTINEL,
 };
 
 /**
@@ -364,6 +367,7 @@ export const __test__ = {
  * Returns null when the user backs out of the package picker (ctrl-up).
  * Returns ScriptSelection when a script (or variation) is selected.
  * Returns QUEUE_LAUNCHED when the user built a multi-pick queue and launched it.
+ * Returns { seed } when a preset or queue resolved under the board option instead of launching.
  */
 async function selectPackageAndScript(
   worktreePath: string,
@@ -374,8 +378,9 @@ async function selectPackageAndScript(
   ctx: CommandContext,
   contextLabel?: string,
   queue?: QueuedItem[],
-  // Resolving for a live board: a preset pick returns its seed rows to that
-  // board instead of launching a nested one (see RunResolution's seed kind).
+  // Set for a live board's own add flow, or for `rt run --resolve-only`: a
+  // preset or queue pick returns its seed rows instead of launching (see
+  // RunResolution's seed kind).
   board?: boolean,
 ): Promise<ScriptSelection | typeof QUEUE_LAUNCHED | { seed: SeedEntry[] } | null> {
   const packages = getWorkspacePackages(worktreePath);
@@ -517,6 +522,7 @@ async function selectPackageAndScript(
 
         // Launch all
         if (val === LAUNCH_ALL_SENTINEL) {
+          if (board) return { seed: queueToSeed(q, worktreePath) };
           return QUEUE_LAUNCHED;
         }
 
@@ -559,7 +565,10 @@ async function selectPackageAndScript(
               initialValue: true,
               stderr: true,
             });
-            if (runNow) return QUEUE_LAUNCHED;
+            if (runNow) {
+              if (board) return { seed: queueToSeed(q, worktreePath) };
+              return QUEUE_LAUNCHED;
+            }
           }
           // User cancelled name or declined to run -- back to picker
           cameFromScript = true;
@@ -803,30 +812,50 @@ async function selectPackageAndScript(
 
 // ─── Queue launch ──────────────────────────────────────────────────────────
 
-async function launchQueue(
+/** "<pkg> → <script> (<variation>)" -- the one fallback item label shape, shared so the queue's and the preset's fallback banners read identically. */
+function launchLabel(pkg: string, script: string, variationName?: string): string {
+  return `${pkg} → ${script}${variationName ? ` (${variationName})` : ""}`;
+}
+
+/** Why launchQueue/launchPreset fell back instead of opening a board -- checked in the same order as the gate they mirror (interactive() && tmuxAvailable()), so the banner names the real blocker rather than assuming it's about herdr. */
+function fallbackReason(): string {
+  return !interactive() ? "not running in an interactive terminal" : "tmux is not on PATH";
+}
+
+/** The command a queue item runs at launch: a variation's is a user-authored override, kept verbatim; a plain item's is rebuilt against the launch worktree, mirroring presetToSeed's `e.command ?? ...` fallback -- qi.command was detected at QUEUE time, against wherever it was queued, and would otherwise carry a stale package-manager prefix across a worktree switch. Shared by queueToSeed and the fallback items below. */
+function queueCommand(qi: QueuedItem, worktreePath: string): string {
+  return qi.variationName ? qi.command : `${detectPackageManager(join(worktreePath, qi.packageRelPath))} run ${qi.script}`;
+}
+
+/** Maps a launch queue's entries to runner seed rows, resolved against `worktreePath` -- the queue can be carried across a worktree switch, and qi.packagePath still points into the worktree where the item was queued. Pure (no spawning), so it stays directly testable. */
+export function queueToSeed(queue: QueuedItem[], worktreePath: string): SeedEntry[] {
+  return queue.map((qi) => ({
+    name: `${qi.script}${qi.variationName ? ` (${qi.variationName})` : ""}`,
+    command: queueCommand(qi, worktreePath),
+    cwd: join(worktreePath, qi.packageRelPath),
+    pkg: qi.packageLabel,
+    repo: basename(worktreePath),
+  }));
+}
+
+/** Resolve a launch queue's entries against the current worktree and open a seeded runner board, or run them in place when not interactive or tmux is unavailable. Mirrors launchPreset; exported for direct testing, same as queueToSeed. */
+export async function launchQueue(
   queue: QueuedItem[],
   worktreePath: string,
+  ctx: CommandContext,
 ): Promise<void> {
   if (queue.length === 0) return;
 
-  const items: LaunchItem[] = queue.map((qi) => {
-    // Re-resolve against the launch worktree (like launchPreset does) — the
-    // queue can be carried across a worktree switch, and qi.packagePath still
-    // points into the worktree where the item was queued.
-    const cwd = join(worktreePath, qi.packageRelPath);
-    const varSuffix = qi.variationName ? ` (${qi.variationName})` : "";
-    return {
-      label: `${qi.packageLabel} > ${qi.script}${varSuffix}`,
-      command: qi.command,
-      cwd,
-    };
-  });
-
-  process.stderr.write(`\n`);
-  if (isInsideHerdr()) {
-    await launchInHerdr(items);
+  if (interactive() && tmuxAvailable()) {
+    const seed = queueToSeed(queue, worktreePath);
+    await runSeededBoard(seed, ctx);
   } else {
-    launchFallback(items);
+    const items: LaunchItem[] = queue.map((qi) => ({
+      label: launchLabel(qi.packageLabel, qi.script, qi.variationName),
+      command: queueCommand(qi, worktreePath),
+      cwd: join(worktreePath, qi.packageRelPath),
+    }));
+    launchFallback(items, fallbackReason());
   }
 }
 
@@ -841,7 +870,7 @@ export function presetToSeed(preset: Preset, worktreePath: string): SeedEntry[] 
   }));
 }
 
-/** Resolve a saved preset's entries against the current worktree and open a seeded runner board (or run them in place when herdr isn't available). Exported for direct testing, same as presetToSeed. */
+/** Resolve a saved preset's entries against the current worktree and open a seeded runner board, or run them in place when not interactive or tmux is unavailable. Exported for direct testing, same as presetToSeed. */
 export async function launchPreset(preset: Preset, worktreePath: string, ctx: CommandContext): Promise<void> {
   if (interactive() && tmuxAvailable()) {
     const seed = presetToSeed(preset, worktreePath);
@@ -850,11 +879,11 @@ export async function launchPreset(preset: Preset, worktreePath: string, ctx: Co
     // The board never opens on this path, so the echo is the only cue of what launched.
     process.stderr.write(`\n  preset ${bold}${preset.name}${reset}\n\n`);
     const items: LaunchItem[] = preset.entries.map((e) => ({
-      label: `${e.packageLabel} → ${e.script}${e.variationName ? ` (${e.variationName})` : ""}`,
+      label: launchLabel(e.packageLabel, e.script, e.variationName),
       command: e.command ?? `${detectPackageManager(join(worktreePath, e.packageRelPath))} run ${e.script}`,
       cwd: join(worktreePath, e.packageRelPath),
     }));
-    launchFallback(items);
+    launchFallback(items, fallbackReason());
   }
 }
 
@@ -914,7 +943,7 @@ export async function resolveRun(
       const sel = await selectPackageAndScript(worktreePath, repoName, ctx, ctxLabel, queue, opts?.board);
       if (sel === QUEUE_LAUNCHED) {
         // Queue was built and user chose "Launch all" -- launch and exit
-        await launchQueue(queue, worktreePath);
+        await launchQueue(queue, worktreePath, ctx);
         return { kind: "launched" };
       }
       if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
@@ -1043,7 +1072,7 @@ export async function resolveRun(
               : repoLabel(selectedRepo.repoName);
             const sel = await selectPackageAndScript(worktreePath, repoName, ctx, wtCtx, queue, opts?.board);
             if (sel === QUEUE_LAUNCHED) {
-              await launchQueue(queue, worktreePath);
+              await launchQueue(queue, worktreePath, ctx);
               return { kind: "launched" };
             }
             if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
@@ -1094,12 +1123,16 @@ export async function runCommand(
   // replays the actual command instead of "rt run".
   try { ensureHistoryHook(); } catch { /* don't block on setup */ }
 
-  const res = await resolveRun(args, ctx);
+  // --resolve-only sets the board option too: a queue or preset pick then
+  // resolves to seed rows instead of launching, exactly as a live board's
+  // add flow resolves -- "resolve only" means resolve, launch nothing.
+  const res = await resolveRun(args, ctx, resolveOnly ? { board: true } : undefined);
   if (res.kind === "launched") return;
   if (res.kind === "cancelled") process.exit(res.code);
-  // Seed resolutions exist only under the board option, which this caller
-  // never passes.
-  if (res.kind === "seed") throw new Error("seed resolution outside a board resolve");
+  if (res.kind === "seed") {
+    process.stdout.write(JSON.stringify({ seed: res.entries }) + "\n");
+    return;
+  }
   const result = res.result;
 
   if (resolveOnly) {
