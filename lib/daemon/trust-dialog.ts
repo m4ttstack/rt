@@ -79,17 +79,21 @@ const REASON_RE = /permission-root\s*relocation\s*to\s*"(?<path>[^"]*)"/i;
 const REASON_PHRASE_RE = /permission-root\s*relocation\s*to/i;
 const RESOLVES_RE = /\(\s*resolves\s*to\s*"(?<real>[^"]*)"\s*\)/i;
 const PROCEED_RE = /do\s*you\s*want\s*to\s*proceed/i;
-const BOX_TOP_RE = /[╭┌]/;
-const RULE_RE = /^\s*─{8,}\s*$/;
 // A Bash, Edit or MCP prompt sits under the same rule (or box), asks the same
 // proceed question, and shows text the model wrote: a command, a diff, tool
-// arguments. So the reason phrase never identifies this dialog on its own;
-// its heading does, and under a rule so does the tool line echoing the path
-// the reason names. That echo wraps at a different column than the gutter
-// line, so a path collapsed by a dropped wrap space cannot pass both.
-const TOOL_USE_HEADING = "Tool use";
-const ENTER_ECHO_RE = /^Entering worktree\((?<path>.*)\)$/;
-const BOXED_HEADING = "EnterWorktree";
+// arguments, all painted indented under the prompt's own heading. So every
+// anchor here is matched at its exact column, never after trimming: a
+// command line cannot start at column 0 or 1, cannot be the box top, and
+// cannot sit where the heading sits. Under a rule the tool line must also
+// echo the path the reason names; that echo wraps at a different column
+// than the gutter line, so a path collapsed by a dropped wrap space cannot
+// pass both.
+const BOX_TOP_RE = /^[╭┌]─+[╮┐]\s*$/;
+const BOXED_HEADING_RE = /^[│┃╎┆|] EnterWorktree\s+[│┃╎┆|]\s*$/;
+const RULE_RE = /^─{8,}\s*$/;
+const TOOL_USE_RE = /^ Tool use\s*$/;
+const ENTER_ECHO_START = "   Entering worktree(";
+const REASON_GUTTER_RE = /^ [│┃╎┆|] permission-root\s*relocation\s*to/i;
 const GUTTER_RE = /^\s*[│┃╎┆|]/;
 // The dialog body (heading, echo, reason, suffixes, question) fits well
 // inside this many lines above the options even with a long wrapped path;
@@ -104,18 +108,27 @@ function joinBoxLines(lines: string[]): string {
   return lines.map((l) => l.replace(/[│┃╎┆|╭╮╰╯]/g, " ").replace(/^[\s─]+|[\s─]+$/g, "")).join("");
 }
 
-function stripDecoration(line: string): string {
-  return line.replace(/[│┃╎┆|╭╮╰╯─]/g, " ").trim();
-}
-
-/** The path the ruled dialog's own tool line echoes, or null when the lines under the rule are not this dialog's heading and echo. */
+/**
+ * The path the ruled dialog's own tool line echoes, or null when the lines
+ * under the rule are not this dialog's heading, echo and gutter reason at
+ * their own columns. A narrow pane wraps the echo; its continuation lines
+ * carry no gutter and the closing paren lands on the last one, so they are
+ * rejoined the same way the reason is.
+ */
 function ruledEchoPath(bodyLines: string[]): string | null {
-  const stripped = bodyLines.map(stripDecoration).filter((l) => l !== "");
-  if (stripped[0] !== TOOL_USE_HEADING) return null;
-  const echo = ENTER_ECHO_RE.exec(stripped[1] ?? "");
-  if (!echo) return null;
-  if (!bodyLines.some((l) => GUTTER_RE.test(l) && REASON_PHRASE_RE.test(l))) return null;
-  return echo.groups?.path ?? null;
+  const nonBlank = bodyLines.filter((l) => l.trim() !== "");
+  if (!TOOL_USE_RE.test(nonBlank[0] ?? "")) return null;
+  const echoStart = nonBlank[1] ?? "";
+  if (!echoStart.startsWith(ENTER_ECHO_START)) return null;
+  let echo = echoStart.slice(ENTER_ECHO_START.length).trimEnd();
+  for (let i = 2; !echo.endsWith(")") && i < Math.min(nonBlank.length, 5); i++) {
+    const cont = nonBlank[i] as string;
+    if (GUTTER_RE.test(cont)) break;
+    echo += cont.trim();
+  }
+  if (!echo.endsWith(")")) return null;
+  if (!bodyLines.some((l) => REASON_GUTTER_RE.test(l))) return null;
+  return echo.slice(0, -1);
 }
 
 /**
@@ -150,7 +163,7 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   const bodyLines = lines.slice(top + 1, first);
   const ruled = RULE_RE.test(lines[top] as string);
   const echoPath = ruled ? ruledEchoPath(bodyLines) : null;
-  if (ruled ? echoPath === null : !bodyLines.map(stripDecoration).includes(BOXED_HEADING)) return null;
+  if (ruled ? echoPath === null : !BOXED_HEADING_RE.test(bodyLines[0] ?? "")) return null;
   const body = joinBoxLines(bodyLines);
   if (!PROCEED_RE.test(body)) return null;
   // The LAST reason match: the live dialog's reason sits nearest its own
