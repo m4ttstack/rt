@@ -340,6 +340,24 @@ function caseInsensitiveComparePath(a: string, b: string): number {
   return 0;
 }
 
+function changeFilter(filter: string): (path: string) => boolean {
+  const text = filter.trim().toLowerCase();
+  return (path) => text === "" || path.toLowerCase().includes(text);
+}
+
+/**
+ * GHD's updateChangedFiles rule (keep a selection that still exists, else
+ * the first file), narrowed to the filtered list as the view's cursor is
+ * (mission.go's clampSelection): keep a selection the list still shows,
+ * else its first row, else nothing. The two must agree, or the list
+ * highlights one file while the diff shows another.
+ */
+export function reconcileSelectedPath(files: ReadonlyArray<{ path: string }>, selected: string | null, filter: string): string | null {
+  const listed = files.map((f) => f.path).filter(changeFilter(filter));
+  if (selected !== null && listed.includes(selected)) return selected;
+  return listed.sort(caseInsensitiveComparePath)[0] ?? null;
+}
+
 // GHD's own model (ratified 2026-09-21): a checkbox means "include in the
 // next commit," not "already in the index" -- include is purely a read of
 // the driver's own persisted selection now, never file.staged/unstaged.
@@ -508,8 +526,8 @@ export function buildModel(input: {
 
   // The filter narrows only the visible list; totals and the commit gate
   // keep counting every change, or filtering would silently disable commit.
-  const filterText = state.filter.trim().toLowerCase();
-  const changes = filterText === "" ? allChanges : allChanges.filter((change) => change.path.toLowerCase().includes(filterText));
+  const listed = changeFilter(state.filter);
+  const changes = allChanges.filter((change) => listed(change.path));
 
   const changedTotal = allChanges.length;
   const stagedTotal = allChanges.filter((change) => change.include !== "none").length;

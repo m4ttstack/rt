@@ -12,9 +12,9 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"rt-ui/internal/busyspin"
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/session"
-	"rt-ui/internal/theme"
 )
 
 type tickMsg time.Time
@@ -29,7 +29,7 @@ type Board struct {
 	input    textinput.Model
 	width    int
 	height   int
-	spin     spinner.Model
+	spin     busyspin.Spinner
 	now      time.Time
 	reason   session.Reason
 }
@@ -41,7 +41,7 @@ func New(em *session.Emitter) *Board {
 	return &Board{
 		em:     em,
 		input:  ti,
-		spin:   spinner.New(spinner.WithSpinner(theme.Spinner())),
+		spin:   busyspin.New(),
 		now:    time.Now(),
 		reason: session.ReasonClosed,
 	}
@@ -64,14 +64,7 @@ func tick() tea.Cmd {
 }
 
 func (b *Board) Init() tea.Cmd {
-	return tea.Batch(tick(), b.spinCmd())
-}
-
-func (b *Board) spinCmd() tea.Cmd {
-	if b.anyTransitional() {
-		return b.spin.Tick
-	}
-	return nil
+	return tea.Batch(tick(), b.spin.Start(b.anyTransitional()))
 }
 
 func (b *Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -82,15 +75,9 @@ func (b *Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		b.now = time.Time(m)
 		return b, tick()
 	case spinner.TickMsg:
-		if !b.anyTransitional() {
-			return b, nil
-		}
-		var cmd tea.Cmd
-		b.spin, cmd = b.spin.Update(m)
-		return b, cmd
+		return b, b.spin.Update(m, b.anyTransitional())
 	case session.ModelUpdate:
 		prev := b.selected
-		wasTransitional := b.anyTransitional()
 		if err := b.SetModel(m.Raw); err != nil {
 			return b, nil
 		}
@@ -98,9 +85,7 @@ func (b *Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if b.tailOpen && b.selected != prev {
 			cmds = append(cmds, b.tailIntent(true))
 		}
-		if !wasTransitional && b.anyTransitional() {
-			cmds = append(cmds, b.spin.Tick)
-		}
+		cmds = append(cmds, b.spin.Start(b.anyTransitional()))
 		return b, tea.Batch(cmds...)
 	case session.CloseRequest:
 		b.reason = session.ReasonClosed

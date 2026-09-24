@@ -53,7 +53,7 @@ describe("canStash", () => {
 describe("createStashAndDropPreviousEntry", () => {
   test("creates first, then drops the branch's previous entry", async () => {
     const { client, calls } = fake({ lastDesktopStashEntryForBranch: async () => entry("old") });
-    expect(await createStashAndDropPreviousEntry(client, "main", ["n"])).toBe(true);
+    expect(await createStashAndDropPreviousEntry(client, "main", ["n"])).toBe("");
     expect(calls).toEqual(["create main [n]", "drop old"]);
   });
 
@@ -62,8 +62,31 @@ describe("createStashAndDropPreviousEntry", () => {
       lastDesktopStashEntryForBranch: async () => entry("old"),
       createDesktopStashEntry: async () => false,
     });
-    expect(await createStashAndDropPreviousEntry(client, "main", [])).toBe(false);
+    expect(await createStashAndDropPreviousEntry(client, "main", [])).toBe("");
     expect(calls).toEqual([]);
+  });
+
+  test("a failed create throws, and the previous entry is kept", async () => {
+    const { client, calls } = fake({
+      lastDesktopStashEntryForBranch: async () => entry("old"),
+      createDesktopStashEntry: async () => {
+        throw new Error("create boom");
+      },
+    });
+    await expect(createStashAndDropPreviousEntry(client, "main", [])).rejects.toThrow("create boom");
+    expect(calls).toEqual([]);
+  });
+
+  test("a failed drop after a successful create reports the drop, not the stash", async () => {
+    const { client, calls } = fake({
+      lastDesktopStashEntryForBranch: async () => entry("old"),
+      dropDesktopStashEntry: async () => {
+        throw new Error("drop boom");
+      },
+    });
+    const notice = await createStashAndDropPreviousEntry(client, "main", []);
+    expect(notice).toBe("Your changes were stashed, but the previous stash could not be removed: drop boom");
+    expect(calls).toEqual(["create main []"]);
   });
 });
 
@@ -84,6 +107,38 @@ describe("checkoutAndLeaveChanges", () => {
     const { client, calls } = fake({ createDesktopStashEntry: async () => { throw new Error("boom"); } });
     expect(await checkoutAndLeaveChanges(client, "other", snap())).toBe("boom");
     expect(calls).toEqual(["last main", "checkout other"]);
+  });
+
+  test("a failed drop of the old entry is reported and the checkout still runs", async () => {
+    const { client, calls } = fake({
+      lastDesktopStashEntryForBranch: async (b: string) => (calls.push(`last ${b}`), entry("old")),
+      dropDesktopStashEntry: async () => {
+        throw new Error("drop boom");
+      },
+    });
+    expect(await checkoutAndLeaveChanges(client, "other", snap())).toBe("Your changes were stashed, but the previous stash could not be removed: drop boom");
+    expect(calls).toEqual(["last main", "create main []", "checkout other"]);
+  });
+
+  test("a failed checkout after a failed drop reports both", async () => {
+    const { client } = fake({
+      lastDesktopStashEntryForBranch: async () => entry("old"),
+      dropDesktopStashEntry: async () => {
+        throw new Error("drop boom");
+      },
+      checkoutBranch: async () => {
+        throw new Error("checkout boom");
+      },
+    });
+    await expect(checkoutAndLeaveChanges(client, "other", snap())).rejects.toThrow(
+      "Your changes were stashed, but the previous stash could not be removed: drop boom · checkout boom",
+    );
+  });
+
+  test("a failed checkout with nothing else to report rethrows the checkout error untouched", async () => {
+    const other = new Error("checkout boom");
+    const { client } = fake({ checkoutBranch: async () => { throw other; } });
+    await expect(checkoutAndLeaveChanges(client, "other", snap())).rejects.toBe(other);
   });
 });
 

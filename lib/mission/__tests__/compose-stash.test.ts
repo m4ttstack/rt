@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MissionDriver } from "../driver.ts";
 import type { MissionModel } from "../model.ts";
@@ -91,6 +91,29 @@ describe("mission compose: stash against a real repo", () => {
     }
   }, 30_000);
 
+  test("a stash whose old-entry drop fails keeps the new stash and names the drop", async () => {
+    const sandbox = await seeded();
+    // git's reflog rewrite needs a lock file beside the log; the append a stash push makes does not.
+    const reflogDir = join(sandbox.dir, ".git", "logs", "refs");
+    try {
+      await sandbox.write("a.txt", "first\n");
+      const { session, stop } = await start(sandbox);
+      await session.step({ t: "intent", name: "mission:stash", payload: {} });
+      await sandbox.write("a.txt", "second\n");
+      await session.step({ t: "intent", name: "mission:refresh", payload: {} });
+      chmodSync(reflogDir, 0o555);
+      const m = await session.step({ t: "intent", name: "mission:stash", payload: {} });
+      chmodSync(reflogDir, 0o755);
+      expect(m.notice).toStartWith("Your changes were stashed, but the previous stash could not be removed:");
+      expect(m.changes).toEqual([]);
+      expect(await desktopStashes(sandbox)).toHaveLength(2);
+      await stop();
+    } finally {
+      chmodSync(reflogDir, 0o755);
+      await sandbox.cleanup();
+    }
+  }, 30_000);
+
   test("switching with changes asks once, and Leave stashes on the old branch", async () => {
     const sandbox = await seeded();
     try {
@@ -114,6 +137,26 @@ describe("mission compose: stash against a real repo", () => {
       expect(m.switchPrompt).toBeNull();
       expect(m.current.branch).toBe("main");
       expect(m.stash?.branch).toBe("main");
+      await stop();
+    } finally {
+      await sandbox.cleanup();
+    }
+  }, 30_000);
+
+  test("a Leave whose checkout fails shows the clean-tree card, not the stashed file's header", async () => {
+    const sandbox = await seeded();
+    try {
+      await sandbox.write("a.txt", "dirty\n");
+      const { session, seed, stop } = await start(sandbox);
+      expect(seed.diff.path).toBe("a.txt");
+
+      const m = await session.step({ t: "intent", name: "mission:checkout", payload: { branch: "no-such-branch", strategy: "leave" } });
+      expect(m.notice).not.toBe("");
+      expect(m.current.branch).toBe("main");
+      expect(m.stash?.branch).toBe("main");
+      expect(m.changes).toEqual([]);
+      expect(m.diff.kind).toBe("none");
+      expect(m.diff.path).toBe("");
       await stop();
     } finally {
       await sandbox.cleanup();

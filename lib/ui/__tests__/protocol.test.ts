@@ -152,7 +152,7 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model).not.toHaveProperty("stashCount");
   expect(model.notice).toBe("");
   expect(model.editorLabel).toBe("Zed");
-  expect(model.stash?.branch).toBe("rt-191-mission-tui");
+  expect(model.stash?.branch).toBe("mission-tui");
   expect(model.stash?.files).toHaveLength(1);
   expect(model.stash?.showing).toBe(false);
   expect(model.switchPrompt).toBeNull();

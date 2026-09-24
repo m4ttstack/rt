@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStateDb } from "../../state/db.ts";
 import { createGitBadges } from "../git-badges-store.ts";
-import { createGitStatusSweep, toBadge } from "../git-status-sweep.ts";
+import { toBadge } from "../../git-badge.ts";
+import { createGitStatusSweep } from "../git-status-sweep.ts";
 import { makeSandbox } from "../../../packages/git-core/test-support/sandbox.ts";
 import { createGitClient } from "../../../packages/git-core/src/index.ts";
 
@@ -161,6 +162,7 @@ describe("git status sweep", () => {
         dir: "/whatever",
         snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
         fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => [{ name: "origin" }],
       }) as any,
     });
     await sweep.sweepNow();
@@ -174,6 +176,7 @@ describe("git status sweep", () => {
     const fakeClient = (dir: string) => ({
       snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
       fetchState: async () => ({ lastFetchedAt: null }),
+      remotes: async () => [{ name: "origin" }],
       fetch: async (_remote: string | undefined, signal: AbortSignal) => {
         expect(signal).toBeInstanceOf(AbortSignal);
         fetched.push(dir);
@@ -198,6 +201,7 @@ describe("git status sweep", () => {
     const fakeClient = (dir: string) => ({
       snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
       fetchState: async () => ({ lastFetchedAt: null }),
+      remotes: async () => [{ name: "origin" }],
       fetch: async () => { fetched.push(dir); },
     }) as any;
     const sweep = sweepWith({
@@ -221,6 +225,7 @@ describe("git status sweep", () => {
       const fakeClient = (dir: string) => ({
         snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
         fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => [{ name: "origin" }],
         // A client whose fetch does not honor the abort signal at all: the
         // in-flight guard can only clear once this promise itself settles,
         // and it never does.
@@ -249,6 +254,7 @@ describe("git status sweep", () => {
       const fakeClient = (dir: string) => ({
         snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
         fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => [{ name: "origin" }],
         // Mirrors rawGit: an aborted signal rejects the fetch promptly, which
         // is what lets fetchesInFlight clear before the next pass runs.
         fetch: (_remote: string | undefined, signal: AbortSignal) => {
@@ -272,6 +278,43 @@ describe("git status sweep", () => {
     }
   });
 
+  test("a repo with no origin remote is never fetched", async () => {
+    const fetched: string[] = [];
+    const sweep = sweepWith({
+      repoIndex: () => ({ r: "/main" }),
+      readConfig: () => ({ sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 }),
+      makeClient: ((dir: string) => ({
+        snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+        fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => [{ name: "upstream" }],
+        fetch: async () => { fetched.push(dir); },
+      })) as any,
+      listWorktrees: async () => [{ path: "/main", branch: "main", headSha: null, isBare: false }],
+    });
+    const { changed } = await sweep.sweepNow();
+    expect(fetched).toEqual([]);
+    expect(changed).toEqual(["r"]);
+  });
+
+  test("a remotes lookup that fails skips the fetch and still snapshots", async () => {
+    const fetched: string[] = [];
+    const sweep = sweepWith({
+      repoIndex: () => ({ r: "/main" }),
+      readConfig: () => ({ sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 }),
+      makeClient: ((dir: string) => ({
+        snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+        fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => { throw new Error("git remote failed"); },
+        fetch: async () => { fetched.push(dir); },
+      })) as any,
+      listWorktrees: async () => [{ path: "/main", branch: "main", headSha: null, isBare: false }],
+    });
+    const { changed } = await sweep.sweepNow();
+    expect(fetched).toEqual([]);
+    expect(changed).toEqual(["r"]);
+    expect(sweep.errors().get("r")).toBeUndefined();
+  });
+
   test("a fetch failure does not stop the snapshot", async () => {
     const sweep = sweepWith({
       repoIndex: () => ({ r: "/main" }),
@@ -279,6 +322,7 @@ describe("git status sweep", () => {
       makeClient: ((dir: string) => ({
         snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
         fetchState: async () => ({ lastFetchedAt: null }),
+        remotes: async () => [{ name: "origin" }],
         fetch: async () => { throw new Error("network down"); },
       })) as any,
       listWorktrees: async () => [{ path: "/main", branch: "main", headSha: null, isBare: false }],

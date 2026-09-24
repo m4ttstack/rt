@@ -433,8 +433,10 @@ pre-ratification drawing:
   iconography. An unpatched font shows fallback boxes there; accepted.
 - The undo strip is one line ("Committed <when> · <summary>" clipped to the
   sidebar, Undo chip right) instead of the boards' two-line strip.
-- The main keybar lists the built action set (adds "enter diff" and
-  "u undo", names the adaptive segment key "f action", omits "? help").
+- The main keybar lists the built action set (adds "enter diff",
+  "u undo", "S stash", and "h show stash", names the adaptive segment key
+  "f action", omits "? help"). The stash keys sit last, so a narrow
+  terminal clips them first.
   Both tabs also add "⌃k menu" right after the tab-switch key, so it
   survives a narrow terminal.
 - The stash view is a third keybar mode, replacing the Changes keybar

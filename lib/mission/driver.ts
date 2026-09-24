@@ -21,7 +21,7 @@ import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.t
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { ResolvedEditor } from "../../commands/code.ts";
 import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
-import { toBadge } from "../daemon/git-status-sweep.ts";
+import { toBadge } from "../git-badge.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import type { FileActions } from "../file-actions.ts";
 import { canon } from "../fs-canon.ts";
@@ -35,7 +35,7 @@ import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
 import { HistoryStore, type HistoryBranch } from "./history.ts";
 import { buildHistoryModel, committedFileRow } from "./history-model.ts";
-import { buildModel, joinWorktreeRows, mergeWorktreeTrees, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import { buildModel, joinWorktreeRows, mergeWorktreeTrees, reconcileSelectedPath, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import {
   canStash,
   checkoutAndBringChanges,
@@ -185,6 +185,9 @@ interface DriverState extends MissionState {
   tab: "changes" | "history";
 }
 
+/** What one git-status pass did; see refreshBadges. */
+type SweepOutcome = "applied" | "overtaken" | "moved";
+
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
 const DISCARD_CONFIRM_WINDOW_MS = 5000;
 
@@ -259,6 +262,8 @@ export class MissionDriver {
   private stagingDiff: StagingDiff | null = null;
   private action: ActionState = { kind: "fetch", title: "Fetch origin", meta: "Never fetched", ahead: 0, behind: 0 };
   private refreshingBadges = false;
+  /** Bumped as every refresh() starts; see refreshBadges for what it guards. */
+  private refreshGen = 0;
   /** Short sha of HEAD's tip, shown as current.branch on a detached checkout. */
   private headShortSha = "";
   /** Cached by refresh() (initial load, and every repo/worktree/checkout
@@ -376,8 +381,10 @@ export class MissionDriver {
     if (this.refreshingBadges) return;
     this.refreshingBadges = true;
     try {
-      await this.refreshBadges();
-      this.push();
+      let outcome: SweepOutcome;
+      do outcome = await this.refreshBadges();
+      while (outcome === "moved");
+      if (outcome === "applied") this.push();
     } finally {
       this.refreshingBadges = false;
     }
@@ -500,6 +507,7 @@ export class MissionDriver {
 
   /** Repos, snapshot, branches, the stash entry, and last commit -- everything but the diff for the current pane. */
   private async refresh(): Promise<void> {
+    this.refreshGen++;
     const client = this.deps.client(this.state.currentWorktree);
     // Every call site that changes currentWorktree (handleCheckout/Worktree/
     // Repo) awaits refresh() before its own push(), so re-resolving here
@@ -529,9 +537,7 @@ export class MissionDriver {
     this.guards = guards;
     this.gitWorktrees = gitWorktrees;
     this.reconcileSelections();
-    // Seed the diff pane on open (and after a checkout/worktree/repo switch
-    // cleared it): the first change is what the view's cursor starts on.
-    if (this.state.selectedPath === null) this.state.selectedPath = snapshot.files[0]?.path ?? null;
+    this.state.selectedPath = reconcileSelectedPath(snapshot.files, this.state.selectedPath, this.state.filter);
     this.branches = branches;
     const entry = log[0];
     this.headShortSha = entry ? entry.sha.slice(0, 7) : "";
@@ -552,37 +558,63 @@ export class MissionDriver {
   /**
    * Just the badges/snapshot/diff a repos:status sweep changed -- the
    * git-status subscription's own refresh, cheaper than a full seed.
-   * The worktree and selected path are captured before the await and
-   * re-checked after: a switch mid-flight (worktree, repo, or selection)
-   * must discard this pass's result rather than publish it onto whatever
-   * is current by the time it lands, and the diff is refetched alongside
-   * the snapshot so the two never publish out of step with each other.
+   * Every read, including the diff for a selection that moved, lands
+   * before the first write, so the snapshot, selection, and diff publish
+   * together or not at all. A pass is "overtaken" when a refresh() started
+   * meanwhile (every worktree, repo, and branch switch runs one, and it
+   * re-reads everything), and must push nothing: the switch may still be
+   * mid-refresh, with currentWorktree moved and this.snapshot not. A pass
+   * whose selection or filter moved mid-read is "moved": nothing else will
+   * re-read what it saw, since the daemon emits only on a change, so the
+   * caller runs it again.
    */
-  private async refreshBadges(): Promise<void> {
+  private async refreshBadges(): Promise<SweepOutcome> {
+    const gen = this.refreshGen;
     const worktree = this.state.currentWorktree;
     const selectedPath = this.state.selectedPath;
+    const filter = this.state.filter;
     const client = this.deps.client(worktree);
+    const check = (): SweepOutcome | null =>
+      this.refreshGen !== gen || this.state.currentWorktree !== worktree
+        ? "overtaken"
+        : this.state.selectedPath !== selectedPath || this.state.filter !== filter
+          ? "moved"
+          : null;
     const [statusRes, snapshot, fetchState, stagingDiff] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       client.snapshot(),
       client.fetchState(),
       selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
     ]);
-    if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return;
+    const afterRead = check();
+    if (afterRead) return afterRead;
+    const nextPath = reconcileSelectedPath(snapshot.files, selectedPath, filter);
+    const nextDiff = nextPath === selectedPath ? stagingDiff : nextPath ? await client.stagingDiff(nextPath) : null;
+    const afterDiff = check();
+    if (afterDiff) return afterDiff;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
     this.fetchState = fetchState;
+    this.state.selectedPath = nextPath;
+    this.stagingDiff = nextDiff;
     this.reconcileSelections();
     this.clearOnDisk();
-    this.stagingDiff = stagingDiff;
     this.recomputeAction();
     await this.stash.load(client, snapshot.branch);
-    if (this.state.currentWorktree !== worktree) return;
+    if (this.refreshGen !== gen || this.state.currentWorktree !== worktree) return "overtaken";
     await this.syncHistory();
+    return "applied";
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
     this.stagingDiff = this.state.selectedPath ? await client.stagingDiff(this.state.selectedPath) : null;
+  }
+
+  /** Reads the diff before moving the selection: a push during the read must not pair one file's header with another's hunks. */
+  private async selectPath(path: string | null): Promise<void> {
+    const diff = path ? await this.deps.client(this.state.currentWorktree).stagingDiff(path) : null;
+    this.state.selectedPath = path;
+    this.stagingDiff = diff;
   }
 
   /**
@@ -1018,7 +1050,6 @@ export class MissionDriver {
     }
     if (switched) {
       this.stash.hide();
-      this.state.selectedPath = null;
       this.state.selections = new Map();
     }
     await this.refresh();
@@ -1030,11 +1061,10 @@ export class MissionDriver {
     this.snapshot = await client.snapshot();
     if (canStash(this.snapshot)) {
       try {
-        await createStashAndDropPreviousEntry(client, this.snapshot.branch!, untrackedPaths(this.snapshot));
+        this.state.notice = await createStashAndDropPreviousEntry(client, this.snapshot.branch!, untrackedPaths(this.snapshot));
       } catch (err) {
         this.state.notice = err instanceof Error ? err.message : String(err);
       }
-      this.state.selectedPath = null;
     }
     await this.refresh();
     this.push();
@@ -1074,7 +1104,6 @@ export class MissionDriver {
       return;
     }
     this.state.notice = "";
-    this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
     this.push();
@@ -1104,7 +1133,6 @@ export class MissionDriver {
     }
     if (typeof payload.path !== "string") return;
     this.setCurrentWorktree(payload.path, false);
-    this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
     this.push();
@@ -1168,7 +1196,6 @@ export class MissionDriver {
         ? "a ready step failed; dependencies in this tree may be stale"
         : "";
     this.setCurrentWorktree(data.path, data.readyPending === true && cachedOk === undefined);
-    this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
     this.push();
@@ -1186,7 +1213,6 @@ export class MissionDriver {
     }
     this.state.currentRepo = payload.repo;
     this.setCurrentWorktree(target.worktree, false);
-    this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
     this.push();
@@ -1194,13 +1220,15 @@ export class MissionDriver {
 
   private async handleSelect(payload: SelectPayload | undefined): Promise<void> {
     if (!payload) return;
-    if (typeof payload.filter === "string") this.state.filter = payload.filter;
+    if (typeof payload.filter === "string") {
+      const next = reconcileSelectedPath(this.snapshot.files, this.state.selectedPath, payload.filter);
+      if (next !== this.state.selectedPath) await this.selectPath(next);
+      this.state.filter = payload.filter;
+    }
     if (typeof payload.path === "string") {
       // GHD: selecting a working-directory file replaces the stash selection.
       this.stash.hide();
-      this.state.selectedPath = payload.path === "" ? null : payload.path;
-      const client = this.deps.client(this.state.currentWorktree);
-      await this.refreshDiff(client);
+      await this.selectPath(payload.path === "" ? null : payload.path);
     }
     if (payload.showOversized === true && this.state.selectedPath) this.state.showOversized.add(this.state.selectedPath);
     if (payload.showOversized === false && this.state.selectedPath) this.state.showOversized.delete(this.state.selectedPath);
@@ -1289,7 +1317,6 @@ export class MissionDriver {
           }
           await client.discardChanges(this.snapshot.files);
           this.state.selections = new Map();
-          this.state.selectedPath = null;
           break;
         }
         case "create-tag": {

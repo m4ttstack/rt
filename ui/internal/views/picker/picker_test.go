@@ -2681,9 +2681,9 @@ func TestMultiSelectGolden(t *testing.T) {
 		T: "pick", Protocol: protocol.Version,
 		Breadcrumb:    []string{"rt", "worktree", "dispose"},
 		Multi:         true,
-		InitialValues: []string{"rt-94-deck-dev-mode", "chat-qol"},
+		InitialValues: []string{"deck-dev-mode", "chat-qol"},
 		Rows: []protocol.PickRow{
-			{Value: "rt-94-deck-dev-mode", Left: []protocol.PickSegment{{Text: "rt-94-deck-dev-mode", Tone: "text"}}},
+			{Value: "deck-dev-mode", Left: []protocol.PickSegment{{Text: "deck-dev-mode", Tone: "text"}}},
 			{Value: "chat-qol", Left: []protocol.PickSegment{{Text: "chat-qol", Tone: "text"}}},
 			{Value: "bundle-ci", Left: []protocol.PickSegment{{Text: "bundle-ci", Tone: "text"}}},
 			{Value: "chat-invite", Left: []protocol.PickSegment{{Text: "chat-invite", Tone: "text"}}},
@@ -2699,14 +2699,14 @@ func TestMultiSelectGolden(t *testing.T) {
 	if !strings.Contains(plain, "◉ 2 selected  ·  5/5") {
 		t.Fatalf("header missing the multi count: %q", plain)
 	}
-	if !strings.Contains(plain, "selected  rt-94-deck-dev-mode · chat-qol") {
+	if !strings.Contains(plain, "selected  deck-dev-mode · chat-qol") {
 		t.Fatalf("selected panel missing or wrong: %q", plain)
 	}
 
 	lines := strings.Split(plain, "\n")
 	var selectedLine, cursorLine string
 	for _, l := range lines {
-		if strings.Contains(l, "rt-94-deck-dev-mode") {
+		if strings.Contains(l, "deck-dev-mode") {
 			selectedLine = l
 		}
 		if strings.Contains(l, "bundle-ci") {

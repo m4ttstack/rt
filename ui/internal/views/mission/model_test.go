@@ -30,7 +30,7 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 		t.Fatalf("SetModel: %v", err)
 	}
 
-	if m.model.Current.Repo != "repo-tools" || m.model.Current.Branch != "rt-191-mission-tui" {
+	if m.model.Current.Repo != "repo-tools" || m.model.Current.Branch != "mission-tui" {
 		t.Fatalf("Current: %+v", m.model.Current)
 	}
 	if m.model.Action.Kind != "pull" || m.model.Action.Ahead != 3 || m.model.Action.Behind != 2 {
@@ -58,7 +58,7 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 		t.Fatalf("Branches[0].When not populated: %+v", m.model.Branches[0])
 	}
 	if !m.model.Branches[1].Current || m.model.Branches[1].Group != "recent" {
-		t.Fatalf("Branches[1] (rt-191-mission-tui) should be the current row, leading \"recent\": %+v", m.model.Branches[1])
+		t.Fatalf("Branches[1] (mission-tui) should be the current row, leading \"recent\": %+v", m.model.Branches[1])
 	}
 	if m.model.Branches[1].When != "" {
 		t.Fatalf("the current row's When should be empty (it shows pills instead): %+v", m.model.Branches[1])
@@ -84,7 +84,7 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if m.model.Commit.LastCommit == nil || !m.model.Commit.LastCommit.Undoable {
 		t.Fatalf("Commit.LastCommit: %+v", m.model.Commit.LastCommit)
 	}
-	if m.model.Stash == nil || m.model.Stash.Branch != "rt-191-mission-tui" || len(m.model.Stash.Files) != 1 || m.model.Notice != "" {
+	if m.model.Stash == nil || m.model.Stash.Branch != "mission-tui" || len(m.model.Stash.Files) != 1 || m.model.Notice != "" {
 		t.Fatalf("Stash=%+v Notice=%q", m.model.Stash, m.model.Notice)
 	}
 	if m.model.EditorLabel != "Zed" {

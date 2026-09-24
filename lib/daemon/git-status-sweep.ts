@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import type { GitWorktreeBadge } from "../../packages/rt-client/src/commands.ts";
-import type { FetchState, RepoSnapshot } from "../../packages/git-core/src/index.ts";
-import { createGitClient } from "../../packages/git-core/src/index.ts";
+import { createGitClient, type GitClient } from "../../packages/git-core/src/index.ts";
+import { toBadge } from "../git-badge.ts";
 import { listWorktreesAsync } from "../worktree/git-async.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { RepoIndex } from "../repo-index.ts";
@@ -37,30 +37,6 @@ export interface GitStatusSweep {
   errors(): Map<string, string>;
 }
 
-export function toBadge(
-  worktree: string,
-  snap: RepoSnapshot,
-  fetch: FetchState,
-  updatedAt: string,
-): GitWorktreeBadge {
-  const files = snap.files;
-  return {
-    worktree,
-    branch: snap.branch,
-    detached: snap.detached,
-    staged: files.filter((f) => f.staged).length,
-    unstaged: files.filter((f) => f.unstaged && f.kind !== "untracked").length,
-    untracked: files.filter((f) => f.kind === "untracked").length,
-    conflicted: files.filter((f) => f.kind === "conflicted").length,
-    clean: snap.clean,
-    ahead: snap.ahead,
-    behind: snap.behind,
-    upstream: snap.upstream,
-    lastFetchedAt: fetch.lastFetchedAt,
-    updatedAt,
-  };
-}
-
 export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
   const listWorktrees = deps.listWorktrees ?? listWorktreesAsync;
   const makeClient = deps.makeClient ?? createGitClient;
@@ -90,33 +66,7 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
         ) {
           // Stamped before the attempt: a hanging remote must not re-hang every pass.
           fetchTimes.set(repo, now().getTime());
-          fetchesInFlight.add(repo);
-          const controller = new AbortController();
-          const fetchPromise = makeClient(mainPath).fetch(undefined, controller.signal);
-          // Settle-driven cleanup: the abort below makes a timed-out fetch's
-          // own child process die promptly, so this now fires close behind it
-          // rather than whenever some unrelated future settlement occurs.
-          fetchPromise.then(
-            () => { fetchesInFlight.delete(repo); },
-            () => { fetchesInFlight.delete(repo); },
-          );
-          let raceTimer: ReturnType<typeof setTimeout> | undefined;
-          try {
-            await Promise.race([
-              fetchPromise,
-              new Promise((_resolve, reject) => {
-                raceTimer = setTimeout(() => {
-                  controller.abort();
-                  reject(new Error("fetch timed out"));
-                }, 60_000);
-                raceTimer.unref?.();
-              }),
-            ]);
-          } catch (err) {
-            deps.log.warn({ err, repo }, "background fetch failed; snapshotting with stale remote refs");
-          } finally {
-            clearTimeout(raceTimer);
-          }
+          await fetchOrigin(repo, makeClient(mainPath));
         }
         const trees = await listWorktrees(mainPath);
         if (trees === null) {
@@ -142,6 +92,43 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
     if (announce.length > 0) deps.emit("git-status", { repos: announce });
     lastCompletedAt = now().getTime();
     return { changed };
+  }
+
+  /**
+   * fetch() targets origin, and git empties FETCH_HEAD before it connects:
+   * fetching a repo with no origin would fail once per fetch cadence and
+   * leave a fresh, empty FETCH_HEAD behind. A failed remotes lookup skips
+   * the fetch rather than the snapshot.
+   */
+  async function fetchOrigin(repo: string, client: GitClient): Promise<void> {
+    const hasOrigin = await client.remotes().then((remotes) => remotes.some((r) => r.name === "origin"), () => false);
+    if (!hasOrigin) return;
+    fetchesInFlight.add(repo);
+    const controller = new AbortController();
+    const fetchPromise = client.fetch(undefined, controller.signal);
+    // Settle-driven cleanup: the abort below kills a timed-out fetch's
+    // child process, so the in-flight mark clears promptly after a timeout.
+    fetchPromise.then(
+      () => { fetchesInFlight.delete(repo); },
+      () => { fetchesInFlight.delete(repo); },
+    );
+    let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        fetchPromise,
+        new Promise((_resolve, reject) => {
+          raceTimer = setTimeout(() => {
+            controller.abort();
+            reject(new Error("fetch timed out"));
+          }, 60_000);
+          raceTimer.unref?.();
+        }),
+      ]);
+    } catch (err) {
+      deps.log.warn({ err, repo }, "background fetch failed; snapshotting with stale remote refs");
+    } finally {
+      clearTimeout(raceTimer);
+    }
   }
 
   function sweepNow(opts?: SweepOptions): Promise<{ changed: string[] }> {

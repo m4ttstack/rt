@@ -149,7 +149,7 @@
                   "content": "Current Branch"
                 },
                 "kkLYY": {
-                  "content": "rt-191-mission-tui"
+                  "content": "mission-tui"
                 }
               }
             },
@@ -981,7 +981,7 @@
                           "id": "R3t4OL",
                           "name": "CommitLabel",
                           "fill": "#161224",
-                          "content": "Commit 4 files to rt-191-mission-tui",
+                          "content": "Commit 4 files to mission-tui",
                           "fontFamily": "$mono",
                           "fontSize": 12,
                           "fontWeight": "bold"
@@ -4297,7 +4297,7 @@
                   "id": "MU6ao",
                   "name": "V",
                   "fill": "$text",
-                  "content": "rt-191-mission-tui",
+                  "content": "mission-tui",
                   "fontFamily": "$mono",
                   "fontSize": 11,
                   "fontWeight": "bold"
@@ -4480,7 +4480,7 @@
                 {
                   "type": "frame",
                   "id": "RFwI4",
-                  "name": "BR rt-191-mission-tui",
+                  "name": "BR mission-tui",
                   "width": "fill_container",
                   "height": 24,
                   "gap": 8,
@@ -4517,7 +4517,7 @@
                       "fill": "$text-soft",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "rt-191-mission-tui",
+                      "content": "mission-tui",
                       "fontFamily": "$mono",
                       "fontSize": 12,
                       "fontWeight": "normal"
@@ -4769,7 +4769,7 @@
                       "id": "jfp8z",
                       "name": "T",
                       "fill": "$lav",
-                      "content": "New branch from rt-191-mission-tui…",
+                      "content": "New branch from mission-tui…",
                       "fontFamily": "$mono",
                       "fontSize": 12,
                       "fontWeight": "bold"
@@ -5081,7 +5081,7 @@
                   "fill": "$dimmer",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "rt-191-mission-tui",
+                  "content": "mission-tui",
                   "fontFamily": "$mono",
                   "fontSize": 11,
                   "fontWeight": "normal"
@@ -6048,7 +6048,7 @@
                   "content": "Current Branch"
                 },
                 "kkLYY": {
-                  "content": "rt-191-mission-tui"
+                  "content": "mission-tui"
                 }
               }
             },
@@ -9821,7 +9821,7 @@
                       "content": "Current Branch"
                     },
                     "kkLYY": {
-                      "content": "rt-191-mission-tui"
+                      "content": "mission-tui"
                     }
                   }
                 },
@@ -10653,7 +10653,7 @@
                               "id": "XgbQl",
                               "name": "CommitLabel",
                               "fill": "#161224",
-                              "content": "Commit 4 files to rt-191-mission-tui",
+                              "content": "Commit 4 files to mission-tui",
                               "fontFamily": "$mono",
                               "fontSize": 12,
                               "fontWeight": "bold"
@@ -16171,7 +16171,7 @@
                   "content": "Current Branch"
                 },
                 "kkLYY": {
-                  "content": "rt-191-mission-tui"
+                  "content": "mission-tui"
                 }
               }
             },
@@ -16765,7 +16765,7 @@
                           "id": "dKkp2",
                           "name": "CommitLabel",
                           "fill": "#161224",
-                          "content": "Commit 2 files to rt-191-mission-tui",
+                          "content": "Commit 2 files to mission-tui",
                           "fontFamily": "$mono",
                           "fontSize": 12,
                           "fontWeight": "bold"

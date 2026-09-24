@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"rt-ui/internal/busyspin"
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
@@ -196,12 +197,8 @@ type Mission struct {
 	selectPending     bool
 	selectPendingBase string
 
-	// spin animates the busy action and the settling worktree. spinning is
-	// true while a tick is in flight, so a push during a busy stretch never
-	// starts a second chain, and it clears only when a tick lands with
-	// nothing busy, which is where the chain ends.
-	spin     spinner.Model
-	spinning bool
+	// spin animates the busy action and the settling worktree.
+	spin busyspin.Spinner
 }
 
 func New(em *session.Emitter) *Mission {
@@ -217,24 +214,12 @@ func New(em *session.Emitter) *Mission {
 		hoverStashFile:   -1,
 		historyMoreFor:   -1,
 		tabDiff:          map[string]diffScroll{},
-		spin:             spinner.New(spinner.WithSpinner(theme.Spinner())),
+		spin:             busyspin.New(),
 	}
 }
 
 func (m *Mission) busy() bool {
 	return m.model.Action.Busy || m.model.Current.Settling
-}
-
-// startSpin begins a fresh chain on frame 0 when something is busy and no
-// chain is running. The fresh spinner.Model carries a new ID, so a tick
-// from an earlier chain can never advance this one.
-func (m *Mission) startSpin() tea.Cmd {
-	if m.spinning || !m.busy() {
-		return nil
-	}
-	m.spinning = true
-	m.spin = spinner.New(spinner.WithSpinner(theme.Spinner()))
-	return m.spin.Tick
 }
 
 // now returns the clock a click is timestamped against -- m.nowFn when a
@@ -307,6 +292,13 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	// row's hover stays with the pointer it moved away from.
 	if reloaded || len(decoded.History.Commits) != len(m.model.History.Commits) || !decoded.History.HasMore {
 		m.historyOnMore, m.hoverHistoryMore = false, false
+	}
+	// The driver keeps the selection across a worktree switch when the new
+	// tree changed the same path, but that diff is another tree's, so it
+	// opens at its top, and the other tab's stashed position goes too.
+	if decoded.Current.Worktree != m.model.Current.Worktree {
+		m.diffCursor, m.diffTop, m.diffPath = 0, 0, ""
+		m.tabDiff = map[string]diffScroll{}
 	}
 	wasShowing := m.stashShowing()
 	m.model = decoded
@@ -403,7 +395,7 @@ func (m *Mission) moveCursor(delta int) {
 
 func (m *Mission) Reason() session.Reason { return m.reason }
 
-func (m *Mission) Init() tea.Cmd { return m.startSpin() }
+func (m *Mission) Init() tea.Cmd { return m.spin.Start(m.busy()) }
 
 func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
@@ -413,19 +405,13 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.SetModel(v.Raw); err != nil {
 			return m, nil
 		}
-		spin := m.startSpin()
+		spin := m.spin.Start(m.busy())
 		if m.historyTab() && m.historyFilter != "" {
 			return m, tea.Batch(m.historyReHome(), spin)
 		}
 		return m, spin
 	case spinner.TickMsg:
-		if !m.busy() {
-			m.spinning = false
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.spin, cmd = m.spin.Update(v)
-		return m, cmd
+		return m, m.spin.Update(v, m.busy())
 	case session.CloseRequest:
 		m.reason = session.ReasonClosed
 		return m, tea.Quit

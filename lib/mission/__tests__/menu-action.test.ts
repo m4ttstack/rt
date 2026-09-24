@@ -466,6 +466,35 @@ describe("mission:menu-action: discard", () => {
     expect(last.diff.kind).toBe("none");
   });
 
+  test("discard-file on the last changed file leaves the diff pane on the clean-tree card", async () => {
+    let discarded = false;
+    const { opened, last } = await run([menu({ action: "discard-file", path: "a.txt" })], {
+      client: {
+        files: () => (discarded ? [] : [changed("a.txt")]),
+        discardChanges: async () => {
+          discarded = true;
+        },
+      },
+    });
+    expect(opened!.diff.path).toBe("a.txt");
+    expect(last.diff.kind).toBe("none");
+    expect(last.diff.path).toBe("");
+  });
+
+  test("discard-file on the selected file moves the diff to the first row the list shows", async () => {
+    let discarded = false;
+    const { last } = await run([{ t: "intent", name: "mission:select", payload: { path: "b.txt" } }, menu({ action: "discard-file", path: "b.txt" })], {
+      client: {
+        files: () => (discarded ? [changed("c.txt"), changed("A.txt")] : [changed("b.txt"), changed("c.txt"), changed("A.txt")]),
+        discardChanges: async () => {
+          discarded = true;
+        },
+      },
+    });
+    expect(last.changes.map((c) => c.path)).toEqual(["A.txt", "c.txt"]);
+    expect(last.diff.path).toBe("A.txt");
+  });
+
   test("discard-all with nothing to discard calls nothing and says so", async () => {
     const { calls, last } = await run([menu({ action: "discard-all" })], { client: { files: () => [] } });
     expect(calls.discardChanges).toEqual([]);
