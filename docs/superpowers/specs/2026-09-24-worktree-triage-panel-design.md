@@ -85,12 +85,13 @@ origin but containment is `patch-identical`, else `unpushed` with `ahead`.
 
 **Dirt classes.** Nothing is called junk by guesswork:
 
-- `junk`: every dirty path is untracked and either matches the repo's
-  `rt.worktrees.junk` globs (default `[".visual/", ".build/"]`, a new key
-  registered in the settings registry per the rt-settings skill) or is a
-  directory holding only files that `git check-ignore` would ignore under
-  the default branch's `.gitignore` rules (the `packages/tenant/` case: build
-  output for a package the branch doesn't have).
+- `junk`: every dirty path is untracked, and every file under it (from
+  `git ls-files --others --exclude-standard`) matches one of the repo's
+  `rt.worktrees.junk` globs. Default `[".visual/**", ".build/**",
+  "**/node_modules/**", "**/.turbo/**", "**/build/**", "**/dist/**"]`, a new
+  key registered in the settings registry per the rt-settings skill. The
+  build-output globs cover the `packages/tenant/` case: build output for a
+  package the branch doesn't have.
 - `lockfile`: the only dirty path is `bun.lock` (or `pnpm-lock.yaml`), and
   every changed line is a workspace `"version"` line.
 - `real`: anything else.
