@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { UserActionableError } from "../../setup/errors.ts";
-import { runDevAppRebuild, runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
+import { assertDevAppRef, runDevAppRebuild, runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
 
 const ok = (stdout = "", exitCode = 0) => Promise.resolve({ stdout, stderr: "", exitCode });
 const fail = (stderr = "boom", exitCode = 1) => Promise.resolve({ stdout: "", stderr, exitCode });
@@ -718,11 +718,29 @@ describe("runDevAppRebuild", () => {
     expect(result.detail).toContain("deck helper restarted");
   });
 
-  test("a failed deck kickstart is an error leg naming the command", async () => {
-    const { seams } = fakeSeams({ failExactCmd: "launchctl kickstart -k gui/501/com.mattstack.deck.dev" });
+  test("a deck kickstart that keeps failing is an error leg naming the command", async () => {
+    const { seams, calls } = fakeSeams({ failExactCmd: "launchctl kickstart -k gui/501/com.mattstack.deck.dev" });
     const { result } = await runDevAppRebuild(seams, "main");
     expect(result.status).toBe("error");
     expect(result.detail).toContain("launchctl kickstart");
+    expect(calls.filter((c) => c.startsWith("launchctl kickstart")).length).toBe(3);
+  });
+
+  test("a deck kickstart that fails once while the relaunched app settles is retried", async () => {
+    const { seams } = fakeSeams({ failExactCmd: "launchctl kickstart -k gui/501/com.mattstack.deck.dev", failExactOccurrence: 1 });
+    const { result } = await runDevAppRebuild(seams, "main");
+    expect(result.status).toBe("ok");
+  });
+
+  test("a failed leg never kickstarts the deck helper", async () => {
+    const { seams, calls } = fakeSeams({ buildExit: 1 });
+    await runDevAppRebuild(seams, "main");
+    expect(calls.some((c) => c.startsWith("launchctl kickstart"))).toBe(false);
+  });
+
+  test("assertDevAppRef accepts branches, tags, and shas and refuses path or flag shapes", () => {
+    for (const good of ["main", "renovate/deps", "v2.11.0", "abc123", "pull/403/head"]) expect(() => assertDevAppRef(good)).not.toThrow();
+    for (const bad of ["../x", "-rf", "a b", "", "a..b"]) expect(() => assertDevAppRef(bad)).toThrow(UserActionableError);
   });
 
   test("a failed build is an error leg, and the running app is never touched", async () => {

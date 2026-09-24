@@ -13,21 +13,40 @@
  */
 import { rmSync } from "fs";
 import { createRealUpdateMachineSeams } from "../commands/release.ts";
-import { flagValue } from "../lib/cli-args.ts";
 import { UserActionableError } from "../lib/setup/errors.ts";
-import { runDevAppRebuild } from "../lib/release/update-machine.ts";
+import { assertDevAppRef, runDevAppRebuild } from "../lib/release/update-machine.ts";
 
 const USAGE = "usage: bun scripts/build-dev-app.ts [--ref <branch|tag|sha>] [--yes]";
-const args = process.argv.slice(2);
-let ref: string;
-try {
-  ref = flagValue(args, "--ref") ?? "main";
-} catch {
+
+// Every argument is accounted for: an unrecognized one (a typo'd flag) would
+// otherwise let a --yes run rebuild main instead of the ref that was meant.
+function parseArgs(argv: string[]): { ref: string; yes: boolean } | null {
+  let ref = "main";
+  let yes = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--yes") yes = true;
+    else if (a === "--ref" && argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("--")) ref = argv[++i]!;
+    else if (a.startsWith("--ref=")) ref = a.slice("--ref=".length);
+    else return null;
+  }
+  return { ref, yes };
+}
+
+const parsed = parseArgs(process.argv.slice(2));
+if (!parsed) {
   console.error(USAGE);
   process.exit(2);
 }
+const { ref, yes } = parsed;
+try {
+  assertDevAppRef(ref);
+} catch (err) {
+  console.error(`✗ ${(err as Error).message}`);
+  process.exit(2);
+}
 
-if (!args.includes("--yes")) {
+if (!yes) {
   console.log(
     `would rebuild /Applications/mattstack-dev.app from m4ttstack/rt ${ref} in a scratch clone, kill and replace the running dev app, relaunch it, and restart the deck helper; pass --yes to do it`,
   );

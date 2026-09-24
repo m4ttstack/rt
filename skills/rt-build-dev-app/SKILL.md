@@ -13,15 +13,15 @@ go-ahead: run the script yourself rather than handing him a bundle to swap in.
 
 | What changed | How it goes live |
 |---|---|
-| `rt-tray/**` in repo-tools (tray, shims, `build.sh`, `deps.lock`) | this skill |
-| board, console, chat, boxscore (`~/Documents/GitHub/mattstack-apps`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then follow that repo's AGENTS.md "Deck serving note" (a UI change needs `bun run <app>:build`) and `deck restart <app>` |
+| `rt-tray/**` in repo-tools (tray, shims, `build.sh`, `deps.lock`) | this skill; a daemon shim (`Sources-daemon-shim`) change also needs the #rt announce and `rt daemon restart` afterwards |
+| board, console, chat, boxscore (`~/Documents/GitHub/mattstack-apps`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then the app row's deploy button or `deck cmd <app> deploy` |
 | deck source (`mattstack-apps/apps/deck`) | no rebuild: the same pull, then the deck row's deploy button or `deck cmd deck deploy` |
-| rt CLI or daemon source (`lib/`, `commands/`) | no rebuild: announce in #rt, then `rt daemon restart` |
+| rt CLI or daemon source (`lib/`, `commands/`) | no rebuild: pull the dev daemon's source checkout on `main`, announce in #rt, then `rt daemon restart` |
 
 ## Run it
 
-`--ref` takes any branch, tag, or sha already pushed to `m4ttstack/rt`
-(merged or not); the script clones it. Run it from your own repo-tools
+`--ref` takes any branch or tag pushed to `m4ttstack/rt` (merged or not),
+or a sha on one of them; the script clones it. Run it from your own repo-tools
 worktree when it has `scripts/build-dev-app.ts`, else from
 `~/Documents/GitHub/repo-tools`:
 

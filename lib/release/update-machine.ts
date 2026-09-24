@@ -410,21 +410,32 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   );
 }
 
-/** The dev-bundle leg on its own, at any pushed ref of the rt repo rather
- *  than a released tag. The tray restarts its helpers only when
- *  CFBundleVersion changes, and a dev build between releases keeps the last
- *  tag's version, so the deck helper is kickstarted here or it keeps running
- *  the replaced bundle's binary. */
-export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): Promise<{ sha: string; result: LegResult }> {
+/** The ref lands in a gh api URL path, so anything shaped like a path
+ *  escape or a flag is refused before any call. */
+export function assertDevAppRef(ref: string): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..")) {
     throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO}, got "${ref}"`);
   }
+}
+
+/** The dev-bundle leg on its own, at any pushed ref of the rt repo rather
+ *  than a released tag. The tray restarts its helpers only when the app
+ *  version changes, and a dev build between releases keeps the last tag's
+ *  version, so the deck helper is kickstarted here or it keeps running the
+ *  replaced bundle's binary. The relaunched app may still be registering its
+ *  agents, so a failed kickstart is retried briefly. */
+export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): Promise<{ sha: string; result: LegResult }> {
+  assertDevAppRef(ref);
   const sha = await resolveCommit(seams, ref);
   const leg = await runDevBundleLeg(seams, { tag: ref, ver: "", sha });
   if (leg.status !== "ok") return { sha, result: leg };
 
   const kickstart: [string, ...string[]] = ["launchctl", "kickstart", "-k", `gui/${seams.uid}/${DEV_DECK_LABEL}`];
-  const kick = await seams.exec(kickstart);
+  let kick = await seams.exec(kickstart);
+  for (let attempt = 1; attempt < 3 && kick.exitCode !== 0; attempt++) {
+    await seams.sleep(1000);
+    kick = await seams.exec(kickstart);
+  }
   if (kick.exitCode !== 0) {
     return { sha, result: errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}, but \`${kickstart.join(" ")}\` failed: ${execTail(kick)}`) };
   }
