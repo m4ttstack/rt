@@ -29,10 +29,11 @@ process.env.RT_GH_TOKEN_FALLBACK = "off";
 // points into it, so nothing a test (or a child it spawns) makes under
 // tmpdir() lands in the machine's TMPDIR: hundreds of thousands of leftover
 // mkdtemp dirs there once made every file create on the machine slow. HOME
-// is a sibling, not nested, to keep socket paths under it inside macOS's
-// 104 bytes. bun test never fires process "exit", so removal is a global
-// afterAll; a run killed before it leaves its dirs behind, and the next
-// start sweeps every dir whose run pid is gone.
+// and the termwright socket dir are siblings, not nested: a per-test home
+// under TMPDIR is already too deep for a Unix socket path (macOS caps it
+// at 104 bytes; e2e/socket-path.ts). bun test never fires process "exit",
+// so removal is a global afterAll; a run killed before it leaves its dirs
+// behind, and the next start sweeps every dir whose run pid is gone.
 const testRoot = join(tmpdir(), "rt-tests");
 mkdirSync(testRoot, { recursive: true, mode: 0o700 });
 const rootStat = lstatSync(testRoot);
@@ -46,12 +47,14 @@ for (const name of readdirSync(testRoot)) {
 }
 const runTmp = mkdtempSync(join(testRoot, `${process.pid}-run-`));
 const home = mkdtempSync(join(testRoot, `${process.pid}-home-`));
+const socketDir = mkdtempSync(join(testRoot, `${process.pid}-sock-`));
 process.env.TMPDIR = runTmp;
 process.env.HOME = home;
+process.env.RT_TEST_SOCKET_DIR = socketDir;
 // A whole run's tree takes longer to delete than bun's 5s hook timeout, so
 // a detached rm does it after the process exits.
 afterAll(() => {
-  spawn("rm", ["-rf", runTmp, home], { detached: true, stdio: "ignore" }).unref();
+  spawn("rm", ["-rf", runTmp, home, socketDir], { detached: true, stdio: "ignore" }).unref();
 });
 
 function pidIsAlive(pid: number): boolean {
