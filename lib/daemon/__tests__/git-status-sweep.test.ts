@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStateDb } from "../../state/db.ts";
 import { createGitBadges } from "../git-badges-store.ts";
-import { createGitStatusSweep, toBadge } from "../git-status-sweep.ts";
+import { toBadge } from "../../git-badge.ts";
+import { createGitStatusSweep } from "../git-status-sweep.ts";
 import { makeSandbox } from "../../../packages/git-core/test-support/sandbox.ts";
 import { createGitClient } from "../../../packages/git-core/src/index.ts";
 

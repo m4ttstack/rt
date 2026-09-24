@@ -21,7 +21,7 @@ import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.t
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { ResolvedEditor } from "../../commands/code.ts";
 import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
-import { toBadge } from "../daemon/git-status-sweep.ts";
+import { toBadge } from "../git-badge.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import type { FileActions } from "../file-actions.ts";
 import { canon } from "../fs-canon.ts";

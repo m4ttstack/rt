@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import type { GitWorktreeBadge } from "../../packages/rt-client/src/commands.ts";
-import type { FetchState, RepoSnapshot } from "../../packages/git-core/src/index.ts";
 import { createGitClient } from "../../packages/git-core/src/index.ts";
+import { toBadge } from "../git-badge.ts";
 import { listWorktreesAsync } from "../worktree/git-async.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { RepoIndex } from "../repo-index.ts";
@@ -35,30 +35,6 @@ export interface GitStatusSweep {
   sweepNow(opts?: SweepOptions): Promise<{ changed: string[] }>;
   lastSweepAt(): string | null;
   errors(): Map<string, string>;
-}
-
-export function toBadge(
-  worktree: string,
-  snap: RepoSnapshot,
-  fetch: FetchState,
-  updatedAt: string,
-): GitWorktreeBadge {
-  const files = snap.files;
-  return {
-    worktree,
-    branch: snap.branch,
-    detached: snap.detached,
-    staged: files.filter((f) => f.staged).length,
-    unstaged: files.filter((f) => f.unstaged && f.kind !== "untracked").length,
-    untracked: files.filter((f) => f.kind === "untracked").length,
-    conflicted: files.filter((f) => f.kind === "conflicted").length,
-    clean: snap.clean,
-    ahead: snap.ahead,
-    behind: snap.behind,
-    upstream: snap.upstream,
-    lastFetchedAt: fetch.lastFetchedAt,
-    updatedAt,
-  };
 }
 
 export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
