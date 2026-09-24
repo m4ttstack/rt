@@ -500,6 +500,20 @@ describe("rt release update-machine", () => {
       expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack-dev.app"))).toBe(false);
     });
 
+    test("a dev app that was not running: the dev daemon leg and the dev pid and source rev checks are skipped with the reason", async () => {
+      const { seams, calls } = fakeSeams({ devPidsBefore: [], daemonSourceRev: null });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const daemonLeg = report.legs.find((l) => l.id === "daemon")!;
+      expect(daemonLeg.status).toBe("skipped");
+      expect(daemonLeg.detail).toContain("dev app was not running");
+      expect(calls).not.toContain("rt daemon restart");
+      const verify = report.legs.find((l) => l.id === "verify")!;
+      expect(verify.status).toBe("ok");
+      expect(verify.detail).toContain("dev app was not running");
+      expect(verify.detail).not.toContain("dev pid");
+      expect(report.ok).toBe(true);
+    });
+
     test("a failed swap does not reopen a dev app that was not running", async () => {
       const { seams, calls } = fakeSeams({ devPidsBefore: [], devDittoExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
