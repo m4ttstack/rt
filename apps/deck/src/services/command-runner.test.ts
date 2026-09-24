@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { beforeEach, expect, test } from 'bun:test';
@@ -12,16 +12,146 @@ import {
 beforeEach(() => resetRuns());
 
 function fakeSpawn(exit: Promise<number>) {
-  const calls: Array<{ argv: string[]; cwd: string }> = [];
+  const calls: Array<{ argv: string[]; cwd: string; detached?: boolean }> = [];
   const spawn = (
     argv: string[],
-    opts: { cwd: string; stdout: number; stderr: number }
+    opts: { cwd: string; stdout: number; stderr: number; detached: boolean }
   ) => {
-    calls.push({ argv, cwd: opts.cwd });
+    calls.push({ argv, cwd: opts.cwd, detached: opts.detached });
     return { exited: exit };
   };
   return { spawn, calls };
 }
+
+test('a detached run is spawned in its own process group; others are not', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  const { spawn, calls } = fakeSpawn(new Promise(() => {}));
+  startCommandRun(
+    {
+      name: 'deck',
+      cmd: 'deploy',
+      shell: 'bun run deploy',
+      workingDirectory: '/tmp/deck',
+      detached: true,
+    },
+    { spawn, logDir }
+  );
+  startCommandRun(
+    { name: 'chat', cmd: 'deploy', shell: 's', workingDirectory: '/tmp' },
+    { spawn, logDir }
+  );
+  expect(calls.map(c => c.detached)).toEqual([true, false]);
+});
+
+test('a detached run still in flight keeps the app busy after deck restarts', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  const input = {
+    name: 'deck',
+    cmd: 'deploy',
+    shell: 'sleep 30',
+    workingDirectory: logDir,
+    detached: true,
+  };
+  expect(startCommandRun(input, { logDir }).started).toBe(true);
+  const { pid } = JSON.parse(
+    readFileSync(join(logDir, 'deck.run.pid'), 'utf8')
+  ) as { pid: number };
+  // Long enough for sh to exec its single command in place, which changes
+  // what ps reports as the process's command line.
+  await new Promise(res => setTimeout(res, 300));
+  try {
+    resetRuns();
+    expect(startCommandRun(input, { logDir })).toEqual({
+      started: false,
+      reason: 'busy',
+    });
+  } finally {
+    process.kill(-pid);
+  }
+});
+
+test('a pid file naming a live but unrelated process is stale: the run starts and the file is replaced', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  writeFileSync(
+    join(logDir, 'deck.run.pid'),
+    JSON.stringify({ pid: process.pid, started: 'Thu Jan  1 00:00:00 1970' })
+  );
+  const spawn = () => ({ exited: new Promise<number>(() => {}), pid: 4242 });
+  const r = startCommandRun(
+    {
+      name: 'deck',
+      cmd: 'deploy',
+      shell: 'bun run deploy',
+      workingDirectory: '/tmp',
+      detached: true,
+    },
+    { spawn, logDir }
+  );
+  expect(r.started).toBe(true);
+  expect(
+    JSON.parse(readFileSync(join(logDir, 'deck.run.pid'), 'utf8')).pid
+  ).toBe(4242);
+});
+
+test('a detached run that exits in the same deck removes its pid file', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  const spawn = () => ({ exited: Promise.resolve(0), pid: 4242 });
+  startCommandRun(
+    {
+      name: 'deck',
+      cmd: 'deploy',
+      shell: 's',
+      workingDirectory: '/tmp',
+      detached: true,
+    },
+    { spawn, logDir }
+  );
+  await new Promise(res => setTimeout(res, 10));
+  expect(existsSync(join(logDir, 'deck.run.pid'))).toBe(false);
+});
+
+test('a detached run whose process is gone does not keep the app busy', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  const dead = () => ({
+    exited: new Promise<number>(() => {}),
+    pid: 2 ** 22 + 7,
+  });
+  const input = {
+    name: 'deck',
+    cmd: 'deploy',
+    shell: 's',
+    workingDirectory: '/tmp',
+    detached: true,
+  };
+  expect(startCommandRun(input, { spawn: dead, logDir }).started).toBe(true);
+  resetRuns();
+  expect(startCommandRun(input, { spawn: dead, logDir }).started).toBe(true);
+});
+
+test('the default spawn really gives a detached run its own process group', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));
+  const r = startCommandRun(
+    {
+      name: 'probe',
+      cmd: 'pgid',
+      shell: 'ps -o pgid= -p $$',
+      workingDirectory: logDir,
+      detached: true,
+    },
+    { logDir }
+  );
+  if (!r.started) throw new Error('unreachable');
+  for (let i = 0; i < 100; i++) {
+    if (commandRunStatus('probe', r.runId)?.status === 'exited') break;
+    await new Promise(res => setTimeout(res, 20));
+  }
+  const own = Bun.spawnSync(['ps', '-o', 'pgid=', '-p', String(process.pid)])
+    .stdout.toString()
+    .trim();
+  const child = (await Bun.file(join(logDir, 'probe.out.log')).text()).trim();
+  expect(child).not.toBe('');
+  expect(child).not.toBe(own);
+});
 
 test('spawns sh -c in the working directory and returns a runId', () => {
   const logDir = mkdtempSync(join(tmpdir(), 'runlog-'));

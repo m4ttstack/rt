@@ -573,11 +573,15 @@ export function startApi(deps: ApiDeps) {
               // belong to the source checkout attached at register time.
               if (!cwd)
                 return json({ error: 'app has no manifest directory' }, 400);
+              // Deck's own commands restart deck, and launchd kills the whole
+              // job's process group on exit; a detached run outlives that
+              // restart and gets to verify it, writing to the same log files.
               const started = startCommandRun({
                 name,
                 cmd,
                 shell,
                 workingDirectory: cwd,
+                detached: name === PLATFORM_NAME,
               });
               if (!started.started) return json({ error: 'busy' }, 409);
               return json({ started: true, runId: started.runId });
