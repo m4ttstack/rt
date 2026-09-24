@@ -118,11 +118,22 @@ private struct TabButton: View {
     let shortcutIndex: Int?
 
     private var isActive: Bool { model.activeApp == app.name }
-    /// Computed once and used for both the reserved trailing space and the
-    /// pill's own `if`, so the two can never disagree about whether a pill
-    /// is showing.
+    /// Read by both the reserved trailing space and the pill's own `if`, so
+    /// the two can never disagree about whether a pill is showing or how
+    /// wide its label is.
     private var pillLabel: String? {
         model.badges[app.name].flatMap { BadgeBook.label($0.count) }
+    }
+    /// Sized to `pillLabel`'s own width (1 digit, 2 digits, or "99+"), not a
+    /// fixed reserve -- a flat 40pt reserve truncates the tab label on a
+    /// 110pt tab when the pill is only 1 character wide.
+    private var pillReserve: CGFloat {
+        switch pillLabel?.count {
+        case nil: return 0
+        case 1: return 28
+        case 2: return 34
+        default: return 40
+        }
     }
 
     var body: some View {
@@ -148,7 +159,7 @@ private struct TabButton: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.leading, 10)
-                    .padding(.trailing, pillLabel != nil ? 40 : 0)
+                    .padding(.trailing, pillReserve)
                     .frame(width: tabWidth, height: barHeight, alignment: .leading)
 
                     if isActive {

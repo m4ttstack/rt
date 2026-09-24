@@ -392,11 +392,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             // as a side effect; showing the shell window would upstage the
             // pane the user is being sent to.
             if Date() < suppressReopenShowUntil { return true }
+            // `hasVisibleWindows` is false for a miniaturized window too, so
+            // without this check a dock click would navigate to the oldest
+            // badged decision on top of whatever Matt had open.
+            let isMiniaturized = mattstackWindow?.window?.isMiniaturized ?? false
             Task { @MainActor in
-                if let model = self.windowModel, let request = model.firstBadgedRequest() {
+                if !isMiniaturized, let model = self.windowModel, let request = model.firstBadgedRequest() {
                     self.mattstackWindow?.show()
                     if await model.open(request) { return }
                 }
+                if isMiniaturized { self.mattstackWindow?.window?.deminiaturize(nil) }
                 // `windowModel.controller` is a weak back-reference; fall
                 // back to the strongly-held `mattstackWindow` ivar if it's
                 // ever nil so a Dock click can't silently no-op.
