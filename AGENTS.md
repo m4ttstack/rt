@@ -10,22 +10,22 @@ glance, gitq, or the acme skills, read `docs/architecture.md` for the links.
 
 ## Settings architecture
 
-Every key any mattstack app reads lives in the suite settings stores behind the
-resolver in `packages/rt-client`. Before adding a key, porting config, or
-touching `~/.mattstack`, read `docs/settings-architecture.md` — it carries the
-scope model, the registry checklist, the ownership-latch pattern, and the
-footguns (call-time HOME, file:-dep copies, sops cwd triple).
+Every key any mattstack app reads lives in the suite settings stores behind
+the resolver in `packages/rt-client`. Before adding a key, porting config, or
+touching `~/.mattstack`, read `docs/settings-architecture.md` (scope model,
+registry checklist, ownership latch, the call-time HOME and sops footguns).
+The working rules for `getSetting`/`setSetting`, scope choice and latches are
+the `rt-settings` skill (`skills/rt-settings/SKILL.md`); this file does not
+repeat them.
 
 ## Repo identity
 
-Every per-repo store, daemon payload, and REST path keys on a serialized repo
-identity from rt-client, never a derived name — EXCEPT settings-store sections
+Every per-repo store, daemon payload and REST path keys on a serialized repo
+identity from rt-client, never a derived name, EXCEPT settings-store sections
 (`repos.<identity>`), which key on the raw `host/path` form the resolver
-expects; a serialized key there misses silently. Before keying anything by repo,
-calling a repo-keyed daemon verb, or displaying a repo name, read
-`docs/repo-identity.md` — it carries the two string forms and where each
-applies, the derivation rules, the identity-only verb guards, and the legacy
-re-key/heal/prune behavior.
+expects. Before keying anything by repo, read `docs/repo-identity.md` and the
+`rt-repo-identity` skill (`skills/rt-repo-identity/SKILL.md`), which carry
+the two string forms, where each applies, and the identity-only verb guards.
 
 ## Worktree pool: the golden tree
 
@@ -169,51 +169,122 @@ Logging is structural, not per-feature. Outcomes are logged at central seams; fe
 
 **The catch policy:** never swallow errors in a seam. Below a logged seam, an empty catch is acceptable only for genuinely expected conditions (socket already closed, file already gone) — anything else logs at `warn` with `{ err }`.
 
+## Gates and the `rt_verb` MCP tool
+
+Agents reach rt from Claude Code two ways: Bash, and the mattstack plugin's
+MCP server, whose `rt_verb` tool runs a curated subset of the command tree.
+A verb is exposed there only when its node in `lib/command-tree-def.ts` sets
+`agentSafe: true`; `listAgentSafe` in `lib/command-tree-resolve.ts` is the
+one place that computes the set, and `lib/mcp/rt-verb.ts` refuses everything
+else, refuses control characters in args, and caps a run at
+`RT_VERB_TIMEOUT_MS`. Mark a verb agent-safe only when it writes nothing the
+calling agent does not already own (its own run, its own gates, a read); the
+tool is the long-term replacement for Bash allow rules, so a careless flag
+here is a permission grant on every estate machine.
+
+Decision gates (`rt gate ask`, `rt gate wait`, the board's stage sheet) are
+the only way an unattended pane asks a human anything. The
+`AskUserQuestion` hook in `.claude/` panes defers to `rt gate fork-check`
+(rt#391): it allows the launch subject's gate, a worktree run gate, or a live
+form gate this pane asked under its own session, and never counts
+pane-attention gates. Before changing gate ownership, the hook, or the
+fork-check rules, read the gate-seam spec named in `docs/architecture.md` and
+the `rt-chat` and gate skills under `skills/`.
+
+## Switchboard and `rt team join`
+
+The switchboard is the only service a board token is ever sent to, and only
+the team-declared URL (`board.switchboardUrl`, https only) is trusted: a URL
+that arrives inside an invite alone is never peered with. `rt team join`
+stores the invite-sealed board token under the rt secrets scope and writes
+the user latch `rt.integrations.switchboardUrl` only when it is unset or
+invalid; a different confirmed URL is never overwritten, the join warns and
+points at `rt setup switchboard connect --host <url>` instead. The setup
+row `account.switchboard` reads that latch, probes `<url>/healthz` with no
+auth header (`/health` is not a route), and offers Confirm with the declared
+URL prefilled when the latch is empty or differs. Change any of these three
+(join, latch, row) together or not at all; `lib/team/join.ts`,
+`lib/setup/validators/accounts.ts` and `lib/setup/validators/access.ts` are
+the seams, and RT-260 is the incident that made this a rule.
+
+## Writing-style presets
+
+Every review or reply an agent drafts composes in one writing style, resolved
+by `resolveWritingStyle` in `lib/skills/writing-style.ts`: the
+`skills.writingStyle` setting (user scope beats team), else the
+`writing-style:` line in `~/.mattstack/user/skills/preferences.md`, else
+`mattstack:writing-style-conversational`. `rt skills writing-style show`
+prints the resolved skill and its source with the one wording the setup row
+also uses (`WRITING_STYLE_SOURCE_LABEL`), so never restate it elsewhere.
+`use` refuses a skill id that is not installed and `new` copies a preset into
+the user's own skill, normalising CRLF and renaming the frontmatter so the
+copy is a skill of its own. The presets themselves ship in the mattstack
+plugin (`mattstack-skills`), not here; a preset id must exist there before
+`use` will accept it, and the `skills.writing-style` setup row is
+finish-gated and not waivable, so a machine with no resolvable style cannot
+Finish.
+
+## Setup checklist rows: required vs finish-gated
+
+A row's `required` blocks Install; `finishGated` blocks the wizard's Finish
+and never Install (`finalizePlan` and `finishBlockers` in
+`lib/setup/contract.ts`). A finish-gated row must carry `waivable` on every
+emit (an app reading a row without it treats the row as waivable) and only
+ids in `WAIVABLE_ROW_IDS` may be waived by `rt setup waive`; `waived` is what
+the app's Un-skip keys on, never the note's wording. A required row with a
+fault must offer an action that can clear it: an actionless required row is
+an Install nobody can reach (RT-260). A connect action may prefill a field
+through `ConnectField.value`; the tray renders it as the field's initial
+text. Add a row by following an existing validator in `lib/setup/validators/`
+and its `steps-*.test.ts` twin; the tray's `PlanModels.swift` decodes the
+same contract, so a new field needs the Swift side too.
+
+## Baseline Claude permissions are provisional, and never git
+
+`lib/setup/base-permissions.ts` is the allow list Install unions into every
+Claude config dir, and `lib/setup/claude-permissions.ts` seeds
+`permissions.defaultMode: "auto"` when a config dir has none (Enterprise and
+Console-key sessions start in manual mode otherwise). Two rules: an allow
+rule resolves BEFORE the auto-mode classifier, so a `Bash(git push *)`-shaped
+entry would wave through a forced push and `Bash(git rebase *)` a `--exec` of
+any command; the read-only git forms need no rule in any mode and the
+classifier approves routine commits and pushes, so no `Bash(git ...)` entry
+belongs in the list (a test pins this). And the `rt runs` / `rt gate`
+entries are the RT-246 stopgap until every skill reaches those verbs through
+`rt_verb`; do not widen the list to make a skill work, expose the verb.
+
+## The relocation prompt parser reads a real capture, not a hand-drawn one
+
+`lib/daemon/trust-dialog.ts` auto-accepts Claude Code's EnterWorktree
+"permission-root relocation" prompt for unattended panes (RT-200, RT-257).
+Claude Code 2.1.281 draws it under a full-width rule with a " Tool use"
+heading, an "   Entering worktree(<path>)" echo and a
+" │ permission-root relocation to ..." gutter line; the parser matches those
+markers by column, never rejoins a path the terminal split across rows, and
+refuses a dialog whose rule is narrower than any other line (a fake painted by
+a command). Every fixture in `lib/daemon/__tests__/trust-dialog.test.ts` that
+claims to be the real dialog is pasted from a gate's captured screen; when a
+Claude Code update changes the drawing, capture the new screen from a stalled
+pane, add it as a fixture, and only then touch the regexes. A parser that
+"fails closed" here reads as a pane that never starts, so RT-263 tracks the
+residue and every change needs the Bash-spoof, MCP-spoof and painted-dialog
+fixtures still passing.
+
 ## State backup
 
 Encrypted, compressed, off-machine backup of mattstack app state. Before
 touching `lib/state/backup-*.ts`, `commands/state-backup-*.ts`, the daemon's
-`state-backup` sweep, or anything that writes to
-`~/.mattstack/user/state-backups/`, read
-`docs/superpowers/specs/2026-09-13-state-backup-design.md`.
+`state-backup` sweep, or anything under `~/.mattstack/user/state-backups/`,
+read `docs/superpowers/specs/2026-09-13-state-backup-design.md`; it is the
+reference for the pipeline, manifest, restore and prune. Three traps the spec
+explains and the code enforces:
 
-**Pipeline:** `VACUUM INTO` (SQLite) or `tar -c` (gitq stacks) into a tmpdir,
-`zstd -19` compress, `age -R recipients.txt` encrypt, then the final `.age`
-blob lands in `~/.mattstack/user/state-backups/<app>/`. The home repo's
-snapshot engine auto-commits and pushes it (Git LFS tracks `*.age`).
-Intermediates never touch the home repo working tree.
-
-**Sources:** `rt/state.db`, `rt/gates.db`, `board/state.db`, `gitq/stacks/`.
-The registry is `BACKUP_SOURCES` in `lib/state/backup-sources.ts`.
-
-**Daemon sweep:** `scheduleSweep("state-backup", ...)` in `lib/daemon.ts`,
-every 4 hours, guarded on `recipients.txt` existence. Falls back to
-local-only `VACUUM INTO` if encrypted backup is not configured or all
-sources fail.
-
-**Key management:** encrypts to multiple age recipients (personal keychain
-key + optional team key). The age private key is never written to disk;
-decrypt pipes via `/dev/stdin`. `readAgeKey` and `ensureAgeKey` require an
-`AgeKeySeam` from `createRealAgeKeySeam()`.
-
-**Manifest:** each backup writes `manifest-<ts>.json` with schema versions
-(`PRAGMA user_version`), content hashes (SHA-256 of the plaintext snapshot),
-and rt version. The manifest carries ALL sources forward each cycle
-(unchanged sources keep their previous entry). Content-hash dedupe skips
-a source only when hash matches AND the referenced `.age` file still exists.
-
-**Restore:** `rt state restore --from-backup` pulls the home repo, decrypts,
-decompresses, integrity-checks, and places. `--identity <path>` for team key
-on a new machine. Checks `lsof -t` for holder processes immediately before
-rename. The daemon guard also checks `rt.sock` existence (a wedged daemon
-that times out the ping no longer reads as stopped).
-
-**Prune:** 7-day retention, keeps the newest file per source prefix so a
-stable source always has at least one copy on disk.
-
-**Dependencies:** `age`, `zstd`, and `git-lfs` resolve via PATH with
-explicit `{ PATH: process.env.PATH }` (the daemon's launchd PATH is
-minimal). RT-131 tracks bundling all three in `deps.lock`.
+- Intermediates never touch the home repo working tree; only the final
+  `.age` blob lands under `state-backups/<app>/`.
+- The age private key is never written to disk; `readAgeKey` and
+  `ensureAgeKey` require an `AgeKeySeam` from `createRealAgeKeySeam()`.
+- `age`, `zstd` and `git-lfs` resolve via an explicit `{ PATH: process.env.PATH }`
+  because the daemon's launchd PATH is minimal (RT-131 tracks bundling them).
 
 ## Operating on this machine
 
@@ -252,20 +323,23 @@ something that does nothing.
 
 ## Footguns
 
-### `bun run test` does not run e2e, and CI does
+### `bun run test` is one of three suites, and CI runs all three
 
-`test` is `bun test lib commands packages scripts`; the e2e suite is a separate
-script (`test:e2e`, and `test:all` for both) because it needs
-`--preload ./e2e/setup.ts`. So a green local `bun run test` is not the same
-gate CI applies, and the difference is invisible in the output.
+`test` is `bun test lib commands packages scripts`. CI also runs `test:e2e`
+(`e2e/tests/`, needs `--preload ./e2e/setup.ts`) and `test:pty` (`e2e/pty/`,
+the termwright gate that drives the compiled binary in a real pty, 120s
+timeout). `test:all` runs all three. A green local `bun run test` says nothing
+about either of the others, and the difference is invisible in the output.
 
-It matters most for anything asserted verbatim end to end: the chat delivery
-frame, a CLI's `--json` envelope, a usage string. Those have exact-string
-assertions in `e2e/tests/` that no unit suite covers, so a deliberate format
-change reads as fully green locally and fails in CI. Run `bun run test:all`,
-or at least the one e2e file covering the surface, before calling a change
-verified. Claiming verification from a suite that never exercised the changed
-contract is the actual defect here, not the red CI.
+It matters most for anything asserted verbatim end to end (the chat delivery
+frame, a CLI's `--json` envelope, a usage string) and for anything glitter or
+rt-ui paints: those have exact-string or screen assertions no unit suite
+covers. Run `bun run test:all`, or at least the one e2e or pty file covering
+the surface, before calling a change verified. The pty gate skips in CI unless
+the diff touches a path in `.github/workflows/e2e.yml`'s filter; a change to
+socket setup, `test-setup.ts` or `e2e/socket-path.ts` must be in that filter or
+the gate never runs (macOS caps a unix socket path at 104 bytes, and the gate
+is what catches a path that grew past it).
 
 ### Module registry
 
