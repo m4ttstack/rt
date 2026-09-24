@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # --frozen-lockfile passes a stale workspace package version, which every
+      # worktree's ready-step install then rewrites and leaves as dirt.
+      - name: Lockfile in sync
+        run: bun install && git diff --exit-code -- bun.lock
+
       - name: Typecheck
         run: bunx tsc --noEmit
 
