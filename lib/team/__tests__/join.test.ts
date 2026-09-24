@@ -122,13 +122,20 @@ function fakeAgeKeySeamLocked(): AgeKeySeam {
 
 function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): {
   seams: JoinRedeemSeams;
-  calls: { readTeamSecret: unknown[][]; forgeLogin: unknown[][]; secretWrites: { key: string; value: string }[]; settingWrites: { key: string; value: unknown }[] };
+  calls: {
+    readTeamSecret: unknown[][];
+    forgeLogin: unknown[][];
+    secretWrites: { key: string; value: string }[];
+    settingWrites: { key: string; value: unknown }[];
+    userSettingWrites: { key: string; value: unknown }[];
+  };
 } {
   const calls = {
     readTeamSecret: [] as unknown[][],
     forgeLogin: [] as unknown[][],
     secretWrites: [] as { key: string; value: string }[],
     settingWrites: [] as { key: string; value: unknown }[],
+    userSettingWrites: [] as { key: string; value: unknown }[],
   };
   const seams: JoinRedeemSeams = {
     ageKeySeam: fakeAgeKeySeam(),
@@ -147,6 +154,9 @@ function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): {
     },
     writeMachineSetting: (key, value) => {
       calls.settingWrites.push({ key, value });
+    },
+    writeUserSetting: (key, value) => {
+      calls.userSettingWrites.push({ key, value });
     },
     warn: () => {},
     ...overrides,
@@ -692,6 +702,100 @@ describe("joinRedeem", () => {
     expect(JSON.parse(fetchCalls[0]!.init?.body ?? "{}")).toEqual({ username: "zaphod" });
     expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-1" }]);
     expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
+    expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { switchboardUrl: "https://sb.test" } }]);
+  });
+
+  test("a minted token confirms the switchboard for rt's own rows on top of the user's existing overrides", async () => {
+    const p = redeemProbes({
+      fetch: async () => ({ status: 201, body: JSON.stringify({ username: "zaphod", token: "tok-1" }), headers: {} }),
+    });
+    const relay = fakeRelay();
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { forgeHost: "gitlab.example.com" },
+      }),
+      readTeamSecret: async () => "admin-token-xyz",
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { forgeHost: "gitlab.example.com", switchboardUrl: "https://sb.test" } }]);
+  });
+
+  test("a switchboard the user already confirmed to this URL is not written again", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { switchboardUrl: "https://sb.test" },
+      }),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.userSettingWrites).toEqual([]);
+  });
+
+  test("a latch left empty or not https by a hand edit counts as unset, so the join fills it", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { forgeHost: "gitlab.example.com", switchboardUrl: "" },
+      }),
+    });
+
+    await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { forgeHost: "gitlab.example.com", switchboardUrl: "https://sb.test" } }]);
+  });
+
+  test("a switchboard the user confirmed to a different URL is never overwritten: the join warns with the connect command and peers anyway", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const warnings: string[] = [];
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { forgeHost: "gitlab.example.com", switchboardUrl: "https://sw-a.example" },
+      }),
+      warn: (m) => warnings.push(m),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
+    expect(calls.userSettingWrites).toEqual([]);
+    expect(warnings.some((w) => w.includes("https://sw-a.example") && w.includes("rt setup switchboard connect --host https://sb.test"))).toBe(true);
+  });
+
+  test("a failing rt.integrations write warns with the connect command and leaves peering applied: the board still peers, only rt's own row stays unconfirmed", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const warnings: string[] = [];
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      writeUserSetting: () => {
+        throw new Error("user store is read-only");
+      },
+      warn: (m) => warnings.push(m),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
+    expect(warnings.some((w) => w.includes("user store is read-only") && w.includes("rt setup switchboard connect --host https://sb.test"))).toBe(true);
   });
 
   test("a pointer carrying an embedded switchboard token: stored directly, peering applied, no switchboard call and no team-secret read", async () => {
@@ -712,6 +816,7 @@ describe("joinRedeem", () => {
     expect(result.peering).toBe("applied");
     expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-emb" }]);
     expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
+    expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { switchboardUrl: "https://sb.test" } }]);
     expect(p.calls.fetch).toHaveLength(0);
     expect(secretReads).toEqual([]);
   });
@@ -730,6 +835,7 @@ describe("joinRedeem", () => {
     expect(result.peering).toBe("unavailable");
     expect(calls.secretWrites).toEqual([]);
     expect(calls.settingWrites).toEqual([]);
+    expect(calls.userSettingWrites).toEqual([]);
   });
 
   test("a team-declared switchboard that is not https: no admin token sent, nothing stored, peering unavailable (the board refuses to boot on a non-loopback http URL)", async () => {
@@ -755,6 +861,7 @@ describe("joinRedeem", () => {
     expect(fetchCalls.filter((u) => u.includes("switchboard.lan"))).toEqual([]);
     expect(calls.secretWrites).toEqual([]);
     expect(calls.settingWrites).toEqual([]);
+    expect(calls.userSettingWrites).toEqual([]);
     expect(warnings.some((w) => w.includes("http://switchboard.lan:8787") && w.includes("https"))).toBe(true);
     expect(result.message).toContain("must be https");
     expect(result.message).not.toContain("re-invite");

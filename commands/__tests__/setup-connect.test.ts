@@ -356,6 +356,77 @@ describe("integrationConnect - switchboard (credential-less, host-confirm flow)"
     expect(body.status).toBe("ready");
   });
 
+  // The app's Confirm sheet has no flag to pass: it sends the URL as the
+  // `host` field on stdin, the channel every other integration's field uses.
+  test("no --host, non-TTY, stdin {host} -> the same validate-then-latch as --host", async () => {
+    const written: [string, unknown, string][] = [];
+    const calledUrls: string[] = [];
+    const fetch: Probes["fetch"] = async (url) => {
+      calledUrls.push(url);
+      return url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} };
+    };
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: async () => ({ host: "https://sw.example.com" }),
+      isTTY: () => false,
+      promptField: neverCalled("promptField"),
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--json"], deps);
+
+    expect(calledUrls).toEqual(["https://sw.example.com/healthz"]);
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+    const body = JSON.parse(deps.lines[0]!) as { integration: string; status: string };
+    expect(body.status).toBe("ready");
+  });
+
+  test("no --host, non-TTY, a bare URL on stdin is the host too, and surrounding whitespace is dropped", async () => {
+    const written: [string, unknown, string][] = [];
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: async () => "  https://sw.example.com\n",
+      isTTY: () => false,
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--json"], deps);
+
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+  });
+
+  test("--host wins over stdin, and a TTY caller never reads stdin at all", async () => {
+    const written: [string, unknown, string][] = [];
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: neverCalled("stdin"),
+      isTTY: () => true,
+      promptField: neverCalled("promptField"),
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--host", "https://sw.example.com", "--json"], deps);
+
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+  });
+
+  test("no --host, non-TTY, stdin {host} that is not https -> bad-host, nothing fetched or written", async () => {
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch: neverCalled("fetch") }),
+      stdin: async () => ({ host: "http://sw.example.com" }),
+      isTTY: () => false,
+      writeSetting: neverCalled("writeSetting"),
+    });
+
+    await expectExit(() => integrationConnect("switchboard", ["--json"], deps));
+
+    expect(deps.exitCodes).toEqual([2]);
+    const payload = JSON.parse(deps.lines[0]!) as { error: { code: string } };
+    expect(payload.error.code).toBe("bad-host");
+  });
+
   test("no credential is ever staged or written: there is nothing to store", async () => {
     const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
     const probes = fakeProbes({ fetch });

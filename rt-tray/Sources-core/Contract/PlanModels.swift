@@ -87,8 +87,10 @@ public struct ActionField: Codable, Equatable, Sendable {
     public var label: String
     public var secret: Bool
     public var hint: String?
-    public init(name: String, label: String, secret: Bool, hint: String? = nil) {
-        self.name = name; self.label = label; self.secret = secret; self.hint = hint
+    /// What the sheet prefills; the user can still edit it before submitting.
+    public var value: String?
+    public init(name: String, label: String, secret: Bool, hint: String? = nil, value: String? = nil) {
+        self.name = name; self.label = label; self.secret = secret; self.hint = hint; self.value = value
     }
     /// The contract marks secrecy explicitly, so an absent `secret` means "not
     /// secret" — and it degrades this one field rather than failing the decode,
@@ -100,6 +102,7 @@ public struct ActionField: Codable, Equatable, Sendable {
         label = try c.decode(String.self, forKey: .label)
         secret = try c.decodeIfPresent(Bool.self, forKey: .secret) ?? false
         hint = try c.decodeIfPresent(String.self, forKey: .hint)
+        value = try c.decodeIfPresent(String.self, forKey: .value)
     }
 }
 

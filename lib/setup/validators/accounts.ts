@@ -162,7 +162,26 @@ async function slackRow(p: Probes, base: Omit<Row, "status" | "detail" | "action
  */
 async function switchboardRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, ctx: ValidateCtx): Promise<Row> {
   const result = await def.validate(p, "", ctx);
-  return row({ ...base, status: result.status, detail: result.detail });
+  if (result.status === "ready" || !ctx.declaredHost) return row({ ...base, status: result.status, detail: result.detail });
+  // Confirmed to this very URL and only unreachable: a Confirm here would
+  // re-latch the same value, so the row offers the re-check instead.
+  const trimSlash = (u: string) => u.replace(/\/+$/, "");
+  if (ctx.host && trimSlash(ctx.host) === trimSlash(ctx.declaredHost)) return row({ ...base, status: result.status, detail: result.detail, action: ACCOUNT_RECHECK_ACTION });
+  // The row is required when the team declares a switchboard, so an
+  // unconfirmed URL with no button would block Install with nothing to click.
+  // The app sends the field back as `host` on stdin to `setup switchboard connect`.
+  const detail = ctx.host ? `${result.detail}; you confirmed "${ctx.host}", this team declares "${ctx.declaredHost}". Confirm it to use it instead` : result.detail;
+  return row({
+    ...base,
+    status: result.status,
+    detail,
+    action: {
+      type: "connect",
+      label: "Confirm",
+      integration: def.id,
+      fields: [{ name: "host", label: "Switchboard URL", secret: false, hint: "Your team declares this URL. Confirming it lets rt reach the switchboard from this Mac.", value: ctx.declaredHost }],
+    },
+  });
 }
 
 async function genericRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx): Promise<Row> {
