@@ -9,7 +9,7 @@ struct TeamScreen: View {
             VStack(alignment: .leading, spacing: 14) {
                 card(.create, title: "Create a team", systemImage: "person.3") { createFields }
                 card(.join, title: "Join a team", systemImage: "person.crop.circle.badge.plus") { joinFields }
-                card(.restore, title: "Already have mattstack settings?", systemImage: "arrow.counterclockwise.icloud", compact: true) { restoreFields }
+                // No restore card: its Continue runs `rt restore`, which rt does not have yet.
             }
             .padding(20)
         }
