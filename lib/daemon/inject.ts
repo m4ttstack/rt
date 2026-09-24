@@ -15,7 +15,62 @@ export function herdrError(res: { ok: false; code: string; message: string }): {
 
 export type InjectDelivery = "accepted" | "queued" | "refused";
 export interface InjectResult { paneId: string; delivered: InjectDelivery; reason?: string }
-export interface InjectOptions { paneId: string; text: string; callerPane?: string; herdr?: typeof herdrRequest; promptWaitMs?: number; sockPath?: string }
+export interface InjectOptions { paneId: string; text: string; callerPane?: string; herdr?: typeof herdrRequest; promptWaitMs?: number; sockPath?: string; preserveDraft?: boolean }
+
+const RULE_LINE = /^─{8,}$/;
+const PROMPT_MARKER = /^\s*❯\s?/;
+const STASH_HINT = /›\s*stashed\s*$/;
+const SGR = /\x1b\[([\d;]*)([A-Za-z])|[^\x1b]+/g;
+
+/** Drops escapes and every dim run: Claude paints its placeholder and prompt
+    suggestions dim, and a composer showing only those is empty. Truecolor and
+    256-colour params are skipped whole so their `2`/`5` never read as dim. */
+function undimmedText(line: string): string {
+  let dim = false;
+  let out = "";
+  for (const m of line.matchAll(SGR)) {
+    if (m[2] === undefined) { if (!dim) out += m[0]; continue; }
+    if (m[2] !== "m") continue;
+    const params = (m[1] || "0").split(";");
+    for (let i = 0; i < params.length; i++) {
+      const p = params[i];
+      if (p === "38" || p === "48" || p === "58") i += params[i + 1] === "5" ? 2 : 4;
+      else if (p === "2") dim = true;
+      else if (p === "0" || p === "22" || p === "") dim = false;
+    }
+  }
+  return out;
+}
+
+/**
+ * The typed text in a Claude Code composer, read off an ANSI screen: the body
+ * between the last two horizontal rules, whose first line carries the `❯`
+ * marker. `stashHeld` is Claude's `› stashed` hint above the box, meaning its
+ * single stash slot is taken. Null when no prompt box is on screen.
+ */
+export function composerDraft(ansi: string): { draft: string; stashHeld: boolean } | null {
+  const lines = ansi.split("\n").map((l) => undimmedText(l.replace(/\r$/, "")));
+  const bottom = lines.findLastIndex((l) => RULE_LINE.test(l.trim()));
+  const top = lines.findLastIndex((l, i) => i < bottom && RULE_LINE.test(l.trim()));
+  if (top < 0 || !PROMPT_MARKER.test(lines[top + 1] ?? "")) return null;
+  const body = lines.slice(top + 1, bottom);
+  body[0] = body[0]!.replace(PROMPT_MARKER, "");
+  return { draft: body.join("\n").trim(), stashHeld: top > 0 && STASH_HINT.test(lines[top - 1]!) };
+}
+
+/**
+ * Ctrl+S is Claude Code's `chat:stash`: it moves a non-empty composer into a
+ * one-slot stash, and the next submit pops it back ("Draft restored"). On an
+ * empty composer the same key pops the stash instead, and a second stash
+ * overwrites the first, so it is pressed only over a draft with the slot free.
+ */
+async function stashDraft(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined): Promise<void> {
+  const screen = await herdr<{ read: { text: string } }>("pane.read", { pane_id: paneId, source: "visible", format: "ansi", strip_ansi: false }, { sockPath });
+  if (!screen.ok) return;
+  const composer = composerDraft(screen.result.read.text);
+  if (!composer || composer.draft === "" || composer.stashHeld) return;
+  await herdr("pane.send_keys", { pane_id: paneId, keys: ["ctrl+s"] }, { sockPath });
+}
 
 /**
  * herdr's injection delivery, shared by chat:invite and pane:send. Returns the
@@ -51,6 +106,7 @@ export async function injectIntoPane(opts: InjectOptions): Promise<{ ok: true; d
   }
   if (probe.result.agent.agent !== "claude") return ok("refused", "not a claude pane");
   if (probe.result.agent.agent_status === "blocked") return ok("refused", "at a prompt");
+  if (opts.preserveDraft) await stashDraft(herdr, paneId, sockPath);
 
   if (probe.result.agent.agent_status === "working") {
     const queued = await herdr("agent.prompt", { target: paneId, text }, { sockPath });

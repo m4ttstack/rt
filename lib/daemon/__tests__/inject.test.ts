@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { herdrRequest } from "../../herdr/client.ts";
 import { fakeHerdr, HerdrFakeError, type FakeHerdrHandler } from "../../herdr/__tests__/fake-herdr.ts";
-import { injectAfterTurn, injectIntoPane } from "../inject.ts";
+import { composerDraft, injectAfterTurn, injectIntoPane } from "../inject.ts";
 import { bgSocketPath } from "../bg-service.ts";
 
 const stops: Array<() => void> = [];
@@ -164,6 +164,94 @@ test("the stall nudge and its recovery wait also carry sockPath", async () => {
   expect(res).toEqual({ ok: true, data: { paneId: "w1:p2", delivered: "queued" } });
   expect(seenSockPaths.every((s) => s === "/tmp/bg/herdr.sock")).toBe(true);
   expect(seenSockPaths).toHaveLength(4);
+});
+
+// ─── preserveDraft ─────────────────────────────────────────────────────────
+
+// Shaped on a real `pane.read` of Claude Code 2.1.281 with format "ansi" and strip_ansi false.
+const RULE = `\x1b[0m\x1b[38;2;136;136;136m${"─".repeat(60)}\x1b[0m`;
+const GRAY = (s: string) => `\x1b[0m\x1b[38;2;153;153;153m${s}\x1b[0m`;
+const composerScreen = (body: string[], above = "") =>
+  ["⏺ ok", "", above, RULE, ...body, RULE, `  ${GRAY("O 5.5 [high] | offline")}`, ""].map((l) => `${l}\r`).join("\n");
+const readReply = (text: string) => ({ type: "pane_read", read: { text } });
+
+test("composerDraft reads typed text and ignores the prompt marker", () => {
+  expect(composerDraft(composerScreen(["❯\xa0my half typed draft"]))).toEqual({ draft: "my half typed draft", stashHeld: false });
+  expect(composerDraft(composerScreen(["❯\xa0"]))).toEqual({ draft: "", stashHeld: false });
+});
+
+test("composerDraft keeps every line of a multi-line draft", () => {
+  expect(composerDraft(composerScreen(["❯\xa0first", "  second"]))?.draft).toBe("first\n  second");
+});
+
+test("composerDraft treats dim ghost text as empty but keeps truecolor-styled text", () => {
+  expect(composerDraft(composerScreen([`❯\xa0\x1b[2mTry "fix lint errors"\x1b[22m`]))?.draft).toBe("");
+  expect(composerDraft(composerScreen([`❯\xa0${GRAY("[Pasted text #1 +20 lines]")}`]))?.draft).toBe("[Pasted text #1 +20 lines]");
+});
+
+test("composerDraft sees a stash Claude is already holding", () => {
+  expect(composerDraft(composerScreen(["❯\xa0mine"], `${" ".repeat(40)}${GRAY("› stashed")}`))?.stashHeld).toBe(true);
+});
+
+test("composerDraft is null when no prompt box is on screen", () => {
+  expect(composerDraft("⏺ ok\r\n\r\nsome output\r\n")).toBeNull();
+  expect(composerDraft([RULE, "  Do you trust this folder?", RULE].join("\n"))).toBeNull();
+});
+
+function draftPane(screen: string, status = "idle") {
+  return on((method) => {
+    if (method === "agent.get") return agent(status);
+    if (method === "pane.read") return readReply(screen);
+    if (method === "pane.send_keys") return { type: "ok" };
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    return new HerdrFakeError("invalid_request", method);
+  });
+}
+
+test("preserveDraft stashes a typed draft with ctrl+s before the prompt, so Claude restores it after", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0my half typed draft"]));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "watchdog: hi", herdr, preserveDraft: true });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "accepted" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "agent.prompt"]);
+  expect(seen.find((s) => s.method === "pane.read")!.params).toEqual({ pane_id: "w1:p1", source: "visible", format: "ansi", strip_ansi: false });
+  expect(seen.find((s) => s.method === "pane.send_keys")!.params).toEqual({ pane_id: "w1:p1", keys: ["ctrl+s"] });
+});
+
+test("preserveDraft stashes before a queued prompt on a working pane too", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0draft during turn"]), "working");
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "later", herdr, preserveDraft: true });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "agent.prompt"]);
+});
+
+test("preserveDraft never presses ctrl+s on an empty composer, where it would pop a stash into the prompt", async () => {
+  const { herdr, seen } = draftPane(composerScreen([`❯\xa0\x1b[2mTry "fix lint errors"\x1b[22m`]));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr, preserveDraft: true });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
+});
+
+test("preserveDraft leaves a draft alone when Claude already holds a stash, rather than overwrite it", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0new draft"], GRAY("› stashed")));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr, preserveDraft: true });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
+});
+
+test("preserveDraft still sends the prompt when the screen read fails", async () => {
+  const { herdr, seen } = on((method) => {
+    if (method === "agent.get") return agent("idle");
+    if (method === "pane.read") return new HerdrFakeError("pane_not_found", "gone");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr, preserveDraft: true });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "accepted" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
+});
+
+test("without preserveDraft the screen is never read", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0my half typed draft"]));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "agent.prompt"]);
 });
 
 // ─── injectAfterTurn ───────────────────────────────────────────────────────
