@@ -31,6 +31,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var processWindow: NSWindow?
     private var keyboardConflictWindow: NSWindow?
 
+    // ── Worktree panel ─────────────────────────────────────────────────────
+    private var worktreeWindow: NSWindow?
+    private var triageCounts: TriageCounts?
+    /// The item in the menu currently open, retitled in place when the count
+    /// query lands after the menu has already been shown.
+    private weak var worktreesMenuItem: NSMenuItem?
+
     // ── State ───────────────────────────────────────────────────────────────
     private var currentHealth: DaemonHealth = .unknown
     /// This process's own start time -- the freshness cutoff for tray-crash.log,
@@ -136,6 +143,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             name: .detachProcessPanel,
             object: nil
         )
+        NotificationCenter.default.addObserver(forName: .showWorktreePanel, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showWorktreePanel() }
+        }
 
         // Gear-menu actions posted by the panel's status strip
         NotificationCenter.default.addObserver(
@@ -742,6 +752,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         menu.addItem(ActionMenuItem("Processes…", axid: AXID.trayProcesses) { [weak self] in
             self?.detachProcessPanel()
         })
+        let worktrees = ActionMenuItem(Self.worktreesMenuTitle(triageCounts), axid: AXID.trayWorktrees) { [weak self] in
+            MainActor.assumeIsolated { self?.showWorktreePanel() }
+        }
+        menu.addItem(worktrees)
+        worktreesMenuItem = worktrees
+        refreshTriageCount()
         menu.addItem(.separator())
         menu.addItem(ActionMenuItem("Restart Daemon", axid: AXID.trayRestartDaemon) {
             NotificationCenter.default.post(name: .rtRestartDaemon, object: nil)
@@ -1321,6 +1337,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         processWindow = window
+    }
+
+    @MainActor
+    func showWorktreePanel() {
+        if let w = worktreeWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 720),
+                         styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        w.title = "Worktrees"
+        w.contentViewController = NSHostingController(rootView: WorktreePanelView())
+        // Same shrink-to-fitting-size trap as `detachProcessPanel`.
+        w.setContentSize(NSSize(width: 780, height: 720))
+        w.center()
+        w.setFrameAutosaveName("rt-worktree-panel")
+        w.isReleasedWhenClosed = false
+        worktreeWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private static func worktreesMenuTitle(_ counts: TriageCounts?) -> String {
+        TriageMenu.badge(counts).map { "Worktrees…  \($0)" } ?? "Worktrees…"
+    }
+
+    /// Never awaited by the menu build: the menu opens with the last known
+    /// count and is retitled in place if the query lands while it is open.
+    @MainActor
+    private func refreshTriageCount() {
+        Task { [weak self] in
+            guard let self else { return }
+            let p = await self.daemonClient.queryTriage()
+            await MainActor.run {
+                guard let counts = p?.data?.counts else { return }
+                self.triageCounts = counts
+                self.worktreesMenuItem?.title = Self.worktreesMenuTitle(counts)
+            }
+        }
     }
 
     // MARK: - Auto-Update

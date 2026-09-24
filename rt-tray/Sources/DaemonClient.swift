@@ -115,8 +115,30 @@ class DaemonClient {
         }
     }
 
+    /// POST with a JSON body over the socket, which reads `payload` from the
+    /// body on POST. 30 s because dispose and push run git against the tree.
+    func command<T: Decodable>(_ command: String, payload: [String: Any]) async -> T? {
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            TrayLog.error("encode \(command) payload failed")
+            return nil
+        }
+        return await postSocket(command, body: body)
+    }
+
+    func queryTriage() async -> TriagePayload? { await querySocket("worktree:triage") }
+
+    private func postSocket<T: Decodable>(_ command: String, body: Data) async -> T? {
+        let head = "POST /\(command) HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        return await socketRequest(command, request: Data(head.utf8) + body, timeout: 30, logDecodeFailure: true)
+    }
+
     /// Fallback: HTTP over Unix socket via NWConnection.
     private func querySocket<T: Decodable>(_ command: String) async -> T? {
+        let request = "GET /\(command) HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        return await socketRequest(command, request: Data(request.utf8), timeout: 2.0, logDecodeFailure: false)
+    }
+
+    private func socketRequest<T: Decodable>(_ command: String, request data: Data, timeout: TimeInterval, logDecodeFailure: Bool) async -> T? {
         guard FileManager.default.fileExists(atPath: socketPath) else { return nil }
 
         return await withCheckedContinuation { continuation in
@@ -137,7 +159,7 @@ class DaemonClient {
                 }
             }
 
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
                 complete(nil)
             }
 
@@ -145,11 +167,6 @@ class DaemonClient {
                 switch state {
                 case .ready:
                     guard_q.sync { hasReachedReady = true }
-                    let request = "GET /\(command) HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-                    guard let data = request.data(using: .utf8) else {
-                        complete(nil)
-                        return
-                    }
                     connection.send(content: data, completion: .contentProcessed { error in
                         if error != nil {
                             complete(nil)
@@ -165,6 +182,10 @@ class DaemonClient {
                                 let decoded = try JSONDecoder().decode(T.self, from: jsonBody)
                                 complete(decoded)
                             } catch {
+                                if logDecodeFailure {
+                                    let preview = String(data: jsonBody.prefix(500), encoding: .utf8) ?? "<binary>"
+                                    TrayLog.error("decode \(command) failed", ["err": String(describing: error), "preview": preview])
+                                }
                                 complete(nil)
                             }
                         }

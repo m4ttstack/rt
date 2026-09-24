@@ -183,6 +183,11 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 actions: [openSurface],
                 intentIdentifiers: []
             ),
+            UNNotificationCategory(
+                identifier: NotificationClick.worktreeTriageCategory,
+                actions: [],
+                intentIdentifiers: []
+            ),
         ]
 
         center.setNotificationCategories(Set(categories))
