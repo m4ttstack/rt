@@ -1,0 +1,73 @@
+import { describe, test, expect } from "bun:test";
+import { triageCounts, triageRow, type TriageFacts } from "../verdict.ts";
+
+const base: TriageFacts = {
+  repo: "github.com/m4ttstack/rt", tree: "t", path: "/p/t", branch: "b", broken: false,
+  mr: { iid: 1, state: "merged", title: "x", at: null, url: null }, ticket: null,
+  remoteBranchExists: true, ahead: 0, containment: "on-remote",
+  dirt: { kind: "none", files: [], discardable: [] },
+  fingerprint: { headSha: "h", dirtHash: "d", mrState: "merged" }, kept: null, hold: null,
+};
+const row = (o: Partial<TriageFacts>) => triageRow({ ...base, ...o });
+
+describe("triageRow", () => {
+  test("generated junk with every commit in main is safe, dispose first", () => {
+    const r = row({ containment: "in-default", remoteBranchExists: false, dirt: { kind: "junk", files: [".visual/a.png"], discardable: [".visual/a.png"] } });
+    expect([r.group, r.push.kind, r.actions[0]]).toEqual(["safe", "in-main", "dispose"]);
+  });
+  test("a lockfile-only rewrite is safe", () => {
+    expect(row({ dirt: { kind: "lockfile", files: ["bun.lock"], discardable: ["bun.lock"] } }).group).toBe("safe");
+  });
+  test("a rebased-then-merged branch with the remote deleted is safe", () => {
+    const r = row({ containment: "patch-identical", remoteBranchExists: false, ahead: 8 });
+    expect([r.group, r.push.kind]).toEqual(["safe", "remote-deleted"]);
+  });
+  test("a closed MR whose remote has every commit is safe", () => {
+    expect(row({ mr: { iid: 2, state: "closed", title: "x", at: null, url: null } }).group).toBe("safe");
+  });
+  test("no MR but every commit in main is safe", () => {
+    expect(row({ mr: null, containment: "in-default" }).group).toBe("safe");
+  });
+  test("a real uncommitted file needs a look, review first", () => {
+    const r = row({ dirt: { kind: "real", files: ["a.test.ts"], discardable: [] } });
+    expect([r.group, r.actions[0]]).toEqual(["look", "review"]);
+  });
+  test("unpushed work with no remote is the only copy, push first", () => {
+    const r = row({ containment: "none", remoteBranchExists: false, ahead: 19, mr: { iid: 3, state: "closed", title: "x", at: null, url: null } });
+    expect([r.group, r.push, r.actions[0]]).toEqual(["only-copy", { kind: "unpushed", ahead: 19 }, "push-branch"]);
+    expect(r.actions).toContain("keep");
+    expect(r.actions).not.toContain("dispose");
+  });
+  test.each([
+    ["process", "stop-process"], ["herd", "open-herd"], ["run", "open-run"],
+  ] as const)("a %s hold is waiting with %s", (kind, action) => {
+    const r = row({ hold: { kind, detail: "d" }, containment: "none" });
+    expect([r.group, r.actions[0]]).toEqual(["waiting", action]);
+  });
+  test("a stale orphan being stopped is waiting with no primary action", () => {
+    const r = row({ hold: { kind: "orphan-stopping", detail: "d" } });
+    expect(r.group).toBe("waiting");
+    expect(r.actions.every((a) => ["open-finder", "open-terminal", "copy-path"].includes(a))).toBe(true);
+  });
+  test("a broken tree beats every other state and only offers remove", () => {
+    const r = row({ broken: true, containment: "none", hold: { kind: "process", detail: "d" } });
+    expect([r.group, r.actions]).toEqual(["broken", ["remove", "copy-path"]]);
+  });
+  test("a keep holds while the fingerprint matches, and lapses when it doesn't", () => {
+    const kept = { keptAt: "2026-09-24T00:00:00Z", headSha: "h", dirtHash: "d", mrState: "merged" };
+    expect(row({ kept, containment: "none" }).group).toBe("kept");
+    expect(row({ kept, containment: "none" }).actions[0]).toBe("unkeep");
+    expect(row({ kept: { ...kept, headSha: "old" }, containment: "none" }).group).toBe("only-copy");
+  });
+  test("every row names its verdict in one sentence", () => {
+    for (const r of [row({}), row({ containment: "none" }), row({ broken: true })]) expect(r.verdict).toMatch(/^[A-Z].*\.$/);
+  });
+});
+
+describe("triageCounts", () => {
+  test("waiting and kept never count toward needsDecision; broken does", () => {
+    const rows = [row({}), row({ containment: "none" }), row({ broken: true }), row({ hold: { kind: "herd", detail: "d" } }),
+      row({ kept: { keptAt: "x", headSha: "h", dirtHash: "d", mrState: "merged" }, containment: "none" })];
+    expect(triageCounts(rows)).toEqual({ needsDecision: 3, safe: 1, waiting: 1, kept: 1 });
+  });
+});
