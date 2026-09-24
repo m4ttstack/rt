@@ -167,9 +167,23 @@ check_identity() { # app bundle-id exe label devbuild
     done
 }
 check_identity "$PROD" "com.mattstack.app" "mattstack" "com.mattstack.daemon" "false"
+[ -e "$PROD/Contents/Helpers/deck-pinned" ] && fail "prod bundle carries Helpers/deck-pinned; prod ships the pin as deck"
 [ -n "$DEV" ] && check_identity "$DEV" "com.mattstack.app.dev" "mattstack-dev" "com.mattstack.daemon.dev" "true"
 
 if [ -n "$DEV" ]; then
+    # Dev flavor swaps Contents/Helpers/deck for the shim and keeps the pin
+    # beside it; prod never sees deck-pinned (asserted above).
+    if [ -f "$DEV/Contents/Helpers/deck-pinned" ] && [ -x "$DEV/Contents/Helpers/deck-pinned" ]; then
+        pass "dev Helpers/deck-pinned exists and is executable"
+    else
+        fail "dev Helpers/deck-pinned missing or not executable"
+    fi
+    cmp -s "$DEV/Contents/Helpers/deck" "$DEV/Contents/Helpers/deck-pinned" \
+        && fail "dev Helpers/deck is not the shim (identical to deck-pinned)" \
+        || pass "dev Helpers/deck differs from deck-pinned"
+    codesign --verify --strict "$DEV/Contents/Helpers/deck-pinned" >/dev/null 2>&1 \
+        && pass "dev Helpers/deck-pinned passes codesign --verify --strict" \
+        || fail "dev Helpers/deck-pinned failed codesign --verify --strict"
     # Dev rt IS the shim: small Swift binary; prod rt is the compiled daemon (MB).
     DEV_RT_SIZE=$(stat -f%z "$DEV/Contents/MacOS/rt" 2>/dev/null || echo 0)
     [ "$DEV_RT_SIZE" -lt 1000000 ] && pass "dev rt is the shim ($DEV_RT_SIZE bytes)" || fail "dev rt is not the shim ($DEV_RT_SIZE bytes)"
@@ -342,7 +356,15 @@ check_helpers() { # app
             node|fast-browser|portless) ;;
             *)
                 if [ -f "$p" ] && [ -x "$p" ]; then
-                    "$p" --version >/dev/null 2>&1 \
+                    # The dev deck binary is the shim: a real HOME would let it
+                    # find the registry and try to run mattstack-apps from
+                    # source, so the probe runs isolated to force the pinned
+                    # fallback instead.
+                    if [ "$exe" = mattstack-dev ] && [ "$name" = deck ]; then
+                        env -i HOME="$(mktemp -d)" PATH=/usr/bin:/bin "$p" --version >/dev/null 2>&1
+                    else
+                        "$p" --version >/dev/null 2>&1
+                    fi \
                         && pass "$exe Helpers/$name runs (entitlements: $ent)" \
                         || fail "$exe Helpers/$name does not run from inside the bundle under its entitlements"
                 else
@@ -368,7 +390,7 @@ check_helpers() { # app
     # mattstack-proxy-install).
     # The row loop above only proves declared things exist; a helper the
     # lock doesn't pin would otherwise ship unverified and unversioned.
-    local allowed=" rt-ui skills mattstack-proxy-install gate-fork.sh " seg entry stowaways=0
+    local allowed=" rt-ui skills mattstack-proxy-install gate-fork.sh deck-pinned " seg entry stowaways=0
     while IFS= read -r row; do
         [ -n "$row" ] || continue
         split_tsv "$row"

@@ -47,6 +47,11 @@ let package = Package(
             name: "rt-daemon-shim",
             path: "Sources-daemon-shim"
         ),
+        .executableTarget(
+            name: "deck-dev-shim",
+            dependencies: ["DeckShimLogic"],
+            path: "Sources-deck-shim"
+        ),
         .target(
             name: "MattstackCoreChecks",
             dependencies: ["MattstackCore", "DeckShimLogic"],
