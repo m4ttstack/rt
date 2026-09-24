@@ -2206,7 +2206,7 @@ export const TREE: Record<string, CommandNode> = {
         ],
       },
       bind: {
-        description: "Write bindings.<engineRef>.<slot> = <fill> into the manifest (jsonc-parser, comments preserved), validate the fill against the slot's contract, and recompile (a stage bind recompiles the whole pack)",
+        description: "Write bindings.<engineRef>.<slot> = <fill> into the manifest (jsonc-parser, comments preserved) and, for a team pack, into the pack's pack/skills.jsonc fragment too, validate the fill against the slot's contract, and recompile (a stage bind recompiles the whole pack)",
         module: "./commands/skills.ts",
         fn: "skillsBind",
         omitBehavior: "picker",
