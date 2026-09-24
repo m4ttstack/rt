@@ -12,7 +12,7 @@ function fakeSeams(opts: { dirty?: boolean; buildExit?: number; hasDeps?: boolea
     home: "/Users/t",
     now: () => new Date(2026, 8, 24, 9, 41, 2),
     scratchDir: () => "/scratch",
-    pathExists: (p) => p === "/src/tree/rt-tray/deps" && (opts.hasDeps ?? true),
+    pathExists: (p) => p === "/src/tree/rt-tray/build.sh" || (p === "/src/tree/rt-tray/deps" && (opts.hasDeps ?? true)),
     writeFile: (p, content) => {
       writes[p] = content;
     },
@@ -52,6 +52,35 @@ describe("stageLocalDevApp", () => {
     expect(ditto).toBeGreaterThan(-1);
     expect(swap).toBeGreaterThan(ditto);
     expect(writes[paths.lastSourceFile]).toBe("/src/tree");
+  });
+
+  test("the live staged dir is retired by rename, never deleted in place, so a restart mid-stage sees a whole bundle or none", async () => {
+    const { seams, calls } = fakeSeams();
+    await stageLocalDevApp(seams, "/src/tree");
+    const paths = devAppStagePaths("/Users/t");
+    expect(calls).not.toContain(`rm -rf ${paths.stagedDir}`);
+    const retire = calls.findIndex((c) => c.startsWith(`mv -f ${paths.stagedDir} ${paths.root}/.retired-`));
+    const install = calls.findIndex((c) => c.startsWith(`mv ${paths.root}/.incoming-`) && c.endsWith(` ${paths.stagedDir}`));
+    expect(retire).toBeGreaterThan(-1);
+    expect(install).toBeGreaterThan(retire);
+    expect(calls.findIndex((c) => c.startsWith(`rm -rf ${paths.root}/.retired-`))).toBeGreaterThan(install);
+  });
+
+  test("a checkout that is not repo-tools is refused before copying", async () => {
+    const { seams, calls } = fakeSeams();
+    seams.pathExists = () => false;
+    await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow("not a repo-tools checkout");
+    expect(calls.some((c) => c.startsWith("rsync"))).toBe(false);
+  });
+
+  test("a build failure names what build.sh printed on stdout, where its errors go", async () => {
+    const { seams } = fakeSeams();
+    const exec = seams.exec;
+    seams.exec = (argv, opts) =>
+      argv.join(" ").includes("rt-tray/build.sh dev")
+        ? Promise.resolve({ stdout: "  ✗ deck-dev-shim not built\n", stderr: "warning: noise\n", exitCode: 1 })
+        : exec(argv, opts);
+    await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow("deck-dev-shim not built");
   });
 
   test("a clean tree has no +dirty and fetches deps when the tree has none", async () => {

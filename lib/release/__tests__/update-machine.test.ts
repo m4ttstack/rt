@@ -171,6 +171,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
         return ok(JSON.stringify(managed.map((m) => ({ name: m.name, managed: true }))));
       }
       if (cmd.startsWith("launchctl kickstart")) return ok("");
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed") return ok("");
       if (cmd.startsWith("launchctl print")) {
         const name = cmd.split(".").pop()!;
         const pid = pids.get(name);
@@ -752,7 +753,24 @@ describe("runDevAppRebuild", () => {
     const { result } = await runDevAppRebuild(seams, "main");
     const kick = calls.indexOf("launchctl kickstart -k gui/501/com.mattstack.deck.dev");
     expect(kick).toBeGreaterThan(calls.findIndex((c) => c.startsWith("open /Applications/mattstack-dev.app")));
-    expect(result.detail).toContain("deck helper restarted");
+    expect(result.detail).toContain("deck helper and managed apps restarted");
+  });
+
+  test("restarts deck's managed apps after the deck helper, since they run the replaced bundle's bun", async () => {
+    const { seams, calls } = fakeSeams();
+    const { result } = await runDevAppRebuild(seams, "main");
+    const kick = calls.indexOf("launchctl kickstart -k gui/501/com.mattstack.deck.dev");
+    const managed = calls.indexOf("/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed");
+    expect(managed).toBeGreaterThan(kick);
+    expect(result.status).toBe("ok");
+    expect(result.detail).toContain("managed apps restarted");
+  });
+
+  test("a managed-app restart that never succeeds is an error leg naming it", async () => {
+    const { seams } = fakeSeams({ failExactCmd: "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed" });
+    const { result } = await runDevAppRebuild(seams, "main");
+    expect(result.status).toBe("error");
+    expect(result.detail).toContain("restart --managed");
   });
 
   test("a deck kickstart that keeps failing is an error leg naming the command", async () => {

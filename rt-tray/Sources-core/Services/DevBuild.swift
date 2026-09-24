@@ -15,40 +15,61 @@ public enum DevBuild {
         return stamp
     }
 
+    /// A staged bundle only exists until a restart moves it, so it is never the
+    /// running build; an unstamped running app (built from a pushed ref) still
+    /// takes it.
     public static func newerBuildReady(running: String?, staged: String?) -> Bool {
-        guard let running, let staged else { return false }
+        guard let staged else { return false }
         return running != staged
     }
 
     /// A /bin/sh script that waits for `pid` to exit (giving up after 30s, so a
     /// cancelled quit never relaunches later), then swaps `stagedPath` into
-    /// `appPath` by rename with rollback, reopens the app, and kickstarts the
-    /// deck helper only when the bundle actually changed. With no staged path
-    /// it is a plain relaunch.
+    /// `appPath` by rename with rollback and reopens the app. Only when the
+    /// bundle changed does it restart the deck helper and then deck's managed
+    /// apps: they run the bundle's Helpers/bun, and a process whose binary was
+    /// deleted with the old bundle loses its privacy grants (EPERM reading
+    /// ~/Documents). With no staged path it is a plain relaunch.
     public static func handoffScript(pid: Int32, appPath: String, stagedPath: String?, deckLabel: String?,
-                                     uid: UInt32, openPath: String = "/usr/bin/open",
-                                     launchctlPath: String = "/bin/launchctl") -> String {
+                                     uid: UInt32, logPath: String? = nil,
+                                     openPath: String = "/usr/bin/open",
+                                     launchctlPath: String = "/bin/launchctl",
+                                     deckCLIPath: String? = nil) -> String {
         let app = shellQuote(appPath)
         let aside = shellQuote(appPath + ".restart-old")
-        var lines = [
+        var lines: [String] = []
+        if let logPath { lines.append("exec >> \(shellQuote(logPath)) 2>&1") }
+        lines += [
+            "echo \"handoff $(date '+%F %T') pid \(pid)\"",
             "i=0",
-            "while kill -0 \(pid) 2>/dev/null; do i=$((i+1)); [ $i -ge 300 ] && exit 1; sleep 0.1; done",
+            "while kill -0 \(pid) 2>/dev/null; do i=$((i+1)); [ $i -ge 300 ] && { echo 'app did not exit; nothing changed'; exit 1; }; sleep 0.1; done",
             "swapped=0",
         ]
         if let stagedPath {
             let staged = shellQuote(stagedPath)
+            // mv onto an existing directory moves INTO it, so the aside path
+            // must be gone before the app is moved there.
             lines += [
-                "if [ -d \(staged) ]; then",
+                "if [ ! -d \(staged) ]; then echo 'no staged build'",
+                "else",
                 "  rm -rf \(aside)",
-                "  if mv \(app) \(aside); then",
-                "    if mv \(staged) \(app); then swapped=1; rm -rf \(aside); else mv \(aside) \(app); fi",
+                "  if [ -e \(aside) ]; then echo 'stale aside copy could not be removed; not swapping'",
+                "  elif mv \(app) \(aside); then",
+                "    if mv \(staged) \(app); then swapped=1; rm -rf \(aside); echo swapped",
+                "    else rm -rf \(app); mv \(aside) \(app); echo 'swap failed; previous app restored'; fi",
                 "  fi",
                 "fi",
             ]
         }
         lines.append("\(shellQuote(openPath)) \(app)")
         if let deckLabel {
-            lines.append("[ $swapped = 1 ] && \(shellQuote(launchctlPath)) kickstart -k gui/\(uid)/\(deckLabel)")
+            let deck = shellQuote(deckCLIPath ?? appPath + "/Contents/Helpers/deck")
+            lines += [
+                "if [ $swapped = 1 ]; then",
+                "  \(shellQuote(launchctlPath)) kickstart -k gui/\(uid)/\(deckLabel)",
+                "  n=0; until \(deck) restart --managed; do n=$((n+1)); [ $n -ge 30 ] && { echo 'managed apps not restarted'; break; }; sleep 1; done",
+                "fi",
+            ]
         }
         lines.append("exit 0")
         return lines.joined(separator: "\n")

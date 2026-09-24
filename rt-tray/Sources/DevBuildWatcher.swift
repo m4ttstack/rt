@@ -25,7 +25,9 @@ final class DevBuildWatcher {
     var lastSource: String? {
         guard let raw = try? String(contentsOfFile: root + "/last-source", encoding: .utf8) else { return nil }
         let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return path.isEmpty ? nil : path
+        // Worktrees are disposed after merge; Rebuild must not point at one that is gone.
+        guard !path.isEmpty, FileManager.default.fileExists(atPath: path + "/scripts/build-dev-app.ts") else { return nil }
+        return path
     }
 
     func start() {
@@ -48,6 +50,7 @@ final class DevBuildWatcher {
     }
 
     func check() {
+        guard BundleFlavor.isDevBuild else { return }
         let staged = DevBuild.stamp(atBundle: stagedApp, readFile: Self.read)
         TrayState.shared.stagedBuildStamp = DevBuild.newerBuildReady(running: runningStamp, staged: staged) ? staged : nil
     }
@@ -61,8 +64,12 @@ final class DevBuildWatcher {
     }
 
     private func handOff(stagedPath: String?, deckLabel: String?, quit: () -> Void) {
+        guard BundleFlavor.isDevBuild else { return }
+        let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
+        try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
         let script = DevBuild.handoffScript(pid: getpid(), appPath: Bundle.main.bundlePath, stagedPath: stagedPath,
-                                            deckLabel: deckLabel, uid: getuid())
+                                            deckLabel: deckLabel, uid: getuid(),
+                                            logPath: logs + "/dev-app-restart.log")
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
         proc.arguments = ["-c", script]

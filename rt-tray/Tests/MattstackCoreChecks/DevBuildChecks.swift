@@ -21,10 +21,13 @@ private func marker(_ path: URL) -> String? {
     (try? String(contentsOf: path.appendingPathComponent("Contents/marker"), encoding: .utf8))
 }
 
-/// A stand-in for the opener and helper tool that appends its argv to a log.
+private func read(_ url: URL) -> String { (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
+
+/// A stand-in for the opener, the helper tool, and deck's CLI that appends
+/// its argv to a log.
 private func recorder(_ dir: URL, _ name: String, log: URL) -> String {
     let path = dir.appendingPathComponent(name).path
-    try! "#!/bin/sh\necho \"\(name) $*\" >> '\(log.path)'\n".write(toFile: path, atomically: true, encoding: .utf8)
+    try! "#!/bin/sh\necho \"\(name) $*\" >> \"\(log.path)\"\n".write(toFile: path, atomically: true, encoding: .utf8)
     chmod(path, 0o755)
     return path
 }
@@ -47,6 +50,31 @@ private func deadPid() -> Int32 {
     return p.processIdentifier
 }
 
+private struct Rig {
+    let dir: URL
+    let app: URL
+    let staged: URL
+    let calls: URL
+    let restartLog: URL
+
+    init() {
+        dir = tempDir()
+        app = dir.appendingPathComponent("mattstack-dev.app")
+        staged = dir.appendingPathComponent("staged/mattstack-dev.app")
+        calls = dir.appendingPathComponent("calls.log")
+        restartLog = dir.appendingPathComponent("restart.log")
+    }
+
+    func script(pid: Int32, staged: String?, deckLabel: String? = "com.mattstack.deck.dev") -> String {
+        DevBuild.handoffScript(
+            pid: pid, appPath: app.path, stagedPath: staged, deckLabel: deckLabel, uid: 501,
+            logPath: restartLog.path,
+            openPath: recorder(dir, "fake-open", log: calls),
+            launchctlPath: recorder(dir, "fake-helper", log: calls),
+            deckCLIPath: recorder(dir, "fake-deck", log: calls))
+    }
+}
+
 let devBuildChecks: [Check] = [
     Check("the build stamp is read from a bundle's Info.plist on disk") { c in
         let files = ["/A.app/Contents/Info.plist": plist(["MSBuildStamp": "2026-09-24 09:00:00 abc1234+dirty treebeard"])]
@@ -58,86 +86,89 @@ let devBuildChecks: [Check] = [
         let empty = ["/D.app/Contents/Info.plist": plist(["MSBuildStamp": ""])]
         c.expectEqual(DevBuild.stamp(atBundle: "/D.app", readFile: { empty[$0] }), nil)
     },
-    Check("a newer build is ready only when both stamps exist and differ") { c in
+    Check("a staged build is ready when it differs from the running one") { c in
         c.expect(DevBuild.newerBuildReady(running: "a", staged: "b"))
         c.expect(!DevBuild.newerBuildReady(running: "a", staged: "a"))
-        c.expect(!DevBuild.newerBuildReady(running: nil, staged: "b"), "an unstamped running app never offers a restart")
         c.expect(!DevBuild.newerBuildReady(running: "a", staged: nil))
+        c.expect(!DevBuild.newerBuildReady(running: nil, staged: nil))
     },
-    Check("the handoff swaps the staged build in, reopens it, and restarts the deck helper") { c in
-        let dir = tempDir()
-        let app = dir.appendingPathComponent("mattstack-dev.app")
-        let staged = dir.appendingPathComponent("staged/mattstack-dev.app")
-        makeBundle(app, marker: "old")
-        makeBundle(staged, marker: "new")
-        let log = dir.appendingPathComponent("calls.log")
-        let script = DevBuild.handoffScript(
-            pid: deadPid(), appPath: app.path, stagedPath: staged.path, deckLabel: "com.mattstack.deck.dev", uid: 501,
-            openPath: recorder(dir, "fake-open", log: log), launchctlPath: recorder(dir, "fake-helper", log: log))
-        try c.requireEqual(runScript(script), 0)
-        c.expectEqual(marker(app), "new")
-        c.expect(!FileManager.default.fileExists(atPath: staged.path), "the staged bundle is moved, not copied")
-        c.expect(!FileManager.default.fileExists(atPath: app.path + ".restart-old"), "the aside copy is removed")
-        let calls = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-        c.expectEqual(calls, "fake-open \(app.path)\nfake-helper kickstart -k gui/501/com.mattstack.deck.dev\n")
+    Check("an unstamped running app (installed by a --ref rebuild) still offers a staged build") { c in
+        c.expect(DevBuild.newerBuildReady(running: nil, staged: "b"))
     },
-    Check("a failed swap puts the previous app back and reopens it") { c in
-        let dir = tempDir()
-        let app = dir.appendingPathComponent("mattstack-dev.app")
-        makeBundle(app, marker: "old")
-        let log = dir.appendingPathComponent("calls.log")
-        let missing = dir.appendingPathComponent("staged/mattstack-dev.app").path
-        let script = DevBuild.handoffScript(
-            pid: deadPid(), appPath: app.path, stagedPath: missing, deckLabel: "com.mattstack.deck.dev", uid: 501,
-            openPath: recorder(dir, "fake-open", log: log), launchctlPath: recorder(dir, "fake-helper", log: log))
-        c.expectEqual(runScript(script), 0)
-        c.expectEqual(marker(app), "old")
-        let calls = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-        c.expectEqual(calls, "fake-open \(app.path)\n", "no helper restart when the bundle did not change")
+    Check("the handoff swaps the staged build in, reopens it, and restarts deck and the apps it manages") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        try c.requireEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path)), 0)
+        c.expectEqual(marker(rig.app), "new")
+        c.expect(!FileManager.default.fileExists(atPath: rig.staged.path), "the staged bundle is moved, not copied")
+        c.expect(!FileManager.default.fileExists(atPath: rig.app.path + ".restart-old"), "the aside copy is removed")
+        c.expectEqual(read(rig.calls), """
+            fake-open \(rig.app.path)
+            fake-helper kickstart -k gui/501/com.mattstack.deck.dev
+            fake-deck restart --managed
+
+            """)
+        c.expect(read(rig.restartLog).contains("swapped"), "the handoff logs what it did")
     },
-    Check("a plain relaunch reopens the same app without swapping or restarting helpers") { c in
-        let dir = tempDir()
-        let app = dir.appendingPathComponent("mattstack-dev.app")
-        makeBundle(app, marker: "old")
-        let log = dir.appendingPathComponent("calls.log")
-        let script = DevBuild.handoffScript(
-            pid: deadPid(), appPath: app.path, stagedPath: nil, deckLabel: "com.mattstack.deck.dev", uid: 501,
-            openPath: recorder(dir, "fake-open", log: log), launchctlPath: recorder(dir, "fake-helper", log: log))
-        c.expectEqual(runScript(script), 0)
-        c.expectEqual(marker(app), "old")
-        c.expectEqual((try? String(contentsOf: log, encoding: .utf8)) ?? "", "fake-open \(app.path)\n")
+    Check("a failed swap puts the previous app back, reopens it, and restarts nothing") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path)), 0)
+        c.expectEqual(marker(rig.app), "old")
+        c.expectEqual(read(rig.calls), "fake-open \(rig.app.path)\n")
+    },
+    Check("a stale aside copy that cannot be cleared stops the swap instead of nesting the app inside it") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let aside = URL(fileURLWithPath: rig.app.path + ".restart-old")
+        let locked = aside.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: locked.appendingPathComponent("f"))
+        chmod(locked.path, 0o555)
+        defer { chmod(locked.path, 0o755) }
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path)), 0)
+        c.expectEqual(marker(rig.app), "old")
+        c.expectEqual(marker(rig.staged), "new", "the staged build stays for the next try")
+        c.expectEqual(read(rig.calls), "fake-open \(rig.app.path)\n")
+    },
+    Check("a plain relaunch reopens the same app without swapping or restarting anything") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: nil)), 0)
+        c.expectEqual(marker(rig.app), "old")
+        c.expectEqual(read(rig.calls), "fake-open \(rig.app.path)\n")
     },
     Check("the handoff waits for the running app to exit before touching anything") { c in
-        let dir = tempDir()
-        let app = dir.appendingPathComponent("mattstack-dev.app")
-        let staged = dir.appendingPathComponent("staged/mattstack-dev.app")
-        makeBundle(app, marker: "old")
-        makeBundle(staged, marker: "new")
-        let log = dir.appendingPathComponent("calls.log")
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
         let sleeper = Process()
         sleeper.executableURL = URL(fileURLWithPath: "/bin/sleep")
         sleeper.arguments = ["0.5"]
         try sleeper.run()
         let started = Date()
-        let script = DevBuild.handoffScript(
-            pid: sleeper.processIdentifier, appPath: app.path, stagedPath: staged.path, deckLabel: nil, uid: 501,
-            openPath: recorder(dir, "fake-open", log: log), launchctlPath: recorder(dir, "fake-helper", log: log))
-        c.expectEqual(runScript(script), 0)
+        c.expectEqual(runScript(rig.script(pid: sleeper.processIdentifier, staged: rig.staged.path, deckLabel: nil)), 0)
         c.expect(Date().timeIntervalSince(started) >= 0.4, "returned before the pid exited")
-        c.expectEqual(marker(app), "new")
+        c.expectEqual(marker(rig.app), "new")
     },
     Check("paths with quotes and spaces survive the handoff script") { c in
-        let dir = tempDir().appendingPathComponent("it's a dir")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let app = dir.appendingPathComponent("mattstack-dev.app")
-        let staged = dir.appendingPathComponent("staged/mattstack-dev.app")
+        let base = tempDir().appendingPathComponent("it's a dir")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let app = base.appendingPathComponent("mattstack-dev.app")
+        let staged = base.appendingPathComponent("staged/mattstack-dev.app")
+        let calls = base.appendingPathComponent("calls.log")
         makeBundle(app, marker: "old")
         makeBundle(staged, marker: "new")
-        let log = dir.appendingPathComponent("calls.log")
         let script = DevBuild.handoffScript(
             pid: deadPid(), appPath: app.path, stagedPath: staged.path, deckLabel: nil, uid: 501,
-            openPath: recorder(dir, "fake-open", log: log), launchctlPath: recorder(dir, "fake-helper", log: log))
+            logPath: base.appendingPathComponent("restart.log").path,
+            openPath: recorder(base, "fake-open", log: calls),
+            launchctlPath: recorder(base, "fake-helper", log: calls),
+            deckCLIPath: recorder(base, "fake-deck", log: calls))
         c.expectEqual(runScript(script), 0)
         c.expectEqual(marker(app), "new")
+        c.expect(read(calls).hasPrefix("fake-open \(app.path)\n"))
     },
 ]

@@ -22,8 +22,9 @@ export function devAppStagePaths(home: string) {
   return { root, stagedDir: `${root}/staged`, lastSourceFile: `${root}/last-source` };
 }
 
+/** build.sh prints its own ✗ lines on stdout, so both streams are kept. */
 function tail(r: RunResult): string {
-  return (r.stderr || r.stdout).trim().split("\n").slice(-5).join("\n");
+  return `${r.stdout}\n${r.stderr}`.trim().split("\n").filter(Boolean).slice(-8).join("\n");
 }
 
 function stampTime(d: Date): string {
@@ -35,6 +36,9 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   const top = await seams.exec(["git", "rev-parse", "--show-toplevel"], { cwd });
   if (top.exitCode !== 0) throw new UserActionableError("dev-app-not-a-checkout", `${cwd} is not inside a repo-tools checkout`);
   const source = top.stdout.trim();
+  if (!seams.pathExists(`${source}/rt-tray/build.sh`)) {
+    throw new UserActionableError("dev-app-not-a-checkout", `${source} is not a repo-tools checkout (no rt-tray/build.sh)`);
+  }
 
   const sha = (await seams.exec(["git", "rev-parse", "--short", "HEAD"], { cwd: source })).stdout.trim();
   const dirty = (await seams.exec(["git", "status", "--porcelain"], { cwd: source })).stdout.trim() !== "";
@@ -60,19 +64,29 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   });
   if (build.exitCode !== 0) throw new UserActionableError("dev-app-build-failed", `build.sh dev failed: ${tail(build)}`);
 
-  // The tray watches the staging root; the staged dir only ever changes by a
-  // whole-dir rename, so it can never see a half-copied bundle.
+  // The tray watches the staging root, and a restart handoff may be moving
+  // the staged bundle at any moment: the staged dir only ever changes by
+  // whole-dir renames (the old one retired aside before it is deleted), so a
+  // reader sees a complete bundle or none.
   const paths = devAppStagePaths(seams.home);
-  const incoming = `${paths.root}/.incoming-${Date.now()}`;
+  const tag = Date.now();
+  const incoming = `${paths.root}/.incoming-${tag}`;
+  const retired = `${paths.root}/.retired-${tag}`;
   for (const step of [
     ["mkdir", "-p", incoming],
     ["ditto", `${scratch}/rt-tray/mattstack-dev.app`, `${incoming}/mattstack-dev.app`],
-    ["rm", "-rf", paths.stagedDir],
-    ["mv", incoming, paths.stagedDir],
   ] as [string, ...string[]][]) {
     const r = await seams.exec(step);
-    if (r.exitCode !== 0) throw new UserActionableError("dev-app-stage-failed", `${step.join(" ")} failed: ${tail(r)}`);
+    if (r.exitCode !== 0) {
+      await seams.exec(["rm", "-rf", incoming]);
+      throw new UserActionableError("dev-app-stage-failed", `${step.join(" ")} failed: ${tail(r)}`);
+    }
   }
+  // Missing when nothing was staged yet or a restart already took it.
+  await seams.exec(["mv", "-f", paths.stagedDir, retired]);
+  const install = await seams.exec(["mv", incoming, paths.stagedDir]);
+  if (install.exitCode !== 0) throw new UserActionableError("dev-app-stage-failed", `staging failed: ${tail(install)}`);
+  await seams.exec(["rm", "-rf", retired]);
   seams.writeFile(paths.lastSourceFile, source);
   return { stamp, stagedPath: `${paths.stagedDir}/mattstack-dev.app` };
 }

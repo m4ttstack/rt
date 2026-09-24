@@ -219,7 +219,7 @@ private struct NewBuildPill: View {
     @ObservedObject private var state = TrayState.shared
 
     var body: some View {
-        if let stamp = state.stagedBuildStamp {
+        if let stamp = state.stagedBuildStamp, state.devRebuild != .building {
             Button {
                 NotificationCenter.default.post(name: .rtDevRestartIntoStaged, object: nil)
             } label: {

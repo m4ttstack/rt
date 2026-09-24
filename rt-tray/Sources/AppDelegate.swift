@@ -770,7 +770,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private func addDevBuildItems(to menu: NSMenu) {
         let state = TrayState.shared
         let watcher = DevBuildWatcher.shared
-        if let stamp = state.stagedBuildStamp {
+        watcher.check()
+        // A build mid-stage is about to replace the staged bundle.
+        if let stamp = state.stagedBuildStamp, state.devRebuild != .building {
             menu.addItem(ActionMenuItem("New build · Restart (\(stamp))", axid: AXID.trayDevRestart) { [weak self] in
                 self?.restartIntoStagedBuild()
             })
