@@ -2,6 +2,29 @@ import Foundation
 @testable import MattstackCore
 
 let notificationClickChecks: [Check] = [
+    Check("member_joined banner click asks to confirm the members sync for that team and handle") { c in
+        let r = NotificationClick.bannerRoute(category: NotificationClick.memberJoinedCategory, url: nil, paneId: nil, team: "acme", handle: "ed")
+        c.expectEqual(r, .confirmMembersSync(team: "acme", handle: "ed"))
+        c.expect(r.suppressesActivationShow, "an alert must not drag the shell window up first")
+    },
+    Check("member_joined with a team that is not a slug routes nowhere: the tray socket is unauthenticated") { c in
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "../etc", handle: "ed"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "Acme Corp", handle: "ed"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "", handle: "ed"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: nil, handle: "ed"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: ""), .none)
+    },
+    Check("member_joined copy names the handle, the team, and what the sync does") { c in
+        let copy = NotificationClick.membersSyncAlertCopy(team: "acme", handle: "ed")
+        c.expectEqual(copy.title, "Add ed to acme?")
+        c.expect(copy.body.contains("rt team members sync"), "body names the verb")
+        c.expect(copy.body.contains("re-encrypt"), "body says secrets are re-encrypted")
+        c.expectEqual(copy.confirm, "Add member")
+    },
+    Check("a plain banner click ignores team and handle") { c in
+        let r = NotificationClick.bannerRoute(category: "gate", url: nil, paneId: "pane-7", team: "acme", handle: "ed")
+        c.expectEqual(r, .focusPane("pane-7"))
+    },
     Check("banner click prefers the surface URL over pane focus") { c in
         let r = NotificationClick.bannerRoute(
             category: "gate", url: "https://board.mattstack/?gate=g1", paneId: "pane-7")

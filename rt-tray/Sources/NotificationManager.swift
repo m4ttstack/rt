@@ -13,6 +13,9 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     /// back-reference), so a notification click can route a mattstack app
     /// URL through the shell window instead of always shelling out.
     weak var appDelegate: AppDelegate?
+    /// The bundled rt, handed over by AppDelegate with the delegate itself:
+    /// a member_joined confirm runs `rt team members sync` through it.
+    var rt: RtRunning?
 
     override init() {
         super.init()
@@ -107,6 +110,12 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             options: .foreground
         )
 
+        let addMember = UNNotificationAction(
+            identifier: "ADD_MEMBER",
+            title: "Add member…",
+            options: .foreground
+        )
+
         let categories: [UNNotificationCategory] = [
             UNNotificationCategory(
                 identifier: "keyboard_conflict",
@@ -181,6 +190,11 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(
                 identifier: NotificationClick.gatePaneCategory,
                 actions: [openSurface],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: NotificationClick.memberJoinedCategory,
+                actions: [addMember],
                 intentIdentifiers: []
             ),
         ]
@@ -324,6 +338,10 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             content.userInfo["paneId"] = paneId
         }
 
+        // member_joined: the confirm names the team and handle from these
+        if let team = event.team, !team.isEmpty { content.userInfo["team"] = team }
+        if let handle = event.handle, !handle.isEmpty { content.userInfo["handle"] = handle }
+
         let request = UNNotificationRequest(
             identifier: event.id,
             content: content,
@@ -410,9 +428,58 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             if let urlObj = URL(string: urlStr) { openURL(urlObj) }
         case .focusPane(let paneId):
             _ = HerdrBridge.shared.focusPaneById(paneId)
+        case .confirmMembersSync(let team, let handle):
+            confirmMembersSync(team: team, handle: handle)
         case .none:
             break
         }
+    }
+
+    /// The owner half of the invite loop, behind a modal confirm: the reply
+    /// blob on the switchboard is unauthenticated, so nothing adds a
+    /// recipient until a human says so here.
+    private func confirmMembersSync(team: String, handle: String) {
+        let copy = NotificationClick.membersSyncAlertCopy(team: team, handle: handle)
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = copy.title
+        alert.informativeText = copy.body
+        alert.addButton(withTitle: copy.confirm)
+        alert.addButton(withTitle: "Not now")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let rt else {
+            TrayLog.error("members sync: no rt client", ["team": team])
+            fireLocal(title: "Could not add \(handle)", message: "rt is not available to this app; run: rt team members sync --team \(team)")
+            return
+        }
+        Task {
+            let args = ["team", "members", "sync", "--team", team, "--json"]
+            do {
+                let result = try await rt.run(args, stdin: nil)
+                if let e = result.userError(redactStderr: false) {
+                    TrayLog.warn("members sync failed", ["team": team, "err": e.message])
+                    fireLocal(title: "Could not add \(handle) to \(team)", message: e.message)
+                } else if result.exitCode != 0 {
+                    let copy = result.failureCopy(verb: args.joined(separator: " "), redactStderr: false)
+                    TrayLog.warn("members sync failed", ["team": team, "err": copy])
+                    fireLocal(title: "Could not add \(handle) to \(team)", message: copy)
+                } else {
+                    fireLocal(title: "Added \(handle) to \(team)", message: "Their key is a recipient now; the team clone pushes on its next cycle.")
+                }
+            } catch {
+                let copy = (error as? RtClientError)?.copy ?? "rt team members sync failed to start."
+                TrayLog.warn("members sync failed", ["team": team, "err": copy])
+                fireLocal(title: "Could not add \(handle) to \(team)", message: copy)
+            }
+        }
+    }
+
+    /// A tray-originated banner with no click route: the outcome of an action the user just confirmed.
+    private func fireLocal(title: String, message: String) {
+        fire(NotificationEvent(
+            id: UUID().uuidString, title: title, message: message, url: nil, category: "general",
+            timestamp: Int(Date().timeIntervalSince1970), pids: nil, paneId: nil, team: nil, handle: nil
+        ))
     }
 
     /// Handle notification click and action button presses.
@@ -446,7 +513,15 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             follow(NotificationClick.bannerRoute(
                 category: response.notification.request.content.categoryIdentifier,
                 url: url,
-                paneId: userInfo["paneId"] as? String
+                paneId: userInfo["paneId"] as? String,
+                team: userInfo["team"] as? String,
+                handle: userInfo["handle"] as? String
+            ))
+
+        case "ADD_MEMBER":
+            follow(NotificationClick.memberJoinedRoute(
+                team: userInfo["team"] as? String,
+                handle: userInfo["handle"] as? String
             ))
 
         case "COPY_APPROVE_COMMAND":
