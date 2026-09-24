@@ -62,6 +62,16 @@ describe("triageRow", () => {
   test("every row names its verdict in one sentence", () => {
     for (const r of [row({}), row({ containment: "none" }), row({ broken: true })]) expect(r.verdict).toMatch(/^[A-Z].*\.$/);
   });
+  test("a hold with detail ending in period has it stripped from the verdict", () => {
+    const r = row({ hold: { kind: "herd", detail: "pid 7 has its cwd inside." } });
+    expect(r.verdict).toBe("Waiting: pid 7 has its cwd inside.");
+  });
+  test("a kept row whose facts carry a hold has no hold field", () => {
+    const kept = { keptAt: "2026-09-24T00:00:00Z", headSha: "h", dirtHash: "d", mrState: "merged" };
+    const r = row({ kept, containment: "none", hold: { kind: "process", detail: "d" } });
+    expect(r.group).toBe("kept");
+    expect("hold" in r).toBe(false);
+  });
 });
 
 describe("triageCounts", () => {

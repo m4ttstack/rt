@@ -60,7 +60,7 @@ function verdictOf(f: TriageFacts, group: TriageGroup): string {
   switch (group) {
     case "broken": return "Its repo or git directory is gone. Nothing to recover.";
     case "kept": return "Kept. Comes back here if it changes.";
-    case "waiting": return `Waiting: ${f.hold!.detail}.`;
+    case "waiting": return `Waiting: ${f.hold!.detail.trimEnd().replace(/\.$/, "")}.`;
     case "only-copy": return "Only copy of this work. Push the branch to keep it, or dispose to drop it.";
     case "look": return `${f.dirt.files.length === 1 ? "One uncommitted file" : `${f.dirt.files.length} uncommitted files`}: ${f.dirt.files.slice(0, 2).join(", ")}. Review before disposing.`;
     case "safe": return safeVerdict(f);
@@ -87,7 +87,7 @@ export function triageRow(f: TriageFacts): TriageRow {
     repo: f.repo, tree: f.tree, path: f.path, branch: f.branch, mr: f.mr, ticket: f.ticket,
     push: pushOf(f), containment: f.containment, dirt: { kind: f.dirt.kind, files: f.dirt.files },
     group, verdict: verdictOf(f, group), actions: actionsOf(f, group),
-    ...(f.hold ? { hold: f.hold } : {}),
+    ...(group === "waiting" && f.hold ? { hold: f.hold } : {}),
     ...(group === "kept" && f.kept ? { keptAt: f.kept.keptAt } : {}),
     fingerprint: f.fingerprint,
   };
