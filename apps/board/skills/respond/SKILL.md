@@ -46,8 +46,8 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 | `triaging` | Immediately, before fetching threads. |
 | `implementing` | Only after Gate 1's `code-changes` question comes back `approve`, before touching code. Skip when no threads need code changes. |
 | `drafting` | When presenting the verdict table + drafted replies (before Gate 1), and again right before Gate 2 opens, on every path: after implementing, and after drafting a reply override with nothing implemented. |
-| `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>`, plus `--held <n>` whenever a gate decision kept any reply from posting (see step 7). |
-| `error` | Anything unrecoverable (bad MR, no threads to process, delegated skill failed). |
+| `done` | After the run finishes, zero threads included. REQUIRED: `--posted <n> --threads <n>`, plus `--held <n>` whenever a gate decision kept any reply from posting (see step 7). |
+| `error` | Anything unrecoverable (bad MR, delegated skill failed). |
 
 ## Operator note
 
@@ -112,6 +112,20 @@ old one. Instead:
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
+- **Posted already.** Before any reply posts on this resume, or a fresh
+  Gate 2 offers a thread, read each thread this pass could post (Gate
+  2's threads and the reply-only rows) on the forge, its full note
+  chain. A thread already carries this run's reply when it holds either
+  a note whose text is the reply due to post, or any note by the account
+  this pane posts as dated after the resumed gate's `answeredAt` (from
+  the wait). Such a thread is posted: it counts toward `--posted` in
+  step 7, it is never offered at a fresh Gate 2, and its reply is never
+  posted again, whatever `--report` says of it, though a `resolve:` pick
+  on it still runs. With a domain skill, tell it this is a resume and
+  let its own Posted already rule do the read; it hands back which
+  replies posted, the ones it found already up included, for step 7's
+  counts. On the generic path, do it yourself, before Gate 2 opens or
+  step 6's push rule runs.
 - **Act on the answer, by `--resumed-gate-kind`.** Read `--report <path>` first: it
   holds the adjudication table and drafted/finalized replies a fresh pane has
   no other way to recover once the pane that produced them is gone. On the
@@ -383,7 +397,8 @@ conversation.
    - **Reply-only threads** (rows with `gate-1: reply`) post the reply
      their row records (Gate 1's `text` when present, the draft
      otherwise), never resolved, so the reviewer can answer. On the
-     generic path you post them; with a domain skill it posts them, so
+     generic path you post them (on a resume, minus any the Posted
+     already check found up); with a domain skill it posts them, so
      never post one twice.
    - **Nothing to offer** (no fixed thread and no reply override; never on
      `code-changes: revise`, which posts nothing and reopens Gate 1): open
@@ -484,7 +499,9 @@ conversation.
    - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
      skill so it can execute the posting, the reply-only threads included,
      or act yourself on the generic no-domain-skill path, push rule
-     below first: per Gate 2 thread, `post:<threadId>` posts that thread's
+     below first and, on a resume, posting no reply the Posted already
+     check found already up (its `resolve:` pick still runs): per Gate
+     2 thread, `post:<threadId>` posts that thread's
      reply (the answer's `text` when it carries one, the report's finalized
      reply otherwise), `resolve:<threadId>` resolves the thread (after the
      reply when both are picked), and an empty array leaves it untouched;
