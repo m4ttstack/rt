@@ -22,7 +22,7 @@
       "@mantine/notifications": "^9.5.2",
       "@mantine/spotlight": "^9.5.2",
       "@mattstack/glance": "^0.27.0",
-      "@mattstack/rt-client": "0.31.0",
+      "@mattstack/rt-client": "0.31.1",
       "@mattstack/settings-kit": "0.3.0",
       "@radix-ui/colors": "^3.0.0",
       "@tanstack/react-query": "^5.102.0",
