@@ -140,6 +140,7 @@ async function run(args: string[], seams: Partial<TakeoverSeams> = {}): Promise<
   await flavorTakeover(args, {}, {
     exists: isolatedExists,
     resolveSourcePath: () => null,
+    ownProdBundle: () => null,
     log: (l) => r.out.push(l),
     error: (l) => r.err.push(l),
     exit: ((code: number) => { r.exitCode = code; }) as unknown as (code: number) => never,
@@ -306,6 +307,23 @@ describe("rt flavor takeover", () => {
     const wrapper = readFileSync(WRAPPER_PATH, "utf8");
     expect(wrapper.split("\n")[1]).toBe("# mattstack-dev-mode");
     expect(wrapper).toContain(`"${src}/cli.ts"`);
+  }, 15_000);
+
+  test("prod run from the prod app's own bundle links that bundle, wherever it lives", async () => {
+    setUpFakes([]);
+    const elsewhere = join(HOME, "Downloads", TRAY_APP_BUNDLE);
+    const elsewhereRt = join(elsewhere, "Contents", "MacOS", "rt");
+    mkdirSync(dirname(elsewhereRt), { recursive: true });
+    writeFileSync(elsewhereRt, Buffer.from([0xcf, 0xfa, 0xed, 0xfe]), { mode: 0o755 });
+
+    try {
+      const r = await run(["prod"], { ownProdBundle: () => elsewhere });
+
+      expect(r.exitCode).toBeNull();
+      expect(readlinkSync(WRAPPER_PATH)).toBe(elsewhereRt);
+    } finally {
+      rmSync(join(HOME, "Downloads"), { recursive: true, force: true });
+    }
   }, 15_000);
 
   test("a missing or unknown target is a usage error", async () => {

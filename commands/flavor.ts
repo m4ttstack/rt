@@ -11,8 +11,8 @@ import { spawnSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
-import { daemonLabelFor, deckLabelFor, otherFlavor, type Flavor } from "../lib/flavor.ts";
-import { RT_BUNDLE_PATH } from "../lib/bundle-layout.ts";
+import { buildFlavor, daemonLabelFor, deckLabelFor, otherFlavor, type Flavor } from "../lib/flavor.ts";
+import { bundleRootFromExec, RT_BUNDLE_PATH } from "../lib/bundle-layout.ts";
 import { rtBinaryPath } from "../lib/dev-mode.ts";
 import { DEV_TRAY_APP_NAME, TRAY_APP_BUNDLE, TRAY_APP_NAME, trayAppPath } from "../lib/rt-paths.ts";
 import { envelope } from "../lib/setup/contract.ts";
@@ -23,6 +23,8 @@ export interface TakeoverSeams {
   exists: (path: string) => boolean;
   /** The rt checkout the dev wrapper runs, or null when none is known. */
   resolveSourcePath: () => string | null;
+  /** The prod app bundle this compiled rt runs from, or null from source. */
+  ownProdBundle: () => string | null;
   log: (line: string) => void;
   error: (line: string) => void;
   exit: (code: number) => never;
@@ -32,6 +34,7 @@ function realSeams(): TakeoverSeams {
   return {
     exists: existsSync,
     resolveSourcePath: resolveStoredSourcePath,
+    ownProdBundle: () => (buildFlavor() === "prod" ? bundleRootFromExec() : null),
     log: (line) => console.log(line),
     error: (line) => console.error(line),
     exit: (code) => process.exit(code),
@@ -107,7 +110,7 @@ export async function flavorTakeover(args: string[], _ctx: CommandContext = {}, 
       return;
     }
   } else {
-    prodBinary = join(trayAppPath(seams.exists), RT_BUNDLE_PATH);
+    prodBinary = join(seams.ownProdBundle() ?? trayAppPath(seams.exists), RT_BUNDLE_PATH);
     if (!seams.exists(prodBinary)) {
       fail(seams, json, "no-prod-app", `${TRAY_APP_BUNDLE} is not installed, so there is no compiled rt to link at ${rtBinaryPath()}`);
       return;
