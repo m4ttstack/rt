@@ -55,24 +55,36 @@ function currentAllow(settings: ClaudeSettings): string[] {
   return Array.isArray(allow) ? allow.filter((v): v is string => typeof v === "string") : [];
 }
 
-/** BASE_PERMISSIONS entries not already present, in BASE_PERMISSIONS order. Empty means this config dir needs no write. */
+/** BASE_PERMISSIONS entries not already present, in BASE_PERMISSIONS order. */
 export function missingPermissions(settings: ClaudeSettings): string[] {
   const existing = new Set(currentAllow(settings));
   return BASE_PERMISSIONS.filter((entry) => !existing.has(entry));
 }
 
 /**
- * Appends `toAdd` to `permissions.allow`, preserving every other key on
- * `settings` and every other key under `permissions` (deny, ask,
- * defaultMode, anything unknown) byte-for-byte. Never writes `defaultMode`
- * itself: `auto` is already Claude Code's default, so stamping it would
- * only overwrite a value the user may set later.
+ * Claude Code starts in auto mode by itself only on the Pro, Max and Team
+ * plans; an Enterprise plan or a Console key starts in manual mode, where
+ * every git and rt call in an unattended pane prompts. So a config dir with
+ * no `defaultMode` of its own gets this one. A value the user set, whatever
+ * it is, is never touched.
+ */
+export const SEEDED_DEFAULT_MODE = "auto";
+
+export function missingDefaultMode(settings: ClaudeSettings): boolean {
+  return settings.permissions?.defaultMode === undefined;
+}
+
+/**
+ * Appends `toAdd` to `permissions.allow` and seeds `defaultMode` when it is
+ * absent, preserving every other key on `settings` and every other key
+ * under `permissions` (deny, ask, anything unknown) byte-for-byte.
  */
 export function withPermissions(settings: ClaudeSettings, toAdd: string[]): ClaudeSettings {
   return {
     ...settings,
     permissions: {
       ...(settings.permissions ?? {}),
+      ...(missingDefaultMode(settings) ? { defaultMode: SEEDED_DEFAULT_MODE } : {}),
       allow: [...currentAllow(settings), ...toAdd],
     },
   };
