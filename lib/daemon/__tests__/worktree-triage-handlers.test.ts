@@ -263,10 +263,24 @@ describe("triage action verbs", () => {
     unlinkSync(join(rec.path, "november2.txt"));
     const res = await handlers["worktree:triage-diff"]({ repoName, tree: "november2" });
     const by = (p: string) => res.data.files.find((x: any) => x.path === p);
-    expect(by("blob.bin")).toEqual({ path: "blob.bin", status: "untracked", diff: "(binary or larger than 1 MB)", truncated: true });
+    expect(by("blob.bin")).toEqual({ path: "blob.bin", status: "untracked", diff: "(binary or larger than 1 MB)", truncated: true, added: 0, removed: 0, totalLines: 1 });
     expect(by("huge.txt").diff).toBe("(binary or larger than 1 MB)");
     expect(by("november2.txt").status).toBe("modified");
     expect(by("november2.txt").diff).toContain("-w");
+  });
+
+  test("triage-diff counts added, removed and total lines before the cap", async () => {
+    const rec = stuck("november3");
+    writeFileSync(join(rec.path, "long.ts"), Array.from({ length: 900 }, (_, i) => `line ${i}`).join("\n"));
+    writeFileSync(join(rec.path, "short.ts"), "a\nb\n");
+    writeFileSync(join(rec.path, "november3.txt"), "---x\n+++y\nz\n");
+    const res = await handlers["worktree:triage-diff"]({ repoName, tree: "november3" });
+    const by = (p: string) => res.data.files.find((x: any) => x.path === p);
+    expect([by("long.ts").added, by("long.ts").removed, by("long.ts").totalLines, by("long.ts").truncated]).toEqual([900, 0, 900, true]);
+    expect([by("short.ts").added, by("short.ts").totalLines, by("short.ts").truncated]).toEqual([2, 2, false]);
+    const tracked = by("november3.txt");
+    expect([tracked.added, tracked.removed]).toEqual([3, 1]);
+    expect(tracked.totalLines).toBe(tracked.diff.trimEnd().split("\n").length);
   });
 
   test("triage-remove only removes a broken row", async () => {

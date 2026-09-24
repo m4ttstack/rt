@@ -538,7 +538,13 @@ export interface WorktreeTriageData {
 }
 export type TriageFingerprint = TriageRow["fingerprint"];
 export interface WorktreeTriageDisposeData { disposed: true; trash?: { path: string; keptUntil: string } }
-export interface WorktreeTriageDiffFile { path: string; status: "modified" | "untracked"; diff: string; truncated: boolean }
+export interface WorktreeTriageDiffFile {
+  path: string; status: "modified" | "untracked"; diff: string; truncated: boolean;
+  /** Counted over the whole diff, before the 400-line cap. */
+  added: number; removed: number;
+  /** Lines in the uncapped diff text; `diff` holds at most 400 of them. */
+  totalLines: number;
+}
 
 /** Duplicated shape on purpose: mirrors lib/endpoint/store.ts's EndpointClaim. */
 export interface EndpointClaim { worktree: string; role: string; port: number; ts: number }

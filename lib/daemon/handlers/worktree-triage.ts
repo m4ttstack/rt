@@ -41,21 +41,52 @@ const SKIPPED_BINARY = "(binary or larger than 1 MB)";
 
 const fail = (error: string) => ({ ok: false as const, error });
 
+/** Counts are taken before the line cap, so the sheet can say how much it isn't showing. */
+type DiffBody = { diff: string; truncated: boolean; added: number; removed: number; totalLines: number };
+
 function capLines(text: string): { diff: string; truncated: boolean } {
   const lines = text.split("\n");
   return { diff: lines.slice(0, DIFF_CAP_LINES).join("\n"), truncated: lines.length > DIFF_CAP_LINES };
 }
 
-function readUntracked(abs: string): { diff: string; truncated: boolean } {
+function lineCount(text: string): number {
+  if (text === "") return 0;
+  const n = text.split("\n").length;
+  return text.endsWith("\n") ? n - 1 : n;
+}
+
+/** Only lines inside a hunk count: a `+++`/`---` file header is not a change. */
+function diffStats(text: string): { added: number; removed: number } {
+  let added = 0, removed = 0, inHunk = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("@@")) { inHunk = true; continue; }
+    if (!inHunk) continue;
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return { added, removed };
+}
+
+function placeholder(text: string): DiffBody {
+  return { diff: text, truncated: true, added: 0, removed: 0, totalLines: 1 };
+}
+
+function trackedBody(fullDiff: string): DiffBody {
+  return { ...capLines(fullDiff), ...diffStats(fullDiff), totalLines: lineCount(fullDiff) };
+}
+
+function readUntracked(abs: string): DiffBody {
   try {
     const st = lstatSync(abs);
-    if (!st.isFile()) return { diff: "(not a regular file)", truncated: true };
-    if (st.size > UNTRACKED_MAX_BYTES) return { diff: SKIPPED_BINARY, truncated: true };
+    if (!st.isFile()) return placeholder("(not a regular file)");
+    if (st.size > UNTRACKED_MAX_BYTES) return placeholder(SKIPPED_BINARY);
     const buf = readFileSync(abs);
-    if (buf.subarray(0, NUL_SNIFF_BYTES).includes(0)) return { diff: SKIPPED_BINARY, truncated: true };
-    return capLines(buf.toString("utf8"));
+    if (buf.subarray(0, NUL_SNIFF_BYTES).includes(0)) return placeholder(SKIPPED_BINARY);
+    const text = buf.toString("utf8");
+    const lines = lineCount(text);
+    return { ...capLines(text), added: lines, removed: 0, totalLines: lines };
   } catch {
-    return { diff: "(unreadable)", truncated: true };
+    return placeholder("(unreadable)");
   }
 }
 
@@ -210,10 +241,10 @@ export function createWorktreeTriageHandlers(
         ...tracked.stdout.split("\0").filter(Boolean).map((path) => ({ path, status: "modified" as const })),
         ...untracked.stdout.split("\0").filter(Boolean).map((path) => ({ path, status: "untracked" as const })),
       ];
-      const files: Array<{ path: string; status: "modified" | "untracked"; diff: string; truncated: boolean }> = [];
+      const files: Array<{ path: string; status: "modified" | "untracked" } & DiffBody> = [];
       for (const { path, status } of listed.slice(0, DIFF_CAP_FILES)) {
         const body = status === "modified"
-          ? capLines((await runGit(cwd, ["--literal-pathspecs", "diff", "HEAD", "--", path])).stdout)
+          ? trackedBody((await runGit(cwd, ["--literal-pathspecs", "diff", "HEAD", "--", path])).stdout)
           : readUntracked(join(cwd, path));
         files.push({ path, status, ...body });
       }
