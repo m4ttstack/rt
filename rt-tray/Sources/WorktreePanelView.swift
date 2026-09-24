@@ -121,6 +121,7 @@ enum TriageLabels {
 struct WorktreePanelView: View {
     @StateObject private var controller: WorktreePanelController
     @State private var reviewing: TriageRow?
+    @State private var confirmingDisposeAnyway: TriageRow?
     @State private var keptOpen: Bool
     /// The verb each busy row is running, so its button can say what it is doing.
     @State private var inFlight: [String: String] = [:]
@@ -149,6 +150,18 @@ struct WorktreePanelView: View {
         .onDisappear { controller.stopPolling() }
         .sheet(item: $reviewing) { row in
             WorktreeReviewSheet(row: row, controller: controller) { inFlight[row.id] = $0 }
+        }
+        .alert(confirmingDisposeAnyway.map(TriageConfirm.disposeAnywayTitle) ?? "",
+               isPresented: Binding(get: { confirmingDisposeAnyway != nil },
+                                    set: { if !$0 { confirmingDisposeAnyway = nil } }),
+               presenting: confirmingDisposeAnyway) { row in
+            Button("Dispose anyway", role: .destructive) {
+                inFlight[row.id] = "dispose"
+                controller.disposeAnyway(row)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { row in
+            Text(TriageConfirm.disposeAnywayMessage(row))
         }
     }
 
@@ -271,7 +284,7 @@ struct WorktreePanelView: View {
     private func perform(_ action: String, on r: TriageRow) {
         switch action {
         case "dispose": inFlight[r.id] = "dispose"; controller.dispose(r)
-        case "dispose-anyway": inFlight[r.id] = "dispose"; controller.disposeAnyway(r)
+        case "dispose-anyway": confirmingDisposeAnyway = r
         case "review": reviewing = r
         case "push-branch": inFlight[r.id] = "push-branch"; controller.pushBranch(r)
         case "keep": inFlight[r.id] = "keep"; controller.keep(r)

@@ -186,6 +186,10 @@ public struct TriageStatusLine: Equatable, Sendable {
         }
     }
 
+    public static func removed(trash: String?) -> String {
+        trash.map { "moved to the trash at \($0)" } ?? "removed"
+    }
+
     public static func bulk(total: Int, failures: [(tree: String, outcome: TriageActionOutcome)]) -> TriageStatusLine {
         if failures.isEmpty {
             return TriageStatusLine(text: "Cleaned up \(total) worktree\(total == 1 ? "" : "s") (restorable for 14 days)", isError: false)
@@ -193,6 +197,42 @@ public struct TriageStatusLine: Equatable, Sendable {
         let reasons = failures.map { "\($0.tree): \(reason($0.outcome))" }.joined(separator: "; ")
         let onlyTimeouts = failures.allSatisfy { $0.outcome == .timedOut }
         return TriageStatusLine(text: "Cleaned up \(total - failures.count) of \(total). \(reasons)", isError: !onlyTimeouts)
+    }
+}
+
+public enum TriageConfirm {
+    public static func disposeAnywayTitle(_ row: TriageRow) -> String { "Dispose \(row.tree) anyway?" }
+
+    public static func disposeAnywayMessage(_ row: TriageRow) -> String {
+        let n = row.push.ahead ?? 0
+        return "This is the only copy of \(n) unpushed commit\(n == 1 ? "" : "s"). "
+            + "The files go to the trash for 14 days, but the commits may not be recoverable."
+    }
+}
+
+/// Keeps the 10 s poll from stacking queries behind a slow daemon, and keeps
+/// a slow older reply from overwriting a newer one already on screen.
+public struct TriageQueryGate: Sendable {
+    private var latestStarted = 0
+    private var latestApplied = 0
+    private var inFlight: Set<Int> = []
+
+    public init() {}
+
+    /// A ticket for a new query, or nil when a background poll would overlap one in flight.
+    public mutating func begin(force: Bool) -> Int? {
+        guard force || inFlight.isEmpty else { return nil }
+        latestStarted += 1
+        inFlight.insert(latestStarted)
+        return latestStarted
+    }
+
+    /// Whether this finished query may touch the panel; never once a newer result was applied.
+    public mutating func finish(_ ticket: Int, succeeded: Bool) -> Bool {
+        inFlight.remove(ticket)
+        guard ticket > latestApplied else { return false }
+        if succeeded { latestApplied = ticket }
+        return true
     }
 }
 
@@ -228,6 +268,7 @@ public enum TriageRefusal {
         case "unpushed": return "it has commits that aren't pushed."
         case "dirty": return "it has uncommitted changes."
         case "detached": return "it has no branch to push."
+        case "not-pushable": return detail.isEmpty ? "it has nothing to push." : "it has nothing to push while it's \(detail)."
         case "diff-failed": return "couldn't read its changes."
         case "push-failed": return detail.isEmpty ? "the push failed." : "the push failed: \(detail)"
         case "commit-failed": return detail.isEmpty ? "the commit failed." : "the commit failed: \(detail)"

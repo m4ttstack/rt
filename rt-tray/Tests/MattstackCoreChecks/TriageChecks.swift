@@ -83,6 +83,36 @@ let triageChecks: [Check] = [
         let slow = TriageStatusLine.bulk(total: 2, failures: [(tree: "olive", outcome: .timedOut)])
         c.expectEqual(slow, TriageStatusLine(text: "Cleaned up 1 of 2. olive: still working. Refresh to check.", isError: false))
     },
+    Check("a background poll never overlaps one in flight; a forced query may, and an older reply never overwrites a newer one") { c in
+        var gate = TriageQueryGate()
+        let first = gate.begin(force: false)
+        c.expectEqual(first, 1)
+        c.expectEqual(gate.begin(force: false), nil)
+        let second = gate.begin(force: true)
+        c.expectEqual(second, 2)
+        c.expectEqual(gate.finish(2, succeeded: true), true)
+        c.expectEqual(gate.finish(1, succeeded: true), false)
+        c.expectEqual(gate.begin(force: false), 3)
+        c.expectEqual(gate.finish(3, succeeded: false), true)
+        c.expectEqual(gate.begin(force: false), 4)
+    },
+    Check("dispose anyway asks first, naming the tree and its unpushed commits") { c in
+        let rows = try JSONDecoder().decode(TriagePayload.self, from: Data(json.utf8)).data!.rows
+        let neville = rows[0]
+        c.expectEqual(TriageConfirm.disposeAnywayTitle(neville), "Dispose neville anyway?")
+        c.expectEqual(TriageConfirm.disposeAnywayMessage(neville),
+                      "This is the only copy of 19 unpushed commits. The files go to the trash for 14 days, but the commits may not be recoverable.")
+    },
+    Check("a remove footer names the trash path when the daemon returns one") { c in
+        c.expectEqual(TriageStatusLine.action(tree: "daisy", outcome: .done, done: TriageStatusLine.removed(trash: "/p/.worktrees/.trash-daisy")).text,
+                      "daisy: moved to the trash at /p/.worktrees/.trash-daisy")
+        c.expectEqual(TriageStatusLine.removed(trash: nil), "removed")
+    },
+    Check("push and run refusals read as sentences") { c in
+        c.expectEqual(TriageRefusal.explain("not-pushable:safe"), "it has nothing to push while it's safe.")
+        c.expectEqual(TriageRefusal.explain("runs-unreadable"), "couldn't confirm no run is active in it.")
+        c.expectEqual(TriageRefusal.explain("running-run:run-9 at implement"), "a run is still active in it (run-9 at implement).")
+    },
     Check("a remote wire decodes to its label, host and forge marker") { c in
         let gh = RepoIdentity(wire: "remote:github.com%2Fm4ttstack%2Frt")
         c.expectEqual(gh?.kind, .remote)
