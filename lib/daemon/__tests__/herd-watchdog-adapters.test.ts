@@ -273,8 +273,8 @@ describe("watchdog actuators", () => {
     expect(await a.poke("bg:w1:p1", "watchdog: hello")).toBe(true);
     expect(await a.poke("w1:p2", "watchdog: hi")).toBe(true);
     expect(injected).toEqual([
-      { paneId: "w1:p1", text: "watchdog: hello", sockPath: BG, preserveDraft: true },
-      { paneId: "w1:p2", text: "watchdog: hi", sockPath: DEFAULT, preserveDraft: true },
+      { paneId: "w1:p1", text: "watchdog: hello", sockPath: BG },
+      { paneId: "w1:p2", text: "watchdog: hi", sockPath: DEFAULT },
     ]);
   });
 

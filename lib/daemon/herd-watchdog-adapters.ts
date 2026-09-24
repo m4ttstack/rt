@@ -157,7 +157,7 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
     async poke(pane, text) {
       const sockPath = deps.socketFor(pane);
       try {
-        const res = await inject({ paneId: parsePaneRef(pane).paneId, text, sockPath, preserveDraft: true });
+        const res = await inject({ paneId: parsePaneRef(pane).paneId, text, sockPath });
         if (!res.ok) {
           log.warn({ pane, sockPath, error: res.error }, "watchdog poke failed");
           return false;

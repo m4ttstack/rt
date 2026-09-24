@@ -15,7 +15,7 @@ export function herdrError(res: { ok: false; code: string; message: string }): {
 
 export type InjectDelivery = "accepted" | "queued" | "refused";
 export interface InjectResult { paneId: string; delivered: InjectDelivery; reason?: string }
-export interface InjectOptions { paneId: string; text: string; callerPane?: string; herdr?: typeof herdrRequest; promptWaitMs?: number; sockPath?: string; preserveDraft?: boolean }
+export interface InjectOptions { paneId: string; text: string; callerPane?: string; herdr?: typeof herdrRequest; promptWaitMs?: number; sockPath?: string }
 
 const RULE_LINE = /^─{8,}$/;
 const PROMPT_MARKER = /^\s*❯\s?/;
@@ -106,7 +106,7 @@ export async function injectIntoPane(opts: InjectOptions): Promise<{ ok: true; d
   }
   if (probe.result.agent.agent !== "claude") return ok("refused", "not a claude pane");
   if (probe.result.agent.agent_status === "blocked") return ok("refused", "at a prompt");
-  if (opts.preserveDraft) await stashDraft(herdr, paneId, sockPath);
+  await stashDraft(herdr, paneId, sockPath);
 
   if (probe.result.agent.agent_status === "working") {
     const queued = await herdr("agent.prompt", { target: paneId, text }, { sockPath });
