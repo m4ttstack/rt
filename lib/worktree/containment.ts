@@ -21,7 +21,7 @@ async function hasObject(treePath: string, sha: string): Promise<boolean> {
  * has no piped-stdin support, so the same SIGTERM-then-SIGKILL escalation is
  * reimplemented here. Spawn failure or a blown deadline fails closed (null).
  */
-export async function runPatchId(treePath: string, input: string): Promise<string | null> {
+async function runPatchId(treePath: string, input: string): Promise<string | null> {
   // A local no-arg closure, not `Bun.spawn(...)` inline under a pre-declared
   // `let proc: ReturnType<typeof Bun.spawn>` -- that widens stdin's inferred
   // type to `number | FileSink` and loses the FileSink narrowing the write
@@ -45,21 +45,26 @@ export async function runPatchId(treePath: string, input: string): Promise<strin
   }, PATCH_ID_TIMEOUT_MS);
 
   const captured: Promise<string | null> = (async () => {
+    // Started before the write settles, and .catch'd right here rather than
+    // only where it's awaited below: draining stdout only after stdin is
+    // fully written risks the classic pipe deadlock if the child ever
+    // interleaves reading input with writing output faster than a
+    // then-unread pipe can hold. Catching inline the moment it's created
+    // means a later rejection (the child exits mid-read) can never surface
+    // as an unhandled rejection, regardless of whether the stdin write below
+    // throws first (EPIPE on an early exit) and skips straight past it.
+    const reading = Promise.all([new Response(proc.stdout as ReadableStream).text(), proc.exited]).catch(() => null);
     try {
-      // Started before the write settles: draining stdout only after stdin
-      // is fully written risks the classic pipe deadlock if the child ever
-      // interleaves reading input with writing output faster than a
-      // then-unread pipe can hold, since the child would then block on its
-      // own stdout write, stop reading stdin, and this write would never
-      // resolve either.
-      const reading = Promise.all([new Response(proc.stdout as ReadableStream).text(), proc.exited]);
       await proc.stdin.write(input);
       await proc.stdin.end();
-      const [out, code] = await reading;
-      return code === 0 ? out : null;
     } catch {
-      return null;
+      // Fall through to `reading`: an EPIPE here means the child already
+      // exited, not that it produced nothing.
     }
+    const settled = await reading;
+    if (!settled) return null;
+    const [out, code] = settled;
+    return code === 0 ? out : null;
   })();
 
   let deadlineTimer!: ReturnType<typeof setTimeout>;

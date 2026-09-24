@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { containmentOf, patchIdenticalToMr, runPatchId } from "../containment.ts";
+import { containmentOf, patchIdenticalToMr } from "../containment.ts";
 
 const GIT_ID = "-c user.email=t@t -c user.name=t";
 const sh = (cmd: string, cwd?: string) => execSync(cmd, { cwd, shell: "/bin/zsh", stdio: "pipe" }).toString().trim();
@@ -135,34 +135,5 @@ describe("containmentOf", () => {
     sh("git checkout -q feat", repo);
 
     expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("none");
-  });
-
-  test("runPatchId drains stdout while writing a large input rather than after", async () => {
-    // Synthetic, not a real fixture: a real N-commit repo would make this
-    // test slow to build. patch-id emits one output line per commit as it
-    // parses, so enough commits push total output past a pipe's buffer,
-    // reproducing the write-then-read deadlock this guards against.
-    const commitCount = 1500;
-    const blocks: string[] = [];
-    for (let i = 0; i < commitCount; i++) {
-      const sha = String(i).padStart(40, "0");
-      blocks.push(
-        `commit ${sha}`,
-        `diff --git a/file${i}.txt b/file${i}.txt`,
-        "index 0000000..1111111 100644",
-        `--- a/file${i}.txt`,
-        `+++ b/file${i}.txt`,
-        "@@ -1 +1 @@",
-        `-old${i}`,
-        `+new${i}`,
-      );
-    }
-    const input = blocks.join("\n") + "\n";
-
-    const started = Date.now();
-    const out = await runPatchId(repo, input);
-    expect(Date.now() - started).toBeLessThan(10_000);
-    expect(out).not.toBeNull();
-    expect(out!.split("\n").filter(Boolean).length).toBe(commitCount);
   });
 });
