@@ -66,7 +66,7 @@ export function removeIcon(name: string): void {
 }
 
 /**
- * Reads the app's manifest from its workingDirectory, validates the icon
+ * Reads the app's manifest from its checkout directory, validates the icon
  * (svg-rooted, at most 64 KB), copies it to the deck icon store, and writes
  * displayName/description/icon onto the record. Every failure path is a quiet
  * skip that leaves the record's launcher fields untouched: a missing
@@ -76,8 +76,10 @@ export function removeIcon(name: string): void {
  */
 export function ingestManifest(name: string): void {
   const record = getRecord(name);
-  if (!record || record.workingDirectory === undefined) return;
-  const deck = readDeckManifest(record.workingDirectory);
+  // A dev-shape record keeps its checkout only under dev.workingDirectory.
+  const appDir = record?.workingDirectory ?? record?.dev?.workingDirectory;
+  if (!record || appDir === undefined) return;
+  const deck = readDeckManifest(appDir);
   const manifest =
     deck && deck.ok && deck.manifest.displayName && deck.manifest.icon
       ? {
@@ -86,7 +88,7 @@ export function ingestManifest(name: string): void {
           icon: deck.manifest.icon,
           badge: deck.manifest.badge,
         }
-      : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
+      : readManifest(appDir); // deprecated mattstack.json fallback (identity only)
   if (!manifest) {
     // The manifest is the source of truth for identity: if neither deck.json
     // nor mattstack.json supplies one anymore, a previously-ingested
@@ -111,7 +113,7 @@ export function ingestManifest(name: string): void {
   }
   let svg: string;
   try {
-    const iconPath = resolve(record.workingDirectory, manifest.icon);
+    const iconPath = resolve(appDir, manifest.icon);
     const bytes = readFileSync(iconPath);
     if (bytes.byteLength > MAX_ICON_BYTES) return;
     svg = bytes.toString('utf8');

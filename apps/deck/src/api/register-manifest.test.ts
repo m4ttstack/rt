@@ -572,6 +572,42 @@ test('register on a managed app links the checkout instead of rewriting its serv
   expect(altResult.status).toBe(400);
 });
 
+test('register on a managed app ingests the linked manifest identity and badge', async () => {
+  scratch();
+  const { FakeServiceManager } = await import('../services/fake.ts');
+  const { FakeEdgeProxy } = await import('../edge/portless.ts');
+  const { reloadRegistry, getRecord, putRecord } =
+    await import('../registry/records.ts');
+  const { applyManifest } = await import('./register-manifest.ts');
+  reloadRegistry();
+  const drivers = {
+    manager: new FakeServiceManager(),
+    edge: new FakeEdgeProxy(),
+  };
+  const bundleDir = mkdtempSync(join(tmpdir(), 'chat-bundle-'));
+  const commandPath = join(bundleDir, 'chat');
+  writeFileSync(commandPath, '');
+  putRecord(managedRecord(commandPath));
+  const dir = appRepo({
+    name: 'chat',
+    displayName: 'Chat',
+    icon: './icon.svg',
+    badge: '/api/badge',
+    port: 5173,
+    dev: { start: 'bun run serve' },
+  });
+  writeFileSync(
+    join(dir, 'icon.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+  );
+
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(200);
+  const rec = getRecord('chat')!;
+  expect(rec.displayName).toBe('Chat');
+  expect(rec.badge).toBe('/api/badge');
+});
+
 test('register on a managed app still syncs manifest env onto the supervised service', async () => {
   scratch();
   const { FakeServiceManager } = await import('../services/fake.ts');

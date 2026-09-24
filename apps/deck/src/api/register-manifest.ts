@@ -133,6 +133,7 @@ export async function applyManifest(
         workingDirectory: undefined,
       });
     }
+    ingestManifest(manifest.name);
     return { status: 200, body: { record: getRecord(manifest.name) } };
   }
 

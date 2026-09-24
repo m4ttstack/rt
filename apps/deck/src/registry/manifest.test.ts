@@ -128,6 +128,34 @@ test('ingest is a no-op skip when workingDirectory is undefined', async () => {
   expect(getRecord('ext')!.displayName).toBeUndefined();
 });
 
+test('ingest reads a dev-shape record from dev.workingDirectory', async () => {
+  isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import('./records.ts');
+  reloadRegistry();
+  const appDir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'board',
+      displayName: 'Board',
+      icon: './icon.svg',
+      badge: '/api/badge',
+      commands: { start: 'bun run serve' },
+    }),
+    'icon.svg': SVG,
+  });
+  putRecord({
+    name: 'board',
+    managedBy: 'rt',
+    port: 11006,
+    kind: 'service',
+    dev: { workingDirectory: appDir },
+    createdAt: 'x',
+  });
+  ingestManifest('board');
+  const r = getRecord('board')!;
+  expect(r.displayName).toBe('Board');
+  expect(r.badge).toBe('/api/badge');
+});
+
 test('ingest skips a manifest whose icon is not svg or is too large', async () => {
   isolate();
   const { putRecord, getRecord, reloadRegistry } = await import('./records.ts');
