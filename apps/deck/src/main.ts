@@ -11,9 +11,12 @@ import {
 import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
 import { logPortHolder, redirectAgentOutput } from './agent-log.ts';
+import { isDevMode } from './api/dev-mode.ts';
+import { reresolveManagedApps } from './api/register.ts';
 import { startApi } from './api/server.ts';
 import { claimApiInfo, stateDir } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
+import { reresolveOnBoot } from './boot-reresolve.ts';
 import { resolveCfDns, type CfDns } from './edge/cf-dns.ts';
 import { PortlessCli } from './edge/portless.ts';
 import { CloudflaredCli } from './edge/tunnel.ts';
@@ -48,6 +51,9 @@ const CANARY_INTERVAL_MS = 5 * 60_000;
 
 export async function serve(): Promise<void> {
   const bundleRoot = bundleRootFromExec();
+  console.log(
+    `[flavor] ${isDevMode() ? 'dev' : 'prod'} (${bundleRoot ?? 'no bundle'})`
+  );
   await prepareHelperBoot({
     bundleRoot,
     env: process.env,
@@ -114,11 +120,11 @@ export async function serve(): Promise<void> {
   // Same contract as the gateway bind below: a held API port exits for
   // launchd's retry, naming the holder on the way out, instead of the
   // uncaught EADDRINUSE crash loop a held port otherwise produces.
+  const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
   let apiServer: ReturnType<typeof startApi>;
   try {
     apiServer = startApi({
-      manager: new LaunchdManager(),
-      edge: new PortlessCli(),
+      ...drivers,
       port: PORT,
       canaryPort: CANARY_PORT,
       freshness: () => proxyFreshness,
@@ -178,6 +184,12 @@ export async function serve(): Promise<void> {
   } catch (err) {
     console.error('mattstack-tld reconcile failed:', err);
   }
+
+  void reresolveOnBoot({
+    bundleRoot,
+    reresolve: () => reresolveManagedApps(drivers),
+    log: console.log,
+  });
 
   const reconcileInterval = setInterval(() => {
     reconcileOnce().catch(err => console.error('reconcile tick failed:', err));

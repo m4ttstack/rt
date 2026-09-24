@@ -75,9 +75,8 @@ export interface StatusData {
   suffix: string;
   canRestart: boolean;
   canManage: boolean;
-  /** Machine-wide `rt settings dev-mode`: mattstack-managed apps (not "your
-      apps") serve from their linked source instead of their bundled binary
-      while this is on. */
+  /** Deck runs inside mattstack-dev.app: mattstack-managed apps (not "your
+      apps") serve from their linked source instead of their bundled binary. */
   devMode: boolean;
   up: number;
   total: number;

@@ -1488,66 +1488,6 @@ test('reresolve: a later successful install clears the launchd issue a previous 
   expect(getRecord('recovered')!.issues ?? []).toEqual([]);
 });
 
-test('reresolve reads mattstack.mode fresh, not a cache a prior status poll already warmed', async () => {
-  const { setSetting } = await import('@mattstack/rt-client');
-  const { isDevMode, resetDevModeCache } = await import('./dev-mode.ts');
-  const counting = new CountingManager();
-  const reresolveDrivers = { manager: counting, edge: drivers.edge };
-
-  const helpers = mkdtempSync(join(tmpdir(), 'helpers-'));
-  writeFileSync(join(helpers, 'flip'), '');
-  const srcDir = mkdtempSync(join(tmpdir(), 'src-'));
-  writeFileSync(
-    join(srcDir, 'mattstack.deck.json'),
-    JSON.stringify({ name: 'flip', dev: { start: 'bun run serve' } })
-  );
-
-  setSetting('mattstack.mode', 'prod', 'machine');
-  resetDevModeCache();
-  setServeShapeDeps({ helpersDir: helpers });
-
-  await registerApp(
-    { ...input, name: 'flip', managedBy: 'rt' },
-    reresolveDrivers
-  );
-  const rec = getRecord('flip')!;
-  const label = rec.label!;
-  putRecord({
-    ...rec,
-    command: undefined,
-    workingDirectory: undefined,
-    dev: { workingDirectory: srcDir },
-  });
-  // The shape a prod resolve would already have installed (bundle binary, no
-  // args), so the mode flip below is what produces the diff, not this seed.
-  seedPlist(label, [join(helpers, 'flip')]);
-  counting.installCalls = [];
-  counting.uninstallCalls = [];
-
-  // A status poll in the moment before the flag flips warms the cache with
-  // the stale "prod" reading -- the same 2-second window rt's real poke races.
-  isDevMode();
-  setSetting('mattstack.mode', 'dev', 'machine');
-
-  try {
-    const res = await reresolveManagedApps(reresolveDrivers);
-
-    expect(res.body).toMatchObject({
-      ok: true,
-      restarted: ['flip'],
-      unchanged: [],
-      failed: [],
-    });
-    const installed = counting.installed.get(label)!;
-    expect(installed.workingDirectory).toBe(srcDir);
-    expect(installed.programArguments.slice(1)).toEqual(['run', 'serve']);
-  } finally {
-    // The cache is keyed by wall-clock TTL, not by HOME: left warm, it can leak
-    // a "dev" reading into another test file's assertions for up to 2 seconds.
-    resetDevModeCache();
-  }
-});
-
 // ─── editApp: never uninstall a shape the patch can't replace ─────────────
 
 test('edit: unlinking a slim row with no bundle installed is rejected before any teardown', async () => {

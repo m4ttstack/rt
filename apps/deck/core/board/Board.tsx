@@ -155,7 +155,7 @@ export function Board() {
                 <h2 className="section-title">
                   {section.title}
                   {section.key === 'mattstack' && data.devMode && (
-                    <Tooltip tip="rt settings dev-mode is on: these apps serve from their linked source, not their bundled binary">
+                    <Tooltip tip="deck is running in mattstack-dev: these apps serve from their linked source, not their bundled binary">
                       <Badge intent="warn">dev mode</Badge>
                     </Tooltip>
                   )}

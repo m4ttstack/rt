@@ -1,54 +1,49 @@
-import { mkdtempSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { beforeEach, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 
-import { setSetting } from '@mattstack/rt-client';
-import { isDevMode, resetDevModeCache } from './dev-mode.ts';
+import { isDevBundle } from './dev-mode.ts';
 
-beforeEach(() => resetDevModeCache());
+function bundle(devBuild: string | null): string {
+  const root = join(mkdtempSync(join(tmpdir(), 'devbundle-')), 'mattstack.app');
+  mkdirSync(join(root, 'Contents'), { recursive: true });
+  const key =
+    devBuild === null ? '' : `\t<key>MSDevBuild</key>\n\t${devBuild}\n`;
+  writeFileSync(
+    join(root, 'Contents', 'Info.plist'),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>CFBundleIdentifier</key>\n\t<string>com.mattstack.app</string>\n${key}</dict>\n</plist>\n`
+  );
+  return root;
+}
 
-test('dev when mattstack.mode is dev', () => {
-  expect(isDevMode({ read: () => 'dev' })).toBe(true);
+test('dev when the bundle is stamped MSDevBuild true', () => {
+  expect(isDevBundle(bundle('<true/>'))).toBe(true);
 });
 
-test('prod when mattstack.mode is prod', () => {
-  expect(isDevMode({ read: () => 'prod' })).toBe(false);
+test('prod when the bundle is stamped MSDevBuild false', () => {
+  expect(isDevBundle(bundle('<false/>'))).toBe(false);
 });
 
-test('unset value is production (fail closed)', () => {
-  expect(isDevMode({ read: () => undefined })).toBe(false);
+test('prod when the bundle carries no MSDevBuild key', () => {
+  expect(isDevBundle(bundle(null))).toBe(false);
 });
 
-test('a throwing read is production (fail closed)', () => {
-  expect(
-    isDevMode({
-      read: () => {
-        throw new Error('no daemon');
-      },
-    })
-  ).toBe(false);
+test('prod outside any bundle (a bare source run)', () => {
+  expect(isDevBundle(null)).toBe(false);
 });
 
-// The real getSetting path (no injected read), which the cases above bypass.
-// Regression guard for the rt-client bump: `mattstack.mode` must be a registered
-// key, or getSetting throws unknownKey and the gate is stuck fail-closed to prod.
-test('real rt-client path reads mattstack.mode from the store', () => {
-  const origHome = process.env.HOME;
-  process.env.HOME = mkdtempSync(join(tmpdir(), 'devmode-real-'));
+test('the dev shim run (bun src/main.ts serve with DECK_BUNDLE_ROOT) reads as the dev bundle', () => {
+  const prev = process.env.DECK_BUNDLE_ROOT;
+  process.env.DECK_BUNDLE_ROOT = bundle('<true/>');
   try {
-    resetDevModeCache();
-    expect(isDevMode()).toBe(false); // unset -> prod
-
-    setSetting('mattstack.mode', 'prod', 'machine');
-    resetDevModeCache();
-    expect(isDevMode()).toBe(false);
-
-    setSetting('mattstack.mode', 'dev', 'machine');
-    resetDevModeCache();
-    expect(isDevMode()).toBe(true);
+    expect(isDevBundle()).toBe(true);
   } finally {
-    process.env.HOME = origHome;
-    resetDevModeCache();
+    if (prev === undefined) delete process.env.DECK_BUNDLE_ROOT;
+    else process.env.DECK_BUNDLE_ROOT = prev;
   }
+});
+
+test('prod when Info.plist cannot be read', () => {
+  expect(isDevBundle(join(tmpdir(), 'no-such', 'mattstack.app'))).toBe(false);
 });

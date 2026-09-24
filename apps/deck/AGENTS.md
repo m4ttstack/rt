@@ -56,6 +56,11 @@ LIVE from the linked manifest, never copied onto the record. Deck adopts its
 own minimal manifest this way too (just a `dev.deploy` button); its serve
 shape stays the bare `com.mattstack.deck` serve unit, never manifest-declared.
 
+Dev mode is the running bundle, nothing else: `MSDevBuild` in the
+bundle's `Info.plist` (`src/api/dev-mode.ts`), true in mattstack-dev.app.
+Outside a bundle deck is production. A bundled deck re-resolves managed
+apps at boot, so launching the other app moves them over.
+
 Dev mode is only for mattstack's own apps. `managedBy` classifies every entry:
 `rt` (mattstack-owned), `deck` (deck itself), or `user` (someone's own local
 app, which they registered themselves and which is not bundled with
@@ -88,7 +93,7 @@ deck's api server does the same for `deck.localhost`. A dev-port override
 repoints `.localhost` at a process deck did not launch, so that process has no
 canonical host and keeps serving. `reresolveManagedApps` diffs the installed
 plist's environment too, so an env change reinstalls the unit on the next
-`POST /api/v1/apps/managed/reresolve`.
+sweep (a bundled deck's boot, or `POST /api/v1/apps/managed/reresolve`).
 
 ## Settings and secrets go through rt, never raw files
 
