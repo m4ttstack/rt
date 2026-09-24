@@ -10,7 +10,9 @@ export async function getFetchState(ctx: ClientContext): Promise<FetchState> {
   const commonDir = isAbsolute(commonDirRaw) ? commonDirRaw : join(ctx.dir, commonDirRaw);
   try {
     const s = await stat(join(commonDir, "FETCH_HEAD"));
-    return { lastFetchedAt: s.mtime.toISOString() };
+    // git empties FETCH_HEAD before it connects, so a fetch that failed
+    // leaves it empty with a fresh mtime; only a written one is a fetch.
+    return { lastFetchedAt: s.size > 0 ? s.mtime.toISOString() : null };
   } catch {
     return { lastFetchedAt: null };
   }

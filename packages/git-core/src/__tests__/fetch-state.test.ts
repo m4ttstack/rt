@@ -31,4 +31,18 @@ describe("fetchState", () => {
       await sb.cleanup();
     }
   });
+
+  it("null after a fetch that failed, though git left a FETCH_HEAD behind", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.commitAll("first");
+      await sb.git(["fetch", "--quiet", "origin"]).catch(() => {});
+      expect(await Bun.file(`${sb.dir}/.git/FETCH_HEAD`).exists()).toBe(true);
+      const state = await createGitClient(sb.dir).fetchState();
+      expect(state.lastFetchedAt).toBeNull();
+    } finally {
+      await sb.cleanup();
+    }
+  });
 });
