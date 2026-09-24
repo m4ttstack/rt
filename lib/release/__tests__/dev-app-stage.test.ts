@@ -5,21 +5,35 @@ import { devAppStagePaths, stageLocalDevApp, type StageSeams } from "../dev-app-
 const ok = (stdout = "") => Promise.resolve({ stdout, stderr: "", exitCode: 0 });
 const fail = (stderr = "boom") => Promise.resolve({ stdout: "", stderr, exitCode: 1 });
 
-function fakeSeams(opts: { dirty?: boolean; buildExit?: number; hasDeps?: boolean; failCmd?: string } = {}) {
+type SourceDeps = "full" | "partial" | "none";
+
+function fakeSeams(opts: { dirty?: boolean; buildExit?: number; sourceDeps?: SourceDeps; failCmd?: string } = {}) {
   const calls: string[] = [];
+  const cwds: (string | undefined)[] = [];
   const writes: Record<string, string> = {};
+  const sourceDeps = opts.sourceDeps ?? "full";
+  const scratchDeps = new Set<string>();
   const seams: StageSeams = {
     home: "/Users/t",
     now: () => new Date(2026, 8, 24, 9, 41, 2),
     scratchDir: () => "/scratch",
-    pathExists: (p) => p === "/src/tree/rt-tray/build.sh" || (p === "/src/tree/rt-tray/deps" && (opts.hasDeps ?? true)),
+    pathExists: (p) =>
+      p === "/src/tree/rt-tray/build.sh" ||
+      (p === "/src/tree/rt-tray/deps" && sourceDeps !== "none") ||
+      (p === "/src/tree/rt-tray/deps/arm64" && sourceDeps === "full") ||
+      scratchDeps.has(p),
     writeFile: (p, content) => {
       writes[p] = content;
     },
-    exec: (argv) => {
+    exec: (argv, execOpts) => {
       const cmd = argv.join(" ");
       calls.push(cmd);
+      cwds.push(execOpts?.cwd);
       if (opts.failCmd && cmd.startsWith(opts.failCmd)) return fail();
+      if (cmd === "cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps") {
+        scratchDeps.add("/scratch/rt-tray/deps/tools");
+        if (sourceDeps === "full") scratchDeps.add("/scratch/rt-tray/deps/arm64");
+      }
       if (cmd === "git rev-parse --show-toplevel") return ok("/src/tree\n");
       if (cmd === "git rev-parse --short HEAD") return ok("abc1234\n");
       if (cmd === "git status --porcelain") return ok(opts.dirty ? " M rt-tray/Sources/AppDelegate.swift\n" : "");
@@ -28,7 +42,7 @@ function fakeSeams(opts: { dirty?: boolean; buildExit?: number; hasDeps?: boolea
       return ok();
     },
   };
-  return { seams, calls, writes };
+  return { seams, calls, cwds, writes };
 }
 
 describe("stageLocalDevApp", () => {
@@ -44,7 +58,7 @@ describe("stageLocalDevApp", () => {
     expect(copy).toContain("--exclude=.git");
     expect(copy).toContain("--filter=:- .gitignore");
     expect(calls).toContain("cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps");
-    expect(calls.some((c) => c.startsWith("scripts/fetch-deps.sh"))).toBe(false);
+    expect(calls.some((c) => c.includes("fetch-deps.sh"))).toBe(false);
     expect(calls).toContain("env MS_BUILD_STAMP=2026-09-24 09:41:02 abc1234+dirty tree RT_VERSION=v2.11.0 rt-tray/build.sh dev");
 
     const ditto = calls.findIndex((c) => c.startsWith("ditto /scratch/rt-tray/mattstack-dev.app"));
@@ -93,11 +107,51 @@ describe("stageLocalDevApp", () => {
     await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow("deck-dev-shim not built");
   });
 
-  test("a clean tree has no +dirty and fetches deps when the tree has none", async () => {
-    const { seams, calls } = fakeSeams({ dirty: false, hasDeps: false });
+  test("a clean tree has no +dirty", async () => {
+    const { seams } = fakeSeams({ dirty: false });
     const { stamp } = await stageLocalDevApp(seams, "/src/tree");
     expect(stamp).toBe("2026-09-24 09:41:02 abc1234 tree");
-    expect(calls).toContain("scripts/fetch-deps.sh arm64");
+  });
+
+  test("a tree without deps fetches them with bash in the scratch copy, before the build", async () => {
+    const { seams, calls, cwds } = fakeSeams({ sourceDeps: "none" });
+    await stageLocalDevApp(seams, "/src/tree");
+    const fetch = calls.indexOf("bash scripts/fetch-deps.sh arm64");
+    const build = calls.findIndex((c) => c.includes("rt-tray/build.sh dev"));
+    expect(fetch).toBeGreaterThan(-1);
+    expect(cwds[fetch]).toBe("/scratch");
+    expect(build).toBeGreaterThan(fetch);
+    expect(calls.some((c) => c.startsWith("cp -R"))).toBe(false);
+  });
+
+  test("a tree whose deps lack arm64 still copies them, then fetches the rest in the scratch copy", async () => {
+    const { seams, calls, cwds } = fakeSeams({ sourceDeps: "partial" });
+    await stageLocalDevApp(seams, "/src/tree");
+    const copy = calls.indexOf("cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps");
+    const fetch = calls.indexOf("bash scripts/fetch-deps.sh arm64");
+    expect(copy).toBeGreaterThan(-1);
+    expect(fetch).toBeGreaterThan(copy);
+    expect(cwds[fetch]).toBe("/scratch");
+  });
+
+  test("the fetch gets a generous timeout, since it downloads and compiles helpers", async () => {
+    const { seams } = fakeSeams({ sourceDeps: "none" });
+    let timeoutMs: number | undefined;
+    const exec = seams.exec;
+    seams.exec = (argv, opts) => {
+      if (argv.join(" ") === "bash scripts/fetch-deps.sh arm64") timeoutMs = opts?.timeoutMs;
+      return exec(argv, opts);
+    };
+    await stageLocalDevApp(seams, "/src/tree");
+    expect(timeoutMs).toBeGreaterThanOrEqual(1_200_000);
+  });
+
+  test("a failed fetch fails the stage naming the step and never builds", async () => {
+    const { seams, calls } = fakeSeams({ sourceDeps: "none", failCmd: "bash scripts/fetch-deps.sh" });
+    const err = await stageLocalDevApp(seams, "/src/tree").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserActionableError);
+    expect((err as Error).message).toContain("scripts/fetch-deps.sh arm64 failed");
+    expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
   });
 
   test("a failed build is a UserActionableError and never touches the staged build", async () => {

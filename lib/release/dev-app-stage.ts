@@ -50,13 +50,21 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   const copy = await seams.exec(["rsync", "-a", "--exclude=.git", "--filter=:- .gitignore", `${source}/`, `${scratch}/`]);
   if (copy.exitCode !== 0) throw new UserActionableError("dev-app-copy-failed", `copying ${source} failed: ${tail(copy)}`);
 
-  // rt-tray/deps is gitignored, so the copy skips it; reuse the tree's own when it has one.
+  // rt-tray/deps is gitignored, so the copy skips it; reuse the tree's own when
+  // it has one, and fetch whatever build.sh needs that it lacks.
   const deps = `${source}/rt-tray/deps`;
-  const depsStep: [string, ...string[]] = seams.pathExists(deps)
-    ? ["cp", "-R", deps, `${scratch}/rt-tray/deps`]
-    : ["scripts/fetch-deps.sh", "arm64"];
-  const depsRun = await seams.exec(depsStep, { cwd: scratch });
-  if (depsRun.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `${depsStep.join(" ")} failed: ${tail(depsRun)}`);
+  if (seams.pathExists(deps)) {
+    const cp = await seams.exec(["cp", "-R", deps, `${scratch}/rt-tray/deps`]);
+    if (cp.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `copying ${deps} failed: ${tail(cp)}`);
+  }
+  if (!seams.pathExists(`${scratch}/rt-tray/deps/arm64`) || !seams.pathExists(`${scratch}/rt-tray/deps/tools`)) {
+    // fetch-deps.sh is bash-only, and fills deps/tools (Sparkle) as well as deps/arm64.
+    const fetchStep: [string, ...string[]] = ["bash", "scripts/fetch-deps.sh", "arm64"];
+    const fetched = await seams.exec(fetchStep, { cwd: scratch, timeoutMs: 1_800_000 });
+    if (fetched.exitCode !== 0) {
+      throw new UserActionableError("dev-app-deps-failed", `${fetchStep.join(" ")} failed: ${tail(fetched)}`);
+    }
+  }
 
   const build = await seams.exec(["env", `MS_BUILD_STAMP=${stamp}`, `RT_VERSION=${version}`, "rt-tray/build.sh", "dev"], {
     cwd: scratch,
