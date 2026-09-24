@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { UserActionableError } from "../../setup/errors.ts";
-import { runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
+import { runDevAppRebuild, runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
 
 const ok = (stdout = "", exitCode = 0) => Promise.resolve({ stdout, stderr: "", exitCode });
 const fail = (stderr = "boom", exitCode = 1) => Promise.resolve({ stdout: "", stderr, exitCode });
@@ -692,6 +692,36 @@ describe("rt release update-machine", () => {
       seams.exec = wrapExecFailing(seams.exec, "commits/");
       await expect(runUpdateMachine(seams, { yes: true })).rejects.toThrow(UserActionableError);
     });
+  });
+});
+
+describe("runDevAppRebuild", () => {
+  test("resolves the ref and runs only the dev-bundle leg at that sha", async () => {
+    const { seams, calls } = fakeSeams();
+    const { sha, result } = await runDevAppRebuild(seams, "main");
+    expect(sha).toBe(RELEASED_SHA);
+    expect(result.id).toBe("dev-bundle");
+    expect(result.status).toBe("ok");
+    expect(calls).toContain("gh api repos/m4ttstack/rt/commits/main --jq .sha");
+    expect(calls).toContain(`git checkout ${RELEASED_SHA}`);
+    expect(calls.some((c) => c.startsWith("rt-tray/build.sh dev"))).toBe(true);
+    expect(calls.some((c) => c.includes("/Applications/mattstack.app"))).toBe(false);
+    expect(calls.some((c) => c.startsWith("rt daemon") || c.startsWith("deck "))).toBe(false);
+  });
+
+  test("a failed build is an error leg, and the running app is never touched", async () => {
+    const { seams, calls } = fakeSeams({ buildExit: 1 });
+    const { result } = await runDevAppRebuild(seams, "main");
+    expect(result.status).toBe("error");
+    expect(calls.some((c) => c.startsWith("kill") || c.startsWith("mv") || c.startsWith("ditto"))).toBe(false);
+  });
+
+  test("a ref that could break out of the URL path or read as a flag is refused before any call", async () => {
+    for (const bad of ["../../etc", "-rf", "main branch", ""]) {
+      const { seams, calls } = fakeSeams();
+      await expect(runDevAppRebuild(seams, bad)).rejects.toThrow(UserActionableError);
+      expect(calls).toEqual([]);
+    }
   });
 });
 

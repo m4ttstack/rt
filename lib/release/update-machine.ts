@@ -409,6 +409,17 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   );
 }
 
+/** The dev-bundle leg on its own, at any pushed ref of the rt repo rather
+ *  than a released tag. */
+export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): Promise<{ sha: string; result: LegResult }> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..")) {
+    throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO}, got "${ref}"`);
+  }
+  const sha = await resolveCommit(seams, ref);
+  const result = await runDevBundleLeg(seams, { tag: ref, ver: "", sha });
+  return { sha, result };
+}
+
 async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
   // The dev daemon serves other sessions; the announce must land before it restarts
   // out from under them, and a failed announce refuses the restart outright.

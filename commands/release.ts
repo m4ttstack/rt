@@ -118,7 +118,7 @@ export async function releaseVerify(args: string[], _ctx: CommandContext = {}, s
 }
 
 /** Only created for a run that can actually mutate anything -- --plan and --verify-only never touch it. */
-async function createRealUpdateMachineSeams(options: UpdateMachineOptions): Promise<UpdateMachineSeams> {
+export async function createRealUpdateMachineSeams(options: UpdateMachineOptions): Promise<UpdateMachineSeams> {
   const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
   const needsWorkDir = !options.plan && !options.verifyOnly;
   return {
