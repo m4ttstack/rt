@@ -3,6 +3,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { createConnection, type Socket } from "net";
 import { RT_BINARY } from "./harness.ts";
+import { assertSocketPathFits, termwrightSocketPath } from "./socket-path.ts";
 
 function findTermwright(): string {
   const candidates = [
@@ -158,7 +159,10 @@ export async function startInteractive(
   const rows = opts.rows ?? 30;
   const timeoutMs = opts.timeoutMs ?? 10_000;
   const cwd = opts.cwd ?? opts.home;
-  const socketPath = join(opts.home, `.tw-${process.pid}-${++nextId}.sock`);
+  // The preload's short sibling dir when there is one; a per-test home sits
+  // too deep under TMPDIR for a socket path to bind.
+  const socketPath = termwrightSocketPath(process.env.RT_TEST_SOCKET_DIR || opts.home, process.pid, ++nextId);
+  assertSocketPathFits(socketPath);
 
   // Some spawned children may exec a script with a `#!/usr/bin/env bun`
   // shebang, so bun's own directory must be on PATH for the spawned rt
