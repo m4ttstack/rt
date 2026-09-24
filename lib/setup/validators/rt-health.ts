@@ -378,7 +378,7 @@ async function flavorRow(p: Probes): Promise<Row> {
   return row({
     ...base,
     status: "invalid",
-    detail: `a ${daemonFlavor} daemon answers this ${cli} CLI; quit ${app} and open it again, which hands this Mac to it`,
+    detail: `a ${daemonFlavor} daemon answers this ${cli} CLI; open ${app} (quit it first if it is running)`,
   });
 }
 

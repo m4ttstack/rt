@@ -12,8 +12,7 @@ describe("flavor-aware daemon output", () => {
     expect(w).toContain("dev CLI");
     expect(w).toContain("pid 99");
     expect(w).toContain("mattstack-dev.app");
-    expect(w).toContain("quit");
-    expect(w).toContain("open it again");
+    expect(w).toContain("(quit it first if it is running)");
     expect(w).not.toContain("dev-mode");
   });
 
@@ -31,9 +30,9 @@ describe("flavor-aware daemon output", () => {
     expect(headline).toContain("still holds rt.sock");
     expect(headline).toContain("prod");
     expect(headline).toContain("pid 42");
-    expect(remedy).toStartWith("Fix: quit ");
+    expect(remedy).toStartWith("Fix: open ");
     expect(remedy).toContain("mattstack-dev.app");
-    expect(remedy).toEndWith("and open it again");
+    expect(remedy).toEndWith("(quit it first if it is running)");
   });
 
   test("start/restart's mismatch line says the holder answered, not held", () => {
