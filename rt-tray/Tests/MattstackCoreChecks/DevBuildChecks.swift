@@ -37,6 +37,8 @@ private func runScript(_ script: String) -> Int32 {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/bin/sh")
     p.arguments = ["-c", script]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
     try! p.run()
     p.waitUntilExit()
     return p.terminationStatus

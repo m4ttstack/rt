@@ -75,7 +75,11 @@ if (parsed.local) {
         exec: async (argv, opts) => {
           if (!argv.includes("rt-tray/build.sh")) return runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts });
           const proc = Bun.spawn(argv, { cwd: opts?.cwd, stdout: "inherit", stderr: "inherit" });
-          return { stdout: "", stderr: "", exitCode: await proc.exited };
+          // A hung build would otherwise leave the tray showing building… forever.
+          const timer = opts?.timeoutMs ? setTimeout(() => proc.kill(), opts.timeoutMs) : undefined;
+          const exitCode = await proc.exited;
+          clearTimeout(timer);
+          return { stdout: "", stderr: proc.signalCode ? `build killed after ${opts?.timeoutMs}ms` : "", exitCode };
         },
       },
       process.cwd(),

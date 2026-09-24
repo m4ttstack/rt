@@ -21,8 +21,11 @@ final class DevBuildWatcher {
 
     private static func read(_ path: String) -> Data? { FileManager.default.contents(atPath: path) }
 
+    enum SourcesState { case loading, loaded, unreachable }
+
     /// repo-tools trees the daemon knows, for the Rebuild from… submenu.
     private(set) var sources: [RebuildSource] = []
+    private(set) var sourcesState: SourcesState = .loading
     private static let rtRepoName = "remote:github.com%2Fm4ttstack%2Frt"
 
     /// Called with the new list, so an open Rebuild from… submenu can refill
@@ -45,8 +48,10 @@ final class DevBuildWatcher {
             let found = payload.map { RebuildSources.sources(from: $0, repoName: Self.rtRepoName) }
             await MainActor.run {
                 self.refreshing = false
-                guard let found, found != self.sources else { return }
-                self.sources = found
+                let state: SourcesState = found == nil ? .unreachable : .loaded
+                guard state != self.sourcesState || (found.map { $0 != self.sources } ?? false) else { return }
+                self.sourcesState = state
+                if let found { self.sources = found }
                 self.onSourcesChanged?()
             }
         }
@@ -90,6 +95,9 @@ final class DevBuildWatcher {
         let ready = DevBuild.newerBuildReady(running: runningStamp, staged: staged) ? staged : nil
         guard ready != TrayState.shared.stagedBuildStamp else { return }
         TrayState.shared.stagedBuildStamp = ready
+        // A newer staged build (from the tray or a terminal) supersedes an
+        // earlier failed tray rebuild.
+        if ready != nil, TrayState.shared.devRebuild == .failed { TrayState.shared.devRebuild = .idle }
         NotificationCenter.default.post(name: .rtDevRebuildChanged, object: nil)
     }
 

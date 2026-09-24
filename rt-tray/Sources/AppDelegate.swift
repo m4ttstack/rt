@@ -795,17 +795,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             item.isEnabled = state.devRebuild != .building
             menu.addItem(item)
         }
-        let building = state.devRebuild == .building
-        guard !building else { return }
+        guard state.devRebuild != .building else { return }
         let from = NSMenuItem(title: "Rebuild from", action: nil, keyEquivalent: "")
         from.setAccessibilityIdentifier(AXID.trayDevRebuildFrom)
         let sub = NSMenu()
-        populateRebuildFrom(sub, last: last, building: building)
+        populateRebuildFrom(sub, last: last)
         // Menus can be edited while open, so a list that arrives late fills
         // the submenu in place.
         watcher.onSourcesChanged = { [weak self, weak sub] in
             guard let self, let sub else { return }
-            self.populateRebuildFrom(sub, last: DevBuildWatcher.shared.lastSource, building: building)
+            self.populateRebuildFrom(sub, last: DevBuildWatcher.shared.lastSource)
         }
         from.submenu = sub
         menu.addItem(from)
@@ -816,7 +815,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// checkout, the few most recently active trees, and the rest one level
     /// down.
     @MainActor
-    private func populateRebuildFrom(_ menu: NSMenu, last: String?, building: Bool) {
+    private func populateRebuildFrom(_ menu: NSMenu, last: String?) {
         menu.removeAllItems()
         let watcher = DevBuildWatcher.shared
         let groups = RebuildSources.group(watcher.sources, recentLimit: 5)
@@ -825,11 +824,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             let it = ActionMenuItem(label, state: source.path == last ? .on : .off, axid: AXID.trayDevRebuildSource) {
                 watcher.rebuild(from: source.path)
             }
-            it.isEnabled = !building
             return it
         }
         if watcher.sources.isEmpty {
-            let loading = NSMenuItem(title: "Loading worktrees…", action: nil, keyEquivalent: "")
+            let title = switch watcher.sourcesState {
+            case .loading: "Loading worktrees…"
+            case .unreachable: "rt daemon not answering"
+            case .loaded: "No repo-tools worktrees"
+            }
+            let loading = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             loading.isEnabled = false
             menu.addItem(loading)
             return
@@ -900,7 +903,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         NSApp.terminate(nil)
     }
 
-    /// Update the menu bar button with "m" text + colored status dot.
     /// Dark text on the dev orange (the splash's dev mark color): the pair
     /// holds its contrast whatever the menu bar shows through.
     private static let devMarkImage: NSImage = {
@@ -918,6 +920,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }()
 
+    /// Update the menu bar button with "m" text + colored status dot.
     private func updateMenuBarTitle(status: DaemonHealth) {
         guard let button = statusItem.button else { return }
 
