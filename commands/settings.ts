@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join, resolve as resolvePath } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { rtDir } from "../lib/rt-paths.ts";
-import { DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent, readWrapperPrefix, rtBinaryPath } from "../lib/dev-mode.ts";
+import { DEV_MODE_TAG, devWrapperOwnsRt, installRtBinary, rtBinaryPath } from "../lib/dev-mode.ts";
 import { envelope } from "../lib/setup/contract.ts";
 import { spawnSync } from "child_process";
 import { bold, cyan, dim, green, red, reset, yellow } from "../lib/tui.ts";
@@ -504,8 +504,7 @@ export async function sourcePathCommand(
     return;
   }
 
-  const prefix = readWrapperPrefix(rtBinaryPath());
-  const wrapperOwnsRt = prefix !== null && isDevModeWrapperContent(prefix);
+  const wrapperOwnsRt = devWrapperOwnsRt();
   if (wrapperOwnsRt) enableDevMode(sourcePath);
   else saveSourcePath(sourcePath, detectBunPath());
 

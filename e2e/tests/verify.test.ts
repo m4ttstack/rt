@@ -4,15 +4,10 @@ import { join } from "path";
 import { createTestHome, rt, rtRaw } from "../harness.ts";
 import { TRAY_APP_BUNDLE, DEV_TRAY_APP_BUNDLE } from "../../lib/rt-paths.ts";
 
-// Mirrors lib/dev-mode.ts's currentMode() logic, but evaluated against the
-// SUBPROCESS's fixture `home` — currentMode() itself binds HOME at module
-// load time in *this* (outer) test process, so importing it here would check
-// the wrong HOME entirely. The e2e harness never writes a dev-mode wrapper
-// into the fixture home, so this is expected to always resolve "prod" today;
-// asserting it explicitly (rather than hardcoding the prod bundle name)
-// keeps this test honest if that ever changes.
-function activeFlavor(home: string): "dev" | "prod" {
-  return existsSync(join(home, ".local", "bin", "rt")) ? "dev" : "prod";
+// The compiled rt the harness spawns is prod by build unless its env says
+// otherwise, which the harness never sets.
+function activeFlavor(_home: string): "dev" | "prod" {
+  return "prod";
 }
 
 interface VerifyCheck {

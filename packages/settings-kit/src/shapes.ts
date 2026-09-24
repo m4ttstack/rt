@@ -96,7 +96,6 @@ export const ENUMS: Record<string, readonly string[]> = {
   "agent.provider": ["claude", "codex"],
   "rt.logLevel": ["trace", "debug", "info", "warn", "error"],
   "boxscore.defaultRange": ["7d", "30d", "90d"],
-  "mattstack.mode": ["dev", "prod"],
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -328,6 +328,16 @@ describe("settings/resolve", () => {
       expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("rt.fromANewerRt"))).toBe(true);
     });
 
+    test("a retired key left in a store is neither listed nor warned about", () => {
+      writeMachine({ "mattstack.mode": "dev" });
+
+      const listed = listSettings();
+
+      expect(listed.find((e) => e.key === "mattstack.mode")).toBeUndefined();
+      expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("mattstack.mode"))).toBe(false);
+      expect(() => getSetting("mattstack.mode")).toThrow(/unknown setting/);
+    });
+
     test("a type-invalid value skips only its own scope; weaker scopes still apply", () => {
       writeTeam(TEAM, { "rt.intercepts": [{ id: "team" }] });
       writeUser({ "rt.intercepts": { not: "an array" } }); // rt.intercepts is type array

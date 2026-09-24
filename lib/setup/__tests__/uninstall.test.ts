@@ -90,7 +90,7 @@ const APP_BUNDLE_ROOT = "/Applications/mattstack.app";
 const noEditorSeams: UninstallSeams = { detectEditors: () => [] };
 
 describe("rt uninstall", () => {
-  // resolveTool/appBundlePath/currentMode all fall through to real fs/HOME
+  // resolveTool/appBundlePath/processFlavor all fall through to real fs/env
   // regardless of the Probes seam (same posture as steps-b/c.test.ts) — a
   // real per-test temp HOME, never the real machine's.
   const origHome = process.env.HOME;

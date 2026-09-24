@@ -1,15 +1,11 @@
 /**
- * lib/dev-mode.ts — currentMode() parity test.
- *
- * currentMode() MOVED here from commands/settings.ts:364 (MAT-383 §1) with its
- * logic unchanged: wrapper-presence at ~/.local/bin/rt, checked via existsSync.
- * This test pins that behavior from the new home so lib/daemon-config.ts's
- * activeLaunchdLabel() (which depends on it) rests on a verified foundation.
+ * lib/dev-mode.ts: recognizing the dev app's source wrapper at
+ * ~/.local/bin/rt, and installing the prod app's rt over whatever is there.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { currentMode, DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent } from "../dev-mode.ts";
+import { devWrapperOwnsRt, DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent } from "../dev-mode.ts";
 
 // The dev-mode wrapper path is resolved at CALL time from process.env.HOME
 // (mirrors lib/rt-paths.ts's home()), so this constant only needs to match
@@ -18,35 +14,35 @@ import { currentMode, DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent } f
 // under the per-run throwaway HOME, never the developer's real one.
 const WRAPPER_PATH = join(process.env.HOME!, ".local", "bin", "rt");
 
-describe("currentMode", () => {
+describe("devWrapperOwnsRt", () => {
   afterEach(() => {
     try { rmSync(WRAPPER_PATH); } catch { /* already absent */ }
   });
 
-  test("reports prod when the dev-mode wrapper is absent", () => {
+  test("false when nothing is at ~/.local/bin/rt", () => {
     expect(existsSync(WRAPPER_PATH)).toBe(false);
-    expect(currentMode()).toBe("prod");
+    expect(devWrapperOwnsRt()).toBe(false);
   });
 
-  test("reports dev when the wrapper exists at ~/.local/bin/rt", () => {
+  test("true when the marked wrapper is at ~/.local/bin/rt", () => {
     mkdirSync(join(process.env.HOME!, ".local", "bin"), { recursive: true });
     writeFileSync(WRAPPER_PATH, `#!/bin/sh\n${DEV_MODE_TAG}\nexit 0\n`, { mode: 0o755 });
-    expect(currentMode()).toBe("dev");
+    expect(devWrapperOwnsRt()).toBe(true);
   });
 
   test("tracks HOME at call time, not at module load", () => {
     // Proves the wrapper path is recomputed on every call: a HOME that only
-    // exists once currentMode() actually runs must still be honored, which
+    // exists once devWrapperOwnsRt() actually runs must still be honored, which
     // would be impossible if the path were baked in at module-load time.
     const realHome = process.env.HOME!;
     try {
       const fakeHome = join(realHome, ".dev-mode-call-time-probe");
       process.env.HOME = fakeHome;
-      expect(currentMode()).toBe("prod"); // fakeHome/.local/bin/rt doesn't exist yet
+      expect(devWrapperOwnsRt()).toBe(false); // fakeHome/.local/bin/rt doesn't exist yet
 
       mkdirSync(join(fakeHome, ".local", "bin"), { recursive: true });
       writeFileSync(join(fakeHome, ".local", "bin", "rt"), `#!/bin/sh\n${DEV_MODE_TAG}\nexit 0\n`, { mode: 0o755 });
-      expect(currentMode()).toBe("dev");
+      expect(devWrapperOwnsRt()).toBe(true);
 
       rmSync(fakeHome, { recursive: true, force: true });
     } finally {
@@ -73,7 +69,7 @@ describe("isDevModeWrapperContent", () => {
   });
 });
 
-describe("currentMode bounded read", () => {
+describe("devWrapperOwnsRt bounded read", () => {
   afterEach(() => {
     try { rmSync(WRAPPER_PATH); } catch { /* already absent */ }
   });
@@ -89,7 +85,7 @@ describe("currentMode bounded read", () => {
     writeFileSync(bigBinaryPath, Buffer.concat([Buffer.from([0xcf, 0xfa, 0xed, 0xfe]), filler]));
     symlinkSync(bigBinaryPath, WRAPPER_PATH);
 
-    expect(currentMode()).toBe("prod");
+    expect(devWrapperOwnsRt()).toBe(false);
   });
 });
 
@@ -104,7 +100,7 @@ describe("installRtBinary", () => {
     const dest = installRtBinary(src);
     expect(lstatSync(dest).isSymbolicLink()).toBe(true);
     expect(readlinkSync(dest)).toBe(src);
-    expect(currentMode()).toBe("prod");
+    expect(devWrapperOwnsRt()).toBe(false);
   });
 
   test("replaces an existing regular file (the dev wrapper) and an existing link atomically", () => {
@@ -120,11 +116,11 @@ describe("installRtBinary", () => {
     expect(readlinkSync(join(BIN, "rt"))).toBe(src2);
   });
 
-  test("currentMode reads through the link: a link to a script is dev, to a Mach-O is prod", () => {
+  test("reads through the link: a link to a script is the wrapper, to a Mach-O is not", () => {
     const script = join(process.env.HOME!, "wrapper.sh");
     writeFileSync(script, `#!/bin/zsh\n${DEV_MODE_TAG}\nexit 0\n`, { mode: 0o755 });
     installRtBinary(script);
-    expect(currentMode()).toBe("dev");
+    expect(devWrapperOwnsRt()).toBe(true);
   });
 
   test("throws instead of creating a dangling link when src doesn't exist", () => {

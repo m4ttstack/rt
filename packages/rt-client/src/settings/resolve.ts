@@ -56,7 +56,7 @@ import {
   teamsDir,
   userSettingsPath,
 } from "./paths.ts";
-import { allDefs, getDef, isMigrated, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
+import { allDefs, getDef, isMigrated, isRetiredKey, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { listTeams, readStore, type StoreFile } from "./stores.ts";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -587,7 +587,7 @@ function listUnregistered(stores: StoreBundle, opts: ResolveOpts): ListedSetting
 
   const scan = (scope: Scope, file: string, section: Record<string, unknown> | undefined) => {
     for (const [key, value] of Object.entries(section ?? {})) {
-      if (getDef(key)) continue;
+      if (getDef(key) || isRetiredKey(key)) continue;
       found.set(key, { scope, file, value }); // later (stronger) scans win
     }
   };
