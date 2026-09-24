@@ -1126,7 +1126,7 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   version: {
-    description: "Show current version and prod/dev mode",
+    description: "Show the current version and which app (prod or dev) this rt belongs to",
     module: "./commands/version.ts",
     fn: "runVersion",
     args: [],

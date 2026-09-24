@@ -278,7 +278,7 @@ rt settings gitlab token       # GitLab personal access token
 rt settings notifications      # which events fire native macOS notifications
 rt settings runaway            # runaway process detection thresholds
 rt settings extension          # install the rt-context extension into local editors
-rt settings dev-mode           # toggle between local source and the installed binary
+rt settings source-path        # show or set the rt checkout the dev app runs
 ```
 
 Every key any mattstack app reads goes through one settings resolver, which
@@ -412,9 +412,10 @@ bun run cli.ts            # run the CLI from source
 bun run cli.ts verify     # any subcommand works the same way
 ```
 
-`rt --version` reports `dev` when running from source. If mattstack.app is
-already installed alongside your checkout, `rt settings dev-mode` swaps
-`~/.local/bin/rt` between your source tree and the compiled binary.
+`rt --version` reports `dev` when running from source. To run your checkout
+as the machine's rt, build and open `mattstack-dev.app`; opening
+`mattstack.app` again hands the Mac back to the compiled binary (see
+`docs/development.md`).
 
 ### Tests and checks
 

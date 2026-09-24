@@ -188,31 +188,24 @@ VM truths that only a real run surfaced (all encoded in the harness now):
 
 ### Flavor exclusivity
 
-mattstack enforces one registered flavor pair per machine (prod
-`com.mattstack.daemon` XOR dev `com.mattstack.daemon.dev`) via
-`mattstack.mode`, a machine-scope setting; the daemon and tray self-heal to
-whichever flavor the setting (or, when unset, the CLI wrapper) declares,
-standing down on a mismatch rather than racing to bind. Full design:
-`docs/superpowers/specs/2026-08-25-flavor-exclusivity-design.md`.
+One app runs a machine at a time: prod (`mattstack.app`, jobs
+`com.mattstack.daemon` and `com.mattstack.deck`) or dev
+(`mattstack-dev.app`, the same labels with `.dev`). Nothing stores which
+one; each process's flavor is set by its launcher (`MATTSTACK_FLAVOR` in
+each job's plist, exported by the dev `~/.local/bin/rt` wrapper, else the
+build: a compiled rt is prod). Opening an app by hand takes the machine
+over (`rt flavor takeover`: the other tray retires its daemon agent and
+login item and quits, the other app's jobs are booted out, and
+`~/.local/bin/rt` points at the opened app). A login-item launch never
+takes over; it stands down while the other app's tray runs. A daemon
+parks only while the other flavor's daemon still holds `rt.sock`, or when
+its own flavor disagrees with the job that started it. `docs/development.md`
+has the day-to-day view.
 
-Two constraints hold for the migration window, both because old code does
-not carry the gate:
-
-- Until **both** bundles ship the new code, an already-installed pre-gate
-  prod tray still unlinks-and-rebinds `tray.sock` unconditionally at
-  launch — a new-code tray's socket ownership is not durable against it,
-  so don't treat ownership as settled until prod itself has moved past
-  this release.
-- Once the new prod bundle ships, a machine whose CLI wrapper is dev-mode
-  will have its prod tray stand itself down at login (alert, or a silent
-  notification + unregister, depending on launch origin) — expected
-  behavior under the gate, not a regression, and worth knowing before the
-  release tag goes out.
-
-Machines already sitting in a half-state (both flavors registered, or the
-wrong one holding `rt.sock`/`tray.sock`) need a one-time cleanup once the
-new code lands: run `rt settings dev-mode <mode>` once (its repair path
-now covers a dead tray), or manually `launchctl bootout
+A machine that still carries the retired `mattstack.mode` setting needs no
+cleanup: the resolver skips it silently. A machine sitting in a half-state
+(both apps registered, or the wrong daemon holding `rt.sock`) clears it by
+opening the app it should run, or manually with `launchctl bootout
 gui/$UID/<wrong-label>`.
 
 ## Sparkle / updates
