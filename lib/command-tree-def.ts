@@ -2162,6 +2162,16 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      init: {
+        description: "Scaffold this zone's team pack with a generic work pipeline, declare the repo, compile, check, and install it",
+        module: "./commands/skills-init.ts",
+        fn: "skillsInit",
+        args: [
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "/path/to/repo", hint: "Repo to declare; defaults to the current directory" },
+          { name: "Zone", flag: "--zone", type: "text", placeholder: "acme", hint: "Team zone slug when more than one packless zone could host the pack" },
+          SETUP_JSON_ARG,
+        ],
+      },
       surface: {
         description: "List, set, or apply the pack's public/internal skill surface (bare invocation opens a multi-toggle palette)",
         module: "./commands/skills.ts",
