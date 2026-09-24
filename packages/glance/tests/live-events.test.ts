@@ -12,19 +12,19 @@
  *   6. luke closes the MR    -> expect mr:<iid> after restart
  *   7. cleanup: delete branch
  */
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { Gitlab } from '@gitbeaker/rest';
 import { GitLabProvider } from '../src/GitLabProvider.ts';
 import type { EventCursor, InvalidationBatch } from '../src/types.ts';
+import { loadCredentials } from './live/credentials.ts';
 
 async function main(): Promise<void> {
   const HOST = 'https://gitlab.com';
   const REPO = 'm4tthew-dev/glance-test-repo';
-  const creds = JSON.parse(
-    readFileSync(`${homedir()}/Documents/GitHub/Glance/harness_credentials.json`, 'utf8'),
-  );
-  const tok = (u: string) => creds.users.find((x: any) => x.username === u)!.token;
+  const creds = await loadCredentials();
+  if (!creds) {
+    throw new Error('harness_credentials.json not found at the repo root');
+  }
+  const tok = (u: string) => creds.users.find((x) => x.username === u)!.token;
 
   const provider = new GitLabProvider(HOST, tok('goodwin.matthew.eric'));
   const luke = new Gitlab({ host: HOST, token: tok('luke.skycoder') });
