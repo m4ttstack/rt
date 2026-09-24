@@ -308,7 +308,6 @@ export interface MissionModel {
   filter: string;
   diff: MissionDiffModel;
   commit: MissionCommitModel;
-  stashCount: number;
   /** One-line transient notice (guard refusals, not-yet-wired). */
   notice: string;
   tab: "changes" | "history";

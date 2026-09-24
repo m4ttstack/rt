@@ -251,7 +251,6 @@ export class MissionDriver {
   private treeCanon = new Map<string, string>();
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
   private branches: BranchInfo[] = [];
-  private stashCount = 0;
   private lastCommit: MissionLastCommit | null = null;
   private stagingDiff: StagingDiff | null = null;
   private action: ActionState = { kind: "fetch", title: "Fetch origin", meta: "Never fetched", ahead: 0, behind: 0 };
@@ -400,7 +399,6 @@ export class MissionDriver {
       guards: this.guards,
       worktrees: this.worktreeRows(),
       stagingDiff: this.stagingDiff,
-      stashes: this.stashCount,
       lastCommit: this.lastCommit,
       action: this.action,
       headShortSha: this.headShortSha,
@@ -511,7 +509,7 @@ export class MissionDriver {
     });
   }
 
-  /** Repos, snapshot, branches, stashes, and last commit -- everything but the diff for the current pane. */
+  /** Repos, snapshot, branches, the stash entry, and last commit -- everything but the diff for the current pane. */
   private async refresh(): Promise<void> {
     const client = this.deps.client(this.state.currentWorktree);
     // Every call site that changes currentWorktree (handleCheckout/Worktree/
@@ -522,7 +520,7 @@ export class MissionDriver {
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
     this.clearOnDisk();
-    const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, stashes, log] = await Promise.all([
+    const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
       client.snapshot(),
@@ -530,7 +528,6 @@ export class MissionDriver {
       client.remotes(),
       this.deps.buildGuards(this.state.currentWorktree),
       this.deps.listGitWorktrees(this.state.currentWorktree),
-      client.stashes(),
       client.log({ maxCount: 1 }),
     ]);
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
@@ -545,7 +542,6 @@ export class MissionDriver {
     // cleared it): the first change is what the view's cursor starts on.
     if (this.state.selectedPath === null) this.state.selectedPath = snapshot.files[0]?.path ?? null;
     this.branches = branches;
-    this.stashCount = stashes.length;
     const entry = log[0];
     this.headShortSha = entry ? entry.sha.slice(0, 7) : "";
     // Preformatted here, not in model.ts, matching action.meta and

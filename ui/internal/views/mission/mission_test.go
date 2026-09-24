@@ -103,7 +103,7 @@ const canCommitModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
 	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"all"}],` +
 	`"changedTotal":1,"stagedTotal":1,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 1 file to main","canCommit":true,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 func TestSpaceOnCursorRowEmitsStageWithPath(t *testing.T) {
 	s := s5open(t)
@@ -165,7 +165,7 @@ const noStagedModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
 	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"none"}],` +
 	`"changedTotal":1,"stagedTotal":0,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // TestAmendToggleEnablesCommitDespiteWireCanCommitFalse: with nothing staged
 // (canCommit false), toggling amend locally plus a typed summary must still
@@ -557,7 +557,7 @@ const detachedModel = `{"current":{"repo":"repo-tools","branch":"a1b2c3d","detac
 	`"branches":[{"name":"main","current":false,"ahead":0,"behind":0,"guardedBy":"","group":"other"}],` +
 	`"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // TestDetachedHeadRefusesBranchModalWithNotice presses b on a detached
 // checkout: no modal opens (no filter box paints) and nothing emits, only a
@@ -775,7 +775,7 @@ const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"
 	`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}],"selectedFile":"lib/mission/model.ts"},` +
 	`"diff":{"path":"lib/mission/model.ts","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"x","selected":false,"selIdx":-1}],"readOnly":true},` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // historyRowY is the frame row of commit idx's summary line: topH(4), then
 // the History sidebar's tabs(3) + tabs-gap(1) + filter box(3), then the
@@ -1336,6 +1336,38 @@ func TestCreateTagEmitsTheTypedNameAndSha(t *testing.T) {
 	if !strings.Contains(l, `"action":"create-tag"`) || !strings.Contains(l, `"name":"v9"`) || !strings.Contains(l, `"sha":"s1"`) {
 		t.Fatalf("create-tag intent: %q", l)
 	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const stashShowingModel = `{"current":{"repo":"repo-tools","branch":"main"},"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
+	`"diff":{"path":"a.txt","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"stashed line","selected":false,"selIdx":-1}],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":{"sha":"s1","branch":"main","files":[{"path":"a.txt","origPath":"","status":"modified","onDisk":false},{"path":"b.txt","origPath":"","status":"new","onDisk":false}],"showing":true,"selectedFile":"a.txt"},` +
+	`"notice":""}`
+
+func TestHOpensTheStashWithoutAPath(t *testing.T) {
+	s := s5open(t)
+	s.Type("h")
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{}`) {
+		t.Fatalf("opening the stash selects the driver's first file: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestStashViewKeysEmitPathShaAndHide(t *testing.T) {
+	s := openMission(t, stashShowingModel, "Stashed changes")
+	s.Type(keyDown)
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{"path":"b.txt"}`) {
+		t.Fatalf("stash file move: %q", l)
+	}
+	s.Type("R")
+	if l := waitIntent(t, s, "mission:stash-restore"); !strings.Contains(l, `"payload":{"sha":"s1"}`) {
+		t.Fatalf("restore: %q", l)
+	}
+	s.Type("h")
+	waitIntent(t, s, "mission:stash-hide")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }

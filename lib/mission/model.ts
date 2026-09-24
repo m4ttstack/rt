@@ -439,7 +439,6 @@ export function buildModel(input: {
   guards: Map<string, string>;
   worktrees: WorktreeRow[];
   stagingDiff: StagingDiff | null;
-  stashes: number;
   lastCommit: MissionLastCommit | null;
   action: ActionState;
   /** HEAD's short sha; stands in for current.branch on a detached checkout. */
@@ -456,7 +455,7 @@ export function buildModel(input: {
   stashDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
   canStash?: boolean;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff, stash, stashDiff } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff, stash, stashDiff } = input;
   const tab = input.tab ?? "changes";
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
@@ -590,7 +589,6 @@ export function buildModel(input: {
     filter: state.filter,
     diff,
     commit,
-    stashCount: stashes,
     notice: state.notice,
     tab,
     history: input.history ?? EMPTY_HISTORY_MODEL,

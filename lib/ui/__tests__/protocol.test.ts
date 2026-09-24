@@ -149,10 +149,12 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.diff.lines[2]!.selected).toBe(true);
   expect(model.diff.lines[2]!.selIdx).toBe(0);
   expect(model.commit.lastCommit?.undoable).toBe(true);
-  expect(model.stashCount).toBe(1);
+  expect(model).not.toHaveProperty("stashCount");
   expect(model.notice).toBe("");
   expect(model.editorLabel).toBe("Zed");
-  expect(model.stash).toBeNull();
+  expect(model.stash?.branch).toBe("rt-191-mission-tui");
+  expect(model.stash?.files).toHaveLength(1);
+  expect(model.stash?.showing).toBe(false);
   expect(model.switchPrompt).toBeNull();
   expect(model.canStash).toBe(true);
 });

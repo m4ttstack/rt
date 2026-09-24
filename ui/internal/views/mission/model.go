@@ -147,6 +147,26 @@ type Current struct {
 	Settling     bool   `json:"settling"`
 }
 
+// StashModel is the current branch's Desktop stash entry. Files is nil while
+// they load; while Showing, Model.Diff carries the selected file's
+// read-only diff.
+type StashModel struct {
+	Sha          string           `json:"sha"`
+	Branch       string           `json:"branch"`
+	Files        []HistoryFileRow `json:"files"`
+	Showing      bool             `json:"showing"`
+	SelectedFile string           `json:"selectedFile"`
+}
+
+// SwitchPrompt is one-shot on the wire: the view opens the question for a
+// Seq it has not seen and never reopens one.
+type SwitchPrompt struct {
+	Seq      int    `json:"seq"`
+	Branch   string `json:"branch"`
+	Current  string `json:"current"`
+	HasStash bool   `json:"hasStash"`
+}
+
 type Model struct {
 	Current      Current       `json:"current"`
 	Action       ActionModel   `json:"action"`
@@ -159,11 +179,13 @@ type Model struct {
 	Filter       string        `json:"filter"`
 	Diff         DiffModel     `json:"diff"`
 	Commit       CommitModel   `json:"commit"`
-	StashCount   int           `json:"stashCount"`
 	Notice       string        `json:"notice"` // one-line transient notice (guard refusals, not-yet-wired)
 	Tab          string        `json:"tab"`    // "changes"|"history"
 	History      HistoryModel  `json:"history"`
 	EditorLabel  string        `json:"editorLabel"` // rt code's resolved editor ("Zed"), "" when none resolves
+	Stash        *StashModel   `json:"stash"`
+	SwitchPrompt *SwitchPrompt `json:"switchPrompt"`
+	CanStash     bool          `json:"canStash"` // GHD's Stash All Changes enablement
 }
 
 // decode tolerates unknown fields: the wire model is a shared contract with

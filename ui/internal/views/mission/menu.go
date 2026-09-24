@@ -178,7 +178,7 @@ func (m *Mission) closeMenu() {
 	m.menu = nil
 	m.focus = m.menuPrevFocus
 	if m.focus == focusMenu || m.focus == focusSummary || m.focus == focusDescription {
-		m.focus = focusList
+		m.focus = m.homeFocus()
 	}
 }
 
@@ -189,8 +189,12 @@ func (m *Mission) historyRange() bool {
 
 // focusedTarget is ctrl-k's target: the row the focused region acts on.
 // A range, the "Load more" row, or a cursor commit the filter hides has no
-// single commit to act on.
+// single commit to act on, and a stashed file has no menu (Desktop's stash
+// file list has none), nor does the Changes row the stash view hides.
 func (m *Mission) focusedTarget() menuTarget {
+	if m.stashShowing() {
+		return menuTarget{}
+	}
 	if m.historyTab() {
 		if m.focus == focusHistoryFiles || m.focus == focusDiff {
 			return m.historyFileTarget(m.historyFile)
@@ -265,7 +269,7 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 			return m.historyTabKey(press)
 		}
 		// The Changes diff binds none of these keys; the list binds them all.
-		m.focus = focusList
+		m.focus = m.homeFocus()
 		return m.listKey(press)
 	}
 	if folder, ok := strings.CutPrefix(it.ID, "ignore-folder:"); ok {

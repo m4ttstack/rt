@@ -222,18 +222,20 @@ func renderChangeRow(c ChangeRow, width int, cursor, hover bool) string {
 	return on.Width(width).Render(line)
 }
 
-// renderStashStrip is the "Stashed changes · N ❯" row: a notice strip, not
-// yet a foldout (a later interaction pass wires the click). hovered swaps
-// its whole-strip BgSubtle rest fill for HoverBg.
-func renderStashStrip(count int, hovered bool, width int) string {
-	bg := theme.BgSubtle
-	if hovered {
-		bg = theme.HoverBg
+// renderStashStrip is GHD's renderStashedChanges row, "Stashed Changes" with
+// no count (StashStates.png's strip column). selected, the stash view being
+// open, outranks hovered.
+func renderStashStrip(selected, hovered bool, width int) string {
+	bg, glyph, label, chevron := theme.BgSubtle, theme.Dimmer, theme.TextSoft, theme.Faint
+	switch {
+	case selected:
+		bg, glyph, label, chevron = theme.SelBg, theme.Pink, theme.Text, theme.Pink
+	case hovered:
+		bg, glyph, label, chevron = theme.HoverBg, theme.Dim, theme.Text, theme.Dimmer
 	}
 	on := lipgloss.NewStyle().Background(bg)
-	left := on.Foreground(theme.Dim).Render(fmt.Sprintf("Stashed changes · %d", count))
-	right := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron)
-	return justify(on, width, left, right)
+	left := on.Foreground(glyph).Render(theme.GlyphStash) + on.Render(" ") + on.Foreground(label).Render("Stashed Changes")
+	return justify(on, width, left, on.Foreground(chevron).Render(theme.GlyphChevron))
 }
 
 // renderCommitBox paints the amending banner (when locally toggled on), the
@@ -346,10 +348,11 @@ func renderUndoStrip(lc LastCommit, hovered bool, width int) string {
 	return justify(on, width, left, right)
 }
 
-// renderKeybar is the bottom full-width legend for the active tab, key
-// glyphs in KeybarKey (bold) and their labels in KeybarLabel, separated by a
-// Dim middle dot -- the same grammar the picker and board keybars use.
-func renderKeybar(width int, tab string) string {
+// renderKeybar is the bottom full-width legend for mode ("changes",
+// "history", or "stash"), key glyphs in KeybarKey (bold) and their labels in
+// KeybarLabel, separated by a Dim middle dot -- the same grammar the picker
+// and board keybars use.
+func renderKeybar(width int, mode string) string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	dot := on.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
@@ -361,10 +364,16 @@ func renderKeybar(width int, tab string) string {
 		{"space", "stage"}, {"enter", "diff"}, {"2", "history"}, {"⌃k", "menu"}, {"c", "commit"}, {"f", "action"},
 		{"b", "branch"}, {"w", "worktree"}, {"r", "repo"}, {"/", "filter"}, {"u", "undo"},
 	}
-	if tab == "history" {
+	switch mode {
+	case "history":
 		pairs = [][2]string{
 			{"↑↓", "commits"}, {"⇧↑↓", "range"}, {"enter", "files"}, {"/", "filter"}, {"e", "expand"},
 			{"1", "changes"}, {"⌃k", "menu"}, {"f", "action"}, {"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
+		}
+	case "stash":
+		pairs = [][2]string{
+			{"↑↓", "files"}, {"enter", "diff"}, {"R", "restore"}, {"h", "hide"}, {"⌃k", "menu"},
+			{"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
 		}
 	}
 	parts := make([]string, len(pairs))

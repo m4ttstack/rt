@@ -415,8 +415,8 @@ func TestRenderCommitSummaryDescriptionHoverIsDistinctFromFocus(t *testing.T) {
 // strip swaps its whole rest-state BgSubtle fill for HoverBg, without
 // changing its rendered width.
 func TestRenderStashStripHoverPaintsHoverBg(t *testing.T) {
-	rest := renderStashStrip(2, false, sidebarWidth)
-	hovered := renderStashStrip(2, true, sidebarWidth)
+	rest := renderStashStrip(false, false, sidebarWidth)
+	hovered := renderStashStrip(false, true, sidebarWidth)
 	if strings.Contains(rest, bgSGR(theme.HoverBg)) {
 		t.Fatalf("un-hovered stash strip must not wear HoverBg: %q", rest)
 	}
@@ -434,7 +434,7 @@ func TestRenderStashStripHoverPaintsHoverBg(t *testing.T) {
 // unchanged -- proving the new token stayed scoped to the top bar rather
 // than retuning BgSubtle itself.
 func TestStashStripAndDiffHeaderStillUseBgSubtle(t *testing.T) {
-	if !strings.Contains(renderStashStrip(2, false, sidebarWidth), bgSGR(theme.BgSubtle)) {
+	if !strings.Contains(renderStashStrip(false, false, sidebarWidth), bgSGR(theme.BgSubtle)) {
 		t.Fatalf("the stash strip's rest fill should still be BgSubtle")
 	}
 	if !strings.Contains(renderDiffHeader(DiffModel{Path: "a.go", Stats: "+1 -1"}, 60), bgSGR(theme.BgSubtle)) {
@@ -722,7 +722,7 @@ func TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels(t *testing.T) {
 // width cells, however narrow the pane is.
 func TestRenderEmptyStateCardNarrowWidthDoesNotWrapOrGrow(t *testing.T) {
 	const width, height = 20, 10
-	out := renderEmptyStateCard(width, height)
+	out := renderEmptyStateCard(width, height, false)
 	lines := strings.Split(out, "\n")
 	if len(lines) != height {
 		t.Fatalf("narrow card should render exactly %d rows, got %d:\n%s", height, len(lines), ansi.Strip(out))
@@ -1918,7 +1918,7 @@ func TestMouseMotionOverFileRowSetsHoverNotCursor(t *testing.T) {
 }
 
 // hoverFixtureMission builds a Mission whose model exercises all seven newly
-// hoverable regions at once (a nonzero StashCount, a pressable commit
+// hoverable regions at once (a stash entry, a pressable commit
 // button, and an undoable last commit) so one test can visit every one of
 // them off a single fixture.
 func hoverFixtureMission() *Mission {
@@ -1929,7 +1929,7 @@ func hoverFixtureMission() *Mission {
 		Changes:      []ChangeRow{{Path: "a.go", Status: "modified", Include: "all"}},
 		ChangedTotal: 1,
 		StagedTotal:  1,
-		StashCount:   2,
+		Stash:        &StashModel{Sha: "s1", Branch: "main", Files: []HistoryFileRow{}},
 		Commit: CommitModel{
 			ButtonLabel: "Commit 1 file to main",
 			CanCommit:   true,

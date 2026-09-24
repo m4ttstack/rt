@@ -353,7 +353,7 @@ func (m *Mission) openWorktreeModal() (tea.Model, tea.Cmd) {
 
 func (m *Mission) closeModal() {
 	m.modal = nil
-	m.focus = focusList
+	m.focus = m.homeFocus()
 }
 
 // openZone reports which top-bar segment the open modal is anchored under,

@@ -120,7 +120,6 @@ function baseInput(overrides: {
   guards?: Map<string, string>;
   worktrees?: WorktreeRow[];
   stagingDiff?: StagingDiff | null;
-  stashes?: number;
   lastCommit?: MissionModel["commit"]["lastCommit"];
   action?: Partial<ActionState>;
   defaultBranch?: string | null;
@@ -134,7 +133,6 @@ function baseInput(overrides: {
     guards: overrides.guards ?? new Map<string, string>(),
     worktrees: overrides.worktrees ?? baseWorktrees(),
     stagingDiff: overrides.stagingDiff ?? null,
-    stashes: overrides.stashes ?? 0,
     lastCommit: overrides.lastCommit ?? null,
     action: baseAction(overrides.action),
     defaultBranch: overrides.defaultBranch ?? null,
@@ -272,7 +270,19 @@ describe("buildModel golden fixture handshake", () => {
       guards,
       worktrees,
       stagingDiff: missionGoStagingDiff(),
-      stashes: 1,
+      stash: {
+        entry: { name: "refs/stash@{0}", stashSha: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e", branchName: "rt-191-mission-tui", tree: "t", parents: ["p", "i"] },
+        files: [
+          {
+            path: "docs/design/mission/notes.md",
+            status: { kind: AppFileStatusKind.Modified },
+            commitish: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e",
+            parentCommitish: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e^",
+          },
+        ],
+        showing: false,
+        selectedFile: "",
+      },
       lastCommit: {
         summary: "rt-ui: mission view skeleton behind an opt-in mouse session option",
         when: "2 minutes ago",
