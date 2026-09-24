@@ -125,6 +125,7 @@ export const NOTIFICATION_TYPES = [
   { key: "evidence_failed",      label: "Evidence capture failed", description: "A queued evidence capture failed in the sandbox" },
   { key: CHAT_NOTIFICATION_CATEGORY, label: "Chat mention", description: "When an agent mentions you in a chat room" },
   { key: "credential_health", label: "Credential health", description: "When an integration token is rejected or nearing expiry" },
+  { key: "worktree_triage", label: "Worktree summary", description: "Once a day, when worktrees need a decision" },
 ] as const;
 
 export type NotificationPrefs = Record<string, boolean>;
