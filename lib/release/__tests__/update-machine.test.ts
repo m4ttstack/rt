@@ -710,6 +710,12 @@ describe("runDevAppRebuild", () => {
     expect(calls.some((c) => c.startsWith("rt daemon") || c.startsWith("deck "))).toBe(false);
   });
 
+  test("swaps in the bundle build.sh actually writes, rt-tray/mattstack-dev.app", async () => {
+    const { seams, calls } = fakeSeams();
+    await runDevAppRebuild(seams, "main");
+    expect(calls).toContain("ditto /work/rt-dev-bundle/rt-tray/mattstack-dev.app /Applications/mattstack-dev.app");
+  });
+
   test("kickstarts the dev deck helper after the relaunch, since a same-version rebuild never restarts helpers", async () => {
     const { seams, calls } = fakeSeams();
     const { result } = await runDevAppRebuild(seams, "main");

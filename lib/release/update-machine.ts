@@ -394,7 +394,7 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   }
 
   // Never rebuilds the blessed bundle in place; replaceApp swaps it wholesale.
-  const replaceErr = await replaceApp(seams, `${bundleDir}/dist/mattstack-dev.app`, DEV_APP_PATH);
+  const replaceErr = await replaceApp(seams, `${bundleDir}/rt-tray/mattstack-dev.app`, DEV_APP_PATH);
   if (replaceErr) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, replaceErr);
 
   const open = await seams.exec(["open", DEV_APP_PATH]);
