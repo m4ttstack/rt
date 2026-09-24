@@ -253,19 +253,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             var claim = TrayServer.claimSocket()
             var retried = false
             while true {
-                switch FlavorLaunch.afterTakeover(socketClaimed: claim == .claimed, evictionRetried: retried) {
+                let holder: String
+                let holderRetired: Bool
+                switch claim {
+                case .heldByStuckHolder(let flavor): holder = flavor; holderRetired = true
+                case .heldByPeer(let flavor): holder = flavor; holderRetired = false
+                case .claimed: holder = "unknown"; holderRetired = false
+                }
+                switch FlavorLaunch.afterTakeover(socketClaimed: claim == .claimed, holderRetired: holderRetired,
+                                                  evictionRetried: retried) {
                 case .serve:
                     startNormalOperation()
                     return
                 case .retryEviction:
                     retried = true
                     claim = TrayServer.claimSocket()
+                case .quitAndReport:
+                    reportTakeoverFailure(FlavorStandDownCopy.peerHolderBody(holderFlavor: holder, myFlavor: myFlavor),
+                                          fatal: true)
+                    return
                 case .serveOverStuckHolder:
-                    let holder: String
-                    switch claim {
-                    case .heldByPeer(let flavor), .heldByStuckHolder(let flavor): holder = flavor
-                    case .claimed: holder = "unknown"
-                    }
                     TrayLog.warn("serving over a holder that would not quit", ["holder": holder])
                     startNormalOperation()
                     reportTakeoverFailure(FlavorStandDownCopy.stuckHolderBody(holderFlavor: holder, myFlavor: myFlavor),

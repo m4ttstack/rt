@@ -119,10 +119,15 @@ let flavorLaunchChecks: [Check] = [
         c.expect(FlavorStandDownCopy.devTakeoverUnavailable.contains("bun run cli.ts flavor takeover dev"))
     },
     Check("after a successful takeover: a held socket gets one more eviction, then this app serves over the retired holder") { c in
-        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, evictionRetried: false), .serve)
-        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, evictionRetried: false), .retryEviction)
-        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, evictionRetried: true), .serve)
-        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, evictionRetried: true), .serveOverStuckHolder)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, holderRetired: false, evictionRetried: false), .serve)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, holderRetired: true, evictionRetried: false), .retryEviction)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, holderRetired: false, evictionRetried: true), .serve)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, holderRetired: true, evictionRetried: true), .serveOverStuckHolder)
+    },
+    Check("after a successful takeover: a holder that retired nothing (same flavor, or unnamed) is never served over") { c in
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, holderRetired: false, evictionRetried: true), .quitAndReport)
+        let body = FlavorStandDownCopy.peerHolderBody(holderFlavor: "unknown", myFlavor: "prod")
+        c.expect(body.contains("stopped") && body.contains("open"), body)
     },
     Check("takeover argv names only my own flavor") { c in
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])

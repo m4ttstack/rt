@@ -93,15 +93,20 @@ public enum FlavorLaunch {
     public enum AfterTakeover: Equatable, Sendable {
         case serve
         case retryEviction
-        /// The holder already gave up every registration and ~/.local/bin/rt
-        /// points here, so this app rebinds the socket over it rather than
-        /// leave the Mac with nothing serving.
+        /// Only for a holder of the other flavor that was asked to retire
+        /// (TrayServer's `.heldByStuckHolder`): it gave up every registration
+        /// and ~/.local/bin/rt points here, so this app rebinds the socket over
+        /// it rather than leave the Mac with nothing serving.
         case serveOverStuckHolder
+        /// A holder that retired nothing (this flavor, or one that names no
+        /// flavor) is never fought over.
+        case quitAndReport
     }
 
-    public static func afterTakeover(socketClaimed: Bool, evictionRetried: Bool) -> AfterTakeover {
+    public static func afterTakeover(socketClaimed: Bool, holderRetired: Bool, evictionRetried: Bool) -> AfterTakeover {
         if socketClaimed { return .serve }
-        return evictionRetried ? .serveOverStuckHolder : .retryEviction
+        if !evictionRetried { return .retryEviction }
+        return holderRetired ? .serveOverStuckHolder : .quitAndReport
     }
 
     public static func takeoverArguments(myFlavorIsDev: Bool) -> [String] {

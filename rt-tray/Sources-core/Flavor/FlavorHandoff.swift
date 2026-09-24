@@ -113,6 +113,11 @@ public enum FlavorStandDownCopy {
         "A \(holderFlavor) mattstack is still holding the tray socket"
     }
 
+    public static func peerHolderBody(holderFlavor: String, myFlavor: String) -> String {
+        "Another mattstack (\(holderFlavor)) is holding the tray socket, so the \(myFlavor) app stopped instead of fighting it for the socket. "
+            + "Quit that one from its menu bar, then open this app again."
+    }
+
     public static func stuckHolderBody(holderFlavor: String, myFlavor: String) -> String {
         "The \(holderFlavor) app gave up this Mac but did not quit, so the \(myFlavor) app took its socket over. "
             + "Quit the \(holderFlavor) app from its menu bar, or log out and back in."
