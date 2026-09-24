@@ -1014,16 +1014,20 @@ export class MissionDriver {
       this.state.switchPrompt = null;
       return;
     }
+    let switched = false;
     try {
       if (strategy === "leave") this.state.notice = await checkoutAndLeaveChanges(client, payload.branch, snapshot);
       else if (strategy === "bring") await checkoutAndBringChanges(client, payload.branch, snapshot);
       else await client.checkoutBranch(payload.branch);
+      switched = true;
     } catch (err) {
       this.state.notice = err instanceof Error ? err.message : String(err);
     }
-    this.stash.hide();
-    this.state.selectedPath = null;
-    this.state.selections = new Map();
+    if (switched) {
+      this.stash.hide();
+      this.state.selectedPath = null;
+      this.state.selections = new Map();
+    }
     await this.refresh();
     this.push();
   }
@@ -1292,6 +1296,7 @@ export class MissionDriver {
           }
           await client.discardChanges(this.snapshot.files);
           this.state.selections = new Map();
+          this.state.selectedPath = null;
           break;
         }
         case "create-tag": {

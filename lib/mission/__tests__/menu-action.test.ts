@@ -450,6 +450,21 @@ describe("mission:menu-action: discard", () => {
     expect(last.changes.find((c) => c.path === "a.txt")?.include).toBe("all");
   });
 
+  test("discard-all leaves the diff pane on the clean-tree card, not the discarded file's header", async () => {
+    let discarded = false;
+    const { opened, last } = await run([menu({ action: "discard-all" })], {
+      client: {
+        files: () => (discarded ? [] : [changed("a.txt"), changed("b.txt", "untracked")]),
+        discardChanges: async () => {
+          discarded = true;
+        },
+      },
+    });
+    expect(opened!.diff.path).toBe("a.txt");
+    expect(last.changes).toEqual([]);
+    expect(last.diff.kind).toBe("none");
+  });
+
   test("discard-all with nothing to discard calls nothing and says so", async () => {
     const { calls, last } = await run([menu({ action: "discard-all" })], { client: { files: () => [] } });
     expect(calls.discardChanges).toEqual([]);

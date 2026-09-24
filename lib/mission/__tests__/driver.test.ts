@@ -149,6 +149,7 @@ function makeFakeClient(overrides: {
   log?: GitClient["log"];
   resetToCommit?: GitClient["resetToCommit"];
   createBranch?: GitClient["createBranch"];
+  checkoutBranch?: GitClient["checkoutBranch"];
   commits?: GitClient["commits"];
   localCommits?: GitClient["localCommits"];
   changedFiles?: GitClient["changedFiles"];
@@ -211,6 +212,7 @@ function makeFakeClient(overrides: {
     },
     checkoutBranch: async (name: string) => {
       calls.checkoutBranch.push(name);
+      if (overrides.checkoutBranch) await overrides.checkoutBranch(name);
     },
     createBranch: async (name: string, opts?: { from?: string; checkout?: boolean }) => {
       calls.createBranch.push({ name, opts });
@@ -1099,6 +1101,39 @@ describe("MissionDriver: checkout guard", () => {
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("invalid branch name: bad name");
   });
+
+  for (const strategy of ["bring", "leave"] as const) {
+    test(`a ${strategy} checkout that throws keeps the selections and the selected file`, async () => {
+      const client = makeFakeClient({
+        snapshot: async () =>
+          baseSnapshot({
+            clean: false,
+            files: [
+              { path: "a.txt", kind: "modified", staged: false, unstaged: true },
+              { path: "b.txt", kind: "modified", staged: false, unstaged: true },
+            ],
+          }),
+        checkoutBranch: async () => {
+          throw new Error("fatal: cannot lock ref 'refs/heads/feature'");
+        },
+      });
+      const session = new FakeSession([
+        { t: "intent", name: "mission:select", payload: { path: "b.txt" } },
+        { t: "intent", name: "mission:stage", payload: { path: "b.txt", mode: "line", selIdx: 1 } },
+        { t: "intent", name: "mission:checkout", payload: { branch: "feature", strategy } },
+        { t: "intent", name: "quit" },
+      ]);
+
+      await new MissionDriver(baseDeps({ session, client }), START).run();
+
+      expect(client.calls.checkoutBranch).toEqual(["feature"]);
+      const last = session.pushed.at(-1) as MissionModel;
+      expect(last.notice).toBe("fatal: cannot lock ref 'refs/heads/feature'");
+      expect(last.diff.path).toBe("b.txt");
+      expect(last.changes.find((c) => c.path === "b.txt")?.include).toBe("partial");
+      expect(last.changes.find((c) => c.path === "a.txt")?.include).toBe("all");
+    });
+  }
 });
 
 describe("MissionDriver: worktree", () => {
