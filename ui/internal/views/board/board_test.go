@@ -42,6 +42,18 @@ func open(t *testing.T) *testutil.Session {
 	return s
 }
 
+// TestBoardTurnsOnMouseReporting pins the runner's claim on the mouse: a host
+// that shows the board behind a loader (Flock's rt modal) waits for that claim
+// to know the board has taken the screen.
+func TestBoardTurnsOnMouseReporting(t *testing.T) {
+	s := open(t)
+	if tty := s.TTY(); !strings.Contains(tty, "\x1b[?1002h") && !strings.Contains(tty, "\x1b[?1003h") {
+		t.Fatalf("the board never turned on mouse reporting: %q", tty)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 func TestPopulatedBoardPaintsRowsHeaderAndKeybar(t *testing.T) {
 	s := open(t)
 	screen := s.Screen()

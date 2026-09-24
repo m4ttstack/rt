@@ -213,7 +213,7 @@ func runSession(args []string) int {
 		cancel()
 	}()
 
-	reason, _, err := session.Run(ctx, viewName, advertisedViews(), viewFor(viewName), os.Stdin, os.Stdout, term, version, session.Options{Mouse: viewName == "mission"})
+	reason, _, err := session.Run(ctx, viewName, advertisedViews(), viewFor(viewName), os.Stdin, os.Stdout, term, version, session.Options{Mouse: viewName == "mission" || viewName == "board"})
 	code := session.ExitCode(reason, err)
 	if code == ExitBadSpec || code == ExitInternal {
 		if err != nil {
