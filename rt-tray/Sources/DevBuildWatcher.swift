@@ -97,10 +97,6 @@ final class DevBuildWatcher {
         handOff(stagedPath: stagedApp, deckLabel: "com.mattstack.deck.dev", quit: quit)
     }
 
-    func relaunch(quit: () -> Void) {
-        handOff(stagedPath: nil, deckLabel: nil, quit: quit)
-    }
-
     private func handOff(stagedPath: String?, deckLabel: String?, quit: () -> Void) {
         guard BundleFlavor.isDevBuild else { return }
         let logs = NSHomeDirectory() + "/.mattstack/rt/logs"

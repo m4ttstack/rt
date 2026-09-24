@@ -155,7 +155,6 @@ enum AXID {
     static let trayCheckForUpdates = "tray.checkForUpdates"
     static let trayQuit = "tray.quit"
     static let trayDevRestart = "tray.dev.restart"
-    static let trayDevRelaunch = "tray.dev.relaunch"
     static let trayDevRebuild = "tray.dev.rebuild"
     static let trayDevRebuildFrom = "tray.dev.rebuildFrom"
     static let trayDevRebuildSource = "tray.dev.rebuildSource"

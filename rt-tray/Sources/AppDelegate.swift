@@ -773,15 +773,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let state = TrayState.shared
         let watcher = DevBuildWatcher.shared
         watcher.check()
-        // A build mid-stage is about to replace the staged bundle.
+        // A ready build replaces the rebuild items: restarting into it is the
+        // one next step. (A build mid-stage is about to replace it, so it
+        // only counts once the rebuild has finished.)
         if let stamp = state.stagedBuildStamp, state.devRebuild != .building {
             menu.addItem(ActionMenuItem("New build · Restart (\(stamp))", axid: AXID.trayDevRestart) { [weak self] in
                 self?.restartIntoStagedBuild()
             })
+            return
         }
-        menu.addItem(ActionMenuItem("Relaunch", axid: AXID.trayDevRelaunch) { [weak self] in
-            watcher.relaunch { self?.quitFromTray() }
-        })
         let last = watcher.lastSource
         if let tree = last {
             let name = (tree as NSString).lastPathComponent
