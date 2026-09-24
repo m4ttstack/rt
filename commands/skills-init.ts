@@ -9,7 +9,7 @@
 import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { updateRepoIndexAsync } from "../lib/repo-index.ts";
@@ -75,7 +75,10 @@ function realDeps(opts: { json: boolean }): InitDeps {
     fs: {
       exists: (path) => existsSync(path),
       readFile: (path) => (existsSync(path) ? readFileSync(path, "utf8") : null),
-      writeFile: (path, text) => writeFileSync(path, text),
+      writeFile: (path, text) => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, text);
+      },
       mkdirp: (path) => mkdirSync(path, { recursive: true }),
       readDir: (path) => (existsSync(path) ? readdirSync(path) : []),
     },

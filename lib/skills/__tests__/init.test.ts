@@ -2,13 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { chooseZone, parseRemote, readZones, type InitFs, type ZoneInfo, addMarketplacePlugin, declareRepo, packDescription, PIPELINE_STAGES, renderPackFiles, initPack, type InitDeps, type RunResult } from "../init.ts";
 import { stripJsonc } from "../sources.ts";
 
-function memFs(files: Record<string, string>): InitFs {
+/** mkdirp'd dirs and dirs that already hold a file are writable; anything else throws ENOENT, mirroring a real fs. */
+function memFs(files: Record<string, string>): InitFs & { mkdirped: Set<string> } {
   const store = new Map(Object.entries(files));
+  const mkdirped = new Set<string>();
+  const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+  const dirExists = (dir: string) => mkdirped.has(dir) || [...store.keys()].some((k) => k.startsWith(dir + "/"));
   return {
+    mkdirped,
     exists: (p) => store.has(p) || [...store.keys()].some((k) => k.startsWith(p + "/")),
     readFile: (p) => store.get(p) ?? null,
-    writeFile: (p, text) => { store.set(p, text); },
-    mkdirp: () => {},
+    writeFile: (p, text) => {
+      if (!dirExists(dirOf(p))) throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+      store.set(p, text);
+    },
+    mkdirp: (p) => { mkdirped.add(p); },
     readDir: (p) => {
       const names = new Set<string>();
       for (const k of store.keys()) {
@@ -226,6 +234,7 @@ function world(overrides: Partial<InitDeps> & { files?: Record<string, string>; 
     registerRepo: async (dir) => { calls.registered.push(dir); return "gitlab.com/acme/api"; },
     materialize: async (name) => {
       calls.materialized.push(name);
+      fs.mkdirp(`${HOME}/.mattstack/repos/gitlab.com-acme-api`);
       fs.writeFile(`${HOME}/.mattstack/repos/gitlab.com-acme-api/skills.jsonc`, "// mattstack:work tiering <- acme@acme\n{}");
       return { ok: true, detail: "merged" };
     },
@@ -265,6 +274,37 @@ describe("initPack", () => {
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out.ok).toBe(true);
     if (out.ok) expect(out.pack.name).toBe("acmens");
+  });
+
+  test("marketplace.json absent from disk: init mkdirps .claude-plugin before writing it", async () => {
+    const files: Record<string, string> = {
+      [`${HOME}/.mattstack/teams/acme/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "acme", "org": "x" }`,
+      [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `{ "gitlabHost": "https://gitlab.com", "projects": [] }\n`,
+    };
+    const fs = memFs(files);
+    const deps: InitDeps = {
+      fs,
+      home: HOME,
+      gitRemote: async () => ({ kind: "ok", url: "git@gitlab.com:acme/api.git" }),
+      isTTY: false,
+      promptZone: async () => { throw new Error("must not prompt"); },
+      createZone: async () => { throw new Error("must not create"); },
+      engineDescription: (e) => (e === "work" ? "Use when running a unit of work." : null),
+      claude: async (args) => (args[1] === "marketplace" && args[2] === "list" ? ok("[]") : ok("")),
+      registerRepo: async () => "gitlab.com/acme/api",
+      materialize: async () => {
+        fs.mkdirp(`${HOME}/.mattstack/repos/gitlab.com-acme-api`);
+        fs.writeFile(`${HOME}/.mattstack/repos/gitlab.com-acme-api/skills.jsonc`, "{}");
+        return { ok: true, detail: "merged" };
+      },
+      compile: async () => ({ ok: true, errors: [] }),
+      check: async () => ({ drift: false }),
+    };
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out.ok).toBe(true);
+    const written = fs.readFile(`${HOME}/.mattstack/teams/acme/.claude-plugin/marketplace.json`);
+    expect(written).not.toBeNull();
+    expect(JSON.parse(written!).plugins).toContainEqual({ name: "acme", source: "./mattstack/packs/acme", description: packDescription("acme") });
   });
 
   test("a marketplace already listed is not re-added", async () => {
@@ -351,10 +391,13 @@ describe("initPack", () => {
       createZone: async (name, remote) => {
         created.push(`${name} ${remote}`);
         const dir = `${HOME}/.mattstack/teams/beta`;
+        fs.mkdirp(`${dir}/mattstack`);
+        fs.mkdirp(`${dir}/.claude-plugin`);
         for (const [p, t] of Object.entries(zoneFiles("beta", {}))) fs.writeFile(p, t);
         return { slug: "beta", dir };
       },
       materialize: async () => {
+        fs.mkdirp(`${HOME}/.mattstack/repos/gitlab.example.com-acme-api`);
         fs.writeFile(`${HOME}/.mattstack/repos/gitlab.example.com-acme-api/skills.jsonc`, "// beta@beta\n{}");
         return { ok: true, detail: "merged" };
       },
@@ -398,6 +441,8 @@ describe("initPack", () => {
       promptZone: async () => ({ name: "Beta", remote: "https://github.com/acme/mattstack-team-beta.git" }),
       createZone: async (name, remote) => {
         const dir = `${HOME}/.mattstack/teams/beta`;
+        fs.mkdirp(`${dir}/mattstack`);
+        fs.mkdirp(`${dir}/.claude-plugin`);
         for (const [p, t] of Object.entries(zoneFiles("beta", {
           [`${dir}/mattstack/team.jsonc`]: `{ "gitlabHost": "https://github.com", "projects": [] }\n`,
         }))) fs.writeFile(p, t);

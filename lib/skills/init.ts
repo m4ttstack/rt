@@ -316,7 +316,11 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
   const marketOnDisk = deps.fs.readFile(marketPath);
   const marketBefore = marketOnDisk ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
   const marketAfter = addMarketplacePlugin(marketBefore, pack, packDescription(pack));
-  if (marketAfter !== marketOnDisk) { deps.fs.writeFile(marketPath, marketAfter); wrote.push(marketPath); }
+  if (marketAfter !== marketOnDisk) {
+    deps.fs.mkdirp(join(zone.dir, ".claude-plugin"));
+    deps.fs.writeFile(marketPath, marketAfter);
+    wrote.push(marketPath);
+  }
 
   const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
     ({ ok: false, refused: false, code, detail, wrote });
