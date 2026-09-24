@@ -138,7 +138,9 @@ old one. Instead:
     `gate-1: reply`, read from the rows, never from the recommendation)
     post in the same pass, each with the reply its row records,
     unresolved, unless the answer names one (step 6's act paragraph).
-    Hand both to the domain skill exactly as step 6 would have.
+    Hand both to the domain skill exactly as step 6 would have. On the
+    generic path, step 6's push rule applies first, and a report carrying
+    `respond-post-held:` narrows this pass to the threads it lists.
 - `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
   (the counts follow step 7's definitions, `--held` included)
 
@@ -481,8 +483,8 @@ conversation.
      `holding at gate <gateId>` is this one.
    - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
      skill so it can execute the posting, the reply-only threads included,
-     or act yourself on the generic no-domain-skill path: per Gate 2
-     thread, `post:<threadId>` posts that thread's
+     or act yourself on the generic no-domain-skill path, push rule
+     below first: per Gate 2 thread, `post:<threadId>` posts that thread's
      reply (the answer's `text` when it carries one, the report's finalized
      reply otherwise), `resolve:<threadId>` resolves the thread (after the
      reply when both are picked), and an empty array leaves it untouched;
@@ -492,6 +494,34 @@ conversation.
      instead, an empty array included, and no reply posts twice.
      `by` is the wait's own decider field, so the domain skill's decision
      record names who actually decided instead of guessing.
+
+   **Push before any Fixed reply (generic path; a domain skill does this
+   itself).** Only when Gate 2's picks post or resolve at least one fixed
+   thread (a `gate-1: fix` row); otherwise push nothing. Before acting on
+   those threads:
+
+   1. Check the target: `git branch --show-current` must print the MR's
+      source branch (from the forge's MR record for this MR, read when
+      step 2 fetched the threads), and `git rev-parse --abbrev-ref
+      @{push}` must print that branch on its remote
+      (`origin/<source branch>`). Any other
+      output, an error included, is a failed push; never switch branches
+      to make it match.
+   2. Push that one branch explicitly, `git push origin <source branch>`
+      (the branch step 1 verified), never a bare `git push`, which can
+      publish other refs under a configured push refspec or a mirror
+      remote. Gate 2's answer is the authorization: ask nothing more.
+
+   A failed push (a target mismatch or a push error) holds those fixed
+   threads: post and resolve none of them, report the mismatch or the
+   error verbatim in the pane, and never force, rebase or merge past it.
+   Every other reply posts as decided either way. Then write one line,
+   `respond-post-held: <threadId>[, <threadId>...]`, into `--report`, and
+   still mark done in step 7, counting each held thread as neither posted
+   nor held: that partial badge is what leaves the run open, since the
+   board then offers a resume. A resume whose report carries that line
+   acts only on the listed threads (every other reply already went up)
+   once steps 1 and 2 succeed, then deletes the line.
 7. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
    `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n> [--held <n>]`
