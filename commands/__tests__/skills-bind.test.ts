@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { __test__ as pickImplTest, type PickImpl } from "../../lib/ui/pick.ts";
@@ -539,7 +539,7 @@ describe("bind writes the team pack fragment", () => {
     const manifest = join(ms, "repos", "my-repo", "skills.jsonc");
     writeFile(join(pack, "pack", "skills.jsonc"), fragment);
     writeFile(manifest, `// acme@acme\n{\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
-    return { pack, ms, manifest };
+    return { pack, ms, manifest, root };
   }
 
   test("the fragment gains the binding, comments kept, and the manifest gets it too", async () => {
@@ -571,5 +571,45 @@ describe("bind writes the team pack fragment", () => {
     const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
     expect(fragment).toContain("// acme fragment");
     expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
+  });
+
+  test("a fragment symlinked outside the pack is skipped, with a warning, and the outside file is untouched", async () => {
+    const { pack, ms, manifest, root } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
+    const outsidePath = join(root, "outside-fragment.jsonc");
+    writeFile(outsidePath, `// outside fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const outsideBefore = readFileSync(outsidePath, "utf8");
+    rmSync(fragmentPath);
+    symlinkSync(outsidePath, fragmentPath);
+
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(" "));
+    });
+    try {
+      await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(readFileSync(outsidePath, "utf8")).toBe(outsideBefore);
+    const warning = errors.find((l) => l.includes(fragmentPath));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("outside the pack");
+    expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+  });
+
+  test("an unreadable fragment (a directory at the fragment path) leaves the manifest bindings unchanged", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
+    const manifestBefore = readFileSync(manifest, "utf8");
+    rmSync(fragmentPath);
+    mkdirSync(fragmentPath);
+
+    await expect(
+      skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]),
+    ).rejects.toThrow();
+
+    expect(readFileSync(manifest, "utf8")).toBe(manifestBefore);
   });
 });
