@@ -187,4 +187,38 @@ describe("StashStore", () => {
     expect(store.showing).toBe(true);
     expect(calls).toContain("diff a.txt s2");
   });
+
+  test("reset() clears all state and aborts in-flight loads", async () => {
+    let resolveLoad: ((value: DesktopStashEntry | null) => void) = () => {};
+    const { client } = fake({ lastDesktopStashEntryForBranch: async () => new Promise<DesktopStashEntry | null>((resolve) => { resolveLoad = resolve; }) });
+    const store = new StashStore();
+    const loadPromise = store.load(client, "main");
+    await store.select(client);
+    expect(store.showing).toBe(false);
+    store.reset();
+    expect(store.entry).toBeNull();
+    expect(store.files).toBeNull();
+    expect(store.showing).toBe(false);
+    expect(store.selectedFile).toBeNull();
+    expect(store.diff).toBeNull();
+    resolveLoad(entry("s1"));
+    await loadPromise;
+    expect(store.entry).toBeNull();
+  });
+
+  test("showOversized marks a path and isOversizedShown checks it, cleared when sha changes", async () => {
+    let current = entry("s1");
+    const { client } = fake({ lastDesktopStashEntryForBranch: async () => current });
+    const store = new StashStore();
+    await store.load(client, "main");
+    store.showOversized("a.txt");
+    store.showOversized("b.txt");
+    expect(store.isOversizedShown("a.txt")).toBe(true);
+    expect(store.isOversizedShown("b.txt")).toBe(true);
+    expect(store.isOversizedShown("c.txt")).toBe(false);
+    current = entry("s2");
+    await store.load(client, "main");
+    expect(store.isOversizedShown("a.txt")).toBe(false);
+    expect(store.isOversizedShown("b.txt")).toBe(false);
+  });
 });
