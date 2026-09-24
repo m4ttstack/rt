@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
@@ -27,7 +27,7 @@ function tree(name: string, opts: { push?: boolean } = {}): TreeRecord {
   return rec;
 }
 
-function buildHandlers(entries: Record<string, unknown>, liveRuns: Set<string> = new Set()) {
+function buildHandlers(entries: Record<string, unknown>, liveRuns: Set<string> = new Set(), liveCwds: Set<string> = new Set()) {
   const ctx: Pick<HandlerContext, "repoIndex" | "cache" | "log"> = {
     repoIndex: () => ({ [repoName]: repo }),
     cache: fakeStore(entries as any),
@@ -39,6 +39,7 @@ function buildHandlers(entries: Record<string, unknown>, liveRuns: Set<string> =
     jobTreeHold: () => null,
     kick: () => {},
     emit: () => {},
+    liveCwds: async () => liveCwds,
   });
 }
 
@@ -105,12 +106,14 @@ describe("createWorktreeTriageHandlers", () => {
 describe("triage action verbs", () => {
   let entries: Record<string, unknown>;
   let liveRuns: Set<string>;
+  let liveCwds: Set<string>;
   let handlers: any;
 
   beforeEach(() => {
     entries = {};
     liveRuns = new Set();
-    handlers = buildHandlers(entries, liveRuns);
+    liveCwds = new Set();
+    handlers = buildHandlers(entries, liveRuns, liveCwds);
   });
 
   function stuck(name: string, opts: { push?: boolean } = {}): TreeRecord {
@@ -249,6 +252,7 @@ describe("triage action verbs", () => {
     const res = await handlers["worktree:triage-diff"]({ repoName, tree: "november" });
     const f = res.data.files.find((x: any) => x.path === "long.ts");
     expect([f.status, f.truncated]).toEqual(["untracked", true]);
+    expect(res.data.truncatedFiles).toBeUndefined();
     expect(f.diff.split("\n").length).toBeLessThanOrEqual(401);
   });
 
@@ -271,6 +275,77 @@ describe("triage action verbs", () => {
     rmSync(rec.path, { recursive: true, force: true });
     expect((await handlers["worktree:triage-remove"]({ repoName, tree: "oscar" })).ok).toBe(true);
     expect(loadRegistry(repoName).find((t) => t.name === "oscar")).toBeUndefined();
+  });
+
+  function blockRetention(): void {
+    writeFileSync(join(repo, ".worktrees", ".trash"), "not a directory");
+  }
+
+  function danglingGitdir(name: string): TreeRecord {
+    const rec = stuck(name);
+    rmSync(join(repo, ".git", "worktrees", name), { recursive: true, force: true });
+    writeFileSync(join(rec.path, "notes.md"), "keep me\n");
+    return rec;
+  }
+
+  test("a triage dispose refuses no-trash rather than fall back to an unretained reap", async () => {
+    const rec = stuck("quebec");
+    mkdirSync(join(rec.path, ".visual"));
+    writeFileSync(join(rec.path, ".visual", "shot.png"), "x");
+    const only = stuck("quebec2", { push: false });
+    const r1 = await rowFor("quebec");
+    const r2 = await rowFor("quebec2");
+    blockRetention();
+    expect(await handlers["worktree:triage-dispose"]({ repoName, tree: "quebec", fingerprint: r1.fingerprint })).toEqual({ ok: false, error: "no-trash" });
+    expect(await handlers["worktree:triage-dispose"]({ repoName, tree: "quebec2", fingerprint: r2.fingerprint, confirmOnlyCopy: true })).toEqual({ ok: false, error: "no-trash" });
+    expect(readFileSync(join(rec.path, ".visual", "shot.png"), "utf8")).toBe("x");
+    expect(existsSync(only.path)).toBe(true);
+    expect(readdirSync(join(repo, ".worktrees")).filter((e) => e.startsWith(".trash-"))).toEqual([]);
+  });
+
+  test("an acceptDirty dispose refuses in-use while a live cwd sits inside the tree", async () => {
+    const rec = stuck("romeo");
+    writeFileSync(join(rec.path, "evidence.ts"), "x");
+    const r = await rowFor("romeo");
+    liveCwds.add(join(rec.path, "sub"));
+    expect(await handlers["worktree:triage-dispose"]({ repoName, tree: "romeo", fingerprint: r.fingerprint, discard: "all" })).toEqual({ ok: false, error: "in-use" });
+    expect(existsSync(join(rec.path, "evidence.ts"))).toBe(true);
+  });
+
+  test("triage-remove retires a dangling-gitdir tree's folder into the trash, then drops the row", async () => {
+    const rec = danglingGitdir("sierra");
+    expect((await rowFor("sierra")).group).toBe("broken");
+    const res = await handlers["worktree:triage-remove"]({ repoName, tree: "sierra" });
+    expect(res.ok).toBe(true);
+    expect(existsSync(rec.path)).toBe(false);
+    expect(readFileSync(join(res.data.trash.path, "notes.md"), "utf8")).toBe("keep me\n");
+    expect(JSON.parse(readFileSync(join(res.data.trash.path, "manifest.json"), "utf8")).reason).toBe("remove");
+    expect(loadRegistry(repoName).find((t) => t.name === "sierra")).toBeUndefined();
+  });
+
+  test("triage-remove refuses remove-failed when the folder cannot be retained, leaving everything as it was", async () => {
+    const rec = danglingGitdir("tango");
+    blockRetention();
+    expect(await handlers["worktree:triage-remove"]({ repoName, tree: "tango" })).toEqual({ ok: false, error: "remove-failed" });
+    expect(readFileSync(join(rec.path, "notes.md"), "utf8")).toBe("keep me\n");
+    expect(loadRegistry(repoName).find((t) => t.name === "tango")).toBeDefined();
+  });
+
+  test("triage-remove refuses mount-unavailable when the tree's parent dir is missing, keeping the row", async () => {
+    const path = join(repo, "unmounted-root", "uniform");
+    const rec: TreeRecord = { name: "uniform", path, kind: "ephemeral", state: "claimed", branch: "feat-uniform", disposal: "merge", createdAt: "2026-09-20T00:00:00Z" };
+    saveRegistry(repoName, [...loadRegistry(repoName), rec]);
+    expect((await rowFor("uniform")).group).toBe("broken");
+    expect(await handlers["worktree:triage-remove"]({ repoName, tree: "uniform" })).toEqual({ ok: false, error: "mount-unavailable" });
+    expect(loadRegistry(repoName).find((t) => t.name === "uniform")).toBeDefined();
+  });
+
+  test("triage-diff caps the file list at 50 and flags it", async () => {
+    const rec = stuck("victor");
+    for (let i = 0; i < 55; i++) writeFileSync(join(rec.path, `f${i}.ts`), "x");
+    const res = await handlers["worktree:triage-diff"]({ repoName, tree: "victor" });
+    expect(res.data.files).toHaveLength(50);
+    expect(res.data.truncatedFiles).toBe(true);
   });
 
   test("stop-holders refuses a tree no process is holding", async () => {

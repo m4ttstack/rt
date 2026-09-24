@@ -1,5 +1,5 @@
-import { lstatSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, lstatSync, readFileSync } from "fs";
+import { dirname, join } from "path";
 import type { Logger } from "pino";
 import type { RunningRunScan } from "../../runs/store.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
@@ -11,6 +11,9 @@ import { withTreeLock } from "../../worktree/locks.ts";
 import { patchTree } from "../../worktree/patch.ts";
 import { MUTATING_TIMEOUT_MS, runGit } from "../../worktree/git-async.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
+import { hasLiveCwdInside, liveProcessCwds } from "../reconciler/stale-claims.ts";
+import { poolRootsReadable } from "../reconciler/reconcile.ts";
+import { RETENTION_MS, retireTree, stripTrashDir, writeDisposalManifest } from "../../worktree/trash.ts";
 import { loadRepoTracking } from "../../repo-tracking.ts";
 import { loadSecrets } from "../../linear.ts";
 import { mergeCleanupGap, type MergeCleanupGap } from "../../worktree/merge-cleanup-gap.ts";
@@ -22,6 +25,8 @@ export interface WorktreeTriageOpts {
   jobTreeHold: (rec: TreeRecord) => string | null;
   kick: () => void;
   emit: (type: string, data: unknown) => void;
+  /** Test seam; production reads live cwds via lsof. */
+  liveCwds?: () => Promise<Set<string>>;
 }
 
 type TriageVerb =
@@ -29,6 +34,7 @@ type TriageVerb =
   | "worktree:push-branch" | "worktree:triage-diff" | "worktree:triage-remove" | "worktree:stop-holders";
 
 const DIFF_CAP_LINES = 400;
+const DIFF_CAP_FILES = 50;
 const UNTRACKED_MAX_BYTES = 1_000_000;
 const NUL_SNIFF_BYTES = 8192;
 const SKIPPED_BINARY = "(binary or larger than 1 MB)";
@@ -58,7 +64,6 @@ function fingerprintMatches(row: TriageRow, claimed: unknown): boolean {
   return sameFingerprint(row.fingerprint, claimed as TriageRow["fingerprint"]);
 }
 
-/** The refusal for disposing `row` as asked, or the disposeTree flags to use. */
 function disposePlan(
   row: TriageRow,
   discard: unknown,
@@ -136,7 +141,12 @@ export function createWorktreeTriageHandlers(
         if (!fingerprintMatches(row, payload.fingerprint)) return fail("changed");
         const plan = disposePlan(row, payload.discard, payload.confirmOnlyCopy);
         if ("error" in plan) return fail(plan.error);
-        const outcome = await disposeTree(disposeDeps(ctx, opts, r.repo, r.repoPath), rec, { ...plan, auto: false });
+        if (plan.acceptDirty) {
+          const cwds = await (opts.liveCwds ?? liveProcessCwds)().catch(() => null);
+          if (cwds === null) return fail("cwds-unreadable");
+          if (hasLiveCwdInside(cwds, rec.path)) return fail("in-use");
+        }
+        const outcome = await disposeTree(disposeDeps(ctx, opts, r.repo, r.repoPath), rec, { ...plan, auto: false, requireRetention: true });
         if (!outcome.disposed) return fail(outcome.detail ? `${outcome.refusal}:${outcome.detail}` : outcome.refusal);
         return { ok: true as const, data: { disposed: true as const, ...(outcome.trash ? { trash: outcome.trash } : {}) } };
       });
@@ -151,7 +161,8 @@ export function createWorktreeTriageHandlers(
       const row = await freshRow(r.repo, r.repoPath, r.rec);
       if (!fingerprintMatches(row, payload.fingerprint)) return fail("changed");
       if (!row.actions.includes("keep")) return fail(`not-keepable:${row.group}`);
-      patchTree(r.repo, r.rec.path, (t) => { t.kept = { keptAt: new Date().toISOString(), ...row.fingerprint }; });
+      const wrote = patchTree(r.repo, r.rec.path, (t) => { t.kept = { keptAt: new Date().toISOString(), ...row.fingerprint }; });
+      if (!wrote) return fail("changed");
       return { ok: true as const, data: { tree: r.rec.name } };
     },
 
@@ -195,26 +206,47 @@ export function createWorktreeTriageHandlers(
       const tracked = await runGit(cwd, ["diff", "--name-only", "-z", "HEAD"]);
       const untracked = await runGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
       if (tracked.exitCode !== 0 || untracked.exitCode !== 0) return fail("diff-failed");
+      const listed = [
+        ...tracked.stdout.split("\0").filter(Boolean).map((path) => ({ path, status: "modified" as const })),
+        ...untracked.stdout.split("\0").filter(Boolean).map((path) => ({ path, status: "untracked" as const })),
+      ];
       const files: Array<{ path: string; status: "modified" | "untracked"; diff: string; truncated: boolean }> = [];
-      for (const path of tracked.stdout.split("\0").filter(Boolean)) {
-        const d = await runGit(cwd, ["--literal-pathspecs", "diff", "HEAD", "--", path]);
-        files.push({ path, status: "modified", ...capLines(d.stdout) });
+      for (const { path, status } of listed.slice(0, DIFF_CAP_FILES)) {
+        const body = status === "modified"
+          ? capLines((await runGit(cwd, ["--literal-pathspecs", "diff", "HEAD", "--", path])).stdout)
+          : readUntracked(join(cwd, path));
+        files.push({ path, status, ...body });
       }
-      for (const path of untracked.stdout.split("\0").filter(Boolean)) {
-        files.push({ path, status: "untracked", ...readUntracked(join(cwd, path)) });
-      }
-      return { ok: true as const, data: { files } };
+      return { ok: true as const, data: { files, ...(listed.length > DIFF_CAP_FILES ? { truncatedFiles: true as const } : {}) } };
     },
 
     "worktree:triage-remove": async (payload: any) => {
       const r = resolve(payload);
       if ("error" in r) return fail(r.error);
-      const out = await withTreeLock(r.rec.path, async () => {
-        const row = await freshRow(r.repo, r.repoPath, r.rec);
+      const rec = r.rec;
+      const out = await withTreeLock(rec.path, async () => {
+        // Every tree reads as broken during a volume outage; nothing here may
+        // act on that reading.
+        if (!existsSync(dirname(rec.path))) return fail("mount-unavailable");
+        const row = await freshRow(r.repo, r.repoPath, rec);
         if (row.group !== "broken") return fail("not-broken");
-        saveRegistry(r.repo, loadRegistry(r.repo).filter((t) => t.path !== r.rec.path));
-        await runGit(r.repoPath, ["worktree", "prune"]);
-        return { ok: true as const, data: { removed: true as const } };
+        // A folder left behind would free the name while still occupying the
+        // path, and the next create there would reap it outside the trash.
+        let trash: { path: string; keptUntil: string } | undefined;
+        if (existsSync(rec.path)) {
+          const retired = await retireTree(rec.path, rec.name, r.repoPath, { requireRetention: true });
+          if (!retired.ok) return fail("remove-failed");
+          const keptUntil = new Date(Date.now() + RETENTION_MS).toISOString();
+          await writeDisposalManifest(retired.trashPath, {
+            name: rec.name, originalPath: rec.path, branch: rec.branch, headSha: null,
+            reason: "remove", disposedAt: new Date().toISOString(), keptUntil,
+          }, ctx.log);
+          void stripTrashDir(retired.trashPath, ctx.log);
+          trash = { path: retired.trashPath, keptUntil };
+        }
+        saveRegistry(r.repo, loadRegistry(r.repo).filter((t) => t.path !== rec.path));
+        if (poolRootsReadable(loadRegistry(r.repo))) await runGit(r.repoPath, ["worktree", "prune"]);
+        return { ok: true as const, data: { removed: true as const, ...(trash ? { trash } : {}) } };
       });
       if (out === "busy") return fail("busy");
       if (out.ok) opts.kick();

@@ -913,8 +913,8 @@ export interface Commands {
   "worktree:keep": { payload: { repoName: string; tree: string; fingerprint: TriageFingerprint }; data: { tree: string } };
   "worktree:unkeep": { payload: { repoName: string; tree: string }; data: { tree: string } };
   "worktree:push-branch": { payload: { repoName: string; tree: string; fingerprint: TriageFingerprint; commitDirty?: boolean; message?: string }; data: { row: TriageRow } };
-  "worktree:triage-diff": { payload: { repoName: string; tree: string }; data: { files: WorktreeTriageDiffFile[] } };
-  "worktree:triage-remove": { payload: { repoName: string; tree: string }; data: { removed: true } };
+  "worktree:triage-diff": { payload: { repoName: string; tree: string }; data: { files: WorktreeTriageDiffFile[]; truncatedFiles?: true } };
+  "worktree:triage-remove": { payload: { repoName: string; tree: string }; data: { removed: true; trash?: { path: string; keptUntil: string } } };
   "worktree:stop-holders": { payload: { repoName: string; tree: string }; data: { terminated: Array<{ pid: number; label: string }> } };
 
   // ─── Background server (daemon-owned background herdr session) ──────────
