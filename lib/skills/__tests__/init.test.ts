@@ -200,6 +200,12 @@ describe("addMarketplacePlugin", () => {
     const once = addMarketplacePlugin(before, "acme", "desc");
     expect(addMarketplacePlugin(once, "acme", "desc")).toBe(once);
   });
+  test("keeps an existing plugin entry when adding a new one", () => {
+    const withOther = `{\n  "name": "acme",\n  "owner": { "name": "x" },\n  "plugins": [{ "name": "other", "source": "./mattstack/packs/other" }]\n}\n`;
+    const plugins = JSON.parse(addMarketplacePlugin(withOther, "acme", "desc")).plugins;
+    expect(plugins).toContainEqual({ name: "other", source: "./mattstack/packs/other" });
+    expect(plugins).toContainEqual({ name: "acme", source: "./mattstack/packs/acme", description: "desc" });
+  });
 });
 
 type Calls = { claude: string[][]; registered: string[]; materialized: string[]; compiled: string[]; checked: string[] };
