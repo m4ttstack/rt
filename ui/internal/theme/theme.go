@@ -5,7 +5,9 @@ package theme
 import (
 	"fmt"
 	"image/color"
+	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -107,6 +109,14 @@ const (
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}
+
+// SpinnerInterval is how long each SpinnerFrames frame stays on screen.
+const SpinnerInterval = 80 * time.Millisecond
+
+// Spinner is the one frames/interval pair every animated rt-ui spinner runs.
+func Spinner() spinner.Spinner {
+	return spinner.Spinner{Frames: SpinnerFrames, FPS: SpinnerInterval}
+}
 
 // CardWidth caps the prompt card so it reads as a card on a wide terminal
 // rather than a stripe across it. The picker card is content-anchored and

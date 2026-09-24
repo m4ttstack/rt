@@ -38,8 +38,9 @@ func fg(c color.Color) lipgloss.Style {
 // renderTopBar lays out the four segments left to right: repo at the locked
 // sidebarWidth, worktree and branch splitting the remainder evenly, and the
 // action segment absorbing whatever is left over (it is the one segment
-// whose content genuinely varies in length across states).
-func renderTopBar(m Model, width int, hover, open zoneID) string {
+// whose content genuinely varies in length across states). spin is the
+// spinner's current frame, painted wherever something is busy.
+func renderTopBar(m Model, spin string, width int, hover, open zoneID) string {
 	if width <= 0 {
 		return ""
 	}
@@ -52,9 +53,9 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	lastW := remaining - segW*2
 
 	repo := renderRepoSegment(m, sidebarWidth, hover == zoneRepo, open == zoneRepo)
-	worktree := renderWorktreeSegment(m, segW, hover == zoneWorktree, open == zoneWorktree)
+	worktree := renderWorktreeSegment(m, spin, segW, hover == zoneWorktree, open == zoneWorktree)
 	branch := renderBranchSegment(m, segW, hover == zoneBranch, open == zoneBranch)
-	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
+	action := renderActionSegment(m.Action, spin, lastW, hover == zoneAction, open == zoneAction)
 
 	// TopBarBg, not BgSubtle: the divider shares the bar's own rest fill
 	// (segmentBaseColor's default) so the band reads as one continuous
@@ -122,7 +123,7 @@ func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 // worktree segment while its ready steps are still running in the daemon.
 const settlingMarker = "settling"
 
-func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
+func renderWorktreeSegment(m Model, spin string, width int, hovered, isOpen bool) string {
 	name := m.Current.WorktreeName
 	if name == "" {
 		name = m.Current.Worktree
@@ -136,7 +137,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 		// clip, so it survives as the settling indication at any width, even
 		// the 80-column case below where the name+marker text budget cannot
 		// fit the word "settling" at all.
-		icon = theme.SpinnerFrames[0]
+		icon = spin
 		iconColor = theme.Peach
 		// renderSegment's own clip takes from the right, so the marker --
 		// not the name -- would be the first thing lost on a real (narrow)
@@ -208,8 +209,8 @@ func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 // meta line, and ahead/behind pills that only appear when their count is
 // nonzero (GitHub Desktop's badge rule: a diverged repo shows both counts on
 // the one Pull button, never a combined pull-then-push state).
-func renderActionSegment(a ActionModel, width int, hovered, isOpen bool) string {
-	icon, col := actionGlyph(a)
+func renderActionSegment(a ActionModel, spin string, width int, hovered, isOpen bool) string {
+	icon, col := actionGlyph(a, spin)
 	var pills []string
 	if a.Behind > 0 {
 		pills = append(pills, pill(fmt.Sprintf("%d↓", a.Behind), theme.Mint))
@@ -234,9 +235,9 @@ func renderActionSegment(a ActionModel, width int, hovered, isOpen bool) string 
 
 // actionGlyph maps an action Kind to its icon and accent color. Fetch and any
 // unrecognized kind fall through to the same PinkSoft ⟳ default. Busy
-// replaces whatever icon the Kind would show with a spinner frame, keeping
-// the accent color so the segment does not change hue mid-run.
-func actionGlyph(a ActionModel) (string, color.Color) {
+// replaces whatever icon the Kind would show with the spinner's current
+// frame, keeping the accent color so the segment does not change hue mid-run.
+func actionGlyph(a ActionModel, spin string) (string, color.Color) {
 	icon, col := "⟳", theme.PinkSoft
 	switch a.Kind {
 	case "pull", "pull-rebase":
@@ -249,7 +250,7 @@ func actionGlyph(a ActionModel) (string, color.Color) {
 		icon, col = "↑", theme.Lav
 	}
 	if a.Busy {
-		icon = theme.SpinnerFrames[0]
+		icon = spin
 	}
 	return icon, col
 }

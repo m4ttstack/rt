@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -38,7 +39,7 @@ func pullModel() Model {
 }
 
 func TestRenderActionSegmentPullShowsTitleAndBothPills(t *testing.T) {
-	out := renderActionSegment(pullModel().Action, 60, false, false)
+	out := renderActionSegment(pullModel().Action, theme.SpinnerFrames[0], 60, false, false)
 	for _, want := range []string{"Pull origin", "3↑", "2↓"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in pull segment:\n%s", want, out)
@@ -47,7 +48,7 @@ func TestRenderActionSegmentPullShowsTitleAndBothPills(t *testing.T) {
 }
 
 func TestRenderActionSegmentPillsOnlyWhenNonzero(t *testing.T) {
-	out := renderActionSegment(ActionModel{Kind: "push", Title: "Push origin", Meta: "Last fetched 3 minutes ago", Ahead: 3, Behind: 0}, 60, false, false)
+	out := renderActionSegment(ActionModel{Kind: "push", Title: "Push origin", Meta: "Last fetched 3 minutes ago", Ahead: 3, Behind: 0}, theme.SpinnerFrames[0], 60, false, false)
 	if !strings.Contains(out, "3↑") {
 		t.Fatalf("missing ahead pill in push segment:\n%s", out)
 	}
@@ -72,7 +73,7 @@ func TestActionGlyphColorsPerKind(t *testing.T) {
 		{"fetch", "⟳", theme.PinkSoft},
 	}
 	for _, c := range cases {
-		out := renderActionSegment(ActionModel{Kind: c.kind, Title: "x"}, 60, false, false)
+		out := renderActionSegment(ActionModel{Kind: c.kind, Title: "x"}, theme.SpinnerFrames[0], 60, false, false)
 		// The segment's rest-state BgSubtle band now combines into the same
 		// SGR run as the icon's own foreground, so the color and the glyph
 		// are checked separately rather than as one adjoining "fgm+glyph" run.
@@ -140,7 +141,7 @@ func TestRenderSegmentChevronSitsTwoCellsBeforeTheRightEdge(t *testing.T) {
 		out  string
 	}{
 		{"repo", renderRepoSegment(pullModel(), width, false, false)},
-		{"worktree", renderWorktreeSegment(pullModel(), width, false, false)},
+		{"worktree", renderWorktreeSegment(pullModel(), theme.SpinnerFrames[0], width, false, false)},
 		{"branch", renderBranchSegment(Model{Current: Current{Branch: "main"}}, width, false, false)},
 	}
 	chevronRune := []rune(theme.GlyphChevron)[0]
@@ -195,7 +196,7 @@ func TestRenderSegmentLongValueClipsWithoutTouchingChevron(t *testing.T) {
 // chevron-only accessory, not a blanket renderSegment change.
 func TestRenderActionSegmentPillsStayFlush(t *testing.T) {
 	const width = 30
-	out := renderActionSegment(ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2}, width, false, false)
+	out := renderActionSegment(ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2}, theme.SpinnerFrames[0], width, false, false)
 	lines := strings.Split(out, "\n")
 	row2 := []rune(ansi.Strip(lines[2]))
 	if len(row2) != width {
@@ -207,7 +208,7 @@ func TestRenderActionSegmentPillsStayFlush(t *testing.T) {
 }
 
 func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
 	for _, want := range []string{"Current Repository", "repo-tools", "Current Worktree", "gandalf", "Current Branch", "rt-191-mission-tui", "Pull origin"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in top bar:\n%s", want, out)
@@ -216,7 +217,7 @@ func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
 }
 
 func TestRenderTopBarZeroWidthIsEmpty(t *testing.T) {
-	if out := renderTopBar(pullModel(), 0, zoneNone, zoneNone); out != "" {
+	if out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 0, zoneNone, zoneNone); out != "" {
 		t.Fatalf("zero width top bar = %q, want empty", out)
 	}
 }
@@ -857,6 +858,133 @@ func TestSettlingWorktreeShowsInTheTopBar(t *testing.T) {
 	}
 }
 
+// spinTick runs cmd and returns the spinner tick it yields. A nil cmd, or one
+// that yields no tick, fails the test: that is what "not ticking" looks like
+// from outside.
+func spinTick(t *testing.T, cmd tea.Cmd) spinner.TickMsg {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("no command returned: the spinner is not ticking")
+	}
+	msgs := []tea.Msg{cmd()}
+	for len(msgs) > 0 {
+		msg := msgs[0]
+		msgs = msgs[1:]
+		switch v := msg.(type) {
+		case spinner.TickMsg:
+			return v
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					msgs = append(msgs, c())
+				}
+			}
+		}
+	}
+	t.Fatal("the command yielded no spinner tick")
+	return spinner.TickMsg{}
+}
+
+// topBarText is the painted top bar (its four rows), stripped of styling.
+func topBarText(m *Mission) string {
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	return strings.Join(lines[:4], "\n")
+}
+
+// spinnerFramesIn lists which spinner frames appear in s, in frame order.
+func spinnerFramesIn(s string) []int {
+	var found []int
+	for i, f := range theme.SpinnerFrames {
+		if strings.Contains(s, f) {
+			found = append(found, i)
+		}
+	}
+	return found
+}
+
+func TestBusyActionSpinnerAdvancesFrameEachTick(t *testing.T) {
+	m := newTestMission()
+	m.width, m.height = 150, 40
+	busy := m.model
+	busy.Current.Worktree, busy.Current.WorktreeName = "/w/gandalf", "gandalf"
+	busy.Action = ActionModel{Kind: "busy", Title: "Working", Meta: "Last fetched just now", Busy: true}
+
+	tick := spinTick(t, pushModel(t, m, busy))
+	for want := 0; want < 3; want++ {
+		bar := topBarText(m)
+		t.Logf("frame %d:\n%s", want, bar)
+		if got := spinnerFramesIn(bar); len(got) != 1 || got[0] != want {
+			t.Fatalf("painted spinner frames %v, want only frame %d:\n%s", got, want, bar)
+		}
+		_, next := m.Update(tick)
+		tick = spinTick(t, next)
+	}
+}
+
+func TestSettlingWorktreeSpinnerAdvancesFrameOnTick(t *testing.T) {
+	m := newTestMission()
+	settling := m.model
+	settling.Current.Settling = true
+
+	tick := spinTick(t, pushModel(t, m, settling))
+	if got := spinnerFramesIn(topBarText(m)); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("first paint of a settling tree shows frames %v, want frame 0", got)
+	}
+	_, next := m.Update(tick)
+	if next == nil {
+		t.Fatal("a tick while settling must schedule the next one")
+	}
+	if got := spinnerFramesIn(topBarText(m)); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("after one tick a settling tree shows frames %v, want frame 1", got)
+	}
+}
+
+func TestSpinnerStopsTickingWhenNothingIsBusy(t *testing.T) {
+	m := newTestMission()
+	busy := m.model
+	busy.Action.Busy = true
+	tick := spinTick(t, pushModel(t, m, busy))
+
+	idle := busy
+	idle.Action.Busy = false
+	if cmd := pushModel(t, m, idle); cmd != nil {
+		t.Fatal("an idle model must not start another tick")
+	}
+	if _, cmd := m.Update(tick); cmd != nil {
+		t.Fatal("a tick landing with nothing busy must not schedule another")
+	}
+	if got := spinnerFramesIn(topBarText(m)); len(got) != 0 {
+		t.Fatalf("an idle top bar paints spinner frames %v", got)
+	}
+	spinTick(t, pushModel(t, m, busy))
+}
+
+func TestSpinnerDoesNotRestartWhileAlreadyTicking(t *testing.T) {
+	m := newTestMission()
+	busy := m.model
+	busy.Action.Busy = true
+	spinTick(t, pushModel(t, m, busy))
+
+	busy.Notice = "still working"
+	if cmd := pushModel(t, m, busy); cmd != nil {
+		t.Fatal("a second busy model while the spinner is already ticking must not start a second chain")
+	}
+}
+
+func TestInitStartsTheSpinnerForABusyOpenModel(t *testing.T) {
+	m := New(nil)
+	open := modalFixtureModel()
+	open.Current.Settling = true
+	raw, err := json.Marshal(open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetModel(raw); err != nil {
+		t.Fatal(err)
+	}
+	spinTick(t, m.Init())
+}
+
 // TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth pins a normal
 // 130-column terminal (renderTopBar's three-way split gives the worktree
 // segment 27 cells there) against a worktree name long enough to fill that
@@ -865,7 +993,7 @@ func TestSettlingWorktreeShowsInTheTopBar(t *testing.T) {
 func TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth(t *testing.T) {
 	const segmentWidthAt130Cols = 27
 	const longName = "glitter-pty-gate-and-docs"
-	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: longName, Settling: true}}, segmentWidthAt130Cols, false, false))
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: longName, Settling: true}}, theme.SpinnerFrames[0], segmentWidthAt130Cols, false, false))
 	if !strings.Contains(out, "settling") {
 		t.Fatalf("settling marker lost to clipping at a realistic width:\n%s", out)
 	}
@@ -883,7 +1011,7 @@ func TestSettlingMarkerSurvivesLongWorktreeNameAtRealisticWidth(t *testing.T) {
 // row's text.
 func TestSettlingIndicatorSurvivesAtEightyColumns(t *testing.T) {
 	const segmentWidthAt80Cols = 10
-	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "some-worktree", Settling: true}}, segmentWidthAt80Cols, false, false))
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "some-worktree", Settling: true}}, theme.SpinnerFrames[0], segmentWidthAt80Cols, false, false))
 	if !strings.Contains(out, theme.SpinnerFrames[0]) {
 		t.Fatalf("settling indicator missing at 80 columns:\n%s", out)
 	}
@@ -894,7 +1022,7 @@ func TestSettlingIndicatorSurvivesAtEightyColumns(t *testing.T) {
 // spinner fallback: the full word still renders alongside the icon.
 func TestSettlingIndicatorAt130ColumnsUnchanged(t *testing.T) {
 	const segmentWidthAt130Cols = 27
-	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "gandalf", Settling: true}}, segmentWidthAt130Cols, false, false))
+	out := ansi.Strip(renderWorktreeSegment(Model{Current: Current{WorktreeName: "gandalf", Settling: true}}, theme.SpinnerFrames[0], segmentWidthAt130Cols, false, false))
 	if !strings.Contains(out, settlingMarker) {
 		t.Fatalf("settling marker missing at 130 columns:\n%s", out)
 	}
@@ -2444,7 +2572,7 @@ func TestTabsHitZonesAreHalfWidth(t *testing.T) {
 // trailing row carries segment TEXT (label/value content); both wear a
 // half-block glyph rather than being empty.
 func TestTopBarIsFourRowsWithMirroredHalfBlockPadding(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 4 {
 		t.Fatalf("top bar should render exactly 4 rows, got %d:\n%s", len(lines), out)
@@ -2501,7 +2629,7 @@ func TestTopBarPadRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 		{"open", zoneNone, zoneRepo, theme.Surface},
 	}
 	for _, tc := range cases {
-		out := renderTopBar(pullModel(), 140, tc.hover, tc.open)
+		out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, tc.hover, tc.open)
 		pad := strings.Split(out, "\n")[0]
 		if !strings.Contains(pad, fgSGR(tc.want)) {
 			t.Fatalf("%s: pad row should carry %v as its half-block foreground: %q", tc.name, tc.want, pad)
@@ -2524,7 +2652,7 @@ func TestTopBarTrailingRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 		{"open", zoneNone, zoneRepo, theme.Surface},
 	}
 	for _, tc := range cases {
-		out := renderTopBar(pullModel(), 140, tc.hover, tc.open)
+		out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, tc.hover, tc.open)
 		lines := strings.Split(out, "\n")
 		trailing := lines[len(lines)-1]
 		if !strings.Contains(trailing, fgSGR(tc.want)) {
@@ -2539,7 +2667,7 @@ func TestTopBarTrailingRowHalfBlockTracksHoverAndOpen(t *testing.T) {
 // state, or a full-height divider cell against half-height neighbors leaves
 // a visible notch at the seam.
 func TestTopBarDividerPadRowMatchesSegmentHalfBlock(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
 	pad := strings.Split(out, "\n")[0]
 	if !strings.Contains(pad, theme.GlyphHalfBlockLower) {
 		t.Fatalf("pad row should contain the half-block glyph at all, including the divider: %q", pad)
@@ -2559,7 +2687,7 @@ func TestTopBarDividerPadRowMatchesSegmentHalfBlock(t *testing.T) {
 // full-height divider cell against half-height neighbors notches at the
 // bottom seam the same way it once did at the top.
 func TestTopBarDividerLastLineMatchesSegmentUpperHalfBlock(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
 	lines := strings.Split(out, "\n")
 	trailing := lines[len(lines)-1]
 	if !strings.Contains(trailing, theme.GlyphHalfBlockUpper) {
@@ -2577,7 +2705,7 @@ func TestTopBarDividerLastLineMatchesSegmentUpperHalfBlock(t *testing.T) {
 // before the top bar got its own darker rest color -- otherwise the
 // dividers would seam-line against a bar that darkened around them.
 func TestTopBarDividerUsesTopBarBgNotBgSubtle(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
 	if strings.Contains(out, bgSGR(theme.BgSubtle)) || strings.Contains(out, fgSGR(theme.BgSubtle)) {
 		t.Fatalf("an at-rest top bar must not carry BgSubtle anywhere: %q", out)
 	}
@@ -2600,7 +2728,7 @@ func TestTopBarDividerUsesTopBarBgNotBgSubtle(t *testing.T) {
 // canvas the fill rises out of); the label/value rows (1-2) still wear it
 // as a full background.
 func TestTopBarHoverCoversAllFourRowsOfItsSegment(t *testing.T) {
-	out := renderTopBar(pullModel(), 140, zoneRepo, zoneNone)
+	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneRepo, zoneNone)
 	lines := strings.Split(out, "\n")
 	if len(lines) != 4 {
 		t.Fatalf("top bar should render exactly 4 rows, got %d:\n%s", len(lines), out)
@@ -3169,7 +3297,7 @@ func TestTopBarSegmentsWearNerdFontOcticons(t *testing.T) {
 	if !strings.Contains(ansi.Strip(repo), theme.GlyphRepo) {
 		t.Fatalf("repo segment missing its Nerd Font icon: %q", repo)
 	}
-	worktree := renderWorktreeSegment(m, 40, false, false)
+	worktree := renderWorktreeSegment(m, theme.SpinnerFrames[0], 40, false, false)
 	if !strings.Contains(ansi.Strip(worktree), theme.GlyphWorktree) {
 		t.Fatalf("worktree segment missing its Nerd Font icon: %q", worktree)
 	}

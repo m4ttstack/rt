@@ -41,7 +41,7 @@ func New(em *session.Emitter) *Board {
 	return &Board{
 		em:     em,
 		input:  ti,
-		spin:   spinner.New(spinner.WithSpinner(spinner.Spinner{Frames: theme.SpinnerFrames, FPS: 80 * time.Millisecond})),
+		spin:   spinner.New(spinner.WithSpinner(theme.Spinner())),
 		now:    time.Now(),
 		reason: session.ReasonClosed,
 	}
