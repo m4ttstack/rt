@@ -25,9 +25,10 @@ private func read(_ url: URL) -> String { (try? String(contentsOf: url, encoding
 
 /// A stand-in for the opener, the helper tool, and deck's CLI that appends
 /// its argv to a log.
-private func recorder(_ dir: URL, _ name: String, log: URL) -> String {
+private func recorder(_ dir: URL, _ name: String, log: URL, failing verb: String? = nil) -> String {
     let path = dir.appendingPathComponent(name).path
-    try! "#!/bin/sh\necho \"\(name) $*\" >> \"\(log.path)\"\n".write(toFile: path, atomically: true, encoding: .utf8)
+    let fail = verb.map { "[ \"$1\" = \($0) ] && exit 1\n" } ?? ""
+    try! "#!/bin/sh\necho \"\(name) $*\" >> \"\(log.path)\"\n\(fail)exit 0\n".write(toFile: path, atomically: true, encoding: .utf8)
     chmod(path, 0o755)
     return path
 }
@@ -65,13 +66,14 @@ private struct Rig {
         restartLog = dir.appendingPathComponent("restart.log")
     }
 
-    func script(pid: Int32, staged: String?, deckLabel: String? = "com.mattstack.deck.dev") -> String {
+    func script(pid: Int32, staged: String?, deckLabel: String? = "com.mattstack.deck.dev",
+                deckFailing: String? = nil, logPath: String? = nil) -> String {
         DevBuild.handoffScript(
             pid: pid, appPath: app.path, stagedPath: staged, deckLabel: deckLabel, uid: 501,
-            logPath: restartLog.path,
+            logPath: logPath ?? restartLog.path,
             openPath: recorder(dir, "fake-open", log: calls),
             launchctlPath: recorder(dir, "fake-helper", log: calls),
-            deckCLIPath: recorder(dir, "fake-deck", log: calls))
+            deckCLIPath: recorder(dir, "fake-deck", log: calls, failing: deckFailing))
     }
 }
 
@@ -106,10 +108,28 @@ let devBuildChecks: [Check] = [
         c.expectEqual(read(rig.calls), """
             fake-open \(rig.app.path)
             fake-helper kickstart -k gui/501/com.mattstack.deck.dev
+            fake-deck list --json
             fake-deck restart --managed
 
             """)
         c.expect(read(rig.restartLog).contains("swapped"), "the handoff logs what it did")
+    },
+    Check("a managed restart that reports a failure runs once, never in a loop that re-kills every app") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, deckFailing: "restart")), 0)
+        let restarts = read(rig.calls).components(separatedBy: "\n").filter { $0 == "fake-deck restart --managed" }
+        c.expectEqual(restarts.count, 1)
+    },
+    Check("an unwritable handoff log never stops the swap and reopen") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let nowhere = rig.dir.appendingPathComponent("missing-dir/restart.log").path
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, logPath: nowhere)), 0)
+        c.expectEqual(marker(rig.app), "new")
+        c.expect(read(rig.calls).hasPrefix("fake-open \(rig.app.path)\n"))
     },
     Check("a failed swap puts the previous app back, reopens it, and restarts nothing") { c in
         let rig = Rig()

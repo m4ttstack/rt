@@ -172,6 +172,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       }
       if (cmd.startsWith("launchctl kickstart")) return ok("");
       if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed") return ok("");
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck list --json") return ok("[]");
       if (cmd.startsWith("launchctl print")) {
         const name = cmd.split(".").pop()!;
         const pid = pids.get(name);
@@ -766,11 +767,24 @@ describe("runDevAppRebuild", () => {
     expect(result.detail).toContain("managed apps restarted");
   });
 
-  test("a managed-app restart that never succeeds is an error leg naming it", async () => {
-    const { seams } = fakeSeams({ failExactCmd: "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed" });
+  test("waits for deck to answer, then restarts managed apps once", async () => {
+    const { seams, calls } = fakeSeams({
+      failExactCmd: "/Applications/mattstack-dev.app/Contents/Helpers/deck list --json",
+      failExactOccurrence: 1,
+    });
+    await runDevAppRebuild(seams, "main");
+    const list = calls.filter((c) => c === "/Applications/mattstack-dev.app/Contents/Helpers/deck list --json").length;
+    const restarts = calls.filter((c) => c === "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed").length;
+    expect(list).toBe(2);
+    expect(restarts).toBe(1);
+  });
+
+  test("a managed-app restart that reports a failure is an error leg, run once, never retried", async () => {
+    const { seams, calls } = fakeSeams({ failExactCmd: "/Applications/mattstack-dev.app/Contents/Helpers/deck restart --managed" });
     const { result } = await runDevAppRebuild(seams, "main");
     expect(result.status).toBe("error");
     expect(result.detail).toContain("restart --managed");
+    expect(calls.filter((c) => c.endsWith("deck restart --managed")).length).toBe(1);
   });
 
   test("a deck kickstart that keeps failing is an error leg naming the command", async () => {

@@ -82,8 +82,13 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
       throw new UserActionableError("dev-app-stage-failed", `${step.join(" ")} failed: ${tail(r)}`);
     }
   }
-  // Missing when nothing was staged yet or a restart already took it.
+  // Missing when nothing was staged yet or a restart already took it. If it
+  // survives, the next mv would move the new bundle INTO it.
   await seams.exec(["mv", "-f", paths.stagedDir, retired]);
+  if (seams.pathExists(paths.stagedDir)) {
+    await seams.exec(["rm", "-rf", incoming]);
+    throw new UserActionableError("dev-app-stage-failed", `could not retire the previous staged build at ${paths.stagedDir}`);
+  }
   const install = await seams.exec(["mv", incoming, paths.stagedDir]);
   if (install.exitCode !== 0) throw new UserActionableError("dev-app-stage-failed", `staging failed: ${tail(install)}`);
   await seams.exec(["rm", "-rf", retired]);

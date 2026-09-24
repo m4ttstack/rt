@@ -66,6 +66,16 @@ describe("stageLocalDevApp", () => {
     expect(calls.findIndex((c) => c.startsWith(`rm -rf ${paths.root}/.retired-`))).toBeGreaterThan(install);
   });
 
+  test("a staged dir that could not be retired fails staging instead of nesting the new bundle inside it", async () => {
+    const { seams, calls } = fakeSeams();
+    const paths = devAppStagePaths("/Users/t");
+    const exists = seams.pathExists;
+    seams.pathExists = (p) => p === paths.stagedDir || exists(p);
+    await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow("could not retire");
+    expect(calls.some((c) => c.startsWith("mv ") && c.includes(".incoming-") && c.endsWith(` ${paths.stagedDir}`))).toBe(false);
+    expect(calls.some((c) => c.startsWith(`rm -rf ${paths.root}/.incoming-`))).toBe(true);
+  });
+
   test("a checkout that is not repo-tools is refused before copying", async () => {
     const { seams, calls } = fakeSeams();
     seams.pathExists = () => false;

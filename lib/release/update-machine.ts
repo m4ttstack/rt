@@ -464,13 +464,16 @@ export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): 
 
   // Managed apps run the bundle's Helpers/bun; one still running the binary
   // deleted with the old bundle loses its privacy grants (EPERM reading
-  // ~/Documents). The restarted deck takes a moment to answer, so retry.
-  const managed: [string, ...string[]] = [`${DEV_APP_PATH}/Contents/Helpers/deck`, "restart", "--managed"];
-  let restart = await seams.exec(managed);
-  for (let attempt = 1; attempt < 30 && restart.exitCode !== 0; attempt++) {
+  // ~/Documents). Retry only while the restarted deck is not answering:
+  // restart --managed also fails when one app fails, and retrying that would
+  // re-kill every healthy app each time.
+  const deckCli = `${DEV_APP_PATH}/Contents/Helpers/deck`;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    if ((await seams.exec([deckCli, "list", "--json"])).exitCode === 0) break;
     await seams.sleep(1000);
-    restart = await seams.exec(managed);
   }
+  const managed: [string, ...string[]] = [deckCli, "restart", "--managed"];
+  const restart = await seams.exec(managed);
   if (restart.exitCode !== 0) {
     return {
       sha,

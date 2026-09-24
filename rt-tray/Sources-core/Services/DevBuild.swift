@@ -38,7 +38,12 @@ public enum DevBuild {
         let app = shellQuote(appPath)
         let aside = shellQuote(appPath + ".restart-old")
         var lines: [String] = []
-        if let logPath { lines.append("exec >> \(shellQuote(logPath)) 2>&1") }
+        // A failed exec redirect kills sh outright, which would leave the app
+        // quit and never reopened; probing in a subshell makes logging optional.
+        if let logPath {
+            let log = shellQuote(logPath)
+            lines.append("if ( : >> \(log) ) 2>/dev/null; then exec >> \(log) 2>&1; fi")
+        }
         lines += [
             "echo \"handoff $(date '+%F %T') pid \(pid)\"",
             "i=0",
@@ -67,7 +72,11 @@ public enum DevBuild {
             lines += [
                 "if [ $swapped = 1 ]; then",
                 "  \(shellQuote(launchctlPath)) kickstart -k gui/\(uid)/\(deckLabel)",
-                "  n=0; until \(deck) restart --managed; do n=$((n+1)); [ $n -ge 30 ] && { echo 'managed apps not restarted'; break; }; sleep 1; done",
+                // Retry only while deck is not answering: restart --managed
+                // also fails when one app fails, and retrying that would
+                // re-kill every healthy app each second.
+                "  n=0; until \(deck) list --json >/dev/null 2>&1; do n=$((n+1)); [ $n -ge 30 ] && break; sleep 1; done",
+                "  \(deck) restart --managed || echo 'restart --managed reported a failure'",
                 "fi",
             ]
         }
