@@ -292,6 +292,16 @@ const FAST_BROWSER_PAIR_STEPS: Action = { type: "steps", label: "Show steps…",
 const FAST_BROWSER_RECHECK: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
 const DOCTOR_CHECK_MISSING_REMEDY = "update Fast Browser, then Re-check";
 
+/** Swift decodes detail as String and steps as [String]; one wrong-typed field from doctor would fail the whole plan. */
+function doctorText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function doctorRemedy(check: FastBrowserCheck | undefined): Action {
+  const remedy = doctorText(check?.remediation);
+  return remedy ? { type: "steps", label: "Show steps…", steps: [remedy] } : FAST_BROWSER_LOAD_STEPS;
+}
+
 /**
  * Never gates Install in any Chrome state: loading an unpacked extension is a
  * Chrome step rt cannot perform, and nothing on the checklist can create the
@@ -317,17 +327,16 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
 
   const installed = probe.doctor.checks?.find((c) => c.id === "extension-installed");
   if (!installed) return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-installed check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
-  if (installed.status !== "pass") {
-    // doctor tells a missing extension from a store copy on another version;
-    // only its own remedy fits each, and the load steps would trade a store
-    // copy for one that never auto-updates.
-    const action: Action = installed.remediation ? { type: "steps", label: "Show steps…", steps: [installed.remediation] } : FAST_BROWSER_LOAD_STEPS;
-    return row({ ...base, status: "needs-you", detail: installed.message ?? "not installed in Chrome", action });
-  }
+  // doctor tells a missing extension from a store copy on another version;
+  // only its own remedy fits each, and the load steps would trade a store
+  // copy for one that never auto-updates.
+  if (installed.status !== "pass") return row({ ...base, status: "needs-you", detail: doctorText(installed.message) ?? "not installed in Chrome", action: doctorRemedy(installed) });
 
   const extension = checkState(probe.doctor, "extension-loaded");
   if (extension === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-loaded check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
-  if (extension === "fail") return row({ ...base, status: "needs-you", detail: "not loaded in Chrome", action: FAST_BROWSER_LOAD_STEPS });
+  // A stale unpacked load needs Chrome's reload arrow; loading unpacked again
+  // wipes the reconnect token and forces a re-pair.
+  if (extension === "fail") return row({ ...base, status: "needs-you", detail: "not loaded in Chrome", action: doctorRemedy(probe.doctor.checks?.find((c) => c.id === "extension-loaded")) });
 
   // Trust doctor's own pairing check rather than a separate rule: pairing
   // passes whenever the connection mode isn't auto, and manual is the

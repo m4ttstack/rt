@@ -450,6 +450,26 @@ describe("toolRows - tool.fast-browser-extension", () => {
     expect(r.action).toEqual({ type: "steps", label: "Show steps…", steps: [remediation] });
   });
 
+  // Swift decodes steps as [String] and detail as String; one wrong-typed
+  // field fails the whole plan and the checklist never loads.
+  test("a non-string remedy or message from doctor falls back instead of reaching the row", async () => {
+    const report = withCheck(REAL_DOCTOR, "extension-installed", { status: "fail", message: 42, remediation: { text: "x" } });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(typeof r.detail).toBe("string");
+    expect((r.action as { steps: string[] }).steps[0]).toContain("chrome://extensions");
+  });
+
+  // A stale unpacked load needs Chrome's reload arrow; loading unpacked again
+  // wipes the reconnect token and forces a re-pair.
+  test("extension-loaded fails with a remedy -> the row's steps are doctor's remedy", async () => {
+    const remediation = "Open chrome://extensions and click the reload arrow on Fast Browser.";
+    const report = withCheck(REAL_DOCTOR, "extension-loaded", { status: "fail", remediation });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(r.action).toEqual({ type: "steps", label: "Show steps…", steps: [remediation] });
+  });
+
   test("extension-installed check absent from the report -> error naming the remedy", async () => {
     const p = withChrome(doctorExec(withoutCheck(REAL_DOCTOR, "extension-installed")));
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
