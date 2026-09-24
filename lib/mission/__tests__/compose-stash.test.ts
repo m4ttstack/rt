@@ -120,6 +120,26 @@ describe("mission compose: stash against a real repo", () => {
     }
   }, 30_000);
 
+  test("a Leave whose checkout fails shows the clean-tree card, not the stashed file's header", async () => {
+    const sandbox = await seeded();
+    try {
+      await sandbox.write("a.txt", "dirty\n");
+      const { session, seed, stop } = await start(sandbox);
+      expect(seed.diff.path).toBe("a.txt");
+
+      const m = await session.step({ t: "intent", name: "mission:checkout", payload: { branch: "no-such-branch", strategy: "leave" } });
+      expect(m.notice).not.toBe("");
+      expect(m.current.branch).toBe("main");
+      expect(m.stash?.branch).toBe("main");
+      expect(m.changes).toEqual([]);
+      expect(m.diff.kind).toBe("none");
+      expect(m.diff.path).toBe("");
+      await stop();
+    } finally {
+      await sandbox.cleanup();
+    }
+  }, 30_000);
+
   test("Bring carries changes through a temporary stash when checkout would overwrite them", async () => {
     const sandbox = await seeded();
     try {

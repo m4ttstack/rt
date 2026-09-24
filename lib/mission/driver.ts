@@ -35,7 +35,7 @@ import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
 import { HistoryStore, type HistoryBranch } from "./history.ts";
 import { buildHistoryModel, committedFileRow } from "./history-model.ts";
-import { buildModel, joinWorktreeRows, mergeWorktreeTrees, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import { buildModel, firstListedPath, joinWorktreeRows, mergeWorktreeTrees, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import {
   canStash,
   checkoutAndBringChanges,
@@ -376,8 +376,7 @@ export class MissionDriver {
     if (this.refreshingBadges) return;
     this.refreshingBadges = true;
     try {
-      await this.refreshBadges();
-      this.push();
+      if (await this.refreshBadges()) this.push();
     } finally {
       this.refreshingBadges = false;
     }
@@ -529,9 +528,7 @@ export class MissionDriver {
     this.guards = guards;
     this.gitWorktrees = gitWorktrees;
     this.reconcileSelections();
-    // Seed the diff pane on open (and after a checkout/worktree/repo switch
-    // cleared it): the first change is what the view's cursor starts on.
-    if (this.state.selectedPath === null) this.state.selectedPath = snapshot.files[0]?.path ?? null;
+    this.reconcileSelectedPath();
     this.branches = branches;
     const entry = log[0];
     this.headShortSha = entry ? entry.sha.slice(0, 7) : "";
@@ -557,8 +554,11 @@ export class MissionDriver {
    * must discard this pass's result rather than publish it onto whatever
    * is current by the time it lands, and the diff is refetched alongside
    * the snapshot so the two never publish out of step with each other.
+   * Returns false for a discarded pass: a switch mid-flight has already
+   * moved currentWorktree while this.snapshot may still describe the old
+   * tree, so pushing then would pair the two.
    */
-  private async refreshBadges(): Promise<void> {
+  private async refreshBadges(): Promise<boolean> {
     const worktree = this.state.currentWorktree;
     const selectedPath = this.state.selectedPath;
     const client = this.deps.client(worktree);
@@ -568,17 +568,24 @@ export class MissionDriver {
       client.fetchState(),
       selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
     ]);
-    if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return;
+    if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return false;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
     this.fetchState = fetchState;
     this.reconcileSelections();
     this.clearOnDisk();
     this.stagingDiff = stagingDiff;
+    if (this.reconcileSelectedPath()) {
+      const moved = this.state.selectedPath;
+      const diff = moved ? await client.stagingDiff(moved) : null;
+      if (this.state.currentWorktree !== worktree) return false;
+      if (this.state.selectedPath === moved) this.stagingDiff = diff;
+    }
     this.recomputeAction();
     await this.stash.load(client, snapshot.branch);
-    if (this.state.currentWorktree !== worktree) return;
+    if (this.state.currentWorktree !== worktree) return false;
     await this.syncHistory();
+    return true;
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
@@ -604,6 +611,19 @@ export class MissionDriver {
         this.state.selections.set(path, DiffSelection.fromInitialSelection(DiffSelectionType.All));
       }
     }
+  }
+
+  /**
+   * GHD's updateChangedFiles rule: a selected file the tree no longer lists
+   * is dropped, and an empty selection falls to the first listed row, which
+   * is where the view's cursor lands. Nothing left selects nothing, so the
+   * diff pane shows the clean-tree card. Returns whether the path moved.
+   */
+  private reconcileSelectedPath(): boolean {
+    const selected = this.state.selectedPath;
+    if (selected !== null && this.snapshot.files.some((f) => f.path === selected)) return false;
+    this.state.selectedPath = firstListedPath(this.snapshot.files, this.state.filter);
+    return this.state.selectedPath !== selected;
   }
 
   private recomputeAction(): void {

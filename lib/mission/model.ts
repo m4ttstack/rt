@@ -340,6 +340,17 @@ function caseInsensitiveComparePath(a: string, b: string): number {
   return 0;
 }
 
+function changeFilter(filter: string): (path: string) => boolean {
+  const text = filter.trim().toLowerCase();
+  return (path) => text === "" || path.toLowerCase().includes(text);
+}
+
+/** The Changes list's first row: the view's cursor falls back to it, so the driver's selection must fall back to the same file. */
+export function firstListedPath(files: ReadonlyArray<{ path: string }>, filter: string): string | null {
+  const listed = changeFilter(filter);
+  return files.map((f) => f.path).filter(listed).sort(caseInsensitiveComparePath)[0] ?? null;
+}
+
 // GHD's own model (ratified 2026-09-21): a checkbox means "include in the
 // next commit," not "already in the index" -- include is purely a read of
 // the driver's own persisted selection now, never file.staged/unstaged.
@@ -508,8 +519,8 @@ export function buildModel(input: {
 
   // The filter narrows only the visible list; totals and the commit gate
   // keep counting every change, or filtering would silently disable commit.
-  const filterText = state.filter.trim().toLowerCase();
-  const changes = filterText === "" ? allChanges : allChanges.filter((change) => change.path.toLowerCase().includes(filterText));
+  const listed = changeFilter(state.filter);
+  const changes = allChanges.filter((change) => listed(change.path));
 
   const changedTotal = allChanges.length;
   const stagedTotal = allChanges.filter((change) => change.include !== "none").length;

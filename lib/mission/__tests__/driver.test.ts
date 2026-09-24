@@ -2215,6 +2215,116 @@ describe("MissionDriver: git-status refresh race", () => {
     session.send({ t: "intent", name: "quit" });
     await runPromise;
   });
+
+  test("a badge refresh discarded mid-switch never pushes the new worktree with the old one's status", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let releaseStale: (() => void) | null = null;
+    let releaseSwitch: (() => void) | null = null;
+    let snapshotCallsA = 0;
+    const clientA = makeFakeClient({
+      snapshot: async () => {
+        snapshotCallsA++;
+        if (snapshotCallsA === 1) return baseSnapshot({ branch: "branch-a" });
+        return new Promise((resolve) => {
+          releaseStale = () => resolve(baseSnapshot({ branch: "branch-a" }));
+        });
+      },
+    });
+    const clientB = makeFakeClient({
+      snapshot: () =>
+        new Promise((resolve) => {
+          releaseSwitch = () => resolve(baseSnapshot({ branch: "branch-b" }));
+        }),
+    });
+    const deps = baseDeps({
+      session,
+      client: clientA,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    deps.client = (dir: string) => (dir === "/repo2" ? clientB : clientA);
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:worktree", payload: { path: "/repo2" } });
+    await flushMicrotasks();
+    expect(releaseStale).not.toBeNull();
+    expect(releaseSwitch).not.toBeNull();
+
+    // The stale sweep lands while the switch's own refresh is still reading /repo2.
+    releaseStale!();
+    await flushMicrotasks();
+    releaseSwitch!();
+    await flushMicrotasks();
+
+    const mismatched = (session.pushed as MissionModel[]).filter((m) => m.current.worktree === "/repo2" && m.current.branch !== "branch-b");
+    expect(mismatched).toEqual([]);
+    expect((session.pushed.at(-1) as MissionModel).current.branch).toBe("branch-b");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+});
+
+describe("MissionDriver: a selection the tree no longer has", () => {
+  function vanishing(before: string[], after: string[]) {
+    let calls = 0;
+    const diffsFor: string[] = [];
+    const files = (paths: string[]) => paths.map((path) => ({ path, kind: "modified" as const, staged: false, unstaged: true }));
+    const client = makeFakeClient({
+      snapshot: async () => {
+        calls++;
+        const paths = calls === 1 ? before : after;
+        return baseSnapshot({ clean: paths.length === 0, files: files(paths) });
+      },
+      stagingDiff: async (path: string) => {
+        diffsFor.push(path);
+        return oneHunkDiff(path);
+      },
+    });
+    return { client, diffsFor };
+  }
+
+  async function sweepAfterOpen(client: ReturnType<typeof makeFakeClient>): Promise<MissionModel> {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    const last = session.pushed.at(-1) as MissionModel;
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+    return last;
+  }
+
+  test("a git-status refresh that no longer finds the selected file shows the clean-tree card", async () => {
+    const { client } = vanishing(["a.txt"], []);
+    const last = await sweepAfterOpen(client);
+    expect(last.diff.kind).toBe("none");
+    expect(last.diff.path).toBe("");
+  });
+
+  test("a git-status refresh that no longer finds the selected file shows the first listed file's diff", async () => {
+    const { client, diffsFor } = vanishing(["a.txt", "b.txt"], ["b.txt"]);
+    const last = await sweepAfterOpen(client);
+    expect(last.diff.path).toBe("b.txt");
+    expect(diffsFor.at(-1)).toBe("b.txt");
+  });
 });
 
 describe("MissionDriver: error boundary", () => {
