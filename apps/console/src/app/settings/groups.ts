@@ -33,7 +33,7 @@ export const GROUPS: Group[] = [
     tier: 'rt',
     blurb: 'Where rt finds repos, how worktrees are pooled, and branch sync.',
     match: key =>
-      /^rt\.(worktree|repo|branchNaming$|sync$|hooks$|roles$|intercepts$|dopplerTemplate$|gitStatus$)/.test(
+      /^rt\.(worktree|repo|branchNaming$|sync$|hooks$|roles$|intercepts$|dopplerTemplate$|gitStatus$|ignoredMrs$)/.test(
         key
       ) || key === 'mattstack.tracking',
   },
@@ -109,9 +109,9 @@ export const GROUPS: Group[] = [
     label: 'Suite-wide',
     tier: 'suite',
     blurb:
-      'Team integrations, the roster, install mode, and Claude Code plugins.',
+      'Team integrations, the roster, install mode, Claude Code plugins and skills.',
     match: key =>
-      (/^(mattstack|setup|claude)\./.test(key) &&
+      (/^(mattstack|setup|claude|skills)\./.test(key) &&
         key !== 'mattstack.tracking') ||
       key === 'rt.integrations',
   },
