@@ -13,7 +13,7 @@ GUEST_RUN="/Volumes/My Shared Files/run"
 vm_phase_begin gate
 case "$(xcode-select -p 2>/dev/null)" in /Applications/Xcode*.app/*) ;; *) vm_phase_end gate skip "Xcode not installed on the host (xcode-select -p)"; vm_render_report; exit 0;; esac
 [ -f "$VM_ROOT/../project.yml" ] || { vm_phase_end gate skip "rt-tray/project.yml absent (L3 deliverable)"; vm_render_report; exit 0; }
-tart list 2>/dev/null | awk '{print $2}' | grep -qx "$GOLDEN" || { vm_phase_end gate skip "golden $GOLDEN missing — build-golden.sh $VER --xcode"; vm_render_report; exit 0; }
+tart list 2>/dev/null | awk '{print $2}' | grep -cx "$GOLDEN" >/dev/null || { vm_phase_end gate skip "golden $GOLDEN missing — build-golden.sh $VER --xcode"; vm_render_report; exit 0; }
 vm_phase_end gate pass
 
 TART_PID=""

@@ -41,13 +41,13 @@ if [ "$DRY" = 0 ]; then
   vm_require_cmd sshpass "brew install cirruslabs/cli/sshpass"
   mkdir -p "$VM_CACHE" "$VM_ARTIFACTS"
   [ -f "$VM_SSH_KEY" ] || ssh-keygen -q -t ed25519 -N '' -C mattstack-vm -f "$VM_SSH_KEY"
-  if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$FINAL"; then
+  if tart list 2>/dev/null | awk '{print $2}' | grep -cx "$FINAL" >/dev/null; then
     [ "$REBUILD" = 1 ] || vm_die "$FINAL exists; pass --rebuild to replace it"
     vm_log "$FINAL stays in place until the new one verifies"
   fi
   # A previous run that died mid-build leaves this behind; it is scratch by
   # definition, so reclaim it rather than refuse to start.
-  if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$GOLDEN"; then
+  if tart list 2>/dev/null | awk '{print $2}' | grep -cx "$GOLDEN" >/dev/null; then
     vm_warn "removing a leftover $GOLDEN from an earlier interrupted build"
     tart stop "$GOLDEN" 2>/dev/null || true; tart delete "$GOLDEN"
   fi
@@ -116,7 +116,7 @@ trap - EXIT
 
 # Promoted only here, with a verified build in hand: until this line the old
 # golden is still the one every other script clones.
-if tart list 2>/dev/null | awk '{print $2}' | grep -qx "$FINAL"; then
+if tart list 2>/dev/null | awk '{print $2}' | grep -cx "$FINAL" >/dev/null; then
   tart delete "$FINAL"
 fi
 tart rename "$GOLDEN" "$FINAL"

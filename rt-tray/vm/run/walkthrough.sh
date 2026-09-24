@@ -85,7 +85,7 @@ skip_if_dry() { [ "$DRY" = 1 ] && { vm_phase_end "$1" skip "dry-run"; return 0; 
 vm_phase_begin preflight
 if [ "$DRY" = 0 ]; then
   vm_require_cmd tart "brew install openai/tools/tart"
-  tart list 2>/dev/null | awk '{print $2}' | grep -qx "$GOLDEN" || { vm_phase_end preflight fail "golden $GOLDEN missing — run golden/build-golden.sh $VER"; exit 1; }
+  tart list 2>/dev/null | awk '{print $2}' | grep -cx "$GOLDEN" >/dev/null || { vm_phase_end preflight fail "golden $GOLDEN missing — run golden/build-golden.sh $VER"; exit 1; }
   [ -f "$VM_SSH_KEY" ] || { vm_phase_end preflight fail "no ssh key at $VM_SSH_KEY (built by build-golden.sh)"; exit 1; }
 fi
 if [ -z "$DMG" ]; then
