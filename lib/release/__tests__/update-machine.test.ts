@@ -415,13 +415,15 @@ describe("rt release update-machine", () => {
       expect(calls.some((c) => c.startsWith("hdiutil detach"))).toBe(true);
     });
 
-    test("dev bundle: a failed ditto restores the previous bundle instead of leaving a merged mess", async () => {
+    test("dev bundle: a failed ditto restores the previous bundle and reopens it, since the leg already quit it", async () => {
       const { seams, calls } = fakeSeams({ devDittoExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
       const leg = report.legs.find((l) => l.id === "dev-bundle")!;
       expect(leg.status).toBe("error");
-      expect(calls).toContain("mv /Applications/mattstack-dev.app.update-machine-old /Applications/mattstack-dev.app");
-      expect(calls.some((c) => c.startsWith("open"))).toBe(false);
+      const restore = calls.indexOf("mv /Applications/mattstack-dev.app.update-machine-old /Applications/mattstack-dev.app");
+      expect(restore).toBeGreaterThan(-1);
+      expect(calls.indexOf("open /Applications/mattstack-dev.app")).toBeGreaterThan(restore);
+      expect(leg.detail).toContain("reopened the previous app");
     });
   });
 

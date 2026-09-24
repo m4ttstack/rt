@@ -395,7 +395,13 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
 
   // Never rebuilds the blessed bundle in place; replaceApp swaps it wholesale.
   const replaceErr = await replaceApp(seams, `${bundleDir}/rt-tray/mattstack-dev.app`, DEV_APP_PATH);
-  if (replaceErr) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, replaceErr);
+  if (replaceErr) {
+    // The running copy was already quit above, so a failed swap reopens
+    // whatever replaceApp left at DEV_APP_PATH rather than leaving it closed.
+    const reopen = await seams.exec(["open", DEV_APP_PATH]);
+    const tail = reopen.exitCode === 0 ? "reopened the previous app" : `reopening ${DEV_APP_PATH} failed: ${execTail(reopen)}`;
+    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${replaceErr}; ${tail}`);
+  }
 
   const open = await seams.exec(["open", DEV_APP_PATH]);
   if (open.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `open failed: ${execTail(open)}`);
