@@ -18,6 +18,13 @@
  * without them every such call prompts on a fresh Mac. Both write only the
  * caller's own run and gates, and the mattstack MCP server (allowed above)
  * already exposes the gate verbs, so they add no reach.
+ *
+ * No git entries, on purpose. An allow rule resolves before the auto-mode
+ * classifier, so `Bash(git push *)` would wave through a forced push and
+ * `Bash(git rebase *)` a `--exec` of any command; the read-only git forms
+ * need no rule in any mode, and a pane in auto mode (the mode
+ * `claude-permissions.ts` seeds) gets routine commits and pushes from the
+ * classifier itself.
  */
 export const BASE_PERMISSIONS: string[] = [
   "mcp__plugin_fast-browser_fast-browser",

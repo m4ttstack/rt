@@ -1610,6 +1610,13 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       ]);
     });
 
+    // An allow rule resolves before the auto-mode classifier, so a git grant
+    // here would skip the force-push and `rebase --exec` blocks the
+    // classifier applies to every other pane.
+    test("no git verb is pre-approved", () => {
+      expect(BASE_PERMISSIONS.filter((e) => e.startsWith("Bash(git "))).toEqual([]);
+    });
+
     // Filtering a non-string out of `allow` and then writing the filtered array
     // back is silent data loss. Refusing is the only safe answer: rt does not
     // know what that entry meant, and Claude Code may.
@@ -1666,12 +1673,15 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       for (const [key, value] of Object.entries(before)) expect(written[key]).toEqual(value);
     });
 
-    test("no permissions key at all -> created with allow only, no defaultMode", async () => {
+    // Claude Code's own starting mode is auto only on the Pro, Max and Team
+    // plans; an Enterprise plan or a Console key starts in manual mode, where
+    // every git and rt call in an unattended pane prompts.
+    test("no permissions key at all -> created with the allow list and defaultMode auto", async () => {
       const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify({ model: "sonnet" }) } });
       const { ctx } = makeCtx(p);
       await claudePermissionsStep.run(ctx);
       const written = JSON.parse(p.readFile(settingsPath())!);
-      expect(written.permissions).toEqual({ allow: BASE_PERMISSIONS });
+      expect(written.permissions).toEqual({ defaultMode: "auto", allow: BASE_PERMISSIONS });
     });
 
     test("an existing defaultMode of any value is left untouched", async () => {
@@ -1682,13 +1692,22 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(written.permissions.defaultMode).toBe("acceptEdits");
     });
 
+    test("every baseline entry present but no defaultMode -> only defaultMode is added, and the step reports done", async () => {
+      const before = { permissions: { allow: BASE_PERMISSIONS, deny: ["WebFetch"] }, model: "sonnet" };
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify(before) } });
+      const { ctx } = makeCtx(p);
+      expect((await claudePermissionsStep.run(ctx)).state).toBe("done");
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      expect(written).toEqual({ permissions: { allow: BASE_PERMISSIONS, deny: ["WebFetch"], defaultMode: "auto" }, model: "sonnet" });
+    });
+
     test("absent file -> created at 0600, containing only the permissions block", async () => {
       const p = fakeProbes({ home, env: {} });
       const { ctx } = makeCtx(p);
       const outcome = await claudePermissionsStep.run(ctx);
       expect(outcome.state).toBe("done");
       const written = JSON.parse(p.readFile(settingsPath())!);
-      expect(written).toEqual({ permissions: { allow: BASE_PERMISSIONS } });
+      expect(written).toEqual({ permissions: { defaultMode: "auto", allow: BASE_PERMISSIONS } });
       expect(p.calls.modes[settingsPath()]).toBe(0o600);
     });
 
