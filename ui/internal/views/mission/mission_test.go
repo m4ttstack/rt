@@ -103,7 +103,7 @@ const canCommitModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
 	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"all"}],` +
 	`"changedTotal":1,"stagedTotal":1,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 1 file to main","canCommit":true,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 func TestSpaceOnCursorRowEmitsStageWithPath(t *testing.T) {
 	s := s5open(t)
@@ -165,7 +165,7 @@ const noStagedModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
 	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"none"}],` +
 	`"changedTotal":1,"stagedTotal":0,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // TestAmendToggleEnablesCommitDespiteWireCanCommitFalse: with nothing staged
 // (canCommit false), toggling amend locally plus a typed summary must still
@@ -557,7 +557,7 @@ const detachedModel = `{"current":{"repo":"repo-tools","branch":"a1b2c3d","detac
 	`"branches":[{"name":"main","current":false,"ahead":0,"behind":0,"guardedBy":"","group":"other"}],` +
 	`"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // TestDetachedHeadRefusesBranchModalWithNotice presses b on a detached
 // checkout: no modal opens (no filter box paints) and nothing emits, only a
@@ -775,7 +775,7 @@ const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"
 	`"files":[{"path":"lib/mission/model.ts","origPath":"","status":"modified"}],"selectedFile":"lib/mission/model.ts"},` +
 	`"diff":{"path":"lib/mission/model.ts","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"x","selected":false,"selIdx":-1}],"readOnly":true},` +
 	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
-	`"stashCount":0,"notice":""}`
+	`"stash":null,"notice":""}`
 
 // historyRowY is the frame row of commit idx's summary line: topH(4), then
 // the History sidebar's tabs(3) + tabs-gap(1) + filter box(3), then the
@@ -919,6 +919,18 @@ func screenRow(s *testutil.Session, y int) string {
 		return rows[y]
 	}
 	return ""
+}
+
+// paintedRowOf is the first screen row showing text.
+func paintedRowOf(t *testing.T, s *testutil.Session, text string) int {
+	t.Helper()
+	for y, row := range strings.Split(s.Screen(), "\n") {
+		if strings.Contains(row, text) {
+			return y
+		}
+	}
+	t.Fatalf("no screen row shows %q:\n%s", text, s.Screen())
+	return -1
 }
 
 // TestHistoryDateHeadersPaintAndStayInert drives the real binary: each run
@@ -1335,6 +1347,126 @@ func TestCreateTagEmitsTheTypedNameAndSha(t *testing.T) {
 	l := waitIntent(t, s, "mission:menu-action")
 	if !strings.Contains(l, `"action":"create-tag"`) || !strings.Contains(l, `"name":"v9"`) || !strings.Contains(l, `"sha":"s1"`) {
 		t.Fatalf("create-tag intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const stashShowingModel = `{"current":{"repo":"repo-tools","branch":"main"},"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
+	`"diff":{"path":"a.txt","status":"modified","kind":"text","stats":"","lang":"","lines":[{"oldNo":0,"newNo":1,"kind":"add","text":"stashed line","selected":false,"selIdx":-1}],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":{"sha":"s1","branch":"main","files":[{"path":"a.txt","origPath":"","status":"modified","onDisk":false},{"path":"b.txt","origPath":"","status":"new","onDisk":false}],"showing":true,"selectedFile":"a.txt"},` +
+	`"notice":""}`
+
+func TestHOpensTheStashWithoutAPath(t *testing.T) {
+	s := s5open(t)
+	s.Type("h")
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{}`) {
+		t.Fatalf("opening the stash selects the driver's first file: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestStashViewKeysEmitPathShaAndHide(t *testing.T) {
+	s := openMission(t, stashShowingModel, "Stashed changes")
+	s.Type(keyDown)
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{"path":"b.txt"}`) {
+		t.Fatalf("stash file move: %q", l)
+	}
+	s.Type("R")
+	if l := waitIntent(t, s, "mission:stash-restore"); !strings.Contains(l, `"payload":{"sha":"s1"}`) {
+		t.Fatalf("restore: %q", l)
+	}
+	s.Type("h")
+	waitIntent(t, s, "mission:stash-hide")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const stashOversizedModel = `{"current":{"repo":"repo-tools","branch":"main"},"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
+	`"diff":{"path":"a.txt","status":"modified","kind":"oversized","stats":"","lang":"","lines":[],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":{"sha":"s1","branch":"main","files":[{"path":"a.txt","origPath":"","status":"modified","onDisk":false}],"showing":true,"selectedFile":"a.txt"},` +
+	`"notice":""}`
+
+const noStashModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
+	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"none"},{"path":"b.go","origPath":"","status":"modified","include":"none"}],` +
+	`"changedTotal":2,"stagedTotal":0,"filter":"",` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":null,"canStash":true,"notice":""}`
+
+func switchPromptModel(hasStash bool) string {
+	return strings.TrimSuffix(noStashModel, `}`) + fmt.Sprintf(`,"switchPrompt":{"seq":1,"branch":"other","current":"main","hasStash":%t}}`, hasStash)
+}
+
+func TestShiftSEmitsStash(t *testing.T) {
+	s := openMission(t, noStashModel, "a.go")
+	s.Type("S")
+	if l := waitIntent(t, s, "mission:stash"); strings.Contains(l, `"payload"`) {
+		t.Fatalf("stash carries no payload: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestSwitchBringEmitsCheckoutBring(t *testing.T) {
+	s := openMission(t, switchPromptModel(false), "Switch Branch")
+	s.Type(keyDown, keyEnter)
+	if l := waitIntent(t, s, "mission:checkout"); !strings.Contains(l, `"payload":{"branch":"other","strategy":"bring"}`) {
+		t.Fatalf("bring: %q", l)
+	}
+	s.WaitForGone("Switch Branch")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestSwitchLeaveThenOverwriteEmitsCheckoutLeave(t *testing.T) {
+	s := openMission(t, switchPromptModel(true), "Switch Branch")
+	s.Type(keyEnter)
+	s.WaitForPaint("Overwrite Stash?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:checkout"); !strings.Contains(l, `"payload":{"branch":"other","strategy":"leave"}`) {
+		t.Fatalf("leave: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestDiscardStashConfirmEmitsItsSha(t *testing.T) {
+	s := openMission(t, stashShowingModel, "Stashed changes")
+	s.Type("D")
+	s.WaitForPaint("Discard Stash?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:stash-discard"); !strings.Contains(l, `"payload":{"sha":"s1"}`) {
+		t.Fatalf("stash-discard: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestDiscardAllConfirmEmitsTheMenuAction right-clicks the "2 changed files"
+// row and confirms.
+func TestDiscardAllConfirmEmitsTheMenuAction(t *testing.T) {
+	s := openMission(t, noStashModel, "a.go")
+	s.WaitForPaint("2 changed files")
+	s.Type(sgrClick(2, 5, paintedRowOf(t, s, "2 changed files")))
+	s.WaitForPaint("Discard All Changes…")
+	s.Type(keyEnter)
+	s.WaitForPaint("Discard all 2 changed files?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:menu-action"); !strings.Contains(l, `"payload":{"action":"discard-all"}`) {
+		t.Fatalf("discard-all: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestOversizedStashDiffEnterAsksTheStashForIt(t *testing.T) {
+	s := openMission(t, stashOversizedModel, "Stashed changes")
+	s.Type(keyEnter, keyEnter)
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{"path":"a.txt","showOversized":true}`) {
+		t.Fatalf("oversized stash diff: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()

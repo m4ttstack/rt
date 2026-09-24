@@ -1,10 +1,12 @@
 // Context menus: GitHub Desktop's right-click menus for a Changes file row,
-// a History file row, and a History commit row, each followed by a
-// board-wide section that lists every key. picker.Menu is the engine; this
-// file only builds the rows and runs what a chosen row means.
+// the changed-files header, a History file row, and a History commit row,
+// each followed by a board-wide section that lists every key, plus the
+// questions (Desktop's confirm dialogs) the same box asks. picker.Menu is the
+// engine; this file only builds the rows and runs what a chosen row means.
 package mission
 
 import (
+	"fmt"
 	"path"
 	"slices"
 	"strings"
@@ -22,6 +24,9 @@ const (
 	targetChange
 	targetHistoryFile
 	targetCommit
+	targetChangesList
+	targetStash
+	targetSwitch
 )
 
 type menuTarget struct {
@@ -33,6 +38,7 @@ type menuTarget struct {
 	short   string
 	summary string
 	newest  bool
+	prompt  SwitchPrompt
 }
 
 // boardSection is a section id no row menu uses, so a rule always separates
@@ -81,10 +87,35 @@ func (m *Mission) menuItems(t menuTarget) (string, []picker.MenuItem) {
 			title = emptyCommitSummary
 		}
 		items = m.commitItems(t)
+	case targetChangesList:
+		title = "Changes"
+		items = m.changesListItems()
 	default:
 		title = "Actions"
+		if m.stashShowing() {
+			title = "Stashed Changes"
+			items = stashViewItems()
+		}
 	}
 	return title, append(items, m.boardItems()...)
+}
+
+// changesListItems is Desktop's menu on the changed-files header.
+func (m *Mission) changesListItems() []picker.MenuItem {
+	return []picker.MenuItem{
+		{ID: "discard-all", Label: "Discard All Changes…", Disabled: m.model.ChangedTotal == 0},
+		{ID: "stash-all", Label: m.stashAllLabel(), Disabled: !m.model.CanStash},
+	}
+}
+
+func (m *Mission) discardAllTitle() string {
+	if m.model.ChangedTotal != 1 {
+		return fmt.Sprintf("Discard all %d changed files?", m.model.ChangedTotal)
+	}
+	if len(m.model.Changes) == 1 {
+		return "Discard all changes to " + path.Base(m.model.Changes[0].Path) + "?"
+	}
+	return "Discard all 1 changed file?"
 }
 
 func (m *Mission) changeItems(t menuTarget) []picker.MenuItem {
@@ -147,7 +178,14 @@ func (m *Mission) boardItems() []picker.MenuItem {
 	if m.historyTab() {
 		items = []picker.MenuItem{action, key("b", "Switch Branch…"), key("w", "Worktrees…"), key("r", "Repositories…"), key("/", "Filter"), key("e", "Expand"), key("1", "Show Changes")}
 	} else {
-		items = []picker.MenuItem{key("c", "Commit"), action, key("b", "Switch Branch…"), key("w", "Worktrees…"), key("r", "Repositories…"), key("/", "Filter")}
+		stash := key("S", m.stashAllLabel())
+		stash.Disabled = !m.model.CanStash
+		show := key("h", "Show Stashed Changes")
+		if m.stashShowing() {
+			show.Label = "Hide Stashed Changes"
+		}
+		show.Disabled = m.model.Stash == nil
+		items = []picker.MenuItem{key("c", "Commit"), action, key("b", "Switch Branch…"), key("w", "Worktrees…"), key("r", "Repositories…"), key("/", "Filter"), stash, show}
 		if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
 			items = append(items, key("u", "Undo Last Commit"))
 		}
@@ -163,14 +201,48 @@ func (m *Mission) boardItems() []picker.MenuItem {
 // centers it.
 func (m *Mission) openMenu(t menuTarget, anchor *picker.MenuAnchor) {
 	title, items := m.menuItems(t)
+	m.showMenu(title, items, t, anchor)
+}
+
+// openQuestion opens one of Desktop's confirm dialogs as a centered menu:
+// questionBody rows above a rule, the choices below it.
+func (m *Mission) openQuestion(title string, items []picker.MenuItem, t menuTarget) {
+	m.showMenu(title, items, t, nil)
+}
+
+// showMenu replaces an open foldout or menu, since a question can arrive on
+// a push; closing it returns where the one it replaced would have.
+func (m *Mission) showMenu(title string, items []picker.MenuItem, t menuTarget, anchor *picker.MenuAnchor) {
+	switch {
+	case m.modal != nil:
+		m.modal = nil
+		m.menuPrevFocus = m.homeFocus()
+	case m.menu == nil:
+		m.menuPrevFocus = m.focus
+	}
 	m.blurCommitInputs()
 	m.menu = picker.NewMenu(title, items, anchor)
 	m.menu.FitParentHeight()
 	m.menuTarget = t
 	m.menuOnHistory = m.historyTab()
-	m.menuPrevFocus = m.focus
 	m.focus = focusMenu
 }
+
+func questionBody(text string) picker.MenuItem {
+	return picker.MenuItem{ID: "body", Label: text, Disabled: true, Section: 0}
+}
+
+func questionChoice(id, label string) picker.MenuItem {
+	return picker.MenuItem{ID: id, Label: label, Section: 1}
+}
+
+// questionNote is a choice's description, indented under the choice above
+// it.
+func questionNote(text string) picker.MenuItem {
+	return picker.MenuItem{ID: "body", Label: "  " + text, Disabled: true, Section: 1}
+}
+
+func cancelChoice() picker.MenuItem { return questionChoice("cancel", "Cancel") }
 
 // closeMenu returns focus to where the menu opened from. The commit inputs
 // were blurred on open, so a menu opened from one lands on the list.
@@ -178,7 +250,7 @@ func (m *Mission) closeMenu() {
 	m.menu = nil
 	m.focus = m.menuPrevFocus
 	if m.focus == focusMenu || m.focus == focusSummary || m.focus == focusDescription {
-		m.focus = focusList
+		m.focus = m.homeFocus()
 	}
 }
 
@@ -189,8 +261,12 @@ func (m *Mission) historyRange() bool {
 
 // focusedTarget is ctrl-k's target: the row the focused region acts on.
 // A range, the "Load more" row, or a cursor commit the filter hides has no
-// single commit to act on.
+// single commit to act on, and a stashed file has no menu (Desktop's stash
+// file list has none), nor does the Changes row the stash view hides.
 func (m *Mission) focusedTarget() menuTarget {
+	if m.stashShowing() {
+		return menuTarget{}
+	}
 	if m.historyTab() {
 		if m.focus == focusHistoryFiles || m.focus == focusDiff {
 			return m.historyFileTarget(m.historyFile)
@@ -265,7 +341,7 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 			return m.historyTabKey(press)
 		}
 		// The Changes diff binds none of these keys; the list binds them all.
-		m.focus = focusList
+		m.focus = m.homeFocus()
 		return m.listKey(press)
 	}
 	if folder, ok := strings.CutPrefix(it.ID, "ignore-folder:"); ok {
@@ -275,16 +351,13 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 	switch it.ID {
 	case "discard-file":
 		m.menu.Push("Discard all changes to "+path.Base(t.path)+"?", []picker.MenuItem{
-			{ID: "discard-confirm", Label: "Discard Changes"},
-			{ID: "discard-cancel", Label: "Cancel"},
+			questionChoice("discard-confirm", "Discard Changes"),
+			cancelChoice(),
 		})
 		return m, nil
 	case "discard-confirm":
 		m.closeMenu()
 		return m, m.emitMenuAction("discard-file", t, "")
-	case "discard-cancel":
-		m.closeMenu()
-		return m, nil
 	case "ignore-folder":
 		m.menu.Push("Ignore Folder (Add to .gitignore)", ignoreFolderItems(t.path))
 		return m, nil
@@ -300,6 +373,51 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 	case "reveal-repo", "open-repo-editor":
 		m.closeMenu()
 		return m, m.emitMenuAction(it.ID, menuTarget{}, "")
+	case "cancel":
+		m.closeMenu()
+		return m, nil
+	case "discard-all":
+		m.menu.Push(m.discardAllTitle(), []picker.MenuItem{questionChoice("discard-all-confirm", "Discard All Changes"), cancelChoice()})
+		return m, nil
+	case "discard-all-confirm":
+		m.closeMenu()
+		return m, m.emitMenuAction("discard-all", menuTarget{}, "")
+	case "stash-all":
+		if m.model.Stash != nil {
+			m.menu.Push(overwriteStashTitle, overwriteStashItems())
+			return m, nil
+		}
+		m.closeMenu()
+		return m, m.emitStash()
+	case "overwrite":
+		m.closeMenu()
+		if t.kind == targetSwitch {
+			return m, m.emitSwitch(t.prompt.Branch, "leave")
+		}
+		return m, m.emitStash()
+	case "stash-restore":
+		m.closeMenu()
+		return m, m.restoreStash()
+	case "stash-discard-ask":
+		if m.model.Stash == nil {
+			m.closeMenu()
+			return m, nil
+		}
+		m.menu.Push(discardStashTitle, discardStashItems(m.model.Stash.Sha))
+		return m, nil
+	case "stash-discard":
+		m.closeMenu()
+		return m, m.emitStashDiscard(it.Value)
+	case "switch-leave":
+		if t.prompt.HasStash {
+			m.menu.Push(overwriteStashTitle, overwriteStashItems())
+			return m, nil
+		}
+		m.closeMenu()
+		return m, m.emitSwitch(t.prompt.Branch, "leave")
+	case "switch-bring":
+		m.closeMenu()
+		return m, m.emitSwitch(t.prompt.Branch, "bring")
 	}
 	m.closeMenu()
 	return m, m.emitMenuAction(it.ID, t, "")

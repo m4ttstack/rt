@@ -48,7 +48,7 @@ function toWireStatus(file: CommittedFileChange): MissionChangeRow["status"] {
   }
 }
 
-function fileRow(file: CommittedFileChange, onDisk: (path: string) => boolean): MissionHistoryFileRow {
+export function committedFileRow(file: CommittedFileChange, onDisk: (path: string) => boolean): MissionHistoryFileRow {
   const origPath = file.status.kind === AppFileStatusKind.Renamed || file.status.kind === AppFileStatusKind.Copied ? file.status.oldPath : "";
   return { path: file.path, origPath, status: toWireStatus(file), onDisk: onDisk(file.path) };
 }
@@ -149,7 +149,7 @@ export function buildHistoryModel(
     hasMore: store.hasMore,
     loading: opts.loading,
     header: buildHeader(store),
-    files: (store.changeset?.files ?? []).map((file) => fileRow(file, onDisk)),
+    files: (store.changeset?.files ?? []).map((file) => committedFileRow(file, onDisk)),
     selectedFile: store.selectedFile?.path ?? "",
   };
 }

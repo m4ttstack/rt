@@ -103,6 +103,7 @@ const (
 	GlyphRepo     = ""
 	GlyphWorktree = ""
 	GlyphBranch   = ""
+	GlyphStash    = "" // nf-oct-stack: the Stashed Changes strip
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}

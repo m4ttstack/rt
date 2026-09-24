@@ -78,7 +78,7 @@ func TestChangesFileMenuGatesItsRows(t *testing.T) {
 func TestChangesFileMenuWithoutExtensionOrFolderDropsThoseRows(t *testing.T) {
 	m := newMouseTestMission()
 	_, items := m.menuItems(menuTarget{kind: targetChange, path: "Makefile", status: "new"})
-	got := strings.Join(labels(items), "|")
+	got := strings.Join(labels(items[:len(items)-len(m.boardItems())]), "|")
 	for _, absent := range []string{"Ignore Folder", "Ignore All", "(disabled)"} {
 		if strings.Contains(got, absent) {
 			t.Errorf("a root file with no extension offers no %q: %q", absent, got)
@@ -136,7 +136,7 @@ func TestBoardSectionFollowsTheTab(t *testing.T) {
 	m.model.Action.Title = "Fetch origin"
 	m.model.Commit.LastCommit = &LastCommit{Summary: "x", Undoable: true}
 	title, items := m.menuItems(menuTarget{})
-	want := "Commit|Fetch origin|Switch Branch…|Worktrees…|Repositories…|Filter|Undo Last Commit|Show History|Open Repository in External Editor|Reveal Repository in Finder"
+	want := "Commit|Fetch origin|Switch Branch…|Worktrees…|Repositories…|Filter|Stash All Changes (disabled)|Show Stashed Changes (disabled)|Undo Last Commit|Show History|Open Repository in External Editor|Reveal Repository in Finder"
 	if got := strings.Join(labels(items), "|"); title != "Actions" || got != want {
 		t.Fatalf("changes board %q %q", title, got)
 	}
@@ -150,6 +150,182 @@ func TestBoardSectionFollowsTheTab(t *testing.T) {
 	m.model.Action.Busy = true
 	if _, items = m.menuItems(menuTarget{}); !items[1].Disabled {
 		t.Fatal("a busy action segment greys its row")
+	}
+}
+
+func TestChangesListMenuIsGitHubDesktops(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.ChangedTotal = 3
+	m.model.CanStash = true
+	_, items := m.menuItems(menuTarget{kind: targetChangesList})
+	got := labels(items)[:2]
+	if strings.Join(got, "|") != "Discard All Changes…|Stash All Changes" {
+		t.Fatalf("rows %q", got)
+	}
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	_, items = m.menuItems(menuTarget{kind: targetChangesList})
+	if items[1].Label != "Stash All Changes…" {
+		t.Fatalf("with a stash the row asks first: %q", items[1].Label)
+	}
+	m.model.CanStash = false
+	m.model.ChangedTotal = 0
+	_, items = m.menuItems(menuTarget{kind: targetChangesList})
+	if !items[0].Disabled || !items[1].Disabled {
+		t.Fatalf("both rows grey with no changes")
+	}
+}
+
+func TestChangesListMenuTitleAndBoardRowsFollowItsOwn(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.CanStash = true
+	title, items := m.menuItems(menuTarget{kind: targetChangesList})
+	if title != "Changes" {
+		t.Fatalf("title %q", title)
+	}
+	if items[1].Section == items[2].Section || items[0].Section != items[1].Section {
+		t.Fatal("a rule separates the list's own rows from the board rows")
+	}
+	if got := strings.Join(labels(items[2:]), "|"); !strings.HasPrefix(got, "Commit|") {
+		t.Fatalf("the board rows follow: %q", got)
+	}
+}
+
+func TestBoardSectionListsStashKeys(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.CanStash = true
+	got := strings.Join(labels(m.boardItems()), "|")
+	for _, want := range []string{"Stash All Changes", "Show Stashed Changes (disabled)"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("board rows %q missing %q", got, want)
+		}
+	}
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main", Showing: true}
+	if got := strings.Join(labels(m.boardItems()), "|"); !strings.Contains(got, "Hide Stashed Changes") {
+		t.Fatalf("board rows %q", got)
+	}
+}
+
+func TestBoardStashRowsSitAfterFilterAndReplayTheirKeys(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Action.Title = "Fetch origin"
+	m.model.CanStash = true
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	got := strings.Join(labels(m.boardItems()), "|")
+	if want := "Filter|Stash All Changes…|Show Stashed Changes|Show History"; !strings.Contains(got, want) {
+		t.Fatalf("board rows %q, want %q", got, want)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	for _, r := range "stash all" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.menu == nil || m.menu.Title() != "Overwrite Stash?" {
+		t.Fatal("the Stash All Changes… board row asks as S does")
+	}
+}
+
+func TestRightClickOnTheChangedFilesRowOpensTheListMenu(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.ChangedTotal = 2
+	y := masterRowFrameY(m)
+	m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseRight})
+	if m.menu == nil || m.menuTarget.kind != targetChangesList {
+		t.Fatalf("right-click on the header row should open the list menu")
+	}
+}
+
+func TestTheListMenuOpensAtThePointer(t *testing.T) {
+	m := newMouseTestMission()
+	m.height = 50
+	y := masterRowFrameY(m)
+	m.Update(tea.MouseClickMsg{X: 12, Y: y, Button: tea.MouseRight})
+	if x, top := boxCorner(t, m); x != 12 || top != y {
+		t.Fatalf("the box's corner is at (%d,%d), want the pointer (12,%d)", x, top, y)
+	}
+}
+
+func TestTheChangedFilesRowHitsWhereItPaints(t *testing.T) {
+	m := newMouseTestMission()
+	y := masterRowFrameY(m)
+	if row := strings.Split(ansi.Strip(m.View().Content), "\n")[y]; !strings.Contains(row, "3 changed files") {
+		t.Fatalf("row %d paints %q", y, row)
+	}
+	for _, x := range []int{0, 5, sidebarWidth - 1} {
+		if h := m.hitTest(x, y); h.kind != hitMasterRow {
+			t.Fatalf("x %d hits %v", x, h.kind)
+		}
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft}); cmd != nil || m.menu != nil {
+		t.Fatal("a left-click on the header row does nothing")
+	}
+}
+
+func TestDiscardAllAsksWithTheCountThenEmits(t *testing.T) {
+	m := newMouseTestMission()
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu == nil || m.menu.Title() != "Discard all 3 changed files?" {
+		t.Fatal("Discard All Changes… asks first and emits nothing yet")
+	}
+	out := ansi.Strip(m.View().Content)
+	if !strings.Contains(out, "esc back") || !strings.Contains(out, "Discard All Changes") || !strings.Contains(out, "Cancel") {
+		t.Fatalf("the question paints its rows under esc back:\n%s", out)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("confirming emits and closes")
+	}
+}
+
+func TestDiscardAllNamesTheOneFileAndCancelEmitsNothing(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Changes = []ChangeRow{{Path: "src/only.go", Status: "modified", Include: "none"}}
+	m.model.ChangedTotal = 1
+	m.selected = "src/only.go"
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := m.menu.Title(); got != "Discard all changes to only.go?" {
+		t.Fatalf("question title %q", got)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu != nil {
+		t.Fatal("Cancel closes without emitting")
+	}
+}
+
+func TestDiscardAllWithTheOnlyFileFilteredOutSaysOneFile(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Filter = "zzz"
+	m.model.Changes = nil
+	m.model.ChangedTotal = 1
+	m.selected = ""
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.menu == nil {
+		t.Fatal("Discard All Changes… stays enabled while the filter hides the only file")
+	}
+	if got := m.menu.Title(); got != "Discard all 1 changed file?" {
+		t.Fatalf("question title %q", got)
+	}
+}
+
+func TestStashAllFromTheListMenuEmitsOrPushesOverwrite(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.CanStash = true
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Stash All Changes with no stash emits at once and closes")
+	}
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu == nil || m.menu.Title() != "Overwrite Stash?" {
+		t.Fatal("Stash All Changes… pushes Overwrite Stash?")
+	}
+	if out := ansi.Strip(m.View().Content); !strings.Contains(out, "esc back") {
+		t.Fatalf("a pushed question steps back:\n%s", out)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Overwrite emits and closes")
 	}
 }
 
@@ -509,7 +685,7 @@ func TestTheShortestChangesFramePaintsItsHeightAndHitsItsDock(t *testing.T) {
 
 // tallMenuMission is the Changes tab at 27 rows, the shortest frame its
 // docked commit block fits in, with a nested file and Undo showing: the
-// file's menu is 28 lines, one more than the frame.
+// file's menu is 30 lines, three more than the frame.
 func tallMenuMission(width int) *Mission {
 	m := newMouseTestMission()
 	m.width, m.height = width, 27

@@ -32,11 +32,19 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.model.Diff.ReadOnly && (key == "space" || key == "s" || key == "d") {
 		return m, nil
 	}
+	if m.stashShowing() {
+		if cmd, ok := m.stashEntryKey(key); ok {
+			return m, cmd
+		}
+	}
 	switch key {
 	case "esc":
-		if m.historyTab() {
+		switch {
+		case m.historyTab():
 			m.focus = focusHistoryFiles
-		} else {
+		case m.stashShowing():
+			m.focus = focusStashFiles
+		default:
 			m.focus = focusList
 		}
 	case "q":
@@ -61,8 +69,11 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.model.Diff.Kind != "oversized" {
 			break
 		}
-		if m.historyTab() {
+		switch {
+		case m.historyTab():
 			return m, m.em.Emit(protocol.Intent{Name: "mission:history-file", Payload: mustPayload(historyFilePayload{Path: m.model.Diff.Path, ShowOversized: true})})
+		case m.stashShowing():
+			return m, m.em.Emit(protocol.Intent{Name: "mission:stash-select", Payload: mustPayload(stashSelectPayload{Path: m.model.Diff.Path, ShowOversized: true})})
 		}
 		return m, m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(diffSelectPayload{ShowOversized: true})})
 	}
@@ -222,11 +233,15 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		return ""
 	}
 	if d.Kind == "" || d.Kind == "none" {
-		// A commit with no files shows only the file column's empty state,
-		// as GHD suppresses the second one.
-		if m.historyTab() {
+		// A commit or stash with no files shows only the file column's empty
+		// state, as GHD suppresses the second one.
+		if m.historyTab() || m.stashShowing() {
+			files := m.model.History.Files
+			if !m.historyTab() {
+				files = m.model.Stash.Files
+			}
 			msg := ""
-			if len(m.model.History.Files) > 0 {
+			if len(files) > 0 {
 				msg = "No file selected"
 			}
 			return centeredMessage(width, height, theme.Faint, clip(msg, width))
@@ -236,7 +251,7 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		// the filter narrows it), so a filter matching nothing on a dirty
 		// worktree must not read as a clean one.
 		if m.model.ChangedTotal == 0 {
-			return renderEmptyStateCard(width, height)
+			return renderEmptyStateCard(width, height, m.model.Stash != nil)
 		}
 		return centeredMessage(width, height, theme.Faint, "select a file")
 	}
@@ -287,8 +302,10 @@ func centeredMessage(width, height int, col color.Color, text string) string {
 
 // renderEmptyStateCard is the clean-worktree diff pane (docs/design/mission/
 // EmptyState.png): no GitHub Desktop card clone, just a centered title,
-// subline, and the four keys that get a repo out of that state.
-func renderEmptyStateCard(width, height int) string {
+// subline, and the four keys that get a repo out of that state, plus GHD's
+// view-stash action (no-changes.tsx renderViewStashAction) when there is a
+// stash.
+func renderEmptyStateCard(width, height int, hasStash bool) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	title := on.Foreground(theme.Text).Bold(true).Render("No local changes")
 	subline := on.Foreground(theme.Dim).Render("the working tree is clean")
@@ -303,6 +320,9 @@ func renderEmptyStateCard(width, height int) string {
 		hint("b", "switch branch"),
 		hint("w", "switch worktree"),
 		hint("r", "switch repository"),
+	}
+	if hasStash {
+		lines = append(lines, hint("h", "view your stashed changes"))
 	}
 	// JoinVertical centers shorter lines by padding them with bare,
 	// unstyled spaces (it has no whitespace-style option, unlike

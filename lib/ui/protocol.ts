@@ -240,6 +240,24 @@ export interface MissionHistoryModel {
   selectedFile: string;
 }
 
+export interface MissionStashModel {
+  sha: string;
+  branch: string;
+  /** null while the stash's file list loads. */
+  files: MissionHistoryFileRow[] | null;
+  /** The stash view is open; `diff` then carries selectedFile's read-only diff on the Changes tab. */
+  showing: boolean;
+  selectedFile: string;
+}
+
+/** One-shot: present on exactly one push per checkout that needs Desktop's leave-or-bring question. */
+export interface MissionSwitchPrompt {
+  seq: number;
+  branch: string;
+  current: string;
+  hasStash: boolean;
+}
+
 export interface MissionActionModel {
   kind: "fetch" | "pull" | "pull-rebase" | "push" | "force-push" | "publish-branch" | "publish-repo" | "busy" | "detached";
   title: string;
@@ -290,13 +308,17 @@ export interface MissionModel {
   filter: string;
   diff: MissionDiffModel;
   commit: MissionCommitModel;
-  stashCount: number;
   /** One-line transient notice (guard refusals, not-yet-wired). */
   notice: string;
   tab: "changes" | "history";
   history: MissionHistoryModel;
   /** `rt code`'s resolved editor for the current worktree ("Zed"), "" when none resolves. */
   editorLabel: string;
+  /** The current branch's Desktop stash entry, null when it has none. */
+  stash: MissionStashModel | null;
+  switchPrompt: MissionSwitchPrompt | null;
+  /** GHD's Stash All Changes enablement. */
+  canStash: boolean;
 }
 
 export interface SessionHello {
@@ -330,6 +352,11 @@ const SESSION_INTENT_NAMES = [
   "mission:history-file",
   "mission:history-more",
   "mission:menu-action",
+  "mission:stash",
+  "mission:stash-restore",
+  "mission:stash-discard",
+  "mission:stash-select",
+  "mission:stash-hide",
 ] as const;
 
 export interface SessionIntent {

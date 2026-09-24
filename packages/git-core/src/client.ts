@@ -12,6 +12,14 @@ import { scrubGitEnv } from "./exec.ts";
 import { getCommits, getLocalCommits, getChangedFiles, getCommitRangeChangedFiles, getCommitDiff, getCommitRangeDiff } from "./history.ts";
 import { appendIgnoreRule, appendIgnoreFile } from "./gitignore.ts";
 import { discardChanges } from "./discard.ts";
+import {
+  getDesktopStashes,
+  getLastDesktopStashEntryForBranch,
+  createDesktopStashEntry,
+  dropDesktopStashEntry,
+  popStashEntry,
+  getStashedFiles,
+} from "./desktop-stash.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -82,5 +90,11 @@ export function createGitClient(dir: string): GitClient {
     appendIgnoreRule: (patterns) => appendIgnoreRule(ctx, patterns),
     appendIgnoreFile: (paths) => appendIgnoreFile(ctx, paths),
     discardChanges: (files, opts) => discardChanges(ctx, files, opts),
+    desktopStashes: () => getDesktopStashes(ctx),
+    lastDesktopStashEntryForBranch: (branch) => getLastDesktopStashEntryForBranch(ctx, branch),
+    createDesktopStashEntry: (branch, untrackedPaths) => createDesktopStashEntry(ctx, branch, untrackedPaths),
+    dropDesktopStashEntry: (stashSha) => dropDesktopStashEntry(ctx, stashSha),
+    popStashEntry: (stashSha) => popStashEntry(ctx, stashSha),
+    stashedFiles: (stashSha) => getStashedFiles(ctx, stashSha),
   };
 }

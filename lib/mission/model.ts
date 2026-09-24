@@ -3,6 +3,8 @@ import {
   DiffSelectionType,
   type BranchInfo,
   type ChangedFile,
+  type CommittedFileChange,
+  type DesktopStashEntry,
   type RepoSnapshot,
   type StagingDiff,
 } from "../../packages/git-core/src/index.ts";
@@ -14,7 +16,7 @@ import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { WorktreeEntry } from "../worktree/git-async.ts";
 import type { ActionState } from "./git-actions.ts";
-import { EMPTY_HISTORY_MODEL } from "./history-model.ts";
+import { committedFileRow, EMPTY_HISTORY_MODEL } from "./history-model.ts";
 import type {
   MissionActionModel,
   MissionBadge,
@@ -31,6 +33,8 @@ import type {
   MissionLastCommit,
   MissionModel,
   MissionRepoRow,
+  MissionStashModel,
+  MissionSwitchPrompt,
   MissionWorktreeRow,
 } from "../ui/protocol.ts";
 
@@ -50,6 +54,8 @@ export type {
   MissionLastCommit,
   MissionModel,
   MissionRepoRow,
+  MissionStashModel,
+  MissionSwitchPrompt,
   MissionWorktreeRow,
 };
 
@@ -70,6 +76,7 @@ export interface MissionState {
   showOversized: Set<string>;
   selections: Map<string, DiffSelection>;
   settling: boolean;
+  switchPrompt: MissionSwitchPrompt | null;
 }
 
 /** No `rt worktree list` row shape carries a pre-joined git badge; the driver joins one before calling buildModel. */
@@ -432,7 +439,6 @@ export function buildModel(input: {
   guards: Map<string, string>;
   worktrees: WorktreeRow[];
   stagingDiff: StagingDiff | null;
-  stashes: number;
   lastCommit: MissionLastCommit | null;
   action: ActionState;
   /** HEAD's short sha; stands in for current.branch on a detached checkout. */
@@ -445,8 +451,11 @@ export function buildModel(input: {
   history?: MissionHistoryModel;
   historyDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
   editorLabel?: string;
+  stash?: { entry: DesktopStashEntry; files: CommittedFileChange[] | null; showing: boolean; selectedFile: string } | null;
+  stashDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
+  canStash?: boolean;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff, stash, stashDiff } = input;
   const tab = input.tab ?? "changes";
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
@@ -510,14 +519,23 @@ export function buildModel(input: {
           oversizedOverride: historyDiff?.oversizedOverride ?? false,
           readOnly: true,
         })
-      : buildDiffModel({
-          path: state.selectedPath,
-          status: selectedChange?.status ?? "",
-          stagingDiff,
-          selection: diffSelection,
-          oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
-          readOnly: false,
-        });
+      : stash?.showing
+        ? buildDiffModel({
+            path: stashDiff?.path ?? null,
+            status: stashDiff?.status ?? "",
+            stagingDiff: stashDiff?.diff ?? null,
+            selection: DiffSelection.fromInitialSelection(DiffSelectionType.None),
+            oversizedOverride: stashDiff?.oversizedOverride ?? false,
+            readOnly: true,
+          })
+        : buildDiffModel({
+            path: state.selectedPath,
+            status: selectedChange?.status ?? "",
+            stagingDiff,
+            selection: diffSelection,
+            oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
+            readOnly: false,
+          });
 
   // On a plain (non-rt-managed) repo, worktree:list has no row for the
   // checkout at all -- or rt-client's WorktreeTreeRow.name (an rt worktree
@@ -571,10 +589,20 @@ export function buildModel(input: {
     filter: state.filter,
     diff,
     commit,
-    stashCount: stashes,
     notice: state.notice,
     tab,
     history: input.history ?? EMPTY_HISTORY_MODEL,
     editorLabel: input.editorLabel ?? "",
+    stash: stash
+      ? {
+          sha: stash.entry.stashSha,
+          branch: stash.entry.branchName,
+          files: stash.files === null ? null : stash.files.map((f) => committedFileRow(f, () => false)),
+          showing: stash.showing,
+          selectedFile: stash.selectedFile,
+        }
+      : null,
+    switchPrompt: state.switchPrompt ?? null,
+    canStash: input.canStash ?? false,
   };
 }

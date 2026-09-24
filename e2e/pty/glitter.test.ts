@@ -146,6 +146,38 @@ describe("rt glitter through a pty", () => {
     await session.waitForText('"maxTokens": 2048', PAINT_TIMEOUT);
   });
 
+  test("S stashes all changes under a Desktop-tagged entry, and R restores them", async () => {
+    const { session, repo } = await openBoard();
+
+    // Asserted before S is pressed: this is the canary that the
+    // post-restore assertions below are exercising a real transition,
+    // not a sandbox that already looked this way.
+    expect(repo.git("stash", "list")).toBe("");
+
+    await session.press("S");
+    await session.waitForText("Stashed Changes", PAINT_TIMEOUT);
+
+    const stashLog = repo.git("log", "-g", "--format=%gs", "refs/stash", "--")
+      .split("\n")
+      .filter(Boolean);
+    expect(stashLog.length).toBe(1);
+    expect(stashLog[0]).toContain("!!GitHub_Desktop<");
+    expect(repo.git("status", "--porcelain")).toBe("");
+
+    await session.press("h");
+    await session.waitForText("Restore will move your stashed files", PAINT_TIMEOUT);
+
+    await session.press("R");
+    await session.waitForText("Commit 4 files", PAINT_TIMEOUT);
+
+    expect(repo.git("stash", "list")).toBe("");
+    const status = repo.git("status", "--porcelain");
+    expect(status).toContain("config.json");
+    expect(status).toContain("src/parser.ts");
+    expect(status).toContain("src/legacy.ts");
+    expect(status).toContain("NOTES.md");
+  });
+
   test("ctrl-k opens the context menu's board-wide section, and esc closes it", async () => {
     // The context menu changes no git state, so the screen is the only observable.
     const { session } = await openBoard();

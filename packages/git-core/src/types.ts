@@ -113,6 +113,16 @@ export interface StashEntry {
   message: string;
 }
 
+/** GHD IStashEntry (app/src/models/stash-entry.ts), minus `files` (fetched separately via `stashedFiles`). */
+export interface DesktopStashEntry {
+  /** The `%gD` selector (e.g. "refs/stash@{0}") at list time; re-read before use, never cached across a stack mutation. */
+  name: string;
+  stashSha: string;
+  branchName: string;
+  tree: string;
+  parents: string[];
+}
+
 export interface FetchState {
   lastFetchedAt: string | null; // ISO 8601; null = never fetched
 }
@@ -181,4 +191,21 @@ export interface GitClient {
   appendIgnoreFile(paths: string | string[]): Promise<void>;
   /** GHD GitStore.discardChanges: Trash first, then reset and checkout-index only what needs it. */
   discardChanges(files: ChangedFile[], opts?: { moveToTrash?: (absPath: string) => Promise<void> }): Promise<void>;
+  /** GHD getStashes: Desktop-tagged stash entries only, newest first. */
+  desktopStashes(): Promise<DesktopStashEntry[]>;
+  /** GHD getLastDesktopStashEntryForBranch: the newest Desktop-tagged entry for a branch, or null. */
+  lastDesktopStashEntryForBranch(branch: string): Promise<DesktopStashEntry | null>;
+  /** GHD createDesktopStashEntry: stages untrackedPaths, then `stash push` tagged with the branch marker; false when git reported no local changes to save. */
+  createDesktopStashEntry(branch: string, untrackedPaths: ReadonlyArray<string>): Promise<boolean>;
+  /** GHD dropDesktopStashEntry: re-resolves stashSha to its current stash@{n} name before dropping. */
+  dropDesktopStashEntry(stashSha: string): Promise<void>;
+  /**
+   * GHD popStashEntry: re-resolves stashSha. Exit 1 with empty stderr means git
+   * applied with conflicts and kept the entry, so it is dropped here; output
+   * matching Desktop's MergeConflicts pattern is Desktop's expected error and
+   * the entry stays.
+   */
+  popStashEntry(stashSha: string): Promise<void>;
+  /** GHD getStashedFiles: the file changes a stash commit carries. */
+  stashedFiles(stashSha: string): Promise<CommittedFileChange[]>;
 }

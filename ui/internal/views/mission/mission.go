@@ -31,6 +31,7 @@ const (
 	focusModal
 	focusHistoryFiles
 	focusMenu
+	focusStashFiles
 )
 
 // diffScroll is one tab's diff pane position, stashed while the other tab
@@ -81,6 +82,9 @@ type Mission struct {
 	menuTarget    menuTarget
 	menuOnHistory bool
 	menuPrevFocus focusKind
+	// switchSeq is the newest SwitchPrompt.Seq opened, so a push repeating a
+	// prompt never reopens it.
+	switchSeq int
 	// localNotice is a client-only refusal cue (the detached-HEAD branch
 	// guard), kept separate from the wire model's own Notice field: that one
 	// carries the driver's own guard refusals, this one covers a refusal the
@@ -156,6 +160,17 @@ type Mission struct {
 	historyExpanded    bool
 	hoverExpander      bool
 
+	// Stash view state. stashFile is the stash file cursor by path; every
+	// move emits at once, so the driver's SelectedFile is adopted only when
+	// the cursor falls off the list. diffFromStash marks a diff focus taken
+	// inside the stash view, which closes with it.
+	diffFromStash     bool
+	stashFile         string
+	stashFilesTop     int
+	hoverStashFile    int
+	hoverStashRestore bool
+	hoverStashDiscard bool
+
 	// lastTab is the tab the previous push showed; tabDiff holds each tab's
 	// diff position while the other tab owns the pane.
 	lastTab string
@@ -191,6 +206,7 @@ func New(em *session.Emitter) *Mission {
 		hoverDiffLine:    -1,
 		hoverCommit:      -1,
 		hoverHistoryFile: -1,
+		hoverStashFile:   -1,
 		historyMoreFor:   -1,
 		tabDiff:          map[string]diffScroll{},
 	}
@@ -267,6 +283,7 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if reloaded || len(decoded.History.Commits) != len(m.model.History.Commits) || !decoded.History.HasMore {
 		m.historyOnMore, m.hoverHistoryMore = false, false
 	}
+	wasShowing := m.stashShowing()
 	m.model = decoded
 	m.clampSelection()
 	m.clampHistory()
@@ -288,6 +305,7 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		}
 	}
 	m.lastTab = m.model.Tab
+	m.settleStash(wasShowing)
 	m.clampDiffCursor()
 	if m.summaryInput.Value() == "" {
 		m.summaryInput.SetValue(m.model.Commit.Summary)
@@ -300,6 +318,12 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	// typing; the wire value only lands once they commit it via enter.
 	if m.focus != focusFilter {
 		m.filterText = m.model.Filter
+	}
+	// Last: the question takes focus, and the filter check above must still
+	// see the focus the push arrived under.
+	if p := m.model.SwitchPrompt; p != nil && p.Seq > m.switchSeq {
+		m.switchSeq = p.Seq
+		m.openSwitchPrompt(*p)
 	}
 	return nil
 }
@@ -406,6 +430,8 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.diffKey(v)
 		case focusHistoryFiles:
 			return m.historyFilesKey(v)
+		case focusStashFiles:
+			return m.stashFilesKey(v)
 		default:
 			if m.historyTab() {
 				return m.historyListKey(v)
@@ -428,7 +454,7 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.stageIntent(m.selected, "toggle-file")
 	case "enter":
-		m.focus = focusDiff
+		m.focusDiffPane()
 	case "c":
 		m.focus = focusSummary
 		return m, m.summaryInput.Focus()
@@ -449,6 +475,10 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openRepoModal()
 	case "2":
 		return m, m.emitTab("history")
+	case "h":
+		return m, m.toggleStash()
+	case "S":
+		return m, m.stashAllChanges()
 	case "ctrl+k":
 		m.openMenu(m.focusedTarget(), nil)
 	case "q":
@@ -461,10 +491,10 @@ func (m *Mission) filterKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch v.String() {
 	case "esc":
 		m.filterText = m.model.Filter
-		m.focus = focusList
+		m.focus = m.homeFocus()
 	case "enter":
 		ft := m.filterText
-		m.focus = focusList
+		m.focus = m.homeFocus()
 		return m, m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(selectPayload{Filter: ft})})
 	case "backspace":
 		if r := []rune(m.filterText); len(r) > 0 {
@@ -482,7 +512,7 @@ func (m *Mission) commitKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch v.String() {
 	case "esc":
 		m.blurCommitInputs()
-		m.focus = focusList
+		m.focus = m.homeFocus()
 		return m, nil
 	case "tab":
 		m.blurCommitInputs()
@@ -644,8 +674,8 @@ func (m *Mission) sidebarFixedTop(width int) string {
 // undo strip.
 func (m *Mission) sidebarDocked(width int) string {
 	var docked []string
-	if m.model.StashCount > 0 {
-		docked = append(docked, renderStashStrip(m.model.StashCount, m.hoverStash, width))
+	if m.model.Stash != nil {
+		docked = append(docked, renderStashStrip(m.stashShowing(), m.hoverStash, width))
 	}
 	docked = append(docked, lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width)))
 	docked = append(docked, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled(), m.hoverCommitButton, m.hoverCommitSummary, m.hoverCommitDescription))
@@ -691,6 +721,8 @@ func (m *Mission) renderChangesList(width, listRegionH int) string {
 	thumbTop, thumbH := picker.ThumbSpan(top, h, n)
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
 	restOn := lipgloss.NewStyle().Background(theme.Bg)
+	// Stash.png: the stash view owns the selection, so no Changes row wears it.
+	stash := m.stashShowing()
 
 	rows := make([]string, listRegionH)
 	for i := 0; i < listRegionH; i++ {
@@ -698,7 +730,7 @@ func (m *Mission) renderChangesList(width, listRegionH int) string {
 		row := lipgloss.NewStyle().Width(rowWidth).Background(theme.Bg).Render("")
 		if i < h && idx < n {
 			c := changes[idx]
-			row = renderChangeRow(c, rowWidth, c.Path == m.selected, idx == m.hoverFile)
+			row = renderChangeRow(c, rowWidth, c.Path == m.selected && !stash, idx == m.hoverFile)
 		}
 		rows[i] = row + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}
@@ -765,7 +797,7 @@ type frameLayout struct {
 func (m *Mission) layout() frameLayout {
 	l := frameLayout{
 		topH:    lipgloss.Height(renderTopBar(m.model, m.width, m.hoverZone, m.openZone())),
-		keybarH: lipgloss.Height(renderKeybar(m.width, m.model.Tab)),
+		keybarH: lipgloss.Height(renderKeybar(m.width, m.keybarMode())),
 	}
 	if m.noticeText() != "" {
 		l.noticeH = 1
@@ -791,18 +823,32 @@ func (m *Mission) layout() frameLayout {
 	return l
 }
 
+// keybarMode is the legend the frame's keybar shows.
+func (m *Mission) keybarMode() string {
+	switch {
+	case m.historyTab():
+		return "history"
+	case m.stashShowing():
+		return "stash"
+	}
+	return "changes"
+}
+
 func (m *Mission) View() tea.View {
 	top := renderTopBar(m.model, m.width, m.hoverZone, m.openZone())
 	diffW := m.diffWidth()
-	keybar := renderKeybar(m.width, m.model.Tab)
+	keybar := renderKeybar(m.width, m.keybarMode())
 	l := m.layout()
 	bodyHeight := l.bodyH
 
 	sidebarPadded := m.renderSidebar(sidebarWidth, bodyHeight)
 	var pane string
-	if m.historyTab() {
+	switch {
+	case m.historyTab():
 		pane = m.renderHistoryPane(diffW, bodyHeight)
-	} else {
+	case m.stashShowing():
+		pane = m.renderStashPane(diffW, bodyHeight)
+	default:
 		pane = m.renderDiffPane(diffW, bodyHeight)
 	}
 	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(pane)
@@ -883,6 +929,10 @@ const (
 	hitHistoryFile
 	hitHistoryExpander
 	hitHistoryMore
+	hitStashFile
+	hitStashRestore
+	hitStashDiscard
+	hitMasterRow
 )
 
 // hit is hitTest's result: idx is a Changes/Diff.Lines/modal-matches/History
@@ -925,6 +975,8 @@ func (m *Mission) hitTest(x, y int) hit {
 		return hit{}
 	case m.historyTab():
 		return m.historyPaneHit(x-sidebarWidth-1, bodyY)
+	case m.stashShowing():
+		return m.stashPaneHit(x-sidebarWidth-1, bodyY)
 	default:
 		return m.diffHit(x-sidebarWidth-1, bodyY, m.diffWidth())
 	}
@@ -993,7 +1045,7 @@ func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	}
 	row += 3
 	if y == row {
-		return hit{} // master row: no wire affordance to toggle select-all yet
+		return hit{kind: hitMasterRow}
 	}
 	row++
 	if y < row+listRegionH {
@@ -1004,7 +1056,7 @@ func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 		return hit{} // filler row below the last visible change: no click target
 	}
 	row += listRegionH
-	if m.model.StashCount > 0 {
+	if m.model.Stash != nil {
 		if y == row {
 			return hit{kind: hitStash}
 		}
@@ -1204,7 +1256,13 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	case hitFileRow:
 		return m.clickFileRow(h.idx)
 	case hitStash:
-		m.localNotice = "Stash foldout lands in v2"
+		return m, m.toggleStash()
+	case hitStashFile:
+		return m.clickStashFile(h.idx)
+	case hitStashRestore:
+		return m, m.restoreStash()
+	case hitStashDiscard:
+		m.askDiscardStash()
 	case hitCommitSummary:
 		m.focus = focusSummary
 		return m, m.summaryInput.Focus()
@@ -1216,11 +1274,11 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	case hitUndoChip:
 		return m, m.em.Emit(protocol.Intent{Name: "mission:undo"})
 	case hitDiffGutter:
-		m.focus = focusDiff
+		m.focusDiffPane()
 		m.diffCursor = h.idx
 		return m, m.diffClickIntent(h.idx)
 	case hitDiffLine:
-		m.focus = focusDiff
+		m.focusDiffPane()
 		m.diffCursor = h.idx
 	case hitModalRow, hitModalAction:
 		return m.clickModalRow(h)
@@ -1231,9 +1289,9 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 // rightClick moves the cursor to the row first, as a left-click would, then
-// opens that row's menu at the pointer. A right-click with a foldout open only
-// closes it; inside a range selection it keeps the range and opens the
-// board-wide section alone.
+// opens that row's menu at the pointer; the changed-files header opens the
+// list's own menu. A right-click with a foldout open only closes it; inside a
+// range selection it keeps the range and opens the board-wide section alone.
 func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.Cmd) {
 	if m.modal != nil {
 		m.closeModal()
@@ -1259,6 +1317,8 @@ func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.C
 		model, cmd := m.clickHistoryFile(h.idx)
 		m.openMenu(m.historyFileTarget(m.model.History.Files[h.idx].Path), anchor)
 		return model, cmd
+	case hitMasterRow:
+		m.openMenu(menuTarget{kind: targetChangesList}, anchor)
 	}
 	return m, nil
 }
@@ -1293,7 +1353,9 @@ func (m *Mission) clickFileRow(idx int) (tea.Model, tea.Cmd) {
 	if isDouble {
 		m.lastClickPath = ""
 		m.lastClickAt = time.Time{}
-		m.focus = focusDiff
+		// The select just sent closes any open stash view, so the diff
+		// focused here is the Changes diff.
+		m.focus, m.diffFromStash = focusDiff, false
 		return m, cmd
 	}
 	m.lastClickPath = path
@@ -1308,6 +1370,11 @@ func (m *Mission) selectFileRow(idx int) tea.Cmd {
 		return nil
 	}
 	prev := m.selected
+	// GHD hides the stash on any working-directory selection, the row
+	// already under the Changes cursor included.
+	if m.stashShowing() {
+		prev = ""
+	}
 	m.selected = m.model.Changes[idx].Path
 	m.focus = focusList
 	return m.selectPathCmd(prev)
@@ -1325,7 +1392,7 @@ func (m *Mission) clickCheckbox(idx int) (tea.Model, tea.Cmd) {
 	path := m.model.Changes[idx].Path
 	prev := m.selected
 	m.selected = path
-	m.focus = focusList
+	m.focus = m.homeFocus()
 	return m, tea.Batch(m.stageIntent(path, "toggle-file"), m.selectPathCmd(prev))
 }
 
@@ -1394,6 +1461,9 @@ func (m *Mission) setHover(x, y int) {
 	m.hoverHistoryMore = false
 	m.hoverHistoryFile = -1
 	m.hoverExpander = false
+	m.hoverStashFile = -1
+	m.hoverStashRestore = false
+	m.hoverStashDiscard = false
 	if m.modal != nil {
 		m.modal.hoverRow = -1
 		m.modal.hoverAction = false
@@ -1424,6 +1494,12 @@ func (m *Mission) setHover(x, y int) {
 		m.hoverHistoryFile = h.idx
 	case hitHistoryExpander:
 		m.hoverExpander = true
+	case hitStashFile:
+		m.hoverStashFile = h.idx
+	case hitStashRestore:
+		m.hoverStashRestore = true
+	case hitStashDiscard:
+		m.hoverStashDiscard = true
 	case hitFilterRow:
 		m.hoverFilterRow = true
 	case hitCommitSummary:
@@ -1478,8 +1554,11 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if mouse.X >= sidebarWidth {
-		if m.historyTab() {
+		switch {
+		case m.historyTab():
 			return m, m.historyWheel(mouse.X-sidebarWidth-1, bodyY, delta)
+		case m.stashShowing():
+			return m, m.stashWheel(mouse.X-sidebarWidth-1, bodyY, delta)
 		}
 		m.moveDiffCursor(delta)
 		return m, nil

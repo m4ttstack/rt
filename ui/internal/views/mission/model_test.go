@@ -84,8 +84,8 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if m.model.Commit.LastCommit == nil || !m.model.Commit.LastCommit.Undoable {
 		t.Fatalf("Commit.LastCommit: %+v", m.model.Commit.LastCommit)
 	}
-	if m.model.StashCount != 1 || m.model.Notice != "" {
-		t.Fatalf("StashCount=%d Notice=%q", m.model.StashCount, m.model.Notice)
+	if m.model.Stash == nil || m.model.Stash.Branch != "rt-191-mission-tui" || len(m.model.Stash.Files) != 1 || m.model.Notice != "" {
+		t.Fatalf("Stash=%+v Notice=%q", m.model.Stash, m.model.Notice)
 	}
 	if m.model.EditorLabel != "Zed" {
 		t.Fatalf("EditorLabel: got %q want \"Zed\"", m.model.EditorLabel)

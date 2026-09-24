@@ -95,7 +95,6 @@
       "canCommit": false,
       "lastCommit": null
     },
-    "stashCount": 0,
     "notice": "",
     "tab": "history",
     "history": {
@@ -154,6 +153,9 @@
       ],
       "selectedFile": "src/parser.ts"
     },
-    "editorLabel": ""
+    "editorLabel": "",
+    "stash": null,
+    "switchPrompt": null,
+    "canStash": false
   }
 }

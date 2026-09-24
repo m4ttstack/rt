@@ -925,51 +925,128 @@ func (m *Mission) historySlate() string {
 	return ""
 }
 
-// renderHistoryPane is History.png's right pane: the header, a rule, then
-// the file column beside the read-only diff.
-func (m *Mission) renderHistoryPane(width, height int) string {
-	if slate := m.historySlate(); slate != "" {
-		return centeredMessage(width, height, theme.Faint, slate)
-	}
-	header := m.historyHeader(width, height)
+// committedPane is History.png's right pane: a header, a rule, then a file
+// column beside the read-only diff. History and the stash view both paint
+// through it, and committedPaneHit reads the same geometry.
+type committedPane struct {
+	header  []string
+	files   []HistoryFileRow
+	cursor  string
+	top     *int
+	hover   int
+	focused bool
+}
+
+type paneRegion int
+
+const (
+	paneNone paneRegion = iota
+	paneHeader
+	paneFile
+	paneDiff
+)
+
+type paneHit struct {
+	region paneRegion
+	row    int
+	idx    int
+	diff   hit
+}
+
+func (m *Mission) renderCommittedPane(p committedPane, width, height int) string {
 	filesW := historyFilesWidth(width)
 	diffW := max(width-filesW-1, 0)
-	bodyH := max(height-len(header)-1, 0)
+	bodyH := max(height-len(p.header)-1, 0)
 	ruleOn := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule)
-	rows := append(header, ruleOn.Render(strings.Repeat("─", filesW)+"┬"+strings.Repeat("─", diffW)))
+	rows := append(append([]string{}, p.header...), ruleOn.Render(strings.Repeat("─", filesW)+"┬"+strings.Repeat("─", diffW)))
 	if bodyH > 0 {
 		divider := strings.TrimSuffix(strings.Repeat(ruleOn.Render("│")+"\n", bodyH), "\n")
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, m.renderHistoryFiles(filesW, bodyH), divider, m.renderDiffPane(diffW, bodyH)))
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, m.renderCommittedFiles(p, filesW, bodyH), divider, m.renderDiffPane(diffW, bodyH)))
 	}
 	return strings.Join(rows, "\n")
 }
 
-// renderHistoryFiles is GHD's file-list-header ("N changed files") over the
+// renderCommittedFiles is GHD's file-list-header ("N changed files") over the
 // committed-file-item rows, status letter trailing like the Changes rows.
-func (m *Mission) renderHistoryFiles(width, height int) string {
-	files := m.model.History.Files
+func (m *Mission) renderCommittedFiles(p committedPane, width, height int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	noun := "files"
-	if len(files) == 1 {
+	if len(p.files) == 1 {
 		noun = "file"
 	}
-	lines := []string{on.Width(width).Foreground(theme.Dim).Render(clip(fmt.Sprintf(" %d changed %s", len(files), noun), width))}
-
+	lines := []string{on.Width(width).Foreground(theme.Dim).Render(clip(fmt.Sprintf(" %d changed %s", len(p.files), noun), width))}
+	cursorIdx := slices.IndexFunc(p.files, func(f HistoryFileRow) bool { return f.Path == p.cursor })
 	listH := height - 1
 	rowW := max(width-1, 0)
-	top, vis := picker.Viewport(max(m.historyFileIndex(), 0), m.historyFilesTop, len(files), listH, listH, 0)
-	m.historyFilesTop = top
-	thumbTop, thumbH := picker.ThumbSpan(top, vis, len(files))
+	top, vis := picker.Viewport(max(cursorIdx, 0), *p.top, len(p.files), listH, listH, 0)
+	*p.top = top
+	thumbTop, thumbH := picker.ThumbSpan(top, vis, len(p.files))
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
 	for i := 0; i < listH; i++ {
 		idx := top + i
 		line := on.Width(rowW).Render("")
-		if i < vis && idx < len(files) {
-			line = renderHistoryFileRow(files[idx], rowW, files[idx].Path == m.historyFile, idx == m.hoverHistoryFile, m.focus == focusHistoryFiles)
+		if i < vis && idx < len(p.files) {
+			line = renderHistoryFileRow(p.files[idx], rowW, idx == cursorIdx, idx == p.hover, p.focused)
 		}
 		lines = append(lines, line+picker.ThumbCell(i, thumbTop, thumbH, thumbOn, on))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// committedPaneHit walks renderCommittedPane's rows in lockstep: the header,
+// the rule, then the file column (its count row first), the divider, and
+// the diff pane.
+func (m *Mission) committedPaneHit(p committedPane, x, y, paneW int) paneHit {
+	headerH := len(p.header)
+	filesW := historyFilesWidth(paneW)
+	switch {
+	case y < headerH:
+		return paneHit{region: paneHeader, row: y}
+	case y == headerH:
+		return paneHit{}
+	}
+	bodyY := y - headerH - 1
+	switch {
+	case x < filesW:
+		if bodyY == 0 {
+			return paneHit{}
+		}
+		if idx := *p.top + bodyY - 1; idx < len(p.files) {
+			return paneHit{region: paneFile, idx: idx}
+		}
+		return paneHit{}
+	case x == filesW:
+		return paneHit{}
+	}
+	return paneHit{region: paneDiff, diff: m.diffHit(x-filesW-1, bodyY, max(paneW-filesW-1, 0))}
+}
+
+// committedPaneWheel scrolls the file column or the diff under the pointer;
+// the header, the rule, and the divider scroll nothing.
+func (m *Mission) committedPaneWheel(p committedPane, x, y, paneW, delta int, moveFile func(int) tea.Cmd) tea.Cmd {
+	filesW := historyFilesWidth(paneW)
+	switch {
+	case x < 0 || y <= len(p.header) || x == filesW:
+		return nil
+	case x < filesW:
+		return moveFile(delta)
+	}
+	m.moveDiffCursor(delta)
+	return nil
+}
+
+func (m *Mission) historyPane(width, height int) committedPane {
+	return committedPane{
+		header: m.historyHeader(width, height), files: m.model.History.Files, cursor: m.historyFile,
+		top: &m.historyFilesTop, hover: m.hoverHistoryFile, focused: m.focus == focusHistoryFiles,
+	}
+}
+
+func (m *Mission) renderHistoryPane(width, height int) string {
+	if slate := m.historySlate(); slate != "" {
+		return centeredMessage(width, height, theme.Faint, slate)
+	}
+	return m.renderCommittedPane(m.historyPane(width, height), width, height)
 }
 
 // renderHistoryFileRow is one committed-file-item row, exactly width cells:
@@ -992,62 +1069,32 @@ func renderHistoryFileRow(f HistoryFileRow, width int, cursor, hover, focused bo
 	return on.Width(width).Render(clipOn(line, width, on))
 }
 
-// historyPaneLayout is renderHistoryPane's geometry at the frame's pane
-// size, shared by the hit test and the wheel.
-func (m *Mission) historyPaneLayout() (headerH, filesW, paneW int) {
-	paneW = m.diffWidth()
-	return len(m.historyHeader(paneW, m.layout().bodyH)), historyFilesWidth(paneW), paneW
-}
-
-// historyPaneHit walks renderHistoryPane's rows in lockstep: the header
-// (its title row is the expander), the rule, then the file column, the
-// divider, and the diff pane.
+// historyPaneHit reads the committed pane at the frame's pane size; the
+// header's title row is the expander.
 func (m *Mission) historyPaneHit(x, y int) hit {
 	if m.historySlate() != "" {
 		return hit{}
 	}
-	headerH, filesW, paneW := m.historyPaneLayout()
-	if y < headerH {
-		if y == 0 && m.model.History.Header.RangeCount <= 1 {
+	paneW := m.diffWidth()
+	switch h := m.committedPaneHit(m.historyPane(paneW, m.layout().bodyH), x, y, paneW); h.region {
+	case paneHeader:
+		if h.row == 0 && m.model.History.Header.RangeCount <= 1 {
 			return hit{kind: hitHistoryExpander}
 		}
-		return hit{}
+	case paneFile:
+		return hit{kind: hitHistoryFile, idx: h.idx}
+	case paneDiff:
+		return h.diff
 	}
-	if y == headerH {
-		return hit{}
-	}
-	bodyY := y - headerH - 1
-	switch {
-	case x < filesW:
-		if bodyY == 0 {
-			return hit{}
-		}
-		if idx := m.historyFilesTop + bodyY - 1; idx < len(m.model.History.Files) {
-			return hit{kind: hitHistoryFile, idx: idx}
-		}
-		return hit{}
-	case x == filesW:
-		return hit{}
-	default:
-		return m.diffHit(x-filesW-1, bodyY, max(paneW-filesW-1, 0))
-	}
+	return hit{}
 }
 
-// historyWheel scrolls the file column or the diff under the pointer; the
-// header, the rule, and the divider scroll nothing.
 func (m *Mission) historyWheel(x, y, delta int) tea.Cmd {
-	if x < 0 || m.historySlate() != "" {
+	if m.historySlate() != "" {
 		return nil
 	}
-	headerH, filesW, _ := m.historyPaneLayout()
-	switch {
-	case y <= headerH || x == filesW:
-		return nil
-	case x < filesW:
-		return m.historyFileMove(delta)
-	}
-	m.moveDiffCursor(delta)
-	return nil
+	paneW := m.diffWidth()
+	return m.committedPaneWheel(m.historyPane(paneW, m.layout().bodyH), x, y, paneW, delta, m.historyFileMove)
 }
 
 func (m *Mission) historyFileIndex() int {
