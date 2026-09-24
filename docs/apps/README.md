@@ -16,20 +16,22 @@ repo under `apps/`.
 
 ## What's inside
 
-| Package            | Name                       | What it is                                                                                                                                       |
-| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/ui`      | `@mattstack/app-kit`       | The Mantine-based component kit plus the mattstack layer: app shell, boot, router helpers, icon registry, config presets. Tokyo theme pre-wired. |
-| `packages/server`  | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
-| `packages/tokyo`   | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
-| `packages/tui-kit` | `@mattstack/tui-kit`       | The terminal-UI kit for herdr-style panes: components, hooks, and theme, built rather than source-shipped like the other three.                  |
+| Package             | Name                       | What it is                                                                                                                                       |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/ui`       | `@mattstack/app-kit`       | The Mantine-based component kit plus the mattstack layer: app shell, boot, router helpers, icon registry, config presets. Tokyo theme pre-wired. |
+| `packages/server`   | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
+| `packages/tokyo`    | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
+| `packages/tui-kit`  | `@mattstack/tui-kit`       | The terminal-UI kit for herdr-style panes: components, hooks, and theme, built rather than source-shipped like the other three.                  |
+| `packages/gate-kit` | `@mattstack/gate-kit`      | Gate sheet primitives shared by console and board.                                                                                               |
 
 `packages/tui-kit` lives in this repo alongside the Mantine-based packages
 so all four version in lockstep; it does not depend on
-`packages/ui` or `packages/server`, or vice versa. `packages/tokens` is
-also part of this workspace but is private and unpublished: it generates
-the canonical colour and font values both `mantine-tokyo` and `tui-kit`
-ship, and exists to keep those two themes in sync, not to be consumed
-directly.
+`packages/ui` or `packages/server`, or vice versa. `packages/tokens` and
+`packages/gate-kit` are also part of this workspace but are private,
+unversioned, and unpublished: `tokens` generates the canonical colour and
+font values both `mantine-tokyo` and `tui-kit` ship, and exists to keep
+those two themes in sync, not to be consumed directly; `gate-kit` is a
+private workspace member consumed only by `apps/console` and `apps/board`.
 
 `@mattstack/app-kit` has nineteen subpath exports: the Mantine-based
 components and shadows (`./core`), hooks, forms, modals, notifications, the
@@ -55,8 +57,10 @@ See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 ## Repository layout
 
 - `packages/` -- the four platform packages (`ui`, `server`, `tokyo`,
-  `tui-kit`) described above, plus `packages/tokens`, the private
-  generator that keeps `tokyo` and `tui-kit`'s colour/font values in sync.
+  `tui-kit`) described above, plus `packages/tokens` (the private
+  generator that keeps `tokyo` and `tui-kit`'s colour/font values in sync)
+  and `packages/gate-kit` (the private gate sheet primitives `console` and
+  `board` share).
 - `apps/` -- the five mattstack apps that consume these packages as
   workspace members: `chat`, `console`, `boxscore` (Mantine-based, on
   `@mattstack/app-kit`), and `board`, `deck` (terminal-flavoured, on

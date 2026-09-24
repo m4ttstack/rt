@@ -48,6 +48,22 @@ story per gate kind and variant, built from real gate shapes with invented
 data (`gate-gallery.fixtures.ts`). Add a story when you add a gate kind or
 variant, with invented names only (the repo is public).
 
+## Respond rounds
+
+A respond run has a round: 1 on the MR's first pass, one more for each
+`revise` re-adjudication, recorded by the wrapper through
+`respond-status <state> drafting --round <n>` and kept on `RespondState.round`
+(`src/respond-state.ts`). Two dispatch helpers decide what a launched pane is
+told: `respondResumeDispatchFields` rides the recorded round on a parked-gate
+resume as `--round <n>`, and `respondFreshDispatchFields` hands a FRESH launch
+on an MR with a prior recorded round `--round <n+1>`, so the wrapper's own
+"1, then +1 per revise" rule does not restart at 1 and the gate header chip
+does not read round 1 forever. Absent prior round omits the flag in both.
+Keep the two helpers siblings with the same shape (they mirror
+`doctorResumeDispatchFields` in `src/doctor-state.ts`); a new dispatch field
+goes in both, and the wrapper (`skills/respond/SKILL.md`, the `--round` row
+of its flag table) must document it the same day.
+
 ## Browser checks
 
 Drive local apps by raw port (`http://localhost:<port>`; the live board is

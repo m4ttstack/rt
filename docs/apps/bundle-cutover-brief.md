@@ -65,7 +65,7 @@ recipe build.
 
 ## CI bun pin
 
-CI in this repo pins bun to `1.3.13` (`.github/workflows/ci.yml`).
+CI in this repo pins bun to `1.4.2` (`.github/workflows/ci.yml`).
 Bundle legs should pin the same version so build artifacts stay byte
 comparable between CI and the bundle pipeline.
 

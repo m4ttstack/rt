@@ -2,12 +2,29 @@
 
 Contract for anyone (human or agent) working in this repo.
 
+## Read first
+
+1. `ARCHITECTURE.md`: how a message gets from `rt chat post` to the screen,
+   the `/api` and `/ws` surface, the `/r/<room>#m-<id>` link contract with
+   rt, what a message body renders, how to run it with real or fixture data
+   (`CHAT_FIXTURES=1`), and the deploy loop (`bun install && bun run build &&
+deck restart chat`, port 11002).
+2. The rest of this file: what's app-specific about chat's use of
+   `@mattstack/app-kit` + `@mattstack/app-server` (icon registration). The
+   kit contract itself lives in the repo root `AGENTS.md` (see below).
+
+The other half lives in `~/Documents/GitHub/repo-tools`: `skills/rt-chat/SKILL.md`
+(the agent-facing rules), `docs/superpowers/specs/2026-08-2{3,4}-rt-chat-*.md`
+(schema and wake protocol), `packages/rt-client/README.md` (the client this
+app calls).
+
 chat is a thin consumer of `@mattstack/app-kit` (the Mantine-based UI kit,
 shell, boot, icons, router glue) and `@mattstack/app-server` (the Hono/Bun
-server frame). The kit contract itself — the import walls, icon registry,
-theme override patterns, facade recipes (modals/notifications/forms), the
-`MattstackShell`/`mountMattstackApp` mattstack layer, and the server
-package's routes/relay/static contract — lives at this repo's root:
+server frame). The kit contract itself, covering the import walls, icon
+registry, theme override patterns, facade recipes
+(modals/notifications/forms), the `MattstackShell`/`mountMattstackApp`
+mattstack layer, and the server package's routes/relay/static contract,
+lives at this repo's root:
 
 **`AGENTS.md` (repo root)**
 
@@ -39,7 +56,7 @@ import goes straight through `@mattstack/app-kit`'s package subpaths
 `eslint.config.js`. Product code (rooms, transcript, roster, composer) is
 `src/app/**`; the server route handlers are `src/server/routes.ts` (composed
 from `src/server/chat.ts`) served via `@mattstack/app-server`'s
-`serveMattstackApp` — see `ARCHITECTURE.md` for the request path and API
+`serveMattstackApp`. See `ARCHITECTURE.md` for the request path and API
 surface.
 
 ## Icon registration
@@ -51,8 +68,8 @@ app-specific `hash` icon via `@mattstack/app-kit/icons`'s `registerIcons` +
 `declare module '@mattstack/app-kit/icons' { interface AppIcons { hash: true
 } }` augmentation that widens `IconName`. It's named `app-icons.d.ts`, not
 `icons.d.ts`, specifically so it doesn't share a basename with `icons.ts` in
-the same directory — TypeScript silently drops a `.d.ts` that does, and the
-augmentation never loads. See app-kit's AGENTS.md §8 "The `AppIcons`
+the same directory, since TypeScript silently drops a `.d.ts` that does, and
+the augmentation never loads. See app-kit's AGENTS.md §8 "The `AppIcons`
 augmentation contract" for the full mechanism.
 
 ## Dependencies
@@ -67,7 +84,7 @@ there is no `vendor/` and no tarball step. Kit changes land in
 This app pins **Mantine 9.5.2** (via `@mattstack/app-kit`'s peer range).
 Before using a component or prop you're not already certain of, call the
 `mantine` MCP server (configured in `.mcp.json`, pinned to the installed
-version) — `get_item_props`, `get_item_doc`, `search_docs`, `list_items`.
+version): `get_item_props`, `get_item_doc`, `search_docs`, `list_items`.
 Without MCP there's `docs/mantine-llms.txt`, an index only: it names
 components and links a page each, never a prop signature offline.
 
@@ -75,8 +92,7 @@ components and links a page each, never a prop signature offline.
 
 `design/CONFORMANCE.md` and `design/ANATOMY.md` are the UI contract; the
 artboards under `design/artboards` are the authority on layout and values,
-and no UI task is done until `design/audit.mjs` passes against them. See
-`CLAUDE.md` for the read order.
+and no UI task is done until `design/audit.mjs` passes against them.
 
 ## Right-click menus
 

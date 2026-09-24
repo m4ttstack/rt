@@ -9,7 +9,142 @@ component, touching `packages/server/src/**`, or consuming
 mantine-kit; see `docs/superpowers/specs/2026-08-26-app-kit-design.md`).
 "The mattstack layer", "The server package", and "Consumer requirements"
 are new to this repo. Colour and type decisions are NOT made here:
-`docs/ui-authoring.md` owns them, for this package and every app.
+`docs/ui-authoring.md` owns them, for this package and every app. "Working
+in this repo" right below is the repo-wide reading order and layout notes;
+it precedes the numbered kit contract sections.
+
+## Working in this repo
+
+### Reading order
+
+1. `README.md` -- what the four platform packages are, the subpath tables,
+   the consumer snippets, the repository layout, and local development.
+2. `docs/superpowers/specs/2026-08-26-app-kit-design.md` -- historical: why
+   these packages exist and the decisions taken during brainstorming.
+3. `docs/superpowers/specs/2026-09-06-apps-fold-in-design.md` -- historical:
+   why the five apps (chat, console, boxscore, board, deck) moved into this
+   repo as `apps/<name>` and the rename to `m4ttstack/apps`. The fold-in
+   this spec describes is complete; all five apps already live here.
+4. The kit contract below (sections 1 to 10): import walls, theme and icon
+   extension points, the boot family, and the consumer requirements a new
+   app must not skip.
+5. `docs/ui-authoring.md` -- MANDATORY before writing UI colour or type
+   anywhere in this repo: the Radix step model, the role tokens, the
+   contrast bars and their ledger, and the type rules. Each app's own
+   `apps/<name>/AGENTS.md` points back here and carries that app's
+   specifics.
+6. `docs/bundle-cutover-brief.md` -- anything release- or bundle-shaped:
+   how the mac-app bundle pipeline reads each app's
+   `apps/<name>/mattstack.deck.json` recipe, app-prefixed release tags,
+   and why old app repos stay unarchived until a shipped bundle release
+   repoints to them.
+
+### Repository layout
+
+`packages/{ui,server,tokyo,tui-kit,tokens,gate-kit}` and
+`apps/{chat,console,boxscore,board,deck}` are the two workspace roots; see
+README.md's "Repository layout" section for what each package/app is.
+`packages/gate-kit` (`@mattstack/gate-kit`, the gate sheet primitives
+console and board share) is a private workspace member like
+`packages/tokens`, not one of the four versioned platform packages. The
+five old standalone app repos
+(chat, console, board, deck, boxscore, plus tui-kit) are deleted from
+GitHub -- their branch history lives here as `archive/<app>/*` refs, and
+their pre-fold-in releases are re-tagged byte-identical under
+app-prefixed tags (`chat-v0.1.0` style).
+
+### Workspace and catalog rules
+
+The root `package.json`'s `workspaces.catalog` is the single home for
+shared dependency versions; every member declares `"catalog:"` rather than
+pinning its own version. `packages/tui-kit` and `apps/board` each pin
+`"typescript": "^7"` as deliberate exceptions -- the catalog's `~6` line
+would downgrade their compiler, so both opt out on purpose, for the same
+reason. Do not add a further exception without the same kind of reason.
+Member-level lockfiles are forbidden: the root
+`bun.lock` is the only lockfile that owns resolution, so a workspace
+member never runs `bun install` scoped to itself in a way that would
+produce its own lock.
+
+### CI shape
+
+Two GitHub Actions jobs (`.github/workflows/ci.yml`): the `checks` job
+(ubuntu) runs kit/gate checks plus the chat, console, boxscore, and board
+suites (typecheck/lint/test/build), the served-client and served-binary
+gates, and the whole-repo `scripts/repo-purity.sh` gate; `deck-macos`
+(macos-latest, its own bun install) runs deck's suite because deck shells
+to `plutil`/`launchd`, both macOS-only.
+
+`setup-bun` is pinned to `1.4.2` in both jobs. The pin exists because
+CI byte-compares generated/committed artifacts (deck's
+`core/generated-fresh.test.ts`, tui-kit's codegen gate) against a live
+rebuild, and bun's bundler/minifier output is not stable across bun
+versions. Bump the pin only together with the local bun upgrade that
+regenerates those committed files -- never on its own.
+
+`packages/tui-kit` exports `dist/`, not source, so `bun run tui-kit:build`
+must run before any board or deck typecheck/test/build, locally and in
+CI. Both CI jobs run it first for exactly this reason.
+
+### Per-app root scripts
+
+Each app gets `<app>:typecheck`, `<app>:test`, `<app>:lint`, and
+`<app>:build` root scripts in `package.json` where that gate applies to
+the app (e.g. board has no `:lint` script, deck has none of the four --
+see its own test scripts instead). Run an app's own gates with these
+rather than `cd`-ing into `apps/<name>` by hand; they match what CI runs.
+
+### Deck serving note
+
+`deck` (the local supervisor, `apps/deck`) dev-links each app via
+`deck register --dir` pointed at `apps/<name>`. In serve mode, deck's
+health check only proves `/api` is up -- it does not build the app's UI.
+If a Mantine app's `dist/` is stale or missing, `bun run <app>:build`
+inside that app, or the UI 404s while `/api` stays healthy (DECK-61).
+Rebuild after any change you want to see served, not just after changes
+that fail typecheck.
+
+### rt identity note
+
+rt currently shows this repo under the identity label `app-kit`, via a
+machine-settings `rt.repoIdentityOverrides` bridge, until RT-112 re-keys
+it to the repo's actual name. The row and its data are correct; only the
+label is stale.
+
+### Mantine: look it up, don't recall it
+
+`@mattstack/app-kit` pins Mantine on the 9.5 line (`^9.5.2` across every
+`@mantine/*` peer in `packages/ui/package.json`). Before using a Mantine
+component you have not already used in this session, or any prop you are
+not certain of, look it up rather than guessing: a guessed prop compiles
+and renders and is still wrong (the variant that does not exist, the prop
+that moved, a size off the scale). If your session has the `mantine` MCP
+server available (mantine-kit's own `.mcp.json` configures it,
+`npx -y @mantine/mcp-server@9.5.2`), use `get_item_props` /
+`get_item_doc` / `search_docs` / `list_items` the same way mantine-kit's
+`AGENTS.md` describes. This repo does not vendor its own `.mcp.json` or a
+`docs/mantine-llms.txt` index; absent MCP, check the installed
+`@mantine/core` / `@mantine/dates` type declarations directly (they match
+the pinned `^9.5.2` range) rather than recalling a prop from memory or
+from a different Mantine version.
+
+### Publishing
+
+Nothing in this repo publishes to npm. `@mattstack/app-kit`,
+`@mattstack/app-server`, `@mattstack/mantine-tokyo`, and
+`@mattstack/tui-kit` each carry a version (bumped together via
+`scripts/set-platform-version.ts`), but that version is a tree-internal
+identity only: it has never been published and, per the fold-in decision,
+never will be. `packages/tokens` and `packages/gate-kit` stay private and
+unpublished. Every app
+under `apps/` consumes the four platform packages workspace-only
+(`workspace:*`); external npm deps such as `@mattstack/rt-client` (pinned
+exact in the root catalog), `@mattstack/glance`, `@mattstack/settings-kit`, and
+`invadrs` come from the registry via `catalog:`. The packed-tarball
+mechanism in README.md's "Bundle-transition tarballs" section stays
+documented as the sanctioned path for a future app that has not yet
+folded in as a workspace member; do not propose or wire up a publish
+workflow.
 
 ## 1. Why the import walls exist, and how to satisfy them
 
@@ -310,15 +445,12 @@ This still buys the same two things mantine-kit's split buys:
 
 **Write scalar-or-object theme options in their object form.**
 `primaryShade` is `{ light, dark }` in `base-theme.ts` even though both
-shades are 7 and Mantine accepts the scalar. Mantine's `deepMerge`
-recurses whenever the SOURCE value is an object without checking that the
-target is one too, so `deepMerge(7, { light: 7, dark: 4 })` spreads
-`{...7}` to `{}` and returns `{}`, which `validateMantineTheme` then reads
-as the object form and dereferences, blanking the page with `Cannot read
-properties of undefined (reading 'toString')` from
-`isValidPrimaryShade`, naming neither `primaryShade` nor the theme that
-supplied it. Matching the wider shape makes the kit theme safe to nest
-under or over any override. `design-system/theme.test.tsx` pins it.
+shades are 7 and Mantine accepts the scalar. Mantine's `deepMerge` recurses
+into an object source without checking that the target is one too, so a
+scalar target merged with an object override collapses to `{}` and blanks
+the page with a `TypeError` from `isValidPrimaryShade` that names neither
+`primaryShade` nor the theme that supplied it. `design-system/theme.test.tsx`
+pins it.
 
 **Kit-wide defaults** live in `packages/ui/src/design-system/base-theme.ts`,
 via `createTheme`'s `components` map in Mantine's string-keyed form --
@@ -637,6 +769,7 @@ export is the one module in the package that touches `hono/bun` and
 | `./event-bridge`   | `ensureEventBridgeRule(read, write, rule, opts?)`: identity-aware (`pattern` + `subjectPrefix`) merge-not-clobber upsert into an `rt.notify.eventBridges`-shaped list; `deckAppUrl(name, opts?)`: an app's local url from deck's `/api/v1/status`, or `null` on any failure; `reconcileEventBridgeRule(opts)`: the boot step both apps use, which never writes a localhost url (deck unreachable keeps an existing rule, seeds a missing one with `https://<app>.mattstack`)                                                                                                                                                                                                                                                                         | yes                     |
 | `./canonical-host` | `canonicalHostRedirect(req, canonical?)`: a 302 to `https://<canonical>` (default `MATTSTACK_CANONICAL_HOST`, which deck sets to `<name>.mattstack` on every mattstack app it supervises) for a request whose `x-forwarded-host` (read first; portless keeps `Host` and sets both) or `Host` ends in `.localhost`; null otherwise, and always null for a websocket upgrade or when no canonical host is configured. `createApp` runs it before every route                                                                                                                                                                                                                                                                                           | yes                     |
 | `./local-request`  | `isLocalRequest(req, server?)`: true only when the socket peer is loopback (checked when a Bun `server` is passed), `Host` and every `x-forwarded-host` hop are local (`localhost`, `127.0.0.1`, `::1`, `*.localhost`, `*.mattstack`), every `x-forwarded-for` hop is loopback, and no edge marker (`cf-connecting-ip`, `tailscale-funnel-request`, deck gateway's `x-mattstack-edge`) is present. The shared gate for local-only writes; pass the server, since every proxy on the machine connects from 127.0.0.1 and Host alone is forgeable. `hasLocalOrigin(req)`: true with no `Origin` header, otherwise only when the Origin is local and names the request's own `Host`; pair it with `isLocalRequest` on writes a browser page could forge | yes                     |
+| `./shell-handoff`  | `shellHandoff(req, deps?)`: for a top-level `GET` document navigation to a `.mattstack` host whose user agent lacks `SHELL_UA_MARKER`, asks the mattstack window (over the tray's unix socket at `~/.mattstack/rt/tray.sock`, or `RT_APP_SOCKET`) to open the URL in the app shell instead, returning a stub `Response`; every other case, and every failure, returns `null` to serve the app normally. `traySockPath()` resolves the socket path                                                                                                                                                                                                                                                                                                    | yes                     |
 | `.`                | `serveMattstackApp(opts)`: `createApp` + `mountStatic` with `hono/bun`'s `serveStatic` + `/ws` upgrade subscribing each socket to every relay topic + `Bun.serve({ hostname: '127.0.0.1' })` + `server.publish` fan-out + SIGINT/SIGTERM → stop relays, stop server                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | no (`hono/bun`)         |
 
 `/ws` is registered with no middleware in front of it: a
@@ -653,10 +786,10 @@ the app, so an RPC client's typing is untouched by the frame.
 
 ## 10. Consumer requirements
 
-Real findings from building `apps/chat`, `apps/console`, and
-`apps/boxscore`, the three Mantine-based apps that consume
-`@mattstack/app-kit` -- a consumer that misses any of these breaks in a
-way that does not announce itself as "the kit is wrong":
+These are rules a new app consuming `@mattstack/app-kit` must follow,
+drawn from building `apps/chat`, `apps/console`, and `apps/boxscore` --
+missing any of them breaks in a way that does not announce itself as
+"the kit is wrong":
 
 1. **The Mantine colour-name augmentation needs no `/// <reference>`
    line.** It lives in `packages/ui/src/design-system/colors.ts` (a

@@ -13,9 +13,9 @@ contrast gates.
 
 This app consumes `@mattstack/app-kit` and `@mattstack/app-server` as workspace packages
 (`workspace:*` in `package.json`; the packages live in `packages/` of this same repo). The kit's
-own contract — the Mantine import walls, theme layering, facades (modals, notifications, forms),
-the icon registry, `MattstackShell`, and the server package's `serveMattstackApp` surface — is
-documented in `AGENTS.md` at this repo's root. Read that before touching anything that imports
+own contract, covering the Mantine import walls, theme layering, facades (modals, notifications,
+forms), the icon registry, `MattstackShell`, and the server package's `serveMattstackApp` surface,
+is documented in `AGENTS.md` at this repo's root. Read that before touching anything that imports
 from `@mattstack/app-kit/*` or `@mattstack/app-server`.
 
 This file covers only what's specific to console: its routes, its runs domain, the wiring map, and
@@ -25,8 +25,8 @@ how it wires up the shell and server packages.
 
 A local web app for the mattstack pipeline: what's running, what needs you, and what a run
 actually did. One `Bun.serve` process (Hono, via `@mattstack/app-server`) serves a built Vite SPA
-and an `/api` + `/ws` surface backed by `@mattstack/rt-client`, called in-process — no shelling out
-to `rt`, and nothing proxied through to another service. The dev server defaults to port `11011` (`PORT`, and the `vite.config.ts` proxy); the production
+and an `/api` + `/ws` surface backed by `@mattstack/rt-client`, called in-process, with no
+shelling out to `rt` and nothing proxied through to another service. The dev server defaults to port `11011` (`PORT`, and the `vite.config.ts` proxy); the production
 `deck` service runs on `11001` (`mattstack.deck.json`).
 
 ## Routes and chrome (`src/app/App.tsx`, `src/app/routes.ts`)
@@ -46,7 +46,7 @@ thrown error.
 appName="console"`, a `MattstackShell.Rail` of `RailLink`s (Runs, Search) plus the app-specific
 `WiringRailEntry`, and routes each `AppRoute` to its page component inside a per-path
 `RouteErrorBoundary` (keyed on `path` so a caught error on one route doesn't linger after
-navigating away — Mantine has no error boundary of its own, and the run-detail suspense query
+navigating away, since Mantine has no error boundary of its own and the run-detail suspense query
 throws on failure).
 
 `ConsolePalette` (`src/app/palette/ConsolePalette.tsx`) is a single global `Spotlight` instance
@@ -73,7 +73,7 @@ WebSocket wire-up.
 ## Wiring map (`src/app/wiring/`)
 
 The wiring map (skills, surfaces, seams, version timeline, on-demand view) is console's largest
-app-specific feature — it visualizes the mattstack skill/pipeline graph read from
+app-specific feature: it visualizes the mattstack skill/pipeline graph read from
 `@mattstack/rt-client`. It has no kit dependency beyond the shared UI facades; `WiringRailEntry`
 is the one component that reaches into the shell's rail context (`useShellRail` from
 `@mattstack/app-kit/app`) to badge the rail entry with attention state.
@@ -86,22 +86,14 @@ bun run build:binary   # vite build && mattstack-embed-assets && bun build --com
 ```
 
 `mattstack-embed-assets` (the bin shipped by `@mattstack/app-server`) reads the built `dist/` and
-generates `src/server/embedded/manifest.ts` (gitignored, build-time only — never hand-edited, and
+generates `src/server/embedded/manifest.ts` (gitignored, build-time only, never hand-edited, and
 never committed). `src/server/index.ts` imports it dynamically as `import('./embedded/manifest' as
-string)` — the `as string` cast keeps `tsc` from trying to resolve the gitignored path at
+string)`. The `as string` cast keeps `tsc` from trying to resolve the gitignored path at
 typecheck time, while `bun build --compile` still sees the literal specifier and embeds the module
 into the compiled binary. `serveMattstackApp`'s embedded-mode detection (`decideServingMode` /
 `loadEmbeddedManifest`, both in the app-server package) is what lets the resulting `dist-bin/console`
-binary serve its own assets with no `dist/` on disk next to it — see the CI job in
+binary serve its own assets with no `dist/` on disk next to it. See the CI job in
 `.github/workflows/ci.yml` for the end-to-end proof (build the binary, hide `dist/`, curl it).
-
-## Vendored packages
-
-`@mattstack/app-kit`, `@mattstack/app-server`, and `@mattstack/mantine-tokyo` are consumed as
-`file:` tarball dependencies pinned in `vendor/` (see `package.json`). Bun **copies** a `file:`
-dependency into `node_modules` rather than symlinking it, so bumping one means dropping in a new
-tarball and re-running `bun install` — editing the vendored source in place has no effect until
-then.
 
 ## Formatting, linting, testing
 
