@@ -109,10 +109,13 @@ func (m *Mission) changesListItems() []picker.MenuItem {
 }
 
 func (m *Mission) discardAllTitle() string {
-	if m.model.ChangedTotal == 1 && len(m.model.Changes) == 1 {
+	if m.model.ChangedTotal != 1 {
+		return fmt.Sprintf("Discard all %d changed files?", m.model.ChangedTotal)
+	}
+	if len(m.model.Changes) == 1 {
 		return "Discard all changes to " + path.Base(m.model.Changes[0].Path) + "?"
 	}
-	return fmt.Sprintf("Discard all %d changed files?", m.model.ChangedTotal)
+	return "Discard all 1 changed file?"
 }
 
 func (m *Mission) changeItems(t menuTarget) []picker.MenuItem {

@@ -123,7 +123,7 @@ Desktop's app-store sequencing, in its own module the driver calls, so
   runs on every status refresh): keep only the newest entry per branch,
   expose the current branch's entry, and load its file list. A file list is
   cached by sha and reused while the sha is unchanged. A stash made in
-  GitHub Desktop or with `rt git stash` therefore shows without a restart.
+  GitHub Desktop therefore shows without a restart.
 - Whether the stash view is showing is store state, as Desktop's
   Changes-selection kind is: `selectStashedFile` opens it and selects a file
   (the first when none is named), `hideStashedChanges` closes it, and

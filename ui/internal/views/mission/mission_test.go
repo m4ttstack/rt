@@ -921,6 +921,18 @@ func screenRow(s *testutil.Session, y int) string {
 	return ""
 }
 
+// paintedRowOf is the first screen row showing text.
+func paintedRowOf(t *testing.T, s *testutil.Session, text string) int {
+	t.Helper()
+	for y, row := range strings.Split(s.Screen(), "\n") {
+		if strings.Contains(row, text) {
+			return y
+		}
+	}
+	t.Fatalf("no screen row shows %q:\n%s", text, s.Screen())
+	return -1
+}
+
 // TestHistoryDateHeadersPaintAndStayInert drives the real binary: each run
 // of commits opens on its date header, and a click on a header emits
 // nothing.
@@ -1434,10 +1446,11 @@ func TestDiscardStashConfirmEmitsItsSha(t *testing.T) {
 }
 
 // TestDiscardAllConfirmEmitsTheMenuAction right-clicks the "2 changed files"
-// row (frame row 11: topH(4) + the tabs/tabs-gap/filter rows) and confirms.
+// row and confirms.
 func TestDiscardAllConfirmEmitsTheMenuAction(t *testing.T) {
 	s := openMission(t, noStashModel, "a.go")
-	s.Type(sgrClick(2, 5, 11))
+	s.WaitForPaint("2 changed files")
+	s.Type(sgrClick(2, 5, paintedRowOf(t, s, "2 changed files")))
 	s.WaitForPaint("Discard All Changes…")
 	s.Type(keyEnter)
 	s.WaitForPaint("Discard all 2 changed files?")

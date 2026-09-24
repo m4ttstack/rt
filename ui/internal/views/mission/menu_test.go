@@ -291,6 +291,22 @@ func TestDiscardAllNamesTheOneFileAndCancelEmitsNothing(t *testing.T) {
 	}
 }
 
+func TestDiscardAllWithTheOnlyFileFilteredOutSaysOneFile(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Filter = "zzz"
+	m.model.Changes = nil
+	m.model.ChangedTotal = 1
+	m.selected = ""
+	m.Update(tea.MouseClickMsg{X: 5, Y: masterRowFrameY(m), Button: tea.MouseRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.menu == nil {
+		t.Fatal("Discard All Changes… stays enabled while the filter hides the only file")
+	}
+	if got := m.menu.Title(); got != "Discard all 1 changed file?" {
+		t.Fatalf("question title %q", got)
+	}
+}
+
 func TestStashAllFromTheListMenuEmitsOrPushesOverwrite(t *testing.T) {
 	m := newMouseTestMission()
 	m.model.CanStash = true

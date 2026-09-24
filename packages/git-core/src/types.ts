@@ -113,7 +113,7 @@ export interface StashEntry {
   message: string;
 }
 
-/** GHD app/src/lib/git/stash.ts's stash entry shape, minus `files` (fetched separately via `stashedFiles`). */
+/** GHD IStashEntry (app/src/models/stash-entry.ts), minus `files` (fetched separately via `stashedFiles`). */
 export interface DesktopStashEntry {
   /** The `%gD` selector (e.g. "refs/stash@{0}") at list time; re-read before use, never cached across a stack mutation. */
   name: string;
@@ -195,11 +195,16 @@ export interface GitClient {
   desktopStashes(): Promise<DesktopStashEntry[]>;
   /** GHD getLastDesktopStashEntryForBranch: the newest Desktop-tagged entry for a branch, or null. */
   lastDesktopStashEntryForBranch(branch: string): Promise<DesktopStashEntry | null>;
-  /** GHD createDesktopStashEntry: stages untrackedPaths, then `stash push` tagged with the branch marker. */
+  /** GHD createDesktopStashEntry: stages untrackedPaths, then `stash push` tagged with the branch marker; false when git reported no local changes to save. */
   createDesktopStashEntry(branch: string, untrackedPaths: ReadonlyArray<string>): Promise<boolean>;
   /** GHD dropDesktopStashEntry: re-resolves stashSha to its current stash@{n} name before dropping. */
   dropDesktopStashEntry(stashSha: string): Promise<void>;
-  /** GHD popStashEntry: re-resolves stashSha; a conflicted pop leaves the conflict and drops the entry. */
+  /**
+   * GHD popStashEntry: re-resolves stashSha. Exit 1 with empty stderr means git
+   * applied with conflicts and kept the entry, so it is dropped here; output
+   * matching Desktop's MergeConflicts pattern is Desktop's expected error and
+   * the entry stays.
+   */
   popStashEntry(stashSha: string): Promise<void>;
   /** GHD getStashedFiles: the file changes a stash commit carries. */
   stashedFiles(stashSha: string): Promise<CommittedFileChange[]>;

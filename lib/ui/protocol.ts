@@ -259,7 +259,7 @@ export interface MissionSwitchPrompt {
 }
 
 export interface MissionActionModel {
-  kind:"fetch" | "pull" | "pull-rebase" | "push" | "force-push" | "publish-branch" | "publish-repo" | "busy" | "detached";
+  kind: "fetch" | "pull" | "pull-rebase" | "push" | "force-push" | "publish-branch" | "publish-repo" | "busy" | "detached";
   title: string;
   meta: string;
   ahead: number;

@@ -285,9 +285,10 @@ committed pane, built on the same shared pane History's right side uses:
 header "Stashed changes" with Restore and Discard buttons and "Restore will
 move your stashed files to the Changes list.", a file column, and a
 read-only diff (no stage gutter). `R` restores, `D` asks "Discard Stash?",
-and `h`/esc hide -- all three bound alike whether the stash file list or the
+and `h` hides -- all three bound alike whether the stash file list or the
 stash diff has focus, so a reader mid-diff never has to step back to the
-file list first.
+file list first. esc hides from the file list; from the stash diff it
+returns to the file list.
 
 **The store owns the view state.** Which file is selected, its diff, and
 whether the view is showing all live in the driver's `StashStore`

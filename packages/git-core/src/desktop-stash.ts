@@ -77,7 +77,11 @@ export async function dropDesktopStashEntry(ctx: ClientContext, stashSha: string
   if (entry !== null) await rawGit(ctx.dir, ["stash", "drop", entry.name]);
 }
 
-/** GHD popStashEntry: a conflicted pop exits 1 with empty stderr and git keeps the entry, so it is dropped here. */
+/**
+ * GHD popStashEntry. Exit 1 with empty stderr means git applied with conflicts
+ * and kept the entry, so it is dropped here; output matching Desktop's
+ * MergeConflicts pattern is Desktop's expected error and the entry stays.
+ */
 export async function popStashEntry(ctx: ClientContext, stashSha: string): Promise<void> {
   const entry = await entryMatchingSha(ctx, stashSha);
   if (entry === null) return;
