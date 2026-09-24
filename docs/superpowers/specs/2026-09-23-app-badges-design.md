@@ -81,11 +81,13 @@ An app opts in by declaring a badge path in its `mattstack.deck.json`:
 The path is relative to the app's URL. `GET <app url><badge>` returns:
 
 ```json
-{ "count": 2, "url": "https://board.mattstack/?gate=<id>" }
+{ "count": 2, "path": "/?gate=<id>" }
 ```
 
-`count` is a non-negative integer. `url` is optional: a page showing the
-oldest counted decision. Any other response (non-2xx, bad JSON, negative
+`count` is a non-negative integer. `path` is optional: a path inside the
+same app (starting with `/`) to the page showing the oldest counted
+decision. The tray opens it in that app's own tab, so a badge can never
+point outside its app. Any other response (non-2xx, bad JSON, negative
 or non-integer count, timeout) is a failed fetch.
 
 ### Board (`mattstack-apps/apps/board`)
@@ -117,11 +119,11 @@ The board's gate cache must be correct before its count can be:
 
 Then the count:
 
-- A shared module exports the badge predicate (the rule above) beside the
-  existing `needsQueue`. The server applies it to the rows the board holds
+- `src/gates/badge.ts` exports the badge predicate (the rule above). The
+  client's `needsQueue` and queue button are unchanged. The server applies it to the rows the board holds
   (MR rows with attached gates, plus `queueExtras`), unaffected by the
   client's tab or author filter.
-- `GET /api/badge` returns the count and, when above 0, `url` =
+- `GET /api/badge` returns the count and, when above 0, `path` =
   `/?gate=<id>` for the oldest counted gate. Declare
   `"badge": "/api/badge"` in `apps/board/mattstack.deck.json`.
 
@@ -130,7 +132,7 @@ Then the count:
 - `GET /api/badge` counts gates on `run:` subjects whose run exists in
   `listRuns`, under the rule above, excluding `kind: pane-attention` (the
   board owns those; counting them here would double-count a wedged run).
-  `url` points at the run page of the oldest counted gate.
+  `path` is the run page of the oldest counted gate (`/runs/<repo>/<runId>`).
 - The run row marker (`hasOpenGate`, `src/app/runs/useGates.ts`, painted by
   `RunRow.tsx`) shows for any `open` or `parked` gate, labeled by owner:
   "blocked" when the gate is Matt's (counted), "waiting on shepherd" when
@@ -159,17 +161,18 @@ Then the count:
 - **Failure hold:** an app keeps its last count through 2 consecutive failed
   fetches, then drops out (no badge). This matches the tray's existing
   `consecutiveStatusFailures >= 2` rule for daemon health.
-- `WindowModel` holds `badges: [String: (count: Int, url: URL?)]`.
+- `WindowModel` holds `badges: [String: BadgeReading]` (count plus optional
+  path).
 - **Tab:** `TabButton` (`Window/MattstackWindowView.swift`) shows a count
   pill after the label when the count is above 0, and nothing at 0. Colors
   come from the window's existing tokens, in both schemes. Clicking the tab
   label keeps today's behavior (it does not navigate the webview). Clicking
-  the pill itself selects the tab and loads its `url` (the oldest counted
+  the pill itself selects the tab and loads its `path` (the oldest counted
   decision), through `WindowModel.open(OpenRequest)`.
 - **Dock:** `NSApp.dockTile.badgeLabel` is the sum of all counts, or `nil`
   at 0. Counts above 99 render as `99+` on both the tab and the dock. When
   the window is closed and the dock sum is above 0, clicking the dock icon
-  opens the window on the first badged tab (in tab order) at its `url`
+  opens the window on the first badged tab (in tab order) at its `path`
   (`applicationShouldHandleReopen`, keeping the `suppressReopenShowUntil`
   guard). With the window open, a dock click just activates it with no
   navigation. With a sum of 0, a dock click behaves as today. Tab order is
