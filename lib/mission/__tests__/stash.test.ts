@@ -131,7 +131,7 @@ describe("checkoutAndLeaveChanges", () => {
       },
     });
     await expect(checkoutAndLeaveChanges(client, "other", snap())).rejects.toThrow(
-      "checkout boom · Your changes were stashed, but the previous stash could not be removed: drop boom",
+      "Your changes were stashed, but the previous stash could not be removed: drop boom · checkout boom",
     );
   });
 

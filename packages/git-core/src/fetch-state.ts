@@ -12,6 +12,8 @@ export async function getFetchState(ctx: ClientContext): Promise<FetchState> {
     const s = await stat(join(commonDir, "FETCH_HEAD"));
     // git empties FETCH_HEAD before it connects, so a fetch that failed
     // leaves it empty with a fresh mtime; only a written one is a fetch.
+    // A fetch still in flight, or one from a remote with no refs, also
+    // reads as never fetched until the next read.
     return { lastFetchedAt: s.size > 0 ? s.mtime.toISOString() : null };
   } catch {
     return { lastFetchedAt: null };

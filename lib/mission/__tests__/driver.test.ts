@@ -2423,6 +2423,168 @@ describe("MissionDriver: a selection the tree no longer has", () => {
   });
 });
 
+describe("MissionDriver: a git-status pass overtaken mid-read", () => {
+  const files = (paths: string[]) => paths.map((path) => ({ path, kind: "modified" as const, staged: false, unstaged: true }));
+
+  for (const [label, intent] of [
+    ["the selection", { name: "mission:select", payload: { path: "b.txt" } }],
+    ["the filter", { name: "mission:select", payload: { filter: ".txt" } }],
+  ] as const) {
+    test(`a pass whose read ${label} moved under runs again, so a file it saw still lands`, async () => {
+      const session = new QueueSession();
+      let captured: ((ev: DaemonEvent) => void) | null = null;
+      let snapshots = 0;
+      let releaseRead: (() => void) | null = null;
+      const client = makeFakeClient({
+        snapshot: async () => {
+          snapshots++;
+          if (snapshots === 1) return baseSnapshot({ clean: false, files: files(["a.txt", "b.txt"]) });
+          if (snapshots === 2) {
+            return new Promise((resolve) => {
+              releaseRead = () => resolve(baseSnapshot({ clean: false, files: files(["a.txt", "b.txt", "c.txt"]) }));
+            });
+          }
+          return baseSnapshot({ clean: false, files: files(["a.txt", "b.txt", "c.txt"]) });
+        },
+      });
+      const deps = baseDeps({
+        session,
+        client,
+        subscribe: (onEvent) => {
+          captured = onEvent;
+          return { close: () => {} };
+        },
+      });
+      const runPromise = new MissionDriver(deps, START).run();
+      await flushMicrotasks();
+
+      captured!({ type: "git-status", data: {} });
+      await flushMicrotasks();
+      expect(releaseRead).not.toBeNull();
+      session.send({ t: "intent", ...intent });
+      await flushMicrotasks();
+      releaseRead!();
+      await flushMicrotasks();
+
+      expect((session.pushed.at(-1) as MissionModel).changes.map((c) => c.path)).toEqual(["a.txt", "b.txt", "c.txt"]);
+      expect(snapshots).toBe(3);
+
+      session.send({ t: "intent", name: "quit" });
+      await runPromise;
+    });
+  }
+
+  test("a checkout during a moved selection's diff read discards the pass", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let snapshots = 0;
+    let checkedOut = false;
+    let releaseDiff: (() => void) | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => {
+        snapshots++;
+        if (checkedOut) return baseSnapshot({ branch: "other" });
+        return baseSnapshot({ clean: false, files: files(snapshots === 1 ? ["a.txt", "b.txt"] : ["b.txt"]) });
+      },
+      stagingDiff: (path: string) =>
+        path === "b.txt" && releaseDiff === null && snapshots === 2
+          ? new Promise((resolve) => {
+              releaseDiff = () => resolve(oneHunkDiff("b.txt"));
+            })
+          : Promise.resolve(oneHunkDiff(path)),
+      checkoutBranch: async () => {
+        checkedOut = true;
+      },
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    expect(releaseDiff).not.toBeNull();
+    session.send({ t: "intent", name: "mission:checkout", payload: { branch: "other", strategy: "bring" } });
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).current.branch).toBe("other");
+
+    releaseDiff!();
+    await flushMicrotasks();
+    captured!({ type: "worktree:ready-settled", data: { path: "/repo", ok: true } });
+    expect((session.pushed.at(-1) as MissionModel).current.branch).toBe("other");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a refresh that starts while a pass loads its stash keeps that pass from pushing", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let snapshots = 0;
+    let stashLoads = 0;
+    let checkedOut = false;
+    let releaseStash: (() => void) | null = null;
+    let releaseRefresh: (() => void) | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => {
+        snapshots++;
+        if (snapshots === 4) {
+          return new Promise((resolve) => {
+            releaseRefresh = () => resolve(baseSnapshot({ branch: "other" }));
+          });
+        }
+        return baseSnapshot({ branch: checkedOut ? "other" : "main" });
+      },
+      checkoutBranch: async () => {
+        checkedOut = true;
+      },
+    });
+    client.lastDesktopStashEntryForBranch = async () => {
+      stashLoads++;
+      if (stashLoads !== 2) return null;
+      return new Promise((resolve) => {
+        releaseStash = () => resolve(null);
+      });
+    };
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    expect(releaseStash).not.toBeNull();
+    const before = session.pushed.length;
+    session.send({ t: "intent", name: "mission:checkout", payload: { branch: "other" } });
+    await flushMicrotasks();
+    expect(releaseRefresh).not.toBeNull();
+
+    releaseStash!();
+    await flushMicrotasks();
+    releaseRefresh!();
+    await flushMicrotasks();
+
+    const after = (session.pushed.slice(before) as MissionModel[]).map((m) => m.current.branch);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((b) => b === "other")).toBe(true);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+});
+
 describe("MissionDriver: the selection follows the view's cursor rule", () => {
   const files = (paths: string[]) => paths.map((path) => ({ path, kind: "modified" as const, staged: false, unstaged: true }));
 
@@ -2443,6 +2605,44 @@ describe("MissionDriver: the selection follows the view's cursor rule", () => {
     expect(last.current.worktree).toBe("/repo2");
     expect(last.diff.path).toBe("b.txt");
     expect(clientB.calls.stagingDiff).toEqual(["b.txt"]);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a push during a selection's diff read still shows the file it has the diff for", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let releaseB: (() => void) | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: files(["a.txt", "b.txt"]) }),
+      stagingDiff: (path: string) =>
+        path === "b.txt"
+          ? new Promise((resolve) => {
+              releaseB = () => resolve(oneHunkDiff("b.txt"));
+            })
+          : Promise.resolve(oneHunkDiff(path)),
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:select", payload: { path: "b.txt" } });
+    await flushMicrotasks();
+    expect(releaseB).not.toBeNull();
+    captured!({ type: "worktree:ready-settled", data: { path: "/repo", ok: true } });
+    expect((session.pushed.at(-1) as MissionModel).diff.path).toBe("a.txt");
+
+    releaseB!();
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).diff.path).toBe("b.txt");
 
     session.send({ t: "intent", name: "quit" });
     await runPromise;

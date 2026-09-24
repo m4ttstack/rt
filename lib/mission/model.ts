@@ -346,11 +346,11 @@ function changeFilter(filter: string): (path: string) => boolean {
 }
 
 /**
- * GHD's updateChangedFiles rule, and the view cursor's own (mission.go's
- * clampSelection): keep a selection the filtered list still shows, else take
- * its first row, else nothing, which puts the clean-tree card in the diff
- * pane. The two must agree, or the list highlights one file while the diff
- * shows another.
+ * GHD's updateChangedFiles rule (keep a selection that still exists, else
+ * the first file), narrowed to the filtered list as the view's cursor is
+ * (mission.go's clampSelection): keep a selection the list still shows,
+ * else its first row, else nothing. The two must agree, or the list
+ * highlights one file while the diff shows another.
  */
 export function reconcileSelectedPath(files: ReadonlyArray<{ path: string }>, selected: string | null, filter: string): string | null {
   const listed = files.map((f) => f.path).filter(changeFilter(filter));

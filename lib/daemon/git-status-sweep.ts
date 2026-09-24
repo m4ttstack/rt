@@ -96,9 +96,9 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
 
   /**
    * fetch() targets origin, and git empties FETCH_HEAD before it connects:
-   * fetching a repo with no origin would fail every pass and leave a fresh,
-   * empty FETCH_HEAD behind. A failed remotes lookup skips the fetch rather
-   * than the snapshot.
+   * fetching a repo with no origin would fail once per fetch cadence and
+   * leave a fresh, empty FETCH_HEAD behind. A failed remotes lookup skips
+   * the fetch rather than the snapshot.
    */
   async function fetchOrigin(repo: string, client: GitClient): Promise<void> {
     const hasOrigin = await client.remotes().then((remotes) => remotes.some((r) => r.name === "origin"), () => false);
@@ -106,9 +106,8 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
     fetchesInFlight.add(repo);
     const controller = new AbortController();
     const fetchPromise = client.fetch(undefined, controller.signal);
-    // Settle-driven cleanup: the abort below makes a timed-out fetch's
-    // own child process die promptly, so this now fires close behind it
-    // rather than whenever some unrelated future settlement occurs.
+    // Settle-driven cleanup: the abort below kills a timed-out fetch's
+    // child process, so the in-flight mark clears promptly after a timeout.
     fetchPromise.then(
       () => { fetchesInFlight.delete(repo); },
       () => { fetchesInFlight.delete(repo); },

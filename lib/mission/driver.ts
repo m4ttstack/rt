@@ -185,6 +185,9 @@ interface DriverState extends MissionState {
   tab: "changes" | "history";
 }
 
+/** What one git-status pass did; see refreshBadges. */
+type SweepOutcome = "applied" | "overtaken" | "moved";
+
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
 const DISCARD_CONFIRM_WINDOW_MS = 5000;
 
@@ -378,7 +381,10 @@ export class MissionDriver {
     if (this.refreshingBadges) return;
     this.refreshingBadges = true;
     try {
-      if (await this.refreshBadges()) this.push();
+      let outcome: SweepOutcome;
+      do outcome = await this.refreshBadges();
+      while (outcome === "moved");
+      if (outcome === "applied") this.push();
     } finally {
       this.refreshingBadges = false;
     }
@@ -552,33 +558,40 @@ export class MissionDriver {
   /**
    * Just the badges/snapshot/diff a repos:status sweep changed -- the
    * git-status subscription's own refresh, cheaper than a full seed.
-   * A full refresh() or a selection or filter change mid-flight discards
-   * this pass: every worktree, repo, and branch switch runs refresh(), so
-   * its generation is what says these reads describe a tree or branch that
-   * is no longer current. Every read, including the diff for a selection
-   * that moved, lands before the first write, so the snapshot, selection,
-   * and diff publish together or not at all. Returns false for a discarded
-   * pass, which must push nothing: the switch that discarded it may still
-   * be mid-refresh, with currentWorktree moved and this.snapshot not.
+   * Every read, including the diff for a selection that moved, lands
+   * before the first write, so the snapshot, selection, and diff publish
+   * together or not at all. A pass is "overtaken" when a refresh() started
+   * meanwhile (every worktree, repo, and branch switch runs one, and it
+   * re-reads everything), and must push nothing: the switch may still be
+   * mid-refresh, with currentWorktree moved and this.snapshot not. A pass
+   * whose selection or filter moved mid-read is "moved": nothing else will
+   * re-read what it saw, since the daemon emits only on a change, so the
+   * caller runs it again.
    */
-  private async refreshBadges(): Promise<boolean> {
+  private async refreshBadges(): Promise<SweepOutcome> {
     const gen = this.refreshGen;
     const worktree = this.state.currentWorktree;
     const selectedPath = this.state.selectedPath;
     const filter = this.state.filter;
     const client = this.deps.client(worktree);
-    const stale = (): boolean =>
-      this.refreshGen !== gen || this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath || this.state.filter !== filter;
+    const check = (): SweepOutcome | null =>
+      this.refreshGen !== gen || this.state.currentWorktree !== worktree
+        ? "overtaken"
+        : this.state.selectedPath !== selectedPath || this.state.filter !== filter
+          ? "moved"
+          : null;
     const [statusRes, snapshot, fetchState, stagingDiff] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       client.snapshot(),
       client.fetchState(),
       selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
     ]);
-    if (stale()) return false;
+    const afterRead = check();
+    if (afterRead) return afterRead;
     const nextPath = reconcileSelectedPath(snapshot.files, selectedPath, filter);
     const nextDiff = nextPath === selectedPath ? stagingDiff : nextPath ? await client.stagingDiff(nextPath) : null;
-    if (stale()) return false;
+    const afterDiff = check();
+    if (afterDiff) return afterDiff;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
     this.fetchState = fetchState;
@@ -588,13 +601,20 @@ export class MissionDriver {
     this.clearOnDisk();
     this.recomputeAction();
     await this.stash.load(client, snapshot.branch);
-    if (this.refreshGen !== gen || this.state.currentWorktree !== worktree) return false;
+    if (this.refreshGen !== gen || this.state.currentWorktree !== worktree) return "overtaken";
     await this.syncHistory();
-    return true;
+    return "applied";
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
     this.stagingDiff = this.state.selectedPath ? await client.stagingDiff(this.state.selectedPath) : null;
+  }
+
+  /** Reads the diff before moving the selection: a push during the read must not pair one file's header with another's hunks. */
+  private async selectPath(path: string | null): Promise<void> {
+    const diff = path ? await this.deps.client(this.state.currentWorktree).stagingDiff(path) : null;
+    this.state.selectedPath = path;
+    this.stagingDiff = diff;
   }
 
   /**
@@ -1201,19 +1221,14 @@ export class MissionDriver {
   private async handleSelect(payload: SelectPayload | undefined): Promise<void> {
     if (!payload) return;
     if (typeof payload.filter === "string") {
+      const next = reconcileSelectedPath(this.snapshot.files, this.state.selectedPath, payload.filter);
+      if (next !== this.state.selectedPath) await this.selectPath(next);
       this.state.filter = payload.filter;
-      const next = reconcileSelectedPath(this.snapshot.files, this.state.selectedPath, this.state.filter);
-      if (next !== this.state.selectedPath) {
-        this.state.selectedPath = next;
-        await this.refreshDiff(this.deps.client(this.state.currentWorktree));
-      }
     }
     if (typeof payload.path === "string") {
       // GHD: selecting a working-directory file replaces the stash selection.
       this.stash.hide();
-      this.state.selectedPath = payload.path === "" ? null : payload.path;
-      const client = this.deps.client(this.state.currentWorktree);
-      await this.refreshDiff(client);
+      await this.selectPath(payload.path === "" ? null : payload.path);
     }
     if (payload.showOversized === true && this.state.selectedPath) this.state.showOversized.add(this.state.selectedPath);
     if (payload.showOversized === false && this.state.selectedPath) this.state.showOversized.delete(this.state.selectedPath);

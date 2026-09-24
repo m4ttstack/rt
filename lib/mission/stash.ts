@@ -59,7 +59,7 @@ export async function checkoutAndLeaveChanges(client: GitClient, target: string,
   } catch (err) {
     // Desktop reports each failed operation; one notice line must carry both.
     if (notice === "") throw err;
-    throw new Error(`${message(err)} · ${notice}`);
+    throw new Error(`${notice} · ${message(err)}`);
   }
   return notice;
 }
