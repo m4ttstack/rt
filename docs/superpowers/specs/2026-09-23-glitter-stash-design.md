@@ -57,18 +57,19 @@ stay as they are for `rt git stash`.
   Desktop and the reverse.
 - `DesktopStashEntry { name, stashSha, branchName, tree, parents }`, where
   `name` is the `%gD` selector (`stash@{n}`) as read at list time.
-- `getDesktopStashes(): { desktopEntries, stashEntryCount }`: `git log -g`
-  with Desktop's format fields (`%gD`, `%H`, `%gs`, `%T`, `%P`) over
-  `refs/stash --`; exit 128 yields no entries and a count of 0. Entries whose
-  message does not end in `!!GitHub_Desktop<branch>` are counted but not
-  returned. Port Desktop's `stashEntryCount` arithmetic verbatim and pin it
-  with a real-git test.
+- `getDesktopStashes(): DesktopStashEntry[]`: `git log -g` with Desktop's
+  format fields (`%gD`, `%H`, `%gs`, `%T`, `%P`) over `refs/stash --`; exit
+  128 yields none. Entries whose message does not end in
+  `!!GitHub_Desktop<branch>` are skipped. Desktop's `stashEntryCount` is
+  not ported: nothing in glitter shows it, and its `entries.length - 1`
+  undercounts by one with this parser.
 - `getLastDesktopStashEntryForBranch(branch)`: the first matching entry in
   reflog (LIFO) order, or null.
 - `createDesktopStashEntry(branch, untrackedPaths): boolean`: stage the
   untracked paths fully first (Desktop's `stageFiles` with every selection
-  set to All: `git update-index --add --remove --replace` semantics, the
-  same path `stageFileFully` already takes), then
+  set to All, which for untracked files is its `updateIndex` step:
+  `git update-index --add --remove --replace -z --stdin` with the paths
+  NUL-joined on stdin, skipped when there are none), then
   `stash push -m !!GitHub_Desktop<branch>`. Exit 1 with no line starting
   `error: ` in stderr counts as created; any other failure throws. Stdout
   exactly `No local changes to save\n` returns false.
@@ -117,18 +118,30 @@ Desktop's app-store sequencing, in its own module the driver calls, so
 - `createStashForCurrentBranch()`: `createStashAndDropPreviousEntry` on the
   current branch; refused (no-op) on a detached or unborn HEAD.
 - `restore(sha)` pops; `discard(sha)` drops. Both then refresh.
-- Stash state on each refresh (Desktop's `loadStashEntries` plus
-  `loadFilesForCurrentStashEntry`): keep only the newest entry per branch,
+- Stash state on each refresh and on each git-status sweep (Desktop's
+  `loadStashEntries` plus `loadFilesForCurrentStashEntry`, which Desktop
+  runs on every status refresh): keep only the newest entry per branch,
   expose the current branch's entry, and load its file list. A file list is
-  cached by sha and reused while the sha is unchanged.
+  cached by sha and reused while the sha is unchanged. A stash made in
+  GitHub Desktop or with `rt git stash` therefore shows without a restart.
+- Whether the stash view is showing is store state, as Desktop's
+  Changes-selection kind is: `selectStashedFile` opens it and selects a file
+  (the first when none is named), `hideStashedChanges` closes it, and
+  selecting a Changes file closes it. The view closes itself when the entry
+  disappears.
 
 ## 3. Wire
 
-- `stashCount` is removed. `stash: { sha, branch, files } | null` carries
-  the current branch's Desktop entry; `files` is `HistoryFileRow[]`, or null
-  while loading.
-- `stashDiff`: the selected stash file's diff, the same shape as
-  `historyDiff`.
+- `stashCount` is removed. `stash: { sha, branch, files, showing,
+  selectedFile } | null` carries the current branch's Desktop entry;
+  `files` is `HistoryFileRow[]`, or null while loading.
+- While `stash.showing`, the existing `diff` field carries the selected
+  stash file's read-only diff on the Changes tab, the way it carries the
+  History diff on the History tab. The view's diff pane needs no second
+  source.
+- `canStash`: Desktop's Stash All Changes enablement (changes exist, the tip
+  is a branch, nothing is conflicted), computed by the driver from the
+  unfiltered snapshot.
 - `switchPrompt: { seq, branch, current, hasStash } | null`: one-shot. The
   view opens the question when `seq` is new and never reopens a seq it has
   seen, so a later refresh cannot bring a dismissed prompt back.
@@ -136,12 +149,15 @@ Desktop's app-store sequencing, in its own module the driver calls, so
   - `mission:stash {}`: Stash All Changes (any overwrite confirm has
     already happened in the view).
   - `mission:stash-restore {sha}`, `mission:stash-discard {sha}`.
-  - `mission:stash-select {path}`: load `stashDiff` for a stashed file.
+  - `mission:stash-select {path?, showOversized?}`: open the stash view
+    and select a stashed file (the first when no path is given).
+  - `mission:stash-hide {}`: close the stash view.
   - `mission:checkout` gains `strategy?: "leave" | "bring"`.
   - `mission:menu-action {action: "discard-all"}`: Discard All Changes,
     through the shipped `discardChanges` port over every changed file (the
     driver re-reads the snapshot first, as the single-file discard does).
-- Stash actions run under the same busy handling as commit and undo.
+- Stash intents run on the driver's serial intent loop like commit and
+  undo; there is no separate busy flag.
 
 ## 4. The view
 
@@ -174,12 +190,15 @@ On the Changes tab, the right pane takes History's layout:
 - **Switch Branch**, opened by `switchPrompt` in place of the branch
   foldout: title "Switch Branch"; a quiet line "You have changes on this
   branch. What would you like to do with them?"; rows "Leave my changes on
-  <current>" and "Bring my changes to <branch>". The cursor row's Desktop
-  description shows as a quiet footer ("Your in-progress work will be
-  stashed on this branch for you to return to later" / "Your in-progress
-  work will follow you to the new branch"). When `hasStash` and the cursor
-  is on Leave, a greyed row reads "⚠ Your current stash will be overwritten
-  by creating a new stash". Choosing Bring, or Leave without a stash, sends
+  <current>" and "Bring my changes to <branch>". Each row has its Desktop
+  description as a greyed row directly under it ("Your in-progress work
+  will be stashed on this branch for you to return to later" / "Your
+  in-progress work will follow you to the new branch"), as Desktop's
+  segmented control shows both at once. When `hasStash`, a greyed row under
+  Leave's description reads "⚠ Your current stash will be overwritten by
+  creating a new stash" (Desktop hides it while Bring is selected;
+  picker.Menu rows do not change with the cursor). Choosing Bring, or Leave
+  without a stash, sends
   `mission:checkout {branch, strategy}`. Choosing Leave with a stash goes to
   Overwrite Stash?.
 - **Overwrite Stash?**: quiet line "Are you sure you want to proceed? This
@@ -248,7 +267,7 @@ With no changes and a stash, the "No local changes" card gains Desktop's
 ## 7. Testing
 
 - git-core, against real sandbox repos: marker round trip; newest entry per
-  branch in LIFO order; non-Desktop stashes counted but not returned;
+  branch in LIFO order; non-Desktop stashes skipped;
   untracked files land in the stash; "No local changes to save" returns
   false; a conflicting pop drops the entry; drop and pop by sha after
   another stash shifted the stack; `getStashedFiles` lists a formerly
