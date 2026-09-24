@@ -66,6 +66,10 @@ public enum AgentReregisterOutcome: Equatable, Sendable {
 /// registered over it. A failed register is retried once: the agent must not
 /// be left unregistered by the refresh that meant to renew it.
 public enum AgentReregister {
+    /// An unregistered job can take up to its ExitTimeOut to leave launchd,
+    /// and a register racing that exit fails.
+    public static let retryPauseNanoseconds: UInt64 = 2_000_000_000
+
     public static func run(unregister: () async -> Bool, register: () async -> Bool,
                            beforeRetry: () async -> Void) async -> AgentReregisterOutcome {
         guard await unregister() else { return .unregisterFailed }

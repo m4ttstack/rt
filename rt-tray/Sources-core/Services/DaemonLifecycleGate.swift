@@ -13,6 +13,8 @@ public enum DaemonOrigin {
     public static let menu = "gear menu"
     /// A flavor handover retiring this bundle's agent.
     public static let flavorRetire = "flavor retire"
+    /// Launch re-registering the agent because the bundle's plist changed.
+    public static let plistChanged = "agent plist changed"
 
     /// A request that arrived on tray.sock. rt's clients identify themselves
     /// in `X-RT-Client` (`rt-cli/<pid>`, `rt-client/<pid>`); a caller that
