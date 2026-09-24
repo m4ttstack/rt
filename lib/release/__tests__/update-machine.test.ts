@@ -415,13 +415,44 @@ describe("rt release update-machine", () => {
       expect(calls.some((c) => c.startsWith("hdiutil detach"))).toBe(true);
     });
 
-    test("dev bundle: a failed ditto restores the previous bundle instead of leaving a merged mess", async () => {
+    test("dev bundle: a failed ditto restores the previous bundle and reopens it, since the leg already quit it", async () => {
       const { seams, calls } = fakeSeams({ devDittoExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
       const leg = report.legs.find((l) => l.id === "dev-bundle")!;
       expect(leg.status).toBe("error");
-      expect(calls).toContain("mv /Applications/mattstack-dev.app.update-machine-old /Applications/mattstack-dev.app");
+      const restore = calls.indexOf("mv /Applications/mattstack-dev.app.update-machine-old /Applications/mattstack-dev.app");
+      expect(restore).toBeGreaterThan(-1);
+      expect(calls.indexOf("open /Applications/mattstack-dev.app")).toBeGreaterThan(restore);
+      expect(leg.detail).toContain("reopened the previous app (pid 222)");
+    });
+
+    test("dev bundle: a failed ditto that leaves a broken bundle in place is never opened", async () => {
+      const { seams, calls } = fakeSeams({ devDittoExit: 1, failExactCmd: "rm -rf /Applications/mattstack-dev.app" });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("error");
       expect(calls.some((c) => c.startsWith("open"))).toBe(false);
+      expect(leg.detail).toContain("not reopened");
+    });
+
+    test("dev bundle: a swap that only failed to remove the aside copy opens the new app", async () => {
+      const { seams, calls } = fakeSeams({
+        failExactCmd: "rm -rf /Applications/mattstack-dev.app.update-machine-old",
+        failExactOccurrence: 2,
+      });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("error");
+      expect(calls).toContain("open /Applications/mattstack-dev.app");
+      expect(leg.detail).toContain("opened the new app");
+    });
+
+    test("dev bundle: a reopen that brings up no process says so", async () => {
+      const { seams } = fakeSeams({ devDittoExit: 1, devPidsAfter: [] });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.detail).toContain("did not bring up a process");
+      expect(leg.detail).not.toContain("reopened the previous app");
     });
   });
 
@@ -708,6 +739,12 @@ describe("runDevAppRebuild", () => {
     expect(calls.some((c) => c.startsWith("rt-tray/build.sh dev"))).toBe(true);
     expect(calls.some((c) => c.includes("/Applications/mattstack.app"))).toBe(false);
     expect(calls.some((c) => c.startsWith("rt daemon") || c.startsWith("deck "))).toBe(false);
+  });
+
+  test("swaps in the bundle build.sh actually writes, rt-tray/mattstack-dev.app", async () => {
+    const { seams, calls } = fakeSeams();
+    await runDevAppRebuild(seams, "main");
+    expect(calls).toContain("ditto /work/rt-dev-bundle/rt-tray/mattstack-dev.app /Applications/mattstack-dev.app");
   });
 
   test("kickstarts the dev deck helper after the relaunch, since a same-version rebuild never restarts helpers", async () => {
