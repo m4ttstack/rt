@@ -2,6 +2,11 @@ import { join } from "path";
 import { applyEdits, modify } from "jsonc-parser";
 import { stripJsonc } from "./sources.ts";
 
+/** Strips only the userinfo (scheme://user:pass@) so the rest of a rejected remote URL stays in the message; withoutUrls's full-URL redaction would leave nothing readable here. */
+function withoutCredentials(message: string): string {
+  return message.replace(/(:\/\/)[^/@\s]+@/g, "$1");
+}
+
 export type RepoRef = { host: string; path: string; slug: string };
 
 /** Mirrors norm_url in merge-manifests.sh so the slug here is the one the per-repo manifest lands under. */
@@ -263,7 +268,7 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
   if (remote.kind === "not-a-repo") return refuse("not-a-repo", `${opts.repoDir} is not a git checkout`);
   if (remote.kind === "no-remote") return refuse("no-remote", `${opts.repoDir} has no git remote; add one so the zone can declare it`);
   const repo = parseRemote(remote.url);
-  if (!repo) return refuse("no-remote", `could not read a host and path from remote "${remote.url}"`);
+  if (!repo) return refuse("no-remote", `could not read a host and path from remote "${withoutCredentials(remote.url)}"`);
 
   const workDescription = deps.engineDescription("work");
   if (workDescription === null) {

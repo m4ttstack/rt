@@ -395,6 +395,14 @@ describe("initPack", () => {
     expect(calls.registered).toEqual([]);
   });
 
+  test("a credential-bearing remote with no path refuses no-remote without leaking the credential", async () => {
+    const { deps } = world({ gitRemote: async () => ({ kind: "ok", url: "https://user:secret@gitlab.com" }) });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "no-remote" });
+    if (out.ok || !out.refused) return;
+    expect(out.detail).not.toContain("secret");
+  });
+
   test("zone-missing without a TTY names rt team create", async () => {
     const { deps } = world({ gitRemote: async () => ({ kind: "ok", url: "git@gitlab.example.com:acme/api.git" }) });
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
