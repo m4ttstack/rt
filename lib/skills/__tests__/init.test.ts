@@ -379,4 +379,34 @@ describe("initPack", () => {
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out).toMatchObject({ ok: false, refused: false, code: "materialize-failed" });
   });
+
+  test("a throw from registerRepo after writing is materialize-failed, keeping wrote", async () => {
+    const { deps } = world({
+      registerRepo: async () => { throw new Error("daemon down"); },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: false, code: "materialize-failed" });
+    if (out.ok || out.refused) return;
+    expect(out.detail).toContain("daemon down");
+    expect(out.wrote).toContain(`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/pack/stubs.jsonc`);
+  });
+
+  test("zone-missing with a TTY prompts, but the created zone lands on a different host, so it refuses zone-mismatch naming the created zone", async () => {
+    const { deps, fs } = world({
+      gitRemote: async () => ({ kind: "ok", url: "git@gitlab.example.com:acme/api.git" }),
+      isTTY: true,
+      promptZone: async () => ({ name: "Beta", remote: "https://github.com/acme/mattstack-team-beta.git" }),
+      createZone: async (name, remote) => {
+        const dir = `${HOME}/.mattstack/teams/beta`;
+        for (const [p, t] of Object.entries(zoneFiles("beta", {
+          [`${dir}/mattstack/team.jsonc`]: `{ "gitlabHost": "https://github.com", "projects": [] }\n`,
+        }))) fs.writeFile(p, t);
+        return { slug: "beta", dir };
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "zone-mismatch" });
+    if (out.ok || !out.refused) return;
+    expect(out.detail).toContain("beta");
+  });
 });

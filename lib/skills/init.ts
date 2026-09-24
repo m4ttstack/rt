@@ -270,6 +270,7 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
     return refuse("mattstack-missing", "the mattstack plugin is not installed, so the work engine cannot be read; run rt setup pack first");
   }
   if (!deps.claude) return refuse("claude-missing", "claude binary not found on PATH; install the Claude CLI, then re-run");
+  const claude = deps.claude;
 
   let zones = readZones(deps.fs, deps.home);
   let choice = chooseZone(zones, repo, opts.zone);
@@ -278,9 +279,9 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
       return refuse("zone-missing", `no team zone without a pack covers ${repo.host}; run rt team create <Name> --remote <url>, then re-run`);
     }
     const answer = await deps.promptZone();
-    await deps.createZone(answer.name, answer.remote);
+    const created = await deps.createZone(answer.name, answer.remote);
     zones = readZones(deps.fs, deps.home);
-    choice = chooseZone(zones, repo, null);
+    choice = chooseZone(zones, repo, created.slug);
   }
   if (choice.kind === "missing") return refuse("zone-missing", `no team zone named "${opts.zone}"`);
   if (choice.kind === "ambiguous") {
@@ -320,25 +321,47 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
   const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
     ({ ok: false, refused: false, code, detail, wrote });
 
-  const repoName = await deps.registerRepo(opts.repoDir);
-  const materialized = await deps.materialize(repoName);
+  /** A daemon-backed dep can throw instead of returning a failure shape; the throw must still carry `wrote` forward, same as a returned failure. */
+  const attempt = async <T>(code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", fn: () => Promise<T>): Promise<{ value: T } | { outcome: InitOutcome }> => {
+    try {
+      return { value: await fn() };
+    } catch (err) {
+      return { outcome: failed(code, err instanceof Error ? err.message : String(err)) };
+    }
+  };
+
+  const registered = await attempt("materialize-failed", () => deps.registerRepo(opts.repoDir));
+  if ("outcome" in registered) return registered.outcome;
+  const materializedAttempt = await attempt("materialize-failed", () => deps.materialize(registered.value));
+  if ("outcome" in materializedAttempt) return materializedAttempt.outcome;
+  const materialized = materializedAttempt.value;
   const manifestPath = join(deps.home, ".mattstack", "repos", repo.slug, "skills.jsonc");
   if (!materialized.ok || !deps.fs.exists(manifestPath)) {
     return failed("materialize-failed", `${materialized.detail}; expected ${manifestPath}`);
   }
-  const compiled = await deps.compile(packDir, manifestPath);
+  const compiledAttempt = await attempt("compile-failed", () => deps.compile(packDir, manifestPath));
+  if ("outcome" in compiledAttempt) return compiledAttempt.outcome;
+  const compiled = compiledAttempt.value;
   if (!compiled.ok) return failed("compile-failed", compiled.errors.join("\n"));
-  const checked = await deps.check(packDir, manifestPath);
-  if (checked.drift) return failed("check-drift", "rt skills check reports drift right after compile");
+  const checkedAttempt = await attempt("check-drift", () => deps.check(packDir, manifestPath));
+  if ("outcome" in checkedAttempt) return checkedAttempt.outcome;
+  if (checkedAttempt.value.drift) return failed("check-drift", "rt skills check reports drift right after compile");
 
-  const known = await marketplaceNames(deps.claude);
-  if (!known || !known.has(marketplace)) {
-    const added = await deps.claude(["plugin", "marketplace", "add", zone.dir]);
-    if (added.code !== 0 && !isAlreadyDone(added)) return failed("install-failed", `claude plugin marketplace add exited ${added.code}: ${added.stderr.trim()}`);
+  const known = await attempt("install-failed", () => marketplaceNames(claude));
+  if ("outcome" in known) return known.outcome;
+  if (!known.value || !known.value.has(marketplace)) {
+    const added = await attempt("install-failed", () => claude(["plugin", "marketplace", "add", zone.dir]));
+    if ("outcome" in added) return added.outcome;
+    if (added.value.code !== 0 && !isAlreadyDone(added.value)) {
+      return failed("install-failed", `claude plugin marketplace add exited ${added.value.code}: ${added.value.stderr.trim()}`);
+    }
   }
   const pluginId = `${pack}@${marketplace}`;
-  const installed = await deps.claude(["plugin", "install", pluginId]);
-  if (installed.code !== 0 && !isAlreadyDone(installed)) return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.code}: ${installed.stderr.trim()}`);
+  const installed = await attempt("install-failed", () => claude(["plugin", "install", pluginId]));
+  if ("outcome" in installed) return installed.outcome;
+  if (installed.value.code !== 0 && !isAlreadyDone(installed.value)) {
+    return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.value.code}: ${installed.value.stderr.trim()}`);
+  }
 
   return {
     ok: true,
