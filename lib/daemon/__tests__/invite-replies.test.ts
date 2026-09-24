@@ -15,32 +15,46 @@ function rec(id: string, expiresAt = LATER) {
 }
 
 function fakeDeps(opts: {
-  records?: Record<string, InviteRecords>;
+  records?: Record<string, InviteRecords | Error>;
   replies?: Record<string, { blob: string } | "none" | Error>;
+  /** Blobs that open to a usable age key; any other blob fails to open. */
+  opens?: Record<string, string>;
   notified?: string[];
   enabled?: boolean;
 } = {}) {
   const notified = new Set(opts.notified ?? []);
+  const marks: { id: string; outcome: string }[] = [];
   const sent: NotifyEventInput[] = [];
   const warned: string[] = [];
   const reads: string[] = [];
+  const opened: string[] = [];
   const deps: InviteReplyDeps = {
     slugs: () => Object.keys(opts.records ?? {}),
-    records: (slug) => opts.records?.[slug] ?? {},
+    records: (slug) => {
+      const r = opts.records?.[slug] ?? {};
+      if (r instanceof Error) throw r;
+      return r;
+    },
     readReply: async (id, creatorSecret) => {
       reads.push(`${id}:${creatorSecret}`);
       const r = opts.replies?.[id] ?? "none";
       if (r instanceof Error) throw r;
       return r;
     },
+    openReply: async (blob, keyB64, id) => {
+      opened.push(`${id}:${keyB64}`);
+      const key = (opts.opens ?? { ciphertext: "age1validkey" })[blob];
+      if (!key) throw new Error("reply did not decrypt under this invite's key");
+      return key;
+    },
     isNotified: (id) => notified.has(id),
-    markNotified: (id) => { notified.add(id); },
+    markNotified: (id, outcome) => { notified.add(id); marks.push({ id, outcome }); },
     notify: (event) => { sent.push(event); },
     enabled: () => opts.enabled ?? true,
     now: () => NOW,
     warn: (msg) => { warned.push(msg); },
   };
-  return { deps, sent, warned, reads, notified };
+  return { deps, sent, warned, reads, opened, marks, notified };
 }
 
 describe("checkInviteReplies", () => {
@@ -95,14 +109,14 @@ describe("checkInviteReplies", () => {
   test("a relay failure on one invite is warned and the others still run", async () => {
     const f = fakeDeps({
       records: { acme: { ed: rec("inv-1"), jo: rec("inv-2") } },
-      replies: { "inv-1": new Error("relay-unreachable"), "inv-2": { blob: "x" } },
+      replies: { "inv-1": new Error("relay-unreachable"), "inv-2": { blob: "ciphertext" } },
     });
 
     const result = await checkInviteReplies(f.deps);
 
     expect(result.notified).toEqual([{ slug: "acme", handle: "jo", id: "inv-2" }]);
     expect(f.warned).toHaveLength(1);
-    expect(f.warned[0]).toContain("inv-1");
+    expect(f.warned[0]).toContain("ed");
   });
 
   test("the member_joined preference off means no read and no send", async () => {
@@ -112,6 +126,62 @@ describe("checkInviteReplies", () => {
 
     expect(f.sent).toEqual([]);
     expect(f.reads).toEqual([]);
+  });
+
+  test("a reply is opened under the invite's key before anyone is told about it", async () => {
+    const f = fakeDeps({ records: { acme: { ed: rec("inv-1") } }, replies: { "inv-1": { blob: "ciphertext" } } });
+
+    await checkInviteReplies(f.deps);
+
+    expect(f.opened).toEqual(["inv-1:a2V5"]);
+    expect(f.sent).toHaveLength(1);
+    expect(f.marks).toEqual([{ id: "inv-1", outcome: "notified" }]);
+  });
+
+  test("a blob that does not open is warned once, marked rejected, and never announced", async () => {
+    const f = fakeDeps({ records: { acme: { ed: rec("inv-1") } }, replies: { "inv-1": { blob: "garbage" } }, opens: {} });
+
+    const first = await checkInviteReplies(f.deps);
+    const second = await checkInviteReplies(f.deps);
+
+    expect(first.notified).toEqual([]);
+    expect(second.notified).toEqual([]);
+    expect(f.sent).toEqual([]);
+    expect(f.warned).toHaveLength(1);
+    expect(f.warned[0]).toContain("ed");
+    expect(f.marks).toEqual([{ id: "inv-1", outcome: "rejected" }]);
+    expect(f.reads).toHaveLength(1);
+  });
+
+  test("one team's unreadable invite file does not stop the other teams", async () => {
+    const f = fakeDeps({
+      records: { broken: new Error("invite records file is not a valid records map"), acme: { ed: rec("inv-1") } },
+      replies: { "inv-1": { blob: "ciphertext" } },
+    });
+
+    const result = await checkInviteReplies(f.deps);
+
+    expect(result.notified).toEqual([{ slug: "acme", handle: "ed", id: "inv-1" }]);
+    expect(f.warned).toHaveLength(1);
+    expect(f.warned[0]).toContain("broken");
+  });
+
+  test("an unparsable expiry counts as expired, matching the records reader", async () => {
+    const f = fakeDeps({ records: { acme: { ed: rec("inv-1", "not a date") } }, replies: { "inv-1": { blob: "ciphertext" } } });
+
+    await checkInviteReplies(f.deps);
+
+    expect(f.sent).toEqual([]);
+    expect(f.reads).toEqual([]);
+  });
+
+  test("the warning for a relay read failure names the handle, never the invite id", async () => {
+    const f = fakeDeps({ records: { acme: { ed: rec("inv-1") } }, replies: { "inv-1": new Error("relay-unreachable") } });
+
+    await checkInviteReplies(f.deps);
+
+    expect(f.warned[0]).toContain("ed");
+    expect(f.warned[0]).not.toContain("inv-1");
   });
 });
 

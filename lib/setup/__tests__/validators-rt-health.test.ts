@@ -581,7 +581,7 @@ describe("rtHealthRows — home.backup (real git)", () => {
     const row = await homeBackupRow(await localOnlyRepo());
     expect(row.status).toBe("needs-you");
     expect(row.required).toBe(false);
-    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere");
+    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere (rt home remote set <url>, or --create)");
     expect(row.action).not.toBeNull();
   });
 
@@ -711,7 +711,7 @@ describe("rtHealthRows — home.backup (real git)", () => {
     const row = await homeBackupRow(await localOnlyRepo(), REAL_EXEC, () => {
       throw new Error("readLastPush must not be reached on the local-only path");
     });
-    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere");
+    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere (rt home remote set <url>, or --create)");
   });
 
   test("unborn branch (remote attached before any commit ever landed): needs-you, never crashes on a missing ref", async () => {
@@ -737,7 +737,7 @@ describe("rtHealthRows — home.backup (real git)", () => {
     execFileSync("git", ["remote", "add", "upstream", otherDir], { cwd: repoDir });
 
     const row = await homeBackupRow(repoDir);
-    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere");
+    expect(row.detail).toBe("local only — your settings are versioned on this machine but are not backed up anywhere (rt home remote set <url>, or --create)");
   });
 
   test("remote configured, nothing pushed: the remedy names the push, not just the remote add", async () => {

@@ -447,7 +447,7 @@ export async function homeBackupRow(
   }
 
   if (!(await hasRemote(exec, repoDir))) {
-    return row({ ...base, status: "needs-you", detail: "local only — your settings are versioned on this machine but are not backed up anywhere", action: HOME_BACKUP_ADD_REMOTE_ACTION });
+    return row({ ...base, status: "needs-you", detail: "local only — your settings are versioned on this machine but are not backed up anywhere (rt home remote set <url>, or --create)", action: HOME_BACKUP_ADD_REMOTE_ACTION });
   }
 
   const state = await originPushState(exec, repoDir);

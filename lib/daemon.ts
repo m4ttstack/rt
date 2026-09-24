@@ -40,7 +40,9 @@ import { onNotification, notifyEnabled, notifyEvent, loadNotificationPrefs } fro
 import { checkInviteReplies, INVITE_REPLIES_NS, listInviteSlugs, MEMBER_JOINED_CATEGORY } from "./daemon/invite-replies.ts";
 import { readInviteRecords } from "./team/invite-records.ts";
 import { createRelayClient, inviteRelayUrl } from "./team/relay-client.ts";
-import { hasKvValue, setKvValue } from "./state/kv-blob.ts";
+import { openReply } from "./team/invite-crypto.ts";
+import { base64ToKey, isValidAgePublicKey } from "./team/members.ts";
+import { hasKvValue, setKvValueCritical } from "./state/kv-blob.ts";
 import { appBundleRoot } from "./bundle-layout.ts";
 import { reconcile as reconcileLinks } from "./deps/links.ts";
 import { createRealProbes } from "./setup/probes.ts";
@@ -921,14 +923,21 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
               slugs: () => listInviteSlugs(probes.home),
               records: (slug) => readInviteRecords(probes, slug),
               readReply: (id, creatorSecret) => relay.readReply(id, creatorSecret),
+              openReply: async (blob, keyB64, id) => {
+                const opened = await openReply(blob, base64ToKey(keyB64), id);
+                if (!isValidAgePublicKey(opened.agePublicKey)) throw new Error("reply's age public key is not a well-formed age1 recipient");
+                return opened.agePublicKey;
+              },
               isNotified: (id) => hasKvValue(INVITE_REPLIES_NS, id, db),
-              markNotified: (id) => setKvValue(INVITE_REPLIES_NS, id, { notifiedAt: Date.now() }, db),
+              // Critical: a dropped mark re-announces the same reply next sweep.
+              markNotified: (id, outcome) => { setKvValueCritical(INVITE_REPLIES_NS, id, { outcome, at: Date.now() }, db); },
               notify: notifyEvent,
               enabled: () => loadNotificationPrefs()[MEMBER_JOINED_CATEGORY] !== false,
               now: () => Date.now(),
-              warn: (message) => log.warn({ sweep: "invite-replies" }, message),
+              // An unreachable relay repeats every tick while offline; that is debug, not a warning.
+              warn: (message) => (message.includes("relay-unreachable") ? log.debug : log.warn).call(log, { sweep: "invite-replies" }, message),
             });
-            for (const n of notified) log.info(n, "invite reply landed; owner notified");
+            for (const n of notified) log.info({ team: n.slug, handle: n.handle }, "invite reply landed; owner notified");
           },
           { bootDelayMs: 90_000, intervalMs: 5 * 60 * 1000 },
           log,
