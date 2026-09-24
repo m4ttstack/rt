@@ -141,6 +141,57 @@ extension TriageFingerprint {
     }
 }
 
+/// Each must outlast the daemon's own worst case for the verb: push-branch
+/// may commit and then push, each bounded by the daemon's 5 minute mutating
+/// git timeout; dispose may fetch for up to a minute first.
+public enum TriageTimeouts {
+    public static let query: TimeInterval = 15
+    public static func action(_ verb: String) -> TimeInterval {
+        verb == "worktree:push-branch" ? 660 : 120
+    }
+}
+
+public enum TriageActionOutcome: Equatable, Sendable {
+    case done
+    case refused(String)
+    /// The daemon got the request and may still finish it.
+    case timedOut
+    case unreachable
+}
+
+public struct TriageStatusLine: Equatable, Sendable {
+    public let text: String
+    public let isError: Bool
+
+    public init(text: String, isError: Bool) { self.text = text; self.isError = isError }
+
+    public static func reason(_ outcome: TriageActionOutcome) -> String {
+        switch outcome {
+        case .done: return "done."
+        case .refused(let code): return TriageRefusal.explain(code)
+        case .timedOut: return "still working. Refresh to check."
+        case .unreachable: return TriageRefusal.explain(nil)
+        }
+    }
+
+    public static func action(tree: String, outcome: TriageActionOutcome, done: String) -> TriageStatusLine {
+        switch outcome {
+        case .done: return TriageStatusLine(text: "\(tree): \(done)", isError: false)
+        case .timedOut: return TriageStatusLine(text: "\(tree): \(reason(outcome))", isError: false)
+        case .refused, .unreachable: return TriageStatusLine(text: "\(tree): \(reason(outcome))", isError: true)
+        }
+    }
+
+    public static func bulk(total: Int, failures: [(tree: String, outcome: TriageActionOutcome)]) -> TriageStatusLine {
+        if failures.isEmpty {
+            return TriageStatusLine(text: "Cleaned up \(total) worktree\(total == 1 ? "" : "s") (restorable for 14 days)", isError: false)
+        }
+        let reasons = failures.map { "\($0.tree): \(reason($0.outcome))" }.joined(separator: "; ")
+        let onlyTimeouts = failures.allSatisfy { $0.outcome == .timedOut }
+        return TriageStatusLine(text: "Cleaned up \(total - failures.count) of \(total). \(reasons)", isError: !onlyTimeouts)
+    }
+}
+
 /// Daemon refusal codes as the tail of a "<tree>: ..." status line. Codes
 /// may carry a ":<detail>" suffix; anything unrecognised is shown verbatim.
 public enum TriageRefusal {

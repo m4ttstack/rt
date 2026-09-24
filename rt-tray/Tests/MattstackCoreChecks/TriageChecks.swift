@@ -62,4 +62,25 @@ let triageChecks: [Check] = [
         c.expectEqual(TriageRefusal.explain("attended"), "someone is attending its MR right now.")
         c.expectEqual(TriageRefusal.explain("something-new:x"), "something-new:x")
     },
+    Check("a timed-out action reads as still working, never as an unreachable daemon") { c in
+        let t = TriageStatusLine.action(tree: "olive", outcome: .timedOut, done: "pushed")
+        c.expectEqual(t, TriageStatusLine(text: "olive: still working. Refresh to check.", isError: false))
+        let u = TriageStatusLine.action(tree: "olive", outcome: .unreachable, done: "pushed")
+        c.expectEqual(u, TriageStatusLine(text: "olive: couldn't reach the daemon.", isError: true))
+        c.expectEqual(TriageStatusLine.action(tree: "olive", outcome: .done, done: "pushed").text, "olive: pushed")
+        c.expectEqual(TriageStatusLine.action(tree: "olive", outcome: .refused("busy"), done: "pushed").isError, true)
+    },
+    Check("action timeouts outlast the daemon: push 660 s, other actions 120 s, the triage read 15 s") { c in
+        c.expectEqual(TriageTimeouts.action("worktree:push-branch"), 660)
+        c.expectEqual(TriageTimeouts.action("worktree:triage-dispose"), 120)
+        c.expectEqual(TriageTimeouts.query, 15)
+    },
+    Check("clean-up footer: all done keeps the success sentence; mixed names the count and each reason") { c in
+        c.expectEqual(TriageStatusLine.bulk(total: 3, failures: []).text, "Cleaned up 3 worktrees (restorable for 14 days)")
+        c.expectEqual(TriageStatusLine.bulk(total: 1, failures: []).text, "Cleaned up 1 worktree (restorable for 14 days)")
+        let mixed = TriageStatusLine.bulk(total: 3, failures: [(tree: "olive", outcome: .refused("in-use"))])
+        c.expectEqual(mixed, TriageStatusLine(text: "Cleaned up 2 of 3. olive: a process is still running inside it. Stop it first.", isError: true))
+        let slow = TriageStatusLine.bulk(total: 2, failures: [(tree: "olive", outcome: .timedOut)])
+        c.expectEqual(slow, TriageStatusLine(text: "Cleaned up 1 of 2. olive: still working. Refresh to check.", isError: false))
+    },
 ]

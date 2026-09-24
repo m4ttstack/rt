@@ -13,6 +13,7 @@ struct TriageDiffFile: Decodable, Identifiable {
 private struct ActionReply: Decodable { let ok: Bool; let error: String? }
 private struct DiffReply: Decodable { struct D: Decodable { let files: [TriageDiffFile] }; let ok: Bool; let data: D? }
 
+@MainActor
 final class WorktreePanelController: ObservableObject {
     @Published var rows: [TriageRow] = []
     @Published var counts: TriageCounts?
@@ -26,6 +27,7 @@ final class WorktreePanelController: ObservableObject {
     private let client = DaemonClient()
     private var timer: Timer?
     private var statusGeneration = 0
+    private var hasLoaded = false
     private let fixture: TriageData?
 
     init(fixture: TriageData? = nil) {
@@ -36,41 +38,53 @@ final class WorktreePanelController: ObservableObject {
     func startPolling() {
         guard fixture == nil, timer == nil else { return }
         refresh()
-        let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in self?.refresh() }
+        let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
 
     func stopPolling() { timer?.invalidate(); timer = nil }
 
-    func refresh() {
+    /// A failed background poll keeps the last rows and says nothing, so it
+    /// never overwrites the footer an action just set.
+    func refresh(userInitiated: Bool = false) {
         guard fixture == nil else { return }
         Task {
             let p = await client.queryTriage()
-            await MainActor.run {
-                isLoading = false
-                guard let data = p?.data else {
+            isLoading = false
+            guard let data = p?.data else {
+                if userInitiated || !hasLoaded {
                     setStatus(p == nil ? "Couldn't reach the daemon" : "Couldn't load worktrees: \(Self.explain(p?.error))", isError: true)
-                    return
                 }
-                rows = data.rows; counts = data.counts; banners = data.banners
+                return
             }
+            hasLoaded = true
+            rows = data.rows; counts = data.counts; banners = data.banners
+        }
+    }
+
+    private func perform(_ verb: String, _ row: TriageRow, _ payload: [String: Any]) async -> TriageActionOutcome {
+        var body = payload
+        body["repoName"] = row.repo
+        body["tree"] = row.tree
+        let reply: SocketReply<ActionReply> = await client.command(verb, payload: body, timeout: TriageTimeouts.action(verb))
+        switch reply {
+        case .value(let r): return r.ok ? .done : .refused(r.error ?? "refused")
+        case .timedOut: return .timedOut
+        case .unreachable: return .unreachable
         }
     }
 
     private func run(_ row: TriageRow, _ verb: String, _ payload: [String: Any], done: String) {
         busy.insert(row.id)
-        var body = payload
-        body["repoName"] = row.repo
-        body["tree"] = row.tree
         Task {
-            let r: ActionReply? = await client.command(verb, payload: body)
-            await MainActor.run {
-                busy.remove(row.id)
-                if r?.ok == true { setStatus("\(row.tree): \(done)", isError: false) }
-                else { setStatus("\(row.tree): \(Self.explain(r?.error))", isError: true) }
-                refresh()
-            }
+            let outcome = await perform(verb, row, payload)
+            busy.remove(row.id)
+            let line = TriageStatusLine.action(tree: row.tree, outcome: outcome, done: done)
+            setStatus(line.text, isError: line.isError)
+            refresh()
         }
     }
 
@@ -100,28 +114,26 @@ final class WorktreePanelController: ObservableObject {
         guard !safe.isEmpty, bulkProgress == nil else { return }
         bulkProgress = (0, safe.count)
         Task {
-            var failures: [String] = []
+            var failures: [(tree: String, outcome: TriageActionOutcome)] = []
             for (i, row) in safe.enumerated() {
-                await MainActor.run { busy.insert(row.id); bulkProgress = (i, safe.count) }
-                let r: ActionReply? = await client.command("worktree:triage-dispose", payload: [
-                    "repoName": row.repo, "tree": row.tree, "fingerprint": row.fingerprint.jsonObject, "discard": "classified",
-                ])
-                await MainActor.run { _ = busy.remove(row.id) }
-                if r?.ok != true { failures.append("\(row.tree): \(Self.explain(r?.error))") }
+                busy.insert(row.id)
+                bulkProgress = (i, safe.count)
+                let outcome = await perform("worktree:triage-dispose", row, ["fingerprint": row.fingerprint.jsonObject, "discard": "classified"])
+                busy.remove(row.id)
+                if outcome != .done { failures.append((tree: row.tree, outcome: outcome)) }
             }
-            let failed = failures
-            await MainActor.run {
-                bulkProgress = nil
-                if failed.isEmpty { setStatus("Cleaned up \(safe.count) worktree\(safe.count == 1 ? "" : "s") (restorable for 14 days)", isError: false) }
-                else { setStatus(failed.joined(separator: "; "), isError: true) }
-                refresh()
-            }
+            bulkProgress = nil
+            let line = TriageStatusLine.bulk(total: safe.count, failures: failures)
+            setStatus(line.text, isError: line.isError)
+            refresh()
         }
     }
 
     func diff(_ row: TriageRow) async -> [TriageDiffFile] {
-        let r: DiffReply? = await client.command("worktree:triage-diff", payload: ["repoName": row.repo, "tree": row.tree])
-        return r?.data?.files ?? []
+        let verb = "worktree:triage-diff"
+        let reply: SocketReply<DiffReply> = await client.command(verb, payload: ["repoName": row.repo, "tree": row.tree],
+                                                                  timeout: TriageTimeouts.action(verb))
+        return reply.value?.data?.files ?? []
     }
 
     static func explain(_ error: String?) -> String { TriageRefusal.explain(error) }
@@ -131,7 +143,9 @@ final class WorktreePanelController: ObservableObject {
         let gen = statusGeneration
         status = PanelStatus(text: text, isError: isError)
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            if self?.statusGeneration == gen { self?.status = nil }
+            MainActor.assumeIsolated {
+                if self?.statusGeneration == gen { self?.status = nil }
+            }
         }
     }
 }

@@ -116,30 +116,33 @@ class DaemonClient {
     }
 
     /// POST with a JSON body over the socket, which reads `payload` from the
-    /// body on POST. 30 s because dispose and push run git against the tree.
-    func command<T: Decodable>(_ command: String, payload: [String: Any]) async -> T? {
+    /// body on POST. The timeout must outlast the verb's own worst case, or a
+    /// slow success reads as a failure.
+    func command<T: Decodable>(_ command: String, payload: [String: Any], timeout: TimeInterval) async -> SocketReply<T> {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
             TrayLog.error("encode \(command) payload failed")
-            return nil
+            return .unreachable
         }
-        return await postSocket(command, body: body)
+        let head = "POST /\(command) HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        return await socketRequest(command, request: Data(head.utf8) + body, timeout: timeout, logDecodeFailure: true)
     }
 
-    func queryTriage() async -> TriagePayload? { await querySocket("worktree:triage") }
-
-    private func postSocket<T: Decodable>(_ command: String, body: Data) async -> T? {
-        let head = "POST /\(command) HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-        return await socketRequest(command, request: Data(head.utf8) + body, timeout: 30, logDecodeFailure: true)
+    func queryTriage() async -> TriagePayload? {
+        let request = "GET /worktree:triage HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        let reply: SocketReply<TriagePayload> = await socketRequest("worktree:triage", request: Data(request.utf8),
+                                                                    timeout: TriageTimeouts.query, logDecodeFailure: true)
+        return reply.value
     }
 
     /// Fallback: HTTP over Unix socket via NWConnection.
     private func querySocket<T: Decodable>(_ command: String) async -> T? {
         let request = "GET /\(command) HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-        return await socketRequest(command, request: Data(request.utf8), timeout: 2.0, logDecodeFailure: false)
+        let reply: SocketReply<T> = await socketRequest(command, request: Data(request.utf8), timeout: 2.0, logDecodeFailure: false)
+        return reply.value
     }
 
-    private func socketRequest<T: Decodable>(_ command: String, request data: Data, timeout: TimeInterval, logDecodeFailure: Bool) async -> T? {
-        guard FileManager.default.fileExists(atPath: socketPath) else { return nil }
+    private func socketRequest<T: Decodable>(_ command: String, request data: Data, timeout: TimeInterval, logDecodeFailure: Bool) async -> SocketReply<T> {
+        guard FileManager.default.fileExists(atPath: socketPath) else { return .unreachable }
 
         return await withCheckedContinuation { continuation in
             let endpoint = NWEndpoint.unix(path: socketPath)
@@ -150,7 +153,8 @@ class DaemonClient {
             let guard_q = DispatchQueue(label: "rt.query.\(command)")
             var completed = false
             var hasReachedReady = false
-            let complete: (T?) -> Void = { result in
+            var requestSent = false
+            let complete: (SocketReply<T>) -> Void = { result in
                 guard_q.sync {
                     guard !completed else { return }
                     completed = true
@@ -159,8 +163,11 @@ class DaemonClient {
                 }
             }
 
+            // Once the request is out, the daemon may still finish the work
+            // after this gives up, so that case must not read as unreachable.
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                complete(nil)
+                let sent = guard_q.sync { requestSent }
+                complete(sent ? .timedOut : .unreachable)
             }
 
             connection.stateUpdateHandler = { state in
@@ -169,24 +176,30 @@ class DaemonClient {
                     guard_q.sync { hasReachedReady = true }
                     connection.send(content: data, completion: .contentProcessed { error in
                         if error != nil {
-                            complete(nil)
+                            complete(.unreachable)
                             return
                         }
+                        guard_q.sync { requestSent = true }
                         self.readFullResponse(connection: connection) { responseData in
-                            guard let responseData = responseData,
-                                  let jsonBody = self.extractJSONBody(from: responseData) else {
-                                complete(nil)
+                            // The server drops a connection idle past its own
+                            // cap while the handler keeps running.
+                            guard let responseData = responseData else {
+                                complete(.timedOut)
+                                return
+                            }
+                            guard let jsonBody = self.extractJSONBody(from: responseData) else {
+                                complete(.unreachable)
                                 return
                             }
                             do {
                                 let decoded = try JSONDecoder().decode(T.self, from: jsonBody)
-                                complete(decoded)
+                                complete(.value(decoded))
                             } catch {
                                 if logDecodeFailure {
                                     let preview = String(data: jsonBody.prefix(500), encoding: .utf8) ?? "<binary>"
                                     TrayLog.error("decode \(command) failed", ["err": String(describing: error), "preview": preview])
                                 }
-                                complete(nil)
+                                complete(.unreachable)
                             }
                         }
                     })
@@ -194,7 +207,7 @@ class DaemonClient {
                 case .failed:
                     let wasReady = guard_q.sync { hasReachedReady }
                     if !wasReady {
-                        complete(nil)
+                        complete(.unreachable)
                     }
 
                 case .cancelled:
@@ -242,6 +255,21 @@ class DaemonClient {
 }
 
 // MARK: - Response Types
+
+/// A socket round trip's outcome. `timedOut` means the request reached the
+/// daemon and no reply came back (the wait ran out, or the connection closed
+/// empty), so the work may still finish; `unreachable` covers everything
+/// before the request went out, plus an unreadable reply.
+enum SocketReply<T> {
+    case value(T)
+    case timedOut
+    case unreachable
+
+    var value: T? {
+        if case .value(let v) = self { return v }
+        return nil
+    }
+}
 
 struct PingResponse: Decodable {
     let ok: Bool
