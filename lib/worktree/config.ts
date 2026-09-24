@@ -98,7 +98,11 @@ export interface WorktreeRepoConfig {
   branchFormat: string; // default "<ticket>-<slug>"
   ready: ReadyStep[]; // declared domain steps ONLY (implicit install prepended at resolve time)
   staleClaimDays: number; // default 7; 0 disables the stale-claim sweep
+  junk: string[]; // default DEFAULT_JUNK_GLOBS; untracked globs a triage dispose may discard
 }
+
+/** Untracked build-output shapes a merged tree may discard on dispose without asking. */
+export const DEFAULT_JUNK_GLOBS = [".visual/**", ".build/**", "**/node_modules/**", "**/.turbo/**", "**/build/**", "**/dist/**"];
 
 export interface WorktreeAppConfig {
   enabled: boolean;
@@ -195,6 +199,14 @@ function sanitizeNamePool(raw: unknown): string[] | undefined {
   return raw.filter((name): name is string => typeof name === "string" && !name.startsWith("."));
 }
 
+/** Untracked-path globs a triage dispose may discard; an absolute glob would
+ *  escape the tree, so it is dropped rather than honored. */
+function sanitizeJunk(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return DEFAULT_JUNK_GLOBS;
+  const globs = raw.filter((g): g is string => typeof g === "string" && g.trim().length > 0 && !g.startsWith("/"));
+  return globs.length > 0 ? globs : DEFAULT_JUNK_GLOBS;
+}
+
 /**
  * The repo's worktree pool declaration, resolved across the whole settings
  * ladder (module header). ASYNC because the store rungs are keyed by repo
@@ -215,6 +227,7 @@ export async function loadWorktreeRepoConfig(
     branchFormat: sanitizeBranchFormat(declared.branchFormat),
     ready: sanitizeReady(declared.ready),
     staleClaimDays: sanitizeStaleClaimDays(declared.staleClaimDays),
+    junk: sanitizeJunk(declared.junk),
   };
   const namePool = sanitizeNamePool(declared.namePool);
   if (namePool) cfg.namePool = namePool;

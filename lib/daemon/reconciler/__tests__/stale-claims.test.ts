@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { basename, dirname, join } from "path";
 import type { Logger } from "pino";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
-import type { WorktreeRepoConfig } from "../../../worktree/config.ts";
+import { DEFAULT_JUNK_GLOBS, type WorktreeRepoConfig } from "../../../worktree/config.ts";
 import { closeStateDb } from "../../../state/index.ts";
 import { liveProcessCwds, retryDisposableTrees, sweepStaleClaims } from "../stale-claims.ts";
 
@@ -59,7 +59,7 @@ function claimedTree(
 }
 
 function cfgWith(staleClaimDays: number): WorktreeRepoConfig {
-  return { onDeck: 0, root: "/unused", branchFormat: "<ticket>-<slug>", ready: [], staleClaimDays };
+  return { onDeck: 0, root: "/unused", branchFormat: "<ticket>-<slug>", ready: [], staleClaimDays, junk: DEFAULT_JUNK_GLOBS };
 }
 
 describe("stale-claim sweep", () => {
