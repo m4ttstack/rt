@@ -86,6 +86,7 @@ private struct TopTabBar: View {
             }
             .frame(height: barHeight)
             Spacer(minLength: 0)
+            NewBuildPill()
             DeckMini(model: model)
         }
         .frame(height: barHeight)
@@ -209,6 +210,35 @@ private struct TabButton: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white)
                 )
+        }
+    }
+}
+
+/// Dev flavor only: shown while a staged build differs from the running one.
+private struct NewBuildPill: View {
+    @ObservedObject private var state = TrayState.shared
+
+    var body: some View {
+        if let stamp = state.stagedBuildStamp {
+            Button {
+                NotificationCenter.default.post(name: .rtDevRestartIntoStaged, object: nil)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("New build · Restart")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(badgeText)
+                .padding(.horizontal, 8)
+                .frame(height: 20)
+                .background(Capsule().fill(tabAccentColor))
+                .fixedSize()
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 10)
+            .help("Quit and reopen mattstack-dev on the staged build (\(stamp))")
+            .accessibilityIdentifier(AXID.windowDevRestart)
         }
     }
 }

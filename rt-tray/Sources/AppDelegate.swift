@@ -152,6 +152,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(restartIntoStagedBuild), name: .rtDevRestartIntoStaged, object: nil)
+        DevBuildWatcher.shared.start()
         // The process panel's own gear-menu "Quit mattstack" (distinct from
         // the tray menu's, which calls quitFromTray() directly) posts this
         // instead of calling NSApp.terminate itself, so it goes through the
@@ -725,6 +728,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             NotificationCenter.default.post(name: .showMattstackWindow, object: nil)
         })
         menu.addItem(.separator())
+        if BundleFlavor.isDevBuild {
+            addDevBuildItems(to: menu)
+            menu.addItem(.separator())
+        }
         let status = NSMenuItem(title: TrayState.shared.statusText, action: nil, keyEquivalent: "")
         status.isEnabled = false
         status.setAccessibilityIdentifier(AXID.trayStatus)
@@ -757,6 +764,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         menu.addItem(ActionMenuItem("Quit mattstack", axid: AXID.trayQuit) { [weak self] in
             self?.quitFromTray()
         })
+    }
+
+    @MainActor
+    private func addDevBuildItems(to menu: NSMenu) {
+        let state = TrayState.shared
+        let watcher = DevBuildWatcher.shared
+        if let stamp = state.stagedBuildStamp {
+            menu.addItem(ActionMenuItem("New build · Restart (\(stamp))", axid: AXID.trayDevRestart) { [weak self] in
+                self?.restartIntoStagedBuild()
+            })
+        }
+        menu.addItem(ActionMenuItem("Relaunch", axid: AXID.trayDevRelaunch) { [weak self] in
+            watcher.relaunch { self?.quitFromTray() }
+        })
+        if let tree = watcher.lastSource {
+            let name = (tree as NSString).lastPathComponent
+            let title: String
+            switch state.devRebuild {
+            case .idle: title = "Rebuild (\(name))"
+            case .building: title = "Building \(name)…"
+            case .failed: title = "Rebuild (\(name)), last try failed"
+            }
+            let item = ActionMenuItem(title, axid: AXID.trayDevRebuild) { watcher.rebuild() }
+            item.isEnabled = state.devRebuild != .building
+            menu.addItem(item)
+        }
+    }
+
+    @MainActor @objc private func restartIntoStagedBuild() {
+        DevBuildWatcher.shared.restartIntoStaged { [weak self] in self?.quitFromTray() }
     }
 
     @MainActor
