@@ -32,7 +32,7 @@ let flavorLaunchChecks: [Check] = [
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: false), ["flavor", "takeover", "prod", "--json"])
     },
-    Check("locator: dev build with no wrapper resolves nil — never the bundled daemon shim") { c in
+    Check("locator: dev build with no wrapper resolves nil, never the bundled daemon shim") { c in
         let loc = RtBinaryLocator.resolve(bundlePath: "/tmp/x.app", isDevBuild: true, isDebugBuild: false,
                                           environment: [:], home: "/tmp/nohome",
                                           fileExists: { $0.contains("Contents/MacOS/rt") })

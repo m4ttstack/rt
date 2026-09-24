@@ -133,8 +133,9 @@ export async function flavorTakeover(args: string[], _ctx: CommandContext = {}, 
     if (!retired) bootout(otherDaemon);
     spawnSync("osascript", ["-e", `tell application "${appName(other)}" to quit`], { stdio: "pipe", timeout: 3_000, env: process.env });
   }
-  // The retired tray keeps its listener until it exits, and pkill is the
-  // only quit its terminate interception cannot turn into a window close.
+  // The retired tray keeps its listener until it exits, and with its window
+  // on screen it turns an AppleScript quit into a window close; pkill is the
+  // quit that always lands.
   spawnSync("pkill", ["-x", appName(other)], { stdio: "pipe", env: process.env });
   if (holder?.flavor === other) {
     const gone = await waitUntilGone(TRAY_SOCK_PATH, otherDaemon);

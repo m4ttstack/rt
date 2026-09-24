@@ -657,7 +657,7 @@ if $SHIM_DEPS_OK; then
     # has the legacy dev-mode.json must keep working with NO manual step.
     # The shim never migrates (read-only fallback), so dev-mode.json is
     # deliberately left in place by this fixture, unlike every other case
-    # here — that mirrors production: only rt itself (the dev takeover or
+    # here, which mirrors production: only rt itself (the dev takeover or
     # `rt settings source-path`) migrates it.
     H8="$SHIM_TMP/legacy-fallback-success"; mkdir -p "$H8/.mattstack/rt" "$SHIM_TMP/legacysrc/lib"
     sqlite3 "$H8/.mattstack/rt/state.db" "CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (ns,k));"
