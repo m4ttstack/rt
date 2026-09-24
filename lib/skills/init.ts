@@ -202,3 +202,151 @@ export function addMarketplacePlugin(marketplaceJson: string, pack: string, desc
   const edits = modify(marketplaceJson, ["plugins", plugins.length], entry, { ...FORMAT, isArrayInsertion: true });
   return applyEdits(marketplaceJson, edits);
 }
+
+export type RunResult = { code: number; stdout: string; stderr: string };
+
+export type InitDeps = {
+  fs: InitFs;
+  home: string;
+  gitRemote(repoDir: string): Promise<{ kind: "ok"; url: string } | { kind: "not-a-repo" } | { kind: "no-remote" }>;
+  isTTY: boolean;
+  promptZone(): Promise<{ name: string; remote: string }>;
+  createZone(name: string, remote: string): Promise<{ slug: string; dir: string }>;
+  engineDescription(engine: string): string | null;
+  claude: ((args: string[]) => Promise<RunResult>) | null;
+  registerRepo(repoDir: string): Promise<string>;
+  materialize(repoName: string): Promise<{ ok: boolean; detail: string }>;
+  compile(packDir: string, manifestPath: string): Promise<{ ok: boolean; errors: string[] }>;
+  check(packDir: string, manifestPath: string): Promise<{ drift: boolean }>;
+};
+
+export type InitRefusalCode =
+  | "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "zone-has-pack"
+  | "pack-exists" | "mattstack-missing" | "claude-missing";
+
+export type InitOutcome =
+  | {
+      ok: true;
+      pack: { name: string; dir: string; zone: string; marketplace: string };
+      repo: { slug: string; manifest: string };
+      wrote: string[];
+      installed: { plugin: string; version: string };
+      restartNeeded: true;
+      tryNext: string;
+    }
+  | { ok: false; refused: true; code: InitRefusalCode; detail: string }
+  | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[] };
+
+function refuse(code: InitRefusalCode, detail: string): InitOutcome {
+  return { ok: false, refused: true, code, detail };
+}
+
+/** Anchored to the CLI's own "already ..." phrasings so a failing call that merely mentions the word does not read as success. */
+function isAlreadyDone(res: RunResult): boolean {
+  return /already (on disk|added|installed|exists)/i.test(`${res.stdout}\n${res.stderr}`);
+}
+
+async function marketplaceNames(claude: NonNullable<InitDeps["claude"]>): Promise<Set<string> | null> {
+  const res = await claude(["plugin", "marketplace", "list", "--json"]);
+  if (res.code !== 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(res.stdout);
+    if (!Array.isArray(parsed)) return null;
+    return new Set(parsed.map((m) => (m as { name?: unknown })?.name).filter((n): n is string => typeof n === "string"));
+  } catch {
+    return null;
+  }
+}
+
+export async function initPack(opts: { repoDir: string; zone: string | null }, deps: InitDeps): Promise<InitOutcome> {
+  const remote = await deps.gitRemote(opts.repoDir);
+  if (remote.kind === "not-a-repo") return refuse("not-a-repo", `${opts.repoDir} is not a git checkout`);
+  if (remote.kind === "no-remote") return refuse("no-remote", `${opts.repoDir} has no git remote; add one so the zone can declare it`);
+  const repo = parseRemote(remote.url);
+  if (!repo) return refuse("no-remote", `could not read a host and path from remote "${remote.url}"`);
+
+  const workDescription = deps.engineDescription("work");
+  if (workDescription === null) {
+    return refuse("mattstack-missing", "the mattstack plugin is not installed, so the work engine cannot be read; run rt setup pack first");
+  }
+  if (!deps.claude) return refuse("claude-missing", "claude binary not found on PATH; install the Claude CLI, then re-run");
+
+  let zones = readZones(deps.fs, deps.home);
+  let choice = chooseZone(zones, repo, opts.zone);
+  if (choice.kind === "missing" && opts.zone === null) {
+    if (!deps.isTTY) {
+      return refuse("zone-missing", `no team zone without a pack covers ${repo.host}; run rt team create <Name> --remote <url>, then re-run`);
+    }
+    const answer = await deps.promptZone();
+    await deps.createZone(answer.name, answer.remote);
+    zones = readZones(deps.fs, deps.home);
+    choice = chooseZone(zones, repo, null);
+  }
+  if (choice.kind === "missing") return refuse("zone-missing", `no team zone named "${opts.zone}"`);
+  if (choice.kind === "ambiguous") {
+    return refuse("zone-ambiguous", `several zones could host this pack: ${choice.zones.map((z) => z.slug).join(", ")}; pass --zone <slug>`);
+  }
+  if (choice.kind === "mismatch") {
+    return refuse("zone-mismatch", `zone "${choice.zone.slug}" is on ${choice.zone.host}, the repo is on ${repo.host}`);
+  }
+  if (choice.kind === "has-pack") {
+    return refuse("zone-has-pack", `zone "${choice.zone.slug}" already carries a pack; a zone hosts one pack, so create a zone for this team (rt team create)`);
+  }
+  const zone = choice.zone;
+  const pack = zone.namespace;
+  const packDir = join(zone.dir, "mattstack", "packs", pack);
+  if (zone.hasPack || deps.fs.exists(packDir)) {
+    return refuse("pack-exists", `${join(zone.dir, "mattstack", "packs")} already holds this repo's pack; init never touches an existing pack (see mattstack:extending-a-pack)`);
+  }
+  const marketplace = zone.marketplace ?? zone.slug;
+
+  const wrote: string[] = [];
+  for (const [rel, text] of Object.entries(renderPackFiles({ pack, workDescription }))) {
+    const full = join(packDir, rel);
+    deps.fs.mkdirp(join(full, ".."));
+    deps.fs.writeFile(full, text);
+    wrote.push(full);
+  }
+  const teamPath = join(zone.dir, "mattstack", "team.jsonc");
+  const teamBefore = deps.fs.readFile(teamPath);
+  const teamAfter = declareRepo(teamBefore, repo);
+  if (teamAfter !== teamBefore) { deps.fs.writeFile(teamPath, teamAfter); wrote.push(teamPath); }
+  const marketPath = join(zone.dir, ".claude-plugin", "marketplace.json");
+  const marketOnDisk = deps.fs.readFile(marketPath);
+  const marketBefore = marketOnDisk ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
+  const marketAfter = addMarketplacePlugin(marketBefore, pack, packDescription(pack));
+  if (marketAfter !== marketOnDisk) { deps.fs.writeFile(marketPath, marketAfter); wrote.push(marketPath); }
+
+  const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
+    ({ ok: false, refused: false, code, detail, wrote });
+
+  const repoName = await deps.registerRepo(opts.repoDir);
+  const materialized = await deps.materialize(repoName);
+  const manifestPath = join(deps.home, ".mattstack", "repos", repo.slug, "skills.jsonc");
+  if (!materialized.ok || !deps.fs.exists(manifestPath)) {
+    return failed("materialize-failed", `${materialized.detail}; expected ${manifestPath}`);
+  }
+  const compiled = await deps.compile(packDir, manifestPath);
+  if (!compiled.ok) return failed("compile-failed", compiled.errors.join("\n"));
+  const checked = await deps.check(packDir, manifestPath);
+  if (checked.drift) return failed("check-drift", "rt skills check reports drift right after compile");
+
+  const known = await marketplaceNames(deps.claude);
+  if (!known || !known.has(marketplace)) {
+    const added = await deps.claude(["plugin", "marketplace", "add", zone.dir]);
+    if (added.code !== 0 && !isAlreadyDone(added)) return failed("install-failed", `claude plugin marketplace add exited ${added.code}: ${added.stderr.trim()}`);
+  }
+  const pluginId = `${pack}@${marketplace}`;
+  const installed = await deps.claude(["plugin", "install", pluginId]);
+  if (installed.code !== 0 && !isAlreadyDone(installed)) return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.code}: ${installed.stderr.trim()}`);
+
+  return {
+    ok: true,
+    pack: { name: pack, dir: packDir, zone: zone.slug, marketplace },
+    repo: { slug: repo.slug, manifest: manifestPath },
+    wrote,
+    installed: { plugin: pluginId, version: "0.1.0" },
+    restartNeeded: true,
+    tryNext: `/${pack}:work <ticket>`,
+  };
+}
