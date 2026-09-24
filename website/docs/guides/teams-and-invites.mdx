@@ -38,6 +38,12 @@ The joiner opens the invite link (or pastes the code into Setup's "Join a team" 
 - If the joiner's GitHub account cannot see the repo, a warning appears naming the problem and suggesting they ask the owner or org admin for access. The warning does not block proceeding, but the `access.team-repo` checklist row will block the Install step until access is resolved.
 - If access is confirmed, setup continues normally.
 
+When the team declares a switchboard, `rt team join` confirms its URL for the joiner, so the `account.switchboard` row reads ready and Install is reachable without a terminal.
+
+## When an invitee replies
+
+While you have outstanding invites, the daemon checks each one for a reply every few minutes and notifies you once per reply. The notification's **Add member…** action runs `rt team members sync` for that team, which adds the invitee's key so team secrets decrypt for them.
+
 ## Member machines are pull-only
 
 A machine that joined by redeeming an invite code pulls the team zone but never commits or pushes to it. This prevents local commits that would diverge the clone and jam fast-forward pulls.
