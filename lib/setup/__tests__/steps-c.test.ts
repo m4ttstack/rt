@@ -1595,7 +1595,7 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
   describe("claude.permissions", () => {
     const settingsPath = () => `${home}/.claude/settings.json`;
 
-    test("BASE_PERMISSIONS is exactly the seventeen declared entries, verbatim", () => {
+    test("BASE_PERMISSIONS is exactly the ten declared entries, verbatim", () => {
       expect(BASE_PERMISSIONS).toEqual([
         "mcp__plugin_fast-browser_fast-browser",
         "mcp__plugin_mattstack_mattstack",
@@ -1607,14 +1607,14 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
         "Bash(rt skills sync *)",
         "Bash(rt runs *)",
         "Bash(rt gate *)",
-        "Bash(git commit *)",
-        "Bash(git push *)",
-        "Bash(git fetch *)",
-        "Bash(git rebase *)",
-        "Bash(git status *)",
-        "Bash(git diff *)",
-        "Bash(git log *)",
       ]);
+    });
+
+    // An allow rule resolves before the auto-mode classifier, so a git grant
+    // here would skip the force-push and `rebase --exec` blocks the
+    // classifier applies to every other pane.
+    test("no git verb is pre-approved", () => {
+      expect(BASE_PERMISSIONS.filter((e) => e.startsWith("Bash(git "))).toEqual([]);
     });
 
     // Filtering a non-string out of `allow` and then writing the filtered array
