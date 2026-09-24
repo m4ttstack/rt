@@ -42,7 +42,7 @@ struct FastBrowserPane: View {
             }
         }
         .formStyle(.grouped)
-        .task { await readiness.load() }
+        .task { await readiness.refreshUnlessLoading() }
         .sheet(isPresented: Binding(get: { steps != nil }, set: { presented in
             guard !presented else { return }
             steps = nil

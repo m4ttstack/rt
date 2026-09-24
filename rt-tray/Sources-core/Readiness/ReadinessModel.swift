@@ -101,6 +101,16 @@ public final class ReadinessModel: ObservableObject {
         await load()
     }
 
+    /// For a screen that wants a fresh read but may open while another screen
+    /// sharing this model is still loading: starting a second fetch would bump
+    /// the generation and discard the first reply, so the screen waits on the
+    /// slower of two overlapping `rt setup plan` runs instead of the one
+    /// already underway.
+    public func refreshUnlessLoading() async {
+        guard !isLoading else { return }
+        await fetch()
+    }
+
     public func recheckAll() async {
         await probePermissions()
         await fetch()
