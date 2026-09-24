@@ -2325,6 +2325,146 @@ describe("MissionDriver: a selection the tree no longer has", () => {
     expect(last.diff.path).toBe("b.txt");
     expect(diffsFor.at(-1)).toBe("b.txt");
   });
+
+  test("a sweep that moves the selection publishes nothing new until the new file's diff lands", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let snapshots = 0;
+    let releaseB: (() => void) | null = null;
+    const files = (paths: string[]) => paths.map((path) => ({ path, kind: "modified" as const, staged: false, unstaged: true }));
+    const client = makeFakeClient({
+      snapshot: async () => {
+        snapshots++;
+        const paths = snapshots === 1 ? ["a.txt", "b.txt"] : ["b.txt"];
+        return baseSnapshot({ clean: false, files: files(paths) });
+      },
+      stagingDiff: (path: string) =>
+        path === "b.txt"
+          ? new Promise((resolve) => {
+              releaseB = () => resolve(oneHunkDiff("b.txt"));
+            })
+          : Promise.resolve(oneHunkDiff(path)),
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    expect(releaseB).not.toBeNull();
+    captured!({ type: "worktree:ready-settled", data: { path: "/repo", ok: true } });
+    const during = session.pushed.at(-1) as MissionModel;
+    expect(during.diff.path).toBe("a.txt");
+    expect(during.changes.map((c) => c.path)).toEqual(["a.txt", "b.txt"]);
+
+    releaseB!();
+    await flushMicrotasks();
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.diff.path).toBe("b.txt");
+    expect(last.changes.map((c) => c.path)).toEqual(["b.txt"]);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a sweep read before a branch checkout never pushes the old branch over the new one", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let snapshots = 0;
+    let checkedOut = false;
+    let releaseStale: (() => void) | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => {
+        snapshots++;
+        if (snapshots === 2) {
+          return new Promise((resolve) => {
+            releaseStale = () => resolve(baseSnapshot({ branch: "main" }));
+          });
+        }
+        return baseSnapshot({ branch: checkedOut ? "other" : "main" });
+      },
+      checkoutBranch: async () => {
+        checkedOut = true;
+      },
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    expect(releaseStale).not.toBeNull();
+    session.send({ t: "intent", name: "mission:checkout", payload: { branch: "other" } });
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).current.branch).toBe("other");
+
+    releaseStale!();
+    await flushMicrotasks();
+    // Any later push must still describe the new branch, not a snapshot the sweep wrote and never pushed.
+    captured!({ type: "worktree:ready-settled", data: { path: "/repo", ok: true } });
+    expect((session.pushed.at(-1) as MissionModel).current.branch).toBe("other");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+});
+
+describe("MissionDriver: the selection follows the view's cursor rule", () => {
+  const files = (paths: string[]) => paths.map((path) => ({ path, kind: "modified" as const, staged: false, unstaged: true }));
+
+  test("a worktree switch keeps the selected file when the new tree changed it too", async () => {
+    const session = new QueueSession();
+    const clientA = makeFakeClient({ snapshot: async () => baseSnapshot({ clean: false, files: files(["a.txt", "b.txt"]) }) });
+    const clientB = makeFakeClient({ snapshot: async () => baseSnapshot({ clean: false, files: files(["a.txt", "b.txt"]) }) });
+    const deps = baseDeps({ session, client: clientA });
+    deps.client = (dir: string) => (dir === "/repo2" ? clientB : clientA);
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:select", payload: { path: "b.txt" } });
+    await flushMicrotasks();
+    session.send({ t: "intent", name: "mission:worktree", payload: { path: "/repo2" } });
+    await flushMicrotasks();
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/repo2");
+    expect(last.diff.path).toBe("b.txt");
+    expect(clientB.calls.stagingDiff).toEqual(["b.txt"]);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a filter that hides the selected file moves the diff to the first file it shows", async () => {
+    const session = new QueueSession();
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ clean: false, files: files(["src/b.ts", "README.md", "src/a.ts"]) }) });
+    const runPromise = new MissionDriver(baseDeps({ session, client }), START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:select", payload: { filter: "src" } });
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).diff.path).toBe("src/a.ts");
+
+    session.send({ t: "intent", name: "mission:select", payload: { filter: "" } });
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).diff.path).toBe("src/a.ts");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
 });
 
 describe("MissionDriver: error boundary", () => {

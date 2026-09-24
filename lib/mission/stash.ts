@@ -54,7 +54,13 @@ export async function checkoutAndLeaveChanges(client: GitClient, target: string,
       notice = message(err);
     }
   }
-  await client.checkoutBranch(target);
+  try {
+    await client.checkoutBranch(target);
+  } catch (err) {
+    // Desktop reports each failed operation; one notice line must carry both.
+    if (notice === "") throw err;
+    throw new Error(`${message(err)} · ${notice}`);
+  }
   return notice;
 }
 

@@ -345,10 +345,17 @@ function changeFilter(filter: string): (path: string) => boolean {
   return (path) => text === "" || path.toLowerCase().includes(text);
 }
 
-/** The Changes list's first row: the view's cursor falls back to it, so the driver's selection must fall back to the same file. */
-export function firstListedPath(files: ReadonlyArray<{ path: string }>, filter: string): string | null {
-  const listed = changeFilter(filter);
-  return files.map((f) => f.path).filter(listed).sort(caseInsensitiveComparePath)[0] ?? null;
+/**
+ * GHD's updateChangedFiles rule, and the view cursor's own (mission.go's
+ * clampSelection): keep a selection the filtered list still shows, else take
+ * its first row, else nothing, which puts the clean-tree card in the diff
+ * pane. The two must agree, or the list highlights one file while the diff
+ * shows another.
+ */
+export function reconcileSelectedPath(files: ReadonlyArray<{ path: string }>, selected: string | null, filter: string): string | null {
+  const listed = files.map((f) => f.path).filter(changeFilter(filter));
+  if (selected !== null && listed.includes(selected)) return selected;
+  return listed.sort(caseInsensitiveComparePath)[0] ?? null;
 }
 
 // GHD's own model (ratified 2026-09-21): a checkbox means "include in the

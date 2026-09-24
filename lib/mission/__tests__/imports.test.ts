@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const missionDir = join(import.meta.dir, "..");
 
-test("glitter's mission modules import nothing from lib/daemon/", () => {
+test("glitter's mission modules import nothing directly from lib/daemon/", () => {
   const offenders = readdirSync(missionDir)
     .filter((name) => name.endsWith(".ts"))
     .filter((name) => /from "\.\.\/daemon\//.test(readFileSync(join(missionDir, name), "utf8")));

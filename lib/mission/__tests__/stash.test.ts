@@ -119,6 +119,27 @@ describe("checkoutAndLeaveChanges", () => {
     expect(await checkoutAndLeaveChanges(client, "other", snap())).toBe("Your changes were stashed, but the previous stash could not be removed: drop boom");
     expect(calls).toEqual(["last main", "create main []", "checkout other"]);
   });
+
+  test("a failed checkout after a failed drop reports both", async () => {
+    const { client } = fake({
+      lastDesktopStashEntryForBranch: async () => entry("old"),
+      dropDesktopStashEntry: async () => {
+        throw new Error("drop boom");
+      },
+      checkoutBranch: async () => {
+        throw new Error("checkout boom");
+      },
+    });
+    await expect(checkoutAndLeaveChanges(client, "other", snap())).rejects.toThrow(
+      "checkout boom · Your changes were stashed, but the previous stash could not be removed: drop boom",
+    );
+  });
+
+  test("a failed checkout with nothing else to report rethrows the checkout error untouched", async () => {
+    const other = new Error("checkout boom");
+    const { client } = fake({ checkoutBranch: async () => { throw other; } });
+    await expect(checkoutAndLeaveChanges(client, "other", snap())).rejects.toBe(other);
+  });
 });
 
 describe("checkoutAndBringChanges", () => {

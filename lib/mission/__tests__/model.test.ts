@@ -9,7 +9,7 @@ import { serializeIdentity } from "../../settings/identity.ts";
 import type { ActionState } from "../git-actions.ts";
 import { buildHistoryModel } from "../history-model.ts";
 import { HistoryStore } from "../history.ts";
-import { buildBranchRows, buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
+import { buildBranchRows, buildModel, joinWorktreeRows, reconcileSelectedPath, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
 const FIXTURES = resolve(import.meta.dir, "..", "..", "..", "ui", "fixtures");
 
@@ -367,6 +367,30 @@ describe("buildModel history tab golden fixture", () => {
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
+  });
+});
+
+describe("reconcileSelectedPath", () => {
+  const files = ["c.txt", "src/B.ts", "A.txt", "src/a.ts"].map((path) => ({ path }));
+
+  test("keeps a selection the list still shows", () => {
+    expect(reconcileSelectedPath(files, "c.txt", "")).toBe("c.txt");
+  });
+
+  test("a vanished or empty selection falls to the first row, sorted case-insensitively", () => {
+    expect(reconcileSelectedPath(files, "gone.txt", "")).toBe("A.txt");
+    expect(reconcileSelectedPath(files, null, "")).toBe("A.txt");
+  });
+
+  test("the filter decides both what is kept and where it falls", () => {
+    expect(reconcileSelectedPath(files, "src/B.ts", "src")).toBe("src/B.ts");
+    expect(reconcileSelectedPath(files, "c.txt", "src")).toBe("src/a.ts");
+    expect(reconcileSelectedPath(files, null, " SRC ")).toBe("src/a.ts");
+  });
+
+  test("nothing listed selects nothing", () => {
+    expect(reconcileSelectedPath([], "c.txt", "")).toBeNull();
+    expect(reconcileSelectedPath(files, "c.txt", "zzz")).toBeNull();
   });
 });
 
