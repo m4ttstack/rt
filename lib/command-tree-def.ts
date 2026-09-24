@@ -83,6 +83,14 @@ const gateSubcommands: Record<string, CommandNode> = {
       { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Accepted for symmetry; output is always JSON" },
     ],
   },
+  "fork-check": {
+    description: "Claude Code AskUserQuestion PreToolUse hook endpoint (stdin JSON in, hook decision out); never call directly",
+    module: "./commands/gate.ts",
+    fn: "gateForkCheck",
+    hidden: true,
+    omitBehavior: { exempt: "agent-facing; driven by Claude Code over stdin, never interactively" },
+    args: [],
+  },
   answer: {
     description: "Answer an open gate",
     module: "./commands/gate.ts",

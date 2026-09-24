@@ -64,9 +64,15 @@ export function resolveGateForkHookPath(p: GateForkHookProbes = defaultGateForkH
   return null;
 }
 
+/** Claude Code's hook `timeout` is in seconds, and a timed-out PreToolUse
+    hook lets the tool call through, so a wedged rt fails open here instead
+    of after Claude Code's 600s default. `rt gate fork-check` spends at most
+    half of it on the daemon call, leaving the rest for rt's own startup. */
+export const GATE_FORK_HOOK_TIMEOUT_SECONDS = 10;
+
 export interface GateForkHookEntry {
   matcher: "AskUserQuestion";
-  hooks: [{ type: "command"; command: string }];
+  hooks: [{ type: "command"; command: string; timeout: number }];
 }
 
 export interface GateForkHookSettings {
@@ -74,7 +80,7 @@ export interface GateForkHookSettings {
 }
 
 function gateForkHookEntry(hookPath: string): GateForkHookEntry {
-  return { matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookPath }] };
+  return { matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookPath, timeout: GATE_FORK_HOOK_TIMEOUT_SECONDS }] };
 }
 
 /** The exact PreToolUse settings block Task 9's hook contract requires, gated on the resolved absolute path to gate-fork.sh. */

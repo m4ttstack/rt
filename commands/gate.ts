@@ -5,6 +5,7 @@
  *
  *   rt gate open --subject <s> --kind <k> --questions <json> [--meta <json>] [--agent <id>] [--pane <id>] [--nudge <json>]
  *   rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]
+ *   rt gate fork-check                           # AskUserQuestion hook endpoint: stdin JSON in, hook decision out
  *   rt gate answer <id> --answers <json> --by <surface> [--session <id>] [--override]
  *   rt gate wait <id> [--timeout <duration>]     # default: wait forever
  *   rt gate list [--open] [--subject-prefix <p>] [--kind <k>] [--limit <n>] [--cursor <n>]
@@ -15,10 +16,12 @@
  *   rt gate subscriptions [--session <addr>] [--live]
  */
 
+import { realpathSync } from "fs";
 import {
   gateOpen as clientOpen,
   gateAnswer as clientAnswer,
   gateAsk as clientAsk,
+  gateForkCheck as clientForkCheck,
   gateWait as clientWait,
   gateList as clientList,
   gatePark as clientPark,
@@ -29,6 +32,7 @@ import {
 } from "../packages/rt-client/src/index.ts";
 import type { Commands, GateRow, RtResponse } from "../packages/rt-client/src/index.ts";
 import { parseDuration, nextWaitMs } from "./events.ts";
+import { GATE_FORK_HOOK_TIMEOUT_SECONDS } from "../lib/agent-hooks.ts";
 
 function fail(msg: string): never {
   console.error(`rt gate: ${msg}`);
@@ -226,6 +230,78 @@ export async function gateAsk(args: string[]): Promise<void> {
     console.error(`rt gate: form cap exceeded (${data.formCapExceeded.map((q) => `${q.question}: ${q.options}`).join(", ")}): ${data.formCapAdvisory}`);
   }
   console.log(JSON.stringify(gateAskOutput(data)));
+}
+
+// ─── fork-check ──────────────────────────────────────────────────────────────
+
+const FORK_CHECK_TIMEOUT_MS = (GATE_FORK_HOOK_TIMEOUT_SECONDS * 1000) / 2;
+
+export const FORK_CHECK_ALLOW = {
+  hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+} as const;
+
+/** Claude Code's PreToolUse stdin carries `session_id` and `cwd`; the
+    process cwd is the fallback for a caller that pipes none. Both session
+    ids ride along because `rt gate ask` stamps its gate from
+    CLAUDE_CODE_SESSION_ID, which need not equal the hook's `session_id`.
+    Null means this pane is not an `rt agent` launch (no RT_GATE_SUBJECT):
+    such a pane is allowed without asking the daemon. */
+export function buildForkCheckPayload(
+  stdin: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Commands["gate:fork-check"]["payload"] | null {
+  const subject = env.RT_GATE_SUBJECT;
+  if (!subject) return null;
+  let hook: { session_id?: unknown; cwd?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(stdin);
+    if (parsed && typeof parsed === "object") hook = parsed as typeof hook;
+  } catch { /* no payload: fall back to env and process cwd */ }
+
+  const payload: Commands["gate:fork-check"]["payload"] = { subject };
+  const sessionIds = [...new Set([hook.session_id, env.CLAUDE_CODE_SESSION_ID])]
+    .filter((s): s is string => typeof s === "string" && s.length > 0);
+  if (sessionIds.length > 0) payload.sessionIds = sessionIds;
+  if (env.HERDR_PANE_ID) payload.paneId = env.HERDR_PANE_ID;
+  // Both spellings: a run records whichever path its pipeline saw, and a
+  // symlinked tree differs between the logical and the physical one.
+  const dir = typeof hook.cwd === "string" && hook.cwd ? hook.cwd : cwd;
+  const worktrees = [dir];
+  try {
+    const physical = realpathSync(dir);
+    if (physical !== dir) worktrees.push(physical);
+  } catch { /* a vanished cwd still matches by its given spelling */ }
+  payload.worktrees = worktrees;
+  return payload;
+}
+
+export function forkDenyReason(subject: string | undefined): string {
+  return "Blocking forks go through the gate protocol first: run `rt gate ask --questions <json>` "
+    + "(with --context quoting the decision material), then act on the presentation it returns. "
+    + "form: ask it here with AskUserQuestion, which this hook then allows, and submit the pick with `rt gate answer <id> --answers <json> --by pane`. "
+    + "wait: background `rt gate wait <id>` and end the turn."
+    + (subject ? ` This pane's gates file under ${JSON.stringify(subject)}.` : "");
+}
+
+/** Any failure to get a verdict (daemon down, a daemon that predates the
+    verb) allows: degraded mode stays legal. */
+export function forkCheckHookOutput(res: RtResponse<Commands["gate:fork-check"]["data"]> | null): Record<string, unknown> {
+  if (!res || !res.ok || !res.data || res.data.allow) return FORK_CHECK_ALLOW;
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: forkDenyReason(res.data.subject),
+    },
+  };
+}
+
+export async function gateForkCheck(_args: string[]): Promise<void> {
+  const stdin = process.stdin.isTTY ? "" : await Bun.stdin.text();
+  const payload = buildForkCheckPayload(stdin, process.env, process.cwd());
+  const res = payload ? await clientForkCheck(payload, { timeoutMs: FORK_CHECK_TIMEOUT_MS }) : null;
+  console.log(JSON.stringify(forkCheckHookOutput(res)));
 }
 
 // ─── wait ────────────────────────────────────────────────────────────────────

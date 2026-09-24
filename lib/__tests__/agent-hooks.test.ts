@@ -46,7 +46,7 @@ describe("gateForkHookSettings", () => {
     expect(gateForkHookSettings("/abs/gate-fork.sh")).toEqual({
       hooks: {
         PreToolUse: [
-          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh", timeout: 10 }] },
         ],
       },
     });
@@ -58,7 +58,7 @@ describe("mergeGateForkHookSettings", () => {
     expect(mergeGateForkHookSettings(undefined, "/abs/gate-fork.sh")).toEqual({
       hooks: {
         PreToolUse: [
-          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh", timeout: 10 }] },
         ],
       },
     });
@@ -70,7 +70,7 @@ describe("mergeGateForkHookSettings", () => {
       crossSessionInbound: "accept",
       hooks: {
         PreToolUse: [
-          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh", timeout: 10 }] },
         ],
       },
     });
@@ -87,7 +87,7 @@ describe("mergeGateForkHookSettings", () => {
       hooks: {
         PreToolUse: [
           { matcher: "SomeOtherTool", hooks: [{ type: "command", command: "/other.sh" }] },
-          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh", timeout: 10 }] },
         ],
       },
     });

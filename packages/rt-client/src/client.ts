@@ -481,6 +481,15 @@ export function gateAsk(
   return rtCommand<Commands["gate:ask"]["data"]>("gate:ask", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
+export function gateForkCheck(
+  a: Commands["gate:fork-check"]["payload"],
+  o: RtClientOptions = {},
+): Promise<RtResponse<Commands["gate:fork-check"]["data"]>> {
+  const payload: Record<string, unknown> = {};
+  for (const k of ["sessionIds", "paneId", "subject", "worktrees"] as const) if (a[k] !== undefined) payload[k] = a[k];
+  return rtCommand<Commands["gate:fork-check"]["data"]>("gate:fork-check", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+}
+
 export function gateAnswer(
   a: Commands["gate:answer"]["payload"],
   o: RtClientOptions = {},
