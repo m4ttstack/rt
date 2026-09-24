@@ -237,6 +237,8 @@ export type InitRefusalCode =
   | "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "zone-has-pack"
   | "pack-exists" | "mattstack-missing" | "claude-missing" | "invalid-namespace";
 
+export type FailureCode = "write-failed" | "materialize-failed" | "compile-failed" | "check-drift" | "install-failed";
+
 export type InitOutcome =
   | {
       ok: true;
@@ -248,7 +250,7 @@ export type InitOutcome =
       tryNext: string;
     }
   | { ok: false; refused: true; code: InitRefusalCode; detail: string }
-  | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[]; remedy?: string };
+  | { ok: false; refused: false; code: FailureCode; detail: string; wrote: string[]; remedy?: string };
 
 function refuse(code: InitRefusalCode, detail: string): InitOutcome {
   return { ok: false, refused: true, code, detail };
@@ -321,27 +323,9 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
   const pluginId = `${pack}@${marketplace}`;
 
   const wrote: string[] = [];
-  for (const [rel, text] of Object.entries(renderPackFiles({ pack, workDescription }))) {
-    const full = join(packDir, rel);
-    deps.fs.mkdirp(join(full, ".."));
-    deps.fs.writeFile(full, text);
-    wrote.push(full);
-  }
-  const teamPath = join(zone.dir, "mattstack", "team.jsonc");
-  const teamBefore = deps.fs.readFile(teamPath);
-  const teamAfter = declareRepo(teamBefore, repo);
-  if (teamAfter !== teamBefore) { deps.fs.writeFile(teamPath, teamAfter); wrote.push(teamPath); }
-  const marketPath = join(zone.dir, ".claude-plugin", "marketplace.json");
-  const marketOnDisk = deps.fs.readFile(marketPath);
-  const marketBefore = marketOnDisk ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
-  const marketAfter = addMarketplacePlugin(marketBefore, pack, packDescription(pack));
-  if (marketAfter !== marketOnDisk) {
-    deps.fs.mkdirp(join(zone.dir, ".claude-plugin"));
-    deps.fs.writeFile(marketPath, marketAfter);
-    wrote.push(marketPath);
-  }
 
-  const remedyFor = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"): string => {
+  const remedyFor = (code: FailureCode): string => {
+    if (code === "write-failed") return `then: remove ${packDir} and re-run rt skills init`;
     if (code === "materialize-failed") return `then: rt skills materialize --repo ${opts.repoDir}`;
     if (code === "compile-failed" || code === "check-drift") {
       return `then: rt skills compile --pack-dir ${packDir} and rt skills check --pack-dir ${packDir}`;
@@ -349,17 +333,41 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
     return `then: claude plugin marketplace add ${zone.dir} and claude plugin install ${pluginId}`;
   };
 
-  const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
+  const failed = (code: FailureCode, detail: string): InitOutcome =>
     ({ ok: false, refused: false, code, detail, wrote, remedy: remedyFor(code) });
 
   /** A daemon-backed dep can throw instead of returning a failure shape; the throw must still carry `wrote` forward, same as a returned failure. */
-  const attempt = async <T>(code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", fn: () => Promise<T>): Promise<{ value: T } | { outcome: InitOutcome }> => {
+  const attempt = async <T>(code: FailureCode, fn: () => Promise<T>): Promise<{ value: T } | { outcome: InitOutcome }> => {
     try {
       return { value: await fn() };
     } catch (err) {
       return { outcome: failed(code, err instanceof Error ? err.message : String(err)) };
     }
   };
+
+  try {
+    for (const [rel, text] of Object.entries(renderPackFiles({ pack, workDescription }))) {
+      const full = join(packDir, rel);
+      deps.fs.mkdirp(join(full, ".."));
+      deps.fs.writeFile(full, text);
+      wrote.push(full);
+    }
+    const teamPath = join(zone.dir, "mattstack", "team.jsonc");
+    const teamBefore = deps.fs.readFile(teamPath);
+    const teamAfter = declareRepo(teamBefore, repo);
+    if (teamAfter !== teamBefore) { deps.fs.writeFile(teamPath, teamAfter); wrote.push(teamPath); }
+    const marketPath = join(zone.dir, ".claude-plugin", "marketplace.json");
+    const marketOnDisk = deps.fs.readFile(marketPath);
+    const marketBefore = marketOnDisk ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
+    const marketAfter = addMarketplacePlugin(marketBefore, pack, packDescription(pack));
+    if (marketAfter !== marketOnDisk) {
+      deps.fs.mkdirp(join(zone.dir, ".claude-plugin"));
+      deps.fs.writeFile(marketPath, marketAfter);
+      wrote.push(marketPath);
+    }
+  } catch (err) {
+    return failed("write-failed", err instanceof Error ? err.message : String(err));
+  }
 
   const registered = await attempt("materialize-failed", () => deps.registerRepo(opts.repoDir));
   if ("outcome" in registered) return registered.outcome;

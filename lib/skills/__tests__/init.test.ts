@@ -465,6 +465,24 @@ describe("initPack", () => {
     expect(out.detail).not.toContain("null");
   });
 
+  test("a scaffold write that throws mid-phase returns write-failed, carrying wrote and a pack-dir remedy", async () => {
+    const { deps } = world();
+    let writes = 0;
+    const originalWriteFile = deps.fs.writeFile;
+    deps.fs.writeFile = (p, text) => {
+      writes++;
+      if (writes === 2) throw new Error("disk full");
+      originalWriteFile(p, text);
+    };
+    const packDir = `${HOME}/.mattstack/teams/acme/mattstack/packs/acme`;
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: false, code: "write-failed" });
+    if (out.ok || out.refused) return;
+    expect(out.detail).toContain("disk full");
+    expect(out.wrote).toEqual([`${packDir}/.claude-plugin/plugin.json`]);
+    expect(out.remedy).toContain(packDir);
+  });
+
   test("a compile failure after writing reports every written path", async () => {
     const { deps } = world({ compile: async () => ({ ok: false, errors: ["boom"] }) });
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
