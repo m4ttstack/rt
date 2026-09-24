@@ -189,6 +189,44 @@ describe("readRelocationPrompt", () => {
     expect(readRelocationPrompt(screen)).toBeNull();
   });
 
+  // Captured from a board-launched pane on Claude Code 2.1.281 (RT-257): the
+  // prompt sits under a full-width rule and a "Tool use" heading, with no
+  // rounded box at all, and the transcript above it names the same path.
+  const RULED = [
+    "⏺ The /cd landed, so I'll enter the dean worktree and clear the hold.",
+    "",
+    `⏺ Entering worktree(${TREE})`,
+    "",
+    "──────────────────────────────────────────────────────────────────────────────────────────────",
+    " Tool use",
+    "",
+    `   Entering worktree(${TREE})`,
+    "   │ Creates an isolated worktree (via git or configured hooks) and switches the session into it",
+    "",
+    ` │ permission-root relocation to "${TREE}" — a model-supplied worktree outside`,
+    " │ .claude/worktrees/",
+    "",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. No",
+    "",
+    " Esc to cancel · Tab to amend",
+  ].join("\n");
+
+  test("the ruled prompt (no box, a rule and a Tool use heading above the body) parses to the dialog's path", () => {
+    expect(readRelocationPrompt(RULED)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("under a rule, a transcript quote naming another path above the dialog still yields the dialog's own", () => {
+    const screen = RULED.replace("⏺ The /cd landed, so I'll enter the dean worktree and clear the hold.", `⏺ last time: permission-root relocation to "${EVIL}" and I declined`);
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("a rule with the reason but no proceed question under it is not a prompt", () => {
+    const screen = RULED.replace(" Do you want to proceed?", " (the session is discussing the prompt it saw)");
+    expect(readRelocationPrompt(screen)).toBeNull();
+  });
+
   test("inside the box, the reason line nearest the options wins over an earlier quoted one", () => {
     const screen = [
       "╭─────────────────────────────────────────────────────────────────────╮",

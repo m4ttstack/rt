@@ -78,6 +78,9 @@ const REASON_RE = /permission-root\s*relocation\s*to\s*"(?<path>[^"]*)"/i;
 const RESOLVES_RE = /\(\s*resolves\s*to\s*"(?<real>[^"]*)"\s*\)/i;
 const PROCEED_RE = /do\s*you\s*want\s*to\s*proceed/i;
 const BOX_TOP_RE = /[╭┌]/;
+// Claude Code 2.1.x paints the prompt under a full-width rule and a "Tool
+// use" heading with no box at all; the rule is the body's top there.
+const RULE_RE = /^\s*─{8,}\s*$/;
 // The dialog body (reason + suffixes + question) fits well inside this many
 // lines above the options even with a long wrapped path; the cap only
 // matters for an unboxed screen, where it keeps transcript text out.
@@ -111,13 +114,14 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   const block = optionIdx.slice(start);
   const first = block[0] as number;
   const last = block[block.length - 1] as number;
-  // No box top within reach means the body cannot be bounded, and an
+  // No box top or rule within reach means the body cannot be bounded, and an
   // unbounded body lets transcript text supply the path (a partial capture
   // with the ╭ scrolled off reproduced exactly that), so this fails closed:
-  // the real dialog always paints boxed.
+  // the real dialog always paints under one or the other.
   let top = -1;
   for (let i = first - 1; i >= Math.max(0, first - WINDOW_CAP); i--) {
-    if (BOX_TOP_RE.test(lines[i] as string)) { top = i; break; }
+    const line = lines[i] as string;
+    if (BOX_TOP_RE.test(line) || RULE_RE.test(line)) { top = i; break; }
   }
   if (top < 0) return null;
   const body = joinBoxLines(lines.slice(top, first));
