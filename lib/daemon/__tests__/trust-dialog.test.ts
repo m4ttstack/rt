@@ -148,8 +148,8 @@ describe("readRelocationPrompt", () => {
     expect(readRelocationPrompt(RELOCATION(1))).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
   });
 
-  test("a path wrapped across screen lines is reassembled byte for byte", () => {
-    expect(readRelocationPrompt(RELOCATION_WRAPPED)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  test("a path split across screen rows is never rejoined for a keypress: undrivable, a human answers", () => {
+    expect(readRelocationPrompt(RELOCATION_WRAPPED)).toEqual({ kind: "undrivable" });
   });
 
   test("the cursor on No walks up before entering", () => {
@@ -199,7 +199,7 @@ describe("readRelocationPrompt", () => {
     "",
     `⏺ Entering worktree(${TREE})`,
     "",
-    "──────────────────────────────────────────────────────────────────────────────────────────────",
+    "─".repeat(150),
     " Tool use",
     "",
     `   Entering worktree(${TREE})`,
@@ -273,7 +273,7 @@ describe("readRelocationPrompt", () => {
     expect(readRelocationPrompt(screen)).toBeNull();
   });
 
-  test("a wrap that drops the space in a path with one collapses the reason into a registered path, and the echo line catches it", () => {
+  test("a wrap that drops the space in a path with one would collapse the reason into a registered path; the split alone makes it undrivable", () => {
     const spaced = "/Users/matt/.mattstack/rt/worktrees/gl-acme-acme-dev/sir ius";
     const screen = RULED
       .replace(`   Entering worktree(${TREE})`, `   Entering worktree(${spaced})`)
@@ -320,9 +320,14 @@ describe("readRelocationPrompt", () => {
     expect(readRelocationPrompt(screen)).toBeNull();
   });
 
-  test("on a narrow pane the echo line wraps; its pieces are rejoined before the comparison", () => {
+  test("on a narrow pane the echo line wraps; a split echo is never rejoined either", () => {
     const screen = RULED.replace(`   Entering worktree(${TREE})`, "   Entering worktree(/Users/matt/.mattstack/rt/worktrees/gl-acme-\n   acme-dev/sirius)");
-    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "undrivable" });
+  });
+
+  test("a rule narrower than another line on screen is not the dialog's top: command text cannot paint the full-width rule", () => {
+    const screen = RULED.replace(/^─+$/m, "─".repeat(40));
+    expect(readRelocationPrompt(screen)).toBeNull();
   });
 
   test("a boxed prompt without the EnterWorktree heading is not this dialog", () => {
@@ -395,17 +400,16 @@ describe("readRelocationPrompt", () => {
     expect(readRelocationPrompt(screen)).toBeNull();
   });
 
-  test("a real space inside the path survives: only line wraps are rejoined, never spaces", () => {
+  test("a real space inside a path that sits whole on one row survives", () => {
     const screen = [
-      "╭──────────────────────────────────────────────────────────╮",
-      "│ EnterWorktree                                            │",
-      '│ permission-root relocation to "/Users/matt/.mattstack/rt │',
-      '│ /worktrees/gl-acme-acme-dev/fara mir" — a model-supplied │',
-      "│ worktree outside .claude/worktrees/                      │",
-      "│ Do you want to proceed?                                  │",
-      "│ ❯ 1. Yes                                                 │",
-      "│   2. No                                                  │",
-      "╰──────────────────────────────────────────────────────────╯",
+      "╭──────────────────────────────────────────────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                                                                    │",
+      '│ permission-root relocation to "/Users/matt/.mattstack/rt/worktrees/gl-acme-acme-dev/fara mir" — a │',
+      "│ model-supplied worktree outside .claude/worktrees/                                               │",
+      "│ Do you want to proceed?                                                                          │",
+      "│ ❯ 1. Yes                                                                                         │",
+      "│   2. No                                                                                          │",
+      "╰──────────────────────────────────────────────────────────────────────────────────────────────────╯",
     ].join("\n");
     const got = readRelocationPrompt(screen);
     expect(got).toEqual({ kind: "accept", path: "/Users/matt/.mattstack/rt/worktrees/gl-acme-acme-dev/fara mir", keys: ["enter"] });
