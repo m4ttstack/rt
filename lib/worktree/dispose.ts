@@ -13,6 +13,7 @@
 
 import { existsSync } from "fs";
 import { gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
+import { patchIdenticalToMr } from "./containment.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "./registry.ts";
 import { hasFreshAttendantLease } from "./lease.ts";
 import { loadSyncConfig, matchRule } from "../sync-config.ts";
@@ -245,7 +246,10 @@ export async function disposeTree(
     const mr = joinedMr(deps, rec);
     if (!mr || !(await mergedMrCoversHead(rec, mr))) {
       const anchorRefusal = await remoteAnchorRefusal(rec);
-      if (anchorRefusal) return refuse(anchorRefusal);
+      const rebasedIntoMr = anchorRefusal !== null && mr?.state === "merged" && mr.sha
+        ? await patchIdenticalToMr(rec.path, mr.sha, await remoteDefaultRef(rec.path))
+        : false;
+      if (anchorRefusal && !rebasedIntoMr) return refuse(anchorRefusal);
     }
 
     // 4. No pipeline run is still live in this worktree: a running run can go
