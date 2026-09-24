@@ -752,9 +752,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         menu.addItem(ActionMenuItem("Processes…", axid: AXID.trayProcesses) { [weak self] in
             self?.detachProcessPanel()
         })
-        let worktrees = ActionMenuItem(Self.worktreesMenuTitle(triageCounts), axid: AXID.trayWorktrees) { [weak self] in
+        let worktrees = ActionMenuItem("Worktrees…", axid: AXID.trayWorktrees) { [weak self] in
             MainActor.assumeIsolated { self?.showWorktreePanel() }
         }
+        Self.applyWorktreesBadge(worktrees, triageCounts)
         menu.addItem(worktrees)
         worktreesMenuItem = worktrees
         refreshTriageCount()
@@ -1349,7 +1350,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 720),
                          styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         w.title = "Worktrees"
-        w.contentViewController = NSHostingController(rootView: WorktreePanelView())
+        w.backgroundColor = WT.windowNS
+        w.titlebarAppearsTransparent = true
+        let controller = WorktreePanelController()
+        w.contentViewController = NSHostingController(rootView: WorktreePanelView(controller: controller))
+        let refresh = NSTitlebarAccessoryViewController()
+        refresh.layoutAttribute = .trailing
+        let refreshButton = NSHostingView(rootView:
+            Button { controller.refresh(userInitiated: true) } label: {
+                Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.borderless)
+            .help("Refresh")
+            .padding(.horizontal, 10))
+        refreshButton.frame = NSRect(x: 0, y: 0, width: 36, height: 28)
+        refresh.view = refreshButton
+        w.addTitlebarAccessoryViewController(refresh)
         // Same shrink-to-fitting-size trap as `detachProcessPanel`.
         w.setContentSize(NSSize(width: 780, height: 720))
         w.center()
@@ -1364,6 +1380,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         TriageMenu.badge(counts).map { "Worktrees…  \($0)" } ?? "Worktrees…"
     }
 
+    private static func applyWorktreesBadge(_ item: NSMenuItem?, _ counts: TriageCounts?) {
+        guard let item else { return }
+        if #available(macOS 14.0, *) {
+            item.title = "Worktrees…"
+            item.badge = TriageMenu.badge(counts).flatMap(Int.init).map { NSMenuItemBadge(count: $0) }
+        } else {
+            item.title = worktreesMenuTitle(counts)
+        }
+    }
+
     /// Never awaited by the menu build: the menu opens with the last known
     /// count and is retitled in place if the query lands while it is open.
     @MainActor
@@ -1374,7 +1400,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             await MainActor.run {
                 guard let counts = p?.data?.counts else { return }
                 self.triageCounts = counts
-                self.worktreesMenuItem?.title = Self.worktreesMenuTitle(counts)
+                Self.applyWorktreesBadge(self.worktreesMenuItem, counts)
             }
         }
     }
