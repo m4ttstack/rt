@@ -1,9 +1,9 @@
 # The mattstack settings architecture
 
-How every mattstack app (rt, deck, mr-board, gitq) declares, reads, and writes
+How every mattstack app (rt, deck, board, gitq) declares, reads, and writes
 human-intent configuration. Read this before adding a key, porting an app, or
 building anything that touches `~/.mattstack`. The dated design records live in
-`docs/superpowers/specs/` (2026-08-20 suite spec, 2026-08-21 re-root spec) and
+`docs/superpowers/specs/` (2026-08-20 suite spec, [2026-08-21 re-root spec](superpowers/specs/2026-08-21-home-repo-reroot.md)) and
 Linear (MAT-374, RT-30/31/32); this file is the live contract.
 
 ## The three-layer rule
@@ -83,7 +83,7 @@ exist for out-of-process callers only.
    the dist-freshness test fails otherwise.
 3. Deliver the new registry to every consumer — a node_modules copy never
    updates itself. A `file:` consumer (today: console) re-copies on
-   `bun install`; the apps pinned to the published package (mr-board, gitq,
+   `bun install`; the apps pinned to the published package (gitq,
    board) only see the key after an rt-client version bump + publish +
    install; deck additionally BUNDLES rt-client into its compiled binary —
    rebuild + fresh-inode install + `codesign -f -s -` to pick up path or
@@ -107,8 +107,8 @@ place, unrenamed) stays recoverable by hand. Verifying is not optional:
 `persistOrWarn` swallows `SQLITE_BUSY`, so a write that returned is not
 necessarily a write that landed. Reference implementations:
 `lib/state/legacy-import.ts`, `lib/run-history.ts`,
-`extensions/vscode/rt-context/src/branchNaming.ts`, `mr-board/src/config.ts`,
-`gitq/src/core/{worktrees,forges}.ts`, `local-apps/src/api/platform-settings.ts`.
+`extensions/vscode/rt-context/src/branchNaming.ts`, `apps/board/src/config.ts`,
+`gitq/src/core/{worktrees,forges}.ts`, `apps/deck/src/api/platform-settings.ts`.
 
 **Invariant: keys behind an ownership latch must carry NO registry `default`** —
 a default materializes as a present value and flips the key store-authoritative
@@ -135,7 +135,7 @@ on every install (stated at the `board.*` block in registry-defs).
 
 The authoritative per-app tables (which key, which scope, what shape) are in
 `docs/superpowers/specs/2026-08-20-suite-settings-migration.md`; app-facing
-summaries live in each app's README (gitq, mr-board) and
+summaries live in each app's README (gitq, board) and
 `~/.mattstack/work/scratch/handoff-2026-08-21-deck-state-for-react-rewrite.md`
 for deck.
 

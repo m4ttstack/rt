@@ -4,7 +4,7 @@ rt is one piece of a larger plan that spans five repos. Because it spans repos,
 the governing documents do **not** live in any one of them. They live in Linear,
 in the `mattstack` workspace.
 
-Read these before proposing anything about rt's scope, mr-board's shape, glance,
+Read these before proposing anything about rt's scope, board's shape, glance,
 gitq, or the acme skills:
 
 - **[distribution roadmap: status for agents](https://linear.app/mattstack/document/distribution-roadmap-status-for-agents-017c24a92fcf)**
@@ -22,7 +22,7 @@ gitq, or the acme skills:
   `@mattstack/rt-client` design.
 
 Tracking lives in the same workspace, one project per repo (`rt`, `rt client`,
-`glance`, `mr-board`, `gitq`, `skills`) on team `just matt` (MAT).
+`glance`, `board`, `gitq`, `skills`) on team `just matt` (MAT).
 
 ## Why they are not in this repo
 
