@@ -170,6 +170,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
         if (opts.deckListBadJson) return ok("not json");
         return ok(JSON.stringify(managed.map((m) => ({ name: m.name, managed: true }))));
       }
+      if (cmd.startsWith("launchctl kickstart")) return ok("");
       if (cmd.startsWith("launchctl print")) {
         const name = cmd.split(".").pop()!;
         const pid = pids.get(name);
@@ -707,6 +708,21 @@ describe("runDevAppRebuild", () => {
     expect(calls.some((c) => c.startsWith("rt-tray/build.sh dev"))).toBe(true);
     expect(calls.some((c) => c.includes("/Applications/mattstack.app"))).toBe(false);
     expect(calls.some((c) => c.startsWith("rt daemon") || c.startsWith("deck "))).toBe(false);
+  });
+
+  test("kickstarts the dev deck helper after the relaunch, since a same-version rebuild never restarts helpers", async () => {
+    const { seams, calls } = fakeSeams();
+    const { result } = await runDevAppRebuild(seams, "main");
+    const kick = calls.indexOf("launchctl kickstart -k gui/501/com.mattstack.deck.dev");
+    expect(kick).toBeGreaterThan(calls.findIndex((c) => c.startsWith("open /Applications/mattstack-dev.app")));
+    expect(result.detail).toContain("deck helper restarted");
+  });
+
+  test("a failed deck kickstart is an error leg naming the command", async () => {
+    const { seams } = fakeSeams({ failExactCmd: "launchctl kickstart -k gui/501/com.mattstack.deck.dev" });
+    const { result } = await runDevAppRebuild(seams, "main");
+    expect(result.status).toBe("error");
+    expect(result.detail).toContain("launchctl kickstart");
   });
 
   test("a failed build is an error leg, and the running app is never touched", async () => {

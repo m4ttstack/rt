@@ -7,9 +7,9 @@
  *
  * --ref defaults to main. Without --yes it prints what it would do and
  * exits. The build runs in a scratch clone, never in a checkout's rt-tray/,
- * so the ref must be pushed. The running dev app is killed, moved aside, and
- * replaced; helper jobs it supervises (deck, the daemon) keep their current
- * process until they restart.
+ * so the ref must be pushed. The running dev app is killed, moved aside,
+ * replaced and reopened, then the deck helper is kickstarted so it runs the
+ * new bundle's Helpers/deck.
  */
 import { rmSync } from "fs";
 import { createRealUpdateMachineSeams } from "../commands/release.ts";
@@ -29,7 +29,7 @@ try {
 
 if (!args.includes("--yes")) {
   console.log(
-    `would rebuild /Applications/mattstack-dev.app from m4ttstack/rt ${ref} in a scratch clone, kill and replace the running dev app, and relaunch it; pass --yes to do it`,
+    `would rebuild /Applications/mattstack-dev.app from m4ttstack/rt ${ref} in a scratch clone, kill and replace the running dev app, relaunch it, and restart the deck helper; pass --yes to do it`,
   );
   process.exit(0);
 }

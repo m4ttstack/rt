@@ -64,6 +64,7 @@ const DEV_APP_PATH = "/Applications/mattstack-dev.app";
 /** Anchored to the executable inside the bundle so pgrep never catches an unrelated
  *  process that merely mentions the bundle path (a `tail -f` on its log, an editor). */
 const DEV_APP_ANCHOR = `${DEV_APP_PATH}/Contents/MacOS/`;
+const DEV_DECK_LABEL = "com.mattstack.deck.dev";
 
 const PROD_APP_LABEL = "prod app update";
 const DEV_BUNDLE_LABEL = "dev bundle rebuild";
@@ -410,14 +411,24 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
 }
 
 /** The dev-bundle leg on its own, at any pushed ref of the rt repo rather
- *  than a released tag. */
+ *  than a released tag. The tray restarts its helpers only when
+ *  CFBundleVersion changes, and a dev build between releases keeps the last
+ *  tag's version, so the deck helper is kickstarted here or it keeps running
+ *  the replaced bundle's binary. */
 export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): Promise<{ sha: string; result: LegResult }> {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..")) {
     throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO}, got "${ref}"`);
   }
   const sha = await resolveCommit(seams, ref);
-  const result = await runDevBundleLeg(seams, { tag: ref, ver: "", sha });
-  return { sha, result };
+  const leg = await runDevBundleLeg(seams, { tag: ref, ver: "", sha });
+  if (leg.status !== "ok") return { sha, result: leg };
+
+  const kickstart: [string, ...string[]] = ["launchctl", "kickstart", "-k", `gui/${seams.uid}/${DEV_DECK_LABEL}`];
+  const kick = await seams.exec(kickstart);
+  if (kick.exitCode !== 0) {
+    return { sha, result: errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}, but \`${kickstart.join(" ")}\` failed: ${execTail(kick)}`) };
+  }
+  return { sha, result: okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}; deck helper restarted`) };
 }
 
 async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
