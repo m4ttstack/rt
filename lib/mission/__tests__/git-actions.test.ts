@@ -321,12 +321,28 @@ describe("publishRepo: gh repo create", () => {
     const a = await makeSandbox();
     const bin = mkdtempSync(join(tmpdir(), "fake-gh-"));
     try {
+      await a.write("README.md", "hi\n");
+      await a.commitAll("first");
       const gh = fakeGh(bin, 0);
       const result = await publishRepo(a.dir, { name: "acme-app", private: true }, gh.path);
       expect(result).toEqual({ ok: true, detail: "" });
       const { cwd, args } = gh.recorded();
       expect(realpathSync(cwd)).toBe(realpathSync(a.dir));
       expect(args).toEqual(["repo", "create", "acme-app", "--private", "--source", a.dir, "--remote", "origin", "--push"]);
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+      await a.cleanup();
+    }
+  });
+
+  test("an unborn repo publishes without pushing, since gh refuses --push with no commits", async () => {
+    const a = await makeSandbox();
+    const bin = mkdtempSync(join(tmpdir(), "fake-gh-"));
+    try {
+      const gh = fakeGh(bin, 0);
+      const result = await publishRepo(a.dir, { name: "acme-app", private: true }, gh.path);
+      expect(result).toEqual({ ok: true, detail: "" });
+      expect(gh.recorded().args).toEqual(["repo", "create", "acme-app", "--private", "--source", a.dir, "--remote", "origin"]);
     } finally {
       rmSync(bin, { recursive: true, force: true });
       await a.cleanup();

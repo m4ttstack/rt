@@ -125,8 +125,9 @@ shadows, no radii).
   in) and then "Keep this code private" or "Public", instead of GitHub
   Desktop's single dialog. There is no description field and no
   organization dropdown: `owner/name` in the name field publishes to an
-  organization. It runs `gh repo create --source --remote origin --push`,
-  so it needs the GitHub CLI signed in.
+  organization. It runs `gh repo create --source --remote origin --push`
+  (no `--push` for a repo with no commits yet), so it needs the GitHub CLI
+  signed in.
 
 ## Deferred to v2
 

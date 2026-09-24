@@ -146,14 +146,17 @@ export async function runAction(
 /**
  * GitHub Desktop's Publish Repository through the GitHub CLI: creates the
  * repo (`name` may be `owner/name` for an organization), adds it as origin,
- * and pushes. `gh` is a parameter so tests can stand in for it.
+ * and pushes. An unborn repo skips the push: gh refuses `--push` with no
+ * commits, before it creates anything. `gh` is a parameter so tests can
+ * stand in for it.
  */
 export async function publishRepo(
   cwd: string,
   opts: { name: string; private: boolean },
   gh = "gh",
 ): Promise<ActionResult> {
-  const args = ["repo", "create", opts.name, opts.private ? "--private" : "--public", "--source", cwd, "--remote", "origin", "--push"];
+  const args = ["repo", "create", opts.name, opts.private ? "--private" : "--public", "--source", cwd, "--remote", "origin"];
+  if ((await spawnGit(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok) args.push("--push");
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn([gh, ...args], { cwd, env: scrubGitEnv(), stdout: "pipe", stderr: "pipe" });
