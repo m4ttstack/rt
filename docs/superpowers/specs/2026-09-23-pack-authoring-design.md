@@ -14,10 +14,24 @@ pass the mattstack purity gate.
 
 ## Locked decisions
 
-- **Topology by detection.** A zone that already declares the repo's forge
-  host hosts the pack; otherwise a new zone is scaffolded. `merge-manifests`
-  already folds every `packs/*/pack/skills.jsonc` from every zone, so both
-  shapes work today.
+- **One pack per zone, named after the zone's namespace.** `merge-manifests`
+  folds every pack in a zone into every project that zone declares, so a
+  second team's pack in an existing zone would inherit (or collide with) the
+  first pack's bindings; and rt's default-manifest lookup keys on the pack
+  name while the merge labels fragments `<namespace>@<zone>`, so a pack
+  named anything else loses every flagless `rt skills` verb. Both go away
+  when the pack is the zone's namespace. Stacking packs in one zone is
+  something the merge can do but init never creates.
+- **Topology by detection.** A zone already declaring the repo wins (its
+  pack, when present, is the repo's pack: `pack-exists`). Otherwise a zone
+  on the repo's forge host that has no pack yet. Otherwise a new zone is
+  scaffolded. Zones that already carry a pack are skipped, never joined.
+- **`rt skills bind` writes the binding into the team pack's fragment.**
+  Today it writes only the generated per-repo manifest, which the next
+  materialize rewrites and teammates never see. For a team-shaped pack it
+  also applies the same `bindings.<engine>.<slot>` edit to
+  `<pack>/pack/skills.jsonc`; a standalone pack's fragment is its manifest
+  and is written once.
 - **Floor is zero fills.** Every domain slot is optional and an unbound slot
   renders as nothing, so a roster plus a bindings fragment is a working
   pack. Generic provision and ship stages carry explicit unbound fallbacks.
@@ -54,7 +68,8 @@ pass the mattstack purity gate.
   PACK.md                        short map; names the two skills for next steps
   pack/surface.jsonc             { "public": ["work"] }
   pack/stubs.jsonc               { "verbs": { "work": { "engine": "work", "description": <seeded> } } }
-  pack/skills.jsonc              version 1; pipelines.feature = the eight mattstack stages;
+  pack/skills.jsonc              version 1; skills.enabled = [mattstack:work, mattstack:model-tiering];
+                                 pipelines.feature = the eight mattstack stages;
                                  bindings: mattstack:work.tiering -> mattstack:model-tiering,
                                  mattstack:stage-watch-ci.forge -> mattstack:ci-forge-gitlab
   skills/work/SKILL.md           compiled
@@ -67,37 +82,44 @@ plugins entry `{ name, source: "./mattstack/packs/<pack>", description }`.
 
 The `work` description is seeded from the engine's own frontmatter
 `description` in the installed mattstack cache, so the roster cannot go
-stale the way a copied template does. The author rewrites it later.
+stale the way a copied template does. It is a placeholder: `PACK.md` and
+`creating-a-pack` both say to rewrite it in the team's words.
 
 ## `rt skills init`
 
 New leaf under `skills` in `lib/command-tree-def.ts`, module
-`commands/skills-init.ts` (registered in `lib/module-registry.ts`),
-`omitBehavior: "prompt"` for the pack name.
+`commands/skills-init.ts` (registered in `lib/module-registry.ts`). No
+required positional, so no `omitBehavior`.
 
 Inputs:
 
 | flag | meaning | default |
 | --- | --- | --- |
-| `--pack <name>` | `[a-z][a-z0-9-]*` | the zone slug |
 | `--repo <path>` | a git checkout with a remote | cwd |
 | `--zone <slug>` | which zone hosts the pack when several match | detected |
 | `--json` | envelope output | off |
+
+The pack is named after the zone's `namespace` (from its
+`mattstack.jsonc`); there is no `--pack`.
 
 Steps, in order. Every refusal fires before anything is written.
 
 1. **Resolve the repo.** `git remote get-url origin` (first remote as a
    fallback). Refuse `not-a-repo`, `no-remote`.
-2. **Resolve the zone.** Candidates: zones under `~/.mattstack/teams/*/`
-   whose `mattstack.jsonc` has `role: team` and whose forge host (from
-   `team.jsonc` `gitlabHost`, else `settings.team.jsonc`
-   `mattstack.integrations.forge.host`) equals the remote host. A zone
-   already declaring the repo path wins outright. Several remain: refuse
+2. **Resolve the zone.** Zones are the dirs under `~/.mattstack/teams/*/`
+   whose `mattstack.jsonc` has `role: team`; each has a namespace, a forge
+   host (from `team.jsonc` `gitlabHost`, else `settings.team.jsonc`
+   `mattstack.integrations.forge.host`, else none yet), declared projects,
+   and whether `mattstack/packs/` already holds a pack. A zone declaring
+   the repo path wins outright. Otherwise candidates are zones with no
+   pack whose host matches the remote host or is unset. Several: refuse
    `zone-ambiguous`, listing them, remedy `--zone`. None: in a TTY, prompt
    for team name and remote and call the existing `createTeam`; without a
-   TTY refuse `zone-missing`, remedy `rt team create`.
-3. **Refuse on an existing pack dir** (`pack-exists`), on an invalid name
-   (`pack-name-invalid`), on a missing mattstack plugin cache
+   TTY refuse `zone-missing`, remedy `rt team create`. `--zone <slug>`
+   naming a zone on another host is `zone-mismatch`; naming one that
+   already carries a pack is `zone-has-pack`.
+3. **Refuse on an existing pack dir** (`pack-exists`: the declaring zone
+   already has this repo's pack), on a missing mattstack plugin cache
    (`mattstack-missing`, engines unreadable), on no `claude` binary
    (`claude-missing`).
 4. **Write** the pack files and the two zone edits above.
@@ -105,8 +127,10 @@ Steps, in order. Every refusal fires before anything is written.
    edits, comments preserved, entries left alone when present.
 5. **Register and materialize:** `rt repos register <repo>` (idempotent),
    then `merge-manifests.sh --repo <repo>` through the existing
-   `materializeSkills`, so `~/.mattstack/repos/<slug>/skills.jsonc` exists
-   and names the pack in its provenance header.
+   `materializeSkills`, so `~/.mattstack/repos/<slug>/skills.jsonc` exists.
+   Its provenance header labels the fragment `<namespace>@<zone>`, which is
+   what rt's default-manifest lookup matches against the pack name; the two
+   agree because the pack is named after the namespace.
 6. **Compile and check** through the existing `skillsCompile` and
    `skillsCheck` code paths (`--pack <pack>`). A failure here is reported
    verbatim and the files stay in place for the author to fix; exit 1.
@@ -149,8 +173,9 @@ root is already in the manifest's `skills` array).
 
 Description (trigger-only, under 500 chars): use when a team wants the
 mattstack pipeline on a repo that has no pack yet: "make a pack", "set up
-/<team>:work", "we want the work pipeline on our repo", or `rt skills packs`
-lists nothing for the repo. Not for adding rules to an existing pack.
+/<team>:work", "we want the work pipeline on our repo", "onboard our team
+to mattstack", or no pack of the team's is installed. Not for adding rules
+to an existing pack.
 
 Recipe (the output shape the skill states; form chosen after the RED
 baseline, see Testing):
@@ -202,7 +227,10 @@ Triage, one ask at a time:
 `rt skills composition --pack <pack>` is the live source for slot names and
 contracts; the table is the reading aid. A bind targets a roster verb or a
 stage, so a verb-level bind (`mattstack:ship`) needs the door rostered
-first; the stage-level bind works either way.
+first; the stage-level bind works either way. A `shepherdr` door is the one
+verb with required slots: `tiering` and `strategy` must be bound (to
+`mattstack:model-tiering` and `mattstack:execution-strategy`) before it
+compiles; the domain fill stays optional.
 
 Fill recipe, fixed shape, at `<pack>/attachments/<fill>/SKILL.md`:
 
@@ -220,9 +248,12 @@ Writing the fill or `context`: REQUIRED SUB-SKILL `superpowers:writing-skills`.
 RED runs in the author's own repo, in a worktree: run the generic stage or
 verb on a small real task without the rule, record verbatim where it missed,
 write the fill, run again. Then, in order: `rt skills bind <stage> <slot>
-<pack>:<fill>` (validates `provides` against the slot's contract and
-recompiles), `tests/certify.sh <fill dir> --domain` from the mattstack-skills
-checkout, `rt skills check --pack <pack>`, hand to `editing-skills`.
+<pack>:<fill>` (validates `provides` against the slot's contract, writes the
+binding into both the per-repo manifest and the pack's `pack/skills.jsonc`,
+and recompiles), `tests/certify.sh <fill dir> --domain` from the
+mattstack-skills checkout, `rt skills check --pack <pack>`, hand to
+`editing-skills`. The fragment write is what reaches teammates; the
+per-repo manifest is regenerated on every materialize.
 
 ## Retirements
 
@@ -234,12 +265,20 @@ checkout, `rt skills check --pack <pack>`, hand to `editing-skills`.
 
 ## Testing
 
-1. **`rt skills init` unit tests** as listed above.
+1. **`rt skills init` unit tests** as listed above, plus a `bind` test
+   proving a team pack's `pack/skills.jsonc` carries the binding after a
+   bind and a standalone pack's manifest is written exactly once.
 2. **Scratch end-to-end, before either skill is written.** Under
    `env -i HOME=<scratch> CLAUDE_CONFIG_DIR=<scratch>/.claude`, with the
    mattstack and superpowers plugins installed into that config and a
    scratch daemon started under that HOME only (its socket lives under the
-   scratch HOME, so it never squats the live one; stopped afterwards).
+   scratch HOME, so it never squats the live one; stopped afterwards). A
+   fresh config dir has no credentials: the first `claude` call asks for a
+   login, which the operator does by hand before anything else runs. The
+   mattstack plugin installs from a scratch marketplace whose entry is a
+   `file://` URL to the mattstack-skills worktree, so the GREEN runs later
+   pick up the new skills with `claude plugin update` instead of a second
+   plugin loaded by `--plugin-dir` beside the installed one.
    A throwaway GitLab project from the harness credentials, cloned into the
    scratch HOME. `rt team create` with a second throwaway project as the
    remote, then `rt skills init --pack scratch --repo <clone> --json`.
@@ -267,7 +306,7 @@ checkout, `rt skills check --pack <pack>`, hand to `editing-skills`.
 ## Repos touched
 
 - `repo-tools`: `commands/skills-init.ts`, the command-tree leaf, the module
-  registry entry, tests, `docs/` mention in the rt reference if one lists
-  `rt skills`.
+  registry entry, the fragment write in `skillsBind` (`commands/skills.ts`),
+  tests.
 - `mattstack-skills`: two skills under `plugin/skills/`, `templates/domain-pack`
   removed, README Configuration rewritten, desc-test scenarios, version bump.

@@ -4,7 +4,7 @@
 
 **Goal:** `rt skills init` scaffolds a team's zero-fill pack so `/<pack>:work` runs, and two mattstack skills (`creating-a-pack`, `extending-a-pack`) walk an author from nothing to that pack and then through adding rules in their own words.
 
-**Architecture:** Deterministic scaffolding is a pure module (`lib/skills/init.ts`) with injected deps, wrapped by a thin command (`commands/skills-init.ts`) that reuses the existing compile, check, materialize, register, and plugin-install seams. The two skills are mattstack plugin skills written TDD-style (baseline first) under a scratch HOME so no baseline touches the live estate. A scratch end-to-end run proves the generic pipeline before either skill is written.
+**Architecture:** Deterministic scaffolding is a pure module (`lib/skills/init.ts`) with injected deps, wrapped by a thin command (`commands/skills-init.ts`) that reuses the existing compile, check, materialize, register, and plugin-install seams. `rt skills bind` gains a write into the team pack's fragment so a binding survives materialize and reaches teammates. The two skills are mattstack plugin skills written TDD-style (baseline first) under a scratch HOME so no baseline touches the live estate. A scratch end-to-end run proves the generic pipeline before either skill is written.
 
 **Tech Stack:** Bun + TypeScript (rt), `jsonc-parser` for comment-preserving edits, `bun:test`, mattstack-skills (markdown skills, `tests/certify.sh`, `tests/desc-test.ts`).
 
@@ -17,20 +17,20 @@
 - The two skills live in mattstack and must pass `tests/certify.sh <dir>` in stack mode: no team names, no personal names or home paths. Examples use `acme`.
 - Skill descriptions are trigger-only, start with "Use when", third person, under 500 chars.
 - Every new command module referenced from `lib/command-tree-def.ts` is also registered as a thunk in `lib/module-registry.ts`.
-- A leaf with a required positional declares `omitBehavior`; `init` has none required (all flags), so no picker is needed.
-- `init` never commits. It never writes into an existing pack directory.
+- `init` has no required positional, so no `omitBehavior`.
+- `init` never commits. It never writes into an existing pack directory. One pack per zone; the pack is named after the zone's `namespace`.
 - Roster on scaffold is `work` only, public. Bindings: `mattstack:work.tiering -> mattstack:model-tiering`, `mattstack:stage-watch-ci.forge -> mattstack:ci-forge-gitlab`, nothing else.
 - Built or source `rt` is only ever run against a real machine through the normal dev wrapper; any scratch run uses `env -i HOME=<scratch> CLAUDE_CONFIG_DIR=<scratch>/.claude`.
-- rt work happens on branch `pack-authoring` in worktree `/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/elrond`. mattstack-skills work happens on a branch `pack-authoring` in a worktree under `~/Documents/GitHub/mattstack-skills/.claude/worktrees/pack-authoring`.
+- rt work happens on branch `pack-authoring` in worktree `/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/elrond`. mattstack-skills work happens on a branch `pack-authoring` in a worktree at `/Users/matt/Documents/GitHub/mattstack-skills/.claude/worktrees/pack-authoring`.
 - Commit after every task.
 
 ## Review Focus
 
-1. A repo whose remote is `git@gitlab.com:Group/Sub/repo.git` (SSH form, mixed-case host) must resolve to host `gitlab.com`, path `Group/Sub/repo`, and the same slug `merge-manifests.sh` computes. Test in Task 1.
-2. A zone whose `team.jsonc` is absent but whose `settings.team.jsonc` names a forge host must still be a candidate, and `init` must then create `team.jsonc`. Test in Task 1 (candidate) and Task 2 (creation).
-3. A `team.jsonc` with comments and an existing `projects` array must keep both after the repo is appended. Test in Task 2.
+1. A repo whose remote is `git@GitLab.com:Group/Sub/repo.git` (SSH form, mixed-case host) must resolve to host `gitlab.com`, path `Group/Sub/repo`, and the same slug `merge-manifests.sh` computes. Test in Task 1.
+2. A zone whose `team.jsonc` is absent but whose `settings.team.jsonc` names a forge host must still be a candidate, and `init` must then create `team.jsonc`. Test in Task 1 (candidate) and Task 3 (creation).
+3. A zone on the repo's host that already carries a pack must be skipped by detection (a second team never lands in it), and `--zone` naming it must refuse `zone-has-pack`. Test in Task 1 and Task 3.
 4. When compile fails after files were written, the report must list every written path and exit 1, so the author can fix and re-run compile rather than re-run init (which would refuse on `pack-exists`). Test in Task 3.
-5. `claude plugin marketplace add` on a marketplace already registered exits 0 with "already" wording; init must treat that as success and continue to install. Test in Task 3.
+5. `rt skills bind` on a team pack must land the binding in `pack/skills.jsonc`, or the next materialize drops it and teammates never get it. Test in Task 6.
 
 ---
 
@@ -45,9 +45,9 @@
   - `type RepoRef = { host: string; path: string; slug: string }`
   - `parseRemote(url: string): RepoRef | null`
   - `type InitFs = { exists(p: string): boolean; readFile(p: string): string | null; writeFile(p: string, text: string): void; mkdirp(p: string): void; readDir(p: string): string[] }`
-  - `type ZoneInfo = { slug: string; dir: string; host: string | null; projects: string[]; marketplace: string | null }`
+  - `type ZoneInfo = { slug: string; namespace: string; dir: string; host: string | null; projects: string[]; marketplace: string | null; hasPack: boolean }`
   - `readZones(fs: InitFs, home: string): ZoneInfo[]`
-  - `chooseZone(zones: ZoneInfo[], repo: RepoRef, wanted: string | null): { kind: "found"; zone: ZoneInfo } | { kind: "ambiguous"; zones: ZoneInfo[] } | { kind: "missing" } | { kind: "mismatch"; zone: ZoneInfo }`
+  - `chooseZone(zones: ZoneInfo[], repo: RepoRef, wanted: string | null): { kind: "found"; zone: ZoneInfo } | { kind: "ambiguous"; zones: ZoneInfo[] } | { kind: "missing" } | { kind: "mismatch"; zone: ZoneInfo } | { kind: "has-pack"; zone: ZoneInfo }`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -95,26 +95,32 @@ describe("parseRemote", () => {
 });
 
 const HOME = "/h";
-const zoneFiles = (slug: string, extra: Record<string, string>) => ({
-  [`${HOME}/.mattstack/teams/${slug}/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "${slug}", "org": "x" }`,
+const zoneFiles = (slug: string, extra: Record<string, string>, namespace = slug) => ({
+  [`${HOME}/.mattstack/teams/${slug}/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "${namespace}", "org": "x" }`,
   [`${HOME}/.mattstack/teams/${slug}/.claude-plugin/marketplace.json`]: `{ "name": "${slug}-market", "owner": { "name": "x" }, "plugins": [] }`,
   ...extra,
 });
 
 describe("readZones", () => {
-  test("host from team.jsonc gitlabHost, projects listed", () => {
+  test("host from team.jsonc gitlabHost, projects listed, namespace from the marker, no pack", () => {
     const fs = memFs(zoneFiles("acme", {
       [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `// shim\n{ "gitlabHost": "https://GitLab.com", "projects": ["acme/api"] }`,
-    }));
+    }, "acmens"));
     expect(readZones(fs, HOME)).toEqual([
-      { slug: "acme", dir: `${HOME}/.mattstack/teams/acme`, host: "gitlab.com", projects: ["acme/api"], marketplace: "acme-market" },
+      { slug: "acme", namespace: "acmens", dir: `${HOME}/.mattstack/teams/acme`, host: "gitlab.com", projects: ["acme/api"], marketplace: "acme-market", hasPack: false },
     ]);
   });
   test("host falls back to settings.team.jsonc forge host when team.jsonc is absent", () => {
     const fs = memFs(zoneFiles("beta", {
       [`${HOME}/.mattstack/teams/beta/mattstack/settings.team.jsonc`]: `// header\n{ "mattstack.integrations": { "forge": { "host": "gitlab.com", "provider": "gitlab" } } }`,
     }));
-    expect(readZones(fs, HOME)[0]).toMatchObject({ slug: "beta", host: "gitlab.com", projects: [] });
+    expect(readZones(fs, HOME)[0]).toMatchObject({ slug: "beta", namespace: "beta", host: "gitlab.com", projects: [] });
+  });
+  test("a zone with a plugin.json under mattstack/packs/* has a pack", () => {
+    const fs = memFs(zoneFiles("acme", {
+      [`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/.claude-plugin/plugin.json`]: `{ "name": "acme", "version": "0.5.0" }`,
+    }));
+    expect(readZones(fs, HOME)[0]!.hasPack).toBe(true);
   });
   test("a user-role zone is skipped", () => {
     const fs = memFs({
@@ -126,12 +132,20 @@ describe("readZones", () => {
 
 describe("chooseZone", () => {
   const repo = { host: "gitlab.com", path: "acme/api", slug: "gitlab.com-acme-api" };
-  const z = (slug: string, host: string | null, projects: string[] = []): ZoneInfo => ({ slug, dir: `/z/${slug}`, host, projects, marketplace: slug });
-  test("a zone already declaring the repo wins over another host match", () => {
-    const r = chooseZone([z("a", "gitlab.com"), z("b", "gitlab.com", ["acme/api"])], repo, null);
-    expect(r).toEqual({ kind: "found", zone: z("b", "gitlab.com", ["acme/api"]) });
+  const z = (slug: string, host: string | null, projects: string[] = [], hasPack = false): ZoneInfo =>
+    ({ slug, namespace: slug, dir: `/z/${slug}`, host, projects, marketplace: slug, hasPack });
+  test("a zone already declaring the repo wins, pack or not", () => {
+    const r = chooseZone([z("a", "gitlab.com"), z("b", "gitlab.com", ["acme/api"], true)], repo, null);
+    expect(r).toEqual({ kind: "found", zone: z("b", "gitlab.com", ["acme/api"], true) });
   });
-  test("two host matches with no declaration is ambiguous", () => {
+  test("a zone on the host that already has a pack is skipped", () => {
+    const r = chooseZone([z("claim", "gitlab.com", ["acme/other"], true), z("fresh", "gitlab.com")], repo, null);
+    expect(r).toEqual({ kind: "found", zone: z("fresh", "gitlab.com") });
+  });
+  test("only packed zones on the host means missing", () => {
+    expect(chooseZone([z("claim", "gitlab.com", ["acme/other"], true)], repo, null)).toEqual({ kind: "missing" });
+  });
+  test("two packless host matches is ambiguous", () => {
     const r = chooseZone([z("a", "gitlab.com"), z("b", "gitlab.com")], repo, null);
     expect(r.kind).toBe("ambiguous");
   });
@@ -142,6 +156,10 @@ describe("chooseZone", () => {
   test("--zone naming a zone on another host is a mismatch", () => {
     const r = chooseZone([z("gh", "github.com")], repo, "gh");
     expect(r).toEqual({ kind: "mismatch", zone: z("gh", "github.com") });
+  });
+  test("--zone naming a packed zone that does not declare the repo is has-pack", () => {
+    const packed = z("claim", "gitlab.com", ["acme/other"], true);
+    expect(chooseZone([packed], repo, "claim")).toEqual({ kind: "has-pack", zone: packed });
   });
   test("a zone with no host yet is a candidate", () => {
     const r = chooseZone([z("fresh", null)], repo, null);
@@ -192,7 +210,15 @@ export type InitFs = {
   readDir(p: string): string[];
 };
 
-export type ZoneInfo = { slug: string; dir: string; host: string | null; projects: string[]; marketplace: string | null };
+export type ZoneInfo = {
+  slug: string;
+  namespace: string;
+  dir: string;
+  host: string | null;
+  projects: string[];
+  marketplace: string | null;
+  hasPack: boolean;
+};
 
 function readJsonc(fs: InitFs, path: string): Record<string, unknown> | null {
   const raw = fs.readFile(path);
@@ -210,6 +236,11 @@ function hostOnly(value: unknown): string | null {
   return value.replace(/^https?:\/\//, "").split("/")[0]!.toLowerCase() || null;
 }
 
+function zoneHasPack(fs: InitFs, dir: string): boolean {
+  const packs = join(dir, "mattstack", "packs");
+  return fs.readDir(packs).some((name) => fs.exists(join(packs, name, ".claude-plugin", "plugin.json")));
+}
+
 export function readZones(fs: InitFs, home: string): ZoneInfo[] {
   const teams = join(home, ".mattstack", "teams");
   const zones: ZoneInfo[] = [];
@@ -217,6 +248,7 @@ export function readZones(fs: InitFs, home: string): ZoneInfo[] {
     const dir = join(teams, slug);
     const marker = readJsonc(fs, join(dir, "mattstack", "mattstack.jsonc"));
     if (marker?.role !== "team") continue;
+    const namespace = typeof marker.namespace === "string" && marker.namespace ? marker.namespace : slug;
     const shim = readJsonc(fs, join(dir, "mattstack", "team.jsonc"));
     const settings = readJsonc(fs, join(dir, "mattstack", "settings.team.jsonc"));
     const forge = (settings?.["mattstack.integrations"] as { forge?: { host?: unknown } } | undefined)?.forge;
@@ -224,7 +256,7 @@ export function readZones(fs: InitFs, home: string): ZoneInfo[] {
     const projects = Array.isArray(shim?.projects) ? shim.projects.filter((p): p is string => typeof p === "string") : [];
     const market = readJsonc(fs, join(dir, ".claude-plugin", "marketplace.json"));
     const marketplace = typeof market?.name === "string" ? market.name : null;
-    zones.push({ slug, dir, host, projects, marketplace });
+    zones.push({ slug, namespace, dir, host, projects, marketplace, hasPack: zoneHasPack(fs, dir) });
   }
   return zones;
 }
@@ -233,18 +265,23 @@ export type ZoneChoice =
   | { kind: "found"; zone: ZoneInfo }
   | { kind: "ambiguous"; zones: ZoneInfo[] }
   | { kind: "missing" }
-  | { kind: "mismatch"; zone: ZoneInfo };
+  | { kind: "mismatch"; zone: ZoneInfo }
+  | { kind: "has-pack"; zone: ZoneInfo };
 
 export function chooseZone(zones: ZoneInfo[], repo: RepoRef, wanted: string | null): ZoneChoice {
-  const candidates = zones.filter((z) => z.host === null || z.host === repo.host);
+  const onHost = (z: ZoneInfo) => z.host === null || z.host === repo.host;
+  const declares = (z: ZoneInfo) => z.projects.includes(repo.path);
   if (wanted) {
     const named = zones.find((z) => z.slug === wanted);
     if (!named) return { kind: "missing" };
-    return candidates.includes(named) ? { kind: "found", zone: named } : { kind: "mismatch", zone: named };
+    if (!onHost(named)) return { kind: "mismatch", zone: named };
+    if (named.hasPack && !declares(named)) return { kind: "has-pack", zone: named };
+    return { kind: "found", zone: named };
   }
-  const declared = candidates.filter((z) => z.projects.includes(repo.path));
+  const declared = zones.filter((z) => onHost(z) && declares(z));
   if (declared.length === 1) return { kind: "found", zone: declared[0]! };
   if (declared.length > 1) return { kind: "ambiguous", zones: declared };
+  const candidates = zones.filter((z) => onHost(z) && !z.hasPack);
   if (candidates.length === 1) return { kind: "found", zone: candidates[0]! };
   if (candidates.length > 1) return { kind: "ambiguous", zones: candidates };
   return { kind: "missing" };
@@ -254,7 +291,7 @@ export function chooseZone(zones: ZoneInfo[], repo: RepoRef, wanted: string | nu
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `bun test lib/skills/__tests__/init.test.ts`
-Expected: PASS, 12 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -311,18 +348,20 @@ describe("renderPackFiles", () => {
     });
     expect(JSON.parse(stripJsonc(files["pack/surface.jsonc"]!))).toEqual({ public: ["work"] });
   });
-  test("bindings fragment carries the eight-stage pipeline and only the two generic bindings", () => {
+  test("bindings fragment carries enabled skills, the eight-stage pipeline, and only the two generic bindings", () => {
     const manifest = JSON.parse(stripJsonc(files["pack/skills.jsonc"]!));
     expect(manifest.version).toBe(1);
+    expect(manifest.skills).toEqual({ enabled: ["mattstack:work", "mattstack:model-tiering"] });
     expect(manifest.pipelines.feature).toEqual(PIPELINE_STAGES.map((s) => `mattstack:${s}`));
     expect(manifest.bindings).toEqual({
       "mattstack:work": { tiering: "mattstack:model-tiering" },
       "mattstack:stage-watch-ci": { forge: "mattstack:ci-forge-gitlab" },
     });
   });
-  test("PACK.md names the two authoring skills and no dashes", () => {
+  test("PACK.md names the two authoring skills, calls the description a placeholder, no dashes", () => {
     expect(files["PACK.md"]).toContain("mattstack:extending-a-pack");
     expect(files["PACK.md"]).toContain("mattstack:creating-a-pack");
+    expect(files["PACK.md"]).toContain("placeholder");
     for (const text of Object.values(files)) expect(text).not.toMatch(/[\u2013\u2014]/);
   });
 });
@@ -339,6 +378,10 @@ describe("declareRepo", () => {
     const out = declareRepo(before, repo);
     expect(out).toContain("// keep me");
     expect(JSON.parse(stripJsonc(out)).projects).toEqual(["acme/web", "acme/api"]);
+  });
+  test("adds a projects array when the shim has none", () => {
+    const before = `{ "gitlabHost": "https://gitlab.com" }\n`;
+    expect(JSON.parse(stripJsonc(declareRepo(before, repo))).projects).toEqual(["acme/api"]);
   });
   test("is a no-op when the repo is already declared", () => {
     const before = `{ "gitlabHost": "https://gitlab.com", "projects": ["acme/api"] }\n`;
@@ -364,11 +407,9 @@ describe("addMarketplacePlugin", () => {
 Run: `bun test lib/skills/__tests__/init.test.ts`
 Expected: FAIL, `renderPackFiles is not a function` (and the others).
 
-- [ ] **Step 3: Implement** (append to `lib/skills/init.ts`)
+- [ ] **Step 3: Implement** (append to `lib/skills/init.ts`; add `import { applyEdits, modify } from "jsonc-parser";` at the top)
 
 ```ts
-import { applyEdits, modify } from "jsonc-parser";
-
 export const PIPELINE_STAGES = [
   "stage-provision",
   "stage-plan",
@@ -408,7 +449,8 @@ export function renderPackFiles(opts: { pack: string; workDescription: string })
       JSON.stringify({ public: ["work"] }, null, 2) + "\n",
     "pack/stubs.jsonc":
       "// Verb roster: rt skills compile renders one skill per entry from the named\n" +
-      "// mattstack engine. Rewrite each description in your team's words.\n" +
+      "// mattstack engine. Each description here is a placeholder seeded from the\n" +
+      "// engine; rewrite it in your team's words.\n" +
       JSON.stringify(stubs, null, 2) + "\n",
     "pack/skills.jsonc":
       `// ${pack} bindings fragment. merge-manifests.sh folds it into the per-repo\n` +
@@ -425,7 +467,8 @@ function renderPackMd(pack: string): string {
     "Scaffolded by `rt skills init`. The roster (`pack/stubs.jsonc`) names one",
     "verb, `work`, compiled from the mattstack engine with every domain slot",
     "unbound, so `/" + pack + ":work` runs the generic pipeline until the team",
-    "adds rules.",
+    "adds rules. The verb's description is a placeholder seeded from the",
+    "engine; rewrite it in your team's words.",
     "",
     "- Add a rule, a verb, or reword one: `mattstack:extending-a-pack`.",
     "- How this pack came to be: `mattstack:creating-a-pack`.",
@@ -447,9 +490,11 @@ export function declareRepo(teamJsonc: string | null, repo: RepoRef): string {
     );
   }
   const parsed = JSON.parse(stripJsonc(teamJsonc)) as { projects?: unknown };
-  const projects = Array.isArray(parsed.projects) ? parsed.projects : [];
-  if (projects.includes(repo.path)) return teamJsonc;
-  const edits = modify(teamJsonc, ["projects", projects.length], repo.path, { ...FORMAT, isArrayInsertion: true });
+  if (!Array.isArray(parsed.projects)) {
+    return applyEdits(teamJsonc, modify(teamJsonc, ["projects"], [repo.path], FORMAT));
+  }
+  if (parsed.projects.includes(repo.path)) return teamJsonc;
+  const edits = modify(teamJsonc, ["projects", parsed.projects.length], repo.path, { ...FORMAT, isArrayInsertion: true });
   return applyEdits(teamJsonc, edits);
 }
 
@@ -462,8 +507,6 @@ export function addMarketplacePlugin(marketplaceJson: string, pack: string, desc
   return applyEdits(marketplaceJson, edits);
 }
 ```
-
-If `modify` with `isArrayInsertion` on an absent `projects` key throws, guard: when `parsed.projects` is not an array, `modify(teamJsonc, ["projects"], [repo.path], FORMAT)` instead.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -505,12 +548,12 @@ export type InitDeps = {
   compile(packDir: string, manifestPath: string): Promise<{ ok: boolean; errors: string[] }>;
   check(packDir: string, manifestPath: string): Promise<{ drift: boolean }>;
 };
-export type InitRefusalCode = "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "pack-exists" | "pack-name-invalid" | "mattstack-missing" | "claude-missing";
+export type InitRefusalCode = "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "zone-has-pack" | "pack-exists" | "mattstack-missing" | "claude-missing";
 export type InitOutcome =
-  | { ok: true; pack: { name: string; dir: string; zone: string; marketplace: string }; repo: { slug: string; manifest: string }; wrote: string[]; installed: { plugin: string; version: string }; restartNeeded: true; tryNext: string; warnings: string[] }
+  | { ok: true; pack: { name: string; dir: string; zone: string; marketplace: string }; repo: { slug: string; manifest: string }; wrote: string[]; installed: { plugin: string; version: string }; restartNeeded: true; tryNext: string }
   | { ok: false; refused: true; code: InitRefusalCode; detail: string }
   | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[] };
-export async function initPack(opts: { pack: string | null; repoDir: string; zone: string | null }, deps: InitDeps): Promise<InitOutcome>;
+export async function initPack(opts: { repoDir: string; zone: string | null }, deps: InitDeps): Promise<InitOutcome>;
 ```
 
 - [ ] **Step 1: Write the failing tests** (append to `init.test.ts`)
@@ -519,6 +562,9 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
 import { initPack, type InitDeps, type RunResult } from "../init.ts";
 
 type Calls = { claude: string[][]; registered: string[]; materialized: string[]; compiled: string[]; checked: string[] };
+
+const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: "" });
+const REPO = "/work/api";
 
 function world(overrides: Partial<InitDeps> & { files?: Record<string, string>; marketplaces?: string[] } = {}) {
   const calls: Calls = { claude: [], registered: [], materialized: [], compiled: [], checked: [] };
@@ -547,7 +593,7 @@ function world(overrides: Partial<InitDeps> & { files?: Record<string, string>; 
     registerRepo: async (dir) => { calls.registered.push(dir); return "gitlab.com/acme/api"; },
     materialize: async (name) => {
       calls.materialized.push(name);
-      fs.writeFile(`${HOME}/.mattstack/repos/gitlab.com-acme-api/skills.jsonc`, "// acme@acme-market\n{}");
+      fs.writeFile(`${HOME}/.mattstack/repos/gitlab.com-acme-api/skills.jsonc`, "// mattstack:work tiering <- acme@acme\n{}");
       return { ok: true, detail: "merged" };
     },
     compile: async (dir) => { calls.compiled.push(dir); return { ok: true, errors: [] }; },
@@ -556,13 +602,11 @@ function world(overrides: Partial<InitDeps> & { files?: Record<string, string>; 
   };
   return { deps, calls, fs };
 }
-const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: "" });
-const REPO = "/work/api";
 
 describe("initPack", () => {
-  test("happy path writes the pack, declares the repo, installs, and reports", async () => {
+  test("happy path writes the pack named after the namespace, declares the repo, installs, and reports", async () => {
     const { deps, calls, fs } = world();
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     const packDir = `${HOME}/.mattstack/teams/acme/mattstack/packs/acme`;
@@ -581,30 +625,19 @@ describe("initPack", () => {
     expect(out.restartNeeded).toBe(true);
   });
 
+  test("the pack takes the zone namespace when it differs from the slug", async () => {
+    const { deps } = world({
+      files: { [`${HOME}/.mattstack/teams/acme/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "acmens", "org": "x" }` },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.pack.name).toBe("acmens");
+  });
+
   test("a marketplace already listed is not re-added", async () => {
     const { deps, calls } = world({ marketplaces: ["acme-market"] });
-    await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    await initPack({ repoDir: REPO, zone: null }, deps);
     expect(calls.claude.some((a) => a[2] === "add")).toBe(false);
-  });
-
-  test("refuses before writing: pack-exists", async () => {
-    const { deps, fs } = world({ files: { [`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/PACK.md`]: "x" } });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
-    expect(out).toMatchObject({ ok: false, refused: true, code: "pack-exists" });
-    expect(fs.exists(`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/pack/stubs.jsonc`)).toBe(false);
-  });
-
-  test.each([
-    ["no-remote", { gitRemote: async () => ({ kind: "no-remote" as const }) }],
-    ["not-a-repo", { gitRemote: async () => ({ kind: "not-a-repo" as const }) }],
-    ["mattstack-missing", { engineDescription: () => null }],
-    ["claude-missing", { claude: null }],
-    ["pack-name-invalid", {}, "Bad_Name"],
-  ])("refuses with %s", async (code, over, name) => {
-    const { deps, calls } = world(over as Partial<InitDeps>);
-    const out = await initPack({ pack: (name as string | undefined) ?? null, repoDir: REPO, zone: null }, deps);
-    expect(out).toMatchObject({ ok: false, refused: true, code });
-    expect(calls.registered).toEqual([]);
   });
 
   test("a marketplace add that exits non-zero with already wording still installs", async () => {
@@ -616,20 +649,67 @@ describe("initPack", () => {
         return ok("");
       },
     });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out.ok).toBe(true);
     expect(calls.claude).toContainEqual(["plugin", "install", "acme@acme-market"]);
   });
 
+  test("refuses before writing: pack-exists when the declaring zone already has a pack", async () => {
+    const { deps, fs } = world({
+      files: {
+        [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `{ "gitlabHost": "https://gitlab.com", "projects": ["acme/api"] }\n`,
+        [`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/.claude-plugin/plugin.json`]: `{ "name": "acme", "version": "0.3.0" }`,
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "pack-exists" });
+    expect(fs.exists(`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/pack/stubs.jsonc`)).toBe(false);
+  });
+
+  test("a packed zone on the host that does not declare the repo is skipped, so the outcome is zone-missing", async () => {
+    const { deps, calls } = world({
+      files: {
+        [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `{ "gitlabHost": "https://gitlab.com", "projects": ["acme/other"] }\n`,
+        [`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/.claude-plugin/plugin.json`]: `{ "name": "acme", "version": "0.3.0" }`,
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "zone-missing" });
+    expect(calls.registered).toEqual([]);
+  });
+
+  test("--zone naming a packed zone refuses zone-has-pack", async () => {
+    const { deps } = world({
+      files: {
+        [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `{ "gitlabHost": "https://gitlab.com", "projects": ["acme/other"] }\n`,
+        [`${HOME}/.mattstack/teams/acme/mattstack/packs/acme/.claude-plugin/plugin.json`]: `{ "name": "acme", "version": "0.3.0" }`,
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: "acme" }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "zone-has-pack" });
+  });
+
+  test.each([
+    ["no-remote", { gitRemote: async () => ({ kind: "no-remote" as const }) }],
+    ["not-a-repo", { gitRemote: async () => ({ kind: "not-a-repo" as const }) }],
+    ["mattstack-missing", { engineDescription: () => null }],
+    ["claude-missing", { claude: null }],
+  ])("refuses with %s", async (code, over) => {
+    const { deps, calls } = world(over as Partial<InitDeps>);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code });
+    expect(calls.registered).toEqual([]);
+  });
+
   test("zone-missing without a TTY names rt team create", async () => {
     const { deps } = world({ gitRemote: async () => ({ kind: "ok", url: "git@gitlab.example.com:acme/api.git" }) });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out).toMatchObject({ ok: false, refused: true, code: "zone-missing" });
     if (out.ok || !out.refused) return;
     expect(out.detail).toContain("rt team create");
   });
 
-  test("zone-missing with a TTY prompts and creates the zone", async () => {
+  test("zone-missing with a TTY prompts and creates the zone, then writes team.jsonc for it", async () => {
     const created: string[] = [];
     const { deps, fs } = world({
       gitRemote: async () => ({ kind: "ok", url: "git@gitlab.example.com:acme/api.git" }),
@@ -641,8 +721,12 @@ describe("initPack", () => {
         for (const [p, t] of Object.entries(zoneFiles("beta", {}))) fs.writeFile(p, t);
         return { slug: "beta", dir };
       },
+      materialize: async () => {
+        fs.writeFile(`${HOME}/.mattstack/repos/gitlab.example.com-acme-api/skills.jsonc`, "// beta@beta\n{}");
+        return { ok: true, detail: "merged" };
+      },
     });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(created).toEqual(["Beta https://gitlab.example.com/acme/mattstack-team-beta.git"]);
     expect(out.ok).toBe(true);
     expect(fs.readFile(`${HOME}/.mattstack/teams/beta/mattstack/team.jsonc`)).toContain("gitlab.example.com");
@@ -650,7 +734,7 @@ describe("initPack", () => {
 
   test("a compile failure after writing reports every written path", async () => {
     const { deps } = world({ compile: async () => ({ ok: false, errors: ["boom"] }) });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out).toMatchObject({ ok: false, refused: false, code: "compile-failed" });
     if (out.ok || out.refused) return;
     expect(out.detail).toContain("boom");
@@ -659,13 +743,13 @@ describe("initPack", () => {
 
   test("materialize that leaves no manifest is materialize-failed", async () => {
     const { deps } = world({ materialize: async () => ({ ok: false, detail: "no team declares" }) });
-    const out = await initPack({ pack: null, repoDir: REPO, zone: null }, deps);
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
     expect(out).toMatchObject({ ok: false, refused: false, code: "materialize-failed" });
   });
 });
 ```
 
-Note: the `memFs.exists` helper from Task 1 returns true for a directory prefix, which is what the `pack-exists` check relies on.
+Note: `memFs.exists` from Task 1 treats a directory prefix as existing; the `pack-exists` path and `zoneHasPack` rely on that, and on `readDir` listing the pack dir name.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -693,8 +777,8 @@ export type InitDeps = {
 };
 
 export type InitRefusalCode =
-  | "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch"
-  | "pack-exists" | "pack-name-invalid" | "mattstack-missing" | "claude-missing";
+  | "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "zone-has-pack"
+  | "pack-exists" | "mattstack-missing" | "claude-missing";
 
 export type InitOutcome =
   | {
@@ -705,19 +789,17 @@ export type InitOutcome =
       installed: { plugin: string; version: string };
       restartNeeded: true;
       tryNext: string;
-      warnings: string[];
     }
   | { ok: false; refused: true; code: InitRefusalCode; detail: string }
   | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[] };
-
-const PACK_NAME = /^[a-z][a-z0-9-]*$/;
 
 function refuse(code: InitRefusalCode, detail: string): InitOutcome {
   return { ok: false, refused: true, code, detail };
 }
 
-function isAlreadyAdded(res: RunResult): boolean {
-  return /already/i.test(`${res.stdout}\n${res.stderr}`);
+/** Anchored to the CLI's own "already ..." phrasings so a failing call that merely mentions the word does not read as success. */
+function isAlreadyDone(res: RunResult): boolean {
+  return /already (on disk|added|installed|exists)/i.test(`${res.stdout}\n${res.stderr}`);
 }
 
 async function marketplaceNames(claude: NonNullable<InitDeps["claude"]>): Promise<Set<string> | null> {
@@ -732,10 +814,7 @@ async function marketplaceNames(claude: NonNullable<InitDeps["claude"]>): Promis
   }
 }
 
-export async function initPack(opts: { pack: string | null; repoDir: string; zone: string | null }, deps: InitDeps): Promise<InitOutcome> {
-  if (opts.pack !== null && !PACK_NAME.test(opts.pack)) {
-    return refuse("pack-name-invalid", `pack name "${opts.pack}" must match ${PACK_NAME}`);
-  }
+export async function initPack(opts: { repoDir: string; zone: string | null }, deps: InitDeps): Promise<InitOutcome> {
   const remote = await deps.gitRemote(opts.repoDir);
   if (remote.kind === "not-a-repo") return refuse("not-a-repo", `${opts.repoDir} is not a git checkout`);
   if (remote.kind === "no-remote") return refuse("no-remote", `${opts.repoDir} has no git remote; add one so the zone can declare it`);
@@ -752,7 +831,7 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
   let choice = chooseZone(zones, repo, opts.zone);
   if (choice.kind === "missing" && opts.zone === null) {
     if (!deps.isTTY) {
-      return refuse("zone-missing", `no team zone covers ${repo.host}; run rt team create <name> --remote <url>, then re-run`);
+      return refuse("zone-missing", `no team zone without a pack covers ${repo.host}; run rt team create <Name> --remote <url>, then re-run`);
     }
     const answer = await deps.promptZone();
     await deps.createZone(answer.name, answer.remote);
@@ -766,10 +845,15 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
   if (choice.kind === "mismatch") {
     return refuse("zone-mismatch", `zone "${choice.zone.slug}" is on ${choice.zone.host}, the repo is on ${repo.host}`);
   }
+  if (choice.kind === "has-pack") {
+    return refuse("zone-has-pack", `zone "${choice.zone.slug}" already carries a pack; a zone hosts one pack, so create a zone for this team (rt team create)`);
+  }
   const zone = choice.zone;
-  const pack = opts.pack ?? zone.slug;
+  const pack = zone.namespace;
   const packDir = join(zone.dir, "mattstack", "packs", pack);
-  if (deps.fs.exists(packDir)) return refuse("pack-exists", `${packDir} already exists; init never touches an existing pack`);
+  if (zone.hasPack || deps.fs.exists(packDir)) {
+    return refuse("pack-exists", `${join(zone.dir, "mattstack", "packs")} already holds this repo's pack; init never touches an existing pack (see mattstack:extending-a-pack)`);
+  }
   const marketplace = zone.marketplace ?? zone.slug;
 
   const wrote: string[] = [];
@@ -784,9 +868,10 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
   const teamAfter = declareRepo(teamBefore, repo);
   if (teamAfter !== teamBefore) { deps.fs.writeFile(teamPath, teamAfter); wrote.push(teamPath); }
   const marketPath = join(zone.dir, ".claude-plugin", "marketplace.json");
-  const marketBefore = deps.fs.readFile(marketPath) ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
+  const marketOnDisk = deps.fs.readFile(marketPath);
+  const marketBefore = marketOnDisk ?? JSON.stringify({ name: marketplace, owner: { name: zone.slug }, plugins: [] }, null, 2) + "\n";
   const marketAfter = addMarketplacePlugin(marketBefore, pack, packDescription(pack));
-  if (marketAfter !== deps.fs.readFile(marketPath)) { deps.fs.writeFile(marketPath, marketAfter); wrote.push(marketPath); }
+  if (marketAfter !== marketOnDisk) { deps.fs.writeFile(marketPath, marketAfter); wrote.push(marketPath); }
 
   const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
     ({ ok: false, refused: false, code, detail, wrote });
@@ -802,15 +887,14 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
   const checked = await deps.check(packDir, manifestPath);
   if (checked.drift) return failed("check-drift", "rt skills check reports drift right after compile");
 
-  const warnings: string[] = [];
   const known = await marketplaceNames(deps.claude);
   if (!known || !known.has(marketplace)) {
     const added = await deps.claude(["plugin", "marketplace", "add", zone.dir]);
-    if (added.code !== 0 && !isAlreadyAdded(added)) return failed("install-failed", `claude plugin marketplace add exited ${added.code}: ${added.stderr.trim()}`);
+    if (added.code !== 0 && !isAlreadyDone(added)) return failed("install-failed", `claude plugin marketplace add exited ${added.code}: ${added.stderr.trim()}`);
   }
   const pluginId = `${pack}@${marketplace}`;
   const installed = await deps.claude(["plugin", "install", pluginId]);
-  if (installed.code !== 0 && !isAlreadyAdded(installed)) return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.code}: ${installed.stderr.trim()}`);
+  if (installed.code !== 0 && !isAlreadyDone(installed)) return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.code}: ${installed.stderr.trim()}`);
 
   return {
     ok: true,
@@ -820,7 +904,6 @@ export async function initPack(opts: { pack: string | null; repoDir: string; zon
     installed: { plugin: pluginId, version: "0.1.0" },
     restartNeeded: true,
     tryNext: `/${pack}:work <ticket>`,
-    warnings,
   };
 }
 ```
@@ -848,8 +931,8 @@ git commit -m "skills init: initPack orchestration with injected deps"
 - Test: `commands/__tests__/skills-init.test.ts`
 
 **Interfaces:**
-- Consumes: `initPack`, `InitDeps`, `InitOutcome` (Task 3); `createTeam` from `lib/team/create.ts`; `materializeSkills` from `lib/setup/skills-materialize.ts`; `compilePackAll`, `checkPack` from `commands/skills.ts`; `resolvePluginRoots`, `loadStepSource` from `lib/skills/sources.ts`; `resolveClaudeBin` from `lib/claude-bin.ts`; `createRealProbes` from `lib/setup/probes.ts`; `deriveRepoIdentity`, `serializeIdentity` from `lib/settings/identity.ts`; `updateRepoIndexAsync` from `lib/repo-index.ts`; `textInput` from `lib/ui/prompts.ts`; `UserActionableError` from `lib/setup/errors.ts`; `envelope` from `lib/setup/contract.ts`.
-- Produces: `skillsInit(args: string[], _ctx?: CommandContext, deps?: InitDeps): Promise<void>`; `parseInitArgs(args: string[]): { pack: string | null; repo: string; zone: string | null; json: boolean }`.
+- Consumes: `initPack`, `InitDeps`, `InitOutcome` (Task 3); `createTeam` from `lib/team/create.ts`; `materializeSkills` from `lib/setup/skills-materialize.ts`; `compilePackAll`, `checkPack` from `commands/skills.ts`; `resolvePluginRoots`, `loadStepSource` from `lib/skills/sources.ts`; `resolveClaudeBin` from `lib/claude-bin.ts`; `createRealProbes` from `lib/setup/probes.ts`; `deriveRepoIdentity`, `serializeIdentity` from `lib/settings/identity.ts`; `updateRepoIndexAsync` from `lib/repo-index.ts`; `textInput` from `lib/ui/prompts.ts`; `UserActionableError` from `lib/setup/errors.ts`; `envelope` from `lib/setup/contract.ts`; `CommandContext` from `lib/command-tree.ts`.
+- Produces: `skillsInit(args: string[], _ctx?: CommandContext, deps?: InitDeps): Promise<void>`; `parseInitArgs(args: string[]): { repo: string; zone: string | null; json: boolean }`; `renderInitOutcome(out: InitOutcome): string`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -860,14 +943,17 @@ import { parseInitArgs, renderInitOutcome } from "../skills-init.ts";
 import type { InitOutcome } from "../../lib/skills/init.ts";
 
 describe("parseInitArgs", () => {
-  test("defaults: no pack, cwd repo, no zone, human output", () => {
-    expect(parseInitArgs([])).toEqual({ pack: null, repo: process.cwd(), zone: null, json: false });
+  test("defaults: cwd repo, no zone, human output", () => {
+    expect(parseInitArgs([])).toEqual({ repo: process.cwd(), zone: null, json: false });
   });
   test("reads every flag", () => {
-    expect(parseInitArgs(["--pack", "acme", "--repo", "/r", "--zone", "z", "--json"])).toEqual({ pack: "acme", repo: "/r", zone: "z", json: true });
+    expect(parseInitArgs(["--repo", "/r", "--zone", "z", "--json"])).toEqual({ repo: "/r", zone: "z", json: true });
   });
   test("a flag without a value throws a usage error", () => {
-    expect(() => parseInitArgs(["--pack"])).toThrow(/--pack needs a value/);
+    expect(() => parseInitArgs(["--zone"])).toThrow(/--zone needs a value/);
+  });
+  test("--pack is not an argument", () => {
+    expect(() => parseInitArgs(["--pack", "x"])).toThrow(/unrecognized argument "--pack"/);
   });
 });
 
@@ -880,7 +966,6 @@ describe("renderInitOutcome", () => {
     installed: { plugin: "acme@acme", version: "0.1.0" },
     restartNeeded: true,
     tryNext: "/acme:work <ticket>",
-    warnings: [],
   };
   test("human output names the pack dir, the restart, and what to try", () => {
     const text = renderInitOutcome(okOutcome);
@@ -911,17 +996,17 @@ Expected: FAIL, `Cannot find module "../skills-init.ts"`.
 ```ts
 // commands/skills-init.ts
 /**
- * rt skills init [--pack <name>] [--repo <path>] [--zone <slug>] [--json]
+ * rt skills init [--repo <path>] [--zone <slug>] [--json]
  *
- * Scaffolds a zero-fill team pack (roster `work` only, every domain slot
- * unbound), declares the repo in its zone, materializes, compiles, checks,
- * and installs the pack plugin on this machine. Never commits; never writes
- * into an existing pack directory.
+ * Scaffolds a zero-fill team pack named after its zone's namespace (roster
+ * `work` only, every domain slot unbound), declares the repo in the zone,
+ * materializes, compiles, checks, and installs the pack plugin on this
+ * machine. Never commits; never writes into an existing pack directory.
  */
 import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { resolve } from "path";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { updateRepoIndexAsync } from "../lib/repo-index.ts";
@@ -936,10 +1021,10 @@ import { loadStepSource, resolvePluginRoots } from "../lib/skills/sources.ts";
 import { textInput } from "../lib/ui/prompts.ts";
 import { checkPack, compilePackAll } from "./skills.ts";
 
-export type InitArgs = { pack: string | null; repo: string; zone: string | null; json: boolean };
+export type InitArgs = { repo: string; zone: string | null; json: boolean };
 
 export function parseInitArgs(args: string[]): InitArgs {
-  const out: InitArgs = { pack: null, repo: process.cwd(), zone: null, json: false };
+  const out: InitArgs = { repo: process.cwd(), zone: null, json: false };
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     const value = (flag: string): string => {
@@ -948,7 +1033,6 @@ export function parseInitArgs(args: string[]): InitArgs {
       return v;
     };
     switch (a) {
-      case "--pack": out.pack = value(a); break;
       case "--repo": out.repo = resolve(value(a)); break;
       case "--zone": out.zone = value(a); break;
       case "--json": out.json = true; break;
@@ -967,10 +1051,13 @@ export function renderInitOutcome(out: InitOutcome): string {
     `pack ${out.pack.name} at ${out.pack.dir}`,
     `zone ${out.pack.zone}, marketplace ${out.pack.marketplace}, installed ${out.installed.plugin} ${out.installed.version}`,
     `repo manifest ${out.repo.manifest}`,
-    ...out.warnings.map((w) => `warning: ${w}`),
     "restart your Claude session, then try:",
     `  ${out.tryNext}`,
   ].join("\n");
+}
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function realDeps(): InitDeps {
@@ -1032,8 +1119,23 @@ function realDeps(): InitDeps {
       const row = r.repos[0];
       return row ? { ok: row.ok, detail: row.detail } : { ok: false, detail: "materialize wrote nothing" };
     },
-    compile: (packDir, manifest) => compilePackAll({ packDir, manifest }),
-    check: async (packDir, manifest) => ({ drift: (await checkPack({ packDir, manifest })).drift }),
+    // compilePackAll and checkPack resolve outside withCleanErrors, so a usage error from
+    // pack resolution would escape as an uncaught throw and lose the `wrote` list.
+    compile: async (packDir, manifest) => {
+      try {
+        return await compilePackAll({ packDir, manifest });
+      } catch (err) {
+        return { ok: false, errors: [message(err)] };
+      }
+    },
+    check: async (packDir, manifest) => {
+      try {
+        return { drift: (await checkPack({ packDir, manifest })).drift };
+      } catch (err) {
+        console.error(`rt skills init: check threw: ${message(err)}`);
+        return { drift: true };
+      }
+    },
   };
 }
 
@@ -1049,14 +1151,14 @@ export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps
     }
     throw err;
   }
-  const out = await initPack({ pack: parsed.pack, repoDir: parsed.repo, zone: parsed.zone }, deps);
+  const out = await initPack({ repoDir: parsed.repo, zone: parsed.zone }, deps);
   if (parsed.json) console.log(JSON.stringify(envelope(out)));
   else console.log(renderInitOutcome(out));
   if (!out.ok) process.exitCode = out.refused ? 2 : 1;
 }
 ```
 
-`updateRepoIndexAsync` is the whole registration (`rt repos register` adds tracking only behind `--track`, which init does not need); its result has `ok` and, on failure, `error`.
+`updateRepoIndexAsync` is the whole registration (`rt repos register` adds tracking only behind `--track`, which init does not need); its result has `ok` and, on failure, `error`. `CommandContext` has only optional fields, so `= {}` typechecks.
 
 - [ ] **Step 4: Add the command-tree leaf and registry entry**
 
@@ -1064,19 +1166,18 @@ In `lib/command-tree-def.ts`, inside `skills.subcommands`, after `sync`:
 
 ```ts
       init: {
-        description: "Scaffold a team pack with a generic work pipeline, declare the repo in its zone, compile, check, and install it",
+        description: "Scaffold this zone's team pack with a generic work pipeline, declare the repo, compile, check, and install it",
         module: "./commands/skills-init.ts",
         fn: "skillsInit",
         args: [
-          { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name; defaults to the zone slug" },
           { name: "Repo", flag: "--repo", type: "text", placeholder: "/path/to/repo", hint: "Repo to declare; defaults to the current directory" },
-          { name: "Zone", flag: "--zone", type: "text", placeholder: "acme", hint: "Team zone slug when more than one could host the pack" },
+          { name: "Zone", flag: "--zone", type: "text", placeholder: "acme", hint: "Team zone slug when more than one packless zone could host the pack" },
           SETUP_JSON_ARG,
         ],
       },
 ```
 
-In `lib/module-registry.ts`, beside the other `./commands/skills-*.ts` thunks:
+In `lib/module-registry.ts`, beside `"./commands/skills-sync.ts"`:
 
 ```ts
   "./commands/skills-init.ts": () => import("../commands/skills-init.ts"),
@@ -1091,7 +1192,7 @@ Run: `bun run picker:check`
 Expected: exit 0 (init has no required positional).
 
 Run: `bun run cli.ts skills init --help`
-Expected: usage printed with the four flags.
+Expected: usage printed with the three flags.
 
 - [ ] **Step 6: Commit**
 
@@ -1108,7 +1209,7 @@ git commit -m "rt skills init: command, tree leaf, registry entry"
 - Test: `lib/skills/__tests__/init-compile.e2e.test.ts`
 
 **Interfaces:**
-- Consumes: `renderPackFiles`, `PIPELINE_STAGES` (Task 2); `skillsCompile`, `skillsCheck` from `commands/skills.ts`; `runExpectingCleanExit` from `lib/skills/__tests__/helpers.ts`.
+- Consumes: `renderPackFiles`, `PIPELINE_STAGES` (Task 2); `skillsCompile`, `skillsCheck` from `commands/skills.ts`; `runExpectingCleanExit` from `lib/skills/__tests__/helpers.ts`, which returns `{ exitCode: number | undefined; errors: string[] }` (`exitCode` is `undefined` when the command never called `process.exit`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1147,11 +1248,45 @@ metadata:
 {{slot:domain}}
 `;
 
+const workEngine = `---
+name: work
+description: "Use when running a unit of work through a configured pipeline."
+disable-model-invocation: true
+type: pipeline-step
+slots:
+  tiering: { contract: model-tiering@1, required: false }
+---
+
+# work
+
+Stages:
+
+{{pipeline.stages}}
+
+## Tiering
+
+{{slot:tiering}}
+`;
+
+const fill = (name: string, provides: string, body: string) => `---
+name: ${name}
+description: "Use when a slot resolves here."
+disable-model-invocation: true
+metadata:
+  provides: "${provides}"
+---
+
+${body}
+`;
+
 async function build() {
   const root = mkdtempSync(join(tmpdir(), "rt-init-e2e-"));
   cpSync(FIX, root, { recursive: true });
   const ms = join(root, "mattstack-home");
   const engines = join(ms, "plugins", "mattstack", "attachments");
+  // The fixture's own work engine declares no slots, so the tiering bind would be
+  // silently ignored; this one exercises it.
+  write(join(engines, "pipeline", "work", "SKILL.md"), workEngine);
   for (const stage of PIPELINE_STAGES) {
     const path = join(engines, "pipeline", stage, "SKILL.md");
     if (existsSync(path)) continue;
@@ -1160,26 +1295,8 @@ async function build() {
       : `  domain: { contract: ${stage.slice("stage-".length)}-domain@1, required: false }`;
     write(path, stageEngine(stage, slots));
   }
-  write(join(engines, "model-tiering", "SKILL.md"), `---
-name: model-tiering
-description: "Use when a tiering slot resolves here."
-disable-model-invocation: true
-metadata:
-  provides: "model-tiering@1"
----
-
-tiering rules
-`);
-  write(join(engines, "ci-forge-gitlab", "SKILL.md"), `---
-name: ci-forge-gitlab
-description: "Use when a forge slot resolves here."
-disable-model-invocation: true
-metadata:
-  provides: "ci-forge@1"
----
-
-gitlab forge
-`);
+  write(join(engines, "model-tiering", "SKILL.md"), fill("model-tiering", "model-tiering@1", "tiering rules"));
+  write(join(engines, "ci-forge-gitlab", "SKILL.md"), fill("ci-forge-gitlab", "ci-forge@1", "gitlab forge"));
   const pack = join(root, "generated");
   for (const [rel, text] of Object.entries(renderPackFiles({ pack: "acme", workDescription: "Use when running a unit of work." }))) {
     write(join(pack, rel), text);
@@ -1190,12 +1307,14 @@ gitlab forge
 }
 
 describe("rt skills init output compiles", () => {
-  test("work plus eight stages compile and check clean with no placeholders left", async () => {
+  test("work (tiering bound) plus eight stages compile and check clean with no placeholders left", async () => {
     const { pack, ms, manifest } = await build();
     const compiled = await runExpectingCleanExit(() => skillsCompile(["--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]));
     expect(compiled.exitCode).toBeUndefined();
     expect(compiled.errors).toEqual([]);
-    expect(existsSync(join(pack, "skills", "work", "SKILL.md"))).toBe(true);
+    const work = readFileSync(join(pack, "skills", "work", "SKILL.md"), "utf8");
+    expect(work).toContain("tiering rules");
+    expect(work).not.toContain("{{");
     for (const stage of PIPELINE_STAGES) {
       const body = readFileSync(join(pack, "attachments", stage, "SKILL.md"), "utf8");
       expect(body).not.toContain("{{");
@@ -1206,7 +1325,7 @@ describe("rt skills init output compiles", () => {
 });
 ```
 
-`runExpectingCleanExit(fn)` returns `{ exitCode: number | undefined; errors: string[] }`; `exitCode` is `undefined` when the command never called `process.exit`. If the fixture's `work` engine declares a `tiering` slot with a different contract string, align the `model-tiering` fixture's `provides` to it. If the `work` engine's `{{slot:tiering}}` needs the fill body to pass a lint, the fixture body above is enough (one line).
+The `stage-watch-ci` template binds `forge` without placing `{{slot:forge}}`; that yields a compile note, not an error.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1231,7 +1350,97 @@ git commit -m "skills init: generated pack compiles and checks clean end to end"
 
 ---
 
-## Task 6: Scratch end-to-end (real machine, isolated HOME)
+## Task 6: `rt skills bind` writes the team pack's fragment
+
+**Files:**
+- Modify: `commands/skills.ts` (`skillsBind`, the manifest write near the `modify(text, ["bindings", engineRef, slotName], fill, ...)` call)
+- Test: `commands/__tests__/skills-bind.test.ts`
+
+**Interfaces:**
+- Consumes: the existing `skillsBind(args)` with `--pack-dir`, `--mattstack-dir`, `--manifest` flags; the compile-native fixture (`pack/attachments/plan-policy` provides `plan-domain@1`, the manifest binds `mattstack:stage-plan.domain` to `acme:plan-policy`).
+- Produces: after a bind on a pack whose `<packDir>/pack/skills.jsonc` exists and is not the manifest itself, that fragment carries the same `bindings.<engine>.<slot>` entry.
+
+- [ ] **Step 1: Write the failing test** (append to `commands/__tests__/skills-bind.test.ts`)
+
+```ts
+import { cpSync } from "fs";
+import { stripJsonc } from "../../lib/skills/sources.ts";
+
+const FIX = join(import.meta.dir, "..", "..", "lib", "skills", "__tests__", "fixtures", "compile-native");
+
+describe("bind writes the team pack fragment", () => {
+  function fixtureWithFragment(fragment: string) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rt-bind-frag-")));
+    cpSync(FIX, root, { recursive: true });
+    const pack = join(root, "pack");
+    const ms = join(root, "mattstack-home");
+    const manifest = join(ms, "repos", "my-repo", "skills.jsonc");
+    writeFile(join(pack, "pack", "skills.jsonc"), fragment);
+    writeFile(manifest, `// acme@acme\n{\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    return { pack, ms, manifest };
+  }
+
+  test("the fragment gains the binding, comments kept, and the manifest gets it too", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
+    expect(fragment).toContain("// acme fragment");
+    expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
+    expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+  });
+
+  test("a standalone pack whose fragment is the manifest is written once", async () => {
+    const { pack, ms } = fixtureWithFragment(`{\n  "version": 1,\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    const own = join(pack, "pack", "skills.jsonc");
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", own]);
+    const text = readFileSync(own, "utf8");
+    expect(text.match(/acme:plan-policy/g)?.length).toBe(1);
+  });
+});
+```
+
+`writeFile`, `join`, `mkdtempSync`, `realpathSync`, `tmpdir`, `readFileSync`, `readManifestBindings`, and `skillsBind` are already imported or defined at the top of that test file.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `bun test commands/__tests__/skills-bind.test.ts -t "fragment"`
+Expected: FAIL, the fragment's `bindings` is still `{}`.
+
+- [ ] **Step 3: Implement**
+
+In `skillsBind`, right after `writeFileSync(resolved.manifestPath, applyEdits(text, edits));`:
+
+```ts
+    // A team pack's pack/skills.jsonc is the fragment merge-manifests folds into the
+    // per-repo manifest; the manifest write alone is undone by the next materialize and
+    // never reaches a teammate. A standalone pack's fragment IS its manifest (written above).
+    const fragmentPath = join(resolved.packDir, "pack", "skills.jsonc");
+    if (existsSync(fragmentPath) && realpathSync(fragmentPath) !== realpathSync(resolved.manifestPath)) {
+      const fragmentText = readFileSync(fragmentPath, "utf8");
+      const fragmentEdits = modify(fragmentText, ["bindings", engineRef, slotName], fill, {
+        formattingOptions: { insertSpaces: true, tabSize: 2 },
+      });
+      writeFileSync(fragmentPath, applyEdits(fragmentText, fragmentEdits));
+    }
+```
+
+Extend the `summary` printed just after to name the fragment when it was written (`bound ... (fragment updated: <path>)`), so the author sees both writes.
+
+- [ ] **Step 4: Run the bind suite**
+
+Run: `bun test commands/__tests__/skills-bind.test.ts`
+Expected: PASS, including the pre-existing cases.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add commands/skills.ts commands/__tests__/skills-bind.test.ts
+git commit -m "rt skills bind: write the binding into the team pack fragment"
+```
+
+---
+
+## Task 7: Scratch end-to-end (real machine, isolated HOME)
 
 This task produces evidence, not code. It proves two things before any skill is written: `rt skills init` works against real `claude`, real git, and the real merge script; and the generic pipeline runs with nothing bound.
 
@@ -1239,29 +1448,46 @@ This task produces evidence, not code. It proves two things before any skill is 
 - Create: `docs/superpowers/plans/2026-09-23-pack-authoring-scratch-evidence.md`
 
 **Interfaces:**
-- Consumes: the `rt` source checkout on branch `pack-authoring` (`bun run cli.ts`), `/Users/matt/Documents/GitHub/glance/harness_credentials.json` (read for the GitLab test repo URLs and token; never copied anywhere).
+- Consumes: the `rt` source checkout on branch `pack-authoring` (`bun run cli.ts`), `/Users/matt/Documents/GitHub/glance/harness_credentials.json` (read for the GitLab test repo URLs and token; never copied anywhere), the mattstack-skills worktree (created in Step 1).
 
-- [ ] **Step 1: Prepare the scratch environment**
+- [ ] **Step 1: Create the mattstack-skills worktree and the scratch environment**
 
 ```bash
+cd /Users/matt/Documents/GitHub/mattstack-skills
+git worktree add .claude/worktrees/pack-authoring -b pack-authoring origin/main
 S=/private/tmp/claude-501/pack-scratch
-mkdir -p $S/.claude $S/repos
+mkdir -p $S/.claude $S/repos $S/marketplace/.claude-plugin
+cat > $S/marketplace/.claude-plugin/marketplace.json <<'EOF'
+{
+  "name": "scratch-mattstack",
+  "owner": { "name": "scratch" },
+  "plugins": [
+    {
+      "name": "mattstack",
+      "source": { "source": "url", "url": "file:///Users/matt/Documents/GitHub/mattstack-skills/.claude/worktrees/pack-authoring", "ref": "pack-authoring" },
+      "description": "mattstack from the pack-authoring worktree"
+    }
+  ]
+}
+EOF
 export HOME=$S CLAUDE_CONFIG_DIR=$S/.claude
 ```
 
-Every command in this task runs with those two variables set (prefix each with `env HOME=$S CLAUDE_CONFIG_DIR=$S/.claude` when not in one shell). Never run these against the real HOME.
+Every command in this task runs with those two variables set (prefix each with `env HOME=$S CLAUDE_CONFIG_DIR=$S/.claude` when not in one shell). Never run these against the real HOME. The worktree-isolated rt session refuses `git -C` to other repos; run the `git worktree add` from a plain terminal.
 
-- [ ] **Step 2: Install the mattstack and superpowers plugins into the scratch config**
+- [ ] **Step 2: Log in, then install the mattstack and superpowers plugins into the scratch config**
+
+A fresh `CLAUDE_CONFIG_DIR` has no credentials: the first `claude` invocation asks for a login. Matt does that login by hand in this shell (`claude` once, complete the browser flow, exit) before anything below. Then:
 
 ```bash
-claude plugin marketplace add ~/Documents/GitHub/mattstack-marketplace   # HOME is $S here; use the absolute path /Users/matt/Documents/GitHub/mattstack-marketplace
-claude plugin install mattstack@mattstack
+claude plugin marketplace add $S/marketplace
+claude plugin install mattstack@scratch-mattstack
 claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin install superpowers@claude-plugins-official
 claude plugin list --json | jq '.[].id'
 ```
 
-Expected: both plugins listed. The mattstack cache under `$S/.claude/plugins/cache/mattstack/mattstack/<version>/` exists.
+Expected: `mattstack@scratch-mattstack` and `superpowers@claude-plugins-official` listed. The mattstack cache under `$S/.claude/plugins/cache/scratch-mattstack/mattstack/<version>/` exists.
 
 - [ ] **Step 3: Clone the throwaway repo and start a scratch daemon**
 
@@ -1271,28 +1497,29 @@ Read the two GitLab test project URLs from the harness credentials file (one for
 git clone <repo-url> $S/repos/api
 cd /Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/elrond
 bun run cli.ts daemon start
-bun run cli.ts daemon status
+bun run cli.ts daemon status --json
 ```
 
-Expected: daemon socket at `$S/.mattstack/rt/rt.sock`, status ok. The live daemon on the real HOME is untouched.
+Expected: daemon socket at `$S/.mattstack/rt/rt.sock`, `"ok":true`. The live daemon on the real HOME is untouched.
 
 - [ ] **Step 4: Create the zone and run init**
 
 ```bash
 bun run cli.ts team create Scratch --remote <zone-remote-url>
-bun run cli.ts skills init --pack scratch --repo $S/repos/api --json | tee $S/init.json
+bun run cli.ts skills init --repo $S/repos/api --json | tee $S/init.json
 ```
 
-Expected: `"ok": true`, `tryNext: "/scratch:work <ticket>"`. Then:
+Expected: `"ok": true`, `"pack": { "name": "scratch", ... }`, `tryNext: "/scratch:work <ticket>"`. Then:
 
 ```bash
 ls $S/.mattstack/teams/scratch/mattstack/packs/scratch/{pack,skills,attachments}
-cat $S/.mattstack/repos/*/skills.jsonc | head -5
+head -3 $S/.mattstack/repos/*/skills.jsonc
 bun run cli.ts skills check --pack scratch
+bun run cli.ts skills composition --pack scratch
 claude plugin list --json | jq '.[] | select(.id | startswith("scratch@"))'
 ```
 
-Expected: `work` under `skills/`, eight `stage-*` under `attachments/`, check clean, plugin `scratch@scratch` listed and enabled.
+Expected: `work` under `skills/`, eight `stage-*` under `attachments/`, the manifest header naming `scratch@scratch`, check clean, composition listing the tiering and forge fills bound, plugin `scratch@scratch` listed and enabled.
 
 - [ ] **Step 5: Run the generic pipeline in a fresh Claude session**
 
@@ -1304,17 +1531,17 @@ Open a new terminal with `HOME=$S CLAUDE_CONFIG_DIR=$S/.claude`, `cd $S/repos/ap
 
 Walk it through: provision (a worktree from the scratch daemon), plan (an APPROACH block), implement, ship (an MR on the throwaway project), watch-ci. Answer gates as they come. Record, per stage, one line of what happened and any place the generic fallback was taken.
 
-Expected: an MR URL on the throwaway project and a CI verdict. If a stage cannot proceed without a domain fill, that is a finding: record it verbatim; it becomes a fix in the engine (mattstack-skills) before Task 7.
+Expected: an MR URL on the throwaway project and a CI verdict. If a stage cannot proceed without a domain fill, that is a finding: record it verbatim; it becomes a fix in the engine (mattstack-skills) before Task 8.
 
 - [ ] **Step 6: Write the evidence file and tear down**
 
-`docs/superpowers/plans/2026-09-23-pack-authoring-scratch-evidence.md`: the init envelope (paths only, no tokens), the check output, the plugin list line, the per-stage record, the MR URL, and any findings. Then:
+`docs/superpowers/plans/2026-09-23-pack-authoring-scratch-evidence.md`: the init envelope (paths only, no tokens), the check and composition output, the plugin list line, the per-stage record, the MR URL, and any findings. Then:
 
 ```bash
 bun run cli.ts daemon stop
 ```
 
-Close the throwaway MR. Leave `$S` in place for Task 7 and Task 9 baselines.
+Close the throwaway MR. Leave `$S` in place for the baselines and GREEN runs.
 
 - [ ] **Step 7: Commit**
 
@@ -1325,28 +1552,23 @@ git commit -m "docs: scratch end-to-end evidence for rt skills init and the gene
 
 ---
 
-## Task 7: RED baseline for `creating-a-pack`
+## Task 8: RED baseline for `creating-a-pack`
 
 **Files:**
 - Create (mattstack-skills worktree): `docs/superpowers/baselines/2026-09-23-creating-a-pack.md`
 
-- [ ] **Step 1: Set up the mattstack-skills worktree**
+- [ ] **Step 1: Reset the scratch pack state**
+
+Under the scratch environment from Task 7 (`HOME=$S CLAUDE_CONFIG_DIR=$S/.claude`):
 
 ```bash
-cd /Users/matt/Documents/GitHub/mattstack-skills
-git worktree add .claude/worktrees/pack-authoring -b pack-authoring origin/main
-cd .claude/worktrees/pack-authoring
-```
-
-- [ ] **Step 2: Run the no-skill scenario**
-
-Under the scratch environment from Task 6 (`HOME=$S CLAUDE_CONFIG_DIR=$S/.claude`), remove the scratch pack so the repo has none again:
-
-```bash
+claude plugin uninstall scratch@scratch
 rm -rf $S/.mattstack/teams/scratch/mattstack/packs/scratch
 ```
 
-Then edit `$S/.mattstack/teams/scratch/.claude-plugin/marketplace.json` to drop the `scratch` plugin entry, and `claude plugin uninstall scratch@scratch`.
+Then edit `$S/.mattstack/teams/scratch/.claude-plugin/marketplace.json` to drop the `scratch` plugin entry, and `$S/.mattstack/teams/scratch/mattstack/team.jsonc` to empty its `projects` array. Confirm `rt skills packs` (from the rt worktree, scratch env) lists no `scratch` pack.
+
+- [ ] **Step 2: Run the no-skill scenario**
 
 Start a fresh `claude` in `$S/repos/api` and give it, with no skill mentioned:
 
@@ -1360,11 +1582,11 @@ Let it run to a stop. Do not steer.
 
 In the baseline file: the prompt, then what the agent did (files it created, commands it ran, what it copied from), and every rationalization quoted verbatim. Expected failure class: wrong shape (hand-rolled directories, a copy of an existing pack, a `.mattstack/skills.jsonc` in the repo, no compile, no install). Classify the failure per writing-skills "Match the Form to the Failure": shape failures get a recipe, not a prohibition list.
 
-- [ ] **Step 4: Reset the scratch pack state**
+- [ ] **Step 4: Reset again**
 
-Repeat the removal in Step 2 so Task 8's GREEN run starts from the same state.
+Repeat Step 1 so Task 9's GREEN run starts from the same state.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit** (in the mattstack-skills worktree)
 
 ```bash
 git add docs/superpowers/baselines/2026-09-23-creating-a-pack.md
@@ -1373,28 +1595,29 @@ git commit -m "baseline: creating-a-pack without the skill"
 
 ---
 
-## Task 8: GREEN: write `mattstack:creating-a-pack`
+## Task 9: GREEN: write `mattstack:creating-a-pack`
 
 **Files:**
 - Create: `plugin/skills/creating-a-pack/SKILL.md`
 - Modify: `tests/desc-test-scenarios.json`
 
 **Interfaces:**
-- Consumes: `rt skills init --json` envelope (Task 3 shape), `mattstack:extending-a-pack` (Task 10, referenced by name only), `mattstack:editing-skills`, `rt:herdr-inject`.
+- Consumes: `rt skills init --json` envelope (Task 3 shape), `mattstack:extending-a-pack` (Task 11, referenced by name only), `mattstack:editing-skills`, `rt:herdr-inject`. `rt daemon status --json` prints `{"ok":true,"state":"running",...}` when the daemon is up (verified).
 
 - [ ] **Step 1: Write the skill**
 
 ```markdown
 ---
 name: creating-a-pack
-description: Use when a team wants the mattstack pipeline on a repo that has no pack yet -- "make a pack", "set up /<team>:work", "we want the work pipeline on our repo", "onboard our team to mattstack", or when rt skills packs lists nothing for the repo. Not for adding rules or verbs to a pack that already exists.
+description: Use when a team wants the mattstack pipeline on a repo that has no pack yet -- "make a pack", "set up /<team>:work", "we want the work pipeline on our repo", "onboard our team to mattstack", or when no pack of the team's is installed. Not for adding rules or verbs to a pack that already exists.
 ---
 
 # Creating a pack
 
 A pack is a plugin in the team's zone: a verb roster, a bindings fragment,
 and (later) domain fills. `rt skills init` writes all of it; this skill runs
-that verb, proves the result, and offers the first rules.
+that verb, proves the result, and offers the first rules. One zone holds
+one pack, named after the zone's namespace.
 
 The output of this skill is a pack the author can invoke, in this order:
 
@@ -1408,7 +1631,7 @@ The output of this skill is a pack the author can invoke, in this order:
 
 | check | command | pass |
 | --- | --- | --- |
-| rt daemon | `rt daemon status --json` | `ok: true` |
+| rt daemon | `rt daemon status --json` | `"ok":true` |
 | mattstack plugin | `claude plugin list --json` | an id starting `mattstack@` |
 | superpowers | `claude plugin list --json` | an id starting `superpowers@` |
 | a GitLab remote | `git remote get-url origin` | host is a GitLab host |
@@ -1421,19 +1644,22 @@ A miss is reported as the missing thing and the command that installs it
 From the repo root:
 
 ```bash
-rt skills init --pack <name> --json
+rt skills init --json
 ```
 
-Omit `--pack` to name the pack after the zone. Read the envelope:
+Read the envelope:
 
-- `ok: false, refused: true`: relay `detail` verbatim and stop. `zone-missing`
-  outside a TTY means the author runs `rt team create <Name> --remote <url>`
-  (an empty repo the team owns) and re-runs init.
+- `ok: false, refused: true`: relay `detail` verbatim and stop.
+  `zone-missing` outside a TTY means the author runs
+  `rt team create <Name> --remote <url>` (an empty repo the team owns) and
+  re-runs init. `zone-has-pack` means the zone found already belongs to
+  another team's pack: create a zone for this team the same way.
 - `ok: false, refused: false`: files were written; relay `detail` and the
   `wrote` list, then fix and run `rt skills compile --pack <name>` and
   `rt skills check --pack <name>` by hand. Never re-run init on a written
   pack; it refuses on `pack-exists`.
-- `ok: true`: continue with `pack.dir`, `tryNext`, `restartNeeded`.
+- `ok: true`: continue with `pack.name`, `pack.dir`, `tryNext`,
+  `restartNeeded`.
 
 ## 3. Restart and prove
 
@@ -1444,6 +1670,10 @@ restart and paste `tryNext` with a small real ticket.
 "Works" means, in the restarted session: a worktree provisioned, an
 APPROACH block printed, commits, an MR, and a CI verdict. Every stage runs
 its generic path; that is the expected shape of a pack with no fills.
+
+The `work` verb's description in `pack/stubs.jsonc` is a placeholder seeded
+from the engine. Rewording it in the team's words is the first, smallest
+edit; `mattstack:extending-a-pack` covers it.
 
 ## 4. Offer the first rules, once
 
@@ -1501,8 +1731,14 @@ Expected: every rep of every scenario picks the expected skill.
 
 - [ ] **Step 4: GREEN run**
 
-Install the worktree's skill for one session without touching the cache:
-`claude --plugin-dir /Users/matt/Documents/GitHub/mattstack-skills/.claude/worktrees/pack-authoring` under the scratch environment, in `$S/repos/api`, with the pack state reset (Task 7 Step 4). Give the same prompt as the baseline. Expected: the agent invokes `creating-a-pack`, runs `rt skills init`, stops at the restart with `tryNext`, and asks the rules question once. Record the run under the baseline file's "With the skill" heading; if it deviates, tighten the recipe and re-run.
+Commit the draft skill in the worktree (Step 5's commit, amended later if the wording changes), then under the scratch environment:
+
+```bash
+claude plugin update mattstack@scratch-mattstack
+claude plugin list --json | jq '.[] | select(.id == "mattstack@scratch-mattstack") | .version'
+```
+
+The scratch marketplace clones the worktree at ref `pack-authoring`, so the update carries the new skill. Start a fresh `claude` in `$S/repos/api` with the pack state reset (Task 8 Step 4) and give the same prompt as the baseline. Expected: the agent invokes `creating-a-pack`, runs `rt skills init --json`, stops at the restart with `tryNext`, and asks the rules question once. Record the run under the baseline file's "With the skill" heading; if it deviates, tighten the recipe, commit, update the plugin, and re-run.
 
 - [ ] **Step 5: Commit**
 
@@ -1513,14 +1749,14 @@ git commit -m "skill: creating-a-pack"
 
 ---
 
-## Task 9: RED baseline for `extending-a-pack`
+## Task 10: RED baseline for `extending-a-pack`
 
 **Files:**
 - Create: `docs/superpowers/baselines/2026-09-23-extending-a-pack.md`
 
 - [ ] **Step 1: Run the no-skill scenario**
 
-Scratch environment, pack present (re-run `rt skills init --pack scratch --repo $S/repos/api` if Task 8's reset left none). Fresh `claude` in `$S/repos/api`, no skill mentioned:
+Scratch environment, pack present (re-run `bun run cli.ts skills init --repo $S/repos/api --json` from the rt worktree if Task 9's reset left none). Fresh `claude` in `$S/repos/api`, no skill mentioned:
 
 ```
 Our pipeline shipped an MR without running `bun run lint`. Make the pipeline always run lint before it opens an MR on this repo.
@@ -1534,7 +1770,7 @@ Expected failure class: editing the compiled `attachments/stage-ship/SKILL.md` (
 
 - [ ] **Step 3: Reset**
 
-`git -C $S/.mattstack/teams/scratch checkout -- .` and remove any file the agent added under the pack or the plugin cache; re-run `rt skills compile --pack scratch` and `rt skills check --pack scratch` to confirm clean.
+From a plain terminal (not the worktree-isolated rt session): `git -C $S/.mattstack/teams/scratch checkout -- .` and remove any file the agent added under the pack or the plugin cache; re-run `bun run cli.ts skills compile --pack scratch` and `bun run cli.ts skills check --pack scratch` from the rt worktree to confirm clean.
 
 - [ ] **Step 4: Commit**
 
@@ -1545,7 +1781,7 @@ git commit -m "baseline: extending-a-pack without the skill"
 
 ---
 
-## Task 10: GREEN: write `mattstack:extending-a-pack`
+## Task 11: GREEN: write `mattstack:extending-a-pack`
 
 **Files:**
 - Create: `plugin/skills/extending-a-pack/SKILL.md`
@@ -1574,7 +1810,7 @@ skill and every fill. Baseline first, then write, then re-run.
 | --- | --- |
 | a rule that holds even outside a pipeline (branch names, forbidden ops, where things live) | `skills/context/SKILL.md`, a hand-authored public skill |
 | something one stage or verb should do differently | a fill bound to that stage's `domain` slot (or the review cluster's `criteria` / `reply-rules`) |
-| a new door: `ship`, `review`, `watch-ci`, `self-review`, `receive-review` | a roster entry in `pack/stubs.jsonc` plus `rt skills surface set <verb> --public` |
+| a new door: `ship`, `review`, `watch-ci`, `self-review`, `receive-review`, `shepherdr` | a roster entry in `pack/stubs.jsonc` plus `rt skills surface set <verb> --public` |
 | the wording of an existing verb | its `description` in `pack/stubs.jsonc` |
 
 `slots.md` beside this file maps asks to slots and contracts.
@@ -1607,10 +1843,14 @@ the rule, its reason, and the decision it changes. Re-run: the miss is gone.
 ## 3. Bind, certify, check
 
 ```bash
-rt skills bind <stage-or-verb> <slot> <pack>:<fill>     # validates provides, recompiles
+rt skills bind <stage-or-verb> <slot> <pack>:<fill>     # validates provides, writes the per-repo manifest AND pack/skills.jsonc, recompiles
 sh <mattstack-skills>/tests/certify.sh <fill dir> --domain
 rt skills check --pack <pack>
 ```
+
+The write into `pack/skills.jsonc` is what reaches teammates; the per-repo
+manifest is regenerated on every materialize. Confirm the fragment carries
+the new `bindings` entry before moving on.
 
 A verb-level bind (`mattstack:ship`) needs the door rostered first; the
 stage-level bind (`mattstack:stage-ship`) works either way. Bind both when
@@ -1622,7 +1862,9 @@ add it to `pack/surface.jsonc`'s `public` list.
 Add a roster entry with the engine name and a trigger-only description in
 the team's words, then `rt skills surface set <verb> --public` and
 `rt skills compile --pack <pack>`. Rewording is the same edit without the
-surface step.
+surface step. A `shepherdr` door also needs its two required slots bound
+(`tiering` to `mattstack:model-tiering`, `strategy` to
+`mattstack:execution-strategy`) before it compiles.
 
 ## 5. Publish
 
@@ -1635,6 +1877,8 @@ restart.
   output, overwritten by the next compile.
 - Editing the mattstack engine in the plugin cache: every team's compile
   reads it, and the next update erases the edit.
+- Editing `~/.mattstack/repos/<slug>/skills.jsonc` by hand: regenerated on
+  the next materialize; the fragment is the source.
 - A fill body that restates the engine: the fill carries only what the team
   adds.
 - Binding before the fill exists: `rt skills bind` refuses; write first.
@@ -1658,8 +1902,11 @@ restart.
 | how to answer review threads | `mattstack:receive-review` | `reply-rules` | `reply-rules@1` |
 | fan-out rules for parallel agents | `mattstack:shepherdr` | `domain` | `shepherdr-domain@1` |
 
-Every slot is optional; an unbound slot renders as nothing. One fill may be
-bound to more than one engine (ship's stage and door share one fill).
+Every slot above is optional; an unbound slot renders as nothing. One fill
+may be bound to more than one engine (ship's stage and door share one fill).
+`mattstack:shepherdr` is the one engine with required slots, `tiering`
+(`model-tiering@1`) and `strategy` (`execution-strategy@1`); bind both to
+the mattstack fills before compiling a `shepherdr` door.
 ```
 
 - [ ] **Step 3: Certify and scenarios**
@@ -1689,7 +1936,7 @@ Expected: all pass, including the earlier `editing-skills` scenarios.
 
 - [ ] **Step 4: GREEN run**
 
-Same scratch setup and prompt as Task 9, with `claude --plugin-dir <mattstack-skills worktree>`. Expected: the agent sorts the ask to `ship-domain@1`, runs a RED pass, writes `attachments/ship-lint/SKILL.md` (or similar) with the fixed frontmatter, binds to `mattstack:stage-ship`, certifies, checks, and hands to `editing-skills`. Record under the baseline's "With the skill" heading; tighten and re-run on deviation.
+Commit (Step 5), `claude plugin update mattstack@scratch-mattstack` under the scratch environment, then the same scratch setup and prompt as Task 10. Expected: the agent sorts the ask to `ship-domain@1`, runs a RED pass, writes `attachments/ship-lint/SKILL.md` (or similar) with the fixed frontmatter, binds to `mattstack:stage-ship`, confirms the fragment carries the binding, certifies, checks, and hands to `editing-skills`. Record under the baseline's "With the skill" heading; tighten, commit, update, and re-run on deviation.
 
 - [ ] **Step 5: Commit**
 
@@ -1700,11 +1947,11 @@ git commit -m "skill: extending-a-pack"
 
 ---
 
-## Task 11: Retire the stale template and point the README at the skills
+## Task 12: Retire the stale template and point the README at the skills
 
 **Files:**
 - Delete: `templates/domain-pack/` (three files)
-- Modify: `README.md` "Configuration" section (the paragraph beginning "A domain team does not fork this repo")
+- Modify: `README.md`, two places: the paragraph at lines 116-118 ("A domain team starts its own pack from `templates/domain-pack`...") and the Configuration paragraph beginning "A domain team does not fork this repo."
 
 - [ ] **Step 1: Delete the template**
 
@@ -1713,11 +1960,19 @@ git rm -r templates/domain-pack
 ```
 
 Run: `grep -rn "domain-pack" --include=*.md --include=*.json --include=*.jsonc . | grep -v .claude/worktrees`
-Expected: only README.md hits remain (fixed next).
+Expected: exactly the two README.md hits (fixed next).
 
-- [ ] **Step 2: Rewrite the Configuration section**
+- [ ] **Step 2: Rewrite the two README paragraphs**
 
-Replace the two paragraphs from "A domain team does not fork this repo." through "certification habit described below." with:
+Replace the lines 116-118 paragraph with:
+
+```markdown
+A domain team gets its pack from `rt skills init` (the `creating-a-pack`
+skill walks through it) and grows it with `extending-a-pack`; both are
+public doors of this plugin.
+```
+
+Replace the Configuration paragraph (one paragraph, from "A domain team does not fork this repo." through "certification habit described below.") with:
 
 ```markdown
 A domain team does not fork this repo. It runs `rt skills init` in its repo
@@ -1733,8 +1988,8 @@ Keep the paragraph about the manifest schema and the `rt skills compile` / `rt s
 
 - [ ] **Step 3: Purity sweep**
 
-Run: `sh tests/repo-purity.sh`
-Expected: clean.
+Run: `grep -rn "domain-pack" README.md; sh tests/repo-purity.sh`
+Expected: no `domain-pack` hits; purity clean.
 
 - [ ] **Step 4: Commit**
 
@@ -1745,7 +2000,7 @@ git commit -m "retire templates/domain-pack; README points at the pack skills"
 
 ---
 
-## Task 12: Bump, publish, and verify the skills are live
+## Task 13: Bump, publish, and verify the skills are live
 
 **Files:**
 - Modify: `.claude-plugin/plugin.json` (`version` and the `description` list of public doors)
@@ -1761,7 +2016,7 @@ git add .claude-plugin/plugin.json
 git commit -m "mattstack 0.20.0: creating-a-pack and extending-a-pack"
 ```
 
-Open a PR from `pack-authoring` in mattstack-skills, wait for checks, merge. Then in the canonical checkout: `git checkout main && git pull --ff-only`.
+Open a PR from `pack-authoring` in mattstack-skills, wait for checks, merge. Then in the canonical checkout: `git checkout main && git pull --ff-only`. Remove the worktree (`git worktree remove .claude/worktrees/pack-authoring`) before any `rt skills sync`, which refuses on a `.claude/worktrees/` dir under the pack.
 
 - [ ] **Step 3: Sync the caches**
 
@@ -1774,11 +2029,11 @@ Expected: sync reports the new version installed; claimview check reports no eng
 
 - [ ] **Step 4: Verify live**
 
-Restart a session and run `/mattstack:creating-a-pack` and `/mattstack:extending-a-pack` by name; both load. Read both installed files in full from `<config>/plugins/cache/mattstack/mattstack/0.20.0/plugin/skills/` and confirm they match the worktree.
+Restart a session and run `/mattstack:creating-a-pack` and `/mattstack:extending-a-pack` by name; both load. Read both installed files in full from `<config>/plugins/cache/mattstack/mattstack/0.20.0/plugin/skills/` and confirm they match the checkout.
 
 ---
 
-## Task 13: rt PR
+## Task 14: rt PR
 
 - [ ] **Step 1: Full gates on the rt worktree**
 
@@ -1787,7 +2042,7 @@ Expected: green. If a rotating flake appears, isolate and re-run per the repo's 
 
 - [ ] **Step 2: Open the PR**
 
-From the worktree, push `pack-authoring` and open a PR against `main` titled `rt skills init: scaffold a zero-fill team pack`. Body: the spec path, the evidence file path, and the three follow-ups from the spec's "Out of scope" as a short list. End with the attribution line the session reminder gives.
+From the worktree, push `pack-authoring` and open a PR against `main` titled `rt skills init: scaffold a zero-fill team pack; bind writes the pack fragment`. Body: the spec path, the evidence file path, and the three follow-ups from the spec's "Out of scope" as a short list. End with the attribution line the session reminder gives.
 
 - [ ] **Step 3: Review and merge**
 
