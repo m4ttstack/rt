@@ -330,7 +330,7 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "deep",
     migrated: true,
     description:
-      "User-confirmed integration hosts (forgeHost, switchboardUrl), written only by an explicit `rt setup <id> connect --host` after that host validates a real credential. The one trusted source a credential is ever sent to — mattstack.integrations' team-declared host is shown to the user but never auto-used for a fetch.",
+      "User-confirmed integration hosts (forgeHost, switchboardUrl), written by an explicit `rt setup <id> connect --host` after that host validates, and, for switchboardUrl only and only while unset, by `rt team join` once an invite the user redeemed has stored a board token for the team-declared URL. The one trusted source a credential is ever sent to — mattstack.integrations' team-declared host is shown to the user but never auto-used for a credentialed fetch.",
   },
 
   // --- mattstack (shared team truth) ---------------------------------------

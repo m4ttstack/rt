@@ -381,6 +381,37 @@ describe("integrationConnect - switchboard (credential-less, host-confirm flow)"
     expect(body.status).toBe("ready");
   });
 
+  test("no --host, non-TTY, a bare URL on stdin is the host too, and surrounding whitespace is dropped", async () => {
+    const written: [string, unknown, string][] = [];
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: async () => "  https://sw.example.com\n",
+      isTTY: () => false,
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--json"], deps);
+
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+  });
+
+  test("--host wins over stdin, and a TTY caller never reads stdin at all", async () => {
+    const written: [string, unknown, string][] = [];
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: neverCalled("stdin"),
+      isTTY: () => true,
+      promptField: neverCalled("promptField"),
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--host", "https://sw.example.com", "--json"], deps);
+
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+  });
+
   test("no --host, non-TTY, stdin {host} that is not https -> bad-host, nothing fetched or written", async () => {
     const deps = baseDeps({
       probes: fakeProbes({ fetch: neverCalled("fetch") }),

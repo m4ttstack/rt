@@ -130,7 +130,7 @@ async function switchboardRow(p: Probes, team: TeamSnapshot, overrides: UserInte
     optionalNote: "Works without this; only matters if your pack uses switchboard.",
   };
 
-  const confirmedUrl = overrides.switchboardUrl && isValidHttpsUrl(overrides.switchboardUrl) ? overrides.switchboardUrl : null;
+  const confirmedUrl = overrides.switchboardUrl && isValidHttpsUrl(overrides.switchboardUrl) ? overrides.switchboardUrl.replace(/\/+$/, "") : null;
   if (!confirmedUrl) {
     return row({ ...base, status: "needs-you", detail: `your team declares switchboard at "${declaredUrl}" — unverified; confirm it yourself before rt reaches out to it`, action: connectHostSteps("switchboard", declaredUrl) });
   }

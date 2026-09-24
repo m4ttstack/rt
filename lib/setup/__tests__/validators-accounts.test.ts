@@ -301,7 +301,7 @@ describe("accountRows — account.switchboard", () => {
     expect(r.detail).toBe("switchboard reachable");
   });
 
-  test("host user-confirmed, /healthz unhealthy -> error, the Confirm action stays so the URL can be re-confirmed", async () => {
+  test("host user-confirmed to the declared URL, /healthz unhealthy -> error with a re-check, never a Confirm that would re-latch the same value", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const fetch = async () => ({ status: 401, body: "", headers: {} });
     const r = await pickRow(
@@ -309,7 +309,20 @@ describe("accountRows — account.switchboard", () => {
       "account.switchboard",
     );
     expect(r.status).toBe("error");
+    expect(r.action).toEqual({ type: "run", label: "Re-check", verb: ["setup", "status"] });
+  });
+
+  test("host user-confirmed to an older URL while the team now declares another -> Confirm prefilled with the new one, detail naming the switch", async () => {
+    const team = baseTeam({ integrations: { switchboard: { url: "https://sw-b.example.com" } } });
+    const fetch = async () => ({ status: 0, body: "", headers: {} });
+    const r = await pickRow(
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets(), null, { switchboardUrl: "https://sw-a.example.com" }),
+      "account.switchboard",
+    );
+    expect(r.status).toBe("error");
+    expect(r.detail).toContain('your team now declares "https://sw-b.example.com"');
     expect(r.action?.type).toBe("connect");
+    expect(r.action?.type === "connect" ? r.action.fields[0]?.value : null).toBe("https://sw-b.example.com");
   });
 
   test("host user-confirmed and reachable -> no action", async () => {

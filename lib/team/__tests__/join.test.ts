@@ -724,6 +724,44 @@ describe("joinRedeem", () => {
     expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { forgeHost: "gitlab.example.com", switchboardUrl: "https://sb.test" } }]);
   });
 
+  test("a switchboard the user already confirmed to this URL is not written again", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { switchboardUrl: "https://sb.test" },
+      }),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.userSettingWrites).toEqual([]);
+  });
+
+  test("a switchboard the user confirmed to a different URL is never overwritten: the join warns with the connect command and peers anyway", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const warnings: string[] = [];
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { forgeHost: "gitlab.example.com", switchboardUrl: "https://sw-a.example" },
+      }),
+      warn: (m) => warnings.push(m),
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.settingWrites).toEqual([{ key: "board.switchboardUrl", value: "https://sb.test" }]);
+    expect(calls.userSettingWrites).toEqual([]);
+    expect(warnings.some((w) => w.includes("https://sw-a.example") && w.includes("rt setup switchboard connect --host https://sb.test"))).toBe(true);
+  });
+
   test("a failing rt.integrations write warns with the connect command and leaves peering applied: the board still peers, only rt's own row stays unconfirmed", async () => {
     const p = redeemProbes();
     const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };

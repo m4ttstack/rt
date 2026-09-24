@@ -396,6 +396,18 @@ describe("accessRows — access.switchboard", () => {
     expect(rows.some((r) => r.id === "access.switchboard")).toBe(false);
   });
 
+  test("a confirmed URL with a trailing slash probes /healthz, not //healthz", async () => {
+    const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
+    const calledUrls: string[] = [];
+    const fetch = async (url: string) => {
+      calledUrls.push(url);
+      return { status: 200, body: "", headers: {} };
+    };
+    const r = await pickRow(accessRows(fakeProbes({ fetch }), team, null, { switchboardUrl: "https://sw.example.com/" }), "access.switchboard");
+    expect(calledUrls).toEqual(["https://sw.example.com/healthz"]);
+    expect(r.status).toBe("ready");
+  });
+
   test("configured, user-confirmed, /healthz 200 -> ready, required false", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const fetch = async (url: string) => (url === "https://sw.example.com/healthz" ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });

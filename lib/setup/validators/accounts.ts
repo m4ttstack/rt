@@ -163,13 +163,17 @@ async function slackRow(p: Probes, base: Omit<Row, "status" | "detail" | "action
 async function switchboardRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, ctx: ValidateCtx): Promise<Row> {
   const result = await def.validate(p, "", ctx);
   if (result.status === "ready" || !ctx.declaredHost) return row({ ...base, status: result.status, detail: result.detail });
+  // Confirmed to this very URL and only unreachable: a Confirm here would
+  // re-latch the same value, so the row offers the re-check instead.
+  if (ctx.host === ctx.declaredHost) return row({ ...base, status: result.status, detail: result.detail, action: ACCOUNT_RECHECK_ACTION });
   // The row is required when the team declares a switchboard, so an
   // unconfirmed URL with no button would block Install with nothing to click.
   // The app sends the field back as `host` on stdin to `setup switchboard connect`.
+  const detail = ctx.host ? `${result.detail}; your team now declares "${ctx.declaredHost}", confirm it to switch` : result.detail;
   return row({
     ...base,
     status: result.status,
-    detail: result.detail,
+    detail,
     action: {
       type: "connect",
       label: "Confirm",

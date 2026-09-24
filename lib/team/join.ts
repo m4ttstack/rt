@@ -290,19 +290,25 @@ function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
 /**
  * Confirms the switchboard URL for rt's own setup rows (`account.switchboard`
  * is required whenever the team declares one, and reads unconfirmed until
- * `rt.integrations.switchboardUrl` names it). A token minted against the
- * declared URL, or sealed into the invite by the owner, is the same
- * confirmation `rt setup switchboard connect --host` records by hand. A
- * failed write only costs that row: the board's own URL and token are
- * already in place.
+ * `rt.integrations.switchboardUrl` names it). Redeeming the invite is the
+ * user's own act, and a token sealed into it or minted against the declared
+ * URL is what `rt setup switchboard connect --host` records by hand; the
+ * probe behind the row is unauthenticated either way. A URL the user
+ * confirmed to something else is never overwritten, and a failed write only
+ * costs that row: the board's own URL and token are already in place.
  */
 function confirmSwitchboardForRt(seams: JoinRedeemSeams, url: string): void {
+  const remedy = `rt setup switchboard connect --host ${url}`;
   try {
     const overrides = readUserIntegrationOverrides({ read: seams.read, warn: seams.warn });
     if (overrides.switchboardUrl === url) return;
+    if (overrides.switchboardUrl !== undefined) {
+      seams.warn(`switchboard: rt's setup rows are confirmed for ${overrides.switchboardUrl}, not this team's ${url}; leaving that alone. To switch: ${remedy}`);
+      return;
+    }
     seams.writeUserSetting("rt.integrations", { ...overrides, switchboardUrl: url });
   } catch (err) {
-    seams.warn(`switchboard: could not confirm ${url} for rt's setup rows (${err instanceof Error ? err.message : String(err)}); confirm it yourself: rt setup switchboard connect --host ${url}`);
+    seams.warn(`switchboard: could not confirm ${url} for rt's setup rows (${err instanceof Error ? err.message : String(err)}); confirm it yourself: ${remedy}`);
   }
 }
 
