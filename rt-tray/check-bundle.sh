@@ -164,6 +164,7 @@ check_identity() { # app bundle-id exe label devbuild
         assert_eq "$exe $(basename "$a") KeepAlive:SuccessfulExit" "false" "$(plist "$a" 'KeepAlive:SuccessfulExit')"
         assert_eq "$exe $(basename "$a") EnvironmentVariables.PATH" "/usr/bin:/bin:/usr/sbin:/sbin" "$(plist "$a" 'EnvironmentVariables:PATH')"
         if plist "$a" EnvironmentVariables:PATH 2>/dev/null | grep -q '/Applications/'; then fail "$exe $(basename "$a") hardcodes /Applications in PATH"; fi
+        assert_eq "$exe $(basename "$a") EnvironmentVariables.MATTSTACK_FLAVOR" "$([ "$devbuild" = true ] && echo dev || echo prod)" "$(plist "$a" 'EnvironmentVariables:MATTSTACK_FLAVOR')"
     done
 }
 check_identity "$PROD" "com.mattstack.app" "mattstack" "com.mattstack.daemon" "false"
