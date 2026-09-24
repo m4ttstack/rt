@@ -14,6 +14,7 @@
  */
 
 import { randomBytes } from "crypto";
+import { join } from "path";
 import { dim, green, red, reset, yellow } from "../lib/ansi.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { createRealAgeKeySeam } from "../lib/home/age-key.ts";
@@ -526,6 +527,112 @@ export async function setupRepoRootSet(args: string[], _ctx: CommandContext = {}
       json
         ? JSON.stringify(envelope({ path: check.path, tccWarning: check.tccWarning }, deps.probes.now()))
         : `setup repo-root set: ${check.path}${check.tccWarning ? ` (${check.tccWarning})` : ""}`,
+    );
+  } catch (err) {
+    if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);
+    throw err;
+  }
+}
+
+// ─── home remote (`rt home remote set`) ────────────────────────────────────
+
+export interface HomeRemoteDeps {
+  probes: Probes;
+  print: (s: string) => void;
+  exit: (code: number) => never;
+  isTTY: () => boolean;
+  /** Reads the full stdin body: valid JSON parses to its value; anything else comes back as the trimmed raw string; empty stdin is null. Never throws. */
+  stdin: () => Promise<unknown>;
+}
+
+export function realHomeRemoteDeps(): HomeRemoteDeps {
+  return {
+    probes: createRealProbes(),
+    print: (s) => console.log(s),
+    exit: process.exit,
+    isTTY: () => process.stdin.isTTY === true,
+    stdin: readSmartStdin,
+  };
+}
+
+const HOME_REMOTE_DEFAULT_NAME = "mattstack-home";
+/** https(s) clone URLs and scp-style ssh remotes; anything git itself would refuse as a remote is refused here first. */
+const GIT_REMOTE_URL_PATTERN = /^(https?:\/\/[^\s/]+\/\S+|ssh:\/\/[^\s/]+\/\S+|[\w.-]+@[\w.-]+:\S+)$/;
+
+function extractHomeRemoteInput(input: unknown): { url?: string; create?: boolean; name?: string } {
+  if (typeof input === "string" && input.trim() !== "") return { url: input.trim() };
+  if (!isPlainObject(input)) return {};
+  const out: { url?: string; create?: boolean; name?: string } = {};
+  if (typeof input.url === "string" && input.url.trim() !== "") out.url = input.url.trim();
+  if (input.alternative === "create" || input.create === true) out.create = true;
+  if (typeof input.name === "string" && input.name.trim() !== "") out.name = input.name.trim();
+  return out;
+}
+
+/**
+ * Points the home repo at a remote and pushes, or creates the remote first
+ * with `gh repo create` (private). The row that offers this is optional, so a
+ * refusal here never blocks Finish; every failure is an exit-2 envelope the
+ * app renders on the row.
+ */
+export async function homeRemoteSet(args: string[], _ctx: CommandContext = {}, deps: HomeRemoteDeps = realHomeRemoteDeps()): Promise<void> {
+  const json = args.includes("--json");
+  const verb = "home remote set";
+  try {
+    let url = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--name");
+    let create = args.includes("--create");
+    let name = flagValue(args, "--name");
+    if (!url && !create) {
+      if (deps.isTTY()) {
+        throw new UserActionableError("usage", "usage: rt home remote set <url> | --create [--name <repo>] [--json]");
+      }
+      const input = extractHomeRemoteInput(await deps.stdin());
+      url = input.url;
+      create = input.create ?? false;
+      name = input.name ?? name;
+      if (!url && !create) throw new UserActionableError("bad-stdin", 'no remote provided; pipe {"url": "<git url>"} or {"alternative": "create"} on stdin instead');
+    }
+
+    const repoDir = join(deps.probes.home, ".mattstack", "user");
+    if (!deps.probes.exists(homeGitDir(deps.probes.home))) {
+      throw new UserActionableError("no-home-repo", `no home repo at ${repoDir} yet; Install creates it (rt home init)`);
+    }
+
+    let created = false;
+    if (!url) {
+      const repoName = name ?? HOME_REMOTE_DEFAULT_NAME;
+      const gh = await deps.probes.exec(["gh", "repo", "create", repoName, "--private"], { timeoutMs: 60_000 });
+      if (gh.code !== 0) {
+        throw new UserActionableError("create-failed", `gh repo create ${repoName} failed: ${(gh.stderr || gh.stdout).trim() || `exit ${gh.code}`}`);
+      }
+      const printed = gh.stdout.trim().split("\n").find((line) => /^https?:\/\//.test(line.trim()))?.trim();
+      if (!printed) throw new UserActionableError("create-failed", `gh repo create ${repoName} printed no repository URL`);
+      url = printed.endsWith(".git") ? printed : `${printed}.git`;
+      created = true;
+    }
+
+    if (!GIT_REMOTE_URL_PATTERN.test(url)) {
+      throw new UserActionableError("bad-url", `"${url}" is not a git remote URL (https://host/owner/repo.git or git@host:owner/repo.git)`);
+    }
+
+    const existing = await deps.probes.exec(["git", "-C", repoDir, "remote", "get-url", "origin"]);
+    const remote: "added" | "updated" = existing.code === 0 ? "updated" : "added";
+    const set = await deps.probes.exec(
+      remote === "updated"
+        ? ["git", "-C", repoDir, "remote", "set-url", "origin", url]
+        : ["git", "-C", repoDir, "remote", "add", "origin", url],
+    );
+    if (set.code !== 0) throw new UserActionableError("remote-failed", `git remote ${remote === "updated" ? "set-url" : "add"} failed: ${set.stderr.trim() || `exit ${set.code}`}`);
+
+    const push = await deps.probes.exec(["git", "-C", repoDir, "push", "-u", "origin", "HEAD"], { timeoutMs: 120_000 });
+    if (push.code !== 0) {
+      throw new UserActionableError("push-failed", `origin is set to ${url}, but the push failed: ${push.stderr.trim() || `exit ${push.code}`}`);
+    }
+
+    deps.print(
+      json
+        ? JSON.stringify(envelope({ url, remote, pushed: true, created }, deps.probes.now()))
+        : `home remote set: origin -> ${url}, pushed${created ? " (repo created)" : ""}`,
     );
   } catch (err) {
     if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);

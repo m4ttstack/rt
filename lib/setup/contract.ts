@@ -33,6 +33,9 @@ export type Action =
   | { type: "steps"; label: string; steps: string[] }
   | { type: "open-url"; label: string; url: string }
   | { type: "run"; label: string; verb: string[] }
+  // Collects `fields` in the app, then runs `verb --json` with the values as JSON on stdin; an
+  // alternative runs the same verb with {"alternative": "<id>"} instead. `connect` without an integration.
+  | { type: "form"; label: string; verb: string[]; fields: ConnectField[]; alternatives?: { id: string; label: string }[] }
   // startAt is where the panel opens, never a value rt writes.
   | { type: "choose-folder"; label: string; startAt: string | null }
   // The app appends the picked id and --json to verb; "other" collects a free-text id for the same verb.

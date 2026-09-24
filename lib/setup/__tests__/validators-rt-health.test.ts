@@ -585,6 +585,17 @@ describe("rtHealthRows — home.backup (real git)", () => {
     expect(row.action).not.toBeNull();
   });
 
+  test("no remote: the action is a form that runs rt home remote set with a URL field, and offers to create the repo", async () => {
+    const row = await homeBackupRow(await localOnlyRepo());
+    expect(row.action).toEqual({
+      type: "form",
+      label: "Add remote…",
+      verb: ["home", "remote", "set"],
+      fields: [{ name: "url", label: "Remote URL", secret: false, hint: "An empty private repo you own, e.g. https://github.com/you/mattstack-home.git" }],
+      alternatives: [{ id: "create", label: "Create a private repo for me" }],
+    });
+  });
+
   test("remote attached but never pushed: needs-you, not ready", async () => {
     const repo = await localOnlyRepo();
     await attachRemote(repo);
