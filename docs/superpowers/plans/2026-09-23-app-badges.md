@@ -17,7 +17,7 @@
   - `~/Documents/GitHub/repo-tools` (Tasks 6 to 8; `rt-tray/`).
   Work in a worktree for each, never in the shared main checkout.
 - Badge payload: `{ "count": <non-negative integer>, "path"?: "<path starting with / inside the same app>" }`. Declared in a manifest as `"badge": "/api/badge"`.
-- Counting rule (spec "What counts"): `status` is `open` or `parked`; `owner` is `human` or null; `kind: pane-attention` counts only on the board and only once `now - openedAt >= 120000` ms; console never counts `pane-attention`; `execution: unassigned` and `delivery: stuck` never count on their own.
+- Counting rule (spec "What counts"): `status` is `open` or `parked`; `owner` is `human` or null; `kind: pane-attention` counts only once `now - openedAt >= 120000` ms (board for non-`run:` subjects, console for `run:` subjects); the board never counts a `run:` subject; `execution: unassigned` and `delivery: stuck` never count on their own.
 - Never write em dashes or en dashes in code, comments, copy, or commit messages.
 - Comments state only constraints the code cannot show. No narration, no review history, no ticket ids.
 - Board tests run from `apps/board` (`cd apps/board && bun test <file>`); the root-level runner skips its preload.
