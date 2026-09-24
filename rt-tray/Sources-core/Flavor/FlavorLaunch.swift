@@ -115,7 +115,9 @@ public struct DevSourceConfig: Equatable, Sendable {
 public enum RtLinkOwner {
     public static let devWrapperTag = "# mattstack-dev-mode"
 
-    public static let prodLinkSuffix = "/" + FlavorIdentity.bundleName(ofFlavor: "prod") + "/Contents/MacOS/rt"
+    /// lib/dev-mode.test.ts pins this to the TS takeover's TRAY_APP_BUNDLE
+    /// and RT_BUNDLE_PATH.
+    public static let prodLinkSuffix = "/mattstack.app/Contents/MacOS/rt"
 
     /// `linkTarget` is the symlink's destination when the path is a link,
     /// with whether that destination exists; `prefix` is a bounded head of

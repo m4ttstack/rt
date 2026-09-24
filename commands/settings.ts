@@ -561,7 +561,8 @@ export function renderDevModeWrapper(sourcePath: string, bunPath: string): strin
 
 export function renderDevModePreload(): string {
   return [
-    `// Written by the dev app's takeover (commands/settings.ts, RT-25).`,
+    `// Written by rt (commands/settings.ts) with the dev wrapper, on the dev`,
+    `// app's takeover or \`rt settings source-path\`.`,
     `// The dev wrapper cds into the rt source repo before exec'ing bun; this`,
     `// puts the process back in the directory the user launched from.`,
     `const launchCwd = process.env.RT_LAUNCH_CWD;`,

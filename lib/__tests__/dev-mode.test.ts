@@ -6,6 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { devWrapperOwnsRt, DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent } from "../dev-mode.ts";
+import { RT_BUNDLE_PATH } from "../bundle-layout.ts";
+import { TRAY_APP_BUNDLE } from "../rt-paths.ts";
 
 // The dev-mode wrapper path is resolved at CALL time from process.env.HOME
 // (mirrors lib/rt-paths.ts's home()), so this constant only needs to match
@@ -70,6 +72,10 @@ describe("isDevModeWrapperContent", () => {
   test("the tray's login-item check reads the same marker", () => {
     const swift = readFileSync(join(import.meta.dir, "..", "..", "rt-tray", "Sources-core", "Flavor", "FlavorLaunch.swift"), "utf8");
     expect(swift).toContain(`devWrapperTag = "${DEV_MODE_TAG}"`);
+  });
+  test("the tray's login-item check reads the link shape the prod takeover writes", () => {
+    const swift = readFileSync(join(import.meta.dir, "..", "..", "rt-tray", "Sources-core", "Flavor", "FlavorLaunch.swift"), "utf8");
+    expect(swift).toContain(`prodLinkSuffix = "/${TRAY_APP_BUNDLE}/${RT_BUNDLE_PATH}"`);
   });
 });
 

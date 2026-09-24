@@ -54,6 +54,12 @@ describe("renderDevModeWrapper", () => {
 });
 
 describe("renderDevModePreload", () => {
+  test("names what writes it, with no ticket ids", () => {
+    const preload = renderDevModePreload();
+    expect(preload).not.toMatch(/\b[A-Z]+-\d+\b/);
+    expect(preload).toContain("rt settings source-path");
+  });
+
   test("restores RT_LAUNCH_CWD before other modules load, then scrubs it", async () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt25-")));
     const launchDir = realpathSync(mkdtempSync(join(tmpdir(), "rt25-launch-")));
