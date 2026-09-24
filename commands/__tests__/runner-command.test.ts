@@ -319,6 +319,18 @@ test("parseSeedEnvelope rejects a row missing a required string field", () => {
   if (!result.ok) expect(result.error).toContain("command");
 });
 
+test("parseSeedEnvelope rejects a row whose cwd is not absolute", () => {
+  const result = parseSeedEnvelope(JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "relative/path" }] }));
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("cwd");
+});
+
+test("parseSeedEnvelope rejects a row with an empty name", () => {
+  const result = parseSeedEnvelope(JSON.stringify({ seed: [{ name: "", command: "pnpm run dev", cwd: "/abs/web" }] }));
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("name");
+});
+
 test("loadSeedFile reads and validates a real file", () => {
   const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-"));
   const path = join(dir, "seed.json");
@@ -370,6 +382,30 @@ test("resolveSeedFileArg errors, naming the path, when the file cannot be read",
   expect(resolved.error).toContain("/nope/seed.json");
 });
 
+test("resolveSeedFileArg accepts --seed-file=<path>", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-eq-"));
+  const path = join(dir, "seed.json");
+  writeFileSync(path, JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web" }] }));
+  try {
+    const resolved = resolveSeedFileArg(["--herdr", `--seed-file=${path}`]);
+    expect(resolved).toEqual({
+      cleanArgs: ["--herdr"],
+      seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "", repo: "" }],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// CodeRabbit (Major): first.json loaded, second.json silently dropped into
+// cleanArgs, so a later board pick would carry the leftover flag into
+// resolveRun. Reject outright instead of picking a precedence.
+test("resolveSeedFileArg rejects a repeated --seed-file, in any combination of the two forms", () => {
+  expect(resolveSeedFileArg(["--seed-file", "/a.json", "--seed-file", "/b.json"]).error).toContain("once");
+  expect(resolveSeedFileArg(["--seed-file=/a.json", "--seed-file=/b.json"]).error).toContain("once");
+  expect(resolveSeedFileArg(["--seed-file=/a.json", "--seed-file", "/b.json"]).error).toContain("once");
+});
+
 test("runnerCommand with a missing --seed-file exits 1 with a message, before checking interactive or tmux", async () => {
   // No gate.setInteractive: bun test's own stdin is never a TTY, so if
   // validation ran after the interactive gate this would say "interactive
@@ -408,4 +444,28 @@ test("runnerCommand with a valid --seed-file reaches the normal backend gate (tm
   }
   expect(exits).toEqual([1]);
   expect(errs.join("")).toContain("tmux on PATH");
+});
+
+// The review's Important finding: the test above exits the same way whether
+// gateAndRun ever receives the seed/cleanArgs or not, so it cannot catch a
+// regression that drops the seed or forwards the unstripped args. This
+// asserts what gateAndRun is actually handed.
+test("runnerCommand hands the injected run() exactly the parsed seed and the args with --seed-file stripped", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-wiring-"));
+  const path = join(dir, "seed.json");
+  writeFileSync(path, JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "web", repo: "acme" }] }));
+  const calls: Array<{ ctx: unknown; args: string[]; seed: unknown }> = [];
+  const fakeRun = async (ctx: unknown, args: string[], seed?: unknown) => {
+    calls.push({ ctx, args, seed });
+  };
+  const ctx = { marker: "the-ctx" };
+  try {
+    await runnerCommand(["--herdr", "--seed-file", path], ctx as never, fakeRun);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.ctx).toBe(ctx);
+  expect(calls[0]!.args).toEqual(["--herdr"]);
+  expect(calls[0]!.seed).toEqual([{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "web", repo: "acme" }]);
 });

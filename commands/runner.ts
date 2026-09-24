@@ -7,6 +7,7 @@
 import { spawnSync } from "child_process";
 import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
+import { isAbsolute } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { herdrRequest } from "../lib/herdr/client.ts";
 import { bgEnsure, bgRelease, formatPaneRef, paneFocus } from "../packages/rt-client/src/index.ts";
@@ -29,9 +30,11 @@ type SeedResult = { ok: true; seed: SeedEntry[] } | { ok: false; error: string }
 
 /**
  * Validates the `{"seed":[...]}` envelope `rt run --resolve-only` prints:
- * string `name`/`command`/`cwd` on every row, `pkg`/`repo` optional strings
- * defaulted to "", at least one row. Pure -- no fs -- so the shape check is
- * directly testable against arbitrary JSON.
+ * string `name`/`command`/`cwd` on every row (`name` non-empty, `cwd`
+ * absolute -- a relative one would resolve against whatever cwd the runner
+ * process happens to have, not the host's intent), `pkg`/`repo` optional
+ * strings defaulted to "", at least one row. Pure -- no fs -- so the shape
+ * check is directly testable against arbitrary JSON.
  */
 export function parseSeedEnvelope(raw: string): SeedResult {
   let parsed: unknown;
@@ -56,6 +59,8 @@ export function parseSeedEnvelope(raw: string): SeedResult {
     for (const field of ["pkg", "repo"] as const) {
       if (r[field] !== undefined && typeof r[field] !== "string") return { ok: false, error: `row ${i}: ${field} must be a string` };
     }
+    if ((r.name as string).length === 0) return { ok: false, error: `row ${i}: name must not be empty` };
+    if (!isAbsolute(r.cwd as string)) return { ok: false, error: `row ${i}: cwd must be an absolute path` };
     seed.push({
       name: r.name as string,
       command: r.command as string,
@@ -79,16 +84,44 @@ export function loadSeedFile(path: string): SeedResult {
 }
 
 /**
- * Extracts `--seed-file <path>` from a runner invocation's args, loading and
- * validating the file it names. Pure aside from the one file read, so the
- * wiring between --seed-file and the seed handed to Runner is directly
- * testable without a live board.
+ * Extracts `--seed-file <path>` or `--seed-file=<path>` from a runner
+ * invocation's args, loading and validating the file it names. A second
+ * occurrence (either form) is rejected outright rather than picking a
+ * precedence between them -- the first file's rows would otherwise launch
+ * while the second's flag rode along into cleanArgs and reached resolveRun.
+ * Pure aside from the one file read, so the wiring between --seed-file and
+ * the seed handed to Runner is directly testable without a live board.
  */
 export function resolveSeedFileArg(args: string[]): { cleanArgs: string[]; seed?: SeedEntry[]; error?: string } {
-  const idx = args.indexOf("--seed-file");
-  if (idx === -1) return { cleanArgs: args };
-  const path = args[idx + 1];
-  const cleanArgs = [...args.slice(0, idx), ...args.slice(idx + 2)];
+  const EQ_PREFIX = "--seed-file=";
+  const cleanArgs: string[] = [];
+  const values: (string | undefined)[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i]!;
+    if (a === "--seed-file") {
+      const next = args[i + 1];
+      if (next !== undefined) {
+        values.push(next);
+        i += 2;
+      } else {
+        values.push(undefined);
+        i += 1;
+      }
+      continue;
+    }
+    if (a.startsWith(EQ_PREFIX)) {
+      values.push(a.slice(EQ_PREFIX.length));
+      i += 1;
+      continue;
+    }
+    cleanArgs.push(a);
+    i += 1;
+  }
+
+  if (values.length === 0) return { cleanArgs: args };
+  if (values.length > 1) return { cleanArgs, error: "--seed-file may only be given once" };
+  const path = values[0];
   if (!path) return { cleanArgs, error: "--seed-file requires a path" };
   const result = loadSeedFile(path);
   if (!result.ok) return { cleanArgs, error: result.error };
@@ -293,13 +326,18 @@ async function gateAndRun(ctx: CommandContext, args: string[], seed?: SeedEntry[
   }
 }
 
-export async function runnerCommand(args: string[], ctx: CommandContext): Promise<void> {
+/** `run` is a seam so a test can pin exactly what --seed-file's parsed seed and stripped args hand to gateAndRun, instead of only observing gateAndRun's own downstream exit code (which is the same whether or not the seed ever arrives). */
+export async function runnerCommand(
+  args: string[],
+  ctx: CommandContext,
+  run: (ctx: CommandContext, args: string[], seed?: SeedEntry[]) => Promise<void> = gateAndRun,
+): Promise<void> {
   const resolved = resolveSeedFileArg(args);
   if (resolved.error) {
     process.stderr.write(`rt runner: ${resolved.error}\n`);
     return exit(1);
   }
-  return gateAndRun(ctx, resolved.cleanArgs, resolved.seed);
+  return run(ctx, resolved.cleanArgs, resolved.seed);
 }
 
 /** Opens the board pre-seeded with resolved rows (e.g. from `rt run` on a preset); the in-board `a` key still falls back to the normal resolve flow. */
