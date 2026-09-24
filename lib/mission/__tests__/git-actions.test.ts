@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scrubGitEnv } from "../../../packages/git-core/src/exec.ts";
 import type { GitWorktreeBadge } from "../../../packages/rt-client/src/commands.ts";
-import { deriveAction, runAction } from "../git-actions.ts";
+import { deriveAction, publishRepo, runAction } from "../git-actions.ts";
 
 // Local mirror of packages/git-core/test-support/sandbox.ts: this module
 // stays standalone (no cross-package test import), and every spawn pins
@@ -299,11 +299,71 @@ describe("runAction: refused kinds", () => {
     }
   });
 
-  test("publish-repo resolves the not-wired-yet detail verbatim", async () => {
+});
+
+describe("publishRepo: gh repo create", () => {
+  /** A stand-in gh that records where it ran and with what, then exits with `code` after writing `stderr`. */
+  function fakeGh(dir: string, code: number, stderr = ""): { path: string; recorded: () => { cwd: string; args: string[] } } {
+    const path = join(dir, "gh");
+    const log = join(dir, "gh.log");
+    writeFileSync(path, `#!/bin/sh\npwd > "${log}"\nprintf '%s\\n' "$@" >> "${log}"\nprintf '%s' '${stderr}' >&2\nexit ${code}\n`);
+    chmodSync(path, 0o755);
+    return {
+      path,
+      recorded: () => {
+        const [cwd, ...args] = readFileSync(log, "utf8").trimEnd().split("\n");
+        return { cwd: cwd!, args };
+      },
+    };
+  }
+
+  test("creates the repo from the worktree, adds origin, and pushes", async () => {
+    const a = await makeSandbox();
+    const bin = mkdtempSync(join(tmpdir(), "fake-gh-"));
+    try {
+      const gh = fakeGh(bin, 0);
+      const result = await publishRepo(a.dir, { name: "acme-app", private: true }, gh.path);
+      expect(result).toEqual({ ok: true, detail: "" });
+      const { cwd, args } = gh.recorded();
+      expect(realpathSync(cwd)).toBe(realpathSync(a.dir));
+      expect(args).toEqual(["repo", "create", "acme-app", "--private", "--source", a.dir, "--remote", "origin", "--push"]);
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+      await a.cleanup();
+    }
+  });
+
+  test("public, and an owner/name pair, pass straight through", async () => {
+    const a = await makeSandbox();
+    const bin = mkdtempSync(join(tmpdir(), "fake-gh-"));
+    try {
+      const gh = fakeGh(bin, 0);
+      await publishRepo(a.dir, { name: "acme/app", private: false }, gh.path);
+      expect(gh.recorded().args.slice(2, 4)).toEqual(["acme/app", "--public"]);
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+      await a.cleanup();
+    }
+  });
+
+  test("a gh failure reports its last stderr line", async () => {
+    const a = await makeSandbox();
+    const bin = mkdtempSync(join(tmpdir(), "fake-gh-"));
+    try {
+      const gh = fakeGh(bin, 1, "GraphQL: Name already exists on this account (createRepository)");
+      const result = await publishRepo(a.dir, { name: "acme-app", private: true }, gh.path);
+      expect(result).toEqual({ ok: false, detail: "GraphQL: Name already exists on this account (createRepository)" });
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+      await a.cleanup();
+    }
+  });
+
+  test("no gh at all says publishing needs it", async () => {
     const a = await makeSandbox();
     try {
-      const result = await runAction(a.dir, "publish-repo", { branch: null });
-      expect(result).toEqual({ ok: false, detail: "publishing a repository is not wired yet" });
+      const result = await publishRepo(a.dir, { name: "acme-app", private: true }, join(a.dir, "no-such-gh"));
+      expect(result).toEqual({ ok: false, detail: "publishing a repository needs the GitHub CLI (gh)" });
     } finally {
       await a.cleanup();
     }

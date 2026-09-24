@@ -7,7 +7,7 @@ import { existsSync } from "fs";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { createFileActions } from "../lib/file-actions.ts";
 import { MissionDriver, type MissionDeps } from "../lib/mission/driver.ts";
-import { runAction } from "../lib/mission/git-actions.ts";
+import { publishRepo, runAction } from "../lib/mission/git-actions.ts";
 import { interactive } from "../lib/ui/gate.ts";
 import { exit, openSession } from "../lib/ui/spawn.ts";
 import { SessionDied } from "../lib/runner/runner.ts";
@@ -38,6 +38,7 @@ export async function glitterCommand(_args: string[], ctx: CommandContext): Prom
     daemonQuery,
     subscribe: subscribeToDaemon,
     runAction,
+    publishRepo: (cwd, opts) => publishRepo(cwd, opts),
     commit: commitStaged,
     amend: amendStaged,
     guard: checkBranchGuard,

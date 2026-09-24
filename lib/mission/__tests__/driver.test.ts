@@ -281,6 +281,7 @@ function baseDeps(over: {
   daemonQuery?: MissionDeps["daemonQuery"];
   subscribe?: MissionDeps["subscribe"];
   runAction?: MissionDeps["runAction"];
+  publishRepo?: MissionDeps["publishRepo"];
   commit?: MissionDeps["commit"];
   amend?: MissionDeps["amend"];
   guard?: MissionDeps["guard"];
@@ -306,6 +307,7 @@ function baseDeps(over: {
           : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge()] }] } }),
     subscribe: over.subscribe ?? ((): DaemonSubscription => ({ close: () => {} })),
     runAction: over.runAction ?? (async () => ({ ok: true, detail: "" })),
+    publishRepo: over.publishRepo ?? (async () => ({ ok: true, detail: "" })),
     commit: over.commit ?? (() => "[main abc] msg"),
     amend: over.amend ?? (() => "[main abc] msg"),
     guard: over.guard ?? (async () => ({ verdict: "clear" }) as BranchGuardVerdict),
@@ -726,6 +728,97 @@ describe("MissionDriver: real remote name, pull.rebase, and guards", () => {
 
     expect(opened!.action.kind).toBe("publish-repo");
     expect(opened!.action.title).toBe("Publish repository");
+  });
+
+  test("the action on a repo with no remote asks for the publish dialog instead of running", async () => {
+    const kinds: string[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:action" },
+      { t: "intent", name: "mission:refresh" },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ remotes: async () => [] });
+    const deps = baseDeps({
+      session,
+      client,
+      runAction: async (_cwd, kind) => {
+        kinds.push(kind);
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(kinds).toEqual([]);
+    const prompts = (session.pushed as MissionModel[]).map((m) => m.publishPrompt);
+    expect(prompts.filter((p) => p !== null)).toEqual([{ seq: 1, name: "repo-tools" }]);
+    expect(prompts.at(-1)).toBeNull();
+  });
+
+  test("publishing runs gh behind the busy state, then refreshes into the pushed repo", async () => {
+    const published: { cwd: string; name: string; private: boolean }[] = [];
+    let remotes: { name: string }[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:publish", payload: { name: " acme-app ", private: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ remotes: async () => remotes });
+    const deps = baseDeps({
+      session,
+      client,
+      publishRepo: async (cwd, opts) => {
+        published.push({ cwd, ...opts });
+        remotes = [{ name: "origin" }];
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(published).toEqual([{ cwd: "/repo", name: "acme-app", private: true }]);
+    const kinds = (session.pushed as MissionModel[]).map((m) => m.action.kind);
+    expect(kinds).toContain("busy");
+    expect(kinds.at(-1)).not.toBe("publish-repo");
+    expect((session.pushed.at(-1) as MissionModel).notice).toBe("");
+  });
+
+  test("a failed publish shows gh's own message and stays on Publish repository", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:publish", payload: { name: "acme-app", private: false } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ remotes: async () => [] });
+    const deps = baseDeps({
+      session,
+      client,
+      publishRepo: async () => ({ ok: false, detail: "GraphQL: Name already exists on this account (createRepository)" }),
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("GraphQL: Name already exists on this account (createRepository)");
+    expect(last.action.kind).toBe("publish-repo");
+  });
+
+  test("a blank publish name runs nothing", async () => {
+    let calls = 0;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:publish", payload: { name: "   ", private: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client: makeFakeClient({ remotes: async () => [] }),
+      publishRepo: async () => {
+        calls++;
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(calls).toBe(0);
   });
 
   test("a remote named something other than origin flows into runAction", async () => {

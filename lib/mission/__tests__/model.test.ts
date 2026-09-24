@@ -87,6 +87,7 @@ function baseState(overrides: Partial<MissionState> = {}): MissionState {
     selections: new Map(),
     settling: false,
     switchPrompt: null,
+    publishPrompt: null,
     ...overrides,
   };
 }

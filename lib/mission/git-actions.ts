@@ -104,9 +104,12 @@ async function refreshDefaultBranchSymref(cwd: string, remote: string): Promise<
   } catch { /* self-heal only; never fails the action it rides along with */ }
 }
 
+/** Publishing a repository needs a name and visibility first, so it runs through publishRepo, never here. */
+export type RunnableAction = Exclude<ActionKind, "publish-repo">;
+
 export async function runAction(
   cwd: string,
-  kind: ActionKind,
+  kind: RunnableAction,
   opts: { remote?: string; branch: string | null },
 ): Promise<ActionResult> {
   const remote = opts.remote ?? "origin";
@@ -115,8 +118,6 @@ export async function runAction(
       return { ok: false, detail: "an action is already in progress" };
     case "detached":
       return { ok: false, detail: "cannot run a remote action while checked out on a commit, not a branch" };
-    case "publish-repo":
-      return { ok: false, detail: "publishing a repository is not wired yet" };
     case "fetch": {
       const result = await spawnGit(cwd, ["fetch", "--quiet", remote]);
       if (result.ok) await refreshDefaultBranchSymref(cwd, remote);
@@ -140,4 +141,30 @@ export async function runAction(
       if (!opts.branch) return { ok: false, detail: "no branch to publish" };
       return spawnGit(cwd, ["push", "-u", remote, opts.branch]);
   }
+}
+
+/**
+ * GitHub Desktop's Publish Repository through the GitHub CLI: creates the
+ * repo (`name` may be `owner/name` for an organization), adds it as origin,
+ * and pushes. `gh` is a parameter so tests can stand in for it.
+ */
+export async function publishRepo(
+  cwd: string,
+  opts: { name: string; private: boolean },
+  gh = "gh",
+): Promise<ActionResult> {
+  const args = ["repo", "create", opts.name, opts.private ? "--private" : "--public", "--source", cwd, "--remote", "origin", "--push"];
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn([gh, ...args], { cwd, env: scrubGitEnv(), stdout: "pipe", stderr: "pipe" });
+  } catch {
+    return { ok: false, detail: "publishing a repository needs the GitHub CLI (gh)" };
+  }
+  const [, err, code] = await Promise.all([
+    new Response(proc.stdout as ReadableStream).text(),
+    new Response(proc.stderr as ReadableStream).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) return { ok: false, detail: lastStderrLine(err) };
+  return { ok: true, detail: "" };
 }
