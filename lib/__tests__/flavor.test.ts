@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { daemonLabelFor, deckLabelFor, otherFlavor, processFlavor } from "../flavor.ts";
+import { afterEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "child_process";
+import { __resetCapturedFlavor, captureProcessFlavor, daemonLabelFor, deckLabelFor, otherFlavor, processFlavor } from "../flavor.ts";
 
 describe("processFlavor", () => {
   test("MATTSTACK_FLAVOR set by the launcher wins", () => {
@@ -20,6 +21,31 @@ describe("processFlavor", () => {
   test("the test preload pins prod whatever the ambient environment says", () => {
     expect(process.env.MATTSTACK_FLAVOR).toBe("prod");
     expect(processFlavor()).toBe("prod");
+  });
+});
+
+describe("captureProcessFlavor", () => {
+  afterEach(() => {
+    __resetCapturedFlavor();
+    process.env.MATTSTACK_FLAVOR = "prod";
+  });
+
+  test("reads the launcher's value once, then keeps it out of every child's environment", () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
+
+    expect(captureProcessFlavor()).toBe("dev");
+
+    expect(process.env.MATTSTACK_FLAVOR).toBeUndefined();
+    const child = spawnSync("/usr/bin/printenv", ["MATTSTACK_FLAVOR"], { encoding: "utf8", env: process.env });
+    expect(child.stdout.trim()).toBe("");
+    expect(processFlavor()).toBe("dev");
+  });
+
+  test("a later change to the environment does not move a captured process", () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
+    captureProcessFlavor();
+    process.env.MATTSTACK_FLAVOR = "prod";
+    expect(processFlavor()).toBe("dev");
   });
 });
 

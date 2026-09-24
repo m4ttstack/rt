@@ -5,6 +5,10 @@
  * at ~/.local/bin/rt exports it, and a process nobody labelled falls back to
  * what it was built as (a compiled rt is the prod app's binary, a source run
  * is dev). Nothing on disk records an intended flavor.
+ *
+ * The entry points capture it once and delete the variable, so tmux, herdr
+ * and agent sessions started under this process never inherit a flavor that
+ * outlives the switch that set it.
  */
 
 declare const RT_VERSION: string | undefined;
@@ -15,12 +19,28 @@ export function buildFlavor(): Flavor {
   return typeof RT_VERSION !== "undefined" ? "prod" : "dev";
 }
 
-export function processFlavor(
-  env: Record<string, string | undefined> = process.env,
-  built: Flavor = buildFlavor(),
-): Flavor {
+let captured: Flavor | null = null;
+
+function fromEnv(env: Record<string, string | undefined>, built: Flavor): Flavor {
   const raw = env.MATTSTACK_FLAVOR;
   return raw === "dev" || raw === "prod" ? raw : built;
+}
+
+/** The captured flavor when an entry point took one, else read from `env` now. */
+export function processFlavor(env?: Record<string, string | undefined>, built: Flavor = buildFlavor()): Flavor {
+  if (env === undefined) return captured ?? fromEnv(process.env, built);
+  return fromEnv(env, built);
+}
+
+/** Called first thing by cli.ts and the daemon's own entry. */
+export function captureProcessFlavor(env: Record<string, string | undefined> = process.env): Flavor {
+  captured = fromEnv(env, buildFlavor());
+  delete env.MATTSTACK_FLAVOR;
+  return captured;
+}
+
+export function __resetCapturedFlavor(): void {
+  captured = null;
 }
 
 export function otherFlavor(flavor: Flavor): Flavor {

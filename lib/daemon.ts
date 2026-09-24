@@ -29,7 +29,7 @@ import type { Logger } from "pino";
 import type { Database } from "bun:sqlite";
 
 import { RT_DIR, DAEMON_PID_PATH } from "./daemon-config.ts";
-import { buildFlavor } from "./flavor.ts";
+import { buildFlavor, captureProcessFlavor } from "./flavor.ts";
 import {
   getDaemonLogger,
   installCrashHandlers,
@@ -1397,5 +1397,6 @@ declare const RT_VERSION: string | undefined;
 
 // Auto-run when executed directly (source mode: bun run lib/daemon.ts).
 if (import.meta.main) {
+  captureProcessFlavor();
   startDaemon();
 }

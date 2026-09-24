@@ -16,7 +16,10 @@
 
 import { dispatch } from "./lib/command-tree.ts";
 import { TREE } from "./lib/command-tree-def.ts";
+import { captureProcessFlavor } from "./lib/flavor.ts";
 import { rtDir, migrateLegacyRtDir, migrateLegacyPluginsDir, LEGACY_RT_LABEL, RT_DIR_LABEL, trayAppPath } from "./lib/rt-paths.ts";
+
+captureProcessFlavor();
 
 const args = process.argv.slice(2);
 
