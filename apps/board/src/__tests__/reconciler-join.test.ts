@@ -59,6 +59,15 @@ function executorView(overrides: Partial<ExecutorView> = {}): ExecutorView {
 }
 
 describe('buildQueueExtras', () => {
+  test("a human-owned run: gate stays out, since it shows only on its run's MR", () => {
+    const row = fakeRow({
+      subject: 'run:20260923-100000-aaaa-1111',
+      kind: 'clarify',
+      meta: null,
+    });
+    expect(buildQueueExtras([row])).toEqual([]);
+  });
+
   test('a pane-attention gate with owner human lands in queueExtras', () => {
     const row = fakeRow({ owner: 'human' });
     const extras = buildQueueExtras([row]);
@@ -186,7 +195,7 @@ describe('ingestRelayFrame: pane-attention widening', () => {
       target,
       {
         topic: 'gate/opened/g1',
-        payload: { subject: 'run:abc', kind: 'self-review' },
+        payload: { subject: 'agent:pane-2', kind: 'self-review' },
       },
       () => notified++
     );

@@ -71,6 +71,9 @@ function tabIdFor(
  *   an operator deliberately reopened (the resume write stamps both with
  *   one clock value) -- done+tabId there is not a missed close, so it is
  *   skipped until some later write bumps `updatedAt` past the reopen.
+ *
+ * Only `mr:` rows are planned: a `run:` row the board shows on an MR still
+ * belongs to the pipeline that opened it, which parks and closes its own.
  */
 export function planSweep(
   rows: GateRow[],
@@ -165,12 +168,13 @@ export interface PruneOffBoardGatesIo {
 }
 
 /** Closes every off-board `mr:` row still `open`/`parked` via the facility,
-    across every kind. Best-effort: a rejecting gateClose (row already left
-    open/parked by the time this call lands -- another sweep or the wrapper
-    beat it) is logged and skipped, never thrown, so one bad row can't stop
-    the rest of the sweep. `answered`/`closed` rows are skipped outright --
-    their lifecycle is already over and the daemon would reject the close
-    anyway. */
+    across every kind. A `run:` row is never pruned: its pipeline owns it,
+    whether or not its MR is on this board. Best-effort: a rejecting
+    gateClose (row already left open/parked by the time this call lands --
+    another sweep or the wrapper beat it) is logged and skipped, never
+    thrown, so one bad row can't stop the rest of the sweep.
+    `answered`/`closed` rows are skipped outright -- their lifecycle is
+    already over and the daemon would reject the close anyway. */
 export async function pruneOffBoardGates(
   rows: GateRow[],
   onBoard: Set<string>,

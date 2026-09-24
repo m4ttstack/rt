@@ -161,6 +161,24 @@ describe('planSweep', () => {
     expect(actions).toEqual([]);
   });
 
+  test("a pipeline run's gate is never parked or reported, even aged on a tracked MR's run", () => {
+    const reported: string[] = [];
+    const rows = [
+      baseRow({
+        id: 'g-run',
+        subject: 'run:20260923-100000-aaaa-1111',
+        kind: 'clarify',
+        owner: 'human',
+        openedAt: NOW - GRACE_MS - 1,
+      }),
+    ];
+    const actions = planSweep(rows, states(), NOW, GRACE_MS, row =>
+      reported.push(row.id)
+    );
+    expect(actions).toEqual([]);
+    expect(reported).toEqual([]);
+  });
+
   test('an unrecognized kind is skipped entirely, never crashes the sweep', () => {
     const rows = [
       baseRow({ kind: 'some-future-kind', openedAt: NOW - GRACE_MS - 1 }),
@@ -604,6 +622,27 @@ describe('pruneOffBoardGates', () => {
     ];
     const io = makeIo();
     await pruneOffBoardGates(rows, new Set(), io);
+    expect(io.calls).toEqual([]);
+  });
+
+  test("never closes a pipeline run's gate, whatever the board holds", async () => {
+    const rows = [
+      baseRow({
+        id: 'g-run-open',
+        subject: 'run:20260923-100000-aaaa-1111',
+        kind: 'clarify',
+        status: 'open',
+      }),
+      baseRow({
+        id: 'g-run-parked',
+        subject: 'run:20260923-110000-bbbb-2222',
+        kind: 'ship',
+        status: 'parked',
+      }),
+    ];
+    const io = makeIo();
+    await pruneOffBoardGates(rows, new Set(), io);
+    await pruneOffBoardGates(rows, new Set([MR_URL]), io);
     expect(io.calls).toEqual([]);
   });
 

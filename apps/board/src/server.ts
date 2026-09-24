@@ -22,6 +22,7 @@ import {
   gateClose,
   gateList,
   gatePark,
+  getRun,
   getSetting,
   paneList,
   readDiscussions,
@@ -114,7 +115,12 @@ import { upsertEnvKeys } from './env-file.ts';
 import faviconSvg from './favicon.svg' with { type: 'text' };
 import { focusPane } from './focus-pane.ts';
 import { answerGate } from './gates/answer.ts';
-import { attachGates, GateCache, isRowAnswerable } from './gates/cache.ts';
+import {
+  answeredWinner,
+  attachGates,
+  GateCache,
+  isRowAnswerable,
+} from './gates/cache.ts';
 import {
   executeSweepAction,
   type ExecuteSweepActionIo,
@@ -125,6 +131,7 @@ import {
   installBoardBridgeRule,
   reconcileAttentionGatesOnBoot,
   reconcileGatesOnBoot,
+  reconcileRunGatesOnBoot,
   type GateEventFrame,
 } from './gates/ingest.ts';
 import { migrateLegacySessions } from './gates/legacy-session-migration.ts';
@@ -135,6 +142,7 @@ import {
   type GateResumeEventIo,
   type KindResumeIo,
 } from './gates/resume.ts';
+import { RunMrResolver } from './gates/run-mr.ts';
 import { type GateAnswers } from './gates/store.ts';
 import { planSweep, pruneOffBoardGates } from './gates/sweep.ts';
 import {
@@ -397,6 +405,10 @@ async function gitlab(): Promise<GitLabProvider> {
 // the relay handler below (ingestRelayFrame) and the boot gateList reconcile
 // (reconcileGatesOnBoot).
 const gateCache = new GateCache();
+const runMrs = new RunMrResolver({
+  getRun: runId => getRun(runId),
+  onChange: () => sseNudge(),
+});
 
 interface ReconcilerView {
   sweptAt: number;
@@ -1041,6 +1053,7 @@ const httpServer = Bun.serve({
         void refreshMemberNames();
         try {
           const mrs = await fetchMemberMRs(u);
+          const runLinks = runMrs.links(gateCache.rows());
           // Peer state too: a scoped refresh replaces that member's rows
           // wholesale on the client, so anything left off here would blink out
           // of the UI every 15s.
@@ -1057,7 +1070,8 @@ const httpServer = Bun.serve({
                         ),
                         readDoctorStates()
                       ),
-                      gateCache
+                      gateCache,
+                      runLinks
                     ),
                     readSlackRefs()
                   ),
@@ -1142,6 +1156,7 @@ const httpServer = Bun.serve({
         const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
         const reconciler = await fetchReconcilerView();
+        const runLinks = runMrs.links(gateCache.rows());
         const mrsWithGates = attachStandDown(
           attachPeerState(
             attachNotes(
@@ -1155,7 +1170,8 @@ const httpServer = Bun.serve({
                       ),
                       doctors
                     ),
-                    gateCache
+                    gateCache,
+                    runLinks
                   ),
                   slackRefs
                 ),
@@ -2231,6 +2247,12 @@ const httpServer = Bun.serve({
         const result = await answerGate(gateId, answers as GateAnswers, {
           isAnswerable: id =>
             isRowAnswerable(gateCache.rows().find(r => r.id === id)),
+          answeredRow: id =>
+            answeredWinner(gateCache.rows().find(r => r.id === id)),
+          recordWinner: row => {
+            gateCache.applyRow(row);
+            sseNudge();
+          },
           gateAnswer: gateAnswerFacility,
         });
         switch (result.kind) {
@@ -3873,6 +3895,11 @@ if (!FIXTURE_DIR) {
   void reconcileAttentionGatesOnBoot(gateList, gateCache).catch(err =>
     console.error(
       `gate boot reconcile (attention) failed: ${err instanceof Error ? err.message : err}`
+    )
+  );
+  void reconcileRunGatesOnBoot(gateList, gateCache).catch(err =>
+    console.error(
+      `gate boot reconcile (runs) failed: ${err instanceof Error ? err.message : err}`
     )
   );
 }

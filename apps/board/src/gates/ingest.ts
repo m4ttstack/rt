@@ -5,6 +5,7 @@ import {
 import { domainForKind } from '@mattstack/gate-kit';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 import { cachedDelivery, cachedExecution } from './cache.ts';
+import { isHumanOwned, runIdOf } from './run-mr.ts';
 import type { GateAnswers, GateQuestion, GateRow } from './store.ts';
 
 /** Shape shared by a relay `("event", frame)` push and an `events:list` row --
@@ -34,22 +35,22 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** True for a `gate/**` bus frame whose payload names an MR-scoped subject
-    (`mr:...`) -- the board's cache tracks those -- OR a `pane-attention`
-    gate, whose subject targets an agent/pane rather than an MR and is
-    accepted on kind alone so it can still reach `queueExtras`. Any other
-    non-`mr:` subject (a `run:` kind belonging to W3's console, say) is left
+    (`mr:...`) or a pipeline run (`run:...`, joined to its run's MR at read
+    time) -- the board's cache tracks those -- OR a `pane-attention` gate,
+    whose subject targets an agent/pane rather than an MR and is accepted on
+    kind alone so it can still reach `queueExtras`. Any other subject is left
     alone. */
 function isBoardGateFrame(frame: GateEventFrame): boolean {
   if (!GATE_BUS_TOPIC_RE.test(frame.topic)) return false;
   if (!isRecord(frame.payload)) return false;
   const subject = frame.payload.subject;
   if (typeof subject !== 'string' || !subject) return false;
-  if (subject.startsWith('mr:')) return true;
+  if (subject.startsWith('mr:') || runIdOf(subject) !== null) return true;
   return frame.payload.kind === 'pane-attention';
 }
 
 /**
- * Feeds one relay push into the cache: a matching `gate/**` + `mr:` frame
+ * Feeds one relay push into the cache: a matching `gate/**` frame
  * updates the cache and runs `notify` (the board's SSE nudge) so open tabs
  * refresh; anything else is dropped silently.
  */
@@ -151,27 +152,58 @@ export async function reconcileAttentionGatesOnBoot(
 }
 
 /**
+ * Boot-time cache warm for pipeline gates: pages
+ * `gateList({subjectPrefix: "run:"})` to exhaustion, so a run gate opened
+ * while the board was down still joins its MR's row. Only live rows reach
+ * the cache, since a settled run gate never renders; `gate:list`'s `open`
+ * filter would drop parked rows, so the filter runs here.
+ */
+export async function reconcileRunGatesOnBoot(
+  list: (payload: GateListPayload) => Promise<GateListResult>,
+  cache: GateReconcileTarget
+): Promise<void> {
+  const rows = await pageGateList(
+    list,
+    { subjectPrefix: 'run:' },
+    'gate boot reconcile (runs)'
+  );
+  cache.reconcile(newestLiveRows(rows));
+}
+
+/** Each subject+kind's newest row, kept only while it is open or parked. A
+    newer settled row must still shadow an older parked one: opening a gate
+    supersedes only an `open` row of its kind, never a `parked` one. */
+function newestLiveRows(rows: FacilityGateRow[]): FacilityGateRow[] {
+  const newest = new Map<string, FacilityGateRow>();
+  for (const row of rows) {
+    const key = `${row.subject}::${row.kind}`;
+    const seen = newest.get(key);
+    if (!seen || row.openedAt >= seen.openedAt) newest.set(key, row);
+  }
+  return [...newest.values()].filter(
+    row => row.status === 'open' || row.status === 'parked'
+  );
+}
+
+/**
  * Client-shaped rows for the board's decision queue: a human-owned gate
- * (pane-attention or otherwise) whose subject is NOT `mr:`-prefixed --
- * admission is by subject prefix, not by "no MR row currently matches it".
- * An `mr:` gate whose MR dropped out of the polled snapshot (merged/closed
- * while the gate stays open) must still attach through the normal MR join,
- * not leak in here as a queue item. A herd-owned gate is excluded UNLESS
- * the daemon has already escalated it to a human (`escalatedAt` set) --
- * that herd's own board (or shepherd) owns it otherwise, not this one --
- * and a closed row never renders, same rule `attachGates` applies to
- * MR-attached gates.
+ * (pane-attention or otherwise) whose subject is neither `mr:` nor `run:`
+ * -- admission is by subject prefix, not by "no MR row currently matches
+ * it". An `mr:` gate whose MR dropped out of the polled snapshot
+ * (merged/closed while the gate stays open) must still attach through the
+ * normal MR join, not leak in here as a queue item, and a `run:` gate shows
+ * only through its run's MR (a run with no MR on the board stays the
+ * console's). A herd-owned gate is excluded UNLESS the daemon has already
+ * escalated it to a human (`escalatedAt` set) -- that herd's own board (or
+ * shepherd) owns it otherwise, not this one -- and a closed row never
+ * renders, same rule `attachGates` applies to MR-attached gates.
  */
 export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
   const out: GateRow[] = [];
   for (const row of rows) {
-    const isHuman = row.owner === 'human';
-    const isEscalatedHerd =
-      typeof row.owner === 'string' &&
-      row.owner.startsWith('herd:') &&
-      row.escalatedAt != null;
-    if (!isHuman && !isEscalatedHerd) continue;
-    if (row.subject.startsWith('mr:')) continue;
+    if (!isHumanOwned(row)) continue;
+    if (row.subject.startsWith('mr:') || runIdOf(row.subject) !== null)
+      continue;
     if (row.status === 'closed') continue;
     const label =
       typeof row.meta?.label === 'string' ? row.meta.label : row.kind;

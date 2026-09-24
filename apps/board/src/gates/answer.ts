@@ -12,6 +12,12 @@ export interface AnswerGateIo {
       row can be one of several live on the same MR), so this is a guard
       against a stale id, not a lookup. */
   isAnswerable(gateId: string): boolean;
+  /** The cached row when another surface already answered it: a late
+      answer loses to that row rather than reading as a missing gate. */
+  answeredRow?(gateId: string): GateRow | undefined;
+  /** Takes the winning row of a CAS loss the daemon reported, so the cache
+      stops holding the gate open when the board missed that answer. */
+  recordWinner?(row: GateRow): void;
   gateAnswer(
     payload: Commands['gate:answer']['payload']
   ): Promise<RtResponse<Commands['gate:answer']['data']>>;
@@ -31,7 +37,9 @@ export type AnswerGateResult =
     an option value like "closed" (e.g. an invalid answer naming a "closed"
     option), which a substring match would misroute to 404. */
 function isMissingGateError(message: string): boolean {
-  return message === 'not-found' || message === 'closed';
+  return (
+    message === 'not-found' || message === 'closed' || message === 'gate-closed'
+  );
 }
 
 /** The rt-client transport's own error-shape prefix (see rtCommand's catch)
@@ -45,11 +53,13 @@ function isUnreachableError(message: string): boolean {
 
 /**
  * Answers a gate through the facility CAS: guards the id is still live in
- * the board's cache, calls `gateAnswer`, and maps the outcome. A CAS loss is
- * `ok:true` with `conflict:true` and the winning row -- not an error, since
- * the facility already recorded a real answer, just not this caller's. The
- * daemon emits `gate/answered` itself on a genuine write, so there is
- * nothing left for this path to emit or persist.
+ * the board's cache, calls `gateAnswer`, and maps the outcome. A gate the
+ * cache already holds as answered loses to that answer at once, without a
+ * daemon call. A CAS loss is `ok:true` with `conflict:true` and the winning
+ * row -- not an error, since the facility already recorded a real answer,
+ * just not this caller's -- and that row goes to `recordWinner`. The daemon
+ * emits `gate/answered` itself on a genuine write, so there is nothing left
+ * for this path to emit.
  *
  * `gateAnswer` itself never rejects in production (the rt-client transport
  * catches connection failures into `{ok:false}`), but the try/catch here
@@ -61,7 +71,10 @@ export async function answerGate(
   answers: GateAnswers,
   io: AnswerGateIo
 ): Promise<AnswerGateResult> {
-  if (!io.isAnswerable(gateId)) return { kind: 'not-found' };
+  if (!io.isAnswerable(gateId)) {
+    const winner = io.answeredRow?.(gateId);
+    return winner ? { kind: 'conflict', row: winner } : { kind: 'not-found' };
+  }
 
   let res: Awaited<ReturnType<AnswerGateIo['gateAnswer']>>;
   try {
@@ -80,7 +93,7 @@ export async function answerGate(
     return { kind: 'invalid', reason: message };
   }
 
-  return res.data.conflict
-    ? { kind: 'conflict', row: res.data.row }
-    : { kind: 'ok' };
+  if (!res.data.conflict) return { kind: 'ok' };
+  io.recordWinner?.(res.data.row);
+  return { kind: 'conflict', row: res.data.row };
 }
