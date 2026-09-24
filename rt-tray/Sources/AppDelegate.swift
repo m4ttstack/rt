@@ -231,7 +231,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         Task { @MainActor in
             if let failure = await runTakeover() {
-                reportTakeoverFailure(failure, fatal: true)
+                // Never evict on a failed takeover: take the socket only if
+                // the other app already let it go.
+                FlavorLaunchState.takingOver = false
+                let claimed = TrayServer.claimSocket() == .claimed
+                switch FlavorLaunch.afterFailedTakeover(socketClaimed: claimed) {
+                case .serveAndReport:
+                    startNormalOperation()
+                    reportTakeoverFailure(failure, fatal: false)
+                case .quitAndReport:
+                    reportTakeoverFailure(failure, fatal: true)
+                }
                 return
             }
             switch TrayServer.claimSocket() {

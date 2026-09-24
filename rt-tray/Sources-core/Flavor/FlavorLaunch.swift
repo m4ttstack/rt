@@ -51,6 +51,18 @@ public enum FlavorLaunch {
         }
     }
 
+    public enum FailedTakeover: Equatable, Sendable {
+        case serveAndReport
+        case quitAndReport
+    }
+
+    /// A takeover that failed may already have retired the other app. If the
+    /// socket is free this app is all the Mac has left, so it serves; only
+    /// while the other app still holds the Mac does quitting leave it served.
+    public static func afterFailedTakeover(socketClaimed: Bool) -> FailedTakeover {
+        socketClaimed ? .serveAndReport : .quitAndReport
+    }
+
     public static func takeoverArguments(myFlavorIsDev: Bool) -> [String] {
         ["flavor", "takeover", FlavorIdentity.flavorName(isDevBuild: myFlavorIsDev), "--json"]
     }

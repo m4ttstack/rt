@@ -117,7 +117,23 @@ export async function flavorTakeover(args: string[], _ctx: CommandContext = {}, 
     }
   }
 
+  // The fallible local writes go first: once the other app is retired, a
+  // failure here would leave the Mac with neither app registered.
   const lines: string[] = [];
+  try {
+    if (target === "dev") {
+      enableDevMode(sourcePath!);
+      installShellIntegration();
+      lines.push(`${rtBinaryPath()} runs the source at ${sourcePath}`);
+    } else {
+      installProdRt(prodBinary!);
+      lines.push(`${rtBinaryPath()} links ${prodBinary}`);
+    }
+  } catch (err) {
+    fail(seams, json, "local-write", `could not point ${rtBinaryPath()} at the ${target} app: ${(err as Error).message}`);
+    return;
+  }
+
   const { TRAY_SOCK_PATH } = await import("../lib/daemon-config.ts");
   const { trayQuery } = await import("../lib/daemon-client.ts");
   const otherDaemon = daemonLabelFor(other);
@@ -154,15 +170,6 @@ export async function flavorTakeover(args: string[], _ctx: CommandContext = {}, 
     bootedOut.push(label);
   }
   if (bootedOut.length > 0) lines.push(`booted out ${bootedOut.join(", ")}`);
-
-  if (target === "dev") {
-    enableDevMode(sourcePath!);
-    installShellIntegration();
-    lines.push(`${rtBinaryPath()} runs the source at ${sourcePath}`);
-  } else {
-    installProdRt(prodBinary!);
-    lines.push(`${rtBinaryPath()} links ${prodBinary}`);
-  }
 
   if (json) {
     seams.log(JSON.stringify(envelope({

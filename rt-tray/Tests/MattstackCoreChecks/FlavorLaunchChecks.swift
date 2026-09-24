@@ -69,6 +69,10 @@ let flavorLaunchChecks: [Check] = [
         c.expect(RtLinkOwner.flavor(linkTarget: nil, prefix: "#!/bin/sh\n# mattstack-link rt\nexec x\n") == nil,
                  "a tagged PATH-link wrapper")
     },
+    Check("failed takeover: with the other app gone, this app serves and reports; with it still serving, this app quits") { c in
+        c.expectEqual(FlavorLaunch.afterFailedTakeover(socketClaimed: true), .serveAndReport)
+        c.expectEqual(FlavorLaunch.afterFailedTakeover(socketClaimed: false), .quitAndReport)
+    },
     Check("takeover argv names only my own flavor") { c in
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: false), ["flavor", "takeover", "prod", "--json"])

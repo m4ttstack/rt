@@ -326,6 +326,25 @@ describe("rt flavor takeover", () => {
     }
   }, 15_000);
 
+  test("a local write that fails refuses before the other app is retired", async () => {
+    setUpFakes(["com.mattstack.daemon"]);
+    serveTray("prod");
+    const src = devSource();
+    const localBin = dirname(WRAPPER_PATH);
+    rmSync(localBin, { recursive: true, force: true });
+    writeFileSync(localBin, "not a directory");
+
+    try {
+      const r = await run(["dev", "--json"], { resolveSourcePath: () => src });
+
+      expect(r.exitCode).toBe(2);
+      expect(JSON.parse(r.out.join("\n")).error.code).toBe("local-write");
+      expect(steps()).toEqual([]);
+    } finally {
+      rmSync(localBin, { force: true });
+    }
+  }, 15_000);
+
   test("a missing or unknown target is a usage error", async () => {
     setUpFakes([]);
     expect((await run([])).exitCode).toBe(2);
