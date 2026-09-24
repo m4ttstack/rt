@@ -1,0 +1,8 @@
+[
+  {
+    "path": "apps/backend/src/platform/auth/__tests__/Auth0User.evidence.test.ts",
+    "status": "untracked",
+    "diff": "import { execute, parse } from 'graphql16';\nimport { graphqlSchema } from '~/src/graphql-schema/schema';\nimport { getUser } from '~/src/platform/auth/auth0';\n\njest.mock('~/src/platform/auth/auth0', () => ({\n  getUser: jest.fn(),\n}));\n\ndescribe('Auth0User per-field lookups', () => {\n  it('shares one lookup across parity cases', async () => {\n    …",
+    "truncated": true
+  }
+]

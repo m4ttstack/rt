@@ -1,0 +1,533 @@
+{
+  "ok": true,
+  "data": {
+    "rows": [
+      {
+        "repo": "gitlab.com/m4ttstack/app-kit",
+        "tree": "olive-marble",
+        "path": "/Users/matt/.mattstack/rt/worktrees/gitlab.com-m4ttstack-app-kit/olive-marble",
+        "branch": "sync-confirm-dialog",
+        "mr": {
+          "iid": 47,
+          "state": "merged",
+          "title": "console: sync button confirms before running the chain",
+          "at": "2026-09-10T15:00:00.000Z",
+          "url": "https://gitlab.com/m4ttstack/app-kit/-/merge_requests/47"
+        },
+        "ticket": null,
+        "push": {
+          "kind": "in-main"
+        },
+        "containment": "in-default",
+        "dirt": {
+          "kind": "junk",
+          "files": [
+            ".visual/"
+          ]
+        },
+        "group": "safe",
+        "verdict": "Every commit is in main. Only generated files are left (.visual/).",
+        "actions": [
+          "dispose",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "ideal-lantern",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/ideal-lantern",
+        "branch": "settings-kit-shapes",
+        "mr": {
+          "iid": 390,
+          "state": "merged",
+          "title": "settings-kit: shapes for the grouped settings page",
+          "at": "2026-09-23T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/390"
+        },
+        "ticket": {
+          "identifier": "RT-238",
+          "title": "ticket",
+          "stateName": "Done",
+          "url": "https://linear.app/mattstack/issue/RT-238"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "lockfile",
+          "files": [
+            "bun.lock"
+          ]
+        },
+        "group": "safe",
+        "verdict": "Only bun.lock changed, rewritten by install (version lines only). Discarded on dispose.",
+        "actions": [
+          "dispose",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "voldemort",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/voldemort",
+        "branch": "settings-shapes",
+        "mr": {
+          "iid": 398,
+          "state": "merged",
+          "title": "settings-kit: grouped, filterable settings shapes",
+          "at": "2026-09-23T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/398"
+        },
+        "ticket": {
+          "identifier": "RT-241",
+          "title": "ticket",
+          "stateName": "Done",
+          "url": "https://linear.app/mattstack/issue/RT-241"
+        },
+        "push": {
+          "kind": "remote-deleted"
+        },
+        "containment": "patch-identical",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "safe",
+        "verdict": "Rebased before merge. All 8 commits match the merged PR.",
+        "actions": [
+          "dispose",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "fluffy",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/fluffy",
+        "branch": "gates-doc-bullet",
+        "mr": {
+          "iid": 352,
+          "state": "closed",
+          "title": "docs: pipeline gates live-proof bullet",
+          "at": "2026-09-02T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/352"
+        },
+        "ticket": null,
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "safe",
+        "verdict": "PR closed, but the remote branch has every commit.",
+        "actions": [
+          "dispose",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "closed"
+        }
+      },
+      {
+        "repo": "gitlab.com/m4ttstack/app-kit",
+        "tree": "frank-jungle",
+        "path": "/Users/matt/.mattstack/rt/worktrees/gitlab.com-m4ttstack-app-kit/frank-jungle",
+        "branch": "deck-ingest-dev-dir",
+        "mr": null,
+        "ticket": null,
+        "push": {
+          "kind": "in-main"
+        },
+        "containment": "in-default",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "safe",
+        "verdict": "No PR, but every commit already landed in main.",
+        "actions": [
+          "dispose",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": null
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "charlie",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/charlie",
+        "branch": "auth-lookups",
+        "mr": {
+          "iid": 402,
+          "state": "merged",
+          "title": "daemon: guard the per-field auth lookups",
+          "at": "2026-09-24T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/402"
+        },
+        "ticket": {
+          "identifier": "RT-251",
+          "title": "ticket",
+          "stateName": "In Review",
+          "url": "https://linear.app/mattstack/issue/RT-251"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "real",
+          "files": [
+            "apps/backend/src/platform/auth/__tests__/Auth0User.evidence.test.ts"
+          ]
+        },
+        "group": "look",
+        "verdict": "One uncommitted file: Auth0User.evidence.test.ts. Review it before disposing.",
+        "actions": [
+          "review",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "neville",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/neville",
+        "branch": "claim-chat-spike",
+        "mr": {
+          "iid": 342,
+          "state": "closed",
+          "title": "Draft: claim chat spike behind unflag",
+          "at": "2026-08-13T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/342"
+        },
+        "ticket": {
+          "identifier": "RT-199",
+          "title": "ticket",
+          "stateName": "Canceled",
+          "url": "https://linear.app/mattstack/issue/RT-199"
+        },
+        "push": {
+          "kind": "unpushed",
+          "ahead": 19
+        },
+        "containment": "none",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "only-copy",
+        "verdict": "Only copy of this work. Push the branch to keep it, or dispose to drop it.",
+        "actions": [
+          "push-branch",
+          "keep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "closed"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "treebeard",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/treebeard",
+        "branch": "dev-app-restart",
+        "mr": {
+          "iid": 411,
+          "state": "merged",
+          "title": "dev app: Rebuild from any worktree",
+          "at": "2026-09-24T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/411"
+        },
+        "ticket": {
+          "identifier": "RT-266",
+          "title": "ticket",
+          "stateName": "Done",
+          "url": "https://linear.app/mattstack/issue/RT-266"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "waiting",
+        "verdict": "Waiting on pid 4410 (swift-build), started 20 minutes ago.",
+        "actions": [
+          "stop-process",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        },
+        "hold": {
+          "kind": "process",
+          "detail": "pid 4410 (swift-build), started 20 minutes ago"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "smaug",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/smaug",
+        "branch": "daemon-restart-truth",
+        "mr": {
+          "iid": 361,
+          "state": "merged",
+          "title": "Daemon restart truth: pid-verified CLI, honest tray endpoints",
+          "at": "2026-09-22T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/361"
+        },
+        "ticket": {
+          "identifier": "RT-175",
+          "title": "ticket",
+          "stateName": "Done",
+          "url": "https://linear.app/mattstack/issue/RT-175"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "waiting",
+        "verdict": "Stopped a stale orphan (xctest, 2 days old). Disposes on the next pass.",
+        "actions": [
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        },
+        "hold": {
+          "kind": "orphan-stopping",
+          "detail": "stale orphan xctest"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "legolas",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/legolas",
+        "branch": "tray-label",
+        "mr": {
+          "iid": 384,
+          "state": "merged",
+          "title": "tray: clear a hand-installed deck helper first",
+          "at": "2026-09-23T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/384"
+        },
+        "ticket": {
+          "identifier": "RT-247",
+          "title": "ticket",
+          "stateName": "Done",
+          "url": "https://linear.app/mattstack/issue/RT-247"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "waiting",
+        "verdict": "Herd job settings-kit/tray-label is still at a gate.",
+        "actions": [
+          "open-herd",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "merged"
+        },
+        "hold": {
+          "kind": "herd",
+          "detail": "settings-kit/tray-label"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "hermione",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/hermione",
+        "branch": "ready-held",
+        "mr": {
+          "iid": 415,
+          "state": "opened",
+          "title": "worktree: hold team ready steps for approval",
+          "at": null,
+          "url": "https://github.com/m4ttstack/rt/pull/415"
+        },
+        "ticket": {
+          "identifier": "RT-260",
+          "title": "ticket",
+          "stateName": "In Progress",
+          "url": "https://linear.app/mattstack/issue/RT-260"
+        },
+        "push": {
+          "kind": "pushed"
+        },
+        "containment": "on-remote",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "waiting",
+        "verdict": "A pipeline run is live here (run r-0923 at implement).",
+        "actions": [
+          "open-run",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "opened"
+        },
+        "hold": {
+          "kind": "run",
+          "detail": "r-0923"
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/glance-test-repo",
+        "tree": "deft-daisy",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-glance-test-repo/deft-daisy",
+        "branch": "scratch-pipeline-check",
+        "mr": null,
+        "ticket": null,
+        "push": {
+          "kind": "unpushed",
+          "ahead": 0
+        },
+        "containment": "none",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "broken",
+        "verdict": "Its repo is gone (a /tmp scratch copy). Nothing to recover.",
+        "actions": [
+          "remove",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": null
+        }
+      },
+      {
+        "repo": "github.com/m4ttstack/rt",
+        "tree": "gollum",
+        "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/gollum",
+        "branch": "radix-spike",
+        "mr": {
+          "iid": 301,
+          "state": "closed",
+          "title": "Spike: Radix primitives in tui-kit",
+          "at": "2026-09-01T15:00:00.000Z",
+          "url": "https://github.com/m4ttstack/rt/pull/301"
+        },
+        "ticket": null,
+        "push": {
+          "kind": "unpushed",
+          "ahead": 4
+        },
+        "containment": "none",
+        "dirt": {
+          "kind": "clean",
+          "files": []
+        },
+        "group": "kept",
+        "verdict": "Kept Sep 24. Comes back here if it changes.",
+        "actions": [
+          "unkeep",
+          "open-finder",
+          "open-terminal",
+          "copy-path"
+        ],
+        "fingerprint": {
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "dirtHash": "dddddddddddddddd",
+          "mrState": "closed"
+        },
+        "keptAt": "2026-09-24T15:00:00.000Z"
+      }
+    ],
+    "banners": [
+      {
+        "repo": "github.com/m4ttstack/fast-browser",
+        "reason": "no-token",
+        "forge": "github"
+      }
+    ],
+    "counts": {
+      "needsDecision": 8,
+      "safe": 5,
+      "waiting": 4,
+      "kept": 1
+    }
+  }
+}

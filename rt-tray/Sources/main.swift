@@ -12,6 +12,7 @@ if CommandLine.arguments.contains("--find-bar-self-check") {
 if let flag = CommandLine.arguments.firstIndex(of: "--find-bar-preview") {
     FindBarPreview.run(url: CommandLine.arguments.dropFirst(flag + 1).first)
 }
+if MainActor.assumeIsolated({ WorktreeSnapshot.runIfRequested() }) { exit(0) }
 #endif
 
 installTrayCrashHandlers()
