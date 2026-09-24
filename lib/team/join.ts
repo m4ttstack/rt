@@ -256,6 +256,8 @@ export interface JoinRedeemSeams {
   writeLocalSecret: (key: string, value: string) => Promise<void>;
   /** Machine-scope settings write. The board reads its switchboard URL only from `board.switchboardUrl`, so a stored token with no URL there peers nothing. */
   writeMachineSetting: (key: string, value: unknown) => void;
+  /** User-scope settings write, for the `rt.integrations` latch rt's own setup rows read. */
+  writeUserSetting: (key: string, value: unknown) => void;
   warn: (message: string) => void;
 }
 
@@ -285,6 +287,25 @@ function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
   }
 }
 
+/**
+ * Confirms the switchboard URL for rt's own setup rows (`account.switchboard`
+ * is required whenever the team declares one, and reads unconfirmed until
+ * `rt.integrations.switchboardUrl` names it). A token minted against the
+ * declared URL, or sealed into the invite by the owner, is the same
+ * confirmation `rt setup switchboard connect --host` records by hand. A
+ * failed write only costs that row: the board's own URL and token are
+ * already in place.
+ */
+function confirmSwitchboardForRt(seams: JoinRedeemSeams, url: string): void {
+  try {
+    const overrides = readUserIntegrationOverrides({ read: seams.read, warn: seams.warn });
+    if (overrides.switchboardUrl === url) return;
+    seams.writeUserSetting("rt.integrations", { ...overrides, switchboardUrl: url });
+  } catch (err) {
+    seams.warn(`switchboard: could not confirm ${url} for rt's setup rows (${err instanceof Error ? err.message : String(err)}); confirm it yourself: rt setup switchboard connect --host ${url}`);
+  }
+}
+
 export function realJoinRedeemSeams(): JoinRedeemSeams {
   const ageKeySeam = createRealAgeKeySeam();
   return {
@@ -295,6 +316,7 @@ export function realJoinRedeemSeams(): JoinRedeemSeams {
     forgeToken: storedForgeToken,
     writeLocalSecret: (key, value) => writeSecret("rt", key, value, { ageKeySeam, execSeam: createRealSecretsExecSeam() }),
     writeMachineSetting: (key, value) => setSetting(key, value, "machine"),
+    writeUserSetting: (key, value) => setSetting(key, value, "user"),
     warn: defaultWarn,
   };
 }
@@ -488,6 +510,7 @@ export async function joinRedeem(
         await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
         if (pointBoardAt(seams, declaredUrl)) peering = "applied";
         else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
+        confirmSwitchboardForRt(seams, declaredUrl);
       } catch (err) {
         seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
       }
@@ -521,6 +544,7 @@ export async function joinRedeem(
             await seams.writeLocalSecret("switchboardToken", token);
             if (pointBoardAt(seams, declaredUrl)) peering = "applied";
             else peeringFix = `set it yourself: rt settings set board.switchboardUrl '"${declaredUrl}"' --scope machine`;
+            confirmSwitchboardForRt(seams, declaredUrl);
           }
         }
       }
