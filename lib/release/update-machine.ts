@@ -64,6 +64,7 @@ const DEV_APP_PATH = "/Applications/mattstack-dev.app";
 /** Anchored to the executable inside the bundle so pgrep never catches an unrelated
  *  process that merely mentions the bundle path (a `tail -f` on its log, an editor). */
 const DEV_APP_ANCHOR = `${DEV_APP_PATH}/Contents/MacOS/`;
+const DEV_DECK_LABEL = "com.mattstack.deck.dev";
 
 const PROD_APP_LABEL = "prod app update";
 const DEV_BUNDLE_LABEL = "dev bundle rebuild";
@@ -407,6 +408,39 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
     DEV_BUNDLE_LABEL,
     `${DEV_APP_PATH} rebuilt at ${ctx.sha.slice(0, 12)} and relaunched (pid ${pids[0]})`,
   );
+}
+
+/** The ref lands in a gh api URL path, so anything shaped like a path
+ *  escape or a flag is refused before any call. A pull/ ref resolves through
+ *  the API but its commit is absent from a plain clone, so it is refused too. */
+export function assertDevAppRef(ref: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..") || ref.startsWith("pull/")) {
+    throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO} (for a PR, its branch name), got "${ref}"`);
+  }
+}
+
+/** The dev-bundle leg on its own, at any pushed ref of the rt repo rather
+ *  than a released tag. The tray restarts its helpers only when the app
+ *  version changes, and a dev build between releases keeps the last tag's
+ *  version, so the deck helper is kickstarted here or it keeps running the
+ *  replaced bundle's binary. The relaunched app may still be registering its
+ *  agents, so a failed kickstart is retried briefly. */
+export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): Promise<{ sha: string; result: LegResult }> {
+  assertDevAppRef(ref);
+  const sha = await resolveCommit(seams, ref);
+  const leg = await runDevBundleLeg(seams, { tag: ref, ver: "", sha });
+  if (leg.status !== "ok") return { sha, result: leg };
+
+  const kickstart: [string, ...string[]] = ["launchctl", "kickstart", "-k", `gui/${seams.uid}/${DEV_DECK_LABEL}`];
+  let kick = await seams.exec(kickstart);
+  for (let attempt = 1; attempt < 3 && kick.exitCode !== 0; attempt++) {
+    await seams.sleep(1000);
+    kick = await seams.exec(kickstart);
+  }
+  if (kick.exitCode !== 0) {
+    return { sha, result: errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}, but \`${kickstart.join(" ")}\` failed: ${execTail(kick)}`) };
+  }
+  return { sha, result: okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${leg.detail}; deck helper restarted`) };
 }
 
 async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
