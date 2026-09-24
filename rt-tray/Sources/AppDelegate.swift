@@ -99,7 +99,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         // The launch event is only current while AppKit is dispatching it, so
         // the origin is read here rather than anywhere downstream.
-        let origin = TrayLaunchOrigin.current()
+        let origin = TrayLaunchOrigin.current(notification)
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         let rtOwner = BundleFlavor.isStubActive ? nil : FlavorLaunchState.rtOwner(home: AppHome.current)
         let plan = FlavorLaunch.plan(myFlavor: myFlavor, origin: origin,

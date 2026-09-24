@@ -40,6 +40,10 @@ let flavorLaunchChecks: [Check] = [
         c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: "dev", rtOwner: nil), .ask(other: "dev"))
         c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: nil, rtOwner: "dev"), .serve)
     },
+    Check("plan: a url launch asks when the other app runs, else serves; it never takes over or retires") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: "dev", rtOwner: "dev"), .ask(other: "dev"))
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: nil, rtOwner: "dev"), .serve)
+    },
     Check("rt owner: the marked dev wrapper belongs to dev") { c in
         c.expectEqual(RtLinkOwner.flavor(linkTarget: nil,
                                          prefix: "#!/bin/zsh\n# mattstack-dev-mode\nexport PATH=x\n"), "dev")

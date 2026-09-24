@@ -65,13 +65,19 @@ let flavorHandoffChecks: [Check] = [
         c.expectEqual(FlavorIdentity.bundleName(ofFlavor: "prod"), "mattstack.app")
     },
     Check("launch kind: only the login-item Apple Event is a login item") { c in
-        let loginItem = LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: UInt32(keyAELaunchedAsLogInItem))
+        let loginItem = LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: UInt32(keyAELaunchedAsLogInItem),
+                                            isDefaultLaunch: true)
         c.expectEqual(loginItem, .loginItem)
     },
-    Check("launch kind: a plain open or another event is a user launch; no event at all is unknown") { c in
-        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil), .userLaunch)
-        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenDocuments), propData: nil), .userLaunch)
-        c.expectEqual(LaunchKind.classify(eventID: nil, propData: nil), .unknown)
+    Check("launch kind: a plain default open is a user launch; no event at all is unknown") { c in
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: true), .userLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: nil), .userLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: nil, propData: nil, isDefaultLaunch: nil), .unknown)
+    },
+    Check("launch kind: a launch to open a link or document is a url launch, never a user launch") { c in
+        c.expectEqual(LaunchKind.classify(eventID: 0x4755_524C /* 'GURL' */, propData: nil, isDefaultLaunch: nil), .urlLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenDocuments), propData: nil, isDefaultLaunch: nil), .urlLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: false), .urlLaunch)
     },
     Check("a stuck holder is named to the user with a remedy") { c in
         let body = FlavorStandDownCopy.stuckHolderBody(holderFlavor: "dev", myFlavor: "prod")

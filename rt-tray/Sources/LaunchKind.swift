@@ -8,9 +8,10 @@ import MattstackCore
 /// or not at all. A nil read is `unknown`, and uncertainty never takes the
 /// silent branch.
 enum TrayLaunchOrigin {
-    static func current() -> LaunchOrigin {
+    static func current(_ notification: Notification) -> LaunchOrigin {
         let event = NSAppleEventManager.shared().currentAppleEvent
         return LaunchKind.classify(eventID: event?.eventID,
-                                   propData: event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue)
+                                   propData: event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue,
+                                   isDefaultLaunch: notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool)
     }
 }

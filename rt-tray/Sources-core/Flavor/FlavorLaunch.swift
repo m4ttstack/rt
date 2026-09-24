@@ -35,8 +35,9 @@ public enum FlavorLaunch {
     }
 
     /// `rtOwner` is `RtLinkOwner.flavor` of ~/.local/bin/rt; nil (foreign,
-    /// ambiguous, missing) never retires anything. `unknown` never takes the
-    /// Mac on a guess, and never retires this app on one either.
+    /// ambiguous, missing) never retires anything. A url or unknown launch
+    /// never takes the Mac on a guess, and never retires this app on one
+    /// either.
     public static func plan(myFlavor: String, origin: LaunchOrigin, otherTrayAlive: String?, rtOwner: String?) -> Plan {
         switch origin {
         case .userLaunch:
@@ -45,7 +46,7 @@ public enum FlavorLaunch {
             if let otherTrayAlive { return .standDown(other: otherTrayAlive) }
             if let rtOwner, rtOwner != myFlavor { return .retire(owner: rtOwner) }
             return .serve
-        case .unknown:
+        case .urlLaunch, .unknown:
             return otherTrayAlive.map { .ask(other: $0) } ?? .serve
         }
     }
