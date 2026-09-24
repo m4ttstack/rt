@@ -90,6 +90,20 @@ public enum FlavorLaunch {
                                   argumentPrefix: ["run", cli], source: .devSource))
     }
 
+    public enum AfterTakeover: Equatable, Sendable {
+        case serve
+        case retryEviction
+        /// The holder already gave up every registration and ~/.local/bin/rt
+        /// points here, so this app rebinds the socket over it rather than
+        /// leave the Mac with nothing serving.
+        case serveOverStuckHolder
+    }
+
+    public static func afterTakeover(socketClaimed: Bool, evictionRetried: Bool) -> AfterTakeover {
+        if socketClaimed { return .serve }
+        return evictionRetried ? .serveOverStuckHolder : .retryEviction
+    }
+
     public static func takeoverArguments(myFlavorIsDev: Bool) -> [String] {
         ["flavor", "takeover", FlavorIdentity.flavorName(isDevBuild: myFlavorIsDev), "--json"]
     }

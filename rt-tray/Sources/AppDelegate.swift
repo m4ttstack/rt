@@ -250,12 +250,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                 }
                 return
             }
-            switch TrayServer.claimSocket() {
-            case .claimed:
-                startNormalOperation()
-            case .heldByPeer(let flavor), .heldByStuckHolder(let flavor):
-                reportTakeoverFailure(FlavorStandDownCopy.stuckHolderBody(holderFlavor: flavor, myFlavor: myFlavor),
-                                      fatal: true)
+            var claim = TrayServer.claimSocket()
+            var retried = false
+            while true {
+                switch FlavorLaunch.afterTakeover(socketClaimed: claim == .claimed, evictionRetried: retried) {
+                case .serve:
+                    startNormalOperation()
+                    return
+                case .retryEviction:
+                    retried = true
+                    claim = TrayServer.claimSocket()
+                case .serveOverStuckHolder:
+                    let holder: String
+                    switch claim {
+                    case .heldByPeer(let flavor), .heldByStuckHolder(let flavor): holder = flavor
+                    case .claimed: holder = "unknown"
+                    }
+                    TrayLog.warn("serving over a holder that would not quit", ["holder": holder])
+                    startNormalOperation()
+                    reportTakeoverFailure(FlavorStandDownCopy.stuckHolderBody(holderFlavor: holder, myFlavor: myFlavor),
+                                          fatal: false)
+                    return
+                }
             }
         }
     }

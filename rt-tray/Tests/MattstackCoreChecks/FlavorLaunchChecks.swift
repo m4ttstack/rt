@@ -118,6 +118,12 @@ let flavorLaunchChecks: [Check] = [
         c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: nil, config: config, fileExists: { !$0.hasSuffix("cli.ts") }), .unavailable)
         c.expect(FlavorStandDownCopy.devTakeoverUnavailable.contains("bun run cli.ts flavor takeover dev"))
     },
+    Check("after a successful takeover: a held socket gets one more eviction, then this app serves over the retired holder") { c in
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, evictionRetried: false), .serve)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, evictionRetried: false), .retryEviction)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: true, evictionRetried: true), .serve)
+        c.expectEqual(FlavorLaunch.afterTakeover(socketClaimed: false, evictionRetried: true), .serveOverStuckHolder)
+    },
     Check("takeover argv names only my own flavor") { c in
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: false), ["flavor", "takeover", "prod", "--json"])

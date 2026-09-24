@@ -114,7 +114,7 @@ public enum FlavorStandDownCopy {
     }
 
     public static func stuckHolderBody(holderFlavor: String, myFlavor: String) -> String {
-        "The \(holderFlavor) app was asked to retire and did not quit, so the \(myFlavor) app stopped instead of fighting it for the socket. "
+        "The \(holderFlavor) app gave up this Mac but did not quit, so the \(myFlavor) app took its socket over. "
             + "Quit the \(holderFlavor) app from its menu bar, or log out and back in."
     }
 }
