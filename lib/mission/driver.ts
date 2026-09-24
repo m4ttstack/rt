@@ -252,7 +252,7 @@ export class MissionDriver {
   /** Registry path -> realpath, computed in refresh() so model() never touches the filesystem. */
   private treeCanon = new Map<string, string>();
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
-  /** Read alongside every snapshot, so the two always describe the same worktree. */
+  /** Read alongside the snapshot in refresh() and refreshBadges(), so the two always describe the same worktree. */
   private fetchState: FetchState = { lastFetchedAt: null };
   private branches: BranchInfo[] = [];
   private lastCommit: MissionLastCommit | null = null;
