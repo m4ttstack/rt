@@ -1652,17 +1652,18 @@ rt skills init --json
 
 Read the envelope:
 
-- `ok: false, refused: true`: relay `detail` verbatim and stop.
-  `zone-missing` outside a TTY means the author runs
-  `rt team create <Name> --remote <url>` (an empty repo the team owns) and
-  re-runs init. `zone-has-pack` means the zone found already belongs to
-  another team's pack: create a zone for this team the same way.
-- `ok: false, refused: false`: files were written; relay `detail` and the
-  `wrote` list, then fix and run `rt skills compile --pack <name>` and
-  `rt skills check --pack <name>` by hand. Never re-run init on a written
-  pack; it refuses on `pack-exists`.
-- `ok: true`: continue with `pack.name`, `pack.dir`, `tryNext`,
-  `restartNeeded`.
+- A refusal is `{ "error": { "code", "message", "refused": true } }`: relay
+  `error.message` verbatim and stop. `zone-missing` outside a TTY means the
+  author runs `rt team create <Name> --remote <url>` (an empty repo the
+  team owns) and re-runs init. `zone-has-pack` means the zone found already
+  belongs to another team's pack: create a zone for this team the same way.
+- A post-write failure is
+  `{ "error": { "code", "message", "refused": false, "wrote": [...] } }`:
+  relay `error.message` and `error.wrote`, then follow the printed remedy.
+  Never re-run init on a written pack, except after `write-failed`, whose
+  remedy is to remove the pack dir and re-run.
+- Success is `{ "ok": true, ... }`: continue with `pack.name`, `pack.dir`,
+  `tryNext`, `restartNeeded`.
 
 ## 3. Restart and prove
 

@@ -121,10 +121,14 @@ Steps, in order. Every refusal fires before anything is written.
 3. **Refuse on an existing pack dir** (`pack-exists`: the declaring zone
    already has this repo's pack), on a missing mattstack plugin cache
    (`mattstack-missing`, engines unreadable), on no `claude` binary
-   (`claude-missing`).
+   (`claude-missing`), on a zone namespace that is not a single, plain
+   directory name below the zone (`invalid-namespace`).
 4. **Write** the pack files and the two zone edits above.
    `team.jsonc` and `marketplace.json` edits go through `jsonc-parser`
-   edits, comments preserved, entries left alone when present.
+   edits, comments preserved, entries left alone when present. A throw
+   partway through (mkdirp, a write, a JSONC edit) reports `write-failed`
+   with the files written so far and a remedy to remove the pack dir and
+   re-run, same shape as the later post-write failures.
 5. **Register and materialize:** `rt repos register <repo>` (idempotent),
    then `merge-manifests.sh --repo <repo>` through the existing
    `materializeSkills`, so `~/.mattstack/repos/<slug>/skills.jsonc` exists.
