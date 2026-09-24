@@ -23,6 +23,7 @@
 - Built or source `rt` is only ever run against a real machine through the normal dev wrapper; any scratch run uses `env -i HOME=<scratch> CLAUDE_CONFIG_DIR=<scratch>/.claude`.
 - rt work happens on branch `pack-authoring` in worktree `/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/elrond`. mattstack-skills work happens on a branch `pack-authoring` in a worktree at `/Users/matt/Documents/GitHub/mattstack-skills/.claude/worktrees/pack-authoring`.
 - Commit after every task.
+- Execution order (ratified 2026-09-23): Tasks 1 to 6, then Task 14 (rt PR, merge, daemon restart), then Tasks 7 to 13 against the merged rt. Tasks 7 to 11 are driven by the orchestrating session from a herdr pane; the operator does only the one-time scratch login (Task 7 Step 2).
 
 ## Review Focus
 
