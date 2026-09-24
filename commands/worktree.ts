@@ -651,6 +651,23 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
   console.log("");
 }
 
+// ─── triage ──────────────────────────────────────────────────────────────────
+
+export async function worktreeTriage(args: string[], _ctx: unknown): Promise<void> {
+  const parsed = parseListArgs(args);
+  const repoName = parsed.repoName ? await resolveRepoArg(parsed.repoName, (m) => failText(parsed.json, m)) : undefined;
+  const res = await daemonQuery("worktree:triage", repoName ? { repoName } : undefined);
+  const ok = requireQueryResult(parsed.json, res);
+  if (parsed.json) { console.log(JSON.stringify(ok.data, null, 2)); return; }
+  const { rows, counts } = ok.data as { rows: Array<Record<string, any>>; counts: { needsDecision: number } };
+  console.log(`\n  ${bold}${counts.needsDecision} worktree${counts.needsDecision === 1 ? "" : "s"} need a decision${reset}\n`);
+  for (const r of rows) {
+    const mr = r.mr ? `  ${dim}!${r.mr.iid} ${r.mr.state}${reset}` : "";
+    console.log(`  ${bold}${repoLabel(r.repo)}/${r.tree}${reset}  ${dim}${r.group}${reset}${mr}  ${r.verdict}`);
+  }
+  console.log("");
+}
+
 // ─── ready-approve ────────────────────────────────────────────────────────────
 
 async function pickRepoName(repoIndex: Record<string, string>): Promise<string | undefined> {

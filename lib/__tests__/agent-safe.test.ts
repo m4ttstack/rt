@@ -18,6 +18,7 @@ describe("agent-safe surface", () => {
       "herd status",
       "skills writing-style show",
       "worktree list",
+      "worktree triage",
     ]);
   });
 

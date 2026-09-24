@@ -1308,6 +1308,16 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the raw result as JSON" },
         ],
       },
+      triage: {
+        description: "Stuck worktrees: why each one stayed, and what's safe to do",
+        module: "./commands/worktree.ts",
+        fn: "worktreeTriage",
+        agentSafe: true,
+        args: [
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "repo-tools", hint: "Narrow to this registered repo" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the raw result as JSON" },
+        ],
+      },
       freshen: {
         description: "Freshen worktrees (no arg + TTY → picker over freshenable trees)",
         module: "./commands/worktree.ts",
