@@ -15,7 +15,7 @@ import type { CommandContext } from "../lib/command-tree.ts";
 import { updateRepoIndexAsync } from "../lib/repo-index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../lib/settings/identity.ts";
 import { envelope } from "../lib/setup/contract.ts";
-import { UserActionableError } from "../lib/setup/errors.ts";
+import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
 import { createRealProbes } from "../lib/setup/probes.ts";
 import { materializeSkills } from "../lib/setup/skills-materialize.ts";
 import { createTeam } from "../lib/team/create.ts";
@@ -152,7 +152,11 @@ export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps
     parsed = parseInitArgs(args);
   } catch (err) {
     if (err instanceof UserActionableError) {
-      console.error(`rt skills init: ${err.message}`);
+      if (args.includes("--json")) {
+        console.log(JSON.stringify(envelope({ error: { code: "usage", message: err.message } })));
+      } else {
+        console.error(`rt skills init: ${err.message}`);
+      }
       process.exitCode = 2;
       return;
     }
@@ -167,15 +171,26 @@ export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps
     // UserActionableError before initPack's own post-write attempt() wrapper is reached;
     // that must still refuse cleanly rather than crash to a bare stack.
     if (err instanceof UserActionableError) {
-      const refusal = { ok: false as const, refused: true as const, code: err.code, detail: err.message };
-      if (parsed.json) console.log(JSON.stringify(envelope(refusal)));
-      else console.error(`rt skills init: ${err.message}`);
+      if (parsed.json) {
+        console.log(JSON.stringify(userErrorPayload(new UserActionableError(err.code, err.message, { ...err.extra, refused: true }))));
+      } else {
+        console.error(`rt skills init: ${err.message}`);
+      }
       process.exitCode = 2;
       return;
     }
     throw err;
   }
-  if (parsed.json) console.log(JSON.stringify(envelope(out)));
-  else console.log(renderInitOutcome(out));
+  if (parsed.json) {
+    if (out.ok) {
+      console.log(JSON.stringify(envelope(out)));
+    } else if (out.refused) {
+      console.log(JSON.stringify(userErrorPayload(new UserActionableError(out.code, out.detail, { refused: true }))));
+    } else {
+      console.log(JSON.stringify(userErrorPayload(new UserActionableError(out.code, out.detail, { refused: false, wrote: out.wrote }))));
+    }
+  } else {
+    console.log(renderInitOutcome(out));
+  }
   if (!out.ok) process.exitCode = out.refused ? 2 : 1;
 }

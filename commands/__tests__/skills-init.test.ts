@@ -107,10 +107,9 @@ describe("skillsInit", () => {
       await skillsInit(["--json"], {}, deps);
       expect(logSpy.mock.calls.length).toBe(1);
       const printed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
-      expect(printed.ok).toBe(false);
-      expect(printed.refused).toBe(true);
-      expect(printed.code).toBe("remote-required");
-      expect(printed.detail).toBe("a remote is required");
+      expect(printed.error.code).toBe("remote-required");
+      expect(printed.error.message).toBe("a remote is required");
+      expect(printed.error.refused).toBe(true);
       expect(process.exitCode).toBe(2);
     } finally {
       logSpy.mockRestore();
@@ -133,6 +132,74 @@ describe("skillsInit", () => {
       expect(process.exitCode).toBe(2);
     } finally {
       errorSpy.mockRestore();
+    }
+  });
+
+  test("--json: a usage error from parseInitArgs prints envelope({ error })", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await skillsInit(["--zone", "--json"], {}, stubDeps());
+      expect(logSpy.mock.calls.length).toBe(1);
+      const printed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+      expect(printed.error.code).toBe("usage");
+      expect(printed.error.message).toMatch(/--zone needs a value/);
+      expect(process.exitCode).toBe(2);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("--json: a post-write compile failure envelope carries the wrote list", async () => {
+    function memFs(files: Record<string, string>) {
+      const store = new Map(Object.entries(files));
+      return {
+        exists: (p: string) => store.has(p) || [...store.keys()].some((k) => k.startsWith(p + "/")),
+        readFile: (p: string) => store.get(p) ?? null,
+        writeFile: (p: string, text: string) => { store.set(p, text); },
+        mkdirp: () => {},
+        readDir: (p: string) => {
+          const names = new Set<string>();
+          for (const k of store.keys()) {
+            if (!k.startsWith(p + "/")) continue;
+            names.add(k.slice(p.length + 1).split("/")[0]!);
+          }
+          return [...names];
+        },
+      };
+    }
+    const HOME = "/h";
+    const fs = memFs({
+      [`${HOME}/.mattstack/teams/acme/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "acme", "org": "x" }`,
+      [`${HOME}/.mattstack/teams/acme/mattstack/team.jsonc`]: `{ "gitlabHost": "https://gitlab.com", "projects": [] }`,
+      [`${HOME}/.mattstack/teams/acme/.claude-plugin/marketplace.json`]: `{ "name": "acme-market", "owner": { "name": "acme" }, "plugins": [] }`,
+    });
+    const deps = stubDeps({
+      fs,
+      home: HOME,
+      gitRemote: async () => ({ kind: "ok", url: "git@gitlab.com:acme/api.git" }),
+      engineDescription: (e) => (e === "work" ? "Use when running a unit of work." : null),
+      claude: async () => ({ code: 0, stdout: "", stderr: "" }),
+      registerRepo: async () => "gitlab.com/acme/api",
+      materialize: async () => {
+        fs.writeFile(`${HOME}/.mattstack/repos/gitlab.com-acme-api/skills.jsonc`, "{}");
+        return { ok: true, detail: "merged" };
+      },
+      compile: async () => ({ ok: false, errors: ["boom"] }),
+      check: async () => ({ drift: false }),
+    });
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await skillsInit(["--json"], {}, deps);
+      expect(logSpy.mock.calls.length).toBe(1);
+      const printed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+      expect(printed.error.code).toBe("compile-failed");
+      expect(printed.error.message).toContain("boom");
+      expect(printed.error.refused).toBe(false);
+      expect(Array.isArray(printed.error.wrote)).toBe(true);
+      expect(printed.error.wrote.length).toBeGreaterThan(0);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      logSpy.mockRestore();
     }
   });
 });
