@@ -35,16 +35,18 @@ public enum FlavorLaunch {
     }
 
     /// `rtOwner` is `RtLinkOwner.flavor` of ~/.local/bin/rt; nil (foreign,
-    /// ambiguous, missing) never retires anything. A url or unknown launch
-    /// never takes the Mac on a guess, and never retires this app on one
-    /// either.
-    public static func plan(myFlavor: String, origin: LaunchOrigin, otherTrayAlive: String?, rtOwner: String?) -> Plan {
+    /// ambiguous, missing) never retires anything, and neither does an owner
+    /// whose app is not installed: retiring for it would leave no app at
+    /// login. A url or unknown launch never takes the Mac on a guess, and
+    /// never retires this app on one either.
+    public static func plan(myFlavor: String, origin: LaunchOrigin, otherTrayAlive: String?, rtOwner: String?,
+                            ownerInstalled: Bool) -> Plan {
         switch origin {
         case .userLaunch:
             return .takeOver
         case .loginItem:
             if let otherTrayAlive { return .standDown(other: otherTrayAlive) }
-            if let rtOwner, rtOwner != myFlavor { return .retire(owner: rtOwner) }
+            if let rtOwner, rtOwner != myFlavor, ownerInstalled { return .retire(owner: rtOwner) }
             return .serve
         case .urlLaunch, .unknown:
             return otherTrayAlive.map { .ask(other: $0) } ?? .serve
@@ -113,12 +115,14 @@ public struct DevSourceConfig: Equatable, Sendable {
 public enum RtLinkOwner {
     public static let devWrapperTag = "# mattstack-dev-mode"
 
-    /// `linkTarget` is the symlink's destination when the path is a link;
-    /// `prefix` is a bounded head of the file when it is not.
-    public static func flavor(linkTarget: String?, prefix: String?) -> String? {
+    public static let prodLinkSuffix = "/" + FlavorIdentity.bundleName(ofFlavor: "prod") + "/Contents/MacOS/rt"
+
+    /// `linkTarget` is the symlink's destination when the path is a link,
+    /// with whether that destination exists; `prefix` is a bounded head of
+    /// the file when it is not.
+    public static func flavor(linkTarget: String?, linkTargetExists: Bool, prefix: String?) -> String? {
         if let linkTarget {
-            let suffix = "/" + FlavorIdentity.bundleName(ofFlavor: "prod") + "/Contents/MacOS/rt"
-            return linkTarget.hasPrefix("/") && linkTarget.hasSuffix(suffix) ? "prod" : nil
+            return linkTargetExists && linkTarget.hasPrefix("/") && linkTarget.hasSuffix(prodLinkSuffix) ? "prod" : nil
         }
         guard let prefix, prefix.hasPrefix("#!") else { return nil }
         let lines = prefix.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)

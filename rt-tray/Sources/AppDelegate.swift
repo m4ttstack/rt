@@ -103,7 +103,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         let rtOwner = BundleFlavor.isStubActive ? nil : FlavorLaunchState.rtOwner(home: AppHome.current)
         let plan = FlavorLaunch.plan(myFlavor: myFlavor, origin: origin,
-                                     otherTrayAlive: FlavorLaunchState.otherTrayAlive, rtOwner: rtOwner)
+                                     otherTrayAlive: FlavorLaunchState.otherTrayAlive, rtOwner: rtOwner,
+                                     ownerInstalled: FlavorLaunchState.siblingInstalled())
         TrayLog.info("flavor launch", ["origin": String(describing: origin), "rtOwner": rtOwner ?? "none",
                                        "plan": String(describing: plan)])
         switch plan {
