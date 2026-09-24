@@ -100,7 +100,7 @@ public enum DoneActions {
         // The only run verb a Done row carries is a re-check; Done re-reads the plan itself.
         case .run: return .recheck
         case .choose: return .choose
-        case .openSettings, .requestPermission, .connect, .oauth, .install, .ownerOnce, .linkBundled, .chooseFolder, .unknown:
+        case .openSettings, .requestPermission, .connect, .form, .oauth, .install, .ownerOnce, .linkBundled, .chooseFolder, .unknown:
             return nil
         }
     }

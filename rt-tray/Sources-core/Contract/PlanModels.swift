@@ -50,7 +50,7 @@ public enum RecheckPolicy: String, Codable, Equatable, Sendable {
 public enum ActionType: String, Codable, Equatable, Sendable, CaseIterable {
     case openSettings = "open-settings"
     case requestPermission = "request-permission"
-    case connect, oauth, install, steps, run, choose
+    case connect, oauth, install, steps, run, choose, form
     case ownerOnce = "owner-once"
     case linkBundled = "link-bundled"
     case openURL = "open-url"
