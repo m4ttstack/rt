@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -900,6 +901,48 @@ func spinnerFramesIn(s string) []int {
 		}
 	}
 	return found
+}
+
+// separatorColumns lists the display column of every segment separator on
+// each line.
+func separatorColumns(lines []string) [][]int {
+	cols := make([][]int, len(lines))
+	for i, line := range lines {
+		for at := 0; ; {
+			idx := strings.Index(line[at:], "│")
+			if idx < 0 {
+				break
+			}
+			cols[i] = append(cols[i], ansi.StringWidth(line[:at+idx]))
+			at += idx + len("│")
+		}
+	}
+	return cols
+}
+
+func TestTopBarHoldsItsLayoutAcrossSpinnerFrames(t *testing.T) {
+	m := pullModel()
+	m.Current.Settling = true
+	m.Action = ActionModel{Kind: "busy", Title: "Working", Meta: "Last fetched just now", Ahead: 2, Busy: true}
+	for _, width := range []int{140, 80} {
+		first := strings.Split(ansi.Strip(renderTopBar(m, theme.SpinnerFrames[0], width, zoneNone, zoneNone)), "\n")
+		wantSeps := separatorColumns(first)
+		wantText := strings.ReplaceAll(strings.Join(first, "\n"), theme.SpinnerFrames[0], "◌")
+		for _, frame := range theme.SpinnerFrames {
+			lines := strings.Split(ansi.Strip(renderTopBar(m, frame, width, zoneNone, zoneNone)), "\n")
+			for i, line := range lines {
+				if got := ansi.StringWidth(line); got != width {
+					t.Fatalf("width %d, frame %q: line %d is %d columns wide:\n%s", width, frame, i, got, strings.Join(lines, "\n"))
+				}
+			}
+			if got := separatorColumns(lines); !reflect.DeepEqual(got, wantSeps) {
+				t.Fatalf("width %d, frame %q: separators at %v, frame 0 has them at %v", width, frame, got, wantSeps)
+			}
+			if got := strings.ReplaceAll(strings.Join(lines, "\n"), frame, "◌"); got != wantText {
+				t.Fatalf("width %d, frame %q shifts the bar:\n%s\nframe 0:\n%s", width, frame, got, wantText)
+			}
+		}
+	}
 }
 
 func TestBusyActionSpinnerAdvancesFrameEachTick(t *testing.T) {
