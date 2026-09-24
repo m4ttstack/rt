@@ -29,6 +29,11 @@ public enum RowActionDispatcher {
             guard let integration = action.integration else { return .none }
             if let values = fieldValues { return .rtVerb(args: ["setup", integration, "create-app", "--json"], stdin: json(values)) }
             return .collectFields(action.fields ?? [], integration: integration, alternatives: [])
+        case .form:
+            guard let verb = action.verb, !verb.isEmpty else { return .none }
+            if let alternative { return .rtVerb(args: verb + ["--json"], stdin: json(["alternative": alternative])) }
+            if let values = fieldValues { return .rtVerb(args: verb + ["--json"], stdin: json(values)) }
+            return .collectFields(action.fields ?? [], integration: "", alternatives: action.alternatives ?? [])
         case .oauth, .run:
             guard let verb = action.verb, !verb.isEmpty else { return .none }
             return .rtVerb(args: verb + ["--json"], stdin: nil)

@@ -83,12 +83,13 @@ const LINK_BUNDLED_RT: Action = { type: "link-bundled", label: "Use mattstack's"
 const RECHECK_ACTION: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
 const REINSTALL_SHIMS_ACTION: Action = { type: "run", label: "Re-install shims", verb: ["intercept", "install"] };
 const INSTALL_EXTENSION_ACTION: Action = { type: "run", label: "Install extension", verb: ["tools", "setup", "extension"] };
-/** No `rt home remote set` verb exists yet (installer-lane scope), so the remedy names the raw git commands instead of a `run` action. */
 const HOME_BACKUP_PUSH_STEP = "git -C ~/.mattstack/user push origin HEAD (or wait — the daemon pushes on its next cycle, up to 30 minutes)";
 const HOME_BACKUP_ADD_REMOTE_ACTION: Action = {
-  type: "steps",
-  label: "Show steps…",
-  steps: ["git -C ~/.mattstack/user remote add origin <url>", HOME_BACKUP_PUSH_STEP],
+  type: "form",
+  label: "Add remote…",
+  verb: ["home", "remote", "set"],
+  fields: [{ name: "url", label: "Remote URL", secret: false, hint: "An empty private repo you own, e.g. https://github.com/you/mattstack-home.git" }],
+  alternatives: [{ id: "create", label: "Create a private repo for me" }],
 };
 const HOME_BACKUP_PUSH_ACTION: Action = { type: "steps", label: "Show steps…", steps: [HOME_BACKUP_PUSH_STEP] };
 const MERGE_LEGACY_STATE_ACTION: Action = {
@@ -450,7 +451,7 @@ export async function homeBackupRow(
   }
 
   if (!(await hasRemote(exec, repoDir))) {
-    return row({ ...base, status: "needs-you", detail: "local only — your settings are versioned on this machine but are not backed up anywhere", action: HOME_BACKUP_ADD_REMOTE_ACTION });
+    return row({ ...base, status: "needs-you", detail: "local only — your settings are versioned on this machine but are not backed up anywhere (rt home remote set <url>, or --create)", action: HOME_BACKUP_ADD_REMOTE_ACTION });
   }
 
   const state = await originPushState(exec, repoDir);

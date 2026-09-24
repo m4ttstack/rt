@@ -12,6 +12,7 @@ import { openSync, writeSync, closeSync, readdirSync, unlinkSync, mkdirSync, exi
 import { join } from "path";
 import { logsDir } from "./rt-paths.ts";
 import { setBusyLogSink } from "./state/busy.ts";
+import { hasUrlCredentials } from "./team/redact.ts";
 
 const RETENTION_DAYS = 14;
 
@@ -151,6 +152,10 @@ export function redactSensitiveArgs(args: string[], command?: string): string[] 
       continue;
     }
     if (INVITE_CODE_PATTERN.test(arg)) {
+      result.push("[redacted]");
+      continue;
+    }
+    if (hasUrlCredentials(arg)) {
       result.push("[redacted]");
       continue;
     }

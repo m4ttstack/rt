@@ -1886,6 +1886,22 @@ export const TREE: Record<string, CommandNode> = {
           },
         },
       },
+      remote: {
+        description: "Where the home repo is backed up",
+        subcommands: {
+          set: {
+            description: "Point the home repo at a remote and push, or create a private repo for it with gh",
+            module: "./commands/setup.ts",
+            fn: "homeRemoteSet",
+            args: [
+              { name: "URL", type: "text", optional: true, placeholder: "https://github.com/you/mattstack-home.git", hint: "An empty repo you own; omit with --create, or pipe {\"url\"} on stdin" },
+              { name: "Create", flag: "--create", type: "boolean", default: false, hint: "Create a private repo with gh first, then use it as the remote" },
+              { name: "Name", flag: "--name", type: "text", placeholder: "mattstack-home", hint: "Repo name for --create (default mattstack-home)" },
+              SETUP_JSON_ARG,
+            ],
+          },
+        },
+      },
       snapshot: {
         description: "Run the snapshot daemon now (or show its status with --status)",
         module: "./commands/home.ts",

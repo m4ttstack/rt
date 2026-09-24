@@ -309,4 +309,7 @@ struct NotificationEvent: Decodable {
     let pids: [Int]?
     // herdr pane id to focus on click, when the event carries one
     let paneId: String?
+    // member_joined: the team slug and invitee handle the confirm's sync names
+    let team: String?
+    let handle: String?
 }

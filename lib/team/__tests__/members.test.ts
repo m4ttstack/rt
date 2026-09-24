@@ -238,6 +238,8 @@ describe("membersSync", () => {
     // Owner's own bootstrap add is reported too — a fresh team's first sync
     // must not read as "added 0 key(s)".
     expect(result.added).toEqual([OWNER_PUBLIC_KEY, ALICE_PUBLIC_KEY]);
+    // Handles, not keys: the tray's outcome banner matches the invitee it named against this list.
+    expect(result.addedHandles).toEqual(["alice"]);
     expect(result.pending).toEqual([]);
     expect(execSeam.calls.some((c) => c.cmd[0] === "sops" && c.cmd[1] === "updatekeys")).toBe(true);
     expect(p.readFile(join(HOME, ".mattstack", "rt", "invites", `${SLUG}.json`))).toBe("{}");

@@ -510,6 +510,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         TrayServer.shared.routes = TrayRoutes(permissions: permissionsService, services: servicesForNeeds, privileged: privilegedForNeeds,
                                               needs: needBroker, updater: updater, version: self, window: windowBridge)
         rtClient = RtClientFactory.make()
+        notificationManager.rt = rtClient
         if let rt = rtClient {
             coordinator = SetupCoordinator(rt: rt, permissions: permissionsService, permissionProbe: permissionProbe, needs: needBroker, updater: updater)
             if let code = pendingJoinCode {

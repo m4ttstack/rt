@@ -14,6 +14,18 @@ let rowActionChecks: [Check] = [
         c.expectEqual(d, .rtVerb(args: ["setup", "gitlab", "connect", "--json"], stdin: Data("{\"token\":\"glpat-xyz\"}".utf8)))
         c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: "use-gh"), .rtVerb(args: ["setup", "gitlab", "connect", "--json"], stdin: Data("{\"useGh\":true}".utf8)))
     },
+    Check("form: collect first, then the action's own verb with JSON on stdin; an alternative sends its id") { c in
+        let fields = [ActionField(name: "url", label: "Remote URL", secret: false, hint: "an empty private repo")]
+        let alts = [ActionAlternative(id: "create", label: "Create a private repo for me")]
+        let a = RowAction(type: .form, label: "Add remote…", fields: fields, alternatives: alts, verb: ["home", "remote", "set"])
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "", alternatives: alts))
+        // JSONEncoder escapes slashes; the verb parses JSON, so the escaped form is the contract.
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: ["url": "https://x/y.git"], alternative: nil),
+                      .rtVerb(args: ["home", "remote", "set", "--json"], stdin: Data("{\"url\":\"https:\\/\\/x\\/y.git\"}".utf8)))
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: "create"),
+                      .rtVerb(args: ["home", "remote", "set", "--json"], stdin: Data("{\"alternative\":\"create\"}".utf8)))
+        c.expectEqual(RowActionDispatcher.dispatch(RowAction(type: .form, label: "x", fields: fields, verb: []), fieldValues: ["url": "u"], alternative: nil), .none)
+    },
     Check("oauth / owner-once / install / link-bundled / run / steps / open-url / unknown") { c in
         c.expectEqual(RowActionDispatcher.dispatch(RowAction(type: .oauth, label: "Connect", integration: "slack", verb: ["setup", "slack", "connect"]), fieldValues: nil, alternative: nil), .rtVerb(args: ["setup", "slack", "connect", "--json"], stdin: nil))
         let owner = RowAction(type: .ownerOnce, label: "Create…", integration: "slack", fields: [ActionField(name: "configToken", label: "App configuration token", secret: true)])
