@@ -278,11 +278,18 @@ bundle_helpers
 # pinned release stays beside it as the fallback. Prod ships the pin as deck.
 if [ "$IS_DEV" = true ]; then
     [ -f "$DECK_SHIM_BINARY" ] || { echo "  ✗ deck-dev-shim not built"; exit 1; }
-    [ -f "$CONTENTS/Helpers/deck" ] || { echo "  ✗ Helpers/deck missing before the shim swap"; exit 1; }
-    mv "$CONTENTS/Helpers/deck" "$CONTENTS/Helpers/deck-pinned"
-    cp "$DECK_SHIM_BINARY" "$CONTENTS/Helpers/deck"; chmod +x "$CONTENTS/Helpers/deck"
-    HELPER_ENTITLEMENTS+=("$CONTENTS/Helpers/deck-pinned	jit")
-    echo "  ✓ Helpers/deck is the dev shim; the pin is Helpers/deck-pinned"
+    if [ ! -f "$CONTENTS/Helpers/deck" ]; then
+        # bundle_helpers only skips Helpers/deck under the documented
+        # RT_REQUIRE_DEPS=0 opt-out; any other cause of a missing helper is
+        # still a hard failure.
+        if [ "${RT_REQUIRE_DEPS:-1}" = 1 ]; then echo "  ✗ Helpers/deck missing before the shim swap"; exit 1; fi
+        echo "  ⚠ Helpers/deck missing — skipping the deck-dev-shim swap (RT_REQUIRE_DEPS=0 set)"
+    else
+        mv "$CONTENTS/Helpers/deck" "$CONTENTS/Helpers/deck-pinned"
+        cp "$DECK_SHIM_BINARY" "$CONTENTS/Helpers/deck"; chmod +x "$CONTENTS/Helpers/deck"
+        HELPER_ENTITLEMENTS+=("$CONTENTS/Helpers/deck-pinned	jit")
+        echo "  ✓ Helpers/deck is the dev shim; the pin is Helpers/deck-pinned"
+    fi
 fi
 
 # ─── rt's own agent skills (Contents/Helpers/skills/rt) ──────────────────────
