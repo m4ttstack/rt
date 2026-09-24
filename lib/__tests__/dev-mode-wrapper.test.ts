@@ -29,6 +29,12 @@ describe("renderDevModeWrapper", () => {
     expect(execIdx).toBeGreaterThan(cdIdx);
   });
 
+  test("labels every process it launches as the dev app's before exec", () => {
+    const exportIdx = wrapper.indexOf("export MATTSTACK_FLAVOR=dev\n");
+    expect(exportIdx).toBeGreaterThan(-1);
+    expect(exportIdx).toBeLessThan(wrapper.indexOf(`exec "${BUN}"`));
+  });
+
   test("preloads the cwd-restore script and runs cli.ts with forwarded args", () => {
     expect(wrapper).toContain(`--preload="${DEV_MODE_PRELOAD}"`);
     expect(wrapper).toContain(`"${SOURCE}/cli.ts" "$@"`);
@@ -48,6 +54,12 @@ describe("renderDevModeWrapper", () => {
 });
 
 describe("renderDevModePreload", () => {
+  test("names what writes it, with no ticket ids", () => {
+    const preload = renderDevModePreload();
+    expect(preload).not.toMatch(/\b[A-Z]+-\d+\b/);
+    expect(preload).toContain("rt settings source-path");
+  });
+
   test("restores RT_LAUNCH_CWD before other modules load, then scrubs it", async () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt25-")));
     const launchDir = realpathSync(mkdtempSync(join(tmpdir(), "rt25-launch-")));

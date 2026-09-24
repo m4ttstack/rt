@@ -33,46 +33,30 @@ class TrayServer {
 
     // MARK: - Startup mutual exclusion
 
-    /// Exit if a live tray already owns the socket (spec MAT-383 §3).
+    /// Who holds the socket at launch (`main.swift`, before ANY SMAppService
+    /// registration).
     ///
     /// `start()` unlinks and rebinds blindly, so without this the
     /// last-launched tray silently steals every `rt daemon *` command from
-    /// the running one. Both flavors bind the same path, so a mis-ordered
-    /// dev-mode toggle — or a plain double-launch — would leave two trays
-    /// with two registered daemon agents fighting over rt.pid.
-    ///
-    /// **Call this before ANY SMAppService registration.** An app that exits
-    /// here must not have registered a daemon agent or a login item on its
-    /// way out, or the loser's registrations outlive it. That's why the call
-    /// site is `main.swift`, ahead of the AppDelegate.
+    /// the running one. Both flavors bind the same path.
     ///
     /// A leaked socket file (pkill'd tray) is not a live tray: the probe is a
     /// CONNECT + request/response, never a file-existence check.
-    ///
-    /// Only ever called on the serving path — a tray the flavor gate has stood
-    /// down never binds and never evicts anyone (`main.swift`).
-    static func exitIfAnotherTrayOwnsSocket() {
-        switch claimSocket() {
-        case .claimed:
-            return
-        case .heldByPeer:
-            // Clean exit — a double-launch is not a crash, and nothing
-            // supervises the app. Nothing has been registered at this point.
-            exit(0)
-        case .heldByStuckHolder(let holderFlavor):
-            // The retire already landed, so only the intended flavor's
-            // registrations remain: the machine converges on its own at the
-            // next login, when the zombie is gone and this app launches into
-            // a free socket. Until then nothing is serving, which the user
-            // has to be told rather than left to discover.
-            StandDownNotice.postBlocking(
-                title: FlavorStandDownCopy.stuckHolderTitle(holderFlavor: holderFlavor),
-                body: FlavorStandDownCopy.stuckHolderBody(
-                    holderFlavor: holderFlavor,
-                    myFlavor: FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)),
-                identifier: "mattstack-flavor-stuck-holder")
-            exit(0)
+    static func launchSocketVerdict() -> FlavorLaunch.SocketVerdict {
+        guard FileManager.default.fileExists(atPath: socketPath) else { return .claim }
+        let answer = probeTray(atPath: socketPath)
+        let holderFlavor = answer.flatMap(TrayHealth.flavor(inResponse:))
+        let verdict = FlavorLaunch.socket(myFlavor: FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild),
+                                          holderIsLive: answer != nil, holderFlavor: holderFlavor)
+        switch verdict {
+        case .claim:
+            TrayLog.info("stale tray socket found, taking it over", ["socket": socketPath])
+        case .exitDoubleLaunch:
+            TrayLog.error("another tray owns the socket", ["socket": socketPath, "holder": holderFlavor ?? "unknown"])
+        case .otherFlavorHolds:
+            break
         }
+        return verdict
     }
 
     enum SocketClaim: Equatable {
@@ -82,16 +66,16 @@ class TrayServer {
         case heldByStuckHolder(flavor: String)
     }
 
-    /// The guard's verdict without the exit, so a caller that is already
-    /// running (the mismatch alert's switch) can report the failure instead of
-    /// vanishing mid-launch.
+    /// Taking the socket after a takeover: a holder that is still the other
+    /// flavor's tray gets one more eviction, and a failure is reported by the
+    /// caller rather than by vanishing mid-launch.
     static func claimSocket() -> SocketClaim {
         guard FileManager.default.fileExists(atPath: socketPath) else { return .claimed }
         let answer = probeTray(atPath: socketPath)
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         let holderFlavor = answer.flatMap(TrayHealth.flavor(inResponse:))
         switch SocketOwnership.decide(myFlavor: myFlavor, holderIsLive: answer != nil, holderFlavor: holderFlavor,
-                                      intentConfirmed: FlavorGateState.intentConfirmed) {
+                                      takingOver: FlavorLaunchState.takingOver) {
         case .takeOver:
             TrayLog.info("stale tray socket found, taking it over", ["socket": socketPath])
             return .claimed
@@ -103,7 +87,8 @@ class TrayServer {
         }
     }
 
-    /// The socket is held by the flavor this machine is no longer set to.
+    /// The socket is held by the other flavor's tray and this launch is
+    /// taking the Mac over.
     ///
     /// `/flavor/retire` makes the holder give up its registrations but not its
     /// listener — only quitting frees the socket — so eviction is retire, then
@@ -382,64 +367,17 @@ class TrayServer {
                 }
 
             } else if method == "POST" && path == "/flavor/retire" {
-                // Flavor handoff (spec MAT-383 §3). `rt settings dev-mode
-                // on|off` calls this on the OUTGOING tray before quitting it:
-                // this app gives up both of its registrations — its own
-                // daemon LaunchAgent (its MSDaemonLabel job) and its own
-                // login item — so the incoming flavor is the only registered
-                // pair. Without it two agents stay registered and their
-                // daemons fight over rt.pid/rt.sock.
-                //
-                // Replaces the deleted login-item reset route (the LWCR
-                // re-register dance), which existed only for the in-place
-                // binary swaps that no longer happen.
-                //
-                // The reply is sent only after the awaits below settle, so it
-                // still reflects the actual post-state, not an intention. The
-                // teardown stop goes through the lifecycle gate: it waits out
-                // any in-flight start/restart and latches later ones off, so
-                // the client herd can't re-register the agent behind the
-                // retire (CodeRabbit #219 finding).
+                // `rt flavor takeover`, run by the app being opened, calls
+                // this on the OUTGOING tray before quitting it: this app gives
+                // up every registration it holds (AppFlavorTeardown), so the
+                // incoming app's jobs are the only ones left to load. The
+                // reply waits for the teardown, so it states the post-state,
+                // and the daemon stop goes through the lifecycle gate so the
+                // client herd can't re-register the agent behind the retire.
                 Task { @MainActor in
-                    var errs: [String] = []
-                    var daemonAfter = "unknown"
-                    var loginAfter = "unknown"
-                    if let lifecycle = self.daemonLifecycle {
-                        await lifecycle.stopDaemonForTeardown(origin: DaemonOrigin.flavorRetire)   // service.unregister(), logs itself
-                        daemonAfter = Self.statusName(lifecycle.status)
-                    } else {
-                        errs.append("no daemonLifecycle wired")
-                    }
-                    do {
-                        try await SMAppService.mainApp.unregister()
-                    } catch {
-                        // Unregistering an already-unregistered login item
-                        // throws; the status check below is the ground truth.
-                        TrayLog.warn("mainApp.unregister failed", ["err": String(describing: error)])
-                        errs.append(String(describing: error))
-                    }
-                    loginAfter = Self.statusName(SMAppService.mainApp.status)
-                    let handDeck = await Self.retireHandDeckAgent()
-
-                    // Ground truth, not intention: retired means neither
-                    // registration is enabled any more. A hand deck agent
-                    // that would not retire is logged, never a retire failure.
-                    let retired = daemonAfter != "enabled" && loginAfter != "enabled"
-                    if retired {
-                        TrayLog.info("flavor retired",
-                                     ["daemon": daemonAfter, "loginItem": loginAfter,
-                                      "label": self.daemonLifecycle?.label ?? "(none)"])
-                        self.sendResponse(connection: connection, status: 200,
-                                          body: "{\"ok\":true,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\"}")
-                    } else {
-                        let errMsg = errs.joined(separator: "; ")
-                            .replacingOccurrences(of: "\"", with: "\\\"")
-                        TrayLog.error("flavor retire failed",
-                                      ["daemon": daemonAfter, "loginItem": loginAfter, "err": errMsg])
-                        self.sendResponse(connection: connection, status: 500,
-                                          body: "{\"ok\":false,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\",\"error\":\"\(errMsg)\"}",
-                                          path: path)
-                    }
+                    let result = await AppFlavorTeardown.run(lifecycle: self.daemonLifecycle)
+                    self.sendResponse(connection: connection, status: result.retired ? 200 : 500,
+                                      body: result.replyJSON, path: result.retired ? nil : path)
                 }
 
             } else if method == "GET" && path == "/daemon/status" {

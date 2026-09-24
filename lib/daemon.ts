@@ -28,8 +28,8 @@ import type { Server } from "bun";
 import type { Logger } from "pino";
 import type { Database } from "bun:sqlite";
 
-import { RT_DIR, DAEMON_PID_PATH, activeLaunchdLabel } from "./daemon-config.ts";
-import { resolveIntendedMode } from "./dev-mode.ts";
+import { RT_DIR, DAEMON_PID_PATH } from "./daemon-config.ts";
+import { buildFlavor, captureProcessFlavor } from "./flavor.ts";
 import {
   getDaemonLogger,
   installCrashHandlers,
@@ -50,7 +50,7 @@ import { readSecret, createRealSecretsExecSeam, type SecretsSeams } from "./secr
 
 import { SystemProcessScanner } from "./daemon/system-process-scanner.ts";
 
-import { parkUntilIntended, probeSocketHolder, daemonFlavor, launchdLabelFromEnv } from "./daemon/park.ts";
+import { parkUntilServable, probeSocketHolder, daemonFlavor, launchdLabelFromEnv } from "./daemon/park.ts";
 import { evictStaleDaemon } from "./daemon/boot-reconcile.ts";
 import { resolveUserPath } from "./daemon/user-path.ts";
 import { shortReqId, makeSuppressor } from "./daemon/command-attribution.ts";
@@ -236,7 +236,7 @@ export function createHandleCommand(deps: HandleCommandDeps): HandleCommand {
  */
 export interface BootSeams {
   redirectNativeStderr: () => void;
-  /** Flavor/park gate; seamed so the boot test isn't subject to ambient dev-mode intent (which would park a source build indefinitely). */
+  /** Flavor/park gate; seamed so the boot test isn't subject to an ambient launchd label or a live rt.sock holder. */
   parkGate: (log: Logger) => Promise<void>;
   /** Login-shell PATH scrape (spawns shells); seamed so the boot test stays hermetic. */
   resolveUserPath: (log: Logger) => Promise<string>;
@@ -275,12 +275,10 @@ function realSeams(): BootSeams {
   return {
     redirectNativeStderr,
     parkGate: (log) =>
-      parkUntilIntended({
+      parkUntilServable({
         myFlavor: daemonFlavor(),
-        resolveIntent: resolveIntendedMode,
         probeHolder: probeSocketHolder,
         myLaunchdLabel: () => launchdLabelFromEnv(),
-        activeLaunchdLabel,
         sleep: (ms) => Bun.sleep(ms),
         log,
       }),
@@ -432,8 +430,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   };
 
   // Injected at compile time via `bun build --define RT_VERSION=...` (see
-  // cli.ts): undefined when running from source, which is also how
-  // daemonFlavor() tells dev from prod.
+  // cli.ts): undefined when running from source.
   const rtVersion = (): string => (typeof RT_VERSION !== "undefined" ? RT_VERSION : "source");
 
   // ─── Serving-core closures (defined once, invoked once units are wired) ────
@@ -815,7 +812,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
       async start() {
         // Daemon self-description. Only a dev daemon runs from a real checkout,
         // so only dev can shell out for the commit it serves from.
-        const sourceRev = daemonFlavor() === "dev"
+        const sourceRev = buildFlavor() === "dev"
           ? await runCapture(["git", "rev-parse", "--short", "HEAD"], { cwd: import.meta.dir, timeoutMs: 5_000 })
               .then((r) => r.stdout.trim() || null)
               .catch(() => null)
@@ -1400,5 +1397,6 @@ declare const RT_VERSION: string | undefined;
 
 // Auto-run when executed directly (source mode: bun run lib/daemon.ts).
 if (import.meta.main) {
+  captureProcessFlavor();
   startDaemon();
 }

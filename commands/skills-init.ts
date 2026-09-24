@@ -23,6 +23,7 @@ import { initPack, type InitDeps, type InitOutcome } from "../lib/skills/init.ts
 import { loadStepSource, resolvePluginRoots } from "../lib/skills/sources.ts";
 import { textInput } from "../lib/ui/prompts.ts";
 import { checkPack, compilePackAll } from "./skills.ts";
+import { childEnv } from "../lib/subprocess.ts";
 
 export type InitArgs = { repo: string; zone: string | null; json: boolean };
 
@@ -68,7 +69,7 @@ function realDeps(opts: { json: boolean }): InitDeps {
   const p = createRealProbes();
   const claudeBin = resolveClaudeBin();
   const run = async (cmd: string, args: string[]) => {
-    const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn([cmd, ...args], { env: childEnv(), stdout: "pipe", stderr: "pipe" });
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { code: await proc.exited, stdout, stderr };
   };

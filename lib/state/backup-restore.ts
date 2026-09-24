@@ -9,6 +9,7 @@ import { restorePipeline, restorePipelineFromStdin } from "./backup-pipeline";
 import { findBackupTool } from "./backup-tools";
 import { writeLfsFilterConfig } from "./backup-lfs";
 import { backupDestDir, BACKUP_SOURCES, resolveSourcePath, type BackupSource } from "./backup-sources";
+import { childEnv } from "../subprocess.ts";
 
 export interface RestoreOptions {
   identityPath?: string;
@@ -46,7 +47,7 @@ function findLatestBackup(appDir: string, sourcePrefix: string, atTimestamp?: st
 
 function checkHolders(filePath: string): string[] {
   if (!existsSync(filePath)) return [];
-  const proc = Bun.spawnSync(["lsof", "-t", filePath], { stderr: "pipe" });
+  const proc = Bun.spawnSync(["lsof", "-t", filePath], { env: childEnv(), stderr: "pipe" });
   if (proc.exitCode !== 0) return [];
   const pids = proc.stdout.toString().trim();
   return pids ? pids.split("\n").map((p) => p.trim()).filter(Boolean) : [];
@@ -121,7 +122,7 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
           result.restored.push({ app: source.app, targetPath });
         } else {
           mkdirSync(targetPath, { recursive: true });
-          const proc = Bun.spawnSync(["tar", "-xf", restoredPath, "-C", targetPath]);
+          const proc = Bun.spawnSync(["tar", "-xf", restoredPath, "-C", targetPath], { env: childEnv() });
           if (proc.exitCode !== 0) {
             result.errors.push(`${source.app}: tar extract failed: ${proc.stderr.toString()}`);
             continue;

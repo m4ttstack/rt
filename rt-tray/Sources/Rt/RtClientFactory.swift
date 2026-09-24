@@ -16,6 +16,13 @@ enum RtClientFactory {
             return nil
         }
         TrayLog.info("rt resolved", ["path": loc.executable.path, "source": String(describing: loc.source)])
-        return RtClient(location: loc, environment: ["RT_APP_SOCKET": TrayServer.socketPath])
+        return make(location: loc)
+    }
+
+    static func make(location loc: RtLocation) -> RtClient {
+        RtClient(location: loc, environment: [
+            "RT_APP_SOCKET": TrayServer.socketPath,
+            "MATTSTACK_FLAVOR": FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild),
+        ])
     }
 }

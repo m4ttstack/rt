@@ -14,6 +14,16 @@ export interface RunResult {
   timedOut?: boolean;
 }
 
+/**
+ * The environment to hand a child: process.env as it is now. Bun.spawn and
+ * Bun.spawnSync without `env` pass the environment this process STARTED with,
+ * so a PATH resolved later or a variable deleted since (MATTSTACK_FLAVOR,
+ * lib/flavor.ts) would never reach the child.
+ */
+export function childEnv(): Record<string, string | undefined> {
+  return { ...process.env };
+}
+
 /** Longest slice of a failed step's output carried into a log line. */
 export const MAX_LOGGED_OUTPUT = 2000;
 
@@ -57,7 +67,7 @@ export async function runCapture(
       // inherited env strands the PATH the daemon resolves at boot
       // (lib/daemon.ts) and leaves `#!/usr/bin/env node` shebangs unresolvable
       // under launchd. execSync, which this replaces, reads process.env per call.
-      env: opts.env ?? { ...process.env },
+      env: opts.env ?? childEnv(),
       stdin: "ignore",
       stdout: "pipe",
       stderr: captureStderr ? "pipe" : "ignore",

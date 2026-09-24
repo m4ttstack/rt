@@ -1,22 +1,13 @@
 /**
- * Dev-mode detection.
- *
- * currentMode() MOVED here from commands/settings.ts:364 (MAT-383 §1), logic
- * unchanged: dev mode is detected by the presence of the CLI wrapper at
- * ~/.local/bin/rt (written by enableDevMode / removed by disableDevMode in
- * commands/settings.ts, which still owns writing it). The move exists so
- * lib/daemon-config.ts can expose activeLaunchdLabel() without a lib→commands
- * import — settings.ts already imports daemon-config, so the reverse would
- * cycle.
- *
- * currentMode() itself remains the single source of truth for the active
- * flavor (dev vs prod); dev-mode.json's existence is NOT a flavor signal.
+ * What sits at ~/.local/bin/rt: the dev app's source wrapper (written by
+ * enableDevMode in commands/settings.ts) or a link to the prod app's
+ * compiled rt (installRtBinary). Neither is a flavor signal; a process's
+ * flavor comes from lib/flavor.ts.
  */
 
 import { closeSync, existsSync, mkdirSync, openSync, readSync, renameSync, rmSync, symlinkSync } from "fs";
 import { dirname, resolve } from "path";
 import { homedir } from "os";
-import { getSetting } from "./settings/resolve.ts";
 
 // Call-time HOME (mirrors lib/rt-paths.ts's home()): resolved on every call,
 // not baked in at module load, so tests can repoint HOME per-test by setting
@@ -103,37 +94,12 @@ export function readWrapperPrefix(path: string): string | null {
 }
 
 /**
- * Dev mode is signalled by the dev-mode WRAPPER SCRIPT at ~/.local/bin/rt --
- * not by any file existing there. Prod mode installs the compiled binary at
- * that same path (MAT-383: leaving dev mode must leave a working rt behind),
- * so presence alone can no longer tell the modes apart: the smoke showed a
- * machine with the prod binary installed still reporting "dev", which made
- * the flavor toggle a permanent no-op.
+ * True only for the dev wrapper SCRIPT at ~/.local/bin/rt, never for any file
+ * there: the prod app links its compiled binary at that same path.
  */
-export function currentMode(): "dev" | "prod" {
+export function devWrapperOwnsRt(): boolean {
   const path = devModeWrapperPath();
-  if (!existsSync(path)) return "prod";
+  if (!existsSync(path)) return false;
   const prefix = readWrapperPrefix(path);
-  return prefix !== null && isDevModeWrapperContent(prefix) ? "dev" : "prod";
-}
-
-export interface IntendedMode {
-  mode: "dev" | "prod";
-  provenance: "setting" | "derived-from-wrapper";
-}
-
-/**
- * The single seam every flavor decision reads. The generic settings read is
- * NOT equivalent: it reports store values only and drops an unset value, and
- * a consumer defaulting unset→prod would stand the dev pair down on a fresh
- * machine — the opposite of self-heal.
- */
-export function resolveIntendedMode(): IntendedMode {
-  try {
-    const { value } = getSetting<string>("mattstack.mode");
-    if (value === "dev" || value === "prod") return { mode: value, provenance: "setting" };
-  } catch {
-    // unreadable store: derivation below always yields a mode
-  }
-  return { mode: currentMode(), provenance: "derived-from-wrapper" };
+  return prefix !== null && isDevModeWrapperContent(prefix);
 }

@@ -24,6 +24,7 @@ import { BACKUP_TOOLS, findBackupTool } from "../lib/state/backup-tools.ts";
 import { writeLfsFilterConfig } from "../lib/state/backup-lfs.ts";
 import { mattstackHome } from "../lib/rt-paths.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
+import { childEnv } from "../lib/subprocess.ts";
 
 export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}): Promise<void> {
   const resolved = new Map(BACKUP_TOOLS.map((name) => [name, findBackupTool(name)]));
@@ -118,7 +119,7 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
   if (firstBackupFile) {
     const checkAttr = Bun.spawnSync(
       ["git", "check-attr", "filter", "--", firstBackupFile],
-      { cwd: homeRepo },
+      { cwd: homeRepo, env: childEnv() },
     );
     const attrOutput = checkAttr.stdout.toString();
     if (attrOutput.includes("filter: lfs")) {

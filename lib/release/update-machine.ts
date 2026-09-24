@@ -373,7 +373,7 @@ async function runProdAppLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pr
   }
 }
 
-async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
+async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, onNotRunning: () => void = () => {}): Promise<LegResult> {
   const bundleDir = `${seams.workDir}/rt-dev-bundle`;
 
   const clone = await seams.exec(["git", "clone", `https://github.com/${RELEASE_REPO}.git`, bundleDir]);
@@ -391,7 +391,12 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   const build = await seams.exec(["rt-tray/build.sh", "dev"], { cwd: bundleDir });
   if (build.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `build.sh dev failed: ${execTail(build)}`);
 
-  for (const pid of await pgrepPids(seams, DEV_APP_ANCHOR)) {
+  // Opening the dev app by hand takes the Mac over from mattstack.app, so it
+  // is relaunched only when it was the app running before.
+  const runningBefore = await pgrepPids(seams, DEV_APP_ANCHOR);
+  const wasRunning = runningBefore.length > 0;
+  if (!wasRunning) onNotRunning();
+  for (const pid of runningBefore) {
     const kill = await seams.exec(["kill", String(pid)]);
     if (kill.exitCode !== 0) {
       // A process that already exited between pgrep and kill (ESRCH) is not a failure.
@@ -411,11 +416,16 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
     if (failure.atDest === "unsafe") {
       return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; not reopened, ${DEV_APP_PATH} is not safe to launch`);
     }
+    if (!wasRunning) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; not reopened, it was not running`);
     const which = failure.atDest === "previous" ? "reopened the previous app" : "opened the new app";
     const reopen = await seams.exec(["open", DEV_APP_PATH]);
     const pids = reopen.exitCode === 0 ? await pollForPids(seams, DEV_APP_ANCHOR, 5, 500) : [];
     const tail = pids.length > 0 ? `${which} (pid ${pids[0]})` : `opening ${DEV_APP_PATH} did not bring up a process${reopen.exitCode === 0 ? "" : `: ${execTail(reopen)}`}`;
     return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; ${tail}`);
+  }
+
+  if (!wasRunning) {
+    return okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${DEV_APP_PATH} rebuilt at ${ctx.sha.slice(0, 12)}; not relaunched, it was not running`);
   }
 
   const open = await seams.exec(["open", DEV_APP_PATH]);
@@ -549,20 +559,32 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
   return { result: okLeg("served-suite", SERVED_SUITE_LABEL, "managed apps restarted and every pid cycled"), witness };
 }
 
-async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, witness: RestartWitness | null): Promise<LegResult> {
+/** The dev app, its daemon and its source rev are this Mac's only when the dev app was running. */
+const DEV_NOT_RUNNING = "the dev app was not running, so this Mac runs mattstack.app";
+
+async function runVerifyLeg(
+  seams: UpdateMachineSeams,
+  ctx: ReleaseContext,
+  witness: RestartWitness | null,
+  devNotRunning = false,
+): Promise<LegResult> {
   const problems: string[] = [];
 
   const plist = await seams.exec(["defaults", "read", `${PROD_APP_PATH}/Contents/Info.plist`, "CFBundleShortVersionString"]);
   const prodVersion = plist.stdout.trim();
   if (plist.exitCode !== 0 || prodVersion !== ctx.ver) problems.push(`prod app is ${prodVersion || "unknown"}, expected ${ctx.ver}`);
 
-  const devPid = (await pgrepPids(seams, DEV_APP_ANCHOR))[0];
-  if (!devPid) problems.push("dev app has no running pid");
+  let devPid: number | undefined;
+  let sourceRev: string | null = null;
+  if (!devNotRunning) {
+    devPid = (await pgrepPids(seams, DEV_APP_ANCHOR))[0];
+    if (!devPid) problems.push("dev app has no running pid");
 
-  const daemonStatus = await seams.exec(["rt", "daemon", "status", "--json"]);
-  const sourceRev = parseDaemonSourceRev(daemonStatus.stdout);
-  if (!sourceRev) problems.push("daemon reports no source rev (prod daemon?)");
-  else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
+    const daemonStatus = await seams.exec(["rt", "daemon", "status", "--json"]);
+    sourceRev = parseDaemonSourceRev(daemonStatus.stdout);
+    if (!sourceRev) problems.push("daemon reports no source rev (prod daemon?)");
+    else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
+  }
 
   const deckVersion = (await seams.exec(["deck", "--version"])).stdout.trim();
   const depsLockRaw = seams.readFile(`${seams.repoRoot}/rt-tray/deps.lock`);
@@ -587,10 +609,15 @@ async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, witn
   }
 
   if (problems.length > 0) return errorLeg("verify", VERIFY_LABEL, problems.join("; "));
+  const devPart = devNotRunning
+    ? ` (${DEV_NOT_RUNNING}: dev app and daemon source rev not checked)`
+    : "";
   return okLeg(
     "verify",
     VERIFY_LABEL,
-    `prod ${ctx.ver}, dev pid ${devPid}, daemon ${sourceRev}, deck ${deckVersion} all current${staleNote}`,
+    devNotRunning
+      ? `prod ${ctx.ver}, deck ${deckVersion} all current${devPart}${staleNote}`
+      : `prod ${ctx.ver}, dev pid ${devPid}, daemon ${sourceRev}, deck ${deckVersion} all current${staleNote}`,
   );
 }
 
@@ -665,8 +692,14 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   }
 
   await runGatedLeg("prod-app", PROD_APP_LABEL, () => runProdAppLeg(seams, ctx));
-  await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx));
-  await runGatedLeg("daemon", DAEMON_LABEL, () => runDaemonLeg(seams, ctx));
+  let devNotRunning = false;
+  await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx, () => { devNotRunning = true; }));
+  if (devNotRunning) {
+    legs.push(skippedLeg("daemon", DAEMON_LABEL,
+      `not run: ${DEV_NOT_RUNNING}; mattstack.app keeps running the previous build until it is relaunched`));
+  } else {
+    await runGatedLeg("daemon", DAEMON_LABEL, () => runDaemonLeg(seams, ctx));
+  }
 
   let witness: RestartWitness | null = null;
   await runGatedLeg("served-suite", SERVED_SUITE_LABEL, async () => {
@@ -676,7 +709,7 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   });
 
   // Read-only: always runs and reports, halt or no halt.
-  legs.push(await runVerifyLeg(seams, ctx, witness));
+  legs.push(await runVerifyLeg(seams, ctx, witness, devNotRunning));
 
   const ok = legs.every((l) => l.status === "ok" || l.status === "skipped");
   return { tag, legs, haltedAfter, ok };

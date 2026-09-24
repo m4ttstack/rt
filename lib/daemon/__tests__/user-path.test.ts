@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { afterEach, describe, test, expect, beforeEach } from "bun:test";
 import { mkdtempSync, writeFileSync, chmodSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -41,6 +41,15 @@ function makeLog() {
 }
 
 describe("resolveUserPath", () => {
+  // Every child gets process.env.PATH as it is (lib/subprocess.ts childEnv),
+  // so a PATH left at "/usr/bin:/bin" hides lsof and friends from every later
+  // test in the run.
+  const realPath = process.env.PATH;
+  afterEach(() => {
+    if (realPath === undefined) delete process.env.PATH;
+    else process.env.PATH = realPath;
+  });
+
   test("fish-style space-separated base output is rejected, baseline kept + warn", async () => {
     const { log, warns } = makeLog();
     process.env.PATH = "/usr/bin:/bin";

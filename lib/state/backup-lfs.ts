@@ -26,6 +26,7 @@
 
 import { existsSync } from "fs";
 import { join } from "path";
+import { childEnv } from "../subprocess.ts";
 
 export const LFS_FILTER_KEYS = ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"] as const;
 export type LfsFilterKey = (typeof LFS_FILTER_KEYS)[number];
@@ -52,7 +53,7 @@ export interface LfsFilterResult {
 }
 
 function gitConfig(repoDir: string, args: string[]): { code: number; stdout: string } {
-  const proc = Bun.spawnSync(["git", "config", "--local", ...args], { cwd: repoDir, stderr: "pipe" });
+  const proc = Bun.spawnSync(["git", "config", "--local", ...args], { cwd: repoDir, env: childEnv(), stderr: "pipe" });
   return { code: proc.exitCode ?? 1, stdout: proc.stdout.toString().trim() };
 }
 

@@ -37,13 +37,12 @@ import { detectShell, shellRcPath } from "../lib/shell-integration.ts";
 
 // ─── Shell function setup ────────────────────────────────────────────────────
 
-const SHELL_FUNCTION = [
+export const SHELL_FUNCTION = [
   `rt() {`,
-  `  # Resolve rt by absolute path when the dev-mode wrapper exists. This bypasses`,
-  `  # zsh's command-hash cache, which otherwise pins rt to whichever binary it`,
-  `  # first found and ignores later dev-mode`,
-  `  # swaps until the shell calls 'hash -r' — leading to surprising "I'm in dev`,
-  `  # mode but my changes don't show up" behaviour across shells.`,
+  `  # Resolve rt by absolute path at ~/.local/bin/rt when it exists. This`,
+  `  # bypasses zsh's command-hash cache, which otherwise pins rt to whichever`,
+  `  # binary it first found and ignores a switch between the dev and prod apps`,
+  `  # until the shell calls 'hash -r'.`,
   `  local rt_bin="$HOME/.local/bin/rt"`,
   `  # whence -p (zsh) / type -P (bash): PATH-only lookup, skips this function`,
   `  [ -x "$rt_bin" ] || rt_bin="$(whence -p rt 2>/dev/null || type -P rt 2>/dev/null)"`,
@@ -62,11 +61,6 @@ const SHELL_FUNCTION = [
   `    if [ -n "$rt_cwd" ] && [ "$rt_cwd" != "$PWD" ]; then`,
   `      builtin cd "$rt_cwd"`,
   `    fi`,
-  `  elif [ "$1" = "settings" ] && [ "$2" = "dev-mode" ]; then`,
-  `    "$rt_bin" "$@"`,
-  `    # dev-mode swaps ~/.local/bin/rt in or out — rehash so any other shell`,
-  `    # (which doesn't go through this function) sees the swap on next 'rt'.`,
-  `    hash -r 2>/dev/null`,
   `  else`,
   `    "$rt_bin" "$@"`,
   `  fi`,

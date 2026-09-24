@@ -8,7 +8,7 @@
 import { join } from "path";
 import { HELPERS_DIR, readDepsLock } from "../../bundle-layout.ts";
 import { appBundlePath } from "../../deps/resolve.ts";
-import { currentMode } from "../../dev-mode.ts";
+import { processFlavor } from "../../flavor.ts";
 import { markDaemonInstalled } from "../../daemon-config.ts";
 import type { ApplyContext } from "../apply.ts";
 import type { StepDef, StepOutcome } from "../apply.ts";
@@ -17,7 +17,7 @@ import type { Probes } from "../probes.ts";
 import { needOutcome, toFailedOutcome } from "./step-utils.ts";
 
 async function servicesRegisterRun(ctx: ApplyContext): Promise<StepOutcome> {
-  const { plists, deckOmitted } = servicePlists(currentMode(), ctx.p);
+  const { plists, deckOmitted } = servicePlists(processFlavor(), ctx.p);
   if (deckOmitted) ctx.log("services.register", "deck not bundled yet — only the daemon is registered");
 
   const reply = await ctx.need("services.register", { type: "app-register-services", plists });

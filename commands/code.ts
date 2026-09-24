@@ -25,6 +25,7 @@ import { getRepoIdentity, getKnownRepos, findKnownRepo } from "../lib/repo.ts";
 import { currentRepoIdentityFor } from "../lib/repo-arg.ts";
 import { repoLabel } from "../lib/repo-label.ts";
 import { pickWorktreeWithSwitch, pickFromAllRepos, isSwitchRepo } from "../lib/pickers.ts";
+import { childEnv } from "../lib/subprocess.ts";
 
 // ─── Preference storage (rt.workspacePrefs, machine-scoped) ────────────────
 
@@ -369,6 +370,7 @@ export function resolveEditorForDir(dir: string): ResolvedEditor | null {
 // as "$1", never spliced into the command string.
 async function spawnEditor(command: string, target: string): Promise<boolean> {
   const proc = Bun.spawn(["/bin/sh", "-c", `${command} "$1"`, "sh", target], {
+    env: childEnv(),
     stdin: "ignore",
     stdout: "ignore",
     stderr: "ignore",

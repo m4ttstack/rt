@@ -209,7 +209,7 @@ describe("tagged PATH links", () => {
     const p = bundleProbe({ files: { [path]: "#!/bin/sh\nexport RT_LAUNCH_CWD=\"$PWD\"\nexec bun run cli.ts \"$@\"\n" } });
 
     const outcome = link(p, "rt");
-    expect(outcome).toEqual({ ok: false, reason: "dev-mode-owns-rt", detail: expect.any(String) });
+    expect(outcome).toEqual({ ok: false, reason: "dev-mode-owns-rt", detail: expect.stringContaining("opening mattstack.app") });
   });
 
   test("unlink removes a symlink form and a tagged-wrapper form, and leaves a user's own file alone", () => {

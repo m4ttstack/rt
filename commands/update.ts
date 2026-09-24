@@ -12,7 +12,7 @@
 
 import type { CommandContext } from "../lib/command-tree.ts";
 import { trayRequest } from "../lib/daemon-client.ts";
-import { currentMode as realCurrentMode } from "../lib/dev-mode.ts";
+import { processFlavor, type Flavor } from "../lib/flavor.ts";
 import { envelope } from "../lib/setup/contract.ts";
 
 export const RELEASES_URL = "https://github.com/m4ttstack/rt/releases/latest";
@@ -20,7 +20,7 @@ export const RELEASES_URL = "https://github.com/m4ttstack/rt/releases/latest";
 export interface UpdateDeps {
   /** POSTs `/update/check` over tray.sock; `null` means the app isn't running (never throws). */
   tray: (endpoint: string, method: "GET" | "POST") => Promise<{ ok: boolean; error?: string } | null>;
-  currentMode: () => "dev" | "prod";
+  flavor: () => Flavor;
   log: (line: string) => void;
   exit: (code: number) => never;
 }
@@ -34,7 +34,7 @@ async function realTray(endpoint: string, method: "GET" | "POST"): Promise<{ ok:
 
 export const realDeps: UpdateDeps = {
   tray: realTray,
-  currentMode: realCurrentMode,
+  flavor: () => processFlavor(),
   log: (line) => console.log(line),
   exit: process.exit,
 };
@@ -47,8 +47,13 @@ function printError(deps: UpdateDeps, json: boolean, code: string, message: stri
 export async function runUpdate(args: string[], _ctx: CommandContext = {}, deps: UpdateDeps = realDeps): Promise<void> {
   const json = args.includes("--json");
 
-  if (deps.currentMode() === "dev") {
-    printError(deps, json, "dev-mode", "dev mode is active — switch to prod first: rt settings dev-mode prod");
+  if (deps.flavor() === "dev") {
+    printError(
+      deps,
+      json,
+      "dev-app",
+      "this rt belongs to mattstack-dev.app, which runs from source and never updates through Sparkle; open mattstack.app to switch to it",
+    );
     return;
   }
 

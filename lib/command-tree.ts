@@ -89,7 +89,7 @@ export interface CommandNode {
    * Guard: exit early with a message if not in an interactive terminal.
    * A function form is evaluated against the leaf's own args (e.g. a node
    * only needs a TTY to prompt for an arg the caller could instead supply
-   * directly — see `settings dev-mode`'s Target).
+   * directly).
    */
   requiresTTY?: boolean | ((args: string[]) => boolean);
 

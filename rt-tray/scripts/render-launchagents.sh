@@ -15,6 +15,7 @@ render() { # template label out
         -e "s/@@BUNDLE_ID@@/$BUNDLE_ID/g" "$1" > "$2"
     /usr/libexec/PlistBuddy -c "Add :KeepAlive dict" "$2"
     /usr/libexec/PlistBuddy -c "Add :KeepAlive:SuccessfulExit bool false" "$2"
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:MATTSTACK_FLAVOR string $FLAVOR" "$2"
     plutil -lint "$2" >/dev/null
 }
 render "$HERE/LaunchAgent.plist"      "$OUT/$DAEMON_LABEL.plist"

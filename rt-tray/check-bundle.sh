@@ -164,6 +164,7 @@ check_identity() { # app bundle-id exe label devbuild
         assert_eq "$exe $(basename "$a") KeepAlive:SuccessfulExit" "false" "$(plist "$a" 'KeepAlive:SuccessfulExit')"
         assert_eq "$exe $(basename "$a") EnvironmentVariables.PATH" "/usr/bin:/bin:/usr/sbin:/sbin" "$(plist "$a" 'EnvironmentVariables:PATH')"
         if plist "$a" EnvironmentVariables:PATH 2>/dev/null | grep -q '/Applications/'; then fail "$exe $(basename "$a") hardcodes /Applications in PATH"; fi
+        assert_eq "$exe $(basename "$a") EnvironmentVariables.MATTSTACK_FLAVOR" "$([ "$devbuild" = true ] && echo dev || echo prod)" "$(plist "$a" 'EnvironmentVariables:MATTSTACK_FLAVOR')"
     done
 }
 check_identity "$PROD" "com.mattstack.app" "mattstack" "com.mattstack.daemon" "false"
@@ -656,7 +657,8 @@ if $SHIM_DEPS_OK; then
     # has the legacy dev-mode.json must keep working with NO manual step.
     # The shim never migrates (read-only fallback), so dev-mode.json is
     # deliberately left in place by this fixture, unlike every other case
-    # here — that mirrors production: only `rt settings dev-mode` migrates it.
+    # here, which mirrors production: only rt itself (the dev takeover or
+    # `rt settings source-path`) migrates it.
     H8="$SHIM_TMP/legacy-fallback-success"; mkdir -p "$H8/.mattstack/rt" "$SHIM_TMP/legacysrc/lib"
     sqlite3 "$H8/.mattstack/rt/state.db" "CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (ns,k));"
     echo 'x' > "$SHIM_TMP/legacysrc/lib/daemon.ts"

@@ -38,15 +38,9 @@ export interface LinkSeams {
 const REAL_SEAMS: LinkSeams = { installRtBinary: (src) => installRtBinary(src) };
 
 /**
- * rt in dev mode is signalled the same way lib/dev-mode.ts's currentMode()
- * detects it: shares isDevModeWrapperContent so the two call sites can never
- * disagree. Reads through the Probes seam's readPrefix -- a real bounded
- * (4096-byte) read in production, same as currentMode()'s own standalone
- * read, but routed through `p` so link()'s tests (which drive the rest of
- * this function entirely via a fake bundle/home) don't have to touch the
- * real machine's HOME just to simulate this one check. currentMode() itself
- * keeps its own direct real-fs read -- it has no Probes seam to route
- * through, and is not this function's concern.
+ * The dev app's source wrapper at ~/.local/bin/rt, recognized by the shared
+ * isDevModeWrapperContent through the Probes seam's bounded readPrefix, so
+ * link()'s tests never touch the real machine's HOME.
  */
 function isDevModeWrapper(p: Pick<Probes, "readPrefix">, path: string): boolean {
   const prefix = p.readPrefix(path);
@@ -87,14 +81,14 @@ function clearForced(p: Probes, tool: string): void {
  * occupant. "rt" always installs through installRtBinary (atomic
  * link-then-rename) rather than a bare symlink; the pre-existing entry is
  * left in place for the rename to replace atomically, never pre-removed.
- * "rt" is refused outright while dev mode owns the link path — force does
- * not override that; leave dev mode first.
+ * "rt" is refused outright while the dev app's wrapper owns the link path;
+ * force does not override that, opening mattstack.app does.
  */
 export function link(p: Probes, tool: string, opts: { force?: boolean } = {}, seams: LinkSeams = REAL_SEAMS): LinkOutcome {
   const path = linkPath(p.home, tool);
 
   if (tool === "rt" && isDevModeWrapper(p, path)) {
-    return { ok: false, reason: "dev-mode-owns-rt", detail: `${path} is the dev-mode wrapper script; leave dev mode before linking rt` };
+    return { ok: false, reason: "dev-mode-owns-rt", detail: `${path} is mattstack-dev.app's source wrapper; opening mattstack.app hands rt back to it` };
   }
 
   const exec = bundledToolExec(p, tool);

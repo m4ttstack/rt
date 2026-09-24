@@ -281,7 +281,6 @@ describe("settings/registry", () => {
         "mattstack.integrations",
         "mattstack.tracking",
         "mattstack.appPath",
-        "mattstack.mode",
         "setup.waived",
         "mattstack.roster",
         "claude.marketplaces",
@@ -355,7 +354,7 @@ describe("settings/registry", () => {
         "herd.watchdog.midRunTrustAccept",
         "panes.relocationAutoAccept",
       ];
-      expect(suiteKeys).toHaveLength(76);
+      expect(suiteKeys).toHaveLength(75);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),

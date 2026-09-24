@@ -44,6 +44,17 @@ export interface SettingDef {
 
 const BY_KEY: Map<string, SettingDef> = new Map(REGISTRY.map((def) => [def.key, def]));
 
+/**
+ * Keys this suite once registered and no longer reads. A machine that still
+ * carries one upgrades with no manual step: it is skipped silently, never
+ * reported as "from a newer rt".
+ */
+const RETIRED_KEYS: ReadonlySet<string> = new Set(["mattstack.mode"]);
+
+export function isRetiredKey(key: string): boolean {
+  return RETIRED_KEYS.has(key);
+}
+
 /** Looks up a def by its flat namespaced key (e.g. "rt.roles"). */
 export function getDef(key: string): SettingDef | undefined {
   return BY_KEY.get(key);

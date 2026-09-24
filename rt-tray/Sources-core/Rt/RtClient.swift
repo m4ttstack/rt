@@ -45,7 +45,7 @@ public protocol RtRunning: Sendable {
     func stream(_ args: [String], stdin: Data?) -> AsyncThrowingStream<String, Error>
 }
 
-public enum RtSource: Equatable, Sendable { case bundled, devWrapper, stub }
+public enum RtSource: Equatable, Sendable { case bundled, devWrapper, devSource, stub }
 
 public struct RtLocation: Equatable, Sendable {
     public let executable: URL

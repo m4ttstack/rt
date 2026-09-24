@@ -139,14 +139,13 @@ describe("rtHealthRows — rows that resolve the app bundle", () => {
       expect(r.action).toEqual({ type: "link-bundled", label: "Use mattstack's", tool: "rt" });
     });
 
-    test("dev mode wrapper at ~/.local/bin/rt -> skipped, dev mode owns it", async () => {
-      const wrapperDir = join(home, ".local", "bin");
-      mkdirSync(wrapperDir, { recursive: true });
-      writeFileSync(join(wrapperDir, "rt"), `#!/bin/sh\n${DEV_MODE_TAG}\nexit 0\n`, { mode: 0o755 });
-      const p = bundleProbe();
+    test("the dev app's source wrapper at ~/.local/bin/rt -> skipped, the dev app owns it", async () => {
+      const linkedPath = join(home, ".local", "bin", "rt");
+      const p = bundleProbe({ files: { [linkedPath]: `#!/bin/sh\n${DEV_MODE_TAG}\nexit 0\n` } });
       const r = await pickRow(rtHealthRows(p, { ci: false }), "tool.rt-link");
       expect(r.status).toBe("skipped");
-      expect(r.detail).toContain("dev mode owns ~/.local/bin/rt");
+      expect(r.detail).toContain("mattstack-dev.app");
+      expect(r.detail).not.toContain("dev mode");
     });
   });
 
@@ -463,57 +462,34 @@ describe("rtHealthRows — tool.daemon", () => {
   });
 });
 
-/**
- * resolveIntendedMode()/currentMode() read the real wrapper file at
- * ~/.local/bin/rt (mirrors lib/__tests__/intended-mode.test.ts), so this row
- * needs a real temp HOME on top of the daemon's fake `ping` seam.
- */
 describe("rtHealthRows — tool.flavor", () => {
-  const origHome = process.env.HOME;
-  let home: string;
+  afterEach(() => { process.env.MATTSTACK_FLAVOR = "prod"; });
 
-  beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-health-flavor-"));
-    process.env.HOME = home;
-  });
-
-  afterEach(() => {
-    process.env.HOME = origHome;
-    rmSync(home, { recursive: true, force: true });
-  });
-
-  /** A recognized wrapper at ~/.local/bin/rt is the dev-mode signal currentMode() reads. */
-  function writeDevWrapper(): void {
-    mkdirSync(join(home, ".local", "bin"), { recursive: true });
-    writeFileSync(join(home, ".local", "bin", "rt"), `#!/bin/sh\n${DEV_MODE_TAG}\necho dev\n`);
-  }
-
-  test("live daemon of the wrong flavor: fail, names all three legs", async () => {
-    writeDevWrapper(); // setting left unset -> intended derives from the wrapper -> dev; cli -> dev
+  test("the other app's daemon answering this CLI: invalid, names both flavors and the app to open", async () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
     const daemon = (async (cmd: string) => (cmd === "ping" ? { ok: true, flavor: "prod", pid: 9 } : null)) as Probes["daemon"];
-    const r = await pickRow(rtHealthRows(fakeProbes({ home, daemon }), { ci: false }), "tool.flavor");
+    const r = await pickRow(rtHealthRows(fakeProbes({ home: "/home/x", daemon }), { ci: false }), "tool.flavor");
     expect(r.status).toBe("invalid");
-    expect(r.detail).toContain("prod");
-    expect(r.detail).toContain("dev-mode");
+    expect(r.detail).toContain("prod daemon");
+    expect(r.detail).toContain("dev CLI");
+    expect(r.detail).toContain("open mattstack-dev.app (quit it first if it is running)");
+    expect(r.detail).not.toContain("dev-mode");
     expect(r.required).toBe(true);
   });
 
   test("daemon down: row passes with 'n/a' daemon leg (clean-room gate must survive)", async () => {
-    writeDevWrapper();
-    // Deliberately mismatched vs the dev wrapper: proves a down daemon
-    // short-circuits before the cli/intended comparison ever runs.
-    setSetting("mattstack.mode", "prod", "machine");
-    const r = await pickRow(rtHealthRows(fakeProbes({ home, daemon: async () => null }), { ci: false }), "tool.flavor");
+    process.env.MATTSTACK_FLAVOR = "dev";
+    const r = await pickRow(rtHealthRows(fakeProbes({ home: "/home/x", daemon: async () => null }), { ci: false }), "tool.flavor");
     expect(r.status).toBe("ready");
     expect(r.detail).toContain("daemon n/a");
   });
 
-  test("all legs agree: ready", async () => {
-    writeDevWrapper();
+  test("CLI and daemon agree: ready", async () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
     const daemon = (async (cmd: string) => (cmd === "ping" ? { ok: true, flavor: "dev" } : null)) as Probes["daemon"];
-    const r = await pickRow(rtHealthRows(fakeProbes({ home, daemon }), { ci: false }), "tool.flavor");
+    const r = await pickRow(rtHealthRows(fakeProbes({ home: "/home/x", daemon }), { ci: false }), "tool.flavor");
     expect(r.status).toBe("ready");
-    expect(r.detail).toContain("dev everywhere");
+    expect(r.detail).toBe("dev CLI and daemon");
   });
 });
 

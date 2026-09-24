@@ -31,6 +31,9 @@
     <key>ThrottleInterval</key>
     <integer>10</integer>
 
+    <!-- MATTSTACK_FLAVOR (prod|dev) is injected per flavor by
+         `scripts/render-launchagents.sh`: the job, not the machine, says
+         which app this daemon serves. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

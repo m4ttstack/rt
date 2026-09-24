@@ -79,10 +79,10 @@ export interface DaemonStatusInputs {
    *  stand-in), independent of rt.sock. Only worth gathering once `pingOk`
    *  has already come back false; see `classifyDaemonStatus.needsPidProbe`. */
   pidAlive?: boolean;
-  /** This machine's currently-intended flavor (`resolveIntendedMode().mode`).
-   *  A live pid whose own breadcrumb flavor disagrees with this is parked
-   *  (park.ts), not stuck: the same signal `parkUntilIntended` itself acts on. */
-  intendedFlavor?: "dev" | "prod";
+  /** The asking CLI's own flavor. A live pid whose breadcrumb flavor
+   *  disagrees with it is the other app's daemon in a standoff (park.ts),
+   *  not stuck. */
+  cliFlavor?: "dev" | "prod";
   /** The socket holder's flavor, when the caller managed to learn it (best
    *  effort: probing rt.sock again after a failed ping/status round rarely
    *  succeeds, since a parked pid never binds it). Display-only. */
@@ -131,7 +131,7 @@ function countRecentFailures(supervision: SupervisionState, now: number, windowM
 }
 
 export function classifyDaemonStatus(opts: DaemonStatusInputs): DaemonStatusVerdict {
-  const { installed, response, pingOk, pid, pidAlive, intendedFlavor, holderFlavor, breadcrumb, supervision } = opts;
+  const { installed, response, pingOk, pid, pidAlive, cliFlavor, holderFlavor, breadcrumb, supervision } = opts;
 
   if (!installed) return { state: "not-installed" };
 
@@ -152,7 +152,7 @@ export function classifyDaemonStatus(opts: DaemonStatusInputs): DaemonStatusVerd
   // signals) can say more than "not running"; absent them, fall straight
   // through to the pre-existing not-running verdict.
   if (pidAlive && pid !== null) {
-    if (breadcrumb?.flavor && intendedFlavor && breadcrumb.flavor !== intendedFlavor) {
+    if (breadcrumb?.flavor && cliFlavor && breadcrumb.flavor !== cliFlavor) {
       return { state: "parked", pid, ...(holderFlavor ? { holderFlavor } : {}) };
     }
     const now = opts.now ?? Date.now();
