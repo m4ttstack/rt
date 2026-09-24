@@ -229,12 +229,17 @@ interface FastBrowserProbe {
   failure: string | null;
 }
 
+/** The checks the two rows read. The full doctor adds a live Codex agent smoke that costs most of its runtime. */
+const DOCTOR_CHECKS = ["runtime-checksum", "extension-installed", "extension-loaded", "pairing"];
+
 /** One `doctor` run feeds both rows: they read different fields of the same report, and a second spawn would double the bounded wait on every plan. */
 async function probeFastBrowser(p: Probes, seams: ToolsSeams): Promise<FastBrowserProbe> {
   const resolved = seams.resolveTool(p, "fast-browser");
   if (!resolved.exec) return { resolvable: false, doctor: null, failure: null };
 
-  const res = await exec(p, [...resolved.exec, "doctor", "--json"], DOCTOR_TIMEOUT_MS);
+  let res = await exec(p, [...resolved.exec, "doctor", "--checks", DOCTOR_CHECKS.join(","), "--json"], DOCTOR_TIMEOUT_MS);
+  // fast-browser before 0.1.4 has no --checks and refuses it as a usage error.
+  if (res.code === 2 && res.stdout.trim() === "") res = await exec(p, [...resolved.exec, "doctor", "--json"], DOCTOR_TIMEOUT_MS);
   if (res.code === 124) return { resolvable: true, doctor: null, failure: "fast-browser doctor timed out" };
 
   // `doctor` is a health check: it commonly exits non-zero BECAUSE it found a
@@ -309,6 +314,10 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   // tool.fast-browser already reports an unreadable doctor; repeating it here
   // would be two rows for one fact.
   if (!probe.doctor) return row({ ...base, status: "skipped", detail: "fast-browser doctor could not be read (see Fast Browser)" });
+
+  const installed = probe.doctor.checks?.find((c) => c.id === "extension-installed");
+  if (!installed) return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-installed check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
+  if (installed.status !== "pass") return row({ ...base, status: "needs-you", detail: installed.message ?? "not installed in Chrome", action: FAST_BROWSER_LOAD_STEPS });
 
   const extension = checkState(probe.doctor, "extension-loaded");
   if (extension === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-loaded check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
