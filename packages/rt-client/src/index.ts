@@ -172,6 +172,7 @@ export type { SetSettingOpts } from "./settings/write.ts";
 export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-machinery.ts";
 export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";
 export { REGISTRY } from "./settings/registry-defs.ts";
+export { NOTIFICATION_EVENT_KEYS, NOTIFICATION_DEFAULTS } from "./settings/notification-events.ts";
 
 export { readStore, listTeams } from "./settings/stores.ts";
 export type { StoreFile } from "./settings/stores.ts";
