@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { flavorTakeover, type TakeoverSeams } from "../flavor.ts";
 import { TRAY_SOCK_PATH } from "../../lib/daemon-config.ts";
 import { DEV_TRAY_APP_NAME, TRAY_APP_BUNDLE, TRAY_APP_NAME } from "../../lib/rt-paths.ts";
-import { deleteKvValue, getKvValue } from "../../lib/state/index.ts";
+import { deleteKvValue, getKvValue, hasKvValue } from "../../lib/state/index.ts";
 
 const HOME = process.env.HOME!;
 const WRAPPER_PATH = join(HOME, ".local", "bin", "rt");
@@ -27,6 +27,10 @@ const FAKE_PROD_APP = join(HOME, "Applications", TRAY_APP_BUNDLE);
 const FAKE_PROD_RT = join(FAKE_PROD_APP, "Contents", "MacOS", "rt");
 const HAND_DECK_PLIST = join(HOME, "Library", "LaunchAgents", "com.mattstack.deck.plist");
 const UID = process.getuid?.() ?? 501;
+/** What standalone rt 2.5.x left at ~/.local/bin/rt: no marker line, no RT_LAUNCH_CWD. */
+const STANDALONE_25_WRAPPER = `#!/bin/zsh\nexec "/Users/someone/.bun/bin/bun" run "/Users/someone/repo-tools/cli.ts" "$@"\n`;
+const LEGACY_DEV_CONFIG = JSON.stringify({ sourcePath: "/Users/someone/repo-tools", bunPath: "/Users/someone/.bun/bin/bun" });
+const LEGACY_DEV_CONFIGS = [join(HOME, ".rt", "dev-mode.json"), join(HOME, ".mattstack", "rt", "dev-mode.json")];
 
 let fakeBinDir = "";
 let logPath = "";
@@ -153,7 +157,7 @@ afterEach(() => {
   for (const p of [fakeBinDir, sourceDir, FAKE_PROD_APP, dirname(HAND_DECK_PLIST), join(HOME, ".mattstack", "deck")]) {
     if (p) rmSync(p, { recursive: true, force: true });
   }
-  for (const p of [WRAPPER_PATH, PRELOAD, TRAY_SOCK_PATH]) rmSync(p, { force: true });
+  for (const p of [WRAPPER_PATH, PRELOAD, TRAY_SOCK_PATH, ...LEGACY_DEV_CONFIGS]) rmSync(p, { force: true });
   try { deleteKvValue("dev-mode", "config"); } catch { /* never opened */ }
 });
 
@@ -269,6 +273,39 @@ describe("rt flavor takeover", () => {
     expect(r.exitCode).toBe(2);
     expect(steps()).toEqual([]);
     expect(readFileSync(WRAPPER_PATH, "utf8")).toContain("mattstack-dev-mode");
+  }, 15_000);
+
+  test("prod over a standalone rt 2.5.x machine: its markerless source wrapper is replaced, and no dev-mode.json is read", async () => {
+    setUpFakes([]);
+    installProdApp();
+    mkdirSync(dirname(WRAPPER_PATH), { recursive: true });
+    writeFileSync(WRAPPER_PATH, STANDALONE_25_WRAPPER, { mode: 0o755 });
+    for (const p of LEGACY_DEV_CONFIGS) {
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, LEGACY_DEV_CONFIG);
+    }
+
+    const r = await run(["prod"]);
+
+    expect(r.exitCode).toBeNull();
+    expect(lstatSync(WRAPPER_PATH).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(WRAPPER_PATH)).toBe(FAKE_PROD_RT);
+    for (const p of LEGACY_DEV_CONFIGS) expect(readFileSync(p, "utf8")).toBe(LEGACY_DEV_CONFIG);
+    expect(hasKvValue("dev-mode", "config")).toBe(false);
+  }, 15_000);
+
+  test("dev over a foreign ~/.local/bin/rt: replaced by the marked source wrapper", async () => {
+    setUpFakes([]);
+    mkdirSync(dirname(WRAPPER_PATH), { recursive: true });
+    writeFileSync(WRAPPER_PATH, STANDALONE_25_WRAPPER, { mode: 0o755 });
+    const src = devSource();
+
+    const r = await run(["dev"], { resolveSourcePath: () => src });
+
+    expect(r.exitCode).toBeNull();
+    const wrapper = readFileSync(WRAPPER_PATH, "utf8");
+    expect(wrapper.split("\n")[1]).toBe("# mattstack-dev-mode");
+    expect(wrapper).toContain(`"${src}/cli.ts"`);
   }, 15_000);
 
   test("a missing or unknown target is a usage error", async () => {
