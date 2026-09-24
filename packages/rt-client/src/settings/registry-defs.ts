@@ -10,6 +10,7 @@
  */
 
 import type { SettingDef, SettingScope } from "./registry-machinery.ts";
+import { NOTIFICATION_DEFAULTS } from "./notification-events.ts";
 
 const ALL_SCOPES: SettingScope[] = ["user", "team", "machine"];
 
@@ -86,7 +87,8 @@ export const REGISTRY: readonly SettingDef[] = [
     scopes: ["user"],
     merge: "deep",
     migrated: true,
-    description: "Desktop notification preferences (which events notify, sound on/off).",
+    default: NOTIFICATION_DEFAULTS,
+    description: "Desktop notification preferences (which events notify, sound on/off). Every event defaults to on; a user layer turns single events off.",
   },
   {
     key: "rt.notify.eventBridges",

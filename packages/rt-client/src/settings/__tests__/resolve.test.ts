@@ -523,8 +523,10 @@ describe("settings/resolve", () => {
 
       const got = getSetting("rt.notifications", { repoIdentity: IDENTITY });
 
-      expect(got.value).toEqual({ pushes: true });
-      expect(got.provenance).toEqual([{ scope: "user", file: userSettingsPath() }]);
+      // The registry default is merged in underneath; the repo section's `false` never is.
+      expect((got.value as Record<string, boolean>).pushes).toBe(true);
+      expect(got.provenance).toContainEqual({ scope: "user", file: userSettingsPath() });
+      expect(got.provenance.some((p) => String(p.scope).includes("repo"))).toBe(false);
     });
 
     test("explain omits repo rungs when there is no identity to reach them with", () => {
