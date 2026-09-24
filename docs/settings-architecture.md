@@ -107,7 +107,7 @@ place, unrenamed) stays recoverable by hand. Verifying is not optional:
 `persistOrWarn` swallows `SQLITE_BUSY`, so a write that returned is not
 necessarily a write that landed. Reference implementations:
 `lib/state/legacy-import.ts`, `lib/run-history.ts`,
-`extensions/vscode/rt-context/src/branchNaming.ts`, `board/src/config.ts`,
+`extensions/vscode/rt-context/src/branchNaming.ts`, `apps/board/src/config.ts`,
 `gitq/src/core/{worktrees,forges}.ts`, `apps/deck/src/api/platform-settings.ts`.
 
 **Invariant: keys behind an ownership latch must carry NO registry `default`** —
