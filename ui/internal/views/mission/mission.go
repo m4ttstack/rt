@@ -293,6 +293,13 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if reloaded || len(decoded.History.Commits) != len(m.model.History.Commits) || !decoded.History.HasMore {
 		m.historyOnMore, m.hoverHistoryMore = false, false
 	}
+	// The driver keeps the selection across a worktree switch when the new
+	// tree changed the same path, but that diff is another tree's, so it
+	// opens at its top, and the other tab's stashed position goes too.
+	if decoded.Current.Worktree != m.model.Current.Worktree {
+		m.diffCursor, m.diffTop, m.diffPath = 0, 0, ""
+		m.tabDiff = map[string]diffScroll{}
+	}
 	wasShowing := m.stashShowing()
 	m.model = decoded
 	m.clampSelection()

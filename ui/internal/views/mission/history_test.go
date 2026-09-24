@@ -1307,6 +1307,31 @@ func TestTabSwitchStashesEachTabsDiffScroll(t *testing.T) {
 	}
 }
 
+func TestWorktreeSwitchOpensTheSamePathsDiffAtItsTop(t *testing.T) {
+	m := newMouseTestMission()
+	first := mouseFixtureModel()
+	first.Current.Worktree = "/w/a"
+	if err := m.setModelValue(first); err != nil {
+		t.Fatal(err)
+	}
+	m.diffCursor, m.diffTop = 3, 1
+	same := first
+	if err := m.setModelValue(same); err != nil {
+		t.Fatal(err)
+	}
+	if m.diffCursor != 3 || m.diffTop != 1 {
+		t.Fatalf("a push for the same tree and path must keep the diff scroll, got cursor=%d top=%d", m.diffCursor, m.diffTop)
+	}
+	other := first
+	other.Current.Worktree = "/w/b"
+	if err := m.setModelValue(other); err != nil {
+		t.Fatal(err)
+	}
+	if m.diffCursor != 0 || m.diffTop != 0 {
+		t.Fatalf("another tree's diff for the same path must open at its top, got cursor=%d top=%d", m.diffCursor, m.diffTop)
+	}
+}
+
 func TestFullFrameHistoryEveryRowFullyPaintsBackground(t *testing.T) {
 	m := newHistoryTestMission()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
