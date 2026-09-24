@@ -283,7 +283,7 @@ if [ "$IS_DEV" = true ]; then
         # RT_REQUIRE_DEPS=0 opt-out; any other cause of a missing helper is
         # still a hard failure.
         if [ "${RT_REQUIRE_DEPS:-1}" = 1 ]; then echo "  ✗ Helpers/deck missing before the shim swap"; exit 1; fi
-        echo "  ⚠ Helpers/deck missing — skipping the deck-dev-shim swap (RT_REQUIRE_DEPS=0 set)"
+        echo "  ⚠ Helpers/deck missing: skipping the deck-dev-shim swap (RT_REQUIRE_DEPS=0 set)"
     else
         mv "$CONTENTS/Helpers/deck" "$CONTENTS/Helpers/deck-pinned"
         cp "$DECK_SHIM_BINARY" "$CONTENTS/Helpers/deck"; chmod +x "$CONTENTS/Helpers/deck"
