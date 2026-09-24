@@ -649,7 +649,10 @@ export async function homeRemoteSet(args: string[], _ctx: CommandContext = {}, d
       const reason = withoutUrls(push.stderr.trim()) || `exit ${push.code}`;
       if (previous !== null) {
         // The old origin was working; a URL that cannot take a push must not replace it.
-        await deps.probes.exec(["git", "-C", repoDir, "remote", "set-url", "origin", previous]);
+        const restore = await deps.probes.exec(["git", "-C", repoDir, "remote", "set-url", "origin", previous]);
+        if (restore.code !== 0) {
+          throw new UserActionableError("push-failed", `the push to the new URL failed, and the previous origin could not be restored (${withoutUrls(restore.stderr.trim()) || `exit ${restore.code}`}); check git remote -v in ${repoDir}: ${reason}`);
+        }
         throw new UserActionableError("push-failed", `the push to the new URL failed (origin restored to the previous remote): ${reason}`);
       }
       throw new UserActionableError("push-failed", `origin is set, but the push failed: ${reason}`);

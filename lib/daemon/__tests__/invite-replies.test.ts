@@ -49,7 +49,7 @@ function fakeDeps(opts: {
     },
     isNotified: (id) => notified.has(id),
     markNotified: (id, outcome) => { notified.add(id); marks.push({ id, outcome }); },
-    notify: (event) => { sent.push(event); },
+    notify: (event) => { sent.push(event); return true; },
     enabled: () => opts.enabled ?? true,
     now: () => NOW,
     warn: (msg) => { warned.push(msg); },
@@ -173,6 +173,31 @@ describe("checkInviteReplies", () => {
 
     expect(f.sent).toEqual([]);
     expect(f.reads).toEqual([]);
+  });
+
+  test("a malformed invite record is warned and skipped without touching the relay", async () => {
+    const f = fakeDeps({
+      records: { acme: { ed: rec("inv-1"), bad: { id: 7 } as unknown as InviteRecords[string], worse: null as unknown as InviteRecords[string] } },
+      replies: { "inv-1": { blob: "ciphertext" } },
+    });
+
+    const result = await checkInviteReplies(f.deps);
+
+    expect(result.notified).toEqual([{ slug: "acme", handle: "ed", id: "inv-1" }]);
+    expect(f.warned).toHaveLength(2);
+    expect(f.warned.join(" ")).toContain("bad");
+    expect(f.warned.join(" ")).toContain("worse");
+    expect(f.reads).toEqual(["inv-1:secret-inv-1"]);
+  });
+
+  test("a notification that could not be queued leaves the invite unmarked for the next sweep", async () => {
+    const f = fakeDeps({ records: { acme: { ed: rec("inv-1") } }, replies: { "inv-1": { blob: "ciphertext" } } });
+    f.deps.notify = () => false;
+
+    const result = await checkInviteReplies(f.deps);
+
+    expect(result.notified).toEqual([]);
+    expect(f.marks).toEqual([]);
   });
 
   test("the warning for a relay read failure names the handle, never the invite id", async () => {

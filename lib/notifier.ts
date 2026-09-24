@@ -431,8 +431,8 @@ export interface Notifier {
   onNotification(hook: (type: string, data: any) => void): void;
   /** Queue a notification, persist it, and attempt to push to the tray app. Falls back to osascript if no tray app is available. */
   notify(title: string, message: string, url?: string, category?: string, pids?: number[], id?: string): void;
-  /** notify() for an event that carries fields beyond the positional shape (team, handle, paneId); the same queue, broadcast and tray push. */
-  notifyEvent(event: NotifyEventInput): void;
+  /** notify() for an event that carries fields beyond the positional shape (team, handle, paneId); the same queue, broadcast and tray push. False when the durable queue write was dropped (busy retries exhausted): the live tray push still goes out, but nothing survives a tray restart. */
+  notifyEvent(event: NotifyEventInput): boolean;
   /**
    * notify() gated on the user's preference for `category`, loading prefs per
    * call. For emitters outside the transition loop (which loads prefs once per
@@ -524,7 +524,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
     notifyEvent({ id, title, message, url, category, pids });
   }
 
-  function notifyEvent(input: NotifyEventInput): void {
+  function notifyEvent(input: NotifyEventInput): boolean {
     const { title, message, url } = input;
     const category = input.category ?? "general";
     const event: NotificationEvent = {
@@ -535,7 +535,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
     };
 
     // 1. Queue + persist
-    enqueueNotification(event);
+    const queued = enqueueNotification(event);
 
     // 1b. Broadcast to WebSocket clients
     if (broadcastHook) broadcastHook("notification", event);
@@ -586,6 +586,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
         log.warn({ err }, "chat push failed");
       }
     }
+    return queued;
   }
 
   /**
@@ -1030,9 +1031,9 @@ export function notify(
   getDefaultNotifier().notify(title, message, url, category, pids, id);
 }
 
-/** notify() for an event carrying fields beyond the positional shape (team, handle, paneId). */
-export function notifyEvent(event: NotifyEventInput): void {
-  getDefaultNotifier().notifyEvent(event);
+/** notify() for an event carrying fields beyond the positional shape (team, handle, paneId); false when the durable queue write was dropped. */
+export function notifyEvent(event: NotifyEventInput): boolean {
+  return getDefaultNotifier().notifyEvent(event);
 }
 
 /**

@@ -305,6 +305,41 @@ describe("homeRemoteSet", () => {
     expect(execCalls(badName.probes)).toEqual([]);
   });
 
+  test("a token-only https userinfo is a credential too, and is refused", async () => {
+    const probes = fakeProbes({ home: HOME, dirs: { [GIT_DIR]: [] }, exec: scripted() });
+    const deps = baseDeps({ probes });
+
+    await expectExit(() => homeRemoteSet(["https://ghp_tok789@github.com/me/x.git", "--json"], {}, deps));
+
+    const err = payload(deps).error as { code: string; message: string };
+    expect(err.code).toBe("bad-url");
+    expect(err.message).not.toContain("ghp_tok789");
+    expect(execCalls(probes)).toEqual([]);
+  });
+
+  test("when the push fails and restoring the old origin fails too, the message says so instead of claiming a restore", async () => {
+    const old = "https://old.example/x.git";
+    const probes = fakeProbes({
+      home: HOME,
+      dirs: { [GIT_DIR]: [] },
+      exec: scripted({
+        origin: old,
+        answers: {
+          [`git -C ${USER_REPO} push`]: fail(128, "remote: Permission denied"),
+          [`git -C ${USER_REPO} remote set-url origin ${old}`]: fail(1, "fatal: could not lock config file"),
+        },
+      }),
+    });
+    const deps = baseDeps({ probes });
+
+    await expectExit(() => homeRemoteSet([URL, "--json"], {}, deps));
+
+    const err = payload(deps).error as { code: string; message: string };
+    expect(err.code).toBe("push-failed");
+    expect(err.message).not.toContain("origin restored");
+    expect(err.message).toContain("could not be restored");
+  });
+
   test("a raw URL string on stdin (not JSON) is accepted", async () => {
     const deps = baseDeps({ stdin: async () => URL });
 

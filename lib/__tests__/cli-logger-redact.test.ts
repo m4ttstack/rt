@@ -39,6 +39,12 @@ describe("redactSensitiveArgs", () => {
     expect(redactSensitiveArgs(clean)).toEqual(clean);
   });
 
+  test("a token-only https userinfo is redacted; an ssh username is not a credential", () => {
+    expect(redactSensitiveArgs(["home", "remote", "set", "https://ghp_tok@github.com/me/x.git"])).toEqual(["home", "remote", "set", "[redacted]"]);
+    const ssh = ["home", "remote", "set", "ssh://git@github.com/me/x.git"];
+    expect(redactSensitiveArgs(ssh)).toEqual(ssh);
+  });
+
   test("handles a trailing --reason with no value without throwing", () => {
     expect(() => redactSensitiveArgs(["sdm", "connect", "k", "--reason"])).not.toThrow();
     expect(redactSensitiveArgs(["sdm", "connect", "k", "--reason"])).toEqual([

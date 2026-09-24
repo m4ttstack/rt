@@ -36,7 +36,8 @@ export interface InviteReplyDeps {
   openReply(blob: string, keyB64: string, id: string): Promise<string>;
   isNotified(inviteId: string): boolean;
   markNotified(inviteId: string, outcome: InviteReplyOutcomeKind): void;
-  notify(event: NotifyEventInput): void;
+  /** True once the event is durably queued; false leaves the invite for the next sweep. */
+  notify(event: NotifyEventInput): boolean;
   /** The user's member_joined notification preference; off means the relay is not even asked. */
   enabled(): boolean;
   now(): number;
@@ -78,6 +79,10 @@ export async function checkInviteReplies(deps: InviteReplyDeps): Promise<InviteR
     }
 
     for (const [handle, rec] of Object.entries(records)) {
+      if (!isInviteRecord(rec)) {
+        deps.warn(`invite for ${handle} (${slug}): the record is malformed; skipping it`);
+        continue;
+      }
       if (deps.isNotified(rec.id)) continue;
       if (!isLive(rec.expiresAt, now)) continue;
 
@@ -98,13 +103,20 @@ export async function checkInviteReplies(deps: InviteReplyDeps): Promise<InviteR
         continue;
       }
 
-      deps.notify(memberJoinedEvent(slug, handle, rec.id));
+      if (!deps.notify(memberJoinedEvent(slug, handle, rec.id))) continue;
       deps.markNotified(rec.id, "notified");
       notified.push({ slug, handle, id: rec.id });
     }
   }
 
   return { notified };
+}
+
+/** The records reader casts each parsed value; an older or hand-edited file can hold anything. */
+function isInviteRecord(rec: unknown): rec is InviteRecords[string] {
+  if (typeof rec !== "object" || rec === null) return false;
+  const r = rec as Record<string, unknown>;
+  return typeof r.id === "string" && typeof r.creatorSecret === "string" && typeof r.keyB64 === "string" && typeof r.expiresAt === "string";
 }
 
 /** Every `<slug>.json` under ~/.mattstack/rt/invites, the same file `readInviteRecords` reads. */

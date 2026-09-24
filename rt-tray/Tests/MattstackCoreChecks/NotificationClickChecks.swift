@@ -28,15 +28,16 @@ let notificationClickChecks: [Check] = [
         c.expect(copy.body.contains("re-encrypt"), "body says secrets are re-encrypted")
         c.expectEqual(copy.confirm, "Add member")
     },
-    Check("members sync outcome is read from the JSON envelope, not the exit code") { c in
-        let added = Data("{\"contract\":1,\"added\":[\"age1abc\"],\"pending\":[],\"reencrypted\":[\"board.json\"]}".utf8)
+    Check("members sync outcome matches the named handle against addedHandles, never the key list or the exit code") { c in
+        let added = Data("{\"contract\":1,\"added\":[\"age1owner\",\"age1ed\"],\"addedHandles\":[\"ed\"],\"pending\":[],\"reencrypted\":[\"board.json\"]}".utf8)
         c.expectEqual(MembersSyncOutcome.parse(stdout: added, handle: "ed"), .added)
-        let pending = Data("{\"added\":[],\"pending\":[\"ed\"],\"reencrypted\":[]}".utf8)
+        let pending = Data("{\"added\":[\"age1owner\"],\"addedHandles\":[],\"pending\":[\"ed\"],\"reencrypted\":[]}".utf8)
         c.expectEqual(MembersSyncOutcome.parse(stdout: pending, handle: "ed"), .pending)
-        let someoneElse = Data("{\"added\":[\"age1abc\"],\"pending\":[\"jo\"],\"reencrypted\":[]}".utf8)
-        c.expectEqual(MembersSyncOutcome.parse(stdout: someoneElse, handle: "ed"), .added)
-        let gone = Data("{\"added\":[],\"pending\":[],\"reencrypted\":[]}".utf8)
-        c.expectEqual(MembersSyncOutcome.parse(stdout: gone, handle: "ed"), .notFound)
+        let someoneElse = Data("{\"added\":[\"age1jo\"],\"addedHandles\":[\"jo\"],\"pending\":[],\"reencrypted\":[]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: someoneElse, handle: "ed"), .notFound)
+        let ownerOnly = Data("{\"added\":[\"age1owner\"],\"addedHandles\":[],\"pending\":[],\"reencrypted\":[]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: ownerOnly, handle: "ed"), .notFound)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: Data("{\"added\":[],\"pending\":[]}".utf8), handle: "ed"), .unknown)
         c.expectEqual(MembersSyncOutcome.parse(stdout: Data("not json".utf8), handle: "ed"), .unknown)
     },
     Check("a plain banner click ignores team and handle") { c in

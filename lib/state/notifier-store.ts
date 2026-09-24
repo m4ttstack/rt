@@ -95,13 +95,14 @@ function rowToEvent(row: QueueEventRow): NotificationEvent {
   return JSON.parse(row.event) as NotificationEvent;
 }
 
-/** Enqueue = INSERT. The one mutation that would otherwise lose a notification permanently if dropped. */
-export function enqueueNotification(event: NotificationEvent, db: Database = getStateDb()): void {
-  runCriticalWrite(
+/** Enqueue = INSERT. The one mutation that would otherwise lose a notification permanently if dropped; false when the busy retries ran out and it was. */
+export function enqueueNotification(event: NotificationEvent, db: Database = getStateDb()): boolean {
+  const done = runCriticalWrite(
     "enqueue",
-    () => { db.query(`INSERT INTO notify_queue (event_id, event) VALUES (?, ?);`).run(event.id, JSON.stringify(event)); },
+    () => { db.query(`INSERT INTO notify_queue (event_id, event) VALUES (?, ?);`).run(event.id, JSON.stringify(event)); return true; },
     { event_id: event.id },
   );
+  return done === true;
 }
 
 /**
