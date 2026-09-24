@@ -4,6 +4,30 @@ public struct TriageFingerprint: Codable, Sendable, Equatable {
     public let headSha: String
     public let dirtHash: String
     public let mrState: String?
+
+    private enum CodingKeys: String, CodingKey { case headSha, dirtHash, mrState }
+
+    public init(headSha: String, dirtHash: String, mrState: String?) {
+        self.headSha = headSha; self.dirtHash = dirtHash; self.mrState = mrState
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        headSha = try c.decode(String.self, forKey: .headSha)
+        dirtHash = try c.decode(String.self, forKey: .dirtHash)
+        mrState = try c.decodeIfPresent(String.self, forKey: .mrState)
+    }
+
+    /// The daemon's `sameFingerprint` compares `mrState` by value; a key this
+    /// encoder omitted would decode there as `undefined`, which is never
+    /// `=== null`, so every MR-less row would compare as changed forever.
+    /// `encode`, not `encodeIfPresent`, keeps the key present as JSON `null`.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(headSha, forKey: .headSha)
+        try c.encode(dirtHash, forKey: .dirtHash)
+        try c.encode(mrState, forKey: .mrState)
+    }
 }
 
 public struct TriageRow: Decodable, Sendable, Identifiable, Equatable {

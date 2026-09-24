@@ -39,4 +39,10 @@ let triageChecks: [Check] = [
         c.expectEqual(NotificationClick.bannerRoute(category: NotificationClick.worktreeTriageCategory, url: nil, paneId: nil), .showWorktreePanel)
         c.expectEqual(NotificationClick.Route.showWorktreePanel.suppressesActivationShow, false)
     },
+    Check("triage fingerprint encodes a nil mrState as JSON null, never an omitted key") { c in
+        let fp = TriageFingerprint(headSha: "h", dirtHash: "d", mrState: nil)
+        let data = try JSONEncoder().encode(fp)
+        let out = String(decoding: data, as: UTF8.self)
+        c.expect(out.contains(#""mrState":null"#), "expected \"mrState\":null in \(out)")
+    },
 ]

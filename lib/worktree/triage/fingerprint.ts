@@ -8,7 +8,7 @@ export function dirtHash(files: string[]): string {
 }
 
 export function sameFingerprint(a: Fingerprint, b: Fingerprint): boolean {
-  return a.headSha === b.headSha && a.dirtHash === b.dirtHash && a.mrState === b.mrState;
+  return a.headSha === b.headSha && a.dirtHash === b.dirtHash && (a.mrState ?? null) === (b.mrState ?? null);
 }
 
 export function keepStillHolds(kept: KeepRecord, now: Fingerprint): boolean {

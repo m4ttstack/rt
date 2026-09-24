@@ -16,6 +16,12 @@ describe("fingerprint", () => {
     expect(sameFingerprint(fp, { ...fp, mrState: "opened" })).toBe(false);
   });
 
+  test("a missing mrState key matches an explicit null (round-tripped JSON drops the key)", () => {
+    const withNull = { headSha: "a1", dirtHash: "d1", mrState: null };
+    const missingKey = JSON.parse(JSON.stringify({ headSha: "a1", dirtHash: "d1" })) as typeof withNull;
+    expect(sameFingerprint(withNull, missingKey)).toBe(true);
+  });
+
   test("a keep holds only while the tree is unchanged", () => {
     const kept = { keptAt: "2026-09-24T00:00:00Z", ...fp };
     expect(keepStillHolds(kept, fp)).toBe(true);
