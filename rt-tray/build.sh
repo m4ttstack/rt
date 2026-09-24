@@ -383,6 +383,12 @@ plist_set() { # key type value
     /usr/libexec/PlistBuddy -c "Set :$1 $3" "$INFO" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 $2 $3" "$INFO"
 }
 plist_set MSDevBuild bool "$IS_DEV"
+# The running dev app compares this against a staged build's to offer a
+# restart (scripts/build-dev-app.ts --local sets it). plutil, not plist_set:
+# the stamp has spaces, which PlistBuddy's Set would split on.
+if [ "$IS_DEV" = true ] && [ -n "${MS_BUILD_STAMP:-}" ]; then
+    plutil -replace MSBuildStamp -string "$MS_BUILD_STAMP" "$INFO"
+fi
 plist_set LSMinimumSystemVersion string 14.0
 
 if [ "$RT_VERSION" != "dev" ]; then

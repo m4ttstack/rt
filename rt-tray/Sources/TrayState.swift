@@ -52,6 +52,14 @@ class TrayState: ObservableObject {
     /// registering the deck helper, so deck may be running unowned or not at all.
     @Published var handDeckBlocked: HandDeckBlockedNotice? = nil
 
+    // ── Dev flavor: restart to a new build ──────────────────────────────────
+    /// The staged build's stamp, set only while it differs from the running
+    /// app's (DevBuildWatcher).
+    @Published var stagedBuildStamp: String? = nil
+    @Published var devRebuild: DevRebuildState = .idle
+    /// The tree the running or last failed rebuild came from.
+    @Published var devRebuildTree: String? = nil
+
     var healthColor: Color {
         switch health {
         case .healthy:  return .green
@@ -77,4 +85,6 @@ extension Notification.Name {
     static let rtShowUninstall   = Notification.Name("rtShowUninstall")
     static let rtQuitMattstack   = Notification.Name("rtQuitMattstack")
     static let showMattstackWindow = Notification.Name("showMattstackWindow")
+    static let rtDevRestartIntoStaged = Notification.Name("rtDevRestartIntoStaged")
+    static let rtDevRebuildChanged = Notification.Name("rtDevRebuildChanged")
 }

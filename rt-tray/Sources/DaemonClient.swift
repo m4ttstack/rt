@@ -45,6 +45,12 @@ class DaemonClient {
         return response.data
     }
 
+    /// The raw socket, for the same reason as `querySupervision`: the REST
+    /// surface has no route for `worktree:list`.
+    func queryWorktreeList() async -> WorktreeListPayload? {
+        await querySocket("worktree:list")
+    }
+
     func querySystemProcesses() async -> SystemProcessData? {
         guard let response: SystemProcessResponse = await query("system-processes") else { return nil }
         return response.ok ? response.data : nil
