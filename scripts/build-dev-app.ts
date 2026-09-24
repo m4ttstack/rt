@@ -70,16 +70,17 @@ if (parsed.local) {
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, content);
         },
-        // The build step streams, so a terminal or the tray's build log shows
-        // progress for the minutes it runs; its errors are already on screen.
+        // The deps fetch and the build stream, so a terminal or the tray's build
+        // log shows progress for the minutes they run; their errors are already on screen.
         exec: async (argv, opts) => {
-          if (!argv.includes("rt-tray/build.sh")) return runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts });
+          const streamed = argv.includes("rt-tray/build.sh") || argv.includes("scripts/fetch-deps.sh");
+          if (!streamed) return runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts });
           const proc = Bun.spawn(argv, { cwd: opts?.cwd, stdout: "inherit", stderr: "inherit" });
-          // A hung build would otherwise leave the tray showing building… forever.
+          // A hung step would otherwise leave the tray showing building… forever.
           const timer = opts?.timeoutMs ? setTimeout(() => proc.kill(), opts.timeoutMs) : undefined;
           const exitCode = await proc.exited;
           clearTimeout(timer);
-          return { stdout: "", stderr: proc.signalCode ? `build killed after ${opts?.timeoutMs}ms` : "", exitCode };
+          return { stdout: "", stderr: proc.signalCode ? `killed after ${opts?.timeoutMs}ms` : "", exitCode };
         },
       },
       process.cwd(),
