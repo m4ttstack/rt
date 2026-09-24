@@ -521,6 +521,19 @@ describe("settings/unset", () => {
     expect(() => unsetSetting("rt.doesNotExist", "user")).toThrow(/unknown setting/);
   });
 
+  test("removes a retired key a store still carries, from any scope", () => {
+    mkdirSync(dirname(machineSettingsPath()), { recursive: true });
+    writeFileSync(machineSettingsPath(), `{\n  "mattstack.mode": "dev",\n  "mattstack.appPath": "/Applications/mattstack-dev.app"\n}\n`);
+    expect(unsetSetting("mattstack.mode", "machine")).toBe(true);
+    const after = readFileSync(machineSettingsPath(), "utf8");
+    expect(after).not.toContain("mattstack.mode");
+    expect(after).toContain("mattstack.appPath");
+  });
+
+  test("refuses a retired key with a repo identity", () => {
+    expect(() => unsetSetting("mattstack.mode", "user", { repoIdentity: IDENTITY })).toThrow(/not repo-scoped/);
+  });
+
   test("refuses a scope the def does not allow", () => {
     expect(() => unsetSetting("rt.repoIdentityOverrides", "user")).toThrow(/cannot be unset in the user store/);
   });

@@ -98,7 +98,7 @@ import { applyEdits, modify, parseTree, type JSONPath, type Node, type ParseErro
 import { randomBytes } from "crypto";
 import { dirname } from "path";
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
-import { getDef, isMigrated, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
+import { getDef, isMigrated, isRetiredKey, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { listTeams } from "./stores.ts";
 import { isJoinedTeam } from "./team-local-read.ts";
 
@@ -171,9 +171,15 @@ export function setSetting(key: string, value: unknown, scope: SettingScope, opt
  * with no local store included — nothing to remove is success, not an error),
  * and a key not present in the store is a no-op. Returns whether anything was
  * actually removed; the local-only reminder prints only on a real removal.
+ * A retired key is not in the registry but may linger in a store, so it can
+ * still be removed from any scope.
  */
 export function unsetSetting(key: string, scope: SettingScope, opts: SetSettingOpts = {}): boolean {
   const def = getDef(key);
+  if (!def && isRetiredKey(key)) {
+    if (opts.repoIdentity !== undefined) refuse(`"${key}" is not repo-scoped; omit the repo identity`);
+    return removeKeyFromScope(key, scope, opts, [key]);
+  }
   if (!def) {
     refuse(`unknown setting "${key}" — not in the settings registry (see \`rt settings list\`)`);
   }
@@ -190,10 +196,14 @@ export function unsetSetting(key: string, scope: SettingScope, opts: SetSettingO
     refuse(`"${key}" is not repo-scoped — omit the repo identity`);
   }
 
+  const jsonPath: JSONPath = opts.repoIdentity !== undefined ? ["repos", opts.repoIdentity, key] : [key];
+  return removeKeyFromScope(key, scope, opts, jsonPath);
+}
+
+function removeKeyFromScope(key: string, scope: SettingScope, opts: SetSettingOpts, jsonPath: JSONPath): boolean {
   const storePath = resolveStorePathForUnset(scope, opts);
   if (storePath === null || !existsSync(storePath)) return false;
 
-  const jsonPath: JSONPath = opts.repoIdentity !== undefined ? ["repos", opts.repoIdentity, key] : [key];
   const removed = removeFromStore(storePath, jsonPath);
 
   if (removed) {
