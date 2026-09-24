@@ -16,9 +16,12 @@ public struct DiscoveryApp: Codable, Equatable, Sendable {
     public let description: String?
     public let url: String
     public let icon: String?
-    public init(name: String, displayName: String, description: String?, url: String, icon: String?) {
+    public let badge: String?
+    public init(name: String, displayName: String, description: String?, url: String, icon: String?,
+                badge: String? = nil) {
         self.name = name; self.displayName = displayName
         self.description = description; self.url = url; self.icon = icon
+        self.badge = badge
     }
 }
 

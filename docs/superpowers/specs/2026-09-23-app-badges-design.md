@@ -21,8 +21,9 @@ by each app to the gates it renders:
 - `owner` is `human` or null (never `herd:*`: the shepherd answers those,
   and the daemon rejects anyone else's answer);
 - the subject is one that surface renders;
-- a `pane-attention` gate counts only on the board, and only once it has
-  been open 2 minutes (most clear on their own within 1 to 4 minutes, so
+- a `pane-attention` gate counts only once it has been open 2 minutes,
+  on the board for `agent:`/`herd:` subjects and on the console for a
+  `run:` subject (most clear on their own within 1 to 4 minutes, so
   counting them sooner makes the badge blink).
 
 The count is of gates, not rows: a run with two open gates of different
@@ -33,8 +34,8 @@ Verified against live data and a full code trace on 2026-09-23:
 | Gate | Where it surfaces | Counted |
 |---|---|---|
 | MR gates (`mr:`) owned by Matt | Board decision queue | Board tab |
-| Pane-attention gates, open 2+ min, owned by Matt | Board decision queue | Board tab |
-| :work gates (`run:`, owner human, run exists) | Console run row and run page | Console tab |
+| Pane-attention gates, open 2+ min, owned by Matt | Board decision queue (`agent:`/`herd:` subjects); console run row (`run:` subject, e.g. an orphaned :work run) | Board tab, or Console tab for a `run:` subject |
+| :work and pipeline gates (`run:`, owner human, run exists) | Console run row and run page; also the MR row its run recorded on the board | Console tab only (the board never counts a `run:` subject, so the dock never double counts) |
 | Shepherd workers' gates (`run:`, owner `herd:*`) | Console run row ("waiting on shepherd"); shepherd pane form | No |
 | Escalated shepherd gates (all `run:` today) | Console run row ("waiting on shepherd"); notification to the shepherd pane | No. A "shepherd is slow" signal the shepherd resolves. |
 | Board queue items for `execution: unassigned` or `delivery: stuck` | Board decision queue | No. They mean an answer did not land, not a decision waiting. They stay in the queue. |
@@ -119,7 +120,9 @@ The board's gate cache must be correct before its count can be:
 
 Then the count:
 
-- `src/gates/badge.ts` exports the badge predicate (the rule above). The
+- `src/gates/badge.ts` exports the badge predicate (the rule above). It
+  never counts a `run:` subject, even when the board shows that gate on
+  the MR row its run recorded; the console counts those. The
   client's `needsQueue` and queue button are unchanged. The server applies it to the rows the board holds
   (MR rows with attached gates, plus `queueExtras`), unaffected by the
   client's tab or author filter.
@@ -130,8 +133,9 @@ Then the count:
 ### Console (`mattstack-apps/apps/console`)
 
 - `GET /api/badge` counts gates on `run:` subjects whose run exists in
-  `listRuns`, under the rule above, excluding `kind: pane-attention` (the
-  board owns those; counting them here would double-count a wedged run).
+  `listRuns`, under the rule above. A `kind: pane-attention` gate on a
+  `run:` subject counts once it is 2 minutes old; the board never counts
+  a `run:` subject, so it is the console's.
   `path` is the run page of the oldest counted gate (`/runs/<repo>/<runId>`).
 - The run row marker (`hasOpenGate`, `src/app/runs/useGates.ts`, painted by
   `RunRow.tsx`) shows for any `open` or `parked` gate, labeled by owner:
@@ -205,8 +209,8 @@ console with deck, then relaunch the tray.
   answered, closed, herd-owned, unassigned-only, stuck-only excluded;
   pane-attention counted only at 2+ minutes); `/api/badge` count and `url`.
 - **Console:** `/api/badge` counts open and parked human gates on existing
-  runs, and excludes herd-owned, pane-attention, answered, and missing-run
-  gates; the row marker shows "blocked" for counted gates and "waiting on
+  runs and `run:` pane-attention gates 2+ minutes old, and excludes
+  herd-owned, young pane-attention, answered, and missing-run gates; the row marker shows "blocked" for counted gates and "waiting on
   shepherd" for herd-owned ones.
 - **Deck:** discovery passes `badge` through when present and omits it when
   absent.

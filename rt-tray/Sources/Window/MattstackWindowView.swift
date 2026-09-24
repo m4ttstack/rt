@@ -20,6 +20,8 @@ private let activeLabelColor = ShellChrome.activeLabel.color
 private let inactiveLabelColor = ShellChrome.inactiveLabel.color
 private let tabAccentColor = ShellChrome.accent.color
 private let okGreen = ShellChrome.ok.color
+private let badgeFill = ShellChrome.badgeFill.color
+private let badgeText = ShellChrome.badgeText.color
 
 struct MattstackWindowView: View {
     @ObservedObject var model: WindowModel
@@ -116,44 +118,81 @@ private struct TabButton: View {
     let shortcutIndex: Int?
 
     private var isActive: Bool { model.activeApp == app.name }
+    /// Read by both the reserved trailing space and the pill's own `if`, so
+    /// the two can never disagree about whether a pill is showing or how
+    /// wide its label is.
+    private var pillLabel: String? {
+        model.badges[app.name].flatMap { BadgeBook.label($0.count) }
+    }
+    /// Sized to `pillLabel`'s own width (1 digit, 2 digits, or "99+"), not a
+    /// fixed reserve -- a flat 40pt reserve truncates the tab label on a
+    /// 110pt tab when the pill is only 1 character wide.
+    private var pillReserve: CGFloat {
+        switch pillLabel?.count {
+        case nil: return 0
+        case 1: return 28
+        case 2: return 34
+        default: return 40
+        }
+    }
 
     var body: some View {
-        // Size, fill, and hit shape live on the label, inside the Button,
-        // not chained after it: chained after, the Button's own hit region
-        // is only its content's natural size (label text/icon), leaving the
-        // rest of the 110pt cell unclickable.
-        Button {
-            model.select(app.name)
-        } label: {
-            ZStack(alignment: .bottom) {
-                HStack(spacing: 6) {
-                    tabIcon
-                        .frame(width: tabIconSize, height: tabIconSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .saturation(isActive ? 1 : 0)
-                        .opacity(isActive ? 1 : 0.75)
-                    Text(app.displayName.lowercased())
-                        .font(.system(size: 12))
-                        .foregroundColor(isActive ? activeLabelColor : inactiveLabelColor)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 10)
-                .frame(width: tabWidth, height: barHeight, alignment: .leading)
+        ZStack(alignment: .trailing) {
+            // Size, fill, and hit shape live on the label, inside the Button,
+            // not chained after it: chained after, the Button's own hit region
+            // is only its content's natural size (label text/icon), leaving the
+            // rest of the 110pt cell unclickable.
+            Button {
+                model.select(app.name)
+            } label: {
+                ZStack(alignment: .bottom) {
+                    HStack(spacing: 6) {
+                        tabIcon
+                            .frame(width: tabIconSize, height: tabIconSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .saturation(isActive ? 1 : 0)
+                            .opacity(isActive ? 1 : 0.75)
+                        Text(app.displayName.lowercased())
+                            .font(.system(size: 12))
+                            .foregroundColor(isActive ? activeLabelColor : inactiveLabelColor)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 10)
+                    .padding(.trailing, pillReserve)
+                    .frame(width: tabWidth, height: barHeight, alignment: .leading)
 
-                if isActive {
-                    Rectangle().fill(tabAccentColor).frame(width: tabWidth, height: 2)
+                    if isActive {
+                        Rectangle().fill(tabAccentColor).frame(width: tabWidth, height: 2)
+                    }
                 }
+                .frame(width: tabWidth, height: barHeight)
+                .background(isActive ? activeFill : inactiveFill)
+                .contentShape(Rectangle())
             }
-            .frame(width: tabWidth, height: barHeight)
-            .background(isActive ? activeFill : inactiveFill)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(shortcutIndex != nil ? "\(app.displayName) \u{2318}\(shortcutIndex! + 1)" : app.displayName)
-        .modifier(TabShortcut(index: shortcutIndex))
-        .contextMenu {
-            Button("Reload") { model.store.reload(app.name) }
+            .buttonStyle(.plain)
+            .help(shortcutIndex != nil ? "\(app.displayName) \u{2318}\(shortcutIndex! + 1)" : app.displayName)
+            .modifier(TabShortcut(index: shortcutIndex))
+            .contextMenu {
+                Button("Reload") { model.store.reload(app.name) }
+            }
+
+            // A Button's label is one hit target on macOS, so the pill is a
+            // sibling Button, not nested inside the tab's own label.
+            if let label = pillLabel {
+                Button { model.openBadge(for: app.name) } label: {
+                    Text(label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(badgeText)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Capsule().fill(badgeFill))
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+                .help("Open the oldest waiting decision")
+            }
         }
     }
 
