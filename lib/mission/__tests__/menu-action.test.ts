@@ -78,6 +78,7 @@ function fakeClient(over: {
       calls.snapshot++;
       return snapshotOf(over.files?.(calls.snapshot) ?? []);
     },
+    fetchState: async () => ({ lastFetchedAt: null }),
     branches: async () => [],
     remotes: async () => [{ name: "origin" }],
     stashes: async () => [],

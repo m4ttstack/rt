@@ -12,6 +12,7 @@ import {
   DiffSelectionType,
   type BranchInfo,
   type ChangesetData,
+  type FetchState,
   type GitClient,
   type RepoSnapshot,
   type StagingDiff,
@@ -20,6 +21,7 @@ import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.t
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { ResolvedEditor } from "../../commands/code.ts";
 import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
+import { toBadge } from "../daemon/git-status-sweep.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import type { FileActions } from "../file-actions.ts";
 import { canon } from "../fs-canon.ts";
@@ -33,7 +35,7 @@ import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
 import { HistoryStore, type HistoryBranch } from "./history.ts";
 import { buildHistoryModel, committedFileRow } from "./history-model.ts";
-import { buildModel, joinWorktreeRows, mergeWorktreeTrees, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import { buildModel, joinWorktreeRows, mergeWorktreeTrees, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import {
   canStash,
   checkoutAndBringChanges,
@@ -250,6 +252,8 @@ export class MissionDriver {
   /** Registry path -> realpath, computed in refresh() so model() never touches the filesystem. */
   private treeCanon = new Map<string, string>();
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
+  /** Read alongside the snapshot in refresh() and refreshBadges(), so the two always describe the same worktree. */
+  private fetchState: FetchState = { lastFetchedAt: null };
   private branches: BranchInfo[] = [];
   private lastCommit: MissionLastCommit | null = null;
   private stagingDiff: StagingDiff | null = null;
@@ -398,6 +402,7 @@ export class MissionDriver {
       branches: this.branches,
       guards: this.guards,
       worktrees: this.worktreeRows(),
+      currentBadge: this.currentBadge(),
       stagingDiff: this.stagingDiff,
       lastCommit: this.lastCommit,
       action: this.action,
@@ -455,29 +460,13 @@ export class MissionDriver {
     return this.rows.find((r) => r.repo === this.state.currentRepo)?.worktrees ?? [];
   }
 
+  /**
+   * Built from this session's own live read, never the daemon's
+   * repos:status cache: that cache is swept on a timer and lags every push,
+   * commit, and fetch taken here. It stays the source for other worktrees.
+   */
   private currentBadge(): GitWorktreeBadge {
-    // Never another worktree's badge: a wrong ahead/behind would derive a
-    // wrong action, so an unswept tree never borrows one from elsewhere.
-    const badge = this.currentRepoBadges().find((w) => w.worktree === this.state.currentWorktree);
-    if (badge) return badge;
-    // The daemon's repos:status sweep hasn't reached this worktree yet (a
-    // plain, never-registered repo never will), but this.snapshot's own
-    // upstream/ahead/behind are already fetched live on every refresh,
-    // independent of the daemon -- falling back to EMPTY_GIT_BADGE's null
-    // upstream made the action segment claim "Publish branch · Never
-    // fetched" even when the branch demonstrably has an upstream and is
-    // ahead. lastFetchedAt stays null: that specifically answers "has the
-    // daemon fetched," which the live snapshot has no way to know.
-    return {
-      ...EMPTY_GIT_BADGE,
-      worktree: this.state.currentWorktree,
-      branch: this.snapshot.branch,
-      detached: this.snapshot.detached,
-      upstream: this.snapshot.upstream,
-      ahead: this.snapshot.ahead ?? 0,
-      behind: this.snapshot.behind ?? 0,
-      clean: this.snapshot.clean,
-    };
+    return toBadge(this.state.currentWorktree, this.snapshot, this.fetchState, this.deps.now().toISOString());
   }
 
   private historyBranch(): HistoryBranch {
@@ -520,10 +509,11 @@ export class MissionDriver {
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
     this.clearOnDisk();
-    const [statusRes, treesRes, snapshot, branches, remotes, guards, gitWorktrees, log] = await Promise.all([
+    const [statusRes, treesRes, snapshot, fetchState, branches, remotes, guards, gitWorktrees, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
       client.snapshot(),
+      client.fetchState(),
       client.branches(),
       client.remotes(),
       this.deps.buildGuards(this.state.currentWorktree),
@@ -534,6 +524,7 @@ export class MissionDriver {
     if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
     this.treeCanon = new Map(this.trees.map((tree) => [tree.path, canon(tree.path)]));
     this.snapshot = snapshot;
+    this.fetchState = fetchState;
     this.remoteName = remotes[0]?.name ?? null;
     this.guards = guards;
     this.gitWorktrees = gitWorktrees;
@@ -571,14 +562,16 @@ export class MissionDriver {
     const worktree = this.state.currentWorktree;
     const selectedPath = this.state.selectedPath;
     const client = this.deps.client(worktree);
-    const [statusRes, snapshot, stagingDiff] = await Promise.all([
+    const [statusRes, snapshot, fetchState, stagingDiff] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       client.snapshot(),
+      client.fetchState(),
       selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
     ]);
     if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    this.fetchState = fetchState;
     this.reconcileSelections();
     this.clearOnDisk();
     this.stagingDiff = stagingDiff;

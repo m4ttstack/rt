@@ -119,6 +119,7 @@ function baseInput(overrides: {
   branches?: BranchInfo[];
   guards?: Map<string, string>;
   worktrees?: WorktreeRow[];
+  currentBadge?: GitWorktreeBadge;
   stagingDiff?: StagingDiff | null;
   lastCommit?: MissionModel["commit"]["lastCommit"];
   action?: Partial<ActionState>;
@@ -132,6 +133,7 @@ function baseInput(overrides: {
     branches: overrides.branches ?? [],
     guards: overrides.guards ?? new Map<string, string>(),
     worktrees: overrides.worktrees ?? baseWorktrees(),
+    currentBadge: overrides.currentBadge ?? badge(),
     stagingDiff: overrides.stagingDiff ?? null,
     lastCommit: overrides.lastCommit ?? null,
     action: baseAction(overrides.action),
@@ -269,6 +271,7 @@ describe("buildModel golden fixture handshake", () => {
       branches,
       guards,
       worktrees,
+      currentBadge: rows[0]!.worktrees[0]!,
       stagingDiff: missionGoStagingDiff(),
       stash: {
         entry: { name: "refs/stash@{0}", stashSha: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e", branchName: "rt-191-mission-tui", tree: "t", parents: ["p", "i"] },
@@ -446,6 +449,49 @@ describe("editorLabel", () => {
 
   test("is empty when none is given", () => {
     expect(buildModel(baseInput()).editorLabel).toBe("");
+  });
+});
+
+describe("rows describing the current worktree show its live badge", () => {
+  const live = badge({ ahead: 0, behind: 0, staged: 2, clean: false, lastFetchedAt: "2026-09-18T14:00:00Z" });
+  const cached = badge({ ahead: 6, behind: 1, staged: 0, clean: true, lastFetchedAt: null });
+
+  test("the current worktree's row shows the live badge; another worktree's row keeps its cached one", () => {
+    const model = buildModel(
+      baseInput({
+        worktrees: [
+          { path: "/repo", name: "gandalf", branch: "main", onDeck: false, badge: cached },
+          { path: "/repo2", name: "frodo", branch: "feature", onDeck: false, badge: badge({ worktree: "/repo2", ahead: 4 }) },
+        ],
+        currentBadge: live,
+      }),
+    );
+
+    expect(model.worktrees[0]!.badge).toMatchObject({ ahead: 0, staged: 2, clean: false, lastFetchedAt: "2026-09-18T14:00:00Z" });
+    expect(model.worktrees[1]!.badge.ahead).toBe(4);
+  });
+
+  test("a repo row whose badge describes the current worktree shows the live badge; other repo rows keep theirs", () => {
+    const model = buildModel(
+      baseInput({
+        rows: [
+          { repo: "repo-tools", error: null, worktrees: [cached] },
+          { repo: "chat", error: null, worktrees: [badge({ worktree: "/repos/chat", ahead: 3 })] },
+        ],
+        currentBadge: live,
+      }),
+    );
+
+    expect(model.repos[0]!.badge).toMatchObject({ ahead: 0, staged: 2, lastFetchedAt: "2026-09-18T14:00:00Z" });
+    expect(model.repos[1]!.badge.ahead).toBe(3);
+  });
+
+  test("a current repo whose first cached badge is another worktree keeps that badge", () => {
+    const model = buildModel(
+      baseInput({ rows: [{ repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/repo2", ahead: 4 }), cached] }], currentBadge: live }),
+    );
+
+    expect(model.repos[0]!.badge.ahead).toBe(4);
   });
 });
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -194,6 +195,13 @@ type Mission struct {
 	selectGen         int
 	selectPending     bool
 	selectPendingBase string
+
+	// spin animates the busy action and the settling worktree. spinning is
+	// true while a tick is in flight, so a push during a busy stretch never
+	// starts a second chain, and it clears only when a tick lands with
+	// nothing busy, which is where the chain ends.
+	spin     spinner.Model
+	spinning bool
 }
 
 func New(em *session.Emitter) *Mission {
@@ -209,7 +217,24 @@ func New(em *session.Emitter) *Mission {
 		hoverStashFile:   -1,
 		historyMoreFor:   -1,
 		tabDiff:          map[string]diffScroll{},
+		spin:             spinner.New(spinner.WithSpinner(theme.Spinner())),
 	}
+}
+
+func (m *Mission) busy() bool {
+	return m.model.Action.Busy || m.model.Current.Settling
+}
+
+// startSpin begins a fresh chain on frame 0 when something is busy and no
+// chain is running. The fresh spinner.Model carries a new ID, so a tick
+// from an earlier chain can never advance this one.
+func (m *Mission) startSpin() tea.Cmd {
+	if m.spinning || !m.busy() {
+		return nil
+	}
+	m.spinning = true
+	m.spin = spinner.New(spinner.WithSpinner(theme.Spinner()))
+	return m.spin.Tick
 }
 
 // now returns the clock a click is timestamped against -- m.nowFn when a
@@ -378,7 +403,7 @@ func (m *Mission) moveCursor(delta int) {
 
 func (m *Mission) Reason() session.Reason { return m.reason }
 
-func (m *Mission) Init() tea.Cmd { return nil }
+func (m *Mission) Init() tea.Cmd { return m.startSpin() }
 
 func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
@@ -388,9 +413,19 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.SetModel(v.Raw); err != nil {
 			return m, nil
 		}
+		spin := m.startSpin()
 		if m.historyTab() && m.historyFilter != "" {
-			return m, m.historyReHome()
+			return m, tea.Batch(m.historyReHome(), spin)
 		}
+		return m, spin
+	case spinner.TickMsg:
+		if !m.busy() {
+			m.spinning = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(v)
+		return m, cmd
 	case session.CloseRequest:
 		m.reason = session.ReasonClosed
 		return m, tea.Quit
@@ -796,7 +831,7 @@ type frameLayout struct {
 
 func (m *Mission) layout() frameLayout {
 	l := frameLayout{
-		topH:    lipgloss.Height(renderTopBar(m.model, m.width, m.hoverZone, m.openZone())),
+		topH:    lipgloss.Height(renderTopBar(m.model, m.spin.View(), m.width, m.hoverZone, m.openZone())),
 		keybarH: lipgloss.Height(renderKeybar(m.width, m.keybarMode())),
 	}
 	if m.noticeText() != "" {
@@ -835,7 +870,7 @@ func (m *Mission) keybarMode() string {
 }
 
 func (m *Mission) View() tea.View {
-	top := renderTopBar(m.model, m.width, m.hoverZone, m.openZone())
+	top := renderTopBar(m.model, m.spin.View(), m.width, m.hoverZone, m.openZone())
 	diffW := m.diffWidth()
 	keybar := renderKeybar(m.width, m.keybarMode())
 	l := m.layout()

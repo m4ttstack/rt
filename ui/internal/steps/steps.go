@@ -24,7 +24,7 @@ const (
 	Signalled   // SIGINT/SIGTERM/SIGHUP reached us
 )
 
-const frameEvery = 80 * time.Millisecond
+const frameEvery = theme.SpinnerInterval
 
 var (
 	spinStyle = lipgloss.NewStyle().Foreground(theme.Mint)
