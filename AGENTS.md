@@ -321,6 +321,30 @@ A claimed recovery path (self-heal, fallback, retry) is load-bearing: trace the
 code that performs it before documenting it, or the docs will tell users to run
 something that does nothing.
 
+## Getting a change into the running dev app
+
+The dev app (`/Applications/mattstack-dev.app`) takes code from three places.
+
+- **Served apps (board, console, chat, boxscore) and deck run from source**
+  in the shared `~/Documents/GitHub/mattstack-apps` checkout. To deploy:
+  merge, check `git branch --show-current` is `main`, pull, then
+  `deck restart <app>` (or the deck row's deploy button for deck itself).
+  Deck runs through the dev shim (`rt-tray/Sources-deck-shim`), which falls
+  back to `Contents/Helpers/deck-pinned` when source cannot run; `api.json`'s
+  `runMode` says which is serving. A pin older than `runMode` (deck 1.0.6
+  today) reads as `standalone`; the last `deck-dev-shim:` line in
+  `~/.mattstack/deck/logs/deck.err.log` says whether the shim fell back.
+  gitq is its own repo at
+  `~/Documents/GitHub/gitq`, deployed the same way: merge, confirm `main`,
+  pull, `deck restart gitq`.
+- **Manifest keys in `mattstack.deck.json` are read only at register or
+  adopt.** After a manifest change, run `deck register --dir <absolute path>`.
+- **Tray and shim changes need a dev app rebuild**: in a scratch tree at the
+  target commit, `scripts/fetch-deps.sh arm64` then `rt-tray/build.sh dev`,
+  never in the shared checkout's `rt-tray/`. Then replace
+  `/Applications/mattstack-dev.app` by moving the old one aside, the way the
+  dev-bundle leg of the `rt:release` skill does.
+
 ## Footguns
 
 ### `bun run test` is one of three suites, and CI runs all three

@@ -18,6 +18,10 @@ let package = Package(
             name: "MattstackCore",
             path: "Sources-core"
         ),
+        .target(
+            name: "DeckShimLogic",
+            path: "Sources-deck-shim-logic"
+        ),
         .executableTarget(
             name: "rt-tray",
             dependencies: [
@@ -43,9 +47,14 @@ let package = Package(
             name: "rt-daemon-shim",
             path: "Sources-daemon-shim"
         ),
+        .executableTarget(
+            name: "deck-dev-shim",
+            dependencies: ["DeckShimLogic"],
+            path: "Sources-deck-shim"
+        ),
         .target(
             name: "MattstackCoreChecks",
-            dependencies: ["MattstackCore"],
+            dependencies: ["MattstackCore", "DeckShimLogic"],
             path: "Tests/MattstackCoreChecks"
         ),
         .executableTarget(
