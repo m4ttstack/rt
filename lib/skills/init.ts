@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join, relative, resolve } from "path";
 import { applyEdits, modify } from "jsonc-parser";
 import { stripJsonc } from "./sources.ts";
 
@@ -53,6 +53,14 @@ function readJsonc(fs: InitFs, path: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/** A pulled marker's namespace can carry path segments; refuse anything that is not a single, plain directory name below the zone. */
+function isValidNamespace(namespace: string, zoneDir: string): boolean {
+  if (!namespace || namespace === "." || namespace === "..") return false;
+  if (namespace.includes("/") || namespace.includes("\\")) return false;
+  const rel = relative(resolve(zoneDir), resolve(zoneDir, "mattstack", "packs", namespace));
+  return !rel.startsWith("..") && !rel.startsWith("/");
 }
 
 function hostOnly(value: unknown): string | null {
@@ -227,7 +235,7 @@ export type InitDeps = {
 
 export type InitRefusalCode =
   | "not-a-repo" | "no-remote" | "zone-ambiguous" | "zone-missing" | "zone-mismatch" | "zone-has-pack"
-  | "pack-exists" | "mattstack-missing" | "claude-missing";
+  | "pack-exists" | "mattstack-missing" | "claude-missing" | "invalid-namespace";
 
 export type InitOutcome =
   | {
@@ -302,6 +310,9 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
   }
   const zone = choice.zone;
   const pack = zone.namespace;
+  if (!isValidNamespace(pack, zone.dir)) {
+    return refuse("invalid-namespace", `zone "${zone.slug}" has an invalid namespace "${pack}"; fix mattstack/mattstack.jsonc in the zone`);
+  }
   const packDir = join(zone.dir, "mattstack", "packs", pack);
   if (zone.hasPack || deps.fs.exists(packDir)) {
     return refuse("pack-exists", `${join(zone.dir, "mattstack", "packs")} already holds this repo's pack; init never touches an existing pack (see mattstack:extending-a-pack)`);

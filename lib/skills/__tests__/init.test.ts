@@ -395,6 +395,20 @@ describe("initPack", () => {
     expect(calls.registered).toEqual([]);
   });
 
+  test("a zone marker with a path-traversal namespace refuses invalid-namespace, writing nothing", async () => {
+    const { deps, fs } = world({
+      files: {
+        [`${HOME}/.mattstack/teams/acme/mattstack/mattstack.jsonc`]: `{ "role": "team", "namespace": "../escape", "org": "x" }`,
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "invalid-namespace" });
+    if (out.ok || !out.refused) return;
+    expect(out.detail).toContain("../escape");
+    expect(fs.exists(`${HOME}/.mattstack/teams/acme/mattstack/packs`)).toBe(false);
+    expect(fs.exists(`${HOME}/escape`)).toBe(false);
+  });
+
   test("a credential-bearing remote with no path refuses no-remote without leaking the credential", async () => {
     const { deps } = world({ gitRemote: async () => ({ kind: "ok", url: "https://user:secret@gitlab.com" }) });
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
