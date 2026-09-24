@@ -19,7 +19,7 @@ struct WorktreeReviewSheet: View {
 
     private var subtitle: String {
         let place = [row.tree, row.repoLabel, row.branch].compactMap { $0 }.joined(separator: " · ")
-        let noun = row.repo.hasPrefix("github.com/") ? "PR" : "MR"
+        let noun = row.changeNoun
         let one = row.dirt.files.count == 1
         let lead: String
         switch row.mr?.state {

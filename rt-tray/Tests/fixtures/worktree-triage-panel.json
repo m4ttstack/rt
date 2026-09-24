@@ -3,7 +3,7 @@
   "data": {
     "rows": [
       {
-        "repo": "gitlab.com/m4ttstack/app-kit",
+        "repo": "remote:gitlab.com%2Fm4ttstack%2Fapp-kit",
         "tree": "olive-marble",
         "path": "/Users/matt/.mattstack/rt/worktrees/gitlab.com-m4ttstack-app-kit/olive-marble",
         "branch": "sync-confirm-dialog",
@@ -41,7 +41,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "voldemort",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/voldemort",
         "branch": "settings-shapes",
@@ -82,7 +82,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "charlie",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/charlie",
         "branch": "auth-lookups",
@@ -125,7 +125,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "neville",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/neville",
         "branch": "claim-chat-spike",
@@ -167,7 +167,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "smaug",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/smaug",
         "branch": "daemon-restart-truth",
@@ -211,7 +211,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "gollum",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/gollum",
         "branch": "radix-spike",

@@ -54,7 +54,9 @@ public struct TriageRow: Decodable, Sendable, Identifiable, Equatable {
     public let fingerprint: TriageFingerprint
 
     public var id: String { "\(repo)#\(tree)" }
-    public var repoLabel: String { repo.split(separator: "/").last.map(String.init) ?? repo }
+    public var repoLabel: String { RepoIdentity.label(repo) }
+    public var changeMarker: String { RepoIdentity.changeMarker(repo) }
+    public var changeNoun: String { RepoIdentity.changeNoun(repo) }
 }
 
 public struct TriageCounts: Decodable, Sendable, Equatable {
@@ -71,6 +73,8 @@ public struct TriageBanner: Decodable, Sendable {
     public let repo: String
     public let reason: String
     public let forge: String?
+
+    public var repoLabel: String { RepoIdentity.label(repo) }
 }
 
 public struct TriageData: Decodable, Sendable {

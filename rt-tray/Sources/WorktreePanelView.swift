@@ -85,8 +85,6 @@ enum TriageLabels {
         }
     }
 
-    static func forgeMarker(_ repo: String) -> String { repo.hasPrefix("github.com/") ? "#" : "!" }
-
     static func mrState(_ state: String) -> String { state == "opened" ? "open" : state }
 
     private static let isoFractional: ISO8601DateFormatter = {
@@ -310,15 +308,14 @@ struct TriageBannerView: View {
     let banner: TriageBanner
 
     private var forgeName: String { banner.forge == "github" ? "GitHub" : "GitLab" }
-    private var repoLabel: String { banner.repo.split(separator: "/").last.map(String.init) ?? banner.repo }
     private var why: String {
-        banner.reason == "no-token" ? "no \(forgeName) token." : "branch PR checks are off for it."
+        banner.reason == "no-token" ? "no \(forgeName) token." : "branch \(RepoIdentity.changeNoun(banner.repo)) checks are off for it."
     }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "powerplug").foregroundStyle(WT.amber)
-            Text("Merged worktrees aren't cleaned up in \(repoLabel): \(why)")
+            Text("Merged worktrees aren't cleaned up in \(banner.repoLabel): \(why)")
                 .foregroundStyle(WT.amber)
             Spacer(minLength: 8)
             Button(banner.reason == "no-token" ? "Connect \(forgeName)" : "Open settings") {
@@ -428,7 +425,7 @@ struct TriageRowView: View {
             if let mr = row.mr {
                 TriageMRChip(mr: mr, repo: row.repo, neutral: kept)
             } else {
-                TriageChip(text: "no PR", icon: "circle.slash", muted: kept)
+                TriageChip(text: "no \(row.changeNoun)", icon: "circle.slash", muted: kept)
             }
             let push = TriageLabels.push(row.push)
             TriageChip(text: push.text, icon: push.icon,
@@ -570,7 +567,7 @@ struct TriageMRChip: View {
     private var hot: Bool { (forceHover || hovering) && mr.url != nil }
     private var text: String {
         let date = TriageLabels.shortDate(mr.at).map { " \($0)" } ?? ""
-        return "\(TriageLabels.forgeMarker(repo))\(mr.iid) \(TriageLabels.mrState(mr.state))\(date)"
+        return "\(RepoIdentity.changeMarker(repo))\(mr.iid) \(TriageLabels.mrState(mr.state))\(date)"
     }
 
     var body: some View {

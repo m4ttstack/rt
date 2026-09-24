@@ -3,7 +3,7 @@
   "data": {
     "rows": [
       {
-        "repo": "gitlab.com/m4ttstack/app-kit",
+        "repo": "remote:gitlab.com%2Fm4ttstack%2Fapp-kit",
         "tree": "olive-marble",
         "path": "/Users/matt/.mattstack/rt/worktrees/gitlab.com-m4ttstack-app-kit/olive-marble",
         "branch": "sync-confirm-dialog",
@@ -41,7 +41,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "ideal-lantern",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/ideal-lantern",
         "branch": "settings-kit-shapes",
@@ -84,7 +84,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "voldemort",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/voldemort",
         "branch": "settings-shapes",
@@ -125,7 +125,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "fluffy",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/fluffy",
         "branch": "gates-doc-bullet",
@@ -161,7 +161,7 @@
         }
       },
       {
-        "repo": "gitlab.com/m4ttstack/app-kit",
+        "repo": "remote:gitlab.com%2Fm4ttstack%2Fapp-kit",
         "tree": "frank-jungle",
         "path": "/Users/matt/.mattstack/rt/worktrees/gitlab.com-m4ttstack-app-kit/frank-jungle",
         "branch": "deck-ingest-dev-dir",
@@ -176,7 +176,7 @@
           "files": []
         },
         "group": "safe",
-        "verdict": "No PR, but every commit already landed in main.",
+        "verdict": "No MR, but every commit already landed in main.",
         "actions": [
           "dispose",
           "keep",
@@ -191,7 +191,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "charlie",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/charlie",
         "branch": "auth-lookups",
@@ -234,7 +234,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "neville",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/neville",
         "branch": "claim-chat-spike",
@@ -276,7 +276,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "treebeard",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/treebeard",
         "branch": "dev-app-restart",
@@ -320,7 +320,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "smaug",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/smaug",
         "branch": "daemon-restart-truth",
@@ -363,7 +363,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "legolas",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/legolas",
         "branch": "tray-label",
@@ -407,7 +407,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "hermione",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/hermione",
         "branch": "ready-held",
@@ -451,7 +451,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/glance-test-repo",
+        "repo": "remote:github.com%2Fm4ttstack%2Fglance-test-repo",
         "tree": "deft-daisy",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-glance-test-repo/deft-daisy",
         "branch": "scratch-pipeline-check",
@@ -479,7 +479,7 @@
         }
       },
       {
-        "repo": "github.com/m4ttstack/rt",
+        "repo": "remote:github.com%2Fm4ttstack%2Frt",
         "tree": "gollum",
         "path": "/Users/matt/.mattstack/rt/worktrees/github.com-m4ttstack-rt/gollum",
         "branch": "radix-spike",
@@ -518,7 +518,7 @@
     ],
     "banners": [
       {
-        "repo": "github.com/m4ttstack/fast-browser",
+        "repo": "remote:github.com%2Fm4ttstack%2Ffast-browser",
         "reason": "no-token",
         "forge": "github"
       }

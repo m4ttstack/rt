@@ -4,11 +4,11 @@ import MattstackCore
 private let json = """
 {"ok":true,"data":{"counts":{"needsDecision":3,"safe":1,"waiting":1,"kept":1},"banners":[],
 "rows":[
- {"repo":"github.com/m4ttstack/rt","tree":"neville","path":"/p/n","branch":"spike","mr":{"iid":342,"state":"closed","title":"Draft: spike","at":null},"ticket":{"identifier":"RT-199","title":"t","stateName":"Canceled"},"push":{"kind":"unpushed","ahead":19},"containment":"none","dirt":{"kind":"none","files":[]},"group":"only-copy","verdict":"Only copy of this work. Push the branch to keep it, or dispose to drop it.","actions":["push-branch","keep","dispose"],"fingerprint":{"headSha":"h","dirtHash":"d","mrState":"closed"}},
- {"repo":"github.com/m4ttstack/app-kit","tree":"olive","path":"/p/o","branch":"b","mr":{"iid":47,"state":"merged","title":"sync","at":null},"ticket":null,"push":{"kind":"in-main"},"containment":"in-default","dirt":{"kind":"junk","files":[".visual/a.png"]},"group":"safe","verdict":"Every commit is in main.","actions":["dispose"],"fingerprint":{"headSha":"h","dirtHash":"d","mrState":"merged"}},
- {"repo":"github.com/m4ttstack/rt","tree":"smaug","path":"/p/s","branch":"b","mr":null,"ticket":null,"push":{"kind":"pushed"},"containment":"on-remote","dirt":{"kind":"none","files":[]},"group":"waiting","verdict":"Waiting: x.","actions":["stop-process"],"hold":{"kind":"process","detail":"x"},"fingerprint":{"headSha":"h","dirtHash":"d","mrState":null}},
- {"repo":"github.com/m4ttstack/rt","tree":"daisy","path":"/p/d","branch":null,"mr":null,"ticket":null,"push":{"kind":"unpushed","ahead":0},"containment":"none","dirt":{"kind":"none","files":[]},"group":"broken","verdict":"Gone.","actions":["remove"],"fingerprint":{"headSha":"","dirtHash":"d","mrState":null}},
- {"repo":"github.com/m4ttstack/rt","tree":"gollum","path":"/p/g","branch":"r","mr":{"iid":301,"state":"closed","title":"spike","at":null},"ticket":null,"push":{"kind":"unpushed","ahead":4},"containment":"none","dirt":{"kind":"none","files":[]},"group":"kept","verdict":"Kept.","actions":["unkeep"],"keptAt":"2026-09-24T00:00:00Z","fingerprint":{"headSha":"h","dirtHash":"d","mrState":"closed"}}
+ {"repo":"remote:github.com%2Fm4ttstack%2Frt","tree":"neville","path":"/p/n","branch":"spike","mr":{"iid":342,"state":"closed","title":"Draft: spike","at":null},"ticket":{"identifier":"RT-199","title":"t","stateName":"Canceled"},"push":{"kind":"unpushed","ahead":19},"containment":"none","dirt":{"kind":"none","files":[]},"group":"only-copy","verdict":"Only copy of this work. Push the branch to keep it, or dispose to drop it.","actions":["push-branch","keep","dispose"],"fingerprint":{"headSha":"h","dirtHash":"d","mrState":"closed"}},
+ {"repo":"remote:gitlab.com%2Fm4ttstack%2Fapp-kit","tree":"olive","path":"/p/o","branch":"b","mr":{"iid":47,"state":"merged","title":"sync","at":null},"ticket":null,"push":{"kind":"in-main"},"containment":"in-default","dirt":{"kind":"junk","files":[".visual/a.png"]},"group":"safe","verdict":"Every commit is in main.","actions":["dispose"],"fingerprint":{"headSha":"h","dirtHash":"d","mrState":"merged"}},
+ {"repo":"remote:github.com%2Fm4ttstack%2Frt","tree":"smaug","path":"/p/s","branch":"b","mr":null,"ticket":null,"push":{"kind":"pushed"},"containment":"on-remote","dirt":{"kind":"none","files":[]},"group":"waiting","verdict":"Waiting: x.","actions":["stop-process"],"hold":{"kind":"process","detail":"x"},"fingerprint":{"headSha":"h","dirtHash":"d","mrState":null}},
+ {"repo":"remote:github.com%2Fm4ttstack%2Frt","tree":"daisy","path":"/p/d","branch":null,"mr":null,"ticket":null,"push":{"kind":"unpushed","ahead":0},"containment":"none","dirt":{"kind":"none","files":[]},"group":"broken","verdict":"Gone.","actions":["remove"],"fingerprint":{"headSha":"","dirtHash":"d","mrState":null}},
+ {"repo":"remote:github.com%2Fm4ttstack%2Frt","tree":"gollum","path":"/p/g","branch":"r","mr":{"iid":301,"state":"closed","title":"spike","at":null},"ticket":null,"push":{"kind":"unpushed","ahead":4},"containment":"none","dirt":{"kind":"none","files":[]},"group":"kept","verdict":"Kept.","actions":["unkeep"],"keptAt":"2026-09-24T00:00:00Z","fingerprint":{"headSha":"h","dirtHash":"d","mrState":"closed"}}
 ]}}
 """
 
@@ -82,5 +82,38 @@ let triageChecks: [Check] = [
         c.expectEqual(mixed, TriageStatusLine(text: "Cleaned up 2 of 3. olive: a process is still running inside it. Stop it first.", isError: true))
         let slow = TriageStatusLine.bulk(total: 2, failures: [(tree: "olive", outcome: .timedOut)])
         c.expectEqual(slow, TriageStatusLine(text: "Cleaned up 1 of 2. olive: still working. Refresh to check.", isError: false))
+    },
+    Check("a remote wire decodes to its label, host and forge marker") { c in
+        let gh = RepoIdentity(wire: "remote:github.com%2Fm4ttstack%2Frt")
+        c.expectEqual(gh?.kind, .remote)
+        c.expectEqual(gh?.id, "github.com/m4ttstack/rt")
+        c.expectEqual(gh?.label, "rt")
+        c.expectEqual(gh?.host, "github.com")
+        c.expectEqual(RepoIdentity.changeMarker("remote:github.com%2Fm4ttstack%2Frt"), "#")
+        c.expectEqual(RepoIdentity.changeNoun("remote:github.com%2Fm4ttstack%2Frt"), "PR")
+        c.expectEqual(RepoIdentity.label("remote:gitlab.com%2Fm4ttstack%2Fapp-kit"), "app-kit")
+        c.expectEqual(RepoIdentity.changeMarker("remote:gitlab.com%2Fm4ttstack%2Fapp-kit"), "!")
+        c.expectEqual(RepoIdentity.changeNoun("remote:gitlab.com%2Fm4ttstack%2Fapp-kit"), "MR")
+    },
+    Check("a path wire decodes to its basename and never reads as GitHub") { c in
+        c.expectEqual(RepoIdentity.label("path:%2FUsers%2Fdev%2Fmy%20scratch"), "my scratch")
+        c.expectEqual(RepoIdentity(wire: "path:%2FUsers%2Fdev%2Fscratch")?.host, nil)
+        c.expectEqual(RepoIdentity.changeMarker("path:%2Fgithub.com%2Fx"), "!")
+    },
+    Check("a non-canonical identity never decodes; its label passes through unchanged") { c in
+        c.expectEqual(RepoIdentity(wire: "github.com/m4ttstack/rt"), nil)
+        c.expectEqual(RepoIdentity(wire: "path:../.."), nil)
+        c.expectEqual(RepoIdentity(wire: "remote:github.com%2fm4ttstack%2frt"), nil)
+        c.expectEqual(RepoIdentity(wire: "branch:x"), nil)
+        c.expectEqual(RepoIdentity.label("github.com/m4ttstack/rt"), "github.com/m4ttstack/rt")
+        c.expectEqual(RepoIdentity.changeMarker("github.com/m4ttstack/rt"), "!")
+    },
+    Check("rows and banners label and mark from the wire, not the raw string") { c in
+        let rows = try JSONDecoder().decode(TriagePayload.self, from: Data(json.utf8)).data!.rows
+        c.expectEqual(rows.map(\.repoLabel), ["rt", "app-kit", "rt", "rt", "rt"])
+        c.expectEqual(rows.map(\.changeMarker), ["#", "!", "#", "#", "#"])
+        c.expectEqual(rows[1].changeNoun, "MR")
+        let banner = try JSONDecoder().decode(TriageBanner.self, from: Data(#"{"repo":"remote:gitlab.com%2Fm4ttstack%2Fapp-kit","reason":"no-token","forge":"gitlab"}"#.utf8))
+        c.expectEqual(banner.repoLabel, "app-kit")
     },
 ]
