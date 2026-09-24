@@ -26,12 +26,14 @@ export function herdJobTreeHold(store: Pick<HerdStore, "get" | "jobs">, rec: Tre
   const herd = store.get(herdId);
   if (!herd || herd.status === "wrapped") return null;
 
-  // Pool slot paths are reused across jobs in one herd, so the newest row wins.
+  // Pool slot paths are reused across jobs in one herd, and an earlier job's
+  // row keeps moving (its pane closing) after the slot changed hands, so match
+  // on the branch the tree carries rather than on recency.
   const path = canon(rec.path);
-  const job = store
+  const jobs = store
     .jobs(herdId)
-    .filter((j) => canon(j.worktree) === path)
-    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-  if (!job) return `herd ${herdId} is active`;
-  return ENDED_JOB_STATUSES.has(job.status) ? null : `herd job ${herdId}/${job.name} is ${job.status}`;
+    .filter((j) => canon(j.worktree) === path && (j.branch === null || j.branch === rec.branch));
+  if (jobs.length === 0) return `herd ${herdId} is active`;
+  const live = jobs.find((j) => !ENDED_JOB_STATUSES.has(j.status));
+  return live ? `herd job ${herdId}/${live.name} is ${live.status}` : null;
 }

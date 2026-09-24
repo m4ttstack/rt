@@ -28,7 +28,7 @@ import {
 } from "../../worktree/git-async.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
 import { branchOf } from "../../state/branch-cache.ts";
-import { classifyDirtyAsync, disposeTree } from "../../worktree/dispose.ts";
+import { classifyDirtyAsync, disposeTree, mergedMrCoversHead } from "../../worktree/dispose.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
 import { hasLiveCwdInside, liveProcessCwds } from "./stale-claims.ts";
@@ -96,7 +96,7 @@ function saveReactorState(state: ReactorState, log: Logger): void {
 
 /** Branch-keyed MR cache entry, as the daemon holds it (`ctx.cache.entries`). */
 interface ReactorCacheEntry {
-  mr?: { iid?: number; state?: string | null } | null;
+  mr?: { iid?: number; state?: string | null; sha?: string | null } | null;
   repoName?: string;
 }
 
@@ -124,21 +124,47 @@ function jobHold(deps: ReactorDeps, rec: TreeRecord): string | null {
   return deps.jobTreeHold ? deps.jobTreeHold(rec) : `job tree owned by ${rec.owner ?? "nobody"}`;
 }
 
-/** Written only on change: the reactor re-evaluates a held tree every pass. */
+/**
+ * Written only on change: the reactor re-evaluates a held tree every pass.
+ * Callers may run outside the tree lock, so the row must still be the same
+ * claim (a re-provision at this path is a different tree).
+ */
 function recordHold(deps: ReactorDeps, rec: TreeRecord, reason: string): void {
-  if (findByPath(loadRegistry(deps.repoName), rec.path)?.heldReason === reason) return;
+  const cur = findByPath(loadRegistry(deps.repoName), rec.path);
+  if (!cur || cur.heldReason === reason || cur.branch !== rec.branch || cur.state !== rec.state) return;
+  let wrote = false;
   patchTree(deps.repoName, rec.path, (r) => {
+    if (r.branch !== rec.branch || r.state !== rec.state) return;
     r.heldReason = reason;
+    wrote = true;
   });
-  deps.log.info({ repo: deps.repoName, tree: rec.name, reason }, `worktree ${rec.name} held after merge: ${reason}`);
+  if (wrote) deps.log.info({ repo: deps.repoName, tree: rec.name, reason }, `worktree ${rec.name} held after merge: ${reason}`);
+}
+
+/**
+ * Killing is only worth it when the dispose that follows would pass: the
+ * merged MR provably holds this tree's HEAD (not a reused branch's old
+ * merge) and nothing uncommitted blocks it.
+ */
+async function orphanKillAllowed(rec: TreeRecord, mr: ReactorCacheEntry["mr"], killProcesses: boolean): Promise<boolean> {
+  if (!killProcesses || !mr) return false;
+  if (!(await mergedMrCoversHead(rec, mr))) return false;
+  const { blockers } = await classifyDirtyAsync(rec.path);
+  return blockers.length === 0;
 }
 
 /**
  * A live cwd inside a merged tree defers its dispose. When every holder is a
- * stale orphan (a test runner or dev server whose session is long gone) it is
- * stopped here, and the next pass finds the tree free.
+ * stale orphan (a test runner or dev server whose session is long gone) and
+ * the dispose would otherwise pass, it is stopped here, and the next pass
+ * finds the tree free.
  */
-async function holdForLiveProcess(deps: ReactorDeps, rec: TreeRecord): Promise<void> {
+async function holdForLiveProcess(
+  deps: ReactorDeps,
+  rec: TreeRecord,
+  mr: ReactorCacheEntry["mr"],
+  killProcesses: boolean,
+): Promise<void> {
   let holders: TreeHolder[] = [];
   try {
     holders = await (deps.treeHolders ?? treeHolders)(rec.path);
@@ -149,7 +175,7 @@ async function holdForLiveProcess(deps: ReactorDeps, rec: TreeRecord): Promise<v
     recordHold(deps, rec, "a live process has its cwd inside");
     return;
   }
-  if (holders.every(isStaleOrphan)) {
+  if (holders.every(isStaleOrphan) && (await orphanKillAllowed(rec, mr, killProcesses))) {
     (deps.stopProcesses ?? stopProcesses)(holders.map((h) => h.pid));
     deps.log.info(
       { repo: deps.repoName, tree: rec.name, pids: holders.map((h) => h.pid) },
@@ -562,7 +588,7 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
         skippedLive = true;
         trees = trees.filter((r) => !alive.includes(r));
         if (cwds !== null) {
-          for (const r of alive) await holdForLiveProcess(deps, r);
+          for (const r of alive) await holdForLiveProcess(deps, r, entry.mr, appConfig.killProcesses);
           log.info(
             { repo: repoName, branch, trees: alive.map((r) => r.name) },
             "reactor: dispose deferred; live process cwd inside the tree",

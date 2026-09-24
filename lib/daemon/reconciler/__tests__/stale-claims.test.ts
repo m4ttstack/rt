@@ -387,8 +387,8 @@ describe("disposable retry (RT-267)", () => {
     expect(find(rec.path)?.disposableReason).toBe("unpushed");
   });
 
-  test("a closed-without-merge tree is never retried", async () => {
-    const rec = disposableTree("papa", "MR closed without merge");
+  test.each(["MR closed without merge", "grace"])("a %s tree is never retried", async (reason) => {
+    const rec = disposableTree(`papa-${reason.length}`, reason);
     await retry();
     expect(find(rec.path)?.state).toBe("disposable");
   });

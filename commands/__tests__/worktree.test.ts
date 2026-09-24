@@ -333,7 +333,8 @@ describe("worktree CLI identity plumbing", () => {
       data: {
         trees: [
           { name: "beacon", path: "/nonexistent/beacon", kind: "ephemeral", state: "disposable", disposableReason: "dirty", branch: "team-step-cards", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
-          { name: "smaug", path: "/nonexistent/smaug", kind: "ephemeral", state: "claimed", heldReason: "pid 75703 (xctest) has its cwd inside", branch: "daemon-restart-truth", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z" },
+          { name: "smaug", path: "/nonexistent/smaug", kind: "ephemeral", state: "claimed", heldReason: "pid 75703 (xctest) has its cwd inside", branch: "daemon-restart-truth", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z", mr: { iid: 361, state: "merged", title: "t" } },
+          { name: "gollum", path: "/nonexistent/gollum", kind: "ephemeral", state: "claimed", heldReason: "left over from an evicted MR", branch: "recut", repoName: "github.com/acme/app", createdAt: "2026-09-21T00:00:00.000Z", mr: null },
         ],
       },
     });
@@ -348,6 +349,7 @@ describe("worktree CLI identity plumbing", () => {
     const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
     expect(plain.find((l) => l.includes("/beacon "))).toContain("disposable (dirty)");
     expect(plain.find((l) => l.includes("/smaug "))).toContain("held: pid 75703 (xctest) has its cwd inside");
+    expect(plain.find((l) => l.includes("/gollum "))).not.toContain("held:");
   });
 
   test("freshen's picker offers the golden alongside on-deck members", async () => {

@@ -41,7 +41,9 @@ export function isStaleOrphan(h: TreeHolder): boolean {
   if (h.ppid !== 1) return false;
   if (!(h.elapsedMs >= STALE_ORPHAN_MS)) return false;
   if (h.fullCommand.includes(".app/Contents/MacOS/")) return false;
-  return !isUserOrAgentProcess(h);
+  // A login shell's argv0 is "-zsh".
+  const unlogin = (s: string) => s.replace(/^-/, "");
+  return !isUserOrAgentProcess({ ...h, command: unlogin(h.command), fullCommand: unlogin(h.fullCommand) });
 }
 
 export function describeHolders(holders: TreeHolder[]): string {

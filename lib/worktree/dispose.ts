@@ -167,7 +167,7 @@ function joinedMr(
  * ancestor of `mr.sha` means everything here reached the MR that merged.
  * No sha (pre-field cache rows) or an unknown sha fails safe to the anchor.
  */
-async function mergedMrCoversHead(rec: TreeRecord, mr: { state?: string | null; sha?: string | null }): Promise<boolean> {
+export async function mergedMrCoversHead(rec: TreeRecord, mr: { state?: string | null; sha?: string | null }): Promise<boolean> {
   if (mr.state !== "merged" || !mr.sha) return false;
   return isAncestorAsync(rec.path, "HEAD", mr.sha);
 }

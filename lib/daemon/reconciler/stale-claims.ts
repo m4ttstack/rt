@@ -205,9 +205,10 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
  * disposable once and spends its fired key, so without this retry a tree
  * whose dirt was later committed or discarded sits disposable forever.
  * "MR closed without merge" and rollback reasons are a human's call and never
- * retried.
+ * retried. Neither is "grace": it exists so a fresh claim on a reused branch
+ * outlives a stale merged entry, and a retry would reap it minutes later.
  */
-const RETRYABLE_REFUSALS = new Set(["dirty", "unpushed", "running-run", "runs-unreadable", "attended", "grace"]);
+const RETRYABLE_REFUSALS = new Set(["dirty", "unpushed", "running-run", "runs-unreadable", "attended"]);
 
 /** Re-run guarded dispose on disposable trees whose refusal may have cleared. Never throws past a tree. */
 export async function retryDisposableTrees(deps: StaleClaimSweepDeps): Promise<void> {

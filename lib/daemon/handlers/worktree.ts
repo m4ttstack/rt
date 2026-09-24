@@ -400,6 +400,7 @@ export function createWorktreeHandlers(
           r.disposal = disposal;
           r.handoff = "pending";
           r.claimedAt = new Date().toISOString();
+          delete r.heldReason;
           if (typeof payload.owner === "string" && payload.owner.length > 0) r.owner = payload.owner;
         });
         // A dropped write leaves the tree genuinely on-deck on disk... acting

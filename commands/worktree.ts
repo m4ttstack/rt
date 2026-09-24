@@ -639,7 +639,10 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
         : "";
     const dupPart = r.duplicateBranch ? `  ${yellow}duplicate branch${reset}` : "";
     const ownerPart = r.owner ? `  ${dim}${r.owner}${reset}` : "";
-    const heldPart = r.state === "claimed" && r.heldReason ? `  ${yellow}held: ${r.heldReason}${reset}` : "";
+    // A hold only means something while the reactor still sees a terminal MR; past that it is a leftover.
+    const heldPart = r.state === "claimed" && r.heldReason && (r.mr?.state === "merged" || r.mr?.state === "closed")
+      ? `  ${yellow}held: ${r.heldReason}${reset}`
+      : "";
     const label = r.state === "disposable" && r.disposableReason ? `disposable (${r.disposableReason})` : rowLabel(r);
     console.log(
       `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${label}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}${heldPart}`,

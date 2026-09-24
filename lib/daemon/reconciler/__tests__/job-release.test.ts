@@ -16,9 +16,9 @@ function herd(id: string, status: HerdRow["status"]): HerdRow {
   };
 }
 
-function job(herdId: string, name: string, status: HerdJobStatus, updatedAt: number, worktree = TREE): HerdJobRow {
+function job(herdId: string, name: string, status: HerdJobStatus, updatedAt: number, worktree = TREE, branch: string | null = "rt-175"): HerdJobRow {
   return {
-    herd: herdId, name, worktree, branch: null, tree: "saruman", pane: null, agentSession: null, agentId: null,
+    herd: herdId, name, worktree, branch, tree: "saruman", pane: null, agentSession: null, agentId: null,
     handle: name, status, disposable: false, lastGate: null, lastReport: null, createdAt: 0, updatedAt,
   };
 }
@@ -51,11 +51,17 @@ describe("herdJobTreeHold", () => {
     expect(herdJobTreeHold(s, rec("herd:h1"))).toBe("herd job h1/rt-175 is done");
   });
 
-  test("a pool path reused inside one herd judges by the newest job on it", () => {
-    const s = store([herd("h1", "active")], [job("h1", "rt-144", "closed", 5), job("h1", "rt-175", "active", 9)]);
+  test("a pool path reused inside one herd judges by the job on the tree's branch, not the newest row", () => {
+    // The earlier job's pane closing bumps its row after the later job claimed the slot.
+    const s = store([herd("h1", "active")], [job("h1", "rt-144", "closed", 9, TREE, "rt-144"), job("h1", "rt-175", "active", 5)]);
     expect(herdJobTreeHold(s, rec("herd:h1"))).toBe("herd job h1/rt-175 is active");
-    const reversed = store([herd("h1", "active")], [job("h1", "rt-144", "active", 5), job("h1", "rt-175", "closed", 9)]);
-    expect(herdJobTreeHold(reversed, rec("herd:h1"))).toBeNull();
+    const ended = store([herd("h1", "active")], [job("h1", "rt-144", "active", 9, TREE, "rt-144"), job("h1", "rt-175", "closed", 5)]);
+    expect(herdJobTreeHold(ended, rec("herd:h1"))).toBeNull();
+  });
+
+  test("any live job on the tree's branch holds it", () => {
+    const s = store([herd("h1", "active")], [job("h1", "rt-175", "closed", 9), job("h1", "rt-175b", "at-gate", 5)]);
+    expect(herdJobTreeHold(s, rec("herd:h1"))).toBe("herd job h1/rt-175b is at-gate");
   });
 
   test("an active herd with no job row on the tree yet holds it (spawn in flight)", () => {

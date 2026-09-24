@@ -37,7 +37,8 @@ describe("isStaleOrphan", () => {
 
   test.each([
     ["an agent", { command: "claude", fullCommand: "claude --resume" }],
-    ["a shell", { command: "zsh", fullCommand: "-zsh" }],
+    ["a shell", { command: "zsh", fullCommand: "zsh" }],
+    ["a login shell as ps reports it", { command: "-zsh", fullCommand: "-zsh" }],
     ["an editor", { command: "nvim", fullCommand: "nvim ." }],
     ["a GUI app", { command: "Electron", fullCommand: "/Applications/Cursor.app/Contents/MacOS/Cursor" }],
   ])("%s is never stale", (_label, over) => {
