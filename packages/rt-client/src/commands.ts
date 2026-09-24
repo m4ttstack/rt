@@ -786,6 +786,22 @@ export interface Commands {
       formCapAdvisory?: string;
     };
   };
+  /** The AskUserQuestion hook's verdict for the calling pane: allow only
+      when a live gate backs the form. The subject comes from gate:ask's own
+      resolver for `sessionId`, so the hook and the ceremony can never
+      disagree about which gate is this pane's. `subject` is the launch
+      subject (RT_GATE_SUBJECT); exact-subject matches accept open or parked
+      gates, while `paneId`/`worktrees` matches scan open run: gates only.
+      `data.subject` is what `rt gate ask` would file under, when resolvable. */
+  "gate:fork-check": {
+    payload: { sessionId?: string; paneId?: string; subject?: string; worktrees?: string[] };
+    data: {
+      allow: boolean;
+      match?: "session" | "subject" | "pane" | "worktree";
+      gateId?: string;
+      subject?: string;
+    };
+  };
   /**
    * A CAS loss is a DEFINED OUTCOME, not an error: `ok:true` with
    * `conflict:true` and the WINNING row, so every consumer gets the winner
@@ -943,6 +959,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "reconciler:clear",
   "gate:open",
   "gate:ask",
+  "gate:fork-check",
   "gate:answer",
   "gate:wait",
   "gate:list",

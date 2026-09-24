@@ -387,7 +387,9 @@ export function createGateHandlers(
         per-worktree match. */
     runWorktree?: (runId: string) => string | null;
   } = {},
-): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
+): GateSiblingHandlers
+  & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> }
+  & { "gate:fork-check": (payload: unknown) => Promise<CommandResult<"gate:fork-check">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
   const runSpawnedBy = deps.runSpawnedBy;
@@ -825,5 +827,43 @@ export function createGateHandlers(
     };
   };
 
-  return { ...handlers, "gate:ask": gateAsk };
+  // Exact-subject matches take open or parked, as the hook always has for
+  // its launch subject. The pane and worktree scans take open run: gates
+  // only: a parked run gate is not live until its owner resumes the pane,
+  // and the open filter keeps the scan to live rows rather than all of
+  // run: history.
+  const gateForkCheck = async (rawPayload: unknown): Promise<CommandResult<"gate:fork-check">> => {
+    const payload = rawPayload as Commands["gate:fork-check"]["payload"] | undefined;
+    const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    const sessionId = text(payload?.sessionId);
+    const paneId = text(payload?.paneId);
+    const launchSubject = text(payload?.subject);
+    const worktrees = new Set(
+      (Array.isArray(payload?.worktrees) ? payload!.worktrees : []).filter((w): w is string => typeof w === "string" && w.length > 0),
+    );
+
+    const resolved = sessionId ? await resolveSubject({ sessionId }) : undefined;
+    const askSubject = resolved?.ok ? resolved.subject : undefined;
+    const withSubject = askSubject ? { subject: askSubject } : {};
+    const allowOn = (match: "session" | "subject" | "pane" | "worktree", gate: GateRow): CommandResult<"gate:fork-check"> =>
+      ({ ok: true as const, data: { allow: true, match, gateId: gate.id, ...withSubject } });
+
+    const liveOn = (subject: string): GateRow | undefined =>
+      store.list({ subjectPrefix: subject }).gates
+        .find((g) => g.subject === subject && (g.status === "open" || g.status === "parked"));
+    for (const [match, subject] of [["session", askSubject], ["subject", launchSubject]] as const) {
+      const hit = subject ? liveOn(subject) : undefined;
+      if (hit) return allowOn(match, hit);
+    }
+
+    const openRunGates = store.list({ open: true, subjectPrefix: "run:" }).gates;
+    const byPane = paneId ? openRunGates.find((g) => (g.origin?.paneId || g.pane) === paneId) : undefined;
+    if (byPane) return allowOn("pane", byPane);
+    const byTree = openRunGates.find((g) => g.origin?.worktree !== undefined && worktrees.has(g.origin.worktree));
+    if (byTree) return allowOn("worktree", byTree);
+
+    return { ok: true as const, data: { allow: false, ...withSubject } };
+  };
+
+  return { ...handlers, "gate:ask": gateAsk, "gate:fork-check": gateForkCheck };
 }
