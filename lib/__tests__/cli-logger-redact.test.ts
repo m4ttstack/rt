@@ -27,6 +27,18 @@ describe("redactSensitiveArgs", () => {
     expect(redactSensitiveArgs(args)).toEqual(args);
   });
 
+  test("redacts a remote URL that carries a password, wherever it sits", () => {
+    expect(redactSensitiveArgs(["home", "remote", "set", "https://me:ghp_secret@github.com/me/x.git", "--json"])).toEqual([
+      "home",
+      "remote",
+      "set",
+      "[redacted]",
+      "--json",
+    ]);
+    const clean = ["home", "remote", "set", "https://github.com/me/x.git"];
+    expect(redactSensitiveArgs(clean)).toEqual(clean);
+  });
+
   test("handles a trailing --reason with no value without throwing", () => {
     expect(() => redactSensitiveArgs(["sdm", "connect", "k", "--reason"])).not.toThrow();
     expect(redactSensitiveArgs(["sdm", "connect", "k", "--reason"])).toEqual([

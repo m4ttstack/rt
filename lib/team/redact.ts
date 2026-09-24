@@ -23,3 +23,10 @@ const CREDENTIAL_TOKEN_RE = /\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xo
 export function withoutUrls(message: string): string {
   return message.replace(URL_RE, "<remote>").replace(SSH_REMOTE_RE, "<remote>").replace(CREDENTIAL_TOKEN_RE, "<redacted>");
 }
+
+const CREDENTIALED_URL_RE = /^[a-z][a-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@/i;
+
+/** A URL whose userinfo carries a password (`https://user:token@host/...`): never logged, never accepted as a remote. */
+export function hasUrlCredentials(value: string): boolean {
+  return CREDENTIALED_URL_RE.test(value);
+}

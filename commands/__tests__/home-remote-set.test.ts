@@ -212,4 +212,113 @@ describe("homeRemoteSet", () => {
 
     expect(deps.lines[0]).toBe(`home remote set: origin -> ${URL}, pushed`);
   });
+
+  test("a URL carrying a password is refused before any git call, and the secret is not echoed", async () => {
+    const probes = fakeProbes({ home: HOME, dirs: { [GIT_DIR]: [] }, exec: scripted() });
+    const deps = baseDeps({ probes });
+
+    await expectExit(() => homeRemoteSet(["https://me:ghp_secret123@github.com/me/x.git", "--json"], {}, deps));
+
+    expect(deps.exitCodes).toEqual([2]);
+    const err = payload(deps).error as { code: string; message: string };
+    expect(err.code).toBe("bad-url");
+    expect(err.message).not.toContain("ghp_secret123");
+    expect(err.message).toContain("credential helper");
+    expect(execCalls(probes)).toEqual([]);
+  });
+
+  test("scp-style remotes without a user and ssh-config aliases are accepted; a leading dash is not", async () => {
+    for (const good of ["github.com:me/x.git", "gh:me/x.git", "ssh://git@github.com/me/x.git"]) {
+      const deps = baseDeps();
+      await homeRemoteSet([good, "--json"], {}, deps);
+      expect(deps.exitCodes).toEqual([]);
+    }
+    const deps = baseDeps();
+    await expectExit(() => homeRemoteSet(["-oProxyCommand=evil", "--json"], {}, deps));
+    expect(payload(deps)).toMatchObject({ error: { code: "bad-url" } });
+  });
+
+  test("a failed push after updating an existing origin restores the old URL", async () => {
+    const old = "https://old.example/x.git";
+    const probes = fakeProbes({
+      home: HOME,
+      dirs: { [GIT_DIR]: [] },
+      exec: scripted({ origin: old, answers: { [`git -C ${USER_REPO} push`]: fail(128, "remote: Permission denied") } }),
+    });
+    const deps = baseDeps({ probes });
+
+    await expectExit(() => homeRemoteSet([URL, "--json"], {}, deps));
+
+    const calls = execCalls(probes);
+    expect(calls).toContain(`git -C ${USER_REPO} remote set-url origin ${URL}`);
+    expect(calls[calls.length - 1]).toBe(`git -C ${USER_REPO} remote set-url origin ${old}`);
+    const err = payload(deps).error as { code: string; message: string };
+    expect(err.code).toBe("push-failed");
+    expect(err.message).toContain("origin restored");
+  });
+
+  test("push output is redacted: a token in git's stderr never reaches the message", async () => {
+    const probes = fakeProbes({
+      home: HOME,
+      dirs: { [GIT_DIR]: [] },
+      exec: scripted({ answers: { [`git -C ${USER_REPO} push`]: fail(128, "fatal: Authentication failed for 'https://x:ghp_leak456@github.com/me/x.git/'") } }),
+    });
+    const deps = baseDeps({ probes });
+
+    await expectExit(() => homeRemoteSet([URL, "--json"], {}, deps));
+
+    const err = payload(deps).error as { message: string };
+    expect(err.message).not.toContain("ghp_leak456");
+  });
+
+  test("git never gets to prompt for credentials: push and gh run with GIT_TERMINAL_PROMPT=0", async () => {
+    const seen: Record<string, string | undefined>[] = [];
+    const probes = fakeProbes({
+      home: HOME,
+      dirs: { [GIT_DIR]: [] },
+      exec: async (argv, opts) => {
+        if (argv.includes("push") || argv[0] === "gh") seen.push(opts?.env ?? {});
+        return scripted({ answers: { "gh repo create": ok("https://github.com/me/mattstack-home\n") } })(argv);
+      },
+    });
+    const deps = baseDeps({ probes, stdin: async () => ({ alternative: "create" }) });
+
+    await homeRemoteSet(["--json"], {}, deps);
+
+    expect(seen).toHaveLength(2);
+    for (const env of seen) expect(env.GIT_TERMINAL_PROMPT).toBe("0");
+  });
+
+  test("--name x <url> keeps the URL as the positional; --create together with a URL is a usage error; a bad --name is refused", async () => {
+    const probes = fakeProbes({ home: HOME, dirs: { [GIT_DIR]: [] }, exec: scripted() });
+    const deps = baseDeps({ probes });
+    await homeRemoteSet(["--name", "x", URL, "--json"], {}, deps);
+    expect(payload(deps)).toMatchObject({ url: URL });
+
+    const both = baseDeps();
+    await expectExit(() => homeRemoteSet(["--create", URL, "--json"], {}, both));
+    expect(payload(both)).toMatchObject({ error: { code: "usage" } });
+
+    const badName = baseDeps();
+    await expectExit(() => homeRemoteSet(["--create", "--name", "--json"], {}, badName));
+    expect(payload(badName)).toMatchObject({ error: { code: "usage" } });
+    expect(execCalls(badName.probes)).toEqual([]);
+  });
+
+  test("a raw URL string on stdin (not JSON) is accepted", async () => {
+    const deps = baseDeps({ stdin: async () => URL });
+
+    await homeRemoteSet(["--json"], {}, deps);
+
+    expect(payload(deps)).toMatchObject({ url: URL });
+  });
+
+  test("gh printing no URL is exit 2 create-failed", async () => {
+    const probes = fakeProbes({ home: HOME, dirs: { [GIT_DIR]: [] }, exec: scripted({ answers: { "gh repo create": ok("done\n") } }) });
+    const deps = baseDeps({ probes, stdin: async () => ({ alternative: "create" }) });
+
+    await expectExit(() => homeRemoteSet(["--json"], {}, deps));
+
+    expect(payload(deps)).toMatchObject({ error: { code: "create-failed" } });
+  });
 });
