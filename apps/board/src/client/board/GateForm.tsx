@@ -10,6 +10,7 @@ import type {
 import { answeredGateSummary, resolveAnswerOutcome } from '@mattstack/gate-kit';
 import { gateItems, useGateDraft } from '@mattstack/gate-kit/react';
 import type { GateRow } from '../../gates/store.ts';
+import { gateOrigin } from '../../gates/wait-meta.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
 
 function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
@@ -96,7 +97,8 @@ function useGateForm(gate: GateRow, onAnswered?: () => void) {
   const [focusBusy, setFocusBusy] = useState(false);
   const [focusError, setFocusError] = useState<string | null>(null);
 
-  const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
+  const origin = gateOrigin(gate);
+  const originFocusable = Boolean(origin?.paneId || origin?.worktree);
 
   const { display } = useMemo(
     () => gateItems({ kind: gate.kind, questions: gate.questions }, selections),

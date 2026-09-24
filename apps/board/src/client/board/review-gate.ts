@@ -4,6 +4,7 @@ import {
   type GateQuestion,
 } from '@mattstack/gate-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { gateContext } from '../../gates/wait-meta.ts';
 import {
   parseGateCtx,
   type FindingEntry,
@@ -30,7 +31,7 @@ export interface ReviewGate {
   findings: Map<string, FindingEntry>;
 }
 
-type ReviewGateInput = Pick<GateRow, 'kind' | 'context' | 'questions'>;
+type ReviewGateInput = Pick<GateRow, 'kind' | 'context' | 'meta' | 'questions'>;
 
 /** The sheet looks up its findings question by the collapsed id `findings`
     (`ReviewGateSheet.tsx`), which is what a chunked `findings-N` set becomes
@@ -50,7 +51,7 @@ export function isFindingsQuestion(q: { id: string }): boolean {
     mismatch routes the whole gate elsewhere. */
 export function readReviewGate(gate: ReviewGateInput): ReviewGate | null {
   if (gate.kind !== 'review-post') return null;
-  const review = parseGateCtx(gate.context);
+  const review = parseGateCtx(gateContext(gate));
   if (review?.shape !== 'review@1') return null;
   const findings = new Map<string, FindingEntry>();
   for (const q of gate.questions) {

@@ -1,5 +1,6 @@
 import { optionValue, unwrapGateAnswer } from '@mattstack/gate-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { gateContext } from '../../gates/wait-meta.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import {
   parseGateCtx,
@@ -53,7 +54,7 @@ function planGateFor(
   const plans = (mr?.gates ?? [])
     .filter(g => {
       if (g.kind !== 'respond-plan') return false;
-      const plan = parseGateCtx(g.context);
+      const plan = parseGateCtx(gateContext(g));
       return (
         plan?.shape === 'plan@1' &&
         (ctx.round === undefined ||

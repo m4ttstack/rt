@@ -7,6 +7,7 @@ import {
 } from '@mattstack/gate-kit';
 import { Button, CHECK_ICON, Chip, Icon } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { gateContext } from '../../gates/wait-meta.ts';
 import type { BoardMRWithReview, ExecutorState } from '../types.ts';
 import { AnsweredSheetBody } from './AnsweredSheet.tsx';
 import { cleanTitle, signOff } from './format.ts';
@@ -95,11 +96,12 @@ function DecisionQueueModal({
 }) {
   const form = useGateForm(gate, onAnswered);
   const paneGone = gate.executor === 'gone';
+  const context = gateContext(gate);
   const headerCtx = useMemo((): PlanCtx | PostCtx | null => {
-    const ctx = parseGateCtx(gate.context);
+    const ctx = parseGateCtx(context);
     return ctx?.shape === 'plan@1' || ctx?.shape === 'post@1' ? ctx : null;
-  }, [gate.context]);
-  const proseContext = useMemo(() => paneContext(gate.context), [gate.context]);
+  }, [context]);
+  const proseContext = useMemo(() => paneContext(context), [context]);
   // A respond-post gate whose contexts were all flattened to prose still
   // carries its per-thread questions; the sheet takes it without a reviewer.
   const sheetCtx = useMemo((): PlanCtx | PostCtx | null => {

@@ -573,6 +573,38 @@ test('a gate with no context still fills its context card with a meta line', asy
   );
 });
 
+test('a wait-style gate reads its context and pane from meta', async () => {
+  await render(
+    ship({
+      kind: 'login',
+      label: 'login',
+      context: undefined,
+      origin: undefined,
+      meta: {
+        presentation: 'wait',
+        context: 'I need an interactive login at http://localhost:4001.',
+        paneId: 'w4:pC',
+        worktree: '/work/aspen',
+      },
+    })
+  );
+  const card = $('.tui-sheet-context-card')!;
+  expect(
+    card.querySelector('.tui-sheet-context-reasoning')?.textContent?.trim()
+  ).toBe('I need an interactive login at http://localhost:4001.');
+  expect(card.querySelector('.tui-sheet-context-meta')?.textContent).toContain(
+    'aspen · w4:pC'
+  );
+  const focus = $$('.tui-gate-sheet-actions button').find(
+    b => b.textContent?.trim() === 'focus pane'
+  ) as HTMLButtonElement;
+  expect(focus.disabled).toBe(false);
+  await click(focus);
+  expect(posts.filter(p => p.url === '/gate/focus')).toEqual([
+    { url: '/gate/focus', body: { gateId: 'g-ship' } },
+  ]);
+});
+
 test('with an MR the rail opens on the MR card', async () => {
   await render(ship(), MR);
   const first = $('.tui-sheet-rail-scroll')!.firstElementChild!;

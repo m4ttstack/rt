@@ -8,6 +8,7 @@ import {
 import type { GateItemDisplay } from '@mattstack/gate-kit/react';
 import { Button, Markdown } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { gateContext, gateOrigin } from '../../gates/wait-meta.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
 import { ago } from './format.ts';
@@ -66,10 +67,8 @@ function dockRef(gate: GateRow, mr?: BoardMRWithReview): string {
 /** When and where the gate opened: the rail's meta line, which also keeps a
     context card with no prose from standing empty. */
 function openedMeta(gate: GateRow, mr?: BoardMRWithReview): string {
-  const origin = [
-    gate.origin?.worktree?.split('/').filter(Boolean).pop(),
-    gate.origin?.paneId,
-  ]
+  const { worktree, paneId } = gateOrigin(gate) ?? {};
+  const origin = [worktree?.split('/').filter(Boolean).pop(), paneId]
     .filter(Boolean)
     .join(' · ');
   return [
@@ -356,10 +355,8 @@ function PaneSheetBody({
   onContinue: () => void;
 }) {
   const [earlierOpen, setEarlierOpen] = useState(false);
-  const { prompt, earlier } = useMemo(
-    () => splitPaneScreen(gate.context ?? ''),
-    [gate.context]
-  );
+  const screen = gateContext(gate) ?? '';
+  const { prompt, earlier } = useMemo(() => splitPaneScreen(screen), [screen]);
   const reason = paneReason(gate);
   const gone = reason === 'gone';
   const question = gate.questions[0];

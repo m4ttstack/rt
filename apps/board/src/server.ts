@@ -145,6 +145,7 @@ import {
 import { RunMrResolver } from './gates/run-mr.ts';
 import { type GateAnswers } from './gates/store.ts';
 import { planSweep, pruneOffBoardGates } from './gates/sweep.ts';
+import { gateOrigin } from './gates/wait-meta.ts';
 import {
   closeTab,
   dispatchPrompt,
@@ -2300,11 +2301,9 @@ const httpServer = Bun.serve({
         const row = gateCache.rows().find(r => r.id === gateId);
         if (!row)
           return new Response(`unknown gate "${gateId}"`, { status: 404 });
-        const { panes, fetchFailed } = await panesForOrigin(
-          row.origin ?? undefined,
-          paneList
-        );
-        const resolved = resolveOriginFocus(row.origin ?? undefined, panes, {
+        const origin = gateOrigin(row);
+        const { panes, fetchFailed } = await panesForOrigin(origin, paneList);
+        const resolved = resolveOriginFocus(origin, panes, {
           carryTabId: true,
         });
         if (!resolved.ok) {
