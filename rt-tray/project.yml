@@ -127,12 +127,18 @@ targets:
         MSDevBuild: true
         SUEnableAutomaticChecks: false
 
+  DeckShimLogic:
+    type: library.static
+    platform: macOS
+    sources: [Sources-deck-shim-logic]
+
   MattstackCoreChecks:
     type: framework
     platform: macOS
     sources: [Tests/MattstackCoreChecks]
     dependencies:
       - target: MattstackCore
+      - target: DeckShimLogic
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mattstack.core.checks
