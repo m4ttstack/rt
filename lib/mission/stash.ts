@@ -22,16 +22,26 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** GHD app-store createStashAndDropPreviousEntry: the old entry goes only once the new one exists. */
+/**
+ * GHD app-store createStashAndDropPreviousEntry: the old entry goes only once
+ * the new one exists, and each step fails on its own (two
+ * performFailableOperation calls). A failed create throws; a failed drop
+ * returns its notice, since the changes are already safe in the new entry.
+ */
 export async function createStashAndDropPreviousEntry(
   client: GitClient,
   branch: string,
   untracked: ReadonlyArray<string>,
-): Promise<boolean> {
+): Promise<string> {
   const previous = await client.lastDesktopStashEntryForBranch(branch);
   const created = await client.createDesktopStashEntry(branch, untracked);
-  if (created && previous !== null) await client.dropDesktopStashEntry(previous.stashSha);
-  return created;
+  if (!created || previous === null) return "";
+  try {
+    await client.dropDesktopStashEntry(previous.stashSha);
+  } catch (err) {
+    return `Your changes were stashed, but the previous stash could not be removed: ${message(err)}`;
+  }
+  return "";
 }
 
 /** GHD checkoutAndLeaveChanges: a failed stash is reported and the checkout still runs (performFailableOperation). */
@@ -39,7 +49,7 @@ export async function checkoutAndLeaveChanges(client: GitClient, target: string,
   let notice = "";
   if (snapshot.branch !== null && snapshot.files.length > 0) {
     try {
-      await createStashAndDropPreviousEntry(client, snapshot.branch, untrackedPaths(snapshot));
+      notice = await createStashAndDropPreviousEntry(client, snapshot.branch, untrackedPaths(snapshot));
     } catch (err) {
       notice = message(err);
     }

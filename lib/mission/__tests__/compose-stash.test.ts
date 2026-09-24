@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MissionDriver } from "../driver.ts";
 import type { MissionModel } from "../model.ts";
@@ -87,6 +87,29 @@ describe("mission compose: stash against a real repo", () => {
       expect(await desktopStashes(sandbox)).toEqual([]);
       await stop();
     } finally {
+      await sandbox.cleanup();
+    }
+  }, 30_000);
+
+  test("a stash whose old-entry drop fails keeps the new stash and names the drop", async () => {
+    const sandbox = await seeded();
+    // git's reflog rewrite needs a lock file beside the log; the append a stash push makes does not.
+    const reflogDir = join(sandbox.dir, ".git", "logs", "refs");
+    try {
+      await sandbox.write("a.txt", "first\n");
+      const { session, stop } = await start(sandbox);
+      await session.step({ t: "intent", name: "mission:stash", payload: {} });
+      await sandbox.write("a.txt", "second\n");
+      await session.step({ t: "intent", name: "mission:refresh", payload: {} });
+      chmodSync(reflogDir, 0o555);
+      const m = await session.step({ t: "intent", name: "mission:stash", payload: {} });
+      chmodSync(reflogDir, 0o755);
+      expect(m.notice).toStartWith("Your changes were stashed, but the previous stash could not be removed:");
+      expect(m.changes).toEqual([]);
+      expect(await desktopStashes(sandbox)).toHaveLength(2);
+      await stop();
+    } finally {
+      chmodSync(reflogDir, 0o755);
       await sandbox.cleanup();
     }
   }, 30_000);

@@ -1050,7 +1050,7 @@ export class MissionDriver {
     this.snapshot = await client.snapshot();
     if (canStash(this.snapshot)) {
       try {
-        await createStashAndDropPreviousEntry(client, this.snapshot.branch!, untrackedPaths(this.snapshot));
+        this.state.notice = await createStashAndDropPreviousEntry(client, this.snapshot.branch!, untrackedPaths(this.snapshot));
       } catch (err) {
         this.state.notice = err instanceof Error ? err.message : String(err);
       }
