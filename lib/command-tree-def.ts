@@ -2429,6 +2429,7 @@ export const TREE: Record<string, CommandNode> = {
 
   flavor: {
     description: "Which app (mattstack.app or mattstack-dev.app) runs this Mac",
+    hidden: true,
     subcommands: {
       takeover: {
         description: "Retire the other app and point ~/.local/bin/rt at this one (the app runs this when opened by hand)",
