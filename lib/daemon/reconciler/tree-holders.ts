@@ -59,7 +59,10 @@ export async function treeHolders(treePath: string): Promise<TreeHolder[]> {
   if (lsof.exitCode !== 0 && !lsof.stdout) return [];
   const resolved = new Map<number, string>();
   for (const [pid, raw] of parseLsofCwdMap(lsof.stdout, [target])) resolved.set(pid, safeRealpath(raw));
-  const pids = [...attributeCwds(target, [], resolved).keys()];
+  // A launchd-started daemon is itself ppid 1 and long-lived; it must never
+  // read as a stale orphan of a tree it happens to sit in.
+  const self = new Set([process.pid, process.ppid]);
+  const pids = [...attributeCwds(target, [], resolved).keys()].filter((pid) => !self.has(pid));
   if (pids.length === 0) return [];
 
   // args last and no comm column: an executable path with a space would shift every field after it.

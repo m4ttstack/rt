@@ -213,7 +213,11 @@ const RETRYABLE_REFUSALS = new Set(["dirty", "unpushed", "running-run", "runs-un
 /** Re-run guarded dispose on disposable trees whose refusal may have cleared. Never throws past a tree. */
 export async function retryDisposableTrees(deps: StaleClaimSweepDeps): Promise<void> {
   const candidates = loadRegistry(deps.repoName).filter(
-    (rec) => rec.kind === "ephemeral" && rec.state === "disposable" && RETRYABLE_REFUSALS.has(rec.disposableReason ?? ""),
+    (rec) =>
+      rec.kind === "ephemeral" &&
+      rec.state === "disposable" &&
+      RETRYABLE_REFUSALS.has(rec.disposableReason ?? "") &&
+      (rec.disposal !== "job" || (deps.jobTreeHold ? deps.jobTreeHold(rec) : "unwired") === null),
   );
   if (candidates.length === 0) return;
 
@@ -234,7 +238,9 @@ export async function retryDisposableTrees(deps: StaleClaimSweepDeps): Promise<v
         deps.log.info({ repo: deps.repoName, tree: rec.name, was: rec.disposableReason }, "disposable tree disposed on retry");
         continue;
       }
-      if (outcome.refusal === rec.disposableReason || outcome.refusal === "changed" || outcome.refusal === "remove-failed") continue;
+      // Only a retryable refusal replaces the reason: writing "grace" (or any
+      // other one-off) would drop the tree out of the retry set for good.
+      if (outcome.refusal === rec.disposableReason || !RETRYABLE_REFUSALS.has(outcome.refusal)) continue;
       patchTree(deps.repoName, rec.path, (r) => {
         if (r.state === "disposable") r.disposableReason = outcome.refusal;
       });

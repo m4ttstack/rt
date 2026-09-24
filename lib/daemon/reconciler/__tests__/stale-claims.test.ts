@@ -393,6 +393,24 @@ describe("disposable retry (RT-267)", () => {
     expect(find(rec.path)?.state).toBe("disposable");
   });
 
+  test("a retry refused for grace keeps the retryable reason it had", async () => {
+    const rec = disposableTree("romeo", "dirty");
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, claimedAt: new Date().toISOString() } : t)));
+    await retry();
+    expect(find(rec.path)?.disposableReason).toBe("dirty");
+  });
+
+  test("a disposable job tree its herd still holds is not retried", async () => {
+    const rec = disposableTree("sierra", "dirty");
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, disposal: "job", owner: "herd:h1" } : t)));
+    await retryDisposableTrees({
+      repoName, repoPath: repo, cacheEntries: {}, emit: () => {}, log: fakeLog(), killProcesses: false,
+      findRunningRun: () => ({ kind: "none" as const }), liveCwds: async () => new Set<string>(),
+      jobTreeHold: () => "herd job h1/sierra is active",
+    });
+    expect(find(rec.path)?.state).toBe("disposable");
+  });
+
   test("a disposable tree someone is sitting in is left alone", async () => {
     const rec = disposableTree("quebec", "dirty");
     await retry(new Set([rec.path]));

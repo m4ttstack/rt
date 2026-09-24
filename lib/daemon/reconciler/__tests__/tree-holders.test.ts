@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { describeHolders, isStaleOrphan, parseEtime, STALE_ORPHAN_MS, type TreeHolder } from "../tree-holders.ts";
+import { describeHolders, isStaleOrphan, parseEtime, STALE_ORPHAN_MS, treeHolders, type TreeHolder } from "../tree-holders.ts";
 
 const H = 3600_000;
 
@@ -43,6 +43,14 @@ describe("isStaleOrphan", () => {
     ["a GUI app", { command: "Electron", fullCommand: "/Applications/Cursor.app/Contents/MacOS/Cursor" }],
   ])("%s is never stale", (_label, over) => {
     expect(isStaleOrphan(holder(over))).toBe(false);
+  });
+});
+
+describe("treeHolders", () => {
+  test("never lists this process or its parent, even when its cwd is inside the tree", async () => {
+    const pids = (await treeHolders(process.cwd())).map((h) => h.pid);
+    expect(pids).not.toContain(process.pid);
+    expect(pids).not.toContain(process.ppid);
   });
 });
 
