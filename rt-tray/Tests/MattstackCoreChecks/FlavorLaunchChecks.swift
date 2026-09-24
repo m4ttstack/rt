@@ -16,17 +16,54 @@ let flavorLaunchChecks: [Check] = [
         c.expectEqual(FlavorLaunch.socket(myFlavor: "prod", holderIsLive: true, holderFlavor: "dev"),
                       .otherFlavorHolds("dev"))
     },
-    Check("plan: opened by hand takes over, whatever else is running") { c in
-        c.expectEqual(FlavorLaunch.plan(origin: .userLaunch, otherTrayAlive: nil), .takeOver)
-        c.expectEqual(FlavorLaunch.plan(origin: .userLaunch, otherTrayAlive: "prod"), .takeOver)
+    Check("plan: opened by hand takes over, whatever else is running or rt points at") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "dev", origin: .userLaunch, otherTrayAlive: nil, rtOwner: nil), .takeOver)
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "dev", origin: .userLaunch, otherTrayAlive: "prod", rtOwner: "prod"), .takeOver)
     },
-    Check("plan: a login item never takes over; it stands down while the other app runs") { c in
-        c.expectEqual(FlavorLaunch.plan(origin: .loginItem, otherTrayAlive: "prod"), .standDown(other: "prod"))
-        c.expectEqual(FlavorLaunch.plan(origin: .loginItem, otherTrayAlive: nil), .serve)
+    Check("plan: login item while the other flavor's tray runs stands down") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "dev", origin: .loginItem, otherTrayAlive: "prod", rtOwner: "dev"),
+                      .standDown(other: "prod"))
     },
-    Check("plan: an unidentified launch asks when the other app runs, else serves without taking over") { c in
-        c.expectEqual(FlavorLaunch.plan(origin: .unknown, otherTrayAlive: "dev"), .ask(other: "dev"))
-        c.expectEqual(FlavorLaunch.plan(origin: .unknown, otherTrayAlive: nil), .serve)
+    Check("plan: login item with rt pointing at the other flavor retires itself") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .loginItem, otherTrayAlive: nil, rtOwner: "dev"),
+                      .retire(owner: "dev"))
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "dev", origin: .loginItem, otherTrayAlive: nil, rtOwner: "prod"),
+                      .retire(owner: "prod"))
+    },
+    Check("plan: login item with rt pointing at itself serves") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "dev", origin: .loginItem, otherTrayAlive: nil, rtOwner: "dev"), .serve)
+    },
+    Check("plan: login item with rt foreign or missing serves") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .loginItem, otherTrayAlive: nil, rtOwner: nil), .serve)
+    },
+    Check("plan: an unidentified launch asks when the other app runs, else serves without taking over or retiring") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: "dev", rtOwner: nil), .ask(other: "dev"))
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: nil, rtOwner: "dev"), .serve)
+    },
+    Check("rt owner: the marked dev wrapper belongs to dev") { c in
+        c.expectEqual(RtLinkOwner.flavor(linkTarget: nil,
+                                         prefix: "#!/bin/zsh\n# mattstack-dev-mode\nexport PATH=x\n"), "dev")
+    },
+    Check("rt owner: a link to a mattstack.app bundle's compiled rt belongs to prod") { c in
+        c.expectEqual(RtLinkOwner.flavor(linkTarget: "/Applications/mattstack.app/Contents/MacOS/rt", prefix: nil), "prod")
+        c.expectEqual(RtLinkOwner.flavor(linkTarget: "/Users/x/Applications/mattstack.app/Contents/MacOS/rt", prefix: nil), "prod")
+    },
+    Check("rt owner: anything ambiguous or foreign is nobody's") { c in
+        c.expect(RtLinkOwner.flavor(linkTarget: nil, prefix: nil) == nil, "missing")
+        c.expect(RtLinkOwner.flavor(linkTarget: "/opt/homebrew/bin/rt", prefix: nil) == nil, "a user copy")
+        c.expect(RtLinkOwner.flavor(linkTarget: "mattstack.app/Contents/MacOS/rt", prefix: nil) == nil, "a relative link")
+        c.expect(RtLinkOwner.flavor(linkTarget: "/Applications/mattstack-dev.app/Contents/MacOS/rt", prefix: nil) == nil,
+                 "the dev bundle's rt is its daemon shim, never a CLI link")
+        c.expect(RtLinkOwner.flavor(linkTarget: "/Applications/not-mattstack.app/Contents/MacOS/rt", prefix: nil) == nil,
+                 "a bundle whose name only ends in mattstack.app")
+        c.expect(RtLinkOwner.flavor(linkTarget: nil,
+                                    prefix: "#!/bin/zsh\nexport RT_LAUNCH_CWD=\"$PWD\"\nexec bun run cli.ts\n") == nil,
+                 "a markerless legacy wrapper")
+        c.expect(RtLinkOwner.flavor(linkTarget: nil, prefix: "#!/bin/zsh\nexec \"/Users/x/.bun/bin/bun\" run cli.ts\n") == nil,
+                 "a standalone rt 2.5.x wrapper")
+        c.expect(RtLinkOwner.flavor(linkTarget: nil, prefix: "\u{cf}\u{fa}\u{ed}\u{fe}binary") == nil, "a copied binary")
+        c.expect(RtLinkOwner.flavor(linkTarget: nil, prefix: "#!/bin/sh\n# mattstack-link rt\nexec x\n") == nil,
+                 "a tagged PATH-link wrapper")
     },
     Check("takeover argv names only my own flavor") { c in
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])

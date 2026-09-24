@@ -81,6 +81,10 @@ let flavorHandoffChecks: [Check] = [
     },
     Check("stand-down copy names the app keeping the Mac and the way back, never a mode") { c in
         let body = FlavorStandDownCopy.notificationBody(myFlavor: "prod", other: "dev")
+        let retired = FlavorStandDownCopy.retiredBody(myFlavor: "prod", owner: "dev")
+        c.expect(retired.contains("dev app"), retired)
+        c.expect(retired.contains("Open mattstack.app"), retired)
+        c.expect(!retired.contains("mode"), retired)
         c.expect(FlavorStandDownCopy.notificationTitle(myFlavor: "prod").contains("prod"))
         c.expect(body.contains("dev app is running"))
         c.expect(body.contains("Open mattstack.app"))

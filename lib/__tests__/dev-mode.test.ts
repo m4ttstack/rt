@@ -3,7 +3,7 @@
  * ~/.local/bin/rt, and installing the prod app's rt over whatever is there.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { devWrapperOwnsRt, DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent } from "../dev-mode.ts";
 
@@ -66,6 +66,10 @@ describe("isDevModeWrapperContent", () => {
   });
   test("non-shebang content is not a dev wrapper", () => {
     expect(isDevModeWrapperContent(`ELF\x00binary`)).toBe(false);
+  });
+  test("the tray's login-item check reads the same marker", () => {
+    const swift = readFileSync(join(import.meta.dir, "..", "..", "rt-tray", "Sources-core", "Flavor", "FlavorLaunch.swift"), "utf8");
+    expect(swift).toContain(`devWrapperTag = "${DEV_MODE_TAG}"`);
   });
 });
 

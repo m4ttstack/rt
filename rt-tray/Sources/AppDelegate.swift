@@ -100,12 +100,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // The launch event is only current while AppKit is dispatching it, so
         // the origin is read here rather than anywhere downstream.
         let origin = TrayLaunchOrigin.current()
-        let plan = FlavorLaunch.plan(origin: origin, otherTrayAlive: FlavorLaunchState.otherTrayAlive)
-        TrayLog.info("flavor launch", ["origin": String(describing: origin), "plan": String(describing: plan)])
+        let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
+        let rtOwner = BundleFlavor.isStubActive ? nil : FlavorLaunchState.rtOwner(home: AppHome.current)
+        let plan = FlavorLaunch.plan(myFlavor: myFlavor, origin: origin,
+                                     otherTrayAlive: FlavorLaunchState.otherTrayAlive, rtOwner: rtOwner)
+        TrayLog.info("flavor launch", ["origin": String(describing: origin), "rtOwner": rtOwner ?? "none",
+                                       "plan": String(describing: plan)])
         switch plan {
         case .serve: startNormalOperation()
         case .takeOver: takeOver()
-        case .standDown(let other): standDown(other: other)
+        case .standDown(let other):
+            retireSelf(body: FlavorStandDownCopy.notificationBody(myFlavor: myFlavor, other: other))
+        case .retire(let owner):
+            retireSelf(body: FlavorStandDownCopy.retiredBody(myFlavor: myFlavor, owner: owner))
         case .ask(let other): askToTakeOver(other: other)
         }
     }
@@ -261,37 +268,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
-    /// A login item while the other app runs: that app keeps the Mac, so
-    /// this one gives up its daemon agent and login item and quits. Opening
-    /// it by hand later takes the Mac back.
+    /// A login item that lost the Mac to the other app: it gives up its own
+    /// login item and every agent it registers, then quits. Only this app can
+    /// unregister them, and only opening it by hand brings it back.
     @MainActor
-    private func standDown(other: String) {
+    private func retireSelf(body: String) {
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
-        TrayLog.info("flavor stand-down", ["other": other, "flavor": myFlavor])
-        Task { @MainActor in await retireSelf(other: other, myFlavor: myFlavor) }
-    }
-
-    @MainActor
-    private func retireSelf(other: String, myFlavor: String) async {
-        await daemonLifecycle.stopDaemonForTeardown(origin: DaemonOrigin.flavorRetire)
-        do {
-            try await SMAppService.mainApp.unregister()
-        } catch {
-            // Unregistering an already-unregistered login item throws; the
-            // status logged below is the ground truth.
-            TrayLog.warn("login item unregister failed", ["err": String(describing: error)])
+        Task { @MainActor in
+            await daemonLifecycle.stopDaemonForTeardown(origin: DaemonOrigin.flavorRetire)
+            let registrar = ServicesRegistrar(bundlePath: Bundle.main.bundlePath, runner: SystemCommandRunner())
+            let agents = await registrar.unregister(plists: registrar.agents.map(\.fileName))
+            do {
+                try await SMAppService.mainApp.unregister()
+            } catch {
+                // Unregistering an already-unregistered login item throws; the
+                // status logged below is the ground truth.
+                TrayLog.warn("login item unregister failed", ["err": String(describing: error)])
+            }
+            _ = await TrayServer.retireHandDeckAgent()
+            TrayLog.info("stood down", ["agents": agents.map { "\($0.plist)=\($0.status)" }.joined(separator: ","),
+                                        "loginItem": TrayServer.statusName(SMAppService.mainApp.status)])
+            // The notification is the only trace this leaves, so the quit waits
+            // for delivery, with a backstop for a callback that never comes.
+            StandDownNotice.post(title: FlavorStandDownCopy.notificationTitle(myFlavor: myFlavor), body: body,
+                                 identifier: "mattstack-flavor-stand-down") {
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSApp.terminate(nil) }
         }
-        _ = await TrayServer.retireHandDeckAgent()
-        TrayLog.info("stood down", ["daemon": TrayServer.statusName(daemonLifecycle.status),
-                                    "loginItem": TrayServer.statusName(SMAppService.mainApp.status)])
-        // The notification is the only trace this leaves, so the quit waits
-        // for delivery, with a backstop for a callback that never comes.
-        StandDownNotice.post(title: FlavorStandDownCopy.notificationTitle(myFlavor: myFlavor),
-                             body: FlavorStandDownCopy.notificationBody(myFlavor: myFlavor, other: other),
-                             identifier: "mattstack-flavor-stand-down") {
-            DispatchQueue.main.async { NSApp.terminate(nil) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSApp.terminate(nil) }
     }
 
     /// A launch this process could not identify while the other app runs:

@@ -86,6 +86,11 @@ public enum FlavorStandDownCopy {
             + "Open \(FlavorIdentity.bundleName(ofFlavor: myFlavor)) to switch this Mac to it."
     }
 
+    public static func retiredBody(myFlavor: String, owner: String) -> String {
+        "This Mac was switched to the \(owner) app, so this app gave up its daemon and login item. "
+            + "Open \(FlavorIdentity.bundleName(ofFlavor: myFlavor)) to switch back."
+    }
+
     public static func askTitle(other: String) -> String {
         "The \(other) app is running"
     }

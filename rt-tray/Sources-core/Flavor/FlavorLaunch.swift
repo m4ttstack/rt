@@ -25,18 +25,26 @@ public enum FlavorLaunch {
     public enum Plan: Equatable, Sendable {
         case serve
         case takeOver
+        /// A login item while the other app's tray runs.
         case standDown(other: String)
+        /// A login item on a Mac whose ~/.local/bin/rt the other app took:
+        /// a switch made while this app was not running left its login item
+        /// and agents registered, and only this app can unregister them.
+        case retire(owner: String)
         case ask(other: String)
     }
 
-    /// `unknown` never takes the Mac on a guess, and never retires this app
-    /// on one either: while the other app runs, the user decides.
-    public static func plan(origin: LaunchOrigin, otherTrayAlive: String?) -> Plan {
+    /// `rtOwner` is `RtLinkOwner.flavor` of ~/.local/bin/rt; nil (foreign,
+    /// ambiguous, missing) never retires anything. `unknown` never takes the
+    /// Mac on a guess, and never retires this app on one either.
+    public static func plan(myFlavor: String, origin: LaunchOrigin, otherTrayAlive: String?, rtOwner: String?) -> Plan {
         switch origin {
         case .userLaunch:
             return .takeOver
         case .loginItem:
-            return otherTrayAlive.map { .standDown(other: $0) } ?? .serve
+            if let otherTrayAlive { return .standDown(other: otherTrayAlive) }
+            if let rtOwner, rtOwner != myFlavor { return .retire(owner: rtOwner) }
+            return .serve
         case .unknown:
             return otherTrayAlive.map { .ask(other: $0) } ?? .serve
         }
@@ -44,5 +52,27 @@ public enum FlavorLaunch {
 
     public static func takeoverArguments(myFlavorIsDev: Bool) -> [String] {
         ["flavor", "takeover", FlavorIdentity.flavorName(isDevBuild: myFlavorIsDev), "--json"]
+    }
+}
+
+/// Which app a takeover pointed ~/.local/bin/rt at, only when that is
+/// unmistakable: the dev takeover writes a script whose second line is the
+/// dev-mode marker (lib/dev-mode.ts DEV_MODE_TAG), the prod takeover links
+/// an absolute path to a `mattstack.app` bundle's compiled rt. Everything
+/// else, a legacy markerless wrapper included, is nobody's.
+public enum RtLinkOwner {
+    public static let devWrapperTag = "# mattstack-dev-mode"
+
+    /// `linkTarget` is the symlink's destination when the path is a link;
+    /// `prefix` is a bounded head of the file when it is not.
+    public static func flavor(linkTarget: String?, prefix: String?) -> String? {
+        if let linkTarget {
+            let suffix = "/" + FlavorIdentity.bundleName(ofFlavor: "prod") + "/Contents/MacOS/rt"
+            return linkTarget.hasPrefix("/") && linkTarget.hasSuffix(suffix) ? "prod" : nil
+        }
+        guard let prefix, prefix.hasPrefix("#!") else { return nil }
+        let lines = prefix.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)
+        guard lines.count > 1, lines[1].hasPrefix(devWrapperTag) else { return nil }
+        return "dev"
     }
 }
