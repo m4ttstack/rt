@@ -309,6 +309,28 @@ func TestMenuNameStepSubmitsATrimmedName(t *testing.T) {
 	}
 }
 
+func TestNameMenuOpensOnAPrefilledNameAndEscCloses(t *testing.T) {
+	publish := MenuItem{ID: "publish-name", Label: "Publish Repository"}
+	mn := NewNameMenu("Publish Repository", "Name", "repo-tools", publish, nil)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Kind != MenuNamed || out.Name != "repo-tools" || out.Item.ID != "publish-name" {
+		t.Fatalf("enter on the prefilled name = %+v, want MenuNamed repo-tools", out)
+	}
+
+	mn = NewNameMenu("Publish Repository", "Name", "repo", publish, nil)
+	mn.Key(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	for _, r := range "-tools" {
+		mn.Key(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEnter}); out.Name != "rep-tools" {
+		t.Fatalf("editing the prefilled name = %+v, want rep-tools", out)
+	}
+
+	mn = NewNameMenu("Publish Repository", "Name", "repo", publish, nil)
+	if out := mn.Key(tea.KeyPressMsg{Code: tea.KeyEscape}); out.Kind != MenuClosed {
+		t.Fatalf("esc on a name menu's root = %+v, want MenuClosed", out)
+	}
+}
+
 func TestMenuNameStepEscReturnsToTheUnfilteredRows(t *testing.T) {
 	tag := MenuItem{ID: "tag", Label: "Create Tag…"}
 	mn := NewMenu("fix the thing", []MenuItem{{ID: "sha", Label: "Copy SHA"}, {ID: "path", Label: "Copy Path"}, tag}, nil)

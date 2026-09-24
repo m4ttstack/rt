@@ -123,6 +123,16 @@ func NewMenu(title string, items []MenuItem, anchor *MenuAnchor) *Menu {
 	return mn
 }
 
+// NewNameMenu opens straight onto a name field holding name, for a dialog
+// whose first step is the name: esc there closes the menu, as at any root.
+func NewNameMenu(title, placeholder, name string, item MenuItem, anchor *MenuAnchor) *Menu {
+	return &Menu{
+		menuLevel: menuLevel{title: title, naming: true, nameFor: item, name: name, placeholder: placeholder, cursor: -1},
+		anchor:    anchor,
+		hover:     -1,
+	}
+}
+
 func (mn *Menu) Title() string { return mn.title }
 
 func (mn *Menu) SetAnchor(a *MenuAnchor) { mn.anchor = a }
