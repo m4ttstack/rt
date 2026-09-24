@@ -2207,13 +2207,38 @@ export async function skillsBind(args: string[]): Promise<void> {
       return;
     }
 
+    // Both edits are computed before either write lands: a fragment read or edit
+    // failure must not leave the manifest changed with the fragment untouched.
     const text = readFileSync(resolved.manifestPath, "utf8");
-    const edits = modify(text, ["bindings", engineRef, slotName], fill, {
+    const manifestEdits = modify(text, ["bindings", engineRef, slotName], fill, {
       formattingOptions: { insertSpaces: true, tabSize: 2 },
     });
-    writeFileSync(resolved.manifestPath, applyEdits(text, edits));
+    const manifestAfter = applyEdits(text, manifestEdits);
 
-    console.log(summary);
+    // A team pack's pack/skills.jsonc is the fragment merge-manifests folds into the
+    // per-repo manifest; the manifest write alone is undone by the next materialize and
+    // never reaches a teammate. A standalone pack's fragment IS its manifest (written above).
+    const fragmentPath = join(resolved.packDir, "pack", "skills.jsonc");
+    let fragmentWrite: { path: string; text: string } | null = null;
+    if (existsSync(fragmentPath)) {
+      const fragmentReal = realpathSync(fragmentPath);
+      const packDirReal = realpathSync(resolved.packDir);
+      const inPack = fragmentReal === packDirReal || fragmentReal.startsWith(packDirReal + sep);
+      if (!inPack) {
+        console.error(`rt skills bind: ${fragmentPath} resolves outside the pack; skipping fragment write`);
+      } else if (fragmentReal !== realpathSync(resolved.manifestPath)) {
+        const fragmentText = readFileSync(fragmentPath, "utf8");
+        const fragmentEdits = modify(fragmentText, ["bindings", engineRef, slotName], fill, {
+          formattingOptions: { insertSpaces: true, tabSize: 2 },
+        });
+        fragmentWrite = { path: fragmentPath, text: applyEdits(fragmentText, fragmentEdits) };
+      }
+    }
+
+    if (fragmentWrite) writeFileSync(fragmentWrite.path, fragmentWrite.text);
+    writeFileSync(resolved.manifestPath, manifestAfter);
+
+    console.log(fragmentWrite ? `${summary} (fragment updated: ${fragmentWrite.path})` : summary);
 
     const surfaceFlags: SurfaceFlags = {
       team: resolved.team,

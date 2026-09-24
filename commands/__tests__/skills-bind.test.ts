@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { __test__ as pickImplTest, type PickImpl } from "../../lib/ui/pick.ts";
 import type { PickRequest, PickResult } from "../../lib/ui/protocol.ts";
-import { readManifestBindings } from "../../lib/skills/sources.ts";
+import { readManifestBindings, stripJsonc } from "../../lib/skills/sources.ts";
 import { skillsBind, skillsCompile } from "../skills.ts";
 
 /**
@@ -525,5 +525,91 @@ describe("skillsBind: pipeline stages", () => {
     expect(logs).toContain("stage-plan.domain: acme:plan-policy -> acme:plan-policy-v2");
     const bindings = readManifestBindings(manifestPath);
     expect(bindings["mattstack:stage-plan"]?.domain).toBe("acme:plan-policy-v2");
+  });
+});
+
+const FIX = join(import.meta.dir, "..", "..", "lib", "skills", "__tests__", "fixtures", "compile-native");
+
+describe("bind writes the team pack fragment", () => {
+  function fixtureWithFragment(fragment: string) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rt-bind-frag-")));
+    cpSync(FIX, root, { recursive: true });
+    const pack = join(root, "pack");
+    const ms = join(root, "mattstack-home");
+    const manifest = join(ms, "repos", "my-repo", "skills.jsonc");
+    writeFile(join(pack, "pack", "skills.jsonc"), fragment);
+    writeFile(manifest, `// acme@acme\n{\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    return { pack, ms, manifest, root };
+  }
+
+  test("the fragment gains the binding, comments kept, and the manifest gets it too", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    const fragment = readFileSync(fragmentPath, "utf8");
+    expect(fragment).toContain("// acme fragment");
+    expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
+    expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+    // The summary suffix is the only observable proof the fragment write ran.
+    expect(logs.some((l) => l.includes(`fragment updated: ${fragmentPath}`))).toBe(true);
+  });
+
+  test("a standalone pack whose fragment is the manifest is written once", async () => {
+    const { pack, ms } = fixtureWithFragment(`{\n  "version": 1,\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    const own = join(pack, "pack", "skills.jsonc");
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", own]);
+    const text = readFileSync(own, "utf8");
+    expect(text.match(/acme:plan-policy/g)?.length).toBe(1);
+    // A second write onto the same text is idempotent, so the count above alone
+    // cannot prove the realpath guard skipped it; the missing summary suffix can.
+    expect(logs.some((l) => l.includes("fragment updated"))).toBe(false);
+  });
+
+  test("a fragment with no top-level bindings key gains one", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1\n}\n`);
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
+    expect(fragment).toContain("// acme fragment");
+    expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
+  });
+
+  test("a fragment symlinked outside the pack is skipped, with a warning, and the outside file is untouched", async () => {
+    const { pack, ms, manifest, root } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
+    const outsidePath = join(root, "outside-fragment.jsonc");
+    writeFile(outsidePath, `// outside fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const outsideBefore = readFileSync(outsidePath, "utf8");
+    rmSync(fragmentPath);
+    symlinkSync(outsidePath, fragmentPath);
+
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(" "));
+    });
+    try {
+      await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(readFileSync(outsidePath, "utf8")).toBe(outsideBefore);
+    const warning = errors.find((l) => l.includes(fragmentPath));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("outside the pack");
+    expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+  });
+
+  test("an unreadable fragment (a directory at the fragment path) leaves the manifest bindings unchanged", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
+    const manifestBefore = readFileSync(manifest, "utf8");
+    rmSync(fragmentPath);
+    mkdirSync(fragmentPath);
+
+    await expect(
+      skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]),
+    ).rejects.toThrow();
+
+    expect(readFileSync(manifest, "utf8")).toBe(manifestBefore);
   });
 });
