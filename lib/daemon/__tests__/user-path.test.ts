@@ -41,9 +41,9 @@ function makeLog() {
 }
 
 describe("resolveUserPath", () => {
-  // Every child now gets process.env.PATH as it is (lib/subprocess.ts
-  // childEnv), so a PATH left at "/usr/bin:/bin" hides lsof and friends from
-  // every later test in the run.
+  // Every child gets process.env.PATH as it is (lib/subprocess.ts childEnv),
+  // so a PATH left at "/usr/bin:/bin" hides lsof and friends from every later
+  // test in the run.
   const realPath = process.env.PATH;
   afterEach(() => {
     if (realPath === undefined) delete process.env.PATH;
