@@ -16,3 +16,6 @@ rt-docs
 # The internal codec contract for state.db keys and daemon payloads. Applies
 # to writing rt-estate code, not to using rt.
 rt-repo-identity
+
+# Rebuilding and reinstalling the dev app. Maintainer action.
+rt-build-dev-app
