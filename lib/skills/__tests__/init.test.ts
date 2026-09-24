@@ -155,7 +155,7 @@ describe("renderPackFiles", () => {
     expect(files["PACK.md"]).toContain("mattstack:extending-a-pack");
     expect(files["PACK.md"]).toContain("mattstack:creating-a-pack");
     expect(files["PACK.md"]).toContain("placeholder");
-    for (const text of Object.values(files)) expect(text).not.toMatch(/[–—]/);
+    for (const text of Object.values(files)) expect(text).not.toMatch(/[\u2013\u2014]/);
   });
 });
 
