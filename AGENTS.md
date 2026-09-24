@@ -331,10 +331,10 @@ The dev app (`/Applications/mattstack-dev.app`) takes code from three places.
   `deck restart <app>` (or the deck row's deploy button for deck itself).
   Deck runs through the dev shim (`rt-tray/Sources-deck-shim`), which falls
   back to `Contents/Helpers/deck-pinned` when source cannot run; `api.json`'s
-  `runMode` says which is serving. A pin older than `runMode` writes no
-  `runMode` field and so also reads as `standalone`; check the last
-  `deck-dev-shim:` line in `~/.mattstack/deck/logs/deck.err.log` to tell the
-  two apart. gitq is its own repo at
+  `runMode` says which is serving. A pin older than `runMode` (deck 1.0.6
+  today) reads as `standalone`; the last `deck-dev-shim:` line in
+  `~/.mattstack/deck/logs/deck.err.log` says whether the shim fell back.
+  gitq is its own repo at
   `~/Documents/GitHub/gitq`, deployed the same way: merge, confirm `main`,
   pull, `deck restart gitq`.
 - **Manifest keys in `mattstack.deck.json` are read only at register or
