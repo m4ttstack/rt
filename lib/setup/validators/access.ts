@@ -135,10 +135,10 @@ async function switchboardRow(p: Probes, team: TeamSnapshot, overrides: UserInte
     return row({ ...base, status: "needs-you", detail: `your team declares switchboard at "${declaredUrl}" — unverified; confirm it yourself before rt reaches out to it`, action: connectHostSteps("switchboard", declaredUrl) });
   }
 
-  const res = await p.fetch(`${confirmedUrl}/health`);
+  const res = await p.fetch(`${confirmedUrl}/healthz`);
   if (res.status === 200) return row({ ...base, status: "ready", detail: "reachable" });
   if (res.status === 0) return row({ ...base, status: "error", detail: `couldn't reach ${confirmedUrl} — check your network or proxy` });
-  return row({ ...base, status: "error", detail: `switchboard /health returned ${res.status}` });
+  return row({ ...base, status: "error", detail: `switchboard /healthz returned ${res.status}` });
 }
 
 /** Every probe here is independent (different remote/host/URL each), so they run concurrently — worst-case latency is the slowest single probe, not their sum; team-repo/forge/switchboard/each tracking identity all keep their own bounded timeout. */

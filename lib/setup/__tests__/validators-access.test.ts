@@ -396,9 +396,9 @@ describe("accessRows — access.switchboard", () => {
     expect(rows.some((r) => r.id === "access.switchboard")).toBe(false);
   });
 
-  test("configured, user-confirmed, /health 200 -> ready, required false", async () => {
+  test("configured, user-confirmed, /healthz 200 -> ready, required false", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
-    const fetch = async (url: string) => (url === "https://sw.example.com/health" ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const fetch = async (url: string) => (url === "https://sw.example.com/healthz" ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
     const r = await pickRow(accessRows(fakeProbes({ fetch }), team, null, { switchboardUrl: "https://sw.example.com" }), "access.switchboard");
     expect(r.status).toBe("ready");
     expect(r.required).toBe(false);
@@ -412,12 +412,12 @@ describe("accessRows — access.switchboard", () => {
     expect(r.detail).toContain("couldn't reach");
   });
 
-  test("configured, user-confirmed, /health non-200 -> error, distinct detail from the unreachable case", async () => {
+  test("configured, user-confirmed, /healthz non-200 -> error, distinct detail from the unreachable case", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const fetch = async () => ({ status: 503, body: "", headers: {} });
     const r = await pickRow(accessRows(fakeProbes({ fetch }), team, null, { switchboardUrl: "https://sw.example.com" }), "access.switchboard");
     expect(r.status).toBe("error");
-    expect(r.detail).toBe("switchboard /health returned 503");
+    expect(r.detail).toBe("switchboard /healthz returned 503");
   });
 
   test("team-declared switchboard, NOT user-confirmed -> needs-you, never fetched (R-F2)", async () => {
