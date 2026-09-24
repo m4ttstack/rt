@@ -1376,7 +1376,7 @@ func (m *Mission) clickCheckbox(idx int) (tea.Model, tea.Cmd) {
 	path := m.model.Changes[idx].Path
 	prev := m.selected
 	m.selected = path
-	m.focus = focusList
+	m.focus = m.homeFocus()
 	return m, tea.Batch(m.stageIntent(path, "toggle-file"), m.selectPathCmd(prev))
 }
 

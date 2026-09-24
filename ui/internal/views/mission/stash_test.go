@@ -157,6 +157,21 @@ func TestStashHeaderButtonsSpanThePaintedLabels(t *testing.T) {
 	if rs, re, ds, de := stashHeaderButtons(12); re > 11 || de > 11 || ds < re || rs != 1 {
 		t.Fatalf("narrow spans must stay inside the clipped row: %d %d %d %d", rs, re, ds, de)
 	}
+	for _, w := range []int{100, 15, 8} {
+		rs, re, ds, de := stashHeaderButtons(w)
+		for x, bg := range cellBackgrounds(stashHeaderLines(w, false, false)[1]) {
+			want := bgSGR(theme.BgSubtle)
+			switch {
+			case x >= rs && x < re:
+				want = bgSGR(theme.Pink)
+			case x >= ds && x < de:
+				want = bgSGR(theme.Panel)
+			}
+			if bg != want {
+				t.Fatalf("width %d: cell %d wears %q, the spans say %q", w, x, bg, want)
+			}
+		}
+	}
 }
 
 // TestStashDiffWithoutAFileIsNotTheCleanTreeCard: the stash pane's diff
@@ -232,15 +247,6 @@ func TestRRestoresTheStash(t *testing.T) {
 	m := stashMission(true)
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'R', Text: "R"}); cmd == nil {
 		t.Fatalf("R should emit a restore")
-	}
-}
-
-func TestOversizedStashDiffEnterAsksForIt(t *testing.T) {
-	m := stashMission(true)
-	m.model.Diff = DiffModel{Path: "a.txt", Status: "modified", Kind: "oversized", ReadOnly: true}
-	m.focus = focusDiff
-	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
-		t.Fatalf("enter on an oversized stash diff should ask for it")
 	}
 }
 
@@ -414,6 +420,25 @@ func TestChoosingAChangesFileLeavesTheStash(t *testing.T) {
 	m.focus = focusStashFiles
 	if _, cmd := m.Update(tea.MouseClickMsg{X: 10, Y: changesRowY(m, 0), Button: tea.MouseLeft}); cmd == nil || m.focus != focusList {
 		t.Fatalf("clicking the selected Changes row should emit a select (focus=%v)", m.focus)
+	}
+}
+
+// TestCheckboxOnTheHiddenCursorRowKeepsTheStashFocus: staging the row the
+// Changes cursor already holds sends no select, so the view stays open and
+// focus must stay with it.
+func TestCheckboxOnTheHiddenCursorRowKeepsTheStashFocus(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main", Showing: true, SelectedFile: "a.txt", Files: []HistoryFileRow{{Path: "a.txt", Status: "modified"}}}
+	m.focus = focusStashFiles
+	start, _ := changeRowCheckboxSpan(m.model.Changes[0])
+	if h := m.hitTest(start, changesRowY(m, 0)); h.kind != hitFileCheckbox || h.idx != 0 {
+		t.Fatalf("setup: the click should land on a.go's checkbox, got %v idx %d", h.kind, h.idx)
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: start, Y: changesRowY(m, 0), Button: tea.MouseLeft}); cmd == nil {
+		t.Fatalf("the checkbox click should still stage")
+	}
+	if m.focus != focusStashFiles {
+		t.Fatalf("focus should stay on the stash files, got %v", m.focus)
 	}
 }
 

@@ -1371,3 +1371,19 @@ func TestStashViewKeysEmitPathShaAndHide(t *testing.T) {
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
+
+const stashOversizedModel = `{"current":{"repo":"repo-tools","branch":"main"},"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
+	`"diff":{"path":"a.txt","status":"modified","kind":"oversized","stats":"","lang":"","lines":[],"readOnly":true},` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":{"sha":"s1","branch":"main","files":[{"path":"a.txt","origPath":"","status":"modified","onDisk":false}],"showing":true,"selectedFile":"a.txt"},` +
+	`"notice":""}`
+
+func TestOversizedStashDiffEnterAsksTheStashForIt(t *testing.T) {
+	s := openMission(t, stashOversizedModel, "Stashed changes")
+	s.Type(keyEnter, keyEnter)
+	if l := waitIntent(t, s, "mission:stash-select"); !strings.Contains(l, `"payload":{"path":"a.txt","showOversized":true}`) {
+		t.Fatalf("oversized stash diff: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}

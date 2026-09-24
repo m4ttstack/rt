@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/theme"
@@ -58,8 +57,8 @@ func (m *Mission) settleStash(wasShowing bool) {
 }
 
 // homeFocus is where leaving a filter, a commit field, a foldout, or a menu
-// lands: the stash files while the stash view shows, so its keybar stays
-// true.
+// lands, and where a checkbox click leaves focus: the stash files while the
+// stash view shows, so its keybar stays true.
 func (m *Mission) homeFocus() focusKind {
 	if m.stashShowing() {
 		return focusStashFiles
@@ -168,8 +167,6 @@ func stashHeaderButtons(width int) (restoreStart, restoreEnd, discardStart, disc
 
 // stashHeaderLines is Desktop's stash-diff-header as terminal rows, each
 // exactly width cells: the title, then the buttons and the explanatory line.
-// A clipped button loses its tail without an ellipsis, so its painted cells
-// stay exactly its span.
 func stashHeaderLines(width int, hoverRestore, hoverDiscard bool) []string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	title := headerRow(on, on.Render(" ")+on.Foreground(theme.Text).Bold(true).Render(clip("Stashed changes", max(width-2, 0))), width)
@@ -185,9 +182,9 @@ func stashHeaderLines(width int, hoverRestore, hoverDiscard bool) []string {
 	gap := func(n int) string { return on.Render(strings.Repeat(" ", n)) }
 	button := lipgloss.NewStyle().Bold(true)
 	row := gap(rs) +
-		button.Background(restoreBg).Foreground(theme.Bg).Render(ansi.Truncate(stashRestoreLabel, re-rs, "")) +
+		button.Background(restoreBg).Foreground(theme.Bg).Render(clip(stashRestoreLabel, re-rs)) +
 		gap(ds-re) +
-		button.Background(discardBg).Foreground(theme.Text).Render(ansi.Truncate(stashDiscardLabel, de-ds, ""))
+		button.Background(discardBg).Foreground(theme.Text).Render(clip(stashDiscardLabel, de-ds))
 	if rest := width - 1 - de - 1; rest > 0 {
 		row += on.Render(" ") + on.Foreground(theme.Dim).Render(clip(stashRestoreHint, rest))
 	}
