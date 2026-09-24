@@ -7,7 +7,7 @@ import type { Logger } from "pino";
 import { closeStateDb } from "../../state/index.ts";
 import { composeKey } from "../../state/branch-cache.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
-import { createWorktreeTriageHandlers } from "../handlers/worktree-triage.ts";
+import { createWorktreeTriageHandlers, diffStats } from "../handlers/worktree-triage.ts";
 import type { HandlerContext } from "../handlers/types.ts";
 import { fakeStore } from "./fake-cache-store.ts";
 
@@ -281,6 +281,16 @@ describe("triage action verbs", () => {
     const tracked = by("november3.txt");
     expect([tracked.added, tracked.removed]).toEqual([3, 1]);
     expect(tracked.totalLines).toBe(tracked.diff.trimEnd().split("\n").length);
+  });
+
+  test("diffStats reads a second diff section's --- and +++ as headers, not changes", () => {
+    const twoSections = [
+      "diff --git a/a.ts b/a.ts", "index 1..2 100644", "--- a/a.ts", "+++ b/a.ts",
+      "@@ -1,2 +1,2 @@", "-old", "+new", " same",
+      "diff --git a/b.ts b/b.ts", "index 3..4 100644", "--- a/b.ts", "+++ b/b.ts",
+      "@@ -1 +1,2 @@", " keep", "+added",
+    ].join("\n");
+    expect(diffStats(twoSections)).toEqual({ added: 2, removed: 1 });
   });
 
   test("triage-remove only removes a broken row", async () => {

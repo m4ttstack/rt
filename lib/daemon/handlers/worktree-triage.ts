@@ -55,10 +55,14 @@ function lineCount(text: string): number {
   return text.endsWith("\n") ? n - 1 : n;
 }
 
-/** Only lines inside a hunk count: a `+++`/`---` file header is not a change. */
-function diffStats(text: string): { added: number; removed: number } {
+/**
+ * Only lines inside a hunk count: a `+++`/`---` file header is not a change,
+ * and a `diff --git` line opens a new section whose headers come before its hunks.
+ */
+export function diffStats(text: string): { added: number; removed: number } {
   let added = 0, removed = 0, inHunk = false;
   for (const line of text.split("\n")) {
+    if (line.startsWith("diff --git ")) { inHunk = false; continue; }
     if (line.startsWith("@@")) { inHunk = true; continue; }
     if (!inHunk) continue;
     if (line.startsWith("+")) added++;
