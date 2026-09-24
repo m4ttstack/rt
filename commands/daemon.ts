@@ -38,7 +38,7 @@ import {
 } from "../lib/daemon-config.ts";
 import { daemonQuery, isDaemonRunning, pingDaemon, trayQuery } from "../lib/daemon-client.ts";
 import { classifyDaemonStatus, type DaemonStatusVerdict } from "../lib/daemon-status.ts";
-import { resolveIntendedMode, currentMode, type IntendedMode } from "../lib/dev-mode.ts";
+import { processFlavor, type Flavor } from "../lib/flavor.ts";
 import { probeSocketHolder } from "../lib/daemon/park.ts";
 import { readBreadcrumb, readSupervisionState } from "../lib/daemon/supervision-state.ts";
 import { readHeartbeat } from "../lib/daemon/heartbeat-file.ts";
@@ -61,8 +61,7 @@ function trayAppHintPath(): string {
 // ─── Flavor identity ─────────────────────────────────────────────────────────
 
 export interface FlavorTuple {
-  intended: IntendedMode;
-  cliFlavor: "dev" | "prod";
+  cliFlavor: Flavor;
   daemon: { flavor: string; pid: number | null } | null;
 }
 
@@ -86,22 +85,16 @@ export function formatFreshnessParts(
   });
 }
 
-export async function describeTuple(): Promise<FlavorTuple> {
-  const holder = await probeSocketHolder();
-  return { intended: resolveIntendedMode(), cliFlavor: currentMode(), daemon: holder };
-}
-
-/** Null when coherent OR when no daemon answers — a down daemon is a liveness problem, not a flavor mismatch. */
+/** Null when coherent OR when no daemon answers: a down daemon is a liveness problem, not a flavor mismatch. */
 export function tupleWarning(t: FlavorTuple): string | null {
-  if (!t.daemon) return null;
-  if (t.daemon.flavor === t.intended.mode && t.cliFlavor === t.intended.mode) return null;
-  const legs = `intended ${t.intended.mode} (${t.intended.provenance}) · CLI ${t.cliFlavor} · daemon ${t.daemon.flavor}${t.daemon.pid ? ` (pid ${t.daemon.pid})` : ""}`;
-  return `flavor mismatch — ${legs}. Fix: rt settings dev-mode ${t.intended.mode}`;
+  if (!t.daemon || t.daemon.flavor === t.cliFlavor) return null;
+  const pid = t.daemon.pid ? ` (pid ${t.daemon.pid})` : "";
+  return `a ${t.daemon.flavor} daemon${pid} answers this ${t.cliFlavor} CLI. Fix: open ${flavorHintPath(t.cliFlavor)} to hand this Mac to it`;
 }
 
-/** Bundle to point an "open it" hint at: the intended flavor's, not necessarily the one the CLI itself is running. */
-export function flavorHintPath(intended: IntendedMode): string {
-  return intended.mode === "dev" ? devTrayAppPath() : trayAppHintPath();
+/** Bundle to point an "open it" hint at for `flavor`. */
+export function flavorHintPath(flavor: Flavor): string {
+  return flavor === "dev" ? devTrayAppPath() : trayAppHintPath();
 }
 
 /**
@@ -113,13 +106,13 @@ export function flavorHintPath(intended: IntendedMode): string {
 export function flavorMismatchLines(
   op: "stop" | "start" | "restart",
   holder: { flavor: string; pid: number | null },
-  intendedMode: "dev" | "prod",
+  flavor: Flavor,
 ): [string, string] {
   const pidPart = holder.pid ? ` (pid ${holder.pid})` : "";
   const verb = op === "stop" ? "still holds" : "answered on";
   return [
-    `a ${holder.flavor} daemon ${verb} rt.sock${pidPart}, not ${intendedMode}`,
-    `Fix: rt settings dev-mode ${intendedMode}`,
+    `a ${holder.flavor} daemon ${verb} rt.sock${pidPart}, not ${flavor}`,
+    `Fix: open ${flavorHintPath(flavor)}`,
   ];
 }
 
@@ -129,22 +122,22 @@ export function stillShuttingDownLine(holder: { pid: number | null }): string {
 }
 
 /** Prints stop/start/restart's mismatch warning in the shared two-line shape. */
-function printFlavorMismatch(op: "stop" | "start" | "restart", holder: { flavor: string; pid: number | null }, intendedMode: "dev" | "prod"): void {
-  const [headline, remedy] = flavorMismatchLines(op, holder, intendedMode);
+function printFlavorMismatch(op: "stop" | "start" | "restart", holder: { flavor: string; pid: number | null }, flavor: Flavor): void {
+  const [headline, remedy] = flavorMismatchLines(op, holder, flavor);
   console.log(`\n  ${yellow}⚠ ${headline}${reset}`);
   console.log(`  ${dim}${remedy}${reset}\n`);
 }
 
 /**
  * start/restart's post-liveness flavor check. Any holder flavor other than
- * the intended one is worth a warning — including "unknown flavor", since the
+ * this CLI's is worth a warning, including "unknown flavor", since the
  * daemon that was just (re)started should be answering with real identity.
  * Returns true when it printed the warning, so the caller skips the plain ✓.
  */
-async function warnIfWrongFlavor(op: "start" | "restart", intended: IntendedMode): Promise<boolean> {
+async function warnIfWrongFlavor(op: "start" | "restart", flavor: Flavor): Promise<boolean> {
   const holder = await probeSocketHolder();
-  if (!holder || holder.flavor === intended.mode) return false;
-  printFlavorMismatch(op, holder, intended.mode);
+  if (!holder || holder.flavor === flavor) return false;
+  printFlavorMismatch(op, holder, flavor);
   return true;
 }
 
@@ -174,8 +167,8 @@ function cleanupLaunchdPlist(): boolean {
 // ─── Install ─────────────────────────────────────────────────────────────────
 
 export async function install(_args: string[] = []): Promise<void> {
-  const intended = resolveIntendedMode();
-  console.log(`  ${dim}registering the ${intended.mode} daemon${reset}`);
+  const flavor = processFlavor();
+  console.log(`  ${dim}registering the ${flavor} daemon${reset}`);
 
   // Persist the install marker so isDaemonInstalled() returns true and the
   // CLI will attempt to reach the daemon (rather than silently no-op).
@@ -194,7 +187,7 @@ export async function install(_args: string[] = []): Promise<void> {
     console.log(`  ${green}✓${reset} tray app is registering daemon`);
   } else {
     console.log(`  ${yellow}⚠${reset} ${TRAY_APP_NAME} not reachable — open it to finish setup`);
-    console.log(`  ${dim}  ${bold}open ${flavorHintPath(intended)}${reset}`);
+    console.log(`  ${dim}  ${bold}open ${flavorHintPath(flavor)}${reset}`);
   }
 
   // Wait for daemon to come online
@@ -280,10 +273,10 @@ export async function start(): Promise<void> {
     return;
   }
 
-  const intended = resolveIntendedMode();
+  const flavor = processFlavor();
 
   if (await isDaemonRunning()) {
-    if (!(await warnIfWrongFlavor("start", intended))) {
+    if (!(await warnIfWrongFlavor("start", flavor))) {
       console.log(`\n  ${green}daemon is already running${reset}\n`);
     }
     return;
@@ -297,12 +290,12 @@ export async function start(): Promise<void> {
   }
   if (!result) {
     console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running${reset}`);
-    console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(intended)}${reset}\n`);
+    console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(flavor)}${reset}\n`);
     return;
   }
 
-  console.log(`  ${dim}starting ${intended.mode} daemon via tray…${reset}`);
-  if (await pollForDaemonUp(intended)) return;
+  console.log(`  ${dim}starting ${flavor} daemon via tray…${reset}`);
+  if (await pollForDaemonUp(flavor)) return;
 
   // The tray acked /daemon/start, but SMAppService can register a job that
   // never actually launches (still booting, crash-looping, etc.); kick it
@@ -310,17 +303,17 @@ export async function start(): Promise<void> {
   // leaving the operator staring at "check logs" for something a retry fixes.
   console.log(`  ${dim}not up yet, escalating to restart (kickstart)…${reset}`);
   const restartResult = await trayQuery("/daemon/restart", "POST");
-  if (restartResult?.ok && (await pollForDaemonUp(intended))) return;
+  if (restartResult?.ok && (await pollForDaemonUp(flavor))) return;
 
   console.log(`\n  ${yellow}daemon starting… check logs: rt daemon logs${reset}\n`);
 }
 
 /** Shared poll loop for start()'s initial wait and its kickstart escalation. */
-async function pollForDaemonUp(intended: IntendedMode): Promise<boolean> {
+async function pollForDaemonUp(flavor: Flavor): Promise<boolean> {
   for (let i = 0; i < 12; i++) {
     await Bun.sleep(250);
     if (await isDaemonRunning()) {
-      if (!(await warnIfWrongFlavor("start", intended))) {
+      if (!(await warnIfWrongFlavor("start", flavor))) {
         console.log(`\n  ${green}✓ daemon started${reset}\n`);
       }
       return true;
@@ -330,7 +323,7 @@ async function pollForDaemonUp(intended: IntendedMode): Promise<boolean> {
 }
 
 export async function stop(): Promise<void> {
-  const intended = resolveIntendedMode();
+  const flavor = processFlavor();
   const result = await trayQuery("/daemon/stop", "POST");
   if (result && !result.ok) {
     console.log(`\n  ${yellow}⚠ stop failed in the tray — the daemon may still be registered${reset}`);
@@ -343,17 +336,14 @@ export async function stop(): Promise<void> {
     // rt.sock is shared, so a different-flavor daemon can still hold it.
     const holder = await probeSocketHolder();
     if (holder) {
-      // Compare against the intended flavor (the leg this stop addressed), not
-      // the CLI wrapper's own currentMode() — a stale wrapper mid-flip would
-      // otherwise report a mismatch against a daemon that's just slow to exit.
-      if (holder.flavor === intended.mode) {
+      if (holder.flavor === flavor) {
         console.log(`\n  ${yellow}⚠ ${stillShuttingDownLine(holder)}${reset}\n`);
         return;
       }
-      printFlavorMismatch("stop", holder, intended.mode);
+      printFlavorMismatch("stop", holder, flavor);
       return;
     }
-    console.log(`\n  ${green}✓ ${intended.mode} daemon stopped${reset}\n`);
+    console.log(`\n  ${green}✓ ${flavor} daemon stopped${reset}\n`);
     return;
   }
   console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running — nothing to stop${reset}\n`);
@@ -363,7 +353,7 @@ export async function stop(): Promise<void> {
 export const RESTART_POLL = { intervalMs: 500, attempts: 16 };
 
 export async function restart(): Promise<void> {
-  const intended = resolveIntendedMode();
+  const flavor = processFlavor();
   // The pid is the only honest restart signal: the OLD daemon answers a
   // liveness poll too, so "a daemon is up" proved nothing when the tray
   // silently dropped the op (2026-09-21: three restarts reported ✓ while
@@ -390,10 +380,10 @@ export async function restart(): Promise<void> {
   // "no tray" can never disagree about which socket they mean.
   if (!result && !existsSync(TRAY_SOCK_PATH)) {
     console.log(`\n  ${yellow}${TRAY_APP_NAME} is not running${reset}`);
-    console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(intended)}${reset}\n`);
+    console.log(`  ${dim}open it: ${bold}open ${flavorHintPath(flavor)}${reset}\n`);
     return;
   }
-  console.log(`  ${dim}restarting ${intended.mode} daemon via tray…${reset}`);
+  console.log(`  ${dim}restarting ${flavor} daemon via tray…${reset}`);
   for (let i = 0; i < RESTART_POLL.attempts; i++) {
     await Bun.sleep(RESTART_POLL.intervalMs);
     const now = await probeSocketHolder();
@@ -404,7 +394,7 @@ export async function restart(): Promise<void> {
       console.log(`  ${dim}check the tray log: rt daemon logs${reset}\n`);
       return;
     }
-    if (!(await warnIfWrongFlavor("restart", intended))) {
+    if (!(await warnIfWrongFlavor("restart", flavor))) {
       console.log(`\n  ${green}✓ daemon restarted${reset} ${dim}(pid ${before?.pid ?? "down"} → ${now.pid})${reset}\n`);
     }
     return;
@@ -507,7 +497,7 @@ export async function showStatus(args: string[] = []): Promise<void> {
     pingOk,
     pid,
     pidAlive,
-    intendedFlavor: resolveIntendedMode().mode,
+    cliFlavor: processFlavor(),
     breadcrumb,
     supervision,
     heartbeat,
@@ -551,11 +541,7 @@ function printFlavorInfo(daemon: { flavor: string; pid: number | null; version?:
   const versionPart = daemon.version ? ` · ${daemon.version}${rev}` : "";
   console.log(`    ${dim}${daemon.flavor}${versionPart}${reset}`);
 
-  const tuple: FlavorTuple = {
-    intended: resolveIntendedMode(),
-    cliFlavor: currentMode(),
-    daemon: { flavor: daemon.flavor, pid: daemon.pid },
-  };
+  const tuple: FlavorTuple = { cliFlavor: processFlavor(), daemon: { flavor: daemon.flavor, pid: daemon.pid } };
   const warning = tupleWarning(tuple);
   if (warning) console.log(`    ${yellow}⚠${reset} ${warning}`);
 }
@@ -613,9 +599,9 @@ export function statusLines(verdict: DaemonStatusVerdict, now: number): string[]
     lines.push(
       verdict.holderFlavor
         ? `    ${dim}held by: ${verdict.holderFlavor}${reset}`
-        : `    ${dim}waiting for the intended flavor to take rt.sock${reset}`,
+        : `    ${dim}waiting for the other flavor's daemon to let go of rt.sock${reset}`,
     );
-    lines.push(`    ${dim}check: rt settings dev-mode${reset}`);
+    lines.push(`    ${dim}check: rt daemon logs${reset}`);
     return lines;
   }
 

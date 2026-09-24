@@ -14,10 +14,11 @@ import { activeLaunchdLabel, isDaemonInstalled } from "../../daemon-config.ts";
 import type { HomeSnapshotSettings } from "../../daemon/home-snapshot.ts";
 import type { TeamSnapshotEntry, TeamSnapshotSettings } from "../../daemon/team-snapshots.ts";
 import { clampPullIntervalSec, PULL_INTERVAL_FALLBACK_SEC } from "../../daemon/snapshot-interval.ts";
-import { currentMode, resolveIntendedMode } from "../../dev-mode.ts";
+import { isDevModeWrapperContent } from "../../dev-mode.ts";
+import { processFlavor } from "../../flavor.ts";
 import { appBundlePath, linkPath } from "../../deps/resolve.ts";
 import { localBinDir, shimReport, staleIntercepts } from "../../endpoint/shim.ts";
-import { legacyDirsPresent, legacyTrayAppPaths, RT_DIR_LABEL } from "../../rt-paths.ts";
+import { DEV_TRAY_APP_BUNDLE, legacyDirsPresent, legacyTrayAppPaths, RT_DIR_LABEL, TRAY_APP_BUNDLE } from "../../rt-paths.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { detectShellFrom, shellRcPathFor } from "../../shell-integration.ts";
 import { readHomePushRecord, type HomePushRecord } from "../../home/push-record.ts";
@@ -127,7 +128,10 @@ function rtLinkRow(p: Probes): Row {
     optionalNote: "Cosmetic: without this, `rt` may resolve to a different copy on PATH than the one inside mattstack.app.",
   };
 
-  if (currentMode() === "dev") return row({ ...base, status: "skipped", detail: "dev mode owns ~/.local/bin/rt" });
+  const prefix = p.readPrefix(linkPath(p.home, "rt"));
+  if (prefix !== null && isDevModeWrapperContent(prefix)) {
+    return row({ ...base, status: "skipped", detail: "mattstack-dev.app's source wrapper owns ~/.local/bin/rt" });
+  }
 
   const root = appBundlePath(p);
   if (!root) return row({ ...base, status: "skipped", detail: "mattstack.app not found — nothing to link into" });
@@ -344,37 +348,37 @@ async function daemonRow(p: Probes, opts: { ci: boolean }): Promise<Row> {
 }
 
 /**
- * Compares three flavor legs — the intended setting, the CLI wrapper, and
- * a LIVE daemon's own ping — and fails only when a running daemon actually
- * disagrees. A daemon that never answers (down, uninstalled, unreachable)
- * is `tool.daemon`'s failure to report, not this row's: CI's clean-room gate
- * runs verify with no daemon at all, so that leg reading "n/a" must always
- * resolve `ready` here or a headless run could never pass.
+ * Compares this CLI's own flavor with a LIVE daemon's ping, and fails only
+ * when a running daemon actually disagrees. A daemon that never answers
+ * (down, uninstalled, unreachable) is `tool.daemon`'s failure to report, not
+ * this row's: CI's clean-room gate runs verify with no daemon at all, so
+ * that leg reading "n/a" must always resolve `ready` here or a headless run
+ * could never pass.
  */
 async function flavorRow(p: Probes): Promise<Row> {
   const base = {
     id: "tool.flavor",
     kind: "tool" as const,
     title: "Flavor coherence",
-    why: "One intended flavor serves this machine; a mismatched daemon means stale code answering fresh CLIs.",
+    why: "One app serves this machine; a daemon of the other app means stale code answering fresh CLIs.",
     required: true,
     recheck: "on-activate" as const,
   };
-  const intended = resolveIntendedMode();
-  const cli = currentMode();
+  const cli = processFlavor();
   const ping = await p.daemon("ping");
   const daemonFlavor = ping && ping.ok && (ping as any).flavor ? String((ping as any).flavor) : null;
 
   if (daemonFlavor === null) {
-    return row({ ...base, status: "ready", detail: `intended ${intended.mode} (${intended.provenance}) · cli ${cli} · daemon n/a` });
+    return row({ ...base, status: "ready", detail: `${cli} CLI · daemon n/a` });
   }
-  if (daemonFlavor === intended.mode && cli === intended.mode) {
-    return row({ ...base, status: "ready", detail: `${intended.mode} everywhere (${intended.provenance})` });
+  if (daemonFlavor === cli) {
+    return row({ ...base, status: "ready", detail: `${cli} CLI and daemon` });
   }
+  const app = cli === "dev" ? DEV_TRAY_APP_BUNDLE : TRAY_APP_BUNDLE;
   return row({
     ...base,
     status: "invalid",
-    detail: `intended ${intended.mode} (${intended.provenance}) · cli ${cli} · daemon ${daemonFlavor} — run: rt settings dev-mode ${intended.mode}`,
+    detail: `a ${daemonFlavor} daemon answers this ${cli} CLI; open ${app} to hand this Mac to it`,
   });
 }
 

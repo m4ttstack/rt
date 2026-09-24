@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { TRAY_SOCK_PATH, DAEMON_SOCK_PATH, markDaemonInstalled } from "../../lib/daemon-config.ts";
-import { resolveIntendedMode } from "../../lib/dev-mode.ts";
+import { processFlavor } from "../../lib/flavor.ts";
 import { restart, start, stop, RESTART_POLL } from "../daemon.ts";
 
 const realFetch = globalThis.fetch;
@@ -37,7 +37,7 @@ function output(): string {
  * per call, so a scenario can turn the daemon over (or not) mid-flight.
  */
 function fakeSockets(opts: { trayReply: () => Response | Promise<Response>; pid: () => number | null }): void {
-  const flavor = resolveIntendedMode().mode;
+  const flavor = processFlavor();
   globalThis.fetch = (async (_url: string, init: any) => {
     if (init?.unix === TRAY_SOCK_PATH) return opts.trayReply();
     const pid = opts.pid();

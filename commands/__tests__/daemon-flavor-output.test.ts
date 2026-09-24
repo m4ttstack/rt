@@ -2,30 +2,26 @@ import { describe, test, expect } from "bun:test";
 import { tupleWarning, flavorHintPath, flavorMismatchLines, stillShuttingDownLine } from "../daemon.ts";
 
 describe("flavor-aware daemon output", () => {
-  test("agreeing tuple produces no warning", () => {
-    expect(tupleWarning({ intended: { mode: "dev", provenance: "setting" }, cliFlavor: "dev", daemon: { flavor: "dev", pid: 1 } })).toBeNull();
+  test("a daemon of the CLI's own flavor produces no warning", () => {
+    expect(tupleWarning({ cliFlavor: "dev", daemon: { flavor: "dev", pid: 1 } })).toBeNull();
   });
 
-  test("stale prod daemon under dev intent names the exact remedy", () => {
-    const w = tupleWarning({ intended: { mode: "dev", provenance: "setting" }, cliFlavor: "dev", daemon: { flavor: "prod", pid: 99 } });
-    expect(w).toContain("prod");
-    expect(w).toContain("rt settings dev-mode dev");
+  test("the other app's daemon answering this CLI names both flavors and the app to open", () => {
+    const w = tupleWarning({ cliFlavor: "dev", daemon: { flavor: "prod", pid: 99 } })!;
+    expect(w).toContain("prod daemon");
+    expect(w).toContain("dev CLI");
+    expect(w).toContain("pid 99");
+    expect(w).toContain("mattstack-dev.app");
+    expect(w).not.toContain("dev-mode");
   });
 
   test("daemon down is not a mismatch", () => {
-    expect(tupleWarning({ intended: { mode: "dev", provenance: "setting" }, cliFlavor: "dev", daemon: null })).toBeNull();
+    expect(tupleWarning({ cliFlavor: "dev", daemon: null })).toBeNull();
   });
 
-  test("cliFlavor-only mismatch still warns, naming all three legs", () => {
-    const w = tupleWarning({ intended: { mode: "dev", provenance: "setting" }, cliFlavor: "prod", daemon: { flavor: "dev", pid: 5 } });
-    expect(w).toContain("intended dev");
-    expect(w).toContain("CLI prod");
-    expect(w).toContain("daemon dev");
-  });
-
-  test("hint path follows intended mode", () => {
-    expect(flavorHintPath({ mode: "dev", provenance: "setting" })).toContain("mattstack-dev.app");
-    expect(flavorHintPath({ mode: "prod", provenance: "setting" })).not.toContain("mattstack-dev.app");
+  test("hint path follows the flavor", () => {
+    expect(flavorHintPath("dev")).toContain("mattstack-dev.app");
+    expect(flavorHintPath("prod")).not.toContain("mattstack-dev.app");
   });
 
   test("stop's mismatch line says the holder still holds the socket", () => {
@@ -33,7 +29,8 @@ describe("flavor-aware daemon output", () => {
     expect(headline).toContain("still holds rt.sock");
     expect(headline).toContain("prod");
     expect(headline).toContain("pid 42");
-    expect(remedy).toBe("Fix: rt settings dev-mode dev");
+    expect(remedy).toStartWith("Fix: open ");
+    expect(remedy).toContain("mattstack-dev.app");
   });
 
   test("start/restart's mismatch line says the holder answered, not held", () => {
@@ -50,11 +47,11 @@ describe("flavor-aware daemon output", () => {
     expect(headline).not.toContain("pid");
   });
 
-  test("still-shutting-down line names the pid and carries no dev-mode remedy", () => {
+  test("still-shutting-down line names the pid and carries no remedy", () => {
     const line = stillShuttingDownLine({ pid: 123 });
     expect(line).toContain("still shutting down");
     expect(line).toContain("pid 123");
-    expect(line).not.toContain("dev-mode");
+    expect(line).not.toContain("Fix");
   });
 
   test("still-shutting-down line tolerates a missing pid", () => {
