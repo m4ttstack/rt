@@ -143,6 +143,7 @@ function baseDeps(over: DepOptions & { session: SessionHandle; client: GitClient
         : { ok: true, data: { repos: [] } },
     subscribe: over.subscribe ?? ((): DaemonSubscription => ({ close: () => {} })),
     runAction: async () => ({ ok: true, detail: "" }),
+    publishRepo: async () => ({ ok: false, detail: "publishing is not exercised here" }),
     commit: () => "[main abc] msg",
     amend: () => "[main abc] msg",
     guard: async () => ({ verdict: "clear" }) as BranchGuardVerdict,

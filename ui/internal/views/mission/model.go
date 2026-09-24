@@ -167,25 +167,33 @@ type SwitchPrompt struct {
 	HasStash bool   `json:"hasStash"`
 }
 
+// PublishPrompt is one-shot like SwitchPrompt: the Publish Repository dialog
+// opens for a Seq the view has not seen, with Name filled in.
+type PublishPrompt struct {
+	Seq  int    `json:"seq"`
+	Name string `json:"name"`
+}
+
 type Model struct {
-	Current      Current       `json:"current"`
-	Action       ActionModel   `json:"action"`
-	Repos        []RepoRow     `json:"repos"`
-	Worktrees    []WorktreeRow `json:"worktrees"`
-	Branches     []BranchRow   `json:"branches"`
-	Changes      []ChangeRow   `json:"changes"`
-	ChangedTotal int           `json:"changedTotal"`
-	StagedTotal  int           `json:"stagedTotal"`
-	Filter       string        `json:"filter"`
-	Diff         DiffModel     `json:"diff"`
-	Commit       CommitModel   `json:"commit"`
-	Notice       string        `json:"notice"` // one-line transient notice (guard refusals, not-yet-wired)
-	Tab          string        `json:"tab"`    // "changes"|"history"
-	History      HistoryModel  `json:"history"`
-	EditorLabel  string        `json:"editorLabel"` // rt code's resolved editor ("Zed"), "" when none resolves
-	Stash        *StashModel   `json:"stash"`
-	SwitchPrompt *SwitchPrompt `json:"switchPrompt"`
-	CanStash     bool          `json:"canStash"` // GHD's Stash All Changes enablement
+	Current       Current        `json:"current"`
+	Action        ActionModel    `json:"action"`
+	Repos         []RepoRow      `json:"repos"`
+	Worktrees     []WorktreeRow  `json:"worktrees"`
+	Branches      []BranchRow    `json:"branches"`
+	Changes       []ChangeRow    `json:"changes"`
+	ChangedTotal  int            `json:"changedTotal"`
+	StagedTotal   int            `json:"stagedTotal"`
+	Filter        string         `json:"filter"`
+	Diff          DiffModel      `json:"diff"`
+	Commit        CommitModel    `json:"commit"`
+	Notice        string         `json:"notice"` // one-line transient notice (guard refusals, git and gh errors)
+	Tab           string         `json:"tab"`    // "changes"|"history"
+	History       HistoryModel   `json:"history"`
+	EditorLabel   string         `json:"editorLabel"` // rt code's resolved editor ("Zed"), "" when none resolves
+	Stash         *StashModel    `json:"stash"`
+	SwitchPrompt  *SwitchPrompt  `json:"switchPrompt"`
+	PublishPrompt *PublishPrompt `json:"publishPrompt"`
+	CanStash      bool           `json:"canStash"` // GHD's Stash All Changes enablement
 }
 
 // decode tolerates unknown fields: the wire model is a shared contract with

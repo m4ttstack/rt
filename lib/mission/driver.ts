@@ -32,7 +32,7 @@ import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
 import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts";
-import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
+import { deriveAction, type ActionKind, type ActionState, type RunnableAction } from "./git-actions.ts";
 import { HistoryStore, type HistoryBranch } from "./history.ts";
 import { buildHistoryModel, committedFileRow } from "./history-model.ts";
 import { buildModel, joinWorktreeRows, mergeWorktreeTrees, reconcileSelectedPath, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
@@ -53,7 +53,8 @@ import { SessionDied } from "../runner/runner.ts";
 type OpenSessionFn = (view: string, model: unknown) => Promise<SessionHandle>;
 type DaemonQueryFn = typeof daemonQuery;
 type SubscribeFn = (onEvent: (ev: DaemonEvent) => void, opts?: { onStatusChange?: (status: "connecting" | "connected" | "disconnected") => void }) => DaemonSubscription;
-type RunActionFn = (cwd: string, kind: ActionKind, opts: { remote?: string; branch: string | null }) => Promise<{ ok: boolean; detail: string }>;
+type RunActionFn = (cwd: string, kind: RunnableAction, opts: { remote?: string; branch: string | null }) => Promise<{ ok: boolean; detail: string }>;
+type PublishRepoFn = (cwd: string, opts: { name: string; private: boolean }) => Promise<{ ok: boolean; detail: string }>;
 type CommitStagedFn = (cwd: string, message: string, opts?: { amend?: boolean; noVerify?: boolean; allowEmpty?: boolean; coAuthors?: string[] }) => string;
 type AmendStagedFn = (cwd: string, opts?: { message?: string; noVerify?: boolean }) => string;
 type GuardFn = typeof checkBranchGuard;
@@ -69,6 +70,7 @@ export interface MissionDeps {
   daemonQuery: DaemonQueryFn;
   subscribe: SubscribeFn;
   runAction: RunActionFn;
+  publishRepo: PublishRepoFn;
   commit: CommitStagedFn;
   amend: AmendStagedFn;
   guard: GuardFn;
@@ -130,6 +132,11 @@ interface CheckoutPayload {
 
 interface StashEntryPayload {
   sha: string;
+}
+
+interface PublishPayload {
+  name?: string;
+  private?: boolean;
 }
 
 interface StashSelectPayload {
@@ -299,6 +306,7 @@ export class MissionDriver {
   private readonly history = new HistoryStore();
   private readonly stash = new StashStore();
   private switchSeq = 0;
+  private publishSeq = 0;
   /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
   private historySyncs = 0;
   /** See MissionDeps.resolveEditor for when this is re-read. */
@@ -323,6 +331,7 @@ export class MissionDriver {
       confirmDiscard: null,
       settling: false,
       switchPrompt: null,
+      publishPrompt: null,
       tab: "changes",
     };
   }
@@ -662,6 +671,9 @@ export class MissionDriver {
       case "mission:action":
         await this.handleAction();
         break;
+      case "mission:publish":
+        await this.handlePublish(intent.payload as PublishPayload | undefined);
+        break;
       case "mission:stage":
         await this.handleStage(intent.payload as StagePayload | undefined);
         break;
@@ -750,26 +762,45 @@ export class MissionDriver {
 
   private async handleAction(): Promise<void> {
     const kind = this.action.kind;
+    if (kind === "publish-repo") {
+      // Every route to the segment's action lands here (its key, a click,
+      // the menu row), so the dialog opens the same way from each.
+      this.state.publishPrompt = { seq: ++this.publishSeq, name: repoLabel(this.state.currentRepo) };
+      this.push();
+      this.state.publishPrompt = null;
+      return;
+    }
+    await this.runBusy(
+      () => this.deps.runAction(this.state.currentWorktree, kind, { remote: this.remoteName ?? undefined, branch: this.snapshot.branch }),
+      () => {
+        if (kind === "push" || kind === "force-push") this.state.forcePushRecommended = false;
+      },
+    );
+  }
+
+  private async handlePublish(payload: PublishPayload | undefined): Promise<void> {
+    const name = typeof payload?.name === "string" ? payload.name.trim() : "";
+    if (name === "") return;
+    await this.runBusy(() => this.deps.publishRepo(this.state.currentWorktree, { name, private: payload?.private !== false }));
+  }
+
+  /**
+   * One remote action under the busy segment: a failure is the notice, and
+   * either way it refreshes, since a failure can still change the repo (gh
+   * adds origin before the push that fails, so remoteName moves).
+   */
+  private async runBusy(run: () => Promise<{ ok: boolean; detail: string }>, onOk?: () => void): Promise<void> {
     this.state.busyAction = true;
     this.recomputeAction();
     this.push();
-
     try {
-      const result = await this.deps.runAction(this.state.currentWorktree, kind, {
-        remote: this.remoteName ?? undefined,
-        branch: this.snapshot.branch,
-      });
-      if (!result.ok) {
-        this.state.notice = result.detail;
-      } else {
-        this.state.notice = "";
-        if (kind === "push" || kind === "force-push") this.state.forcePushRecommended = false;
-        await this.refresh();
-      }
+      const result = await run();
+      this.state.notice = result.ok ? "" : result.detail;
+      if (result.ok) onOk?.();
+      await this.refresh();
     } finally {
-      // Reached on a runAction rejection too, so a stalled/failed action
-      // never leaves the model stuck busy for the caller's error boundary
-      // to clean up.
+      // Reached on a rejection too, so a stalled/failed action never leaves
+      // the model stuck busy for the caller's error boundary to clean up.
       this.state.busyAction = false;
       this.recomputeAction();
       this.push();

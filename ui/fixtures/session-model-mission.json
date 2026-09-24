@@ -88,5 +88,6 @@
     "selectedFile": ""
   },
   "switchPrompt": null,
+  "publishPrompt": null,
   "canStash": true
 } }
