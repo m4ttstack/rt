@@ -1,9 +1,9 @@
 import { existsSync, lstatSync, readFileSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, sep } from "path";
 import type { Logger } from "pino";
 import type { RunningRunScan } from "../../runs/store.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
-import { collectFacts, triageRepo } from "../../worktree/triage/facts.ts";
+import { collectFacts, linkedGitdir, triageRepo } from "../../worktree/triage/facts.ts";
 import { sameFingerprint } from "../../worktree/triage/fingerprint.ts";
 import { triageCounts, triageRow, type TriageRow } from "../../worktree/triage/verdict.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
@@ -12,7 +12,7 @@ import { patchTree } from "../../worktree/patch.ts";
 import { MUTATING_TIMEOUT_MS, runGit } from "../../worktree/git-async.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
 import { hasLiveCwdInside, liveProcessCwds } from "../reconciler/stale-claims.ts";
-import { poolRootsReadable } from "../reconciler/reconcile.ts";
+import { dirAndParentMissing, poolRootsReadable } from "../reconciler/reconcile.ts";
 import { RETENTION_MS, retireTree, stripTrashDir, writeDisposalManifest } from "../../worktree/trash.ts";
 import { loadRepoTracking } from "../../repo-tracking.ts";
 import { loadSecrets } from "../../linear.ts";
@@ -151,15 +151,22 @@ export function createWorktreeTriageHandlers(
       if (repos.length === 0 && payload?.repoName) return fail("repo-unknown");
       const rows: TriageRow[] = [];
       const banners: Array<{ repo: string; path: string } & MergeCleanupGap> = [];
-      const tracking = (() => { try { return loadRepoTracking(); } catch { return null; } })();
-      const secrets = await loadSecrets().catch(() => null);
+      // Same repo set and lazy read as worktree:list's mergeCleanupOff, so
+      // the panel and the CLI never disagree about which repos get a banner.
+      let gapInputs: { tracking: ReturnType<typeof loadRepoTracking> | null; secrets: Awaited<ReturnType<typeof loadSecrets>> | null } | undefined;
       for (const [repo, path] of repos) {
         try {
           rows.push(...(await triageRepo(repo, path, deps())));
         } catch (err) {
           ctx.log.warn({ err, repo }, "worktree:triage: repo failed");
         }
-        const gap = await mergeCleanupGap(repo, path, tracking, secrets);
+        if (!loadRegistry(repo).some((t) => t.kind === "ephemeral" && t.state === "claimed")) continue;
+        if (gapInputs === undefined) {
+          let tracking: ReturnType<typeof loadRepoTracking> | null = null;
+          try { tracking = loadRepoTracking(); } catch (err) { ctx.log.warn({ err }, "worktree:triage: repo tracking unreadable"); }
+          gapInputs = { tracking, secrets: await loadSecrets().catch(() => null) };
+        }
+        const gap = await mergeCleanupGap(repo, path, gapInputs.tracking, gapInputs.secrets);
         if (gap) banners.push({ repo, path, ...gap });
       }
       return { ok: true as const, data: { rows, banners, counts: triageCounts(rows) } };
@@ -177,7 +184,14 @@ export function createWorktreeTriageHandlers(
         if (!fingerprintMatches(row, payload.fingerprint)) return fail("changed");
         const plan = disposePlan(row, payload.discard, payload.confirmOnlyCopy);
         if ("error" in plan) return fail(plan.error);
-        if (plan.acceptDirty) {
+        // disposeTree's force skips its own run guard and kills whatever runs
+        // inside the tree, so a forced dispose checks both here first.
+        if (plan.force) {
+          const scan = opts.findRunningRunByWorktree(rec.path);
+          if (scan.kind === "incomplete") return fail("runs-unreadable");
+          if (scan.kind === "match") return fail(`running-run:${scan.run.id} at ${scan.run.currentStage}`);
+        }
+        if (plan.acceptDirty || plan.force) {
           const cwds = await (opts.liveCwds ?? liveProcessCwds)().catch(() => null);
           if (cwds === null) return fail("cwds-unreadable");
           if (hasLiveCwdInside(cwds, rec.path)) return fail("in-use");
@@ -217,6 +231,7 @@ export function createWorktreeTriageHandlers(
       const out = await withTreeLock(r.rec.path, async () => {
         const row = await freshRow(r.repo, r.repoPath, r.rec);
         if (!fingerprintMatches(row, payload.fingerprint)) return fail("changed");
+        if (row.group !== "only-copy" && row.group !== "look") return fail(`not-pushable:${row.group}`);
         if (payload.commitDirty === true && row.dirt.files.length > 0) {
           // Classifier paths are verbatim (NUL-split), so they must never be
           // read back as pathspec magic or globs.
@@ -264,6 +279,13 @@ export function createWorktreeTriageHandlers(
         // Every tree reads as broken during a volume outage; nothing here may
         // act on that reading.
         if (!existsSync(dirname(rec.path))) return fail("mount-unavailable");
+        // The same outage on the repo's side: the folder is here, but the
+        // volume holding its git directory is not.
+        const gitdir = existsSync(rec.path) ? linkedGitdir(rec.path) : null;
+        if (gitdir && !existsSync(gitdir)) {
+          const at = gitdir.lastIndexOf(`${sep}.git${sep}worktrees${sep}`);
+          if (at > 0 && dirAndParentMissing(gitdir.slice(0, at))) return fail("mount-unavailable");
+        }
         const row = await freshRow(r.repo, r.repoPath, rec);
         if (row.group !== "broken") return fail("not-broken");
         // A folder left behind would free the name while still occupying the

@@ -48,8 +48,12 @@ type PassResult = { trees: TreeRecord[] } | { conflict: true };
  * outage cannot prune live claim state.
  */
 function isHeldByUnreadableMount(treePath: string): boolean {
-  const root = dirname(treePath);
-  return !existsSync(root) && !existsSync(dirname(root));
+  return dirAndParentMissing(dirname(treePath));
+}
+
+/** The vanished-mount shape: a directory and its parent both unreadable. */
+export function dirAndParentMissing(dir: string): boolean {
+  return !existsSync(dir) && !existsSync(dirname(dir));
 }
 
 /**

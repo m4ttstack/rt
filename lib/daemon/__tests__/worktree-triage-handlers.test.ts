@@ -7,7 +7,8 @@ import type { Logger } from "pino";
 import { closeStateDb } from "../../state/index.ts";
 import { composeKey } from "../../state/branch-cache.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
-import { createWorktreeTriageHandlers, diffStats } from "../handlers/worktree-triage.ts";
+import { createWorktreeTriageHandlers, diffStats, type WorktreeTriageOpts } from "../handlers/worktree-triage.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 import type { HandlerContext } from "../handlers/types.ts";
 import { fakeStore } from "./fake-cache-store.ts";
 
@@ -27,7 +28,12 @@ function tree(name: string, opts: { push?: boolean } = {}): TreeRecord {
   return rec;
 }
 
-function buildHandlers(entries: Record<string, unknown>, liveRuns: Set<string> = new Set(), liveCwds: Set<string> = new Set()) {
+function buildHandlers(
+  entries: Record<string, unknown>,
+  liveRuns: Set<string> = new Set(),
+  liveCwds: Set<string> = new Set(),
+  overrides: Partial<WorktreeTriageOpts> = {},
+) {
   const ctx: Pick<HandlerContext, "repoIndex" | "cache" | "log"> = {
     repoIndex: () => ({ [repoName]: repo }),
     cache: fakeStore(entries as any),
@@ -40,6 +46,7 @@ function buildHandlers(entries: Record<string, unknown>, liveRuns: Set<string> =
     kick: () => {},
     emit: () => {},
     liveCwds: async () => liveCwds,
+    ...overrides,
   });
 }
 
@@ -54,6 +61,17 @@ beforeEach(() => {
 });
 
 describe("createWorktreeTriageHandlers", () => {
+  test("banners come only from repos with a claimed ephemeral tree, the set worktree:list uses", async () => {
+    sh(`git -C ${repo} remote set-url origin https://github.com/acme/app.git`);
+    const handlers = buildHandlers({});
+    const onDeck: TreeRecord = { name: "idle", path: join(repo, ".worktrees", "idle"), kind: "ephemeral", state: "on-deck", branch: null, disposal: "merge", createdAt: "2026-09-20T00:00:00Z" };
+    saveRegistry(repoName, [onDeck]);
+    expect((await (handlers["worktree:triage"] as any)({})).data.banners).toEqual([]);
+    saveRegistry(repoName, [onDeck, { ...onDeck, name: "busy", path: join(repo, ".worktrees", "busy"), state: "claimed", branch: "feat-busy" }]);
+    const res = await (handlers["worktree:triage"] as any)({});
+    expect(res.data.banners.map((b: any) => [b.repo, b.forge])).toEqual([[repoName, "github"]]);
+  });
+
   test("worktree:triage returns rows, counts and banners", async () => {
     const rec = tree("alpha");
     const entries = { [`feat-${rec.name}`]: { repoName, mr: { iid: 7, state: "merged", title: "T alpha", sha: null } } };
@@ -370,6 +388,69 @@ describe("triage action verbs", () => {
     const res = await handlers["worktree:triage-diff"]({ repoName, tree: "victor" });
     expect(res.data.files).toHaveLength(50);
     expect(res.data.truncatedFiles).toBe(true);
+  });
+
+  test("dispose anyway refuses in-use while a live cwd sits inside the tree", async () => {
+    const rec = stuck("whiskey", { push: false });
+    const r = await rowFor("whiskey");
+    expect(r.group).toBe("only-copy");
+    liveCwds.add(rec.path);
+    expect(await handlers["worktree:triage-dispose"]({ repoName, tree: "whiskey", fingerprint: r.fingerprint, confirmOnlyCopy: true })).toEqual({ ok: false, error: "in-use" });
+    expect(existsSync(join(rec.path, "whiskey.txt"))).toBe(true);
+  });
+
+  test("dispose anyway refuses cwds-unreadable when live cwds can't be listed", async () => {
+    const rec = stuck("whiskey2", { push: false });
+    const r = await rowFor("whiskey2");
+    const h = buildHandlers(entries, liveRuns, liveCwds, { liveCwds: async () => { throw new Error("lsof failed"); } });
+    expect(await h["worktree:triage-dispose"]({ repoName, tree: "whiskey2", fingerprint: r.fingerprint, confirmOnlyCopy: true })).toEqual({ ok: false, error: "cwds-unreadable" });
+    expect(existsSync(rec.path)).toBe(true);
+  });
+
+  test("dispose anyway refuses a run it can't rule out, and one it sees going live", async () => {
+    const pending: RunningRunScan[] = [];
+    const scan = (): RunningRunScan => pending.shift() ?? { kind: "none" };
+    const h = buildHandlers(entries, liveRuns, liveCwds, { findRunningRunByWorktree: scan });
+    const rec = stuck("xray", { push: false });
+    const r = (await h["worktree:triage"]({ repoName })).data.rows.find((x: any) => x.tree === "xray");
+    expect(r.group).toBe("only-copy");
+    const body = { repoName, tree: "xray", fingerprint: r.fingerprint, confirmOnlyCopy: true };
+    pending.push({ kind: "none" }, { kind: "incomplete" });
+    expect(await h["worktree:triage-dispose"](body)).toEqual({ ok: false, error: "runs-unreadable" });
+    pending.push({ kind: "none" }, { kind: "match", run: { id: "run-9", currentStage: "implement" } });
+    expect(await h["worktree:triage-dispose"](body)).toEqual({ ok: false, error: "running-run:run-9 at implement" });
+    expect(existsSync(rec.path)).toBe(true);
+  });
+
+  test("push-branch refuses a row that is neither only-copy nor look", async () => {
+    stuck("yankee");
+    const r = await rowFor("yankee");
+    expect(r.group).toBe("safe");
+    expect(await handlers["worktree:push-branch"]({ repoName, tree: "yankee", fingerprint: r.fingerprint })).toEqual({ ok: false, error: "not-pushable:safe" });
+  });
+
+  test("an unlinked tree's verdict says its folder still has files", async () => {
+    danglingGitdir("zulu");
+    const r = await rowFor("zulu");
+    expect([r.group, r.verdict]).toEqual(["broken", "Its git link is broken. The folder still has files; Remove moves it to the trash."]);
+  });
+
+  test("triage-remove refuses mount-unavailable when the gitdir's repo root and its parent are both gone", async () => {
+    const rec = stuck("zulu2");
+    const vanished = join(realpathSync(tmpdir()), `rttriage-vanished-${process.pid}-${Date.now()}`, "repo");
+    writeFileSync(join(rec.path, ".git"), `gitdir: ${join(vanished, ".git", "worktrees", "zulu2")}\n`);
+    expect((await rowFor("zulu2")).group).toBe("broken");
+    expect(await handlers["worktree:triage-remove"]({ repoName, tree: "zulu2" })).toEqual({ ok: false, error: "mount-unavailable" });
+    expect(existsSync(join(rec.path, "zulu2.txt"))).toBe(true);
+    expect(loadRegistry(repoName).find((t) => t.name === "zulu2")).toBeDefined();
+  });
+
+  test("triage-remove still removes when only the repo root is gone and its parent is readable", async () => {
+    const rec = stuck("zulu3");
+    writeFileSync(join(rec.path, ".git"), `gitdir: ${join(repo, "moved-clone", ".git", "worktrees", "zulu3")}\n`);
+    const res = await handlers["worktree:triage-remove"]({ repoName, tree: "zulu3" });
+    expect(res.ok).toBe(true);
+    expect(readFileSync(join(res.data.trash.path, "zulu3.txt"), "utf8")).toBe("w\n");
   });
 
   test("stop-holders refuses a tree no process is holding", async () => {
