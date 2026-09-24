@@ -32,6 +32,7 @@ import {
 } from "../packages/rt-client/src/index.ts";
 import type { Commands, GateRow, RtResponse } from "../packages/rt-client/src/index.ts";
 import { parseDuration, nextWaitMs } from "./events.ts";
+import { GATE_FORK_HOOK_TIMEOUT_SECONDS } from "../lib/agent-hooks.ts";
 
 function fail(msg: string): never {
   console.error(`rt gate: ${msg}`);
@@ -233,7 +234,7 @@ export async function gateAsk(args: string[]): Promise<void> {
 
 // ─── fork-check ──────────────────────────────────────────────────────────────
 
-const FORK_CHECK_TIMEOUT_MS = 5_000;
+const FORK_CHECK_TIMEOUT_MS = (GATE_FORK_HOOK_TIMEOUT_SECONDS * 1000) / 2;
 
 export const FORK_CHECK_ALLOW = {
   hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
@@ -241,8 +242,8 @@ export const FORK_CHECK_ALLOW = {
 
 /** Claude Code's PreToolUse stdin carries `session_id` and `cwd`; the env
     session and the process cwd are fallbacks for a caller that pipes none.
-    Null means this pane is not an `rt agent` launch (no RT_GATE_SUBJECT),
-    which the hook has always allowed without asking the daemon. */
+    Null means this pane is not an `rt agent` launch (no RT_GATE_SUBJECT):
+    such a pane is allowed without asking the daemon. */
 export function buildForkCheckPayload(
   stdin: string,
   env: NodeJS.ProcessEnv,

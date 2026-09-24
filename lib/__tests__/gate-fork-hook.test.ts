@@ -4,10 +4,13 @@
 // handlers/gate.ts); these drive the real script against a stub `rt` on PATH
 // to pin what the wrapper alone owns: the stdin hand-off and every
 // no-verdict fallback allowing.
-import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
+
+const dirs: string[] = [];
+afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 const HOOK_PATH = resolve(import.meta.dir, "..", "..", "scripts", "hooks", "gate-fork.sh");
 // Standard system dirs only: no custom `rt` install lives here, so a
@@ -25,6 +28,7 @@ const DENY_LINE = JSON.stringify({
     and exits `exitCode`. */
 function stubRt(body: string, exitCode: number): { path: string; argvFile: string; stdinFile: string } {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "gate-fork-hook-")));
+  dirs.push(dir);
   const argvFile = join(dir, "argv");
   const stdinFile = join(dir, "stdin");
   const script = `#!/bin/sh\nprintf '%s' "$*" > '${argvFile}'\ncat > '${stdinFile}'\ncat <<'EOF'\n${body}\nEOF\nexit ${exitCode}\n`;

@@ -171,14 +171,23 @@ Every `rt agent` launch injects a PreToolUse hook (matcher
 script ships with rt (`scripts/hooks/gate-fork.sh` in the bundle). Env
 stamped at launch: `RT_AGENT_ID`, `RT_GATE_SUBJECT`, `RT_DAEMON_SOCK`.
 
-Hook logic, in order:
+Hook logic, in order (updated 2026-09-23: the script now hands the hook
+payload to `rt gate fork-check`, and the daemon's `gate:fork-check` verb
+decides; the list below supersedes the original three steps):
 
-1. Daemon socket probe fails: **allow** (degraded mode stays legal).
-2. An open or parked gate exists for `RT_GATE_SUBJECT`: **allow** (the
-   wrapper's `presentation: "form"` branch legitimately renders gates as
-   native forms).
-3. Otherwise: **deny**, with a denial message instructing the agent to open
-   a gate per the gate protocol (subject and status-bin from env).
+1. No `rt`, daemon unreachable, or no verdict: **allow** (degraded mode
+   stays legal). A 10s hook timeout makes a wedged `rt` fail open too.
+2. An open or parked gate exists for `RT_GATE_SUBJECT`: **allow**.
+3. An open form gate on any subject was asked from this pane
+   (`origin.paneId`, else the `pane` column), its pane is still live
+   (executor not `gone`, delivery not `dead-pane`), and its nudge session
+   is the caller's when both carry one: **allow**.
+4. An open `run:` gate's `origin.worktree` is this pane's cwd: **allow**.
+5. An open gate exists on the subject `rt gate ask` would resolve for this
+   session (the same resolver): **allow**.
+6. Otherwise: **deny**, telling the agent to run `rt gate ask` and act on
+   the returned presentation (form: ask it in the pane, which step 3 then
+   allows; wait: background `rt gate wait <id>`).
 
 Net effect: a native form may only be the face of a real gate; improvised
 forks become gates and route by owner. Blocked-pane detection remains the

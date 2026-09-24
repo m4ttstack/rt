@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, symlinkSync } from "fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { buildForkCheckPayload, forkCheckHookOutput, forkDenyReason, FORK_CHECK_ALLOW } from "../gate.ts";
@@ -28,10 +28,16 @@ describe("buildForkCheckPayload", () => {
   });
 
   test("a symlinked cwd sends both the logical and the physical path", () => {
-    const real = realpathSync(mkdtempSync(join(tmpdir(), "fork-check-real-")));
-    const link = join(realpathSync(mkdtempSync(join(tmpdir(), "fork-check-link-"))), "tree");
-    symlinkSync(real, link);
-    expect(buildForkCheckPayload(JSON.stringify({ cwd: link }), agentEnv, "/x")?.worktrees).toEqual([link, real]);
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "fork-check-")));
+    try {
+      const real = join(base, "real");
+      const link = join(base, "link");
+      mkdirSync(real);
+      symlinkSync(real, link);
+      expect(buildForkCheckPayload(JSON.stringify({ cwd: link }), agentEnv, "/x")?.worktrees).toEqual([link, real]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   test("no RT_GATE_SUBJECT means no rt agent launch: no payload, nothing to ask", () => {

@@ -787,11 +787,12 @@ export interface Commands {
     };
   };
   /** The AskUserQuestion hook's verdict for the calling pane: allow only
-      when a live gate backs the form. The subject comes from gate:ask's own
+      when a live gate backs the form. The session rule uses gate:ask's own
       resolver for `sessionId`, so the hook and the ceremony can never
       disagree about which gate is this pane's. `subject` is the launch
-      subject (RT_GATE_SUBJECT); exact-subject matches accept open or parked
-      gates, while `paneId`/`worktrees` matches scan open run: gates only.
+      subject (RT_GATE_SUBJECT), the one rule that accepts a parked gate;
+      `paneId` matches open form gates on any subject whose pane is still
+      live, and `worktrees` matches open run: gates. On a deny,
       `data.subject` is what `rt gate ask` would file under, when resolvable. */
   "gate:fork-check": {
     payload: { sessionId?: string; paneId?: string; subject?: string; worktrees?: string[] };

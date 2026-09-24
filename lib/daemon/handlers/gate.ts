@@ -827,11 +827,17 @@ export function createGateHandlers(
     };
   };
 
-  // Exact-subject matches take open or parked, as the hook always has for
-  // its launch subject. The pane and worktree scans take open run: gates
-  // only: a parked run gate is not live until its owner resumes the pane,
-  // and the open filter keeps the scan to live rows rather than all of
-  // run: history.
+  // Rules run cheapest first: the launch subject and the open-gate scans
+  // read gates.db alone, while the session rule walks every run DB.
+  //
+  // Parked counts for the launch subject only; every other rule takes open
+  // gates, since a parked gate is not live until its owner resumes the pane.
+  //
+  // The pane rule trusts a pane id only while that pane is live: herdr
+  // reuses pane ids, and a dead pane's gate stays open with executor "gone"
+  // or delivery "dead-pane". When both sides carry a session, the gate's
+  // nudge session must be the caller's. Only form gates count, so a wait or
+  // pane-attention gate never licenses an in-pane form.
   const gateForkCheck = async (rawPayload: unknown): Promise<CommandResult<"gate:fork-check">> => {
     const payload = rawPayload as Commands["gate:fork-check"]["payload"] | undefined;
     const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
@@ -841,28 +847,35 @@ export function createGateHandlers(
     const worktrees = new Set(
       (Array.isArray(payload?.worktrees) ? payload!.worktrees : []).filter((w): w is string => typeof w === "string" && w.length > 0),
     );
+    const allowOn = (match: "session" | "subject" | "pane" | "worktree", gate: GateRow): CommandResult<"gate:fork-check"> =>
+      ({ ok: true as const, data: { allow: true, match, gateId: gate.id } });
+
+    if (launchSubject) {
+      const hit = store.list({ subjectPrefix: launchSubject }).gates
+        .find((g) => g.subject === launchSubject && (g.status === "open" || g.status === "parked"));
+      if (hit) return allowOn("subject", hit);
+    }
+
+    const openGates = store.list({ open: true }).gates;
+    const byPane = paneId
+      ? openGates.find((g) =>
+        g.origin?.presentation === "form"
+        && (g.origin.paneId || g.pane) === paneId
+        && g.executor !== "gone"
+        && g.delivery?.outcome !== "dead-pane"
+        && !(sessionId && g.nudge?.session && g.nudge.session !== sessionId))
+      : undefined;
+    if (byPane) return allowOn("pane", byPane);
+    const byTree = openGates.find((g) =>
+      g.subject.startsWith("run:") && g.origin?.worktree !== undefined && worktrees.has(g.origin.worktree));
+    if (byTree) return allowOn("worktree", byTree);
 
     const resolved = sessionId ? await resolveSubject({ sessionId }) : undefined;
     const askSubject = resolved?.ok ? resolved.subject : undefined;
-    const withSubject = askSubject ? { subject: askSubject } : {};
-    const allowOn = (match: "session" | "subject" | "pane" | "worktree", gate: GateRow): CommandResult<"gate:fork-check"> =>
-      ({ ok: true as const, data: { allow: true, match, gateId: gate.id, ...withSubject } });
+    const bySession = askSubject ? openGates.find((g) => g.subject === askSubject) : undefined;
+    if (bySession) return allowOn("session", bySession);
 
-    const liveOn = (subject: string): GateRow | undefined =>
-      store.list({ subjectPrefix: subject }).gates
-        .find((g) => g.subject === subject && (g.status === "open" || g.status === "parked"));
-    for (const [match, subject] of [["session", askSubject], ["subject", launchSubject]] as const) {
-      const hit = subject ? liveOn(subject) : undefined;
-      if (hit) return allowOn(match, hit);
-    }
-
-    const openRunGates = store.list({ open: true, subjectPrefix: "run:" }).gates;
-    const byPane = paneId ? openRunGates.find((g) => (g.origin?.paneId || g.pane) === paneId) : undefined;
-    if (byPane) return allowOn("pane", byPane);
-    const byTree = openRunGates.find((g) => g.origin?.worktree !== undefined && worktrees.has(g.origin.worktree));
-    if (byTree) return allowOn("worktree", byTree);
-
-    return { ok: true as const, data: { allow: false, ...withSubject } };
+    return { ok: true as const, data: { allow: false, ...(askSubject ? { subject: askSubject } : {}) } };
   };
 
   return { ...handlers, "gate:ask": gateAsk, "gate:fork-check": gateForkCheck };

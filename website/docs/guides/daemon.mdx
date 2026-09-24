@@ -97,4 +97,4 @@ A memory-pressure SIGKILL can remove the Claude process while leaving the pane's
 
 ### Gate-fork hook
 
-Herd spawns stamp the gate subject on the worker environment so each worker gets the gate-fork hook (a Claude Code hook that routes questions through the daemon's gate registry). The hook asks the daemon (`rt gate fork-check`), which resolves the pane's subject the same way `rt gate ask` does, so a worker's own open gate (its session's run, a run gate asked from its pane, or one opened for its worktree) is allowed through and it doesn't block on its own question.
+Herd spawns stamp the gate subject on the worker environment so each worker gets the gate-fork hook (a Claude Code hook that routes questions through the daemon's gate registry). The hook asks the daemon (`rt gate fork-check`), which resolves the pane's subject the same way `rt gate ask` does, so a worker's own open gate (its launch subject, a form gate asked from its live pane and session, a run gate for its worktree, or its session's run) is allowed through and it doesn't block on its own question.
