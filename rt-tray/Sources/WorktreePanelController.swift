@@ -16,7 +16,17 @@ struct TriageDiffFile: Decodable, Identifiable {
 }
 
 private struct ActionReply: Decodable { let ok: Bool; let error: String? }
-private struct DiffReply: Decodable { struct D: Decodable { let files: [TriageDiffFile] }; let ok: Bool; let data: D? }
+struct TriageDiffLoad {
+    let files: [TriageDiffFile]
+    /// The daemon lists at most 50 files and says so without a total.
+    let truncatedFiles: Bool
+}
+
+private struct DiffReply: Decodable {
+    struct D: Decodable { let files: [TriageDiffFile]; let truncatedFiles: Bool? }
+    let ok: Bool
+    let data: D?
+}
 
 @MainActor
 final class WorktreePanelController: ObservableObject {
@@ -134,11 +144,14 @@ final class WorktreePanelController: ObservableObject {
         }
     }
 
-    func diff(_ row: TriageRow) async -> [TriageDiffFile] {
+    /// nil when the daemon was unreachable, timed out or refused, so a failed
+    /// load never reads as a tree with nothing left to review.
+    func diff(_ row: TriageRow) async -> TriageDiffLoad? {
         let verb = "worktree:triage-diff"
         let reply: SocketReply<DiffReply> = await client.command(verb, payload: ["repoName": row.repo, "tree": row.tree],
                                                                   timeout: TriageTimeouts.action(verb))
-        return reply.value?.data?.files ?? []
+        guard let r = reply.value, r.ok, let d = r.data else { return nil }
+        return TriageDiffLoad(files: d.files, truncatedFiles: d.truncatedFiles ?? false)
     }
 
     static func explain(_ error: String?) -> String { TriageRefusal.explain(error) }

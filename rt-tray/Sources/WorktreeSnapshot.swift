@@ -12,18 +12,21 @@ enum WorktreeSnapshot {
         #if DEBUG
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--render-worktree-snapshots") else { return false }
-        guard args.count > i + 2 else {
-            FileHandle.standardError.write(Data("usage: --render-worktree-snapshots <fixtures-dir> <out-dir>\n".utf8))
-            return true
-        }
+        guard args.count > i + 2 else { fail("usage: --render-worktree-snapshots <fixtures-dir> <out-dir>", code: 64) }
         let fixtures = URL(fileURLWithPath: args[i + 1]), out = URL(fileURLWithPath: args[i + 2])
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        func load(_ name: String) -> TriageData {
-            let data = try! Data(contentsOf: fixtures.appendingPathComponent(name))
-            return try! JSONDecoder().decode(TriagePayload.self, from: data).data!
+        func read<T: Decodable>(_ name: String, as type: T.Type) -> T {
+            do {
+                return try JSONDecoder().decode(T.self, from: Data(contentsOf: fixtures.appendingPathComponent(name)))
+            } catch {
+                fail("can't read fixture \(name): \(error)", code: 66)
+            }
         }
-        let diff = try! JSONDecoder().decode([TriageDiffFile].self,
-                                             from: Data(contentsOf: fixtures.appendingPathComponent("worktree-triage-diff.json")))
+        func load(_ name: String) -> TriageData {
+            guard let data = read(name, as: TriagePayload.self).data else { fail("fixture \(name) has no data", code: 65) }
+            return data
+        }
+        let diff = read("worktree-triage-diff.json", as: [TriageDiffFile].self)
         let panel = load("worktree-triage-panel.json"), catalog = load("worktree-triage-catalog.json")
         let look = catalog.rows.first { $0.group == "look" }!
         let voldemort = panel.rows.first { $0.tree == "voldemort" }!
@@ -33,7 +36,8 @@ enum WorktreeSnapshot {
                    width: 760, scheme, out.appendingPathComponent("panel-\(tag).png"))
             render(WorktreePanelView(controller: WorktreePanelController(fixture: catalog), keptOpen: true, isSnapshot: true),
                    width: 760, scheme, out.appendingPathComponent("state-catalog-\(tag).png"))
-            render(WorktreeReviewSheet(row: look, controller: WorktreePanelController(fixture: catalog), initialFiles: diff),
+            render(WorktreeReviewSheet(row: look, controller: WorktreePanelController(fixture: catalog),
+                                       initialLoad: TriageDiffLoad(files: diff, truncatedFiles: false)),
                    width: 680, scheme, out.appendingPathComponent("review-sheet-\(tag).png"))
             render(InteractionStatesSnapshot(row: voldemort),
                    width: 1180, scheme, out.appendingPathComponent("interaction-states-\(tag).png"))
@@ -46,6 +50,11 @@ enum WorktreeSnapshot {
     }
 
     #if DEBUG
+    private static func fail(_ message: String, code: Int32) -> Never {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
+        exit(code)
+    }
+
     /// `Color(nsColor:)` resolves against the drawing appearance, not the
     /// SwiftUI `colorScheme`, so each scheme renders inside its own appearance.
     @MainActor
