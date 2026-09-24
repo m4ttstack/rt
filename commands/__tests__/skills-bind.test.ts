@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { __test__ as pickImplTest, type PickImpl } from "../../lib/ui/pick.ts";
 import type { PickRequest, PickResult } from "../../lib/ui/protocol.ts";
-import { readManifestBindings } from "../../lib/skills/sources.ts";
+import { readManifestBindings, stripJsonc } from "../../lib/skills/sources.ts";
 import { skillsBind, skillsCompile } from "../skills.ts";
 
 /**
@@ -525,5 +525,37 @@ describe("skillsBind: pipeline stages", () => {
     expect(logs).toContain("stage-plan.domain: acme:plan-policy -> acme:plan-policy-v2");
     const bindings = readManifestBindings(manifestPath);
     expect(bindings["mattstack:stage-plan"]?.domain).toBe("acme:plan-policy-v2");
+  });
+});
+
+const FIX = join(import.meta.dir, "..", "..", "lib", "skills", "__tests__", "fixtures", "compile-native");
+
+describe("bind writes the team pack fragment", () => {
+  function fixtureWithFragment(fragment: string) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rt-bind-frag-")));
+    cpSync(FIX, root, { recursive: true });
+    const pack = join(root, "pack");
+    const ms = join(root, "mattstack-home");
+    const manifest = join(ms, "repos", "my-repo", "skills.jsonc");
+    writeFile(join(pack, "pack", "skills.jsonc"), fragment);
+    writeFile(manifest, `// acme@acme\n{\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    return { pack, ms, manifest };
+  }
+
+  test("the fragment gains the binding, comments kept, and the manifest gets it too", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
+    expect(fragment).toContain("// acme fragment");
+    expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
+    expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+  });
+
+  test("a standalone pack whose fragment is the manifest is written once", async () => {
+    const { pack, ms } = fixtureWithFragment(`{\n  "version": 1,\n  "pipelines": { "feature": ["mattstack:stage-plan", "mattstack:stage-implement", "mattstack:stage-ship"] },\n  "bindings": {}\n}\n`);
+    const own = join(pack, "pack", "skills.jsonc");
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", own]);
+    const text = readFileSync(own, "utf8");
+    expect(text.match(/acme:plan-policy/g)?.length).toBe(1);
   });
 });

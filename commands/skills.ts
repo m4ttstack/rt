@@ -2213,7 +2213,21 @@ export async function skillsBind(args: string[]): Promise<void> {
     });
     writeFileSync(resolved.manifestPath, applyEdits(text, edits));
 
-    console.log(summary);
+    // A team pack's pack/skills.jsonc is the fragment merge-manifests folds into the
+    // per-repo manifest; the manifest write alone is undone by the next materialize and
+    // never reaches a teammate. A standalone pack's fragment IS its manifest (written above).
+    const fragmentPath = join(resolved.packDir, "pack", "skills.jsonc");
+    let fragmentUpdated = false;
+    if (existsSync(fragmentPath) && realpathSync(fragmentPath) !== realpathSync(resolved.manifestPath)) {
+      const fragmentText = readFileSync(fragmentPath, "utf8");
+      const fragmentEdits = modify(fragmentText, ["bindings", engineRef, slotName], fill, {
+        formattingOptions: { insertSpaces: true, tabSize: 2 },
+      });
+      writeFileSync(fragmentPath, applyEdits(fragmentText, fragmentEdits));
+      fragmentUpdated = true;
+    }
+
+    console.log(fragmentUpdated ? `${summary} (fragment updated: ${fragmentPath})` : summary);
 
     const surfaceFlags: SurfaceFlags = {
       team: resolved.team,
