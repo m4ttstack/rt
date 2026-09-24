@@ -154,6 +154,9 @@
       ],
       "selectedFile": "src/parser.ts"
     },
-    "editorLabel": ""
+    "editorLabel": "",
+    "stash": null,
+    "switchPrompt": null,
+    "canStash": false
   }
 }

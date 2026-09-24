@@ -80,5 +80,8 @@
   "notice": "",
   "tab": "changes",
   "history": { "commits": [], "hasMore": false, "loading": false, "header": null, "files": [], "selectedFile": "" },
-  "editorLabel": "Zed"
+  "editorLabel": "Zed",
+  "stash": null,
+  "switchPrompt": null,
+  "canStash": true
 } }

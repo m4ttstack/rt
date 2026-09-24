@@ -81,6 +81,12 @@ function fakeClient(over: {
     branches: async () => [],
     remotes: async () => [{ name: "origin" }],
     stashes: async () => [],
+    desktopStashes: async () => [],
+    lastDesktopStashEntryForBranch: async () => null,
+    createDesktopStashEntry: async () => false,
+    dropDesktopStashEntry: async () => {},
+    popStashEntry: async () => {},
+    stashedFiles: async () => [],
     log: async () => [],
     stagingDiff: async (path: string) => emptyDiff(path),
     commits: async (_range?: string, limit?: number) => history().slice(0, limit ?? 2),
@@ -433,6 +439,21 @@ describe("mission:menu-action: discard", () => {
     expect(calls.snapshot).toBe(3);
     expect(last.changes).toEqual([]);
     expect(last.notice).toBe("could not move b.txt to the Trash");
+  });
+
+  test("discard-all discards every changed file from a fresh read and drops the selections", async () => {
+    const { calls, last } = await run(
+      [{ t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } }, menu({ action: "discard-all" })],
+      { client: { files: () => [changed("a.txt"), changed("b.txt", "untracked")] } },
+    );
+    expect(calls.discardChanges).toEqual([[changed("a.txt"), changed("b.txt", "untracked")]]);
+    expect(last.changes.find((c) => c.path === "a.txt")?.include).toBe("all");
+  });
+
+  test("discard-all with nothing to discard calls nothing and says so", async () => {
+    const { calls, last } = await run([menu({ action: "discard-all" })], { client: { files: () => [] } });
+    expect(calls.discardChanges).toEqual([]);
+    expect(last.notice).toBe("No changes to discard");
   });
 });
 

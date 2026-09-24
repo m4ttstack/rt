@@ -152,7 +152,25 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.stashCount).toBe(1);
   expect(model.notice).toBe("");
   expect(model.editorLabel).toBe("Zed");
+  expect(model.stash).toBeNull();
+  expect(model.switchPrompt).toBeNull();
+  expect(model.canStash).toBe(true);
 });
+
+test("the mission history model fixture carries the stash fields", () => {
+  const model = (fixture("session-model-mission-history.json") as { model: MissionModel }).model;
+  expect(model.stash).toBeNull();
+  expect(model.switchPrompt).toBeNull();
+  expect(model.canStash).toBe(false);
+});
+
+test.each(["mission:stash", "mission:stash-restore", "mission:stash-discard", "mission:stash-select", "mission:stash-hide"])(
+  "a %s intent parses with its payload passed through untouched",
+  (name) => {
+    const payload = { sha: "abc123" };
+    expect(parseSessionLine(JSON.stringify({ t: "intent", name, payload }))).toEqual({ t: "intent", name, payload });
+  },
+);
 
 // open and close are TS-to-Go messages, not parseSessionLine input; these
 // golden-test the fixture JSON directly, mirroring the Go side's coverage.

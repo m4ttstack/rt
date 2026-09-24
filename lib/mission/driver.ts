@@ -32,8 +32,17 @@ import type { SessionHandle } from "../ui/spawn.ts";
 import type { listWorktreesAsync, WorktreeEntry } from "../worktree/git-async.ts";
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
 import { HistoryStore, type HistoryBranch } from "./history.ts";
-import { buildHistoryModel } from "./history-model.ts";
+import { buildHistoryModel, committedFileRow } from "./history-model.ts";
 import { buildModel, joinWorktreeRows, mergeWorktreeTrees, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import {
+  canStash,
+  checkoutAndBringChanges,
+  checkoutAndLeaveChanges,
+  createStashAndDropPreviousEntry,
+  StashStore,
+  untrackedPaths,
+  type SwitchStrategy,
+} from "./stash.ts";
 import { SessionDied } from "../runner/runner.ts";
 
 // The alias types below exist only so MissionDeps can spell `typeof <fn>`
@@ -114,6 +123,16 @@ interface CheckoutPayload {
   new?: boolean;
   from?: string;
   name?: string;
+  strategy?: SwitchStrategy;
+}
+
+interface StashEntryPayload {
+  sha: string;
+}
+
+interface StashSelectPayload {
+  path?: string;
+  showOversized?: boolean;
 }
 
 interface WorktreePayload {
@@ -270,6 +289,8 @@ export class MissionDriver {
    *  lingers. */
   private pendingSettledEvents: Map<string, boolean> = new Map();
   private readonly history = new HistoryStore();
+  private readonly stash = new StashStore();
+  private switchSeq = 0;
   /** Count, not a boolean: two syncHistory() calls can overlap (a tab-open racing a concurrent badge sync), and one completing/discarding itself must not clear the indicator while the other is still genuinely in flight. */
   private historySyncs = 0;
   /** See MissionDeps.resolveEditor for when this is re-read. */
@@ -293,6 +314,7 @@ export class MissionDriver {
       selections: new Map(),
       confirmDiscard: null,
       settling: false,
+      switchPrompt: null,
       tab: "changes",
     };
   }
@@ -369,6 +391,7 @@ export class MissionDriver {
       onDisk: this.onDisk(),
     });
     const selectedFile = this.history.selectedFile;
+    const stashFile = this.stash.selectedFile;
     return buildModel({
       state: this.state,
       rows: this.rows,
@@ -391,6 +414,16 @@ export class MissionDriver {
         oversizedOverride: selectedFile ? this.history.isOversizedShown(selectedFile.path) : false,
       },
       editorLabel: this.editor?.label ?? "",
+      stash: this.stash.entry
+        ? { entry: this.stash.entry, files: this.stash.files, showing: this.stash.showing, selectedFile: stashFile?.path ?? "" }
+        : null,
+      stashDiff: {
+        path: stashFile?.path ?? null,
+        status: stashFile ? committedFileRow(stashFile, () => false).status : "",
+        diff: this.stash.diff,
+        oversizedOverride: stashFile ? this.stash.isOversizedShown(stashFile.path) : false,
+      },
+      canStash: canStash(this.snapshot),
     });
   }
 
@@ -523,6 +556,7 @@ export class MissionDriver {
     this.lastCommit = entry
       ? { summary: entry.subject, when: formatRelativeTime(entry.authorDate, this.deps.now()), undoable: (snapshot.ahead ?? 0) > 0 }
       : null;
+    await this.stash.load(client, snapshot.branch);
     await this.refreshDiff(client);
     this.recomputeAction();
     await this.syncHistory();
@@ -553,6 +587,8 @@ export class MissionDriver {
     this.clearOnDisk();
     this.stagingDiff = stagingDiff;
     this.recomputeAction();
+    await this.stash.load(client, snapshot.branch);
+    if (this.state.currentWorktree !== worktree) return;
     await this.syncHistory();
   }
 
@@ -653,6 +689,22 @@ export class MissionDriver {
         break;
       case "mission:menu-action":
         await this.handleMenuAction(intent.payload as MenuActionPayload | undefined);
+        break;
+      case "mission:stash":
+        await this.handleStash();
+        break;
+      case "mission:stash-restore":
+        await this.handleStashEntry("restore", intent.payload as StashEntryPayload | undefined);
+        break;
+      case "mission:stash-discard":
+        await this.handleStashEntry("discard", intent.payload as StashEntryPayload | undefined);
+        break;
+      case "mission:stash-select":
+        await this.handleStashSelect(intent.payload as StashSelectPayload | undefined);
+        break;
+      case "mission:stash-hide":
+        this.stash.hide();
+        this.push();
         break;
       case "mission:refresh":
         this.resolveEditor();
@@ -951,11 +1003,67 @@ export class MissionDriver {
       return;
     }
     const client = this.deps.client(this.state.currentWorktree);
-    await client.checkoutBranch(payload.branch);
-    this.state.notice = "";
+    const snapshot = await client.snapshot();
+    if (snapshot.branch === payload.branch) {
+      this.push();
+      return;
+    }
+    const hasChanges = snapshot.files.length > 0;
+    const requested = payload.strategy === "leave" || payload.strategy === "bring" ? payload.strategy : null;
+    // GHD's tip.kind !== TipState.Valid rule: unborn and detached never ask, they bring.
+    const strategy: SwitchStrategy | null = snapshot.branch === null ? "bring" : requested;
+    if (strategy === null && hasChanges) {
+      this.state.switchPrompt = { seq: ++this.switchSeq, branch: payload.branch, current: snapshot.branch!, hasStash: this.stash.entry !== null };
+      this.push();
+      this.state.switchPrompt = null;
+      return;
+    }
+    try {
+      if (strategy === "leave") this.state.notice = await checkoutAndLeaveChanges(client, payload.branch, snapshot);
+      else if (strategy === "bring") await checkoutAndBringChanges(client, payload.branch, snapshot);
+      else await client.checkoutBranch(payload.branch);
+    } catch (err) {
+      this.state.notice = err instanceof Error ? err.message : String(err);
+    }
+    this.stash.hide();
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
+    this.push();
+  }
+
+  private async handleStash(): Promise<void> {
+    const client = this.deps.client(this.state.currentWorktree);
+    this.snapshot = await client.snapshot();
+    if (canStash(this.snapshot)) {
+      try {
+        await createStashAndDropPreviousEntry(client, this.snapshot.branch!, untrackedPaths(this.snapshot));
+      } catch (err) {
+        this.state.notice = err instanceof Error ? err.message : String(err);
+      }
+      this.state.selectedPath = null;
+    }
+    await this.refresh();
+    this.push();
+  }
+
+  private async handleStashEntry(action: "restore" | "discard", payload: StashEntryPayload | undefined): Promise<void> {
+    if (typeof payload?.sha !== "string") return;
+    const client = this.deps.client(this.state.currentWorktree);
+    try {
+      if (action === "restore") await client.popStashEntry(payload.sha);
+      else await client.dropDesktopStashEntry(payload.sha);
+    } catch (err) {
+      this.state.notice = err instanceof Error ? err.message : String(err);
+    }
+    await this.refresh();
+    this.push();
+  }
+
+  private async handleStashSelect(payload: StashSelectPayload | undefined): Promise<void> {
+    const client = this.deps.client(this.state.currentWorktree);
+    if (payload?.showOversized === true && typeof payload.path === "string") this.stash.showOversized(payload.path);
+    else await this.stash.select(client, typeof payload?.path === "string" ? payload.path : undefined);
     this.push();
   }
 
@@ -991,6 +1099,7 @@ export class MissionDriver {
     this.state.currentWorktree = path;
     this.state.settling = settling;
     this.history.reset();
+    this.stash.reset();
     this.resolveEditor();
   }
 
@@ -1094,6 +1203,8 @@ export class MissionDriver {
     if (!payload) return;
     if (typeof payload.filter === "string") this.state.filter = payload.filter;
     if (typeof payload.path === "string") {
+      // GHD: selecting a working-directory file replaces the stash selection.
+      this.stash.hide();
       this.state.selectedPath = payload.path === "" ? null : payload.path;
       const client = this.deps.client(this.state.currentWorktree);
       await this.refreshDiff(client);
@@ -1174,6 +1285,17 @@ export class MissionDriver {
           }
           await client.discardChanges([file]);
           this.state.selections.delete(file.path);
+          break;
+        }
+        case "discard-all": {
+          this.snapshot = await client.snapshot();
+          mutated = true;
+          if (this.snapshot.files.length === 0) {
+            this.state.notice = "No changes to discard";
+            break;
+          }
+          await client.discardChanges(this.snapshot.files);
+          this.state.selections = new Map();
           break;
         }
         case "create-tag": {

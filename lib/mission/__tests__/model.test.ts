@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { AppFileStatusKind, DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, type Commit, type CommittedFileChange, type RepoSnapshot, type StagingDiff } from "../../../packages/git-core/src/index.ts";
+import { AppFileStatusKind, DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, type Commit, type CommittedFileChange, type DesktopStashEntry, type RepoSnapshot, type StagingDiff } from "../../../packages/git-core/src/index.ts";
 import { DiffLine, DiffLineType } from "../../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packages/git-core/src/vendor/ghd/raw-diff.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
@@ -86,6 +86,7 @@ function baseState(overrides: Partial<MissionState> = {}): MissionState {
     showOversized: new Set(),
     selections: new Map(),
     settling: false,
+    switchPrompt: null,
     ...overrides,
   };
 }
@@ -281,6 +282,7 @@ describe("buildModel golden fixture handshake", () => {
       defaultBranch: "origin/main",
       now: new Date("2026-09-18T15:00:00Z"),
       editorLabel: "Zed",
+      canStash: true,
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
@@ -861,5 +863,67 @@ describe("oversized diff gate", () => {
       }),
     );
     expect(model.diff.kind).toBe("text");
+  });
+});
+
+describe("stash on the wire", () => {
+  const entry: DesktopStashEntry = { name: "refs/stash@{0}", stashSha: "s1", branchName: "main", tree: "t", parents: ["p", "i"] };
+  const stashedA: CommittedFileChange = { path: "a.txt", status: { kind: AppFileStatusKind.Modified }, commitish: "s1", parentCommitish: "s1^" };
+
+  function stashDiff(): StagingDiff {
+    const lines = [new DiffLine("@@ -1,1 +1,1 @@", DiffLineType.Hunk, 1, null, null), new DiffLine("+stashed", DiffLineType.Add, 2, null, 1)];
+    const hunk = new DiffHunk(new DiffHunkHeader(1, 1, 1, 1), lines, 0, lines.length - 1, DiffHunkExpansionType.None);
+    return { path: "a.txt", kind: "text", untracked: false, hunks: [hunk] };
+  }
+
+  function withStash(showing: boolean): MissionModel {
+    return buildModel({
+      ...baseInput({
+        state: { selectedPath: "b.txt" },
+        snapshot: { files: [changedFile({ path: "b.txt" })] },
+        stagingDiff: missionGoStagingDiff(),
+      }),
+      stash: { entry, files: [stashedA], showing, selectedFile: "a.txt" },
+      stashDiff: { path: "a.txt", status: "modified", diff: stashDiff(), oversizedOverride: false },
+    });
+  }
+
+  test("an open stash view carries the entry, its file rows, and the stash file's read-only diff", () => {
+    const model = withStash(true);
+    expect(model.stash).toEqual({
+      sha: "s1",
+      branch: "main",
+      files: [{ path: "a.txt", origPath: "", status: "modified", onDisk: false }],
+      showing: true,
+      selectedFile: "a.txt",
+    });
+    expect(model.diff.path).toBe("a.txt");
+    expect(model.diff.readOnly).toBe(true);
+  });
+
+  test("a closed stash view leaves the Changes diff in place", () => {
+    const model = withStash(false);
+    expect(model.stash?.showing).toBe(false);
+    expect(model.diff.path).toBe("b.txt");
+    expect(model.diff.readOnly).toBe(false);
+  });
+
+  test("a stash whose files are still loading sends null files", () => {
+    const model = buildModel({ ...baseInput(), stash: { entry, files: null, showing: false, selectedFile: "" } });
+    expect(model.stash?.files).toBeNull();
+  });
+
+  test("stash, switchPrompt, and canStash default to null, null, and false", () => {
+    const model = buildModel(baseInput());
+    expect(model.stash).toBeNull();
+    expect(model.switchPrompt).toBeNull();
+    expect(model.canStash).toBe(false);
+  });
+
+  test("switchPrompt and canStash pass through", () => {
+    const prompt = { seq: 2, branch: "other", current: "main", hasStash: true };
+    const model = buildModel({ ...baseInput({ state: { switchPrompt: prompt } }), canStash: true });
+    expect(model.switchPrompt).toEqual(prompt);
+    expect(model.canStash).toBe(true);
   });
 });
