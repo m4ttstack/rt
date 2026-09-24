@@ -9,6 +9,7 @@
  *
  * `force` overrides guards 2-6 and never guard 1: "main" and "unmanaged" trees
  * are categorically not rt's to delete, no matter what the caller asks for.
+ * `acceptDirty` skips guard 2 alone; the dirt travels into the trash with the tree.
  */
 
 import { existsSync } from "fs";
@@ -192,7 +193,7 @@ async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
 export async function disposeTree(
   deps: DisposeDeps,
   rec: TreeRecord,
-  opts: { force?: boolean; auto?: boolean },
+  opts: { force?: boolean; auto?: boolean; acceptDirty?: boolean },
 ): Promise<DisposeOutcome> {
   const { repoName, repoPath, emit, log } = deps;
   const force = opts.force === true;
@@ -229,9 +230,11 @@ export async function disposeTree(
 
   if (!force) {
     // 2. Clean modulo declared generated drift.
-    const { discard, blockers } = await classifyDirtyAsync(rec.path);
-    if (blockers.length > 0) return refuse("dirty");
-    discarded = discard;
+    if (opts.acceptDirty !== true) {
+      const { discard, blockers } = await classifyDirtyAsync(rec.path);
+      if (blockers.length > 0) return refuse("dirty");
+      discarded = discard;
+    }
 
     // 3. Containment. A merged MR is authoritative that the branch's work
     //    reached the target: squash-merge and rebase-before-merge both leave
