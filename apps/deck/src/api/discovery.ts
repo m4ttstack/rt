@@ -13,6 +13,7 @@ export interface DiscoveryApp {
   /** The app's own name when it has a stored icon, null otherwise. The route
       turns this into an absolute /api/apps/<name>/icon URL. */
   icon: string | null;
+  badge?: string;
 }
 
 /**
@@ -38,6 +39,7 @@ export async function buildDiscoveryApps(
       description: record.description,
       url,
       icon: record.icon ? record.name : null,
+      ...(record.badge ? { badge: record.badge } : {}),
     });
   }
   apps.sort(

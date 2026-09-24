@@ -72,6 +72,22 @@ function cacheKey(subject: string, kind: string): string {
   return `${subject}::${kind}`;
 }
 
+/** A gate only moves forward through these, so an older copy of a known
+    id (a resync read that raced a live patch) must never overwrite it. */
+const STATUS_RANK: Record<FacilityGateRow['status'], number> = {
+  open: 0,
+  parked: 1,
+  answered: 2,
+  closed: 3,
+};
+
+/** Whole-row comparison: resync is the only path that updates fields no
+    bus frame patches (delivery, execution, escalatedAt), so a narrower
+    check would silently freeze them. */
+function sameRow(a: FacilityGateRow, b: FacilityGateRow): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * In-memory cache of the board's gate rows, keyed by facility `subject`
  * (`mr:<mrUrl>`, or `run:<runId>` for a pipeline gate) AND `kind`. Fed by the
@@ -82,15 +98,28 @@ function cacheKey(subject: string, kind: string): string {
 export class GateCache {
   private readonly byKey = new Map<string, FacilityGateRow>();
 
+  /** Increases on every write that changes a row, so a caller can tell a
+      no-op resync from one that found something. */
+  revision = 0;
+
   /** A different gate for the same subject+kind replaces the cached one
       only when it is not older, so a reconcile listing several rounds keeps
-      the latest whatever order the daemon returns them in. */
+      the latest whatever order the daemon returns them in. A same-id row
+      never regresses status (a stale resync racing a live patch). */
   applyRow(row: FacilityGateRow): void {
     const key = cacheKey(row.subject, row.kind);
     const existing = this.byKey.get(key);
     if (existing && existing.id !== row.id && existing.openedAt > row.openedAt)
       return;
+    if (
+      existing &&
+      existing.id === row.id &&
+      STATUS_RANK[existing.status] > STATUS_RANK[row.status]
+    )
+      return;
+    if (existing && sameRow(existing, row)) return;
     this.byKey.set(key, row);
+    this.revision++;
   }
 
   /** `gateList`'s result is authoritative for every subject+kind it names; a
@@ -141,13 +170,15 @@ export class GateCache {
     if (typeof id !== 'string' || !id) return;
     if (typeof subject !== 'string' || !subject) return;
     if (!Array.isArray(questions)) return;
+    // A frame for a known id carries nothing the cached row lacks, and
+    // replaying it would reset status, answer, and openedAt.
+    if (this.findById(id)) return;
 
-    // An opened frame is the newest gate the bus has seen for its pair, and
-    // its receipt-time openedAt is on the board's clock, not the daemon's,
-    // so it replaces without applyRow's age comparison.
+    // Receipt-time openedAt is always now, so applyRow's older-sibling
+    // check can never drop this write for a genuinely different id.
     const kind =
       typeof payload.kind === 'string' ? payload.kind : 'review-post';
-    this.byKey.set(cacheKey(subject, kind), {
+    this.applyRow({
       id,
       subject,
       kind,
@@ -167,12 +198,10 @@ export class GateCache {
       nudge: null,
       delivery: null,
       released: false,
-      // The opened event predates any supersession, escalation, or
-      // consumption action, so the optimistic row starts supersededBy,
-      // escalatedAt, and consumedAt empty the same way the daemon's own
-      // fresh row does.
       supersededBy: null,
       owner: typeof payload.owner === 'string' ? payload.owner : null,
+      // The opened event predates supersession, escalation, and
+      // consumption, so those start empty the way the daemon's fresh row does.
       escalatedAt: null,
       consumedAt: null,
       context: typeof payload.context === 'string' ? payload.context : null,
@@ -375,5 +404,6 @@ function liveGateRow(row: FacilityGateRow, status: GateRow['status']): GateRow {
     domain: domainForKind(row.kind),
     meta: row.meta ?? undefined,
     escalatedAt: row.escalatedAt ?? undefined,
+    owner: row.owner ?? undefined,
   };
 }

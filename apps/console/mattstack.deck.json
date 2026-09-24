@@ -5,6 +5,7 @@
   "icon": "./public/favicon.svg",
   "port": 11001,
   "includeInBundle": true,
+  "badge": "/api/badge",
   "bundle": {
     "build": "bun install --frozen-lockfile && bun run build:binary",
     "artifact": "dist-bin/console"

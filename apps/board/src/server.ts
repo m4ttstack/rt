@@ -115,6 +115,7 @@ import { upsertEnvKeys } from './env-file.ts';
 import faviconSvg from './favicon.svg' with { type: 'text' };
 import { focusPane } from './focus-pane.ts';
 import { answerGate } from './gates/answer.ts';
+import { boardBadge } from './gates/badge.ts';
 import {
   answeredWinner,
   attachGates,
@@ -127,10 +128,9 @@ import {
 } from './gates/execute-sweep-action.ts';
 import {
   buildQueueExtras,
+  GateResync,
   ingestRelayFrame,
   installBoardBridgeRule,
-  reconcileAttentionGatesOnBoot,
-  reconcileGatesOnBoot,
   reconcileRunGatesOnBoot,
   type GateEventFrame,
 } from './gates/ingest.ts';
@@ -406,6 +406,8 @@ async function gitlab(): Promise<GitLabProvider> {
 // the relay handler below (ingestRelayFrame) and the boot gateList reconcile
 // (reconcileGatesOnBoot).
 const gateCache = new GateCache();
+const GATE_RESYNC_INTERVAL_MS = 60_000;
+const gateResync = new GateResync(gateList, gateCache, m => console.error(m));
 const runMrs = new RunMrResolver({
   getRun: runId => getRun(runId),
   onChange: () => sseNudge(),
@@ -957,6 +959,20 @@ const httpServer = Bun.serve({
     switch (pathname) {
       case '/healthz':
         return new Response('ok');
+      case '/api/badge': {
+        const visible = config.members.filter(m => !m.hidden);
+        const mrs = cache.peek()?.mrs ?? [];
+        const mrGates = attachGates(
+          visibleMrsFor(mrs, visible),
+          gateCache
+        ).flatMap(mr => mr.gates);
+        return Response.json(
+          boardBadge(
+            [...mrGates, ...buildQueueExtras(gateCache.rows())],
+            Date.now()
+          )
+        );
+      }
       case '/events': {
         // One-way nudge channel: browsers re-pull /data.json on any message.
         let ctrl: ReadableStreamDefaultController<Uint8Array>;
@@ -3840,6 +3856,13 @@ let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR
   ? () => {}
   : subscribe((type, data) => {
+      // The daemon sends mr:status on every socket open, so this is the
+      // reconnect signal; it also fires on connection-state changes, which
+      // only costs an extra idempotent resync.
+      if (type === 'mr:status')
+        void gateResync.run().then(changed => {
+          if (changed) sseNudge();
+        });
       if (type === 'event') {
         const frame = data as { topic?: unknown; payload?: unknown } | null;
         if (typeof frame?.topic === 'string') {
@@ -3886,16 +3909,12 @@ const stopRelay = FIXTURE_DIR
     });
 
 if (!FIXTURE_DIR) {
-  void reconcileGatesOnBoot(gateList, gateCache).catch(err =>
-    console.error(
-      `gate boot reconcile failed: ${err instanceof Error ? err.message : err}`
-    )
-  );
-  void reconcileAttentionGatesOnBoot(gateList, gateCache).catch(err =>
-    console.error(
-      `gate boot reconcile (attention) failed: ${err instanceof Error ? err.message : err}`
-    )
-  );
+  const resyncAndNudge = () =>
+    void gateResync.run().then(changed => {
+      if (changed) sseNudge();
+    });
+  resyncAndNudge();
+  setInterval(resyncAndNudge, GATE_RESYNC_INTERVAL_MS);
   void reconcileRunGatesOnBoot(gateList, gateCache).catch(err =>
     console.error(
       `gate boot reconcile (runs) failed: ${err instanceof Error ? err.message : err}`

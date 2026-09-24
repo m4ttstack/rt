@@ -4,6 +4,7 @@ import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 import {
   answeredWinner,
   attachGates,
+  cachedExecution,
   GateCache,
   isRowAnswerable,
 } from '../gates/cache.ts';
@@ -295,9 +296,11 @@ describe('GateCache.applyEvent', () => {
     expect(cached?.answer).toBeNull();
   });
 
-  test('an opened frame replaces the cached gate even when that row carries a later daemon timestamp', () => {
+  // Receipt-time openedAt loses only to a cached row stamped later than
+  // now, which no real daemon timestamp is.
+  test('an opened frame for a different id replaces a cached row stamped in the past', () => {
     const cache = new GateCache();
-    cache.applyRow(row({ openedAt: Date.now() + 60_000 }));
+    cache.applyRow(row({ openedAt: Date.now() - 60_000 }));
     cache.applyEvent({
       topic: 'gate/opened/gate-2',
       payload: {
@@ -942,5 +945,144 @@ describe('isRowAnswerable', () => {
       execution: 'unassigned',
     } as unknown as FacilityGateRow;
     expect(isRowAnswerable(answeredUnassigned)).toBe(true);
+  });
+});
+
+describe('GateCache opened frames', () => {
+  test('an opened frame carries the payload owner onto the row', () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: 'gate/opened/g-att',
+      payload: {
+        id: 'g-att',
+        subject: 'agent:a1',
+        kind: 'pane-attention',
+        questions: [],
+        owner: 'human',
+      },
+    });
+    expect(cache.get('agent:a1', 'pane-attention')?.owner).toBe('human');
+  });
+
+  test('an opened frame without an owner stores null', () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: 'gate/opened/g2',
+      payload: {
+        id: 'g2',
+        subject: 'mr:https://x/-/merge_requests/2',
+        kind: 'review-post',
+        questions: [],
+      },
+    });
+    expect(
+      cache.get('mr:https://x/-/merge_requests/2', 'review-post')?.owner
+    ).toBeNull();
+  });
+
+  test('a duplicate opened frame for a cached id keeps the original openedAt', () => {
+    const cache = new GateCache();
+    cache.applyRow(
+      row({
+        id: 'g3',
+        subject: 'agent:a3',
+        kind: 'pane-attention',
+        openedAt: 1000,
+      })
+    );
+    cache.applyEvent({
+      topic: 'gate/opened/g3',
+      payload: {
+        id: 'g3',
+        subject: 'agent:a3',
+        kind: 'pane-attention',
+        questions: [],
+        owner: 'human',
+      },
+    });
+    expect(cache.get('agent:a3', 'pane-attention')?.openedAt).toBe(1000);
+  });
+});
+
+describe('GateCache status is monotonic per id', () => {
+  test('a stale open copy of an answered gate does not reopen it', () => {
+    const cache = new GateCache();
+    cache.applyRow(
+      row({
+        id: 'g5',
+        subject: 'agent:a5',
+        kind: 'pane-attention',
+        status: 'answered',
+      })
+    );
+    cache.applyRow(
+      row({
+        id: 'g5',
+        subject: 'agent:a5',
+        kind: 'pane-attention',
+        status: 'open',
+      })
+    );
+    expect(cache.get('agent:a5', 'pane-attention')?.status).toBe('answered');
+  });
+
+  test('a resync copy with a new execution value on the same status still lands', () => {
+    const cache = new GateCache();
+    const base = row({
+      id: 'g10',
+      subject: 'agent:a10',
+      kind: 'pane-attention',
+      status: 'answered',
+    });
+    cache.applyRow(base);
+    cache.applyRow({ ...base, execution: 'unassigned' } as FacilityGateRow);
+    expect(cachedExecution(cache.get('agent:a10', 'pane-attention')!)).toBe(
+      'unassigned'
+    );
+  });
+
+  test('revision moves on a real change and not on a no-op', () => {
+    const cache = new GateCache();
+    const r0 = cache.revision;
+    cache.applyRow(
+      row({
+        id: 'g6',
+        subject: 'agent:a6',
+        kind: 'pane-attention',
+        status: 'open',
+      })
+    );
+    const r1 = cache.revision;
+    cache.applyRow(
+      row({
+        id: 'g6',
+        subject: 'agent:a6',
+        kind: 'pane-attention',
+        status: 'open',
+      })
+    );
+    expect(r1).toBeGreaterThan(r0);
+    expect(cache.revision).toBe(r1);
+    cache.applyRow(
+      row({
+        id: 'g6',
+        subject: 'agent:a6',
+        kind: 'pane-attention',
+        status: 'answered',
+      })
+    );
+    expect(cache.revision).toBeGreaterThan(r1);
+  });
+});
+
+describe('attachGates owner', () => {
+  test('an open MR gate row carries its owner', () => {
+    const cache = new GateCache();
+    const url = 'https://x/-/merge_requests/9';
+    cache.applyRow(
+      row({ id: 'g9', subject: `mr:${url}`, status: 'open', owner: 'human' })
+    );
+    const [mr] = attachGates([{ webUrl: url }], cache);
+    expect(mr!.gates[0]!.owner).toBe('human');
   });
 });

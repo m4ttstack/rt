@@ -341,3 +341,33 @@ test('dev node absent stays undefined', () => {
     expect(parsed.manifest.includeInBundle).toBeUndefined();
   }
 });
+
+test('reads a relative badge path', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'board',
+      badge: '/api/badge',
+      commands: {},
+    }),
+  });
+  const r = readDeckManifest(dir);
+  expect(r?.ok && r.manifest.badge).toBe('/api/badge');
+});
+
+test('drops a badge that is absolute or protocol-relative', () => {
+  for (const badge of [
+    'https://evil.example/x',
+    '//evil.example/x',
+    'api/badge',
+  ]) {
+    const dir = repo({
+      'mattstack.deck.json': JSON.stringify({
+        name: 'board',
+        badge,
+        commands: {},
+      }),
+    });
+    const r = readDeckManifest(dir);
+    expect(r?.ok && r.manifest.badge).toBeUndefined();
+  }
+});

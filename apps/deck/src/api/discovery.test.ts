@@ -98,6 +98,57 @@ test('discovery returns managed products only, no internal fields', async () => 
   expect(loose.health).toBeUndefined();
 });
 
+test('discovery passes a manifest badge path through', async () => {
+  const appDir = mkdtempSync(join(tmpdir(), 'discovery-badge-'));
+  writeFileSync(
+    join(appDir, 'mattstack.deck.json'),
+    JSON.stringify({
+      name: 'board',
+      displayName: 'Board',
+      icon: './icon.svg',
+      badge: '/api/badge',
+      commands: { start: 'bun run serve' },
+    })
+  );
+  writeFileSync(join(appDir, 'icon.svg'), SVG);
+  putRecord({
+    name: 'board',
+    managedBy: 'rt',
+    port: 11006,
+    kind: 'service',
+    workingDirectory: appDir,
+    createdAt: '2026-09-23T00:00:00Z',
+  });
+  ingestManifest('board');
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'board.localhost', port: 11006 }])
+  );
+
+  const apps = await buildDiscoveryApps(statusOpts);
+  expect(apps.find(a => a.name === 'board')?.badge).toBe('/api/badge');
+});
+
+test('discovery omits badge when the manifest has none', async () => {
+  const chatDir = manifestDir();
+  putRecord({
+    name: 'chat',
+    managedBy: 'rt',
+    port: 11002,
+    kind: 'service',
+    workingDirectory: chatDir,
+    createdAt: '2026-09-23T00:00:00Z',
+  });
+  ingestManifest('chat');
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'chat.localhost', port: 11002 }])
+  );
+
+  const apps = await buildDiscoveryApps(statusOpts);
+  expect('badge' in apps.find(a => a.name === 'chat')!).toBe(false);
+});
+
 test('an app record with no icon ingested reports icon null', async () => {
   writeFileSync(
     process.env.LOCAL_APPS_ROUTES_PATH!,

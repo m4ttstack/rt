@@ -6,6 +6,8 @@ export interface DeckManifest {
   displayName?: string;
   description?: string;
   icon?: string;
+  /** Path on the app's own origin serving `{ count, path? }` for the shell's tab and dock badges. */
+  badge?: string;
   port?: number;
   /** Shell strings. `start` (when present) is the supervised service; every other key is an action command. */
   commands: Record<string, string>;
@@ -71,6 +73,12 @@ export function readDeckManifest(dir: string): ParseResult {
   if (typeof m.displayName === 'string') out.displayName = m.displayName;
   if (typeof m.description === 'string') out.description = m.description;
   if (typeof m.icon === 'string') out.icon = m.icon;
+  if (
+    typeof m.badge === 'string' &&
+    m.badge.startsWith('/') &&
+    !m.badge.startsWith('//')
+  )
+    out.badge = m.badge;
   if (m.port !== undefined) {
     if (
       !Number.isInteger(m.port) ||

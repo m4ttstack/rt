@@ -5,9 +5,12 @@ import {
   type EventBridgeRule,
 } from '@mattstack/app-server/event-bridge';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
+import { GateCache } from '../gates/cache.ts';
 import {
   boardBridgeRule,
+  buildQueueExtras,
   GATE_LIST_PAGE_LIMIT,
+  GateResync,
   ingestRelayFrame,
   installBoardBridgeRule,
   reconcileGatesOnBoot,
@@ -15,6 +18,34 @@ import {
   type GateCacheTarget,
   type GateReconcileTarget,
 } from '../gates/ingest.ts';
+
+function row(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
+  return {
+    id: 'gate-1',
+    subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/4821',
+    kind: 'review-post',
+    questions: [
+      { id: 'q1', label: 'Ship it?', multi: false, options: ['yes', 'no'] },
+    ],
+    meta: null,
+    status: 'open',
+    answer: null,
+    openedAt: 1000,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
+    supersededBy: null,
+    owner: null,
+    escalatedAt: null,
+    consumedAt: null,
+    ...overrides,
+  };
+}
 
 function fakeCache(): { target: GateCacheTarget; applied: unknown[] } {
   const applied: unknown[] = [];
@@ -503,5 +534,151 @@ describe('installBoardBridgeRule', () => {
       stillWriter: () => false,
     });
     expect(io.writes).toHaveLength(0);
+  });
+});
+
+describe('buildQueueExtras owner', () => {
+  test('a relay-opened human pane-attention gate lands in queueExtras with its owner', () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: 'gate/opened/g-att',
+      payload: {
+        id: 'g-att',
+        subject: 'agent:a1',
+        kind: 'pane-attention',
+        questions: [],
+        owner: 'human',
+      },
+    });
+    const extras = buildQueueExtras(cache.rows());
+    expect(extras.map(g => [g.gateId, g.owner])).toEqual([['g-att', 'human']]);
+  });
+
+  test('an escalated herd-owned attention row is admitted and keeps its herd owner', () => {
+    const cache = new GateCache();
+    cache.applyRow({
+      id: 'g-herd',
+      subject: 'herd:h1/job1',
+      kind: 'pane-attention',
+      questions: [],
+      meta: null,
+      status: 'open',
+      answer: null,
+      openedAt: 0,
+      parkedAt: null,
+      closedAt: null,
+      closedReason: null,
+      agent: null,
+      pane: null,
+      nudge: null,
+      delivery: null,
+      released: false,
+      supersededBy: null,
+      owner: 'herd:h1',
+      escalatedAt: 5,
+      consumedAt: null,
+      context: null,
+      origin: null,
+    } as FacilityGateRow);
+    const extras = buildQueueExtras(cache.rows());
+    expect(extras.map(g => g.owner)).toEqual(['herd:h1']);
+  });
+});
+
+describe('GateResync', () => {
+  function listOf(rows: FacilityGateRow[]) {
+    const calls: Array<{ subjectPrefix?: string; kind?: string }> = [];
+    const list = async (payload: { subjectPrefix?: string; kind?: string }) => {
+      calls.push({ subjectPrefix: payload.subjectPrefix, kind: payload.kind });
+      return { ok: true, data: { gates: rows, cursor: 1 } };
+    };
+    return { list, calls };
+  }
+
+  test('run() reconciles both the mr: and the pane-attention scopes', async () => {
+    const { list, calls } = listOf([]);
+    const resync = new GateResync(list, new GateCache(), () => {});
+    await resync.run();
+    expect(calls).toEqual([
+      { subjectPrefix: 'mr:', kind: undefined },
+      { subjectPrefix: undefined, kind: 'pane-attention' },
+    ]);
+  });
+
+  test('a gate answered during a relay gap stops being open after run()', async () => {
+    const cache = new GateCache();
+    const url = 'https://x/-/merge_requests/4';
+    cache.applyEvent({
+      topic: 'gate/opened/g4',
+      payload: {
+        id: 'g4',
+        subject: `mr:${url}`,
+        kind: 'review-post',
+        questions: [],
+        owner: 'human',
+      },
+    });
+    const answered = {
+      ...cache.get(`mr:${url}`, 'review-post')!,
+      status: 'answered' as const,
+    };
+    const { list } = listOf([answered]);
+    await new GateResync(list, cache, () => {}).run();
+    expect(cache.get(`mr:${url}`, 'review-post')?.status).toBe('answered');
+  });
+
+  test('a live answered patch is not undone by a resync that read the gate as open', async () => {
+    const cache = new GateCache();
+    const subject = 'mr:https://x/-/merge_requests/7';
+    cache.applyEvent({
+      topic: 'gate/opened/g7',
+      payload: {
+        id: 'g7',
+        subject,
+        kind: 'review-post',
+        questions: [],
+        owner: 'human',
+      },
+    });
+    const staleOpen = { ...cache.get(subject, 'review-post')! };
+    cache.applyEvent({
+      topic: 'gate/answered/g7',
+      payload: { id: 'g7', answers: { q: 'a' }, by: 'pane' },
+    });
+    const { list } = listOf([staleOpen]);
+    await new GateResync(list, cache, () => {}).run();
+    expect(cache.get(subject, 'review-post')?.status).toBe('answered');
+  });
+
+  test('run() reports whether the cache changed', async () => {
+    const cache = new GateCache();
+    const fresh = row({
+      id: 'g8',
+      subject: 'mr:https://x/-/merge_requests/8',
+      kind: 'review-post',
+    });
+    expect(
+      await new GateResync(listOf([fresh]).list, cache, () => {}).run()
+    ).toBe(true);
+    expect(
+      await new GateResync(listOf([fresh]).list, cache, () => {}).run()
+    ).toBe(false);
+  });
+
+  test('a run() while one is in flight does not start a second pass', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => (release = r));
+    let calls = 0;
+    const list = async () => {
+      calls++;
+      await gate;
+      return { ok: true, data: { gates: [], cursor: 1 } };
+    };
+    const resync = new GateResync(list, new GateCache(), () => {});
+    const first = resync.run();
+    await resync.run();
+    release();
+    await first;
+    expect(calls).toBe(2);
   });
 });

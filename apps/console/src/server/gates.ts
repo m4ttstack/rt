@@ -11,6 +11,8 @@ import {
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
+import { countsForConsoleBadge } from '../shared/gate-waiting';
+
 /** Read fresh per call, not cached at module scope -- this is the shared
     test seam across every rt-client call site in this file (panes.ts uses
     the same pattern), and a cached snapshot would miss a test that sets it
@@ -78,6 +80,33 @@ export const gates = new Hono()
     const res = await listAllRunGates();
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json({ gates: res.gates }, 200);
+  })
+  .get('/api/badge', async c => {
+    const [gatesRes, runsRes] = await Promise.all([
+      listAllRunGates(),
+      listRuns(undefined, rtClientOptions()),
+    ]);
+    if (!gatesRes.ok) return c.json({ error: gatesRes.error }, 502);
+    if (!runsRes.ok)
+      return c.json({ error: runsRes.error ?? 'run:list failed' }, 502);
+    const repoByRun = new Map(
+      (runsRes.data?.runs ?? []).map(r => [r.id, r.repo])
+    );
+    const now = Date.now();
+    const counted = gatesRes.gates
+      .filter(
+        g =>
+          countsForConsoleBadge(g, now) &&
+          repoByRun.has(g.subject.slice('run:'.length))
+      )
+      .sort((a, b) => a.openedAt - b.openedAt);
+    const oldest = counted[0];
+    if (!oldest) return c.json({ count: 0 }, 200);
+    const runId = oldest.subject.slice('run:'.length);
+    return c.json(
+      { count: counted.length, path: `/runs/${repoByRun.get(runId)}/${runId}` },
+      200
+    );
   })
   .post(
     '/api/gates/:id/answer',

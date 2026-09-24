@@ -64,13 +64,13 @@ export function ingestRelayFrame(
   notify();
 }
 
-type GateListPayload = {
+export type GateListPayload = {
   subjectPrefix?: string;
   kind?: string;
   cursor?: number;
   limit?: number;
 };
-type GateListResult = {
+export type GateListResult = {
   ok: boolean;
   data?: { gates: FacilityGateRow[]; cursor: number };
   error?: string;
@@ -151,6 +151,41 @@ export async function reconcileAttentionGatesOnBoot(
   cache.reconcile(rows);
 }
 
+/** Re-lists every gate scope the board caches. The relay is broadcast-only
+    with no replay, so frames sent while it was disconnected are lost; this
+    is what brings the cache back in line after a gap. Overlapping calls
+    collapse into the one already running. */
+export class GateResync {
+  private inFlight: Promise<boolean> | null = null;
+
+  constructor(
+    private readonly list: (
+      payload: GateListPayload
+    ) => Promise<GateListResult>,
+    private readonly cache: GateReconcileTarget & { readonly revision: number },
+    private readonly onError: (message: string) => void
+  ) {}
+
+  run(): Promise<boolean> {
+    if (this.inFlight) return Promise.resolve(false);
+    const before = this.cache.revision;
+    this.inFlight = (async () => {
+      try {
+        await reconcileGatesOnBoot(this.list, this.cache);
+        await reconcileAttentionGatesOnBoot(this.list, this.cache);
+      } catch (err) {
+        this.onError(
+          `gate resync failed: ${err instanceof Error ? err.message : err}`
+        );
+      } finally {
+        this.inFlight = null;
+      }
+      return this.cache.revision !== before;
+    })();
+    return this.inFlight;
+  }
+}
+
 /**
  * Boot-time cache warm for pipeline gates: pages
  * `gateList({subjectPrefix: "run:"})` to exhaustion, so a run gate opened
@@ -223,6 +258,7 @@ export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
       domain: domainForKind(row.kind),
       meta: row.meta ?? undefined,
       escalatedAt: row.escalatedAt ?? undefined,
+      owner: row.owner ?? undefined,
       delivery: cachedDelivery(row),
       execution: cachedExecution(row),
     });

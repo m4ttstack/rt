@@ -58,6 +58,9 @@ export interface GateRow {
   /** Set when the daemon escalated this gate to a human; drives the
       "escalated" chip alongside the "parked" one. */
   escalatedAt?: number;
+  /** The facility row's owner: `human` (or absent) for Matt's decisions,
+      `herd:<id>` for a gate only that herd's shepherd may answer. */
+  owner?: string;
   /** Set on an answered row once the daemon's answer-time executor
       guarantee resolves the nudge/relaunch it fired: "stuck" is a blocked
       pane that never left blocked after retries, "confirmed" is a resumed

@@ -97,6 +97,11 @@ export class SnapshotCache {
     return this.refresh();
   }
 
+  /** The current snapshot without triggering a fetch; null before the first lands. */
+  peek(): Snapshot | null {
+    return this.snapshot;
+  }
+
   private refresh(): Promise<Snapshot> {
     if (this.inflight) return this.inflight;
     // A markStale() landing mid-fetch means this fetch read the pre-change

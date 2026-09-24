@@ -18,19 +18,7 @@ export function useGates() {
   });
 }
 
-/** True the instant a run has a gate actually waiting on someone -- `parked`
-    deliberately does not count here (a pane stepped away from it, it is no
-    longer blocking the row the way an `open` one is). Used by RunRow's
-    trailing badge slot. */
-export function hasOpenGate(
-  gates: GateRow[] | undefined,
-  runId: string
-): boolean {
-  const subject = `run:${runId}`;
-  return (
-    gates?.some(g => g.subject === subject && g.status === 'open') ?? false
-  );
-}
+export { runGateMarker, type RunGateMarker } from '../../shared/gate-waiting';
 
 /**
  * Every gate RunDetail's page should render for this run, most recently

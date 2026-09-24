@@ -637,15 +637,30 @@ describe('RunRow blocked badge', () => {
     expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
   });
 
-  it('does not show the blocked badge for a parked gate', async () => {
+  it('shows the blocked badge for a parked gate', async () => {
     gatesGet.mockResolvedValue(
       gatesResponse([gateRow({ subject: 'run:run-1', status: 'parked' })])
     );
 
-    const { queryClient } = renderRow(baseRun);
+    renderRow(baseRun);
 
-    await waitForGatesSettled(queryClient);
-    expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('gate-blocked-badge')).toHaveTextContent(
+      'blocked'
+    );
+  });
+
+  it('labels a herd-owned gate as waiting on shepherd', async () => {
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({ subject: 'run:run-1', status: 'open', owner: 'herd:h1' }),
+      ])
+    );
+
+    renderRow(baseRun);
+
+    expect(await screen.findByTestId('gate-blocked-badge')).toHaveTextContent(
+      'waiting on shepherd'
+    );
   });
 
   it("does not show the blocked badge for another run's open gate", async () => {

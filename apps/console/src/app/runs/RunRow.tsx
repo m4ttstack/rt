@@ -22,7 +22,7 @@ import type { BoardRun } from './bands';
 import { LivenessChip } from './LivenessChip';
 import { repoLabel } from './repoLabel';
 import { StageProgress } from './StageProgress';
-import { hasOpenGate, useGates } from './useGates';
+import { runGateMarker, useGates } from './useGates';
 
 function formatElapsed(startedAt: number, endedAt: number | null): string {
   const ms = Math.max(0, (endedAt ?? Date.now()) - startedAt);
@@ -83,7 +83,7 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
   // One shared ['gates'] cache across every row on the board (React Query
   // dedupes by key), so calling the hook per-row costs no extra requests.
   const gatesQuery = useGates();
-  const blocked = hasOpenGate(gatesQuery.data?.gates, run.id);
+  const marker = runGateMarker(gatesQuery.data?.gates, run.id);
 
   const title = enrichment?.ticket?.title;
   const mr = enrichment?.mr;
@@ -223,9 +223,13 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
         justify="flex-end"
         style={{ width: 280, flexShrink: 0 }}
       >
-        {blocked && (
-          <Badge color="bad" variant="light" data-testid="gate-blocked-badge">
-            blocked
+        {marker && (
+          <Badge
+            color={marker === 'blocked' ? 'bad' : 'gray'}
+            variant="light"
+            data-testid="gate-blocked-badge"
+          >
+            {marker === 'blocked' ? 'blocked' : 'waiting on shepherd'}
           </Badge>
         )}
         <LivenessChip run={run} />

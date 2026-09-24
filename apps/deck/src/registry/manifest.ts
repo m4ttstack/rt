@@ -84,6 +84,7 @@ export function ingestManifest(name: string): void {
           displayName: deck.manifest.displayName,
           description: deck.manifest.description,
           icon: deck.manifest.icon,
+          badge: deck.manifest.badge,
         }
       : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
   if (!manifest) {
@@ -93,13 +94,15 @@ export function ingestManifest(name: string): void {
     if (
       record.displayName !== undefined ||
       record.description !== undefined ||
-      record.icon !== undefined
+      record.icon !== undefined ||
+      record.badge !== undefined
     ) {
       removeIcon(name);
       const {
         displayName: _displayName,
         description: _description,
         icon: _icon,
+        badge: _badge,
         ...rest
       } = record;
       putRecord(rest);
@@ -119,11 +122,15 @@ export function ingestManifest(name: string): void {
   try {
     mkdirSync(iconsDir(), { recursive: true });
     writeFileSync(iconPathFor(name), svg);
+    const { badge: _staleBadge, ...base } = record;
     putRecord({
-      ...record,
+      ...base,
       displayName: manifest.displayName,
       description: manifest.description,
       icon: { ext: 'svg' },
+      ...('badge' in manifest && manifest.badge
+        ? { badge: manifest.badge }
+        : {}),
     });
   } catch {
     return;
