@@ -15,14 +15,23 @@ extension EnvironmentValues {
 }
 
 enum TriagePalette {
-    static func card(_ scheme: ColorScheme) -> Color { scheme == .dark ? Color.white.opacity(0.035) : Color.white }
     static func tint(_ tone: TriageTone) -> Color {
         switch tone {
-        case .safe: return .green
-        case .look: return .orange
-        case .risk: return .red
-        case .busy: return .accentColor
-        case .held, .broken, .kept: return .secondary
+        case .safe: return WT.green
+        case .look: return WT.amber
+        case .risk: return WT.red
+        case .busy: return WT.accent
+        case .held: return WT.textSecondary
+        case .broken, .kept: return WT.textMuted
+        }
+    }
+    static func well(_ tone: TriageTone) -> Color {
+        switch tone {
+        case .safe: return WT.greenFill
+        case .look: return WT.amberFill
+        case .risk: return WT.redFill
+        case .busy: return WT.accentFill
+        case .held, .broken, .kept: return WT.neutralFill
         }
     }
     static func icon(_ tone: TriageTone) -> String {
@@ -36,8 +45,14 @@ enum TriagePalette {
         case .kept: return "bookmark"
         }
     }
-    static func mr(_ tone: MRTone) -> Color {
-        switch tone { case .merged: return .blue; case .closed: return .red; case .open: return .green }
+    static func mrText(_ tone: MRTone) -> Color {
+        switch tone { case .merged: return WT.accentText; case .closed: return WT.red; case .open: return WT.green }
+    }
+    static func mrFill(_ tone: MRTone) -> Color {
+        switch tone { case .merged: return WT.accentFill; case .closed: return WT.redFill; case .open: return WT.greenFill }
+    }
+    static func mrIcon(_ tone: MRTone) -> String {
+        switch tone { case .merged: return "arrow.triangle.merge"; case .closed: return "xmark.circle"; case .open: return "arrow.triangle.pull" }
     }
 }
 
@@ -123,6 +138,7 @@ struct WorktreePanelView: View {
             footer
         }
         .frame(minWidth: 640, minHeight: isSnapshot ? 0 : 420)
+        .background(WT.window)
         .environment(\.triageSnapshot, isSnapshot)
         .onAppear { controller.startPolling() }
         .onDisappear { controller.stopPolling() }
@@ -144,7 +160,7 @@ struct WorktreePanelView: View {
             }
             if !controller.isLoading && controller.rows.isEmpty {
                 Text("Nothing stuck. Every merged worktree was cleaned up.")
-                    .foregroundStyle(.secondary).padding(24)
+                    .foregroundStyle(WT.textSecondary).padding(24)
             }
         }
         .padding(.horizontal, 12)
@@ -154,9 +170,9 @@ struct WorktreePanelView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(headline).font(.system(size: 21, weight: .semibold))
+                Text(headline).font(.system(size: 21, weight: .semibold)).foregroundStyle(WT.text)
                 Text("Their MR merged or closed, but something kept them from being cleaned up.")
-                    .font(.system(size: 13.5)).foregroundStyle(.secondary)
+                    .font(.system(size: 13.5)).foregroundStyle(WT.textSecondary)
             }
             Spacer(minLength: 0)
             bulkButton
@@ -187,10 +203,10 @@ struct WorktreePanelView: View {
     private var footer: some View {
         HStack(spacing: 6) {
             if let s = controller.status {
-                Text(s.text).foregroundStyle(s.isError ? Color.red : Color.secondary)
+                Text(s.text).foregroundStyle(s.isError ? WT.red : WT.textSecondary)
             } else {
-                Image(systemName: "trash").foregroundStyle(.tertiary)
-                Text("Disposed worktrees stay restorable for 14 days.").foregroundStyle(.tertiary)
+                Image(systemName: "trash").foregroundStyle(WT.textTertiary)
+                Text("Disposed worktrees stay restorable for 14 days.").foregroundStyle(WT.textTertiary)
             }
             Spacer()
         }
@@ -205,12 +221,12 @@ struct WorktreePanelView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .rotationEffect(.degrees(keptOpen ? 90 : 0))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WT.textTertiary)
                 Text("KEPT (\(rows.count))")
                     .font(.system(size: 11.5, weight: .semibold)).tracking(0.6)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WT.textTertiary)
                 if !keptOpen {
-                    Text(Self.keptSummary(rows)).font(.system(size: 13)).foregroundStyle(.tertiary)
+                    Text(Self.keptSummary(rows)).font(.system(size: 13)).foregroundStyle(WT.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -278,7 +294,7 @@ struct TriageSectionLabel: View {
     var body: some View {
         Text(text)
             .font(.system(size: 11.5, weight: .semibold)).tracking(0.6)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(WT.textTertiary)
             .padding(.leading, 12).padding(.top, 14).padding(.bottom, 2)
     }
 }
@@ -294,9 +310,9 @@ struct TriageBannerView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "powerplug").foregroundStyle(.orange)
+            Image(systemName: "powerplug").foregroundStyle(WT.amber)
             Text("Merged worktrees aren't cleaned up in \(repoLabel): \(why)")
-                .foregroundStyle(.orange)
+                .foregroundStyle(WT.amber)
             Spacer(minLength: 8)
             Button(banner.reason == "no-token" ? "Connect \(forgeName)" : "Open settings") {
                 NotificationCenter.default.post(name: .rtShowSettings, object: nil)
@@ -305,7 +321,7 @@ struct TriageBannerView: View {
         }
         .font(.system(size: 13))
         .padding(.leading, 14).padding(.trailing, 10).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(WT.amberFill))
         .padding(.top, 8)
     }
 }
@@ -340,7 +356,6 @@ struct TriageRowView: View {
     var forceHover = false
     var onAction: (String) -> Void = { _ in }
 
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.triageSnapshot) private var isSnapshot
     @State private var hovering = false
     @State private var menuHover = false
@@ -361,22 +376,18 @@ struct TriageRowView: View {
             trailing
         }
         .padding(.leading, 14).padding(.trailing, 12).padding(.vertical, 13)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(TriagePalette.card(scheme))
-                .overlay(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(lifted ? 0.025 : 0)))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(lifted ? 0.20 : 0.11)))
+        .background(RoundedRectangle(cornerRadius: 10).fill(lifted ? WT.cardHover : WT.card))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(lifted ? WT.borderStrong : WT.border))
         .onHover { hovering = $0 }
     }
 
     private var icon: some View {
-        let tint = kept ? Color.secondary : TriagePalette.tint(tone)
+        let t: TriageTone = kept ? .kept : tone
         return ZStack {
-            Circle().fill(tint.opacity(0.13))
+            Circle().fill(TriagePalette.well(t))
             Image(systemName: TriagePalette.icon(tone))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(tint)
+                .foregroundStyle(TriagePalette.tint(t))
         }
         .frame(width: 30, height: 30)
     }
@@ -385,21 +396,21 @@ struct TriageRowView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(TriageLabels.title(row))
                 .font(.system(size: 14.5, weight: .semibold))
-                .foregroundStyle(row.group == "broken" ? Color.secondary : Color.primary)
+                .foregroundStyle(row.group == "broken" ? WT.textBroken : WT.text)
                 .lineLimit(1)
             HStack(spacing: 6) {
                 Text(row.tree).font(.system(size: 13, weight: .medium))
                 Text(row.branch.map { "\(row.repoLabel) · \($0)" } ?? row.repoLabel)
                     .font(.system(size: 12.5, design: .monospaced))
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(WT.textSecondary)
             .lineLimit(1)
             if row.group != "broken" {
                 chips
             }
             Text(row.verdict)
                 .font(.system(size: 13))
-                .foregroundStyle(kept ? Color.secondary.opacity(0.75) : Color.secondary)
+                .foregroundStyle(kept ? WT.textMuted : WT.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -410,13 +421,13 @@ struct TriageRowView: View {
             if let mr = row.mr {
                 TriageMRChip(mr: mr, repo: row.repo, neutral: kept)
             } else {
-                TriageChip(text: "no PR", icon: "arrow.triangle.pull")
+                TriageChip(text: "no PR", icon: "circle.slash", muted: kept)
             }
             let push = TriageLabels.push(row.push)
             TriageChip(text: push.text, icon: push.icon,
-                       iconTint: row.push.kind == "unpushed" && !kept ? .red : nil)
+                       iconTint: row.push.kind == "unpushed" && !kept ? WT.red : nil, muted: kept)
             if let ticket = row.ticket {
-                TriageTicketChip(ticket: ticket)
+                TriageTicketChip(ticket: ticket, muted: kept)
             }
         }
     }
@@ -432,7 +443,7 @@ struct TriageRowView: View {
                     .buttonStyle(TriageButtonStyle(primary: primary == "push-branch"))
                     .disabled(primaryDisabled)
             } else if tone == .busy {
-                Text("next pass").font(.system(size: 12.5)).foregroundStyle(.tertiary)
+                Text("next pass").font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
             }
             moreMenu
                 .disabled(busy)
@@ -443,9 +454,9 @@ struct TriageRowView: View {
     private var menuLabel: some View {
         Image(systemName: "ellipsis")
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(WT.textSecondary)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(menuHover || forceHover ? 0.06 : 0)))
+            .background(RoundedRectangle(cornerRadius: 6).fill(menuHover || forceHover ? WT.controlHover : Color.clear))
             .contentShape(Rectangle())
     }
 
@@ -490,20 +501,22 @@ struct TriageChip: View {
     let text: String
     var icon: String? = nil
     var iconTint: Color? = nil
+    var muted = false
     var body: some View {
+        let ink = muted ? WT.textMuted : WT.textSecondary
         HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.system(size: 10.5)).foregroundStyle(iconTint ?? Color.secondary) }
+            if let icon { Image(systemName: icon).font(.system(size: 10.5)).foregroundStyle(iconTint ?? ink) }
             Text(text)
         }
         .font(.system(size: 12))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(ink)
         .padding(.horizontal, 6).padding(.vertical, 1.5)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(WT.neutralFill))
     }
 }
 
-/// Opens `url` on click and shows the underline, arrow and pointing-hand
-/// cursor on hover; a nil `url` is a plain, inert chip.
+/// Opens `url` on click and shows the arrow and pointing-hand cursor on
+/// hover; a nil `url` is a plain, inert chip.
 private struct ChipLink: ViewModifier {
     let url: String?
     @Binding var hovering: Bool
@@ -530,7 +543,9 @@ struct TriageMRChip: View {
     var forceHover = false
     @State private var hovering = false
 
-    private var tint: Color { neutral ? .secondary : TriagePalette.mr(MRTone.of(mr.state)) }
+    private var tone: MRTone { MRTone.of(mr.state) }
+    private var ink: Color { neutral ? WT.textMuted : TriagePalette.mrText(tone) }
+    private var fill: Color { neutral ? WT.neutralFill : TriagePalette.mrFill(tone) }
     private var hot: Bool { (forceHover || hovering) && mr.url != nil }
     private var text: String {
         let date = TriageLabels.shortDate(mr.at).map { " \($0)" } ?? ""
@@ -539,14 +554,14 @@ struct TriageMRChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: mr.state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 10.5))
-            Text(text).underline(hot)
+            Image(systemName: TriagePalette.mrIcon(tone)).font(.system(size: 10.5))
+            Text(text)
             if hot { Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .semibold)) }
         }
         .font(.system(size: 12))
-        .foregroundStyle(tint)
+        .foregroundStyle(ink)
         .padding(.horizontal, 6).padding(.vertical, 1.5)
-        .background(RoundedRectangle(cornerRadius: 4).fill(tint.opacity(hot ? 0.18 : 0.12)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(fill))
         .modifier(ChipLink(url: mr.url, hovering: $hovering))
     }
 }
@@ -554,6 +569,7 @@ struct TriageMRChip: View {
 struct TriageTicketChip: View {
     let ticket: TriageRow.Ticket
     var forceHover = false
+    var muted = false
     @State private var hovering = false
 
     private var hot: Bool { (forceHover || hovering) && ticket.url != nil }
@@ -561,13 +577,13 @@ struct TriageTicketChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "ticket").font(.system(size: 10.5))
-            Text(ticket.stateName.map { "\(ticket.identifier) · \($0)" } ?? ticket.identifier).underline(hot)
+            Text(ticket.stateName.map { "\(ticket.identifier) · \($0)" } ?? ticket.identifier)
             if hot { Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .semibold)) }
         }
         .font(.system(size: 12))
-        .foregroundStyle(hot ? Color.primary : Color.secondary)
+        .foregroundStyle(hot ? WT.text : muted ? WT.textMuted : WT.textSecondary)
         .padding(.horizontal, 6).padding(.vertical, 1.5)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(hot ? 0.22 : 0.12)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(hot ? WT.neutralFillHover : WT.neutralFill))
         .modifier(ChipLink(url: ticket.url, hovering: $hovering))
     }
 }
@@ -596,7 +612,6 @@ private struct TriageButtonBody: View {
     let forced: TriageInteraction?
     let large: Bool
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var scheme
     @State private var hovering = false
 
     private var state: TriageInteraction {
@@ -617,40 +632,42 @@ private struct TriageButtonBody: View {
         .lineLimit(1)
         .fixedSize()
         .padding(.horizontal, large ? 13 : 11).padding(.vertical, large ? 7 : 5.5)
-        .foregroundStyle(primary ? Color.white : (s == .busy ? Color.secondary : Color.primary))
+        .foregroundStyle(ink(s))
         .background(RoundedRectangle(cornerRadius: 6).fill(fill(s)))
-        .overlay(RoundedRectangle(cornerRadius: 6).fill(overlay(s)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(border(s)))
-        .opacity(s == .disabled ? 0.45 : 1)
+        .opacity(primary && s == .disabled ? 0.45 : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
 
-    private func fill(_ s: TriageInteraction) -> Color {
-        if primary { return .accentColor }
-        return TriagePalette.card(scheme)
+    private func ink(_ s: TriageInteraction) -> Color {
+        if primary { return .white }
+        switch s {
+        case .busy: return WT.textSecondary
+        case .disabled: return WT.textDisabled
+        default: return WT.text
+        }
     }
 
-    /// Light hover darkens and dark hover lightens, which `Color.primary`
-    /// gives for free in both schemes.
-    private func overlay(_ s: TriageInteraction) -> Color {
+    private func fill(_ s: TriageInteraction) -> Color {
         if primary {
             switch s {
-            case .hover: return Color.primary.opacity(scheme == .dark ? 0.14 : 0.12)
-            case .pressed: return Color.black.opacity(scheme == .dark ? 0.12 : 0.24)
-            default: return .clear
+            case .hover: return WT.accentHover
+            case .pressed: return WT.accentPressed
+            default: return WT.accent
             }
         }
         switch s {
-        case .hover: return Color.primary.opacity(0.05)
-        case .pressed: return Color.primary.opacity(0.10)
-        default: return .clear
+        case .hover: return WT.controlHover
+        case .pressed: return WT.controlPressed
+        case .disabled: return WT.controlDisabled
+        default: return WT.card
         }
     }
 
     private func border(_ s: TriageInteraction) -> Color {
         if primary { return .clear }
-        return Color.primary.opacity(s == .hover || s == .pressed ? 0.22 : 0.12)
+        return s == .hover || s == .pressed ? WT.borderStrong : WT.border
     }
 }
 

@@ -7,7 +7,6 @@ struct WorktreeReviewSheet: View {
     /// Tells the panel which verb the row is now busy with.
     let onStart: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.triageSnapshot) private var isSnapshot
     @State private var files: [TriageDiffFile]
     @State private var loaded: Bool
@@ -35,27 +34,24 @@ struct WorktreeReviewSheet: View {
         return "\(place). \(lead.isEmpty ? tail.prefix(1).uppercased() + tail.dropFirst() : lead + tail)"
     }
 
-    private var diffFill: Color { scheme == .dark ? Color.black.opacity(0.22) : Color.primary.opacity(0.035) }
-    private var barFill: Color { scheme == .dark ? Color.black.opacity(0.12) : Color.primary.opacity(0.045) }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Review uncommitted changes").font(.system(size: 17, weight: .semibold))
-                Text(subtitle).font(.system(size: 13.5)).foregroundStyle(.secondary)
+                Text("Review uncommitted changes").font(.system(size: 17, weight: .semibold)).foregroundStyle(WT.text)
+                Text(subtitle).font(.system(size: 13.5)).foregroundStyle(WT.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 14)
-            Divider()
+            SheetRule()
             if isSnapshot {
                 fileList
             } else {
                 ScrollView { fileList }.frame(minHeight: 280, maxHeight: 520)
             }
-            Divider()
+            SheetRule()
             HStack(spacing: 8) {
                 Text("Discarded files stay in the trash for 14 days.")
-                    .font(.system(size: 12.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
                     .lineLimit(1).layoutPriority(-1)
                 Spacer(minLength: 8)
                 Button("Keep") { onStart("keep"); controller.keep(row); dismiss() }
@@ -68,7 +64,7 @@ struct WorktreeReviewSheet: View {
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
         .frame(width: 680)
-        .background(TriagePalette.card(scheme))
+        .background(WT.card)
         .task {
             guard !loaded else { return }
             files = await controller.diff(row)
@@ -80,30 +76,30 @@ struct WorktreeReviewSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             if loaded && files.isEmpty {
                 Text("No uncommitted changes left to show.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary).padding(20)
+                    .font(.system(size: 13)).foregroundStyle(WT.textSecondary).padding(20)
             }
             ForEach(files) { f in
                 HStack(spacing: 8) {
                     Image(systemName: f.status == "untracked" ? "doc.badge.plus" : "doc.text")
-                        .foregroundStyle(.secondary)
-                    Text(Self.shortPath(f.path)).font(.system(size: 12.5, design: .monospaced))
+                        .foregroundStyle(WT.textSecondary)
+                    Text(Self.shortPath(f.path)).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(WT.text)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 12)
-                    Text(Self.stat(f)).font(.system(size: 12.5)).foregroundStyle(.tertiary)
+                    Text(Self.stat(f)).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
                 }
                 .padding(.horizontal, 20).padding(.vertical, 9)
-                .background(barFill)
-                Divider().opacity(0.6)
+                .background(WT.neutralFill)
+                SheetRule()
                 VStack(alignment: .leading, spacing: 0) {
                     DiffBody(text: f.diff, untracked: f.status == "untracked")
-                    if f.truncated {
-                        Text("More lines not shown").font(.system(size: 12.5)).foregroundStyle(.tertiary)
+                    if let more = Self.moreLines(f) {
+                        Text(more).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
                             .padding(.horizontal, 20).padding(.top, 6)
                     }
                 }
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(diffFill)
+                .background(WT.neutralFill)
             }
         }
     }
@@ -116,14 +112,27 @@ struct WorktreeReviewSheet: View {
         return (parts.prefix(3) + ["…", parts.last!]).joined(separator: "/")
     }
 
-    /// The `+N` count is only exact when the whole diff arrived.
+    /// `untracked · +97`, `modified · +3 −1`; a zero side is left out. A
+    /// daemon without the counts leaves them out entirely rather than showing
+    /// a count taken from the capped text.
     static func stat(_ f: TriageDiffFile) -> String {
-        guard !f.truncated else { return f.status }
-        let lines = DiffBody.parse(f.diff, untracked: f.status == "untracked")
-        let added = lines.filter { $0.marker == "+" }.count, removed = lines.filter { $0.marker == "-" }.count
-        let parts = [added > 0 ? "+\(added)" : nil, removed > 0 ? "-\(removed)" : nil].compactMap { $0 }
-        return ([f.status] + parts).joined(separator: " · ")
+        let parts = [(f.added ?? 0) > 0 ? "+\(f.added!)" : nil, (f.removed ?? 0) > 0 ? "\u{2212}\(f.removed!)" : nil]
+        return ([f.status] + parts.compactMap { $0 }).joined(separator: " · ")
     }
+
+    static func moreLines(_ f: TriageDiffFile) -> String? {
+        guard f.truncated else { return nil }
+        guard let total = f.totalLines else { return "More lines not shown" }
+        var shown = f.diff.components(separatedBy: "\n")
+        if shown.last == "" { shown.removeLast() }
+        let more = total - shown.count
+        guard more > 0 else { return nil }
+        return more == 1 ? "1 more line" : "\(more) more lines"
+    }
+}
+
+private struct SheetRule: View {
+    var body: some View { Rectangle().fill(WT.border).frame(height: 1) }
 }
 
 struct DiffBody: View {
@@ -175,17 +184,18 @@ struct DiffBody: View {
             ForEach(Self.parse(text, untracked: untracked)) { line in
                 if line.isHunk {
                     Text(line.text)
-                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.tertiary)
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(WT.textTertiary)
                         .padding(.leading, 20).padding(.vertical, 3)
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text(line.number.map(String.init) ?? "")
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(WT.textTertiary)
                             .frame(width: 22, alignment: .trailing)
                         Text(line.marker.map(String.init) ?? " ")
-                            .foregroundStyle(line.marker == "+" ? Color.green : line.marker == "-" ? Color.red : Color.secondary)
+                            .foregroundStyle(line.marker == "+" ? WT.green : line.marker == "-" ? WT.red : WT.textTertiary)
                             .frame(width: 30, alignment: .center)
                         Text(line.text.isEmpty ? " " : line.text)
+                            .foregroundStyle(WT.text)
                             .lineLimit(1)
                     }
                     .font(.system(size: 12.5, design: .monospaced))

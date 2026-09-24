@@ -56,7 +56,7 @@ enum WorktreeSnapshot {
                 .environment(\.triageSnapshot, true)
                 .frame(width: width)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(WT.window)
                 .environment(\.colorScheme, scheme)
             let r = ImageRenderer(content: content)
             r.scale = 2
@@ -71,13 +71,13 @@ enum WorktreeSnapshot {
 #if DEBUG
 private struct StateCaption: View {
     let text: String
-    var body: some View { Text(text).font(.system(size: 12.5)).foregroundStyle(.secondary) }
+    var body: some View { Text(text).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary) }
 }
 
 private struct GroupTitle: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11.5, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
+        Text(text).font(.system(size: 11.5, weight: .semibold)).tracking(0.6).foregroundStyle(WT.textTertiary)
     }
 }
 
@@ -98,7 +98,7 @@ struct InteractionStatesSnapshot: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Interaction states").font(.system(size: 21, weight: .semibold))
+            Text("Interaction states").font(.system(size: 21, weight: .semibold)).foregroundStyle(WT.text)
                 .padding(.bottom, 28)
 
             GroupTitle(text: "BUTTONS").padding(.bottom, 10)

@@ -7,6 +7,11 @@ struct TriageDiffFile: Decodable, Identifiable {
     let status: String
     let diff: String
     let truncated: Bool
+    /// Counted over the whole diff before the daemon's line cap; nil from a
+    /// daemon older than the counts.
+    let added: Int?
+    let removed: Int?
+    let totalLines: Int?
     var id: String { path }
 }
 
