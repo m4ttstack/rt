@@ -320,9 +320,20 @@ describe("accountRows — account.switchboard", () => {
       "account.switchboard",
     );
     expect(r.status).toBe("error");
-    expect(r.detail).toContain('your team now declares "https://sw-b.example.com"');
+    expect(r.detail).toContain('you confirmed "https://sw-a.example.com", this team declares "https://sw-b.example.com"');
     expect(r.action?.type).toBe("connect");
     expect(r.action?.type === "connect" ? r.action.fields[0]?.value : null).toBe("https://sw-b.example.com");
+  });
+
+  test("a confirmed URL that differs from the declared one only by a trailing slash is the same switchboard: re-check, not Confirm", async () => {
+    const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
+    const fetch = async () => ({ status: 0, body: "", headers: {} });
+    const r = await pickRow(
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets(), null, { switchboardUrl: "https://sw.example.com/" }),
+      "account.switchboard",
+    );
+    expect(r.status).toBe("error");
+    expect(r.action).toEqual({ type: "run", label: "Re-check", verb: ["setup", "status"] });
   });
 
   test("host user-confirmed and reachable -> no action", async () => {

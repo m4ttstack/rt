@@ -741,6 +741,22 @@ describe("joinRedeem", () => {
     expect(calls.userSettingWrites).toEqual([]);
   });
 
+  test("a latch left empty or not https by a hand edit counts as unset, so the join fills it", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({
+        "mattstack.integrations": { switchboard: { url: "https://sb.test" } },
+        "rt.integrations": { forgeHost: "gitlab.example.com", switchboardUrl: "" },
+      }),
+    });
+
+    await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(calls.userSettingWrites).toEqual([{ key: "rt.integrations", value: { forgeHost: "gitlab.example.com", switchboardUrl: "https://sb.test" } }]);
+  });
+
   test("a switchboard the user confirmed to a different URL is never overwritten: the join warns with the connect command and peers anyway", async () => {
     const p = redeemProbes();
     const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };

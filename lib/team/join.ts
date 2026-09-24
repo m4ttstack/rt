@@ -276,6 +276,10 @@ function defaultWarn(message: string): void {
   console.error(message);
 }
 
+function sameUrl(a: string, b: string): boolean {
+  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+}
+
 /** Writes the URL the stored switchboard token belongs to where the board looks for it. False (with a warning) when the write fails, so peering is never reported applied for a board that cannot reach its switchboard. */
 function pointBoardAt(seams: JoinRedeemSeams, url: string): boolean {
   try {
@@ -301,9 +305,11 @@ function confirmSwitchboardForRt(seams: JoinRedeemSeams, url: string): void {
   const remedy = `rt setup switchboard connect --host ${url}`;
   try {
     const overrides = readUserIntegrationOverrides({ read: seams.read, warn: seams.warn });
-    if (overrides.switchboardUrl === url) return;
-    if (overrides.switchboardUrl !== undefined) {
-      seams.warn(`switchboard: rt's setup rows are confirmed for ${overrides.switchboardUrl}, not this team's ${url}; leaving that alone. To switch: ${remedy}`);
+    // A latch the rows themselves would ignore (empty, not https) is as good as unset.
+    const confirmed = overrides.switchboardUrl && isValidHttpsUrl(overrides.switchboardUrl) ? overrides.switchboardUrl : undefined;
+    if (confirmed !== undefined && sameUrl(confirmed, url)) return;
+    if (confirmed !== undefined) {
+      seams.warn(`switchboard: rt's setup rows are confirmed for ${confirmed}, not this team's ${url}; leaving that alone. To switch: ${remedy}`);
       return;
     }
     seams.writeUserSetting("rt.integrations", { ...overrides, switchboardUrl: url });
