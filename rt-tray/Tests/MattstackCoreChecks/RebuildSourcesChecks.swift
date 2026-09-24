@@ -14,6 +14,19 @@ private func payload(_ trees: [[String: Any]]) -> Data {
 }
 
 let rebuildSourcesChecks: [Check] = [
+    Check("trees whose MR merged or closed, or that rt marked disposable, are not offered") { c in
+        var merged = tree("merged-one", kind: "ephemeral", active: "2026-09-24T10:00:00Z")
+        merged["mr"] = ["iid": 1, "state": "merged"]
+        var closed = tree("closed-one", kind: "ephemeral", active: "2026-09-24T10:00:00Z")
+        closed["mr"] = ["iid": 2, "state": "closed"]
+        var disposable = tree("dirty-one", kind: "ephemeral", active: "2026-09-24T10:00:00Z")
+        disposable["state"] = "disposable"
+        var open = tree("open-one", kind: "ephemeral", active: "2026-09-24T10:00:00Z")
+        open["mr"] = ["iid": 3, "state": "opened"]
+        let fresh = tree("fresh-one", kind: "ephemeral", active: "2026-09-24T10:00:00Z")
+        let names = RebuildSources.parse(payload([merged, closed, disposable, open, fresh]), repoName: rtRepo).map(\.name)
+        c.expectEqual(names, ["open-one", "fresh-one"])
+    },
     Check("rebuild sources are the rt repo's trees only, from the daemon's worktree:list payload") { c in
         let data = payload([
             tree("repo-tools", kind: "main", active: "2026-09-24T15:00:00Z"),
