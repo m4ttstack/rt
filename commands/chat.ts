@@ -246,7 +246,7 @@ function userHostHandle(): string {
   return slugify(`${user}-${hostname()}`);
 }
 
-/** herdr pane title via HERDR_PANE_ID — a sync `herdr` spawn, same convention as lib/herdr-launch.ts; degrades to null on any failure (missing herdr, stale pane, non-JSON). */
+/** herdr pane title via HERDR_PANE_ID, a sync `herdr pane get` spawn; degrades to null on any failure (missing herdr, stale pane, non-JSON). */
 function herdrPaneHandle(): string | null {
   const paneId = process.env.HERDR_PANE_ID;
   if (!paneId) return null;
