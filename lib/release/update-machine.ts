@@ -233,32 +233,42 @@ async function waitForNoPids(seams: UpdateMachineSeams, pattern: string, attempt
  * `rm -rf` of its own destination: a stale aside from a prior failed run
  * would otherwise break the first move, and a partially-ditto'd destPath
  * would break the rollback move the same way. Returns null on success, or
- * an error detail on failure.
+ * an error detail plus what is left at destPath: the previous app, the new
+ * one, or nothing safe to launch (a partial copy, or nothing at all).
  */
-async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPath: string): Promise<string | null> {
+type ReplaceFailure = { error: string; atDest: "previous" | "new" | "unsafe" };
+
+async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPath: string): Promise<ReplaceFailure | null> {
   const asidePath = `${destPath}.update-machine-old`;
 
   const clearAside = await seams.exec(["rm", "-rf", asidePath]);
-  if (clearAside.exitCode !== 0) return `could not clear a stale aside copy at ${asidePath}: ${execTail(clearAside)}`;
+  if (clearAside.exitCode !== 0) {
+    return { error: `could not clear a stale aside copy at ${asidePath}: ${execTail(clearAside)}`, atDest: "previous" };
+  }
 
   const mv = await seams.exec(["mv", destPath, asidePath]);
-  if (mv.exitCode !== 0) return `could not move the current app aside: ${execTail(mv)}`;
+  if (mv.exitCode !== 0) return { error: `could not move the current app aside: ${execTail(mv)}`, atDest: "previous" };
 
   const ditto = await seams.exec(["ditto", sourcePath, destPath]);
   if (ditto.exitCode !== 0) {
     const clearDest = await seams.exec(["rm", "-rf", destPath]);
     if (clearDest.exitCode !== 0) {
-      return `ditto failed and the broken app at ${destPath} could not be cleared to roll back (the previous app is at ${asidePath}): ${execTail(clearDest)}`;
+      return {
+        error: `ditto failed and the broken app at ${destPath} could not be cleared to roll back (the previous app is at ${asidePath}): ${execTail(clearDest)}`,
+        atDest: "unsafe",
+      };
     }
     const rollback = await seams.exec(["mv", asidePath, destPath]);
     if (rollback.exitCode !== 0) {
-      return `ditto failed and rollback failed (the previous app is at ${asidePath}): ${execTail(rollback)}`;
+      return { error: `ditto failed and rollback failed (the previous app is at ${asidePath}): ${execTail(rollback)}`, atDest: "unsafe" };
     }
-    return `ditto failed, restored the previous app: ${execTail(ditto)}`;
+    return { error: `ditto failed, restored the previous app: ${execTail(ditto)}`, atDest: "previous" };
   }
 
   const cleanup = await seams.exec(["rm", "-rf", asidePath]);
-  if (cleanup.exitCode !== 0) return `replaced ${destPath}, but could not remove the aside copy at ${asidePath}: ${execTail(cleanup)}`;
+  if (cleanup.exitCode !== 0) {
+    return { error: `replaced ${destPath}, but could not remove the aside copy at ${asidePath}: ${execTail(cleanup)}`, atDest: "new" };
+  }
   return null;
 }
 
@@ -354,8 +364,8 @@ async function runProdAppLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pr
   try {
     if (!mountPoint) return errorLeg("prod-app", PROD_APP_LABEL, "hdiutil attach succeeded but its plist named no mount point");
 
-    const replaceErr = await replaceApp(seams, `${mountPoint}/mattstack.app`, PROD_APP_PATH);
-    if (replaceErr) return errorLeg("prod-app", PROD_APP_LABEL, replaceErr);
+    const replaceFailure = await replaceApp(seams, `${mountPoint}/mattstack.app`, PROD_APP_PATH);
+    if (replaceFailure) return errorLeg("prod-app", PROD_APP_LABEL, replaceFailure.error);
 
     return okLeg("prod-app", PROD_APP_LABEL, `${PROD_APP_PATH} replaced with ${ctx.tag} (sha256 verified)`);
   } finally {
@@ -394,13 +404,18 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   }
 
   // Never rebuilds the blessed bundle in place; replaceApp swaps it wholesale.
-  const replaceErr = await replaceApp(seams, `${bundleDir}/rt-tray/mattstack-dev.app`, DEV_APP_PATH);
-  if (replaceErr) {
-    // The running copy was already quit above, so a failed swap reopens
-    // whatever replaceApp left at DEV_APP_PATH rather than leaving it closed.
+  const failure = await replaceApp(seams, `${bundleDir}/rt-tray/mattstack-dev.app`, DEV_APP_PATH);
+  if (failure) {
+    // The running copy was already quit above, so a failed swap reopens the
+    // app replaceApp left in place, unless what is there is not safe to launch.
+    if (failure.atDest === "unsafe") {
+      return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; not reopened, ${DEV_APP_PATH} is not safe to launch`);
+    }
+    const which = failure.atDest === "previous" ? "reopened the previous app" : "opened the new app";
     const reopen = await seams.exec(["open", DEV_APP_PATH]);
-    const tail = reopen.exitCode === 0 ? "reopened the previous app" : `reopening ${DEV_APP_PATH} failed: ${execTail(reopen)}`;
-    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${replaceErr}; ${tail}`);
+    const pids = reopen.exitCode === 0 ? await pollForPids(seams, DEV_APP_ANCHOR, 5, 500) : [];
+    const tail = pids.length > 0 ? `${which} (pid ${pids[0]})` : `opening ${DEV_APP_PATH} did not bring up a process${reopen.exitCode === 0 ? "" : `: ${execTail(reopen)}`}`;
+    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; ${tail}`);
   }
 
   const open = await seams.exec(["open", DEV_APP_PATH]);
