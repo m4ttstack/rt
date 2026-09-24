@@ -900,6 +900,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     /// Update the menu bar button with "m" text + colored status dot.
+    /// Dark text on the dev orange (the splash's dev mark color): the pair
+    /// holds its contrast whatever the menu bar shows through.
+    private static let devMarkImage: NSImage = {
+        let text = NSAttributedString(string: "dev", attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .bold),
+            .foregroundColor: NSColor(calibratedRed: 0.10, green: 0.07, blue: 0.02, alpha: 1),
+        ])
+        let textSize = text.size()
+        let size = NSSize(width: ceil(textSize.width) + 8, height: 13)
+        return NSImage(size: size, flipped: false) { rect in
+            NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.28, alpha: 1).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 3.5, yRadius: 3.5).fill()
+            text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2, y: (rect.height - textSize.height) / 2))
+            return true
+        }
+    }()
+
     private func updateMenuBarTitle(status: DaemonHealth) {
         guard let button = statusItem.button else { return }
 
@@ -949,13 +966,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // prod trays are otherwise identical in the menu bar, and mistaking
         // one for the other is how you debug the wrong daemon.
         if BundleFlavor.isDevBuild {
-            let devAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
-                .foregroundColor: NSColor.systemOrange,
-            ]
+            // A filled pill, not colored text: the menu bar is translucent,
+            // so orange text washed out on light wallpapers.
+            let pill = NSTextAttachment()
+            pill.image = Self.devMarkImage
+            let mark = NSMutableAttributedString(attributedString: NSAttributedString(attachment: pill))
+            mark.addAttribute(.baselineOffset, value: -1.5, range: NSRange(location: 0, length: mark.length))
+            attributed.append(NSAttributedString(string: " "))
+            attributed.append(mark)
             // The status button is only ever touched on main.
-            let building = MainActor.assumeIsolated { TrayState.shared.devRebuild == .building }
-            attributed.append(NSAttributedString(string: building ? " dev · building…" : " dev", attributes: devAttrs))
+            if MainActor.assumeIsolated({ TrayState.shared.devRebuild == .building }) {
+                attributed.append(NSAttributedString(string: " building…", attributes: [
+                    .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]))
+            }
         }
 
         // Space
