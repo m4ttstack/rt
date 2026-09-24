@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { skillsCheck, skillsCompile } from "../../../commands/skills.ts";
+import { checkPack, skillsCompile } from "../../../commands/skills.ts";
 import { PIPELINE_STAGES, renderPackFiles } from "../init.ts";
 import { runExpectingCleanExit } from "./helpers.ts";
 
@@ -102,7 +102,7 @@ describe("rt skills init output compiles", () => {
       const body = readFileSync(join(pack, "attachments", stage, "SKILL.md"), "utf8");
       expect(body).not.toContain("{{");
     }
-    const checked = await runExpectingCleanExit(() => skillsCheck(["--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]));
-    expect(checked.exitCode).toBeUndefined();
+    const checked = await checkPack({ packDir: pack, manifest, mattstackDir: ms });
+    expect(checked.drift).toBe(false);
   });
 });
