@@ -55,27 +55,39 @@ public enum NotificationClick {
         return openRoute(url: url, paneId: paneId)
     }
 
-    /// The team slug reaches `rt team members sync --team` as an argument,
-    /// and the tray socket's /notify is unauthenticated, so only rt's own
-    /// slug shape (lib/secrets/store.ts SLUG_PATTERN) may pass.
+    /// The team slug reaches `rt team members sync --team` as an argument
+    /// and the handle reaches the alert, and the tray socket's /notify is
+    /// unauthenticated, so only rt's own shapes may pass: SLUG_PATTERN
+    /// (lib/secrets/store.ts) and HANDLE_PATTERN (lib/team/invite.ts).
     public static func memberJoinedRoute(team: String?, handle: String?) -> Route {
-        guard let team, isTeamSlug(team), let handle, !handle.isEmpty else { return .none }
+        guard let team, isTeamSlug(team), let handle, isHandle(handle) else { return .none }
         return .confirmMembersSync(team: team, handle: handle)
     }
 
+    /// The sync is team-wide: one confirm adds every invitee who has replied, not only the one the banner named.
     public static func membersSyncAlertCopy(team: String, handle: String) -> AlertCopy {
         AlertCopy(
             title: "Add \(handle) to \(team)?",
-            body: "This runs rt team members sync: \(handle)'s key becomes a recipient, the team secrets are re-encrypted for it, and the change is pushed.",
+            body: "This runs rt team members sync for \(team): everyone who has replied to an invite, \(handle) included, becomes a recipient; the team secrets are re-encrypted for them and the change is pushed.",
             confirm: "Add member"
         )
     }
 
+    private static let slugChars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789")
+    private static let handleChars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
     private static func isTeamSlug(_ s: String) -> Bool {
-        guard let first = s.unicodeScalars.first, s.count <= 40 else { return false }
-        let alnum = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789")
-        guard alnum.contains(first) else { return false }
-        return s.unicodeScalars.allSatisfy { alnum.contains($0) || $0 == "-" }
+        matches(s, first: slugChars, rest: slugChars.union(CharacterSet(charactersIn: "-")), maxLength: 40)
+    }
+
+    private static func isHandle(_ s: String) -> Bool {
+        matches(s, first: handleChars, rest: handleChars.union(CharacterSet(charactersIn: "._-")), maxLength: 39)
+    }
+
+    private static func matches(_ s: String, first: CharacterSet, rest: CharacterSet, maxLength: Int) -> Bool {
+        let scalars = Array(s.unicodeScalars)
+        guard let head = scalars.first, scalars.count <= maxLength, first.contains(head) else { return false }
+        return scalars.dropFirst().allSatisfy { rest.contains($0) }
     }
 
     /// The gate_pane category's Open action button, and the default banner

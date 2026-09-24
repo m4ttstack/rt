@@ -14,12 +14,30 @@ let notificationClickChecks: [Check] = [
         c.expectEqual(NotificationClick.memberJoinedRoute(team: nil, handle: "ed"), .none)
         c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: ""), .none)
     },
-    Check("member_joined copy names the handle, the team, and what the sync does") { c in
+    Check("member_joined with a handle that is not a handle routes nowhere too") { c in
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: "ed smith"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: "-ed"), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: String(repeating: "e", count: 40)), .none)
+        c.expectEqual(NotificationClick.memberJoinedRoute(team: "acme", handle: "Ed.Smith-2"), .confirmMembersSync(team: "acme", handle: "Ed.Smith-2"))
+    },
+    Check("member_joined copy names the handle and team, and says the sync adds everyone who replied") { c in
         let copy = NotificationClick.membersSyncAlertCopy(team: "acme", handle: "ed")
         c.expectEqual(copy.title, "Add ed to acme?")
         c.expect(copy.body.contains("rt team members sync"), "body names the verb")
+        c.expect(copy.body.contains("everyone who has replied"), "body says the sync is team-wide")
         c.expect(copy.body.contains("re-encrypt"), "body says secrets are re-encrypted")
         c.expectEqual(copy.confirm, "Add member")
+    },
+    Check("members sync outcome is read from the JSON envelope, not the exit code") { c in
+        let added = Data("{\"contract\":1,\"added\":[\"age1abc\"],\"pending\":[],\"reencrypted\":[\"board.json\"]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: added, handle: "ed"), .added)
+        let pending = Data("{\"added\":[],\"pending\":[\"ed\"],\"reencrypted\":[]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: pending, handle: "ed"), .pending)
+        let someoneElse = Data("{\"added\":[\"age1abc\"],\"pending\":[\"jo\"],\"reencrypted\":[]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: someoneElse, handle: "ed"), .added)
+        let gone = Data("{\"added\":[],\"pending\":[],\"reencrypted\":[]}".utf8)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: gone, handle: "ed"), .notFound)
+        c.expectEqual(MembersSyncOutcome.parse(stdout: Data("not json".utf8), handle: "ed"), .unknown)
     },
     Check("a plain banner click ignores team and handle") { c in
         let r = NotificationClick.bannerRoute(category: "gate", url: nil, paneId: "pane-7", team: "acme", handle: "ed")

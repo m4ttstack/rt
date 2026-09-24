@@ -429,7 +429,9 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         case .focusPane(let paneId):
             _ = HerdrBridge.shared.focusPaneById(paneId)
         case .confirmMembersSync(let team, let handle):
-            confirmMembersSync(team: team, handle: handle)
+            // Off the delegate callback: a modal inside didReceive holds the
+            // completion handler for the whole alert and nests a second click.
+            DispatchQueue.main.async { [weak self] in self?.confirmMembersSync(team: team, handle: handle) }
         case .none:
             break
         }
@@ -464,7 +466,16 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                     TrayLog.warn("members sync failed", ["team": team, "err": copy])
                     fireLocal(title: "Could not add \(handle) to \(team)", message: copy)
                 } else {
-                    fireLocal(title: "Added \(handle) to \(team)", message: "Their key is a recipient now; the team clone pushes on its next cycle.")
+                    switch MembersSyncOutcome.parse(stdout: result.stdout, handle: handle) {
+                    case .added:
+                        fireLocal(title: "Added \(handle) to \(team)", message: "Their key is a recipient now; the team clone pushes on its next cycle.")
+                    case .pending:
+                        fireLocal(title: "\(handle) is not added yet", message: "Their reply could not be used (it did not decrypt, or its key is already a recipient). The invite stays open; rt team members sync will retry.")
+                    case .notFound:
+                        fireLocal(title: "No invite for \(handle) in \(team)", message: "Their invite record is gone, so there was nothing to add. Anyone else who had replied was added.")
+                    case .unknown:
+                        fireLocal(title: "Members sync ran for \(team)", message: "rt did not report a result for \(handle); check rt team members sync --team \(team).")
+                    }
                 }
             } catch {
                 let copy = (error as? RtClientError)?.copy ?? "rt team members sync failed to start."

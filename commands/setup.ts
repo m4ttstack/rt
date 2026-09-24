@@ -1254,7 +1254,7 @@ async function connectSlack(args: string[], deps: ConnectDeps): Promise<void> {
   if (!clientSecret) {
     throw new UserActionableError(
       "slack-app-missing",
-      `the Slack client secret for team "${snapshot.slug}" is not readable on this machine yet: the team owner must run \`rt team members sync\` and push before your key can decrypt team secrets; pull the team clone and try again after that`,
+      `the Slack client secret for team "${snapshot.slug}" is not readable on this machine yet: the team owner must run \`rt team members sync\` first (the team clone pushes it on its next cycle); try again once your clone has pulled that`,
     );
   }
 
