@@ -74,4 +74,66 @@ describe("containmentOf", () => {
     expect(await patchIdenticalToMr(repo, missing, "origin/main", async () => false)).toBe(false);
     expect(await containmentOf(repo, "feat", { state: "merged", sha: missing }, async () => false)).toBe("none");
   });
+
+  test("a rebase merged into main via an explicit merge commit is patch-identical", async () => {
+    sh("git checkout -q -b feat", repo);
+    commit(repo, "a.txt", "a\n");
+    const local = sh("git rev-parse HEAD", repo);
+    // What the forge saw: the same patch rebased onto a moved main, landed
+    // with a real merge commit (GitLab's semi-linear merge method).
+    sh("git checkout -q main", repo);
+    commit(repo, "other.txt", "o\n");
+    sh("git checkout -q -b rebased", repo);
+    sh(`git ${GIT_ID} cherry-pick feat`, repo);
+    const mrSha = sh("git rev-parse HEAD", repo);
+    sh("git checkout -q main", repo);
+    sh(`git ${GIT_ID} merge --no-ff -m merge rebased`, repo);
+    sh("git push -q origin main", repo);
+    sh("git fetch -q origin", repo);
+    sh("git checkout -q feat", repo);
+    expect(sh("git rev-parse HEAD", repo)).toBe(local);
+    expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("patch-identical");
+  });
+
+  test("a rebase merged into main by fast-forward is patch-identical", async () => {
+    sh("git checkout -q -b feat", repo);
+    commit(repo, "a.txt", "a\n");
+    const local = sh("git rev-parse HEAD", repo);
+    // A moved main (so the rebased commit's parent differs from feat's own
+    // parent) landed by fast-forward: mrSha becomes main's tip verbatim.
+    sh("git checkout -q main", repo);
+    commit(repo, "other.txt", "o\n");
+    sh("git checkout -q -b rebased", repo);
+    sh(`git ${GIT_ID} cherry-pick feat`, repo);
+    const mrSha = sh("git rev-parse HEAD", repo);
+    sh("git checkout -q main", repo);
+    sh("git merge -q --ff-only rebased", repo);
+    sh("git push -q origin main", repo);
+    sh("git fetch -q origin", repo);
+    sh("git checkout -q feat", repo);
+    expect(sh("git rev-parse HEAD", repo)).toBe(local);
+    expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("patch-identical");
+  });
+
+  test("a local merge commit that adds content the MR lacks fails closed", async () => {
+    sh("git checkout -q -b feat", repo);
+    commit(repo, "a.txt", "a\n");
+    sh("git checkout -q -b side", repo);
+    sh(`git ${GIT_ID} commit -q --allow-empty -m empty`, repo);
+    sh("git checkout -q feat", repo);
+    sh(`git ${GIT_ID} merge --no-ff --no-commit side`, repo);
+    writeFileSync(join(repo, "sneaky.txt"), "s\n");
+    sh("git add -A", repo);
+    sh(`git ${GIT_ID} commit -q -m merge`, repo);
+
+    // What the forge saw: only the a.txt patch, rebased onto main.
+    sh("git checkout -q -b rebased main", repo);
+    sh(`git ${GIT_ID} cherry-pick feat~1`, repo);
+    const mrSha = sh("git rev-parse HEAD", repo);
+    sh("git push -q origin rebased:main", repo);
+    sh("git fetch -q origin", repo);
+    sh("git checkout -q feat", repo);
+
+    expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("none");
+  });
 });

@@ -239,7 +239,9 @@ export async function disposeTree(
     //    or patch-id check against the TARGET reads "unpushed" for work that
     //    demonstrably merged. But merged-state alone is trusted only when the
     //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead) —
-    //    a reused branch's stale merged entry must fall through to the anchor.
+    //    a reused branch's stale merged entry must fall through to the anchor,
+    //    which a rebased-then-merged branch escapes only via the
+    //    patch-identical check below (see patchIdenticalToMr).
     //    The dirty guard above still blocks uncommitted work, --force still
     //    overrides, and a disposed tree is recoverable from the trash for the
     //    retention window.
