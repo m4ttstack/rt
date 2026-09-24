@@ -278,6 +278,7 @@ describe("driveRelocationAccept", () => {
   test("a prompt whose path cannot be read is stuck, never guessed at", async () => {
     const screen = [
       "╭──────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                    │",
       "│ permission-root relocation to somewhere unquoted │",
       "│ Do you want to proceed?                          │",
       "│ ❯ 1. Yes                                         │",

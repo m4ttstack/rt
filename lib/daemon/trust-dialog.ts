@@ -62,37 +62,60 @@ export type RelocationPrompt =
   | { kind: "accept"; path: string; resolvesTo?: string; keys: Array<"up" | "down" | "enter"> }
   | { kind: "undrivable" };
 
-// Everything this parser reads comes from the LIVE prompt's own box: the
-// last contiguous numbered-options block on screen, plus the body lines
-// above it up to the box top. Transcript text above the box routinely quotes
-// the reason line and the proceed question (a session discussing the very
-// prompt it hit, or these tests on an editor screen), and an ordinary
-// tool-permission prompt asks the same proceed question, so a whole-screen
-// match would let transcript text steer a keypress at an unrelated dialog.
-// The reason template, from the installed binary: `permission-root
-// relocation to "<path>"[ (resolves to "<realpath>")][ (path sanitized for
-// display)] — a model-supplied worktree outside .claude/worktrees/`.
-// \s* between words because the box wrap can drop an inter-word space when
-// lines are rejoined.
+// Everything this parser reads comes from the LIVE prompt's own body: the
+// last contiguous numbered-options block on screen, plus the lines above it
+// up to the dialog's top (a box top, or on Claude Code 2.1.x the full-width
+// rule every permission prompt paints under). Transcript text above that
+// routinely quotes the reason line and the proceed question (a session
+// discussing the very prompt it hit, or these tests on an editor screen), and
+// an ordinary tool-permission prompt asks the same proceed question, so a
+// whole-screen match would let transcript text steer a keypress at an
+// unrelated dialog. The reason template, from the installed binary:
+// `permission-root relocation to "<path>"[ (resolves to "<realpath>")][ (path
+// sanitized for display)] — a model-supplied worktree outside
+// .claude/worktrees/`. \s* between words because the wrap can drop an
+// inter-word space when lines are rejoined.
 const REASON_RE = /permission-root\s*relocation\s*to\s*"(?<path>[^"]*)"/i;
+const REASON_PHRASE_RE = /permission-root\s*relocation\s*to/i;
 const RESOLVES_RE = /\(\s*resolves\s*to\s*"(?<real>[^"]*)"\s*\)/i;
 const PROCEED_RE = /do\s*you\s*want\s*to\s*proceed/i;
 const BOX_TOP_RE = /[╭┌]/;
-// Claude Code 2.1.x paints the prompt under a full-width rule and a "Tool
-// use" heading with no box at all; the rule is the body's top there.
 const RULE_RE = /^\s*─{8,}\s*$/;
-// The dialog body (reason + suffixes + question) fits well inside this many
-// lines above the options even with a long wrapped path; the cap only
-// matters for an unboxed screen, where it keeps transcript text out.
+// A Bash, Edit or MCP prompt sits under the same rule (or box), asks the same
+// proceed question, and shows text the model wrote: a command, a diff, tool
+// arguments. So the reason phrase never identifies this dialog on its own;
+// its heading does, and under a rule so does the tool line echoing the path
+// the reason names. That echo wraps at a different column than the gutter
+// line, so a path collapsed by a dropped wrap space cannot pass both.
+const TOOL_USE_HEADING = "Tool use";
+const ENTER_ECHO_RE = /^Entering worktree\((?<path>.*)\)$/;
+const BOXED_HEADING = "EnterWorktree";
+const GUTTER_RE = /^\s*[│┃╎┆|]/;
+// The dialog body (heading, echo, reason, suffixes, question) fits well
+// inside this many lines above the options even with a long wrapped path;
+// the cap keeps transcript text out when the top has scrolled off.
 const WINDOW_CAP = 16;
 
 /** Box lines rejoined so a wrapped path reads back byte for byte: borders
     stripped, each line trimmed at its ends only, lines joined with NOTHING
-    between them. A wrap break contributes no character, and a REAL space
-    inside a value survives, so a path with a space can never collapse into
-    a different (registered) one. */
+    between them. A wrap break contributes no character; a space AT the break
+    is lost, which is why a ruled prompt's path must also match its echo. */
 function joinBoxLines(lines: string[]): string {
   return lines.map((l) => l.replace(/[│┃╎┆|╭╮╰╯]/g, " ").replace(/^[\s─]+|[\s─]+$/g, "")).join("");
+}
+
+function stripDecoration(line: string): string {
+  return line.replace(/[│┃╎┆|╭╮╰╯─]/g, " ").trim();
+}
+
+/** The path the ruled dialog's own tool line echoes, or null when the lines under the rule are not this dialog's heading and echo. */
+function ruledEchoPath(bodyLines: string[]): string | null {
+  const stripped = bodyLines.map(stripDecoration).filter((l) => l !== "");
+  if (stripped[0] !== TOOL_USE_HEADING) return null;
+  const echo = ENTER_ECHO_RE.exec(stripped[1] ?? "");
+  if (!echo) return null;
+  if (!bodyLines.some((l) => GUTTER_RE.test(l) && REASON_PHRASE_RE.test(l))) return null;
+  return echo.groups?.path ?? null;
 }
 
 /**
@@ -124,7 +147,11 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
     if (BOX_TOP_RE.test(line) || RULE_RE.test(line)) { top = i; break; }
   }
   if (top < 0) return null;
-  const body = joinBoxLines(lines.slice(top, first));
+  const bodyLines = lines.slice(top + 1, first);
+  const ruled = RULE_RE.test(lines[top] as string);
+  const echoPath = ruled ? ruledEchoPath(bodyLines) : null;
+  if (ruled ? echoPath === null : !bodyLines.map(stripDecoration).includes(BOXED_HEADING)) return null;
+  const body = joinBoxLines(bodyLines);
   if (!PROCEED_RE.test(body)) return null;
   // The LAST reason match: the live dialog's reason sits nearest its own
   // options, so anything earlier in the body is quoted text, never the
@@ -133,10 +160,11 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   if (!reason) {
     // The reason phrase without a readable quoted path is still this
     // dialog; a dialog whose path cannot be read is never guessed at.
-    return /permission-root\s*relocation\s*to/i.test(body) ? { kind: "undrivable" } : null;
+    return REASON_PHRASE_RE.test(body) ? { kind: "undrivable" } : null;
   }
   const path = reason.groups?.path ?? "";
   if (path.length === 0) return { kind: "undrivable" };
+  if (echoPath !== null && echoPath !== path) return { kind: "undrivable" };
   const resolvesTo = RESOLVES_RE.exec(body.slice(reason.index))?.groups?.real;
   return walkToAccept(readOptions(lines.slice(first, last + 1).join("\n")), (keys) => ({
     kind: "accept", path, ...(resolvesTo !== undefined && resolvesTo.length > 0 ? { resolvesTo } : {}), keys,
