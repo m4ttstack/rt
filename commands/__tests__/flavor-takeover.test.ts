@@ -251,6 +251,30 @@ describe("rt flavor takeover", () => {
     expect(s).toContain(`launchctl bootout gui/${UID}/com.mattstack.daemon`);
   }, 15_000);
 
+  test("a retire that takes longer than a quick request is waited for, not booted out from under", async () => {
+    setUpFakes(["com.mattstack.daemon"]);
+    try { rmSync(TRAY_SOCK_PATH); } catch { /* absent */ }
+    server = Bun.serve({
+      unix: TRAY_SOCK_PATH,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === "/health") return Response.json({ ok: true, app: "mattstack", flavor: "prod" });
+        await Bun.sleep(2_600);
+        appendFileSync(logPath, "retire\n");
+        rmSync(join(fakeBinDir, "loaded", "com.mattstack.daemon"), { force: true });
+        const s = server;
+        setTimeout(() => { try { s?.stop(true); } catch { /* already stopped */ } }, 100);
+        return Response.json({ ok: true });
+      },
+    });
+    const src = devSource();
+
+    const r = await run(["dev", "--json"], { resolveSourcePath: () => src });
+
+    expect(JSON.parse(r.out.join("\n")).retired).toBe(true);
+    expect(steps().some((l) => l.startsWith("launchctl bootout"))).toBe(false);
+  }, 20_000);
+
   test("dev with no known source checkout refuses before touching anything", async () => {
     setUpFakes(["com.mattstack.daemon"]);
     serveTray("prod");

@@ -45,6 +45,8 @@ function appName(flavor: Flavor): string {
   return flavor === "dev" ? DEV_TRAY_APP_NAME : TRAY_APP_NAME;
 }
 
+/** The retiring tray unregisters every agent before it answers. */
+const RETIRE_TIMEOUT_MS = 15_000;
 const GONE_POLL_TIMEOUT_MS = 3_000;
 const GONE_POLL_INTERVAL_MS = 75;
 
@@ -135,17 +137,20 @@ export async function flavorTakeover(args: string[], _ctx: CommandContext = {}, 
   }
 
   const { TRAY_SOCK_PATH } = await import("../lib/daemon-config.ts");
-  const { trayQuery } = await import("../lib/daemon-client.ts");
+  const { trayRequest } = await import("../lib/daemon-client.ts");
   const otherDaemon = daemonLabelFor(other);
 
   let retired: boolean | null = null;
   const holder = await trayHolder(TRAY_SOCK_PATH);
   if (holder?.flavor === other) {
-    const reply = await trayQuery("/flavor/retire", "POST");
-    retired = reply?.ok === true;
+    const reply = await trayRequest<{ ok?: boolean; error?: string }>("/flavor/retire", {
+      method: "POST",
+      timeoutMs: RETIRE_TIMEOUT_MS,
+    });
+    retired = reply.json?.ok === true;
     lines.push(retired
-      ? `${appName(other)} retired its daemon and login item`
-      : `${appName(other)} did not retire (${(reply as { error?: string } | null)?.error ?? "no reply"}); booting ${otherDaemon} out directly`);
+      ? `${appName(other)} retired its daemon, agents and login item`
+      : `${appName(other)} did not retire (${reply.json?.error ?? (reply.status === 0 ? "no reply" : `status ${reply.status}`)}); booting ${otherDaemon} out directly`);
     if (!retired) bootout(otherDaemon);
     spawnSync("osascript", ["-e", `tell application "${appName(other)}" to quit`], { stdio: "pipe", timeout: 3_000, env: process.env });
   }
