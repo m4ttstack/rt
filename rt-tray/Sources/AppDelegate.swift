@@ -264,8 +264,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             return nil
         }
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
-        guard let rt = RtClientFactory.make() else {
-            return "mattstack could not find its rt command, so it can't switch this Mac to \(myFlavor)."
+        let rt: RtClient
+        if BundleFlavor.isDevBuild {
+            let home = AppHome.current
+            switch FlavorLaunch.devTakeoverRoute(rtOwner: FlavorLaunchState.rtOwner(home: home),
+                                                 config: DevSourceConfigReader.read(home: home),
+                                                 fileExists: { FileManager.default.fileExists(atPath: $0) }) {
+            case .wrapper:
+                guard let wrapper = RtClientFactory.make() else { return FlavorStandDownCopy.devTakeoverUnavailable }
+                rt = wrapper
+            case .source(let location):
+                TrayLog.info("takeover runs the stored checkout", ["cli": location.argumentPrefix.last ?? ""])
+                rt = RtClientFactory.make(location: location)
+            case .unavailable:
+                return FlavorStandDownCopy.devTakeoverUnavailable
+            }
+        } else {
+            guard let bundled = RtClientFactory.make() else {
+                return "mattstack could not find its rt command, so it can't switch this Mac to \(myFlavor)."
+            }
+            rt = bundled
         }
         let verb = "flavor takeover"
         do {

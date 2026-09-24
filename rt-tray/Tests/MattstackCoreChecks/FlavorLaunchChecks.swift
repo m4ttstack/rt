@@ -73,6 +73,32 @@ let flavorLaunchChecks: [Check] = [
         c.expectEqual(FlavorLaunch.afterFailedTakeover(socketClaimed: true), .serveAndReport)
         c.expectEqual(FlavorLaunch.afterFailedTakeover(socketClaimed: false), .quitAndReport)
     },
+    Check("dev source config: the shim's rules (absolute source, bun defaulting to ~/.bun/bin/bun)") { c in
+        c.expectEqual(DevSourceConfig.parse(json: #"{"sourcePath":"/src/rt","bunPath":"/opt/bun"}"#, home: "/Users/x"),
+                      DevSourceConfig(sourcePath: "/src/rt", bunPath: "/opt/bun"))
+        c.expectEqual(DevSourceConfig.parse(json: #"{"sourcePath":"/src/rt","bunPath":"bun"}"#, home: "/Users/x"),
+                      DevSourceConfig(sourcePath: "/src/rt", bunPath: "/Users/x/.bun/bin/bun"))
+        c.expect(DevSourceConfig.parse(json: #"{"sourcePath":"src/rt"}"#, home: "/Users/x") == nil, "relative source")
+        c.expect(DevSourceConfig.parse(json: "not json", home: "/Users/x") == nil)
+    },
+    Check("dev takeover: the marked dev wrapper runs it") { c in
+        let config = DevSourceConfig(sourcePath: "/src/rt", bunPath: "/opt/bun")
+        c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: "dev", config: config, fileExists: { _ in true }), .wrapper)
+    },
+    Check("dev takeover: any other ~/.local/bin/rt runs the stored checkout through bun") { c in
+        let config = DevSourceConfig(sourcePath: "/src/rt", bunPath: "/opt/bun")
+        let route = FlavorLaunch.devTakeoverRoute(rtOwner: "prod", config: config, fileExists: { _ in true })
+        c.expectEqual(route, .source(RtLocation(executable: URL(fileURLWithPath: "/opt/bun"),
+                                                argumentPrefix: ["run", "/src/rt/cli.ts"], source: .devSource)))
+        c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: nil, config: config, fileExists: { _ in true }), route)
+    },
+    Check("dev takeover: no usable checkout or bun is unavailable, and the copy names the command to run") { c in
+        let config = DevSourceConfig(sourcePath: "/src/rt", bunPath: "/opt/bun")
+        c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: nil, config: nil, fileExists: { _ in true }), .unavailable)
+        c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: nil, config: config, fileExists: { $0 != "/opt/bun" }), .unavailable)
+        c.expectEqual(FlavorLaunch.devTakeoverRoute(rtOwner: nil, config: config, fileExists: { !$0.hasSuffix("cli.ts") }), .unavailable)
+        c.expect(FlavorStandDownCopy.devTakeoverUnavailable.contains("bun run cli.ts flavor takeover dev"))
+    },
     Check("takeover argv names only my own flavor") { c in
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: true), ["flavor", "takeover", "dev", "--json"])
         c.expectEqual(FlavorLaunch.takeoverArguments(myFlavorIsDev: false), ["flavor", "takeover", "prod", "--json"])

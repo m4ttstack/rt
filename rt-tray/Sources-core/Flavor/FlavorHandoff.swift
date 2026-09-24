@@ -105,6 +105,10 @@ public enum FlavorStandDownCopy {
 
     public static let takeoverFailedTitle = "The switch didn't finish"
 
+    public static let devTakeoverUnavailable =
+        "mattstack-dev.app can't find its rt checkout, so it can't switch this Mac to dev. "
+            + "From your rt checkout, run: bun run cli.ts flavor takeover dev"
+
     public static func stuckHolderTitle(holderFlavor: String) -> String {
         "A \(holderFlavor) mattstack is still holding the tray socket"
     }

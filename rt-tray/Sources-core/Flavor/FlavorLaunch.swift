@@ -63,8 +63,45 @@ public enum FlavorLaunch {
         socketClaimed ? .serveAndReport : .quitAndReport
     }
 
+    public enum DevTakeoverRoute: Equatable, Sendable {
+        /// ~/.local/bin/rt is the marked dev wrapper: run it as usual.
+        case wrapper
+        /// Anything else there (a foreign rt, an older prod binary, nothing)
+        /// may not know the verb, so the stored checkout runs it directly.
+        case source(RtLocation)
+        case unavailable
+    }
+
+    public static func devTakeoverRoute(rtOwner: String?, config: DevSourceConfig?,
+                                        fileExists: (String) -> Bool) -> DevTakeoverRoute {
+        if rtOwner == "dev" { return .wrapper }
+        guard let config else { return .unavailable }
+        let cli = config.sourcePath + "/cli.ts"
+        guard fileExists(cli), fileExists(config.bunPath) else { return .unavailable }
+        return .source(RtLocation(executable: URL(fileURLWithPath: config.bunPath),
+                                  argumentPrefix: ["run", cli], source: .devSource))
+    }
+
     public static func takeoverArguments(myFlavorIsDev: Bool) -> [String] {
         ["flavor", "takeover", FlavorIdentity.flavorName(isDevBuild: myFlavorIsDev), "--json"]
+    }
+}
+
+/// The dev app's checkout, from the state.db kv row ns='dev-mode',
+/// k='config' (or the legacy dev-mode.json), validated exactly the way
+/// rt-tray/Sources-daemon-shim/main.swift `finalizeConfig` validates it.
+public struct DevSourceConfig: Equatable, Sendable {
+    public let sourcePath: String
+    public let bunPath: String
+    public init(sourcePath: String, bunPath: String) { self.sourcePath = sourcePath; self.bunPath = bunPath }
+
+    public static func parse(json: String, home: String) -> DevSourceConfig? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let source = obj["sourcePath"] as? String, source.hasPrefix("/")
+        else { return nil }
+        let bun = (obj["bunPath"] as? String).flatMap { $0.hasPrefix("/") ? $0 : nil } ?? "\(home)/.bun/bin/bun"
+        return DevSourceConfig(sourcePath: source, bunPath: bun)
     }
 }
 
