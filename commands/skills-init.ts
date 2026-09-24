@@ -92,6 +92,23 @@ function realDeps(opts: { json: boolean }): InitDeps {
       }
       try {
         const url = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+        if (url) return { kind: "ok", url };
+      } catch {
+        // origin is unset or has no URL; fall through to the first remote.
+      }
+      let firstRemote: string | null = null;
+      try {
+        const remotes = execFileSync("git", ["-C", dir, "remote"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        firstRemote = remotes[0] ?? null;
+      } catch {
+        return { kind: "no-remote" };
+      }
+      if (!firstRemote) return { kind: "no-remote" };
+      try {
+        const url = execFileSync("git", ["-C", dir, "remote", "get-url", firstRemote], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
         return url ? { kind: "ok", url } : { kind: "no-remote" };
       } catch {
         return { kind: "no-remote" };
