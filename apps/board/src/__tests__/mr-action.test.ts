@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  mergeRefusalReason,
   parseMrActionBody,
   runMrAction,
   type MrActionProvider,
@@ -80,5 +81,35 @@ describe('runMrAction', () => {
     await expect(
       runMrAction(provider, 'org/repo', 7, 'rebase')
     ).rejects.toThrow('rebase in progress');
+  });
+});
+
+describe('mergeRefusalReason', () => {
+  const refusal = (status: string, hint = '') =>
+    `mergePullRequest failed: 405 Method Not Allowed — 405 Method Not Allowed. Read back after the refusal, GitLab reported detailedMergeStatus="${status}".${hint}`;
+
+  test.each([
+    ['conflict', 'merge conflicts'],
+    ['not_approved', 'not approved yet'],
+    ['need_rebase', 'needs a rebase'],
+    ['checking', 'GitLab is still checking, try again'],
+  ])('%s reads as "%s"', (status, reason) => {
+    expect(mergeRefusalReason(refusal(status))).toBe(reason);
+  });
+
+  test('an unlisted status still reads in words', () => {
+    expect(mergeRefusalReason(refusal('security_policy_violations'))).toBe(
+      'security policy violations'
+    );
+  });
+
+  test('mergeable is not a refusal reason', () => {
+    expect(mergeRefusalReason(refusal('mergeable'))).toBeNull();
+  });
+
+  test('a failure with no read-back status has no reason', () => {
+    expect(
+      mergeRefusalReason('mergePullRequest failed: 500 Internal Server Error')
+    ).toBeNull();
   });
 });

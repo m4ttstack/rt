@@ -119,12 +119,27 @@ export function overlay(
   });
 }
 
+/** How long a fired merge may read as merging while GitLab still reports the
+    MR open with no merge error (a merge train, a stalled sync). */
+export const MERGE_HOLD_MS = 3 * 60_000;
+
+/** A fired merge, by MR url, with when it was fired. */
+export type Merging = ReadonlyMap<string, number>;
+
+/** Milliseconds until the earliest held merge passes MERGE_HOLD_MS, so a
+    hold lapses on time even when no fresh load arrives; null when none. */
+export function nextMergeLapse(merging: Merging, now: number): number | null {
+  if (merging.size === 0) return null;
+  const earliest = Math.min(...merging.values());
+  return Math.max(0, earliest + MERGE_HOLD_MS - now + 1);
+}
+
 /** A merge the board fired reads as GitLab's own merging state on that row,
     through the seconds GitLab and rt's sync still report the MR open and
     mergeable. */
 export function overlayMerging(
   mrs: BoardMRWithReview[],
-  merging: ReadonlySet<string>
+  merging: Merging
 ): BoardMRWithReview[] {
   if (merging.size === 0) return mrs;
   return mrs.map(mr =>
@@ -134,19 +149,25 @@ export function overlayMerging(
   );
 }
 
-/** Let go of a fired merge once its MR has left the board or GitLab has
-    recorded a merge error on it. Returns the SAME reference when nothing
-    changed, for the same reason as clearServerTruth. */
+/** Let go of a fired merge once its MR has left the board, GitLab has
+    recorded a merge error on it, or it has been held MERGE_HOLD_MS. Returns
+    the SAME reference when nothing changed, for the same reason as
+    clearServerTruth. */
 export function settleMerging(
-  merging: ReadonlySet<string>,
-  mrs: BoardMRWithReview[]
-): ReadonlySet<string> {
+  merging: Merging,
+  mrs: BoardMRWithReview[],
+  now: number
+): Merging {
   if (merging.size === 0) return merging;
-  const held = new Set(
+  const open = new Set(
     mrs
       .filter(mr => mr.webUrl && !mr.blockers.hasMergeError)
       .map(mr => mr.webUrl)
   );
-  const next = new Set([...merging].filter(url => held.has(url)));
+  const next = new Map(
+    [...merging].filter(
+      ([url, firedAt]) => open.has(url) && now - firedAt <= MERGE_HOLD_MS
+    )
+  );
   return next.size === merging.size ? merging : next;
 }

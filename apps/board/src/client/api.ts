@@ -17,6 +17,7 @@ export interface ActionResult {
     linked?: boolean;
     status?: string;
     reactions?: string[];
+    reason?: string;
   } | null;
   text: string;
 }

@@ -171,7 +171,11 @@ import {
 import { hasLocalOrigin, isLocalRequest, requireJsonBody } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
-import { parseMrActionBody, runMrAction } from './mr-action.ts';
+import {
+  mergeRefusalReason,
+  parseMrActionBody,
+  runMrAction,
+} from './mr-action.ts';
 import {
   makeSwitchboardClient,
   type SwitchboardClient,
@@ -2220,6 +2224,13 @@ const httpServer = Bun.serve({
           console.error(
             `mr action ${parsed.action} failed for !${parsed.iid}: ${message}`
           );
+          const reason =
+            parsed.action === 'merge' ? mergeRefusalReason(message) : null;
+          if (reason)
+            return new Response(JSON.stringify({ reason }), {
+              status: 409,
+              headers: { 'content-type': 'application/json' },
+            });
           return new Response(`gitlab ${parsed.action} failed: ${message}`, {
             status: 502,
           });

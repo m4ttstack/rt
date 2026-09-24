@@ -37,6 +37,33 @@ export function parseMrActionBody(
   return { mrUrl, iid, action: action as MrAction };
 }
 
+const TRANSITIONAL = 'GitLab is still checking, try again';
+
+const MERGE_REFUSALS: Record<string, string> = {
+  conflict: 'merge conflicts',
+  not_approved: 'not approved yet',
+  need_rebase: 'needs a rebase',
+  ci_must_pass: 'pipeline must pass',
+  ci_still_running: 'pipeline still running',
+  discussions_not_resolved: 'threads to resolve',
+  draft_status: 'still a draft',
+  requested_changes: 'changes requested',
+  not_open: 'not open',
+  merge_request_blocked: 'blocked by another MR',
+  preparing: TRANSITIONAL,
+  unchecked: TRANSITIONAL,
+  checking: TRANSITIONAL,
+  approvals_syncing: TRANSITIONAL,
+};
+
+/** GitLab's refusal in words, read from the detailedMergeStatus glance
+    appends to a 405 after reading the MR back; null when there is none. */
+export function mergeRefusalReason(message: string): string | null {
+  const status = /detailedMergeStatus="([a-z_]+)"/.exec(message)?.[1];
+  if (!status || status === 'mergeable') return null;
+  return MERGE_REFUSALS[status] ?? status.replaceAll('_', ' ');
+}
+
 export async function runMrAction(
   provider: MrActionProvider,
   projectPath: string,

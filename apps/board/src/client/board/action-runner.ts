@@ -149,7 +149,10 @@ function postSpec(req: PostRequest): PostSpec {
         payload: (mr, url) => ({ mrUrl: url, iid: mr.iid, action: req.action }),
         pending: mr => `${w.pending} !${mr.iid}…`,
         done: mr => `${w.done} !${mr.iid}`,
-        fail: (mr, r) => `couldn't ${req.action} !${mr.iid} (${r.status})`,
+        fail: (mr, r) =>
+          r.body?.reason
+            ? `couldn't ${req.action} !${mr.iid}: ${r.body.reason}`
+            : `couldn't ${req.action} !${mr.iid} (${r.status})`,
         fresh: true,
         manyDone: done => `${w.manyDone} ${on(done)}`,
         manyFail: list => `couldn't ${w.manyVerb} ${list}`,
@@ -256,6 +259,8 @@ export async function runOne(
   const result = await post(req, spec, mr, url, deps);
   if (!result.ok) {
     deps.addToast(spec.fail(mr, result));
+    // A GitLab refusal means the row was out of date; show what GitLab says now.
+    if (spec.fresh) deps.reload(true);
     return result;
   }
   const done = spec.done?.(mr, result);
@@ -335,7 +340,7 @@ export async function runMany(
     const only = failed.length === 1 ? failed[0]?.result : undefined;
     parts.push(
       plan.manyFail(iids(failed.map(f => f.mr))) +
-        (only ? ` (${only.status})` : '')
+        (only ? ` (${only.body?.reason ?? only.status})` : '')
     );
   }
   if (skipped > 0) parts.push(`${skipped} didn't need it`);

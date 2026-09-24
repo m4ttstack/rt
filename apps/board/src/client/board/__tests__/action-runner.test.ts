@@ -90,11 +90,45 @@ test('only merge holds a row', async () => {
   expect(events.some(e => /^(hold|release)/.test(e))).toBe(false);
 });
 
-test('runOne failure toasts the status and does not reload', async () => {
-  const { deps, events } = fakeDeps(() => fail(409));
+test('a refused GitLab action toasts the status and reloads fresh, so the row shows what GitLab now says', async () => {
+  const { deps, events } = fakeDeps(() => fail(502));
   await runOne({ kind: 'mr', action: 'setAutoMerge' }, mr(7), deps);
-  expect(events.at(-1)).toBe("toast couldn't setAutoMerge !7 (409)");
+  expect(events.slice(-2)).toEqual([
+    "toast couldn't setAutoMerge !7 (502)",
+    'reload true',
+  ]);
+});
+
+test("a refused merge toasts GitLab's reason in place of the status", async () => {
+  const { deps, events } = fakeDeps(() => ({
+    ...fail(409),
+    body: { reason: 'merge conflicts' },
+  }));
+  await runOne({ kind: 'mr', action: 'merge' }, mr(7), deps);
+  expect(events.slice(-2)).toEqual([
+    "toast couldn't merge !7: merge conflicts",
+    'reload true',
+  ]);
+});
+
+test('a failed slack reaction does not reload', async () => {
+  const { deps, events } = fakeDeps(() => fail(500));
+  await runOne(
+    { kind: 'react', emoji: 'eyes', glyph: '👀', remove: false },
+    mr(7),
+    deps
+  );
   expect(events.some(e => e.startsWith('reload'))).toBe(false);
+});
+
+test('bulk merge names the reason when one MR is refused', async () => {
+  const { deps, events } = fakeDeps(p =>
+    p.iid === 2 ? { ...fail(409), body: { reason: 'merge conflicts' } } : ok()
+  );
+  await runMany({ kind: 'mr', action: 'merge' }, [1, 2].map(mr), deps);
+  expect(events.filter(e => e.startsWith('toast'))).toEqual([
+    "toast merge accepted on !1 · couldn't merge !2 (merge conflicts)",
+  ]);
 });
 
 test('runOne draft words both directions', async () => {

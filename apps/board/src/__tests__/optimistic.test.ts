@@ -4,6 +4,8 @@ import {
   anyActive,
   clearServerTruth,
   EMPTY_OPTIMISTIC,
+  MERGE_HOLD_MS,
+  nextMergeLapse,
   overlay,
   overlayMerging,
   rollback,
@@ -84,19 +86,52 @@ const open = (webUrl: string, blockers: Record<string, unknown> = {}) =>
 
 test('overlayMerging: a fired merge reads as GitLab merging on that row only', () => {
   const rows = [open('u1'), open('u2')];
-  const [one, two] = overlayMerging(rows, new Set(['u1']));
+  const [one, two] = overlayMerging(rows, new Map([['u1', 0]]));
   expect(one!.mergeButton).toEqual({ ...IDLE, loading: true });
   expect(two).toBe(rows[1]);
-  expect(overlayMerging(rows, new Set())).toBe(rows);
+  expect(overlayMerging(rows, new Map())).toBe(rows);
 });
 
 test('settleMerging holds through a lagging sync and lets go once the MR leaves or GitLab records a merge error', () => {
-  const held = new Set(['u1', 'u2', 'u3']);
-  const settled = settleMerging(held, [
-    open('u1'),
-    open('u3', { any: true, hasMergeError: true }),
+  const held = new Map([
+    ['u1', 0],
+    ['u2', 0],
+    ['u3', 0],
   ]);
-  expect([...settled]).toEqual(['u1']);
-  const still = new Set(['u1']);
-  expect(settleMerging(still, [open('u1')])).toBe(still);
+  const settled = settleMerging(
+    held,
+    [open('u1'), open('u3', { any: true, hasMergeError: true })],
+    1000
+  );
+  expect([...settled.keys()]).toEqual(['u1']);
+  const still = new Map([['u1', 0]]);
+  expect(settleMerging(still, [open('u1')], 1000)).toBe(still);
+});
+
+test('settleMerging lets go of a merge still open after the hold limit', () => {
+  const held = new Map([
+    ['old', 0],
+    ['new', MERGE_HOLD_MS],
+  ]);
+  const settled = settleMerging(
+    held,
+    [open('old'), open('new')],
+    MERGE_HOLD_MS + 1
+  );
+  expect([...settled.keys()]).toEqual(['new']);
+});
+
+test('nextMergeLapse waits for the earliest held merge to pass the hold limit', () => {
+  const held = new Map([
+    ['a', 1000],
+    ['b', 500],
+  ]);
+  const wait = nextMergeLapse(held, 600);
+  expect(wait).toBe(500 + MERGE_HOLD_MS - 600 + 1);
+  const later = 600 + wait!;
+  expect([
+    ...settleMerging(held, [open('a'), open('b')], later).keys(),
+  ]).toEqual(['a']);
+  expect(nextMergeLapse(held, 10 * MERGE_HOLD_MS)).toBe(0);
+  expect(nextMergeLapse(new Map(), 0)).toBeNull();
 });

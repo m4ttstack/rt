@@ -9,10 +9,12 @@ import {
   anyActive,
   clearServerTruth,
   EMPTY_OPTIMISTIC,
+  nextMergeLapse,
   rollback,
   setQueued,
   settleMerging,
   type Axis,
+  type Merging,
   type OptimisticState,
 } from './optimistic.ts';
 
@@ -43,21 +45,27 @@ export function useOptimisticLifecycle(data: BoardData | null) {
 }
 
 /** The MRs the board has fired a merge on and not yet seen leave, for
-    overlayMerging; settled against every fresh load. */
+    overlayMerging; settled against every fresh load and when a hold lapses. */
 export function useMerging(data: BoardData | null) {
-  const [merging, setMerging] = useState<ReadonlySet<string>>(new Set());
+  const [merging, setMerging] = useState<Merging>(new Map());
 
   useEffect(() => {
     if (!data) return;
-    setMerging(s => settleMerging(s, data.mrs));
-  }, [data]);
+    const settle = () =>
+      setMerging(s => settleMerging(s, data.mrs, Date.now()));
+    settle();
+    const wait = nextMergeLapse(merging, Date.now());
+    if (wait === null) return;
+    const t = setTimeout(settle, wait);
+    return () => clearTimeout(t);
+  }, [data, merging]);
 
   const start = useCallback((url: string) => {
-    setMerging(s => new Set(s).add(url));
+    setMerging(s => new Map(s).set(url, Date.now()));
   }, []);
 
   const fail = useCallback((url: string) => {
-    setMerging(s => new Set([...s].filter(u => u !== url)));
+    setMerging(s => new Map([...s].filter(([u]) => u !== url)));
   }, []);
 
   return { merging, start, fail };
