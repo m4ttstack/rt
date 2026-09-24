@@ -971,7 +971,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             let pill = NSTextAttachment()
             pill.image = Self.devMarkImage
             let mark = NSMutableAttributedString(attributedString: NSAttributedString(attachment: pill))
-            mark.addAttribute(.baselineOffset, value: -1.5, range: NSRange(location: 0, length: mark.length))
+            mark.addAttribute(.baselineOffset, value: -2.5, range: NSRange(location: 0, length: mark.length))
             attributed.append(NSAttributedString(string: " "))
             attributed.append(mark)
             // The status button is only ever touched on main.
