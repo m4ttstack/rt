@@ -57,15 +57,10 @@ func TestPopulatedBoardPaintsRowsHeaderAndKeybar(t *testing.T) {
 	s.Wait()
 }
 
-func TestStartingEntrySpinnerAnimates(t *testing.T) {
-	s := testutil.StartSession(t, []string{testutil.Binary(t), "session", "--view", "board"}, nil)
-	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"hello"`) {
-		t.Fatalf("hello: %q", l)
-	}
-	model := strings.Replace(fixtureLine(t, "session-model-board.json"), `"t":"model"`, `"t":"open","view":"board"`, 1)
-	model = strings.Replace(model, `"state":"running"`, `"state":"starting"`, 1)
-	s.Send(model)
-	s.WaitForPaint("1 starting")
+// requireSpinnerAdvances fails unless at least two spinner frames paint
+// within two seconds.
+func requireSpinnerAdvances(t *testing.T, s *testutil.Session) {
+	t.Helper()
 	seen := map[string]bool{}
 	for deadline := time.Now().Add(2 * time.Second); len(seen) < 2 && time.Now().Before(deadline); {
 		screen := s.Screen()
@@ -79,6 +74,26 @@ func TestStartingEntrySpinnerAnimates(t *testing.T) {
 	if len(seen) < 2 {
 		t.Fatalf("a starting entry's spinner never advanced past %v:\n%s", seen, s.Screen())
 	}
+}
+
+func TestStartingEntrySpinnerAnimatesFromOpen(t *testing.T) {
+	s := testutil.StartSession(t, []string{testutil.Binary(t), "session", "--view", "board"}, nil)
+	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"hello"`) {
+		t.Fatalf("hello: %q", l)
+	}
+	model := strings.Replace(fixtureLine(t, "session-model-board.json"), `"t":"model"`, `"t":"open","view":"board"`, 1)
+	s.Send(strings.Replace(model, `"state":"running"`, `"state":"starting"`, 1))
+	s.WaitForPaint("1 starting")
+	requireSpinnerAdvances(t, s)
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestEntryThatStartsAfterOpenAnimates(t *testing.T) {
+	s := open(t)
+	s.Send(strings.Replace(fixtureLine(t, "session-model-board.json"), `"state":"running"`, `"state":"starting"`, 1))
+	s.WaitForPaint("1 starting")
+	requireSpinnerAdvances(t, s)
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
