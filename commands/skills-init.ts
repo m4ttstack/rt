@@ -48,7 +48,8 @@ export function parseInitArgs(args: string[]): InitArgs {
 export function renderInitOutcome(out: InitOutcome): string {
   if (!out.ok) {
     if (out.refused) return `rt skills init: ${out.detail}`;
-    return [`rt skills init: ${out.code}: ${out.detail}`, "written so far (fix, then rt skills compile / check by hand):", ...out.wrote.map((w) => `  ${w}`)].join("\n");
+    const remedy = out.remedy ?? "fix, then rt skills compile / check by hand";
+    return [`rt skills init: ${out.code}: ${out.detail}`, `written so far (${remedy}):`, ...out.wrote.map((w) => `  ${w}`)].join("\n");
   }
   return [
     `pack ${out.pack.name} at ${out.pack.dir}`,

@@ -235,7 +235,7 @@ export type InitOutcome =
       tryNext: string;
     }
   | { ok: false; refused: true; code: InitRefusalCode; detail: string }
-  | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[] };
+  | { ok: false; refused: false; code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"; detail: string; wrote: string[]; remedy?: string };
 
 function refuse(code: InitRefusalCode, detail: string): InitOutcome {
   return { ok: false, refused: true, code, detail };
@@ -302,6 +302,7 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
     return refuse("pack-exists", `${join(zone.dir, "mattstack", "packs")} already holds this repo's pack; init never touches an existing pack (see mattstack:extending-a-pack)`);
   }
   const marketplace = zone.marketplace ?? zone.slug;
+  const pluginId = `${pack}@${marketplace}`;
 
   const wrote: string[] = [];
   for (const [rel, text] of Object.entries(renderPackFiles({ pack, workDescription }))) {
@@ -324,8 +325,16 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
     wrote.push(marketPath);
   }
 
+  const remedyFor = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed"): string => {
+    if (code === "materialize-failed") return `then: rt skills materialize --repo ${opts.repoDir}`;
+    if (code === "compile-failed" || code === "check-drift") {
+      return `then: rt skills compile --pack-dir ${packDir} and rt skills check --pack-dir ${packDir}`;
+    }
+    return `then: claude plugin marketplace add ${zone.dir} and claude plugin install ${pluginId}`;
+  };
+
   const failed = (code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", detail: string): InitOutcome =>
-    ({ ok: false, refused: false, code, detail, wrote });
+    ({ ok: false, refused: false, code, detail, wrote, remedy: remedyFor(code) });
 
   /** A daemon-backed dep can throw instead of returning a failure shape; the throw must still carry `wrote` forward, same as a returned failure. */
   const attempt = async <T>(code: "materialize-failed" | "compile-failed" | "check-drift" | "install-failed", fn: () => Promise<T>): Promise<{ value: T } | { outcome: InitOutcome }> => {
@@ -362,7 +371,6 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
       return failed("install-failed", `claude plugin marketplace add exited ${added.value.code}: ${added.value.stderr.trim() || added.value.stdout.trim()}`);
     }
   }
-  const pluginId = `${pack}@${marketplace}`;
   const installed = await attempt("install-failed", () => claude(["plugin", "install", pluginId]));
   if ("outcome" in installed) return installed.outcome;
   if (installed.value.code !== 0 && !isAlreadyDone(installed.value)) {

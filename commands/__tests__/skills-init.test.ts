@@ -44,6 +44,18 @@ describe("renderInitOutcome", () => {
     expect(text).toContain("/a");
     expect(text).toContain("/b");
   });
+  test("a failure with a remedy prints the remedy in place of the generic advice", () => {
+    const text = renderInitOutcome({
+      ok: false,
+      refused: false,
+      code: "compile-failed",
+      detail: "boom",
+      wrote: ["/a"],
+      remedy: "then: rt skills compile --pack-dir /z/mattstack/packs/acme and rt skills check --pack-dir /z/mattstack/packs/acme",
+    });
+    expect(text).toContain("rt skills compile --pack-dir /z/mattstack/packs/acme");
+    expect(text).toContain("rt skills check --pack-dir /z/mattstack/packs/acme");
+  });
 });
 
 function stubDeps(overrides: Partial<InitDeps> = {}): InitDeps {
