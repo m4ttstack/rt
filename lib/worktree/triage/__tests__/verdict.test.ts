@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { triageCounts, triageRow, type TriageFacts } from "../verdict.ts";
 
 const base: TriageFacts = {
-  repo: "github.com/m4ttstack/rt", tree: "t", path: "/p/t", branch: "b", broken: false,
+  repo: `remote:${encodeURIComponent("github.com/m4ttstack/rt")}`, tree: "t", path: "/p/t", branch: "b", broken: false,
   mr: { iid: 1, state: "merged", title: "x", at: null, url: null }, ticket: null,
   remoteBranchExists: true, ahead: 0, containment: "on-remote",
   dirt: { kind: "none", files: [], discardable: [] },
@@ -24,6 +24,13 @@ describe("triageRow", () => {
   });
   test("a closed MR whose remote has every commit is safe", () => {
     expect(row({ mr: { iid: 2, state: "closed", title: "x", at: null, url: null } }).group).toBe("safe");
+  });
+  test("the verdict calls the change a PR on GitHub and an MR on GitLab", () => {
+    const closed = { mr: { iid: 2, state: "closed" as const, title: "x", at: null, url: null } };
+    expect(row(closed).verdict).toBe("The PR was closed, but the remote branch has every commit.");
+    const gitlab = `remote:${encodeURIComponent("gitlab.com/m4ttstack/app-kit")}`;
+    expect(row({ ...closed, repo: gitlab }).verdict).toBe("The MR was closed, but the remote branch has every commit.");
+    expect(row({ repo: gitlab, containment: "patch-identical", ahead: 8 }).verdict).toBe("Rebased before merge, and all 8 commits match the merged MR.");
   });
   test("no MR but every commit in main is safe", () => {
     expect(row({ mr: null, containment: "in-default" }).group).toBe("safe");

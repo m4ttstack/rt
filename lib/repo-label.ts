@@ -18,6 +18,23 @@ export function repoLabel(serialized: string): string {
   return id.kind === "remote" ? (id.id.split("/").pop() ?? id.id) : basename(id.id);
 }
 
+/** The forge host of a remote-kind identity ("github.com"); null for a
+    path-kind identity or a string that is not a canonical wire. */
+export function repoHost(serialized: string): string | null {
+  const id = parseIdentity(serialized);
+  return id?.kind === "remote" ? (id.id.split("/")[0] ?? null) : null;
+}
+
+/** What the repo's forge calls a change: "PR" on GitHub, "MR" everywhere else. */
+export function changeNoun(serialized: string): "PR" | "MR" {
+  return repoHost(serialized) === "github.com" ? "PR" : "MR";
+}
+
+/** The marker the forge prints before a change number: "#" on GitHub, "!" elsewhere. */
+export function changeMarker(serialized: string): "#" | "!" {
+  return repoHost(serialized) === "github.com" ? "#" : "!";
+}
+
 /** Longer label for disambiguating collisions: last two segments for
     remote-kind ("acme/acme-dev"), basename for path-kind (which cannot
     qualify further short of the full path — see repoLabelFull). */

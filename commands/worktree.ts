@@ -20,6 +20,7 @@ import { RT_DIR } from "../lib/daemon-config.ts";
 import { getRepoIdentity } from "../lib/repo.ts";
 import { loadRepoIndex } from "../lib/repo-index.ts";
 import { currentRepoIdentity, repoLabel, resolveRepoArg } from "../lib/repo-arg.ts";
+import { changeMarker } from "../lib/repo-label.ts";
 import { loadWorktreeRepoConfig, inspectReadyGate } from "../lib/worktree/config.ts";
 import { explainError } from "../lib/explain-error.ts";
 import type { MergeCleanupGap } from "../lib/worktree/merge-cleanup-gap.ts";
@@ -670,8 +671,7 @@ export async function worktreeTriage(args: string[], _ctx: unknown): Promise<voi
     console.log(`  ${dim}${repoLabel(b.repo)}: merge cleanup is off (${b.reason})${reset}`);
   }
   for (const r of rows) {
-    const marker = r.repo.startsWith("github.com/") ? "#" : "!";
-    const mr = r.mr ? `  ${dim}${marker}${r.mr.iid} ${r.mr.state}${reset}` : "";
+    const mr = r.mr ? `  ${dim}${changeMarker(r.repo)}${r.mr.iid} ${r.mr.state}${reset}` : "";
     console.log(`  ${bold}${repoLabel(r.repo)}/${r.tree}${reset}  ${dim}${r.group}${reset}${mr}  ${r.verdict}`);
   }
   console.log("");

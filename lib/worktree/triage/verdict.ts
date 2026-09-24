@@ -1,3 +1,4 @@
+import { changeNoun } from "../../repo-label.ts";
 import type { Containment } from "../containment.ts";
 import type { DirtClass, DirtKind } from "../dirt-class.ts";
 import type { KeepRecord } from "../registry.ts";
@@ -47,9 +48,10 @@ function groupOf(f: TriageFacts): TriageGroup {
 }
 
 function safeVerdict(f: TriageFacts): string {
+  const noun = changeNoun(f.repo);
   const where = f.containment === "in-default" ? "Every commit is in main."
-    : f.containment === "patch-identical" ? `Rebased before merge, and all ${f.ahead} commits match the merged PR.`
-    : f.mr?.state === "closed" ? "The PR was closed, but the remote branch has every commit."
+    : f.containment === "patch-identical" ? `Rebased before merge, and all ${f.ahead} commits match the merged ${noun}.`
+    : f.mr?.state === "closed" ? `The ${noun} was closed, but the remote branch has every commit.`
     : "Every commit is on the remote.";
   if (f.dirt.kind === "junk") return `${where} Only generated files are left.`;
   if (f.dirt.kind === "lockfile") return `${where} Only bun.lock changed, rewritten by install.`;
