@@ -161,7 +161,7 @@ export async function startInteractive(
   const cwd = opts.cwd ?? opts.home;
   // The preload's short sibling dir when there is one; a per-test home sits
   // too deep under TMPDIR for a socket path to bind.
-  const socketPath = termwrightSocketPath(process.env.RT_TEST_SOCKET_DIR ?? opts.home, process.pid, ++nextId);
+  const socketPath = termwrightSocketPath(process.env.RT_TEST_SOCKET_DIR || opts.home, process.pid, ++nextId);
   assertSocketPathFits(socketPath);
 
   // Some spawned children may exec a script with a `#!/usr/bin/env bun`
