@@ -13,6 +13,7 @@ import { herdrRequest } from "../herdr/client.ts";
 import { rtDir } from "../rt-paths.ts";
 import { EngineError, wrapCommand, type Engine, type ProcessInfo } from "./engine.ts";
 import { isRunning } from "./state.ts";
+import { childEnv } from "../subprocess.ts";
 
 export const TMUX_SESSION = "rt";
 
@@ -151,7 +152,7 @@ export function defaultTmuxSocket(): string {
 }
 
 async function realSh(argv: string[]): Promise<ShResult> {
-  const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(argv, { env: childEnv(), stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { code, stdout: stdout.replace(/\n$/, ""), stderr: stderr.replace(/\n$/, "") };
 }

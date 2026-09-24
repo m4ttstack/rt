@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { isSafeMachineKeySegment, machineKey } from "../rt-paths.ts";
 import type { HomeProbes } from "../../commands/home.ts";
+import { childEnv } from "../subprocess.ts";
 
 /** IOPlatformUUID via ioreg, slugged; null on any failure (non-mac, CI, no match). */
 export async function stableMachineId(
@@ -20,7 +21,7 @@ export async function stableMachineId(
 
 const defaultIoreg = async (argv: string[]): Promise<string | null> => {
   try {
-    const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn(argv, { env: childEnv(), stdin: "ignore", stdout: "pipe", stderr: "ignore" });
     const term = setTimeout(() => {
       try {
         proc.kill("SIGKILL");

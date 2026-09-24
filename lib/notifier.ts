@@ -46,6 +46,7 @@ import {
   removeQueuedNotification,
   type NotificationEvent,
 } from "./state/index.ts";
+import { childEnv } from "./subprocess.ts";
 const log = lazyChildLogger("notifier");
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -500,7 +501,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
     const body = `${title}: ${message}`;
     const argv = [fallbackNotifierPath, "-e", `display notification "${escapeAppleScript(body)}" with title "rt"`];
     try {
-      const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      const proc = Bun.spawn(argv, { env: childEnv(), stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       const term = setTimeout(() => { try { proc.kill("SIGTERM"); } catch { /* already exited */ } }, FALLBACK_TERM_MS);
       const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch { /* already exited */ } }, FALLBACK_KILL_MS);
       void proc.exited.finally(() => { clearTimeout(term); clearTimeout(kill); });

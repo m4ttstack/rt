@@ -23,6 +23,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "path";
 import { ensureInfoExclude } from "./git-async.ts";
+import { childEnv } from "../subprocess.ts";
 
 /** Marks a directory as rt's to delete. Nothing without this prefix is ever reaped. */
 export const TRASH_PREFIX = ".trash-";
@@ -251,6 +252,7 @@ export async function stripTrashDir(trashPath: string, log: TrashLog): Promise<v
     if (doomed.length === 0) return;
 
     const proc = Bun.spawn(["rm", "-rf", "--", ...doomed], {
+      env: childEnv(),
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
@@ -342,6 +344,7 @@ export async function reapTrashDir(trashPath: string, log: TrashLog): Promise<vo
 
   try {
     const proc = Bun.spawn(["rm", "-rf", "--", trashPath], {
+      env: childEnv(),
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",

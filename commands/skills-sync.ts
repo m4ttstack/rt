@@ -17,6 +17,7 @@ import { discoverPacks, type PackInfo } from "../lib/skills/packs.ts";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import { syncPack, type SyncDeps, type SyncReport, type SyncStep } from "../lib/skills/sync.ts";
 import { checkPack, compilePackAll } from "./skills.ts";
+import { childEnv } from "../lib/subprocess.ts";
 
 /**
  * The mattstack pack is the only valid sync engine: falling back to the pack
@@ -98,7 +99,7 @@ export async function skillsSync(args: string[]): Promise<void> {
   const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
   const deps: SyncDeps = {
     run: async (cmd, cmdArgs, opts) => {
-      const proc = Bun.spawn([cmd, ...cmdArgs], { cwd: opts?.cwd, stdout: "pipe", stderr: "pipe" });
+      const proc = Bun.spawn([cmd, ...cmdArgs], { cwd: opts?.cwd, env: childEnv(), stdout: "pipe", stderr: "pipe" });
       const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       return { code: await proc.exited, stdout, stderr };
     },
