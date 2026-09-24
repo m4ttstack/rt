@@ -7,7 +7,7 @@ import type { Logger } from "pino";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
 import type { WorktreeRepoConfig } from "../../../worktree/config.ts";
 import { closeStateDb } from "../../../state/index.ts";
-import { liveProcessCwds, sweepStaleClaims } from "../stale-claims.ts";
+import { liveProcessCwds, retryDisposableTrees, sweepStaleClaims } from "../stale-claims.ts";
 
 const GIT_ID = "-c user.email=t@t -c user.name=t";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -290,5 +290,130 @@ describe("stale-claim sweep", () => {
   test("liveProcessCwds throws on a non-zero exit and on a spawn failure", async () => {
     expect(liveProcessCwds(["false"])).rejects.toThrow();
     expect(liveProcessCwds(["/nonexistent-rtstale-binary"])).rejects.toThrow();
+  });
+});
+
+describe("stale job trees (RT-267)", () => {
+  const repoName = "acme";
+  let repo: string;
+
+  beforeEach(() => {
+    process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtstale-home-")));
+    closeStateDb();
+    repo = makeRepo();
+  });
+
+  function staleJobTree(name: string): TreeRecord {
+    const rec = claimedTree(repo, repoName, name, `feat-${name}`, { claimedAgoMs: 8 * DAY_MS });
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, disposal: "job", owner: "herd:h1" } : t)));
+    return rec;
+  }
+
+  function sweep(jobTreeHold?: (rec: TreeRecord) => string | null): Promise<void> {
+    return sweepStaleClaims(
+      {
+        repoName, repoPath: repo, cacheEntries: {}, emit: () => {}, log: fakeLog(), killProcesses: false,
+        findRunningRun: () => ({ kind: "none" as const }), liveCwds: async () => new Set<string>(),
+        ...(jobTreeHold ? { jobTreeHold } : {}),
+      },
+      cfgWith(7),
+    );
+  }
+
+  test("a stale job tree its herd still holds is kept", async () => {
+    const rec = staleJobTree("juliet");
+    await sweep(() => "herd job h1/juliet is active");
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("a stale job tree with no release rule wired is kept", async () => {
+    const rec = staleJobTree("kilo");
+    await sweep();
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("a stale job tree its herd released is disposed like any stale claim", async () => {
+    const rec = staleJobTree("lima");
+    await sweep(() => null);
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)).toBeUndefined();
+  });
+});
+
+describe("disposable retry (RT-267)", () => {
+  const repoName = "acme";
+  let repo: string;
+
+  beforeEach(() => {
+    process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtstale-home-")));
+    closeStateDb();
+    repo = makeRepo();
+  });
+
+  function disposableTree(name: string, reason: string, opts: { push?: boolean } = {}): TreeRecord {
+    const rec = claimedTree(repo, repoName, name, `feat-${name}`, { claimedAgoMs: DAY_MS, ...opts });
+    saveRegistry(
+      repoName,
+      loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, state: "disposable", disposableReason: reason } : t)),
+    );
+    return { ...rec, state: "disposable", disposableReason: reason };
+  }
+
+  function retry(live: Set<string> = new Set()): Promise<void> {
+    return retryDisposableTrees({
+      repoName, repoPath: repo, cacheEntries: {}, emit: () => {}, log: fakeLog(), killProcesses: false,
+      findRunningRun: () => ({ kind: "none" as const }), liveCwds: async () => live,
+    });
+  }
+
+  const find = (path: string) => loadRegistry(repoName).find((t) => t.path === path);
+
+  test("a tree flipped disposable for dirt is disposed once the dirt is gone", async () => {
+    const rec = disposableTree("mike", "dirty");
+    await retry();
+    expect(find(rec.path)).toBeUndefined();
+  });
+
+  test("a tree still dirty stays disposable with its reason", async () => {
+    const rec = disposableTree("nov", "dirty");
+    writeFileSync(join(rec.path, "scratch.txt"), "dirt\n");
+    await retry();
+    expect(find(rec.path)?.state).toBe("disposable");
+    expect(find(rec.path)?.disposableReason).toBe("dirty");
+  });
+
+  test("a tree whose blocker changed carries the new reason", async () => {
+    const rec = disposableTree("oscar", "dirty", { push: false });
+    await retry();
+    expect(find(rec.path)?.disposableReason).toBe("unpushed");
+  });
+
+  test.each(["MR closed without merge", "grace"])("a %s tree is never retried", async (reason) => {
+    const rec = disposableTree(`papa-${reason.length}`, reason);
+    await retry();
+    expect(find(rec.path)?.state).toBe("disposable");
+  });
+
+  test("a retry refused for grace keeps the retryable reason it had", async () => {
+    const rec = disposableTree("romeo", "dirty");
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, claimedAt: new Date().toISOString() } : t)));
+    await retry();
+    expect(find(rec.path)?.disposableReason).toBe("dirty");
+  });
+
+  test("a disposable job tree its herd still holds is not retried", async () => {
+    const rec = disposableTree("sierra", "dirty");
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, disposal: "job", owner: "herd:h1" } : t)));
+    await retryDisposableTrees({
+      repoName, repoPath: repo, cacheEntries: {}, emit: () => {}, log: fakeLog(), killProcesses: false,
+      findRunningRun: () => ({ kind: "none" as const }), liveCwds: async () => new Set<string>(),
+      jobTreeHold: () => "herd job h1/sierra is active",
+    });
+    expect(find(rec.path)?.state).toBe("disposable");
+  });
+
+  test("a disposable tree someone is sitting in is left alone", async () => {
+    const rec = disposableTree("quebec", "dirty");
+    await retry(new Set([rec.path]));
+    expect(find(rec.path)?.state).toBe("disposable");
   });
 });

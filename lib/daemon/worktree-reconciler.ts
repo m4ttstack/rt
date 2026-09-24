@@ -11,7 +11,7 @@
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import type { Logger } from "pino";
 import { goldenRoot, legacyWorktreePoolRoots } from "../rt-paths.ts";
-import { loadRegistry } from "../worktree/registry.ts";
+import { loadRegistry, type TreeRecord } from "../worktree/registry.ts";
 import { recoverPendingReady } from "../worktree/ready-async.ts";
 import { MR_TERMINAL_STATES } from "../enrich.ts";
 import { ensureWorktreeRegistryRekeyed } from "../repo-index.ts";
@@ -23,7 +23,7 @@ import {
 } from "../worktree/config.ts";
 import { reapExpiredTrash, reapTrashInRoots } from "../worktree/trash.ts";
 import { branchOf } from "../state/branch-cache.ts";
-import { sweepStaleClaims } from "./reconciler/stale-claims.ts";
+import { retryDisposableTrees, sweepStaleClaims } from "./reconciler/stale-claims.ts";
 import {
   MISSING_PRUNE_PASSES,
   reconcileRepo,
@@ -66,6 +66,9 @@ export interface ReconcilerDeps {
   /** Threaded into every dispose call this reconciler makes (merge reactor and
       shrink); wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
   findRunningRunByWorktree: (worktree: string) => RunningRunScan;
+  /** Releases ended herd job trees to the reactor and the stale sweep; wired
+      from herd-store via job-release.ts. Unwired, job trees are never released. */
+  jobTreeHold?: (rec: TreeRecord) => string | null;
   /** Test seam: overrides RECONCILER_PASS_DEADLINE_MS for the pass latch. */
   passDeadlineMs?: number;
 }
@@ -256,6 +259,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
           emit: deps.emit,
           log: deps.log,
           findRunningRun: deps.findRunningRunByWorktree,
+          ...(deps.jobTreeHold ? { jobTreeHold: deps.jobTreeHold } : {}),
         }),
       );
     } catch (err) {
@@ -278,29 +282,33 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
     } catch (err) {
       deps.log.warn({ err, repo: repoName }, "worktree reconciler: replenish/shrink pass failed");
     }
+    // Bare-branch scoping mirrors the reactor's: disposeTree's joinedMr
+    // looks up by bare branch and must never see another repo's entry.
+    const scopedEntries: Record<string, { mr: any; repoName?: string }> = {};
+    for (const [key, entry] of Object.entries(deps.cache.entries)) {
+      const attributed = (entry as { repoName?: string }).repoName;
+      if (attributed && attributed !== repoName) continue;
+      scopedEntries[branchOf(key)] = entry as { mr: any; repoName?: string };
+    }
+    const sweepDeps = {
+      repoName,
+      repoPath,
+      cacheEntries: scopedEntries,
+      emit: deps.emit,
+      log: deps.log,
+      killProcesses: appConfig.killProcesses,
+      findRunningRun: deps.findRunningRunByWorktree,
+      ...(deps.jobTreeHold ? { jobTreeHold: deps.jobTreeHold } : {}),
+    };
     try {
-      // Bare-branch scoping mirrors the reactor's: disposeTree's joinedMr
-      // looks up by bare branch and must never see another repo's entry.
-      const scopedEntries: Record<string, { mr: any; repoName?: string }> = {};
-      for (const [key, entry] of Object.entries(deps.cache.entries)) {
-        const attributed = (entry as { repoName?: string }).repoName;
-        if (attributed && attributed !== repoName) continue;
-        scopedEntries[branchOf(key)] = entry as { mr: any; repoName?: string };
-      }
-      await sweepStaleClaims(
-        {
-          repoName,
-          repoPath,
-          cacheEntries: scopedEntries,
-          emit: deps.emit,
-          log: deps.log,
-          killProcesses: appConfig.killProcesses,
-          findRunningRun: deps.findRunningRunByWorktree,
-        },
-        await loadWorktreeRepoConfig(repoName, repoPath),
-      );
+      await sweepStaleClaims(sweepDeps, await loadWorktreeRepoConfig(repoName, repoPath));
     } catch (err) {
       deps.log.warn({ err, repo: repoName }, "worktree reconciler: stale-claim sweep failed");
+    }
+    try {
+      await retryDisposableTrees(sweepDeps);
+    } catch (err) {
+      deps.log.warn({ err, repo: repoName }, "worktree reconciler: disposable retry failed");
     }
     try {
       await reapRepoTrash({ repoName, repoPath, log: deps.log });

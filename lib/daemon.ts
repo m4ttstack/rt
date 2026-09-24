@@ -101,6 +101,7 @@ import { createGatesStore, type GatesStore } from "./daemon/gates-store.ts";
 import { createGitBadges, type GitBadgesStore } from "./daemon/git-badges-store.ts";
 import { createGitStatusSweep, type GitStatusSweep, type GitStatusConfig } from "./daemon/git-status-sweep.ts";
 import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
+import { herdJobTreeHold } from "./daemon/reconciler/job-release.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
 import { HerdWatchdog, runWatchdogSweep } from "./daemon/herd-watchdog.ts";
 import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "./daemon/herd-watchdog-adapters.ts";
@@ -1045,6 +1046,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           emit,
           log,
           findRunningRunByWorktree,
+          jobTreeHold: (rec) => herdJobTreeHold(herdStore, rec),
         });
 
         refreshCache = createCacheRefresher({

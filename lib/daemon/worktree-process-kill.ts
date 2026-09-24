@@ -67,6 +67,12 @@ function processNames(proc: KillCandidate): string[] {
   return names;
 }
 
+/** An agent session, shell, multiplexer or editor: the user's, never workload. */
+export function isUserOrAgentProcess(proc: KillCandidate): boolean {
+  const names = processNames(proc);
+  return names.some((n) => DEFAULT_AI_AGENT_NAMES.has(n) || SHELL_BINS.has(n) || SPARED_BINS.has(n));
+}
+
 /**
  * Pids belonging to AI agent sessions (claude, codex, …) plus everything they
  * spawned, following live ppid links. Once an agent exits its orphans get

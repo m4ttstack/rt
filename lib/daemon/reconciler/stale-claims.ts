@@ -26,6 +26,7 @@ import { canon } from "../../fs-canon.ts";
 import { MR_TERMINAL_STATES } from "../../enrich.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
 import { loadRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { patchTree } from "../../worktree/patch.ts";
 import { disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
 import type { WorktreeRepoConfig } from "../../worktree/config.ts";
 
@@ -42,6 +43,8 @@ export interface StaleClaimSweepDeps extends DisposeDeps {
   /** Injectable for tests; defaults to one lsof snapshot of every process cwd. */
   liveCwds?: () => Promise<Set<string>>;
   now?: number;
+  /** Same contract as the reactor's: null once a job tree is released. Unwired, job trees are skipped. */
+  jobTreeHold?: (rec: TreeRecord) => string | null;
 }
 
 /**
@@ -109,15 +112,15 @@ function lastActivityMs(rec: TreeRecord): number {
 }
 
 function staleClaims(
-  repoName: string,
-  cacheEntries: DisposeDeps["cacheEntries"],
+  deps: StaleClaimSweepDeps,
   days: number,
   now: number,
 ): TreeRecord[] {
+  const { repoName, cacheEntries } = deps;
   return loadRegistry(repoName).filter((rec) => {
     if (rec.kind !== "ephemeral" || rec.state !== "claimed") return false;
-    // Job trees are the caller's to end, same as in the reactor.
-    if (rec.disposal === "job") return false;
+    // Job trees are the caller's to end until released, same as in the reactor.
+    if (rec.disposal === "job" && (deps.jobTreeHold ? deps.jobTreeHold(rec) : "unwired") !== null) return false;
     if (!rec.claimedAt) return false;
     if (hasOpenMr(cacheEntries, rec.branch)) return false;
     const activeMs = lastActivityMs(rec);
@@ -131,7 +134,7 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
   if (days === 0) return;
   const now = deps.now ?? Date.now();
 
-  const candidates = staleClaims(deps.repoName, deps.cacheEntries, days, now);
+  const candidates = staleClaims(deps, days, now);
   const prevRefusals = reportedRefusals.get(deps.repoName) ?? new Map<string, string>();
   const nextRefusals = new Map<string, string>();
   if (candidates.length === 0) {
@@ -195,4 +198,58 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
     }
   }
   reportedRefusals.set(deps.repoName, nextRefusals);
+}
+
+/**
+ * Dispose refusals that clear on their own. The reactor flips a merged tree
+ * disposable once and spends its fired key, so without this retry a tree
+ * whose dirt was later committed or discarded sits disposable forever.
+ * "MR closed without merge" and rollback reasons are a human's call and never
+ * retried. Neither is "grace": it exists so a fresh claim on a reused branch
+ * outlives a stale merged entry, and a retry would reap it minutes later.
+ */
+const RETRYABLE_REFUSALS = new Set(["dirty", "unpushed", "running-run", "runs-unreadable", "attended"]);
+
+/** Re-run guarded dispose on disposable trees whose refusal may have cleared. Never throws past a tree. */
+export async function retryDisposableTrees(deps: StaleClaimSweepDeps): Promise<void> {
+  const candidates = loadRegistry(deps.repoName).filter(
+    (rec) =>
+      rec.kind === "ephemeral" &&
+      rec.state === "disposable" &&
+      RETRYABLE_REFUSALS.has(rec.disposableReason ?? "") &&
+      (rec.disposal !== "job" || (deps.jobTreeHold ? deps.jobTreeHold(rec) : "unwired") === null),
+  );
+  if (candidates.length === 0) return;
+
+  let cwds: Set<string>;
+  try {
+    cwds = await (deps.liveCwds ?? liveProcessCwds)();
+  } catch (err) {
+    deps.log.warn({ err, repo: deps.repoName }, "disposable retry skipped: live-cwd snapshot failed");
+    return;
+  }
+
+  for (const rec of candidates) {
+    if (hasLiveCwdInside(cwds, rec.path)) continue;
+    try {
+      const outcome = await withTreeLock(rec.path, () => disposeTree(deps, rec, { auto: true }));
+      if (outcome === "busy") continue;
+      if (outcome.disposed) {
+        deps.log.info({ repo: deps.repoName, tree: rec.name, was: rec.disposableReason }, "disposable tree disposed on retry");
+        continue;
+      }
+      // Only a retryable refusal replaces the reason: writing "grace" (or any
+      // other one-off) would drop the tree out of the retry set for good.
+      if (outcome.refusal === rec.disposableReason || !RETRYABLE_REFUSALS.has(outcome.refusal)) continue;
+      patchTree(deps.repoName, rec.path, (r) => {
+        if (r.state === "disposable") r.disposableReason = outcome.refusal;
+      });
+      deps.log.info(
+        { repo: deps.repoName, tree: rec.name, was: rec.disposableReason, refusal: outcome.refusal },
+        "disposable tree: dispose still refused, for a new reason",
+      );
+    } catch (err) {
+      deps.log.warn({ err, repo: deps.repoName, tree: rec.name }, "disposable retry: dispose failed");
+    }
+  }
 }
