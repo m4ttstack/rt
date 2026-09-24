@@ -113,6 +113,16 @@ export interface StashEntry {
   message: string;
 }
 
+/** GHD app/src/lib/git/stash.ts's stash entry shape, minus `files` (fetched separately via `stashedFiles`). */
+export interface DesktopStashEntry {
+  /** The `%gD` selector (e.g. "refs/stash@{0}") at list time; re-read before use, never cached across a stack mutation. */
+  name: string;
+  stashSha: string;
+  branchName: string;
+  tree: string;
+  parents: string[];
+}
+
 export interface FetchState {
   lastFetchedAt: string | null; // ISO 8601; null = never fetched
 }
@@ -181,4 +191,16 @@ export interface GitClient {
   appendIgnoreFile(paths: string | string[]): Promise<void>;
   /** GHD GitStore.discardChanges: Trash first, then reset and checkout-index only what needs it. */
   discardChanges(files: ChangedFile[], opts?: { moveToTrash?: (absPath: string) => Promise<void> }): Promise<void>;
+  /** GHD getStashes: Desktop-tagged stash entries only, newest first. */
+  desktopStashes(): Promise<DesktopStashEntry[]>;
+  /** GHD getLastDesktopStashEntryForBranch: the newest Desktop-tagged entry for a branch, or null. */
+  lastDesktopStashEntryForBranch(branch: string): Promise<DesktopStashEntry | null>;
+  /** GHD createDesktopStashEntry: stages untrackedPaths, then `stash push` tagged with the branch marker. */
+  createDesktopStashEntry(branch: string, untrackedPaths: ReadonlyArray<string>): Promise<boolean>;
+  /** GHD dropDesktopStashEntry: re-resolves stashSha to its current stash@{n} name before dropping. */
+  dropDesktopStashEntry(stashSha: string): Promise<void>;
+  /** GHD popStashEntry: re-resolves stashSha; a conflicted pop leaves the conflict and drops the entry. */
+  popStashEntry(stashSha: string): Promise<void>;
+  /** GHD getStashedFiles: the file changes a stash commit carries. */
+  stashedFiles(stashSha: string): Promise<CommittedFileChange[]>;
 }

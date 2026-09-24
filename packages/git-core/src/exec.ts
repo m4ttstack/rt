@@ -10,10 +10,16 @@ export interface RawGitOpts {
 // exit code at all and so never matches any `isGitExitCode` check.
 export interface GitExitError extends Error {
   exitCode: number;
+  stdout: string;
+  stderr: string;
 }
 
 export function isGitExitCode(error: unknown, code: number): error is GitExitError {
   return error instanceof Error && "exitCode" in error && (error as GitExitError).exitCode === code;
+}
+
+export function hasGitExitCode(error: unknown): error is GitExitError {
+  return error instanceof Error && "exitCode" in error;
 }
 
 // GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE inherited from the parent process
@@ -76,6 +82,8 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
     if (!ok.has(code)) {
       const error = new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`) as GitExitError;
       error.exitCode = code;
+      error.stdout = out;
+      error.stderr = err;
       throw error;
     }
     return out;

@@ -183,6 +183,12 @@ function makeFakeClient(overrides: {
     stashApply: async () => {},
     stashPop: async () => {},
     stashDrop: async () => {},
+    desktopStashes: async () => [],
+    lastDesktopStashEntryForBranch: async () => null,
+    createDesktopStashEntry: async () => false,
+    dropDesktopStashEntry: async () => {},
+    popStashEntry: async () => {},
+    stashedFiles: async () => [],
     fetchState: async () => ({ lastFetchedAt: null }),
     fetch: async () => {},
     stagingDiff: async (path: string) => {

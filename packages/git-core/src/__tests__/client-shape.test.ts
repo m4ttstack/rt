@@ -18,6 +18,12 @@ describe("createGitClient", () => {
       expect(typeof client.appendIgnoreRule).toBe("function");
       expect(typeof client.appendIgnoreFile).toBe("function");
       expect(typeof client.discardChanges).toBe("function");
+      expect(typeof client.desktopStashes).toBe("function");
+      expect(typeof client.lastDesktopStashEntryForBranch).toBe("function");
+      expect(typeof client.createDesktopStashEntry).toBe("function");
+      expect(typeof client.dropDesktopStashEntry).toBe("function");
+      expect(typeof client.popStashEntry).toBe("function");
+      expect(typeof client.stashedFiles).toBe("function");
     } finally {
       await sb.cleanup();
     }
