@@ -36,7 +36,7 @@ const readyExec: ExecScript = (argv) => {
 /** `readyExec` plus a fast-browser on PATH whose doctor reports the extension not loaded. */
 const fastBrowserNotLoadedExec: ExecScript = (argv) => {
   if (argv[0] === "/opt/tools/fast-browser" && argv[1] === "doctor") {
-    return ok(JSON.stringify({ schemaVersion: 1, ok: false, checks: [{ id: "runtime-checksum", status: "pass" }, { id: "extension-loaded", status: "fail" }, { id: "pairing", status: "pass" }] }));
+    return ok(JSON.stringify({ schemaVersion: 1, ok: false, checks: [{ id: "runtime-checksum", status: "pass" }, { id: "extension-installed", status: "pass" }, { id: "extension-loaded", status: "fail" }, { id: "pairing", status: "pass" }] }));
   }
   return readyExec(argv);
 };

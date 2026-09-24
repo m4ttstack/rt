@@ -56,6 +56,10 @@ function withCheckStatus(doctor: RealDoctor, id: string, status: string): RealDo
   return { ...doctor, checks: doctor.checks.map((c) => (c.id === id ? { ...c, status } : c)) };
 }
 
+function withCheck(doctor: RealDoctor, id: string, patch: Record<string, unknown>): RealDoctor {
+  return { ...doctor, checks: doctor.checks.map((c) => (c.id === id ? { ...c, ...patch } : c)) };
+}
+
 function withoutCheck(doctor: RealDoctor, id: string): RealDoctor {
   return { ...doctor, checks: doctor.checks.filter((c) => c.id !== id) };
 }
@@ -296,11 +300,23 @@ describe("toolRows — tool.fast-browser", () => {
 
   /** Feeds `report` back as doctor's JSON envelope. */
   function doctorExec(report: unknown, code = 0): ExecScript {
-    return (argv) => (argv[2] === "doctor" && argv[3] === "--json" ? { code, stdout: JSON.stringify(report), stderr: "" } : ok());
+    return (argv) => (argv[2] === "doctor" ? { code, stdout: JSON.stringify(report), stderr: "" } : ok());
   }
 
   test("real fully healthy envelope -> ready, and doctor ran through the resolved exec (C2)", async () => {
     const p = fakeProbes({ exec: doctorExec(REAL_DOCTOR) });
+    const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser");
+    expect(p.calls.exec).toContainEqual(["node", "fast-browser.mjs", "doctor", "--checks", "runtime-checksum,extension-installed,extension-loaded,pairing", "--json"]);
+    expect(r.status).toBe("ready");
+  });
+
+  test("a fast-browser without --checks refuses it as a usage error -> rerun as a full doctor", async () => {
+    const exec: ExecScript = (argv) => {
+      if (argv[2] !== "doctor") return ok();
+      if (argv.includes("--checks")) return { code: 2, stdout: "", stderr: "UsageError: unsupported argument: --checks" };
+      return ok(JSON.stringify(REAL_DOCTOR));
+    };
+    const p = fakeProbes({ exec });
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser");
     expect(p.calls.exec).toContainEqual(["node", "fast-browser.mjs", "doctor", "--json"]);
     expect(r.status).toBe("ready");
@@ -366,7 +382,7 @@ describe("toolRows — tool.fast-browser", () => {
   test("doctor exec is issued with a longer timeout than every other probe (RT-138)", async () => {
     const seenTimeouts: Record<string, number | undefined> = {};
     const exec: ExecScript = (argv, execOpts) => {
-      if (argv[2] === "doctor" && argv[3] === "--json") {
+      if (argv[2] === "doctor") {
         seenTimeouts.doctor = execOpts?.timeoutMs;
         return doctorExec(REAL_DOCTOR)(argv);
       }
@@ -384,7 +400,7 @@ describe("toolRows - tool.fast-browser-extension", () => {
     return { ...NOOP_SEAMS, resolveTool: (_p, tool) => (tool === "fast-browser" ? { tool, bundled: "node", exec: ["node", "fast-browser.mjs"], userCopy: null, linked: false, chosen: "node" } : noopResolution(tool)) };
   }
   function doctorExec(report: unknown): ExecScript {
-    return (argv) => (argv[2] === "doctor" && argv[3] === "--json" ? ok(JSON.stringify(report)) : ok());
+    return (argv) => (argv[2] === "doctor" ? ok(JSON.stringify(report)) : ok());
   }
   function withChrome(exec: ExecScript) {
     const p = fakeProbes({ exec });
@@ -408,6 +424,58 @@ describe("toolRows - tool.fast-browser-extension", () => {
     const steps = (r.action as { steps: string[] }).steps;
     expect(steps[0]).toContain("chrome://extensions");
     expect(steps.join(" ")).toContain("reconnect token");
+  });
+
+  // extension-loaded passes when no managed extension is loaded at all and
+  // leaves that to extension-installed, so reading loaded alone called a Mac
+  // with no extension ready.
+  test("extension-installed fails while extension-loaded passes -> needs-you with doctor's message and the load steps", async () => {
+    const report = withCheck(REAL_DOCTOR, "extension-installed", { status: "fail", message: "The pinned Chrome extension is not installed." });
+    const p = withChrome(doctorExec(withCheck(report, "extension-loaded", { message: "No managed Chrome extension load to verify." })));
+    const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(r.detail).toBe("The pinned Chrome extension is not installed.");
+    const steps = (r.action as { steps: string[] }).steps;
+    expect(steps[0]).toContain("chrome://extensions");
+  });
+
+  // doctor distinguishes a missing extension from a store copy on another
+  // version, and only its own remedy fits each; the load steps would swap a
+  // store copy for one that never auto-updates.
+  test("extension-installed fails with a remedy -> the row's steps are doctor's remedy", async () => {
+    const remediation = "Chrome updates it once the store has 0.2.12. To check now, open chrome://extensions, turn on Developer mode, and click Update.";
+    const report = withCheck(REAL_DOCTOR, "extension-installed", { status: "fail", message: "The Chrome Web Store copy is at 0.2.11; this Fast Browser pins 0.2.12.", remediation });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(r.action).toEqual({ type: "steps", label: "Show steps…", steps: [remediation] });
+  });
+
+  // Swift decodes steps as [String] and detail as String; one wrong-typed
+  // field fails the whole plan and the checklist never loads.
+  test("a non-string remedy or message from doctor falls back instead of reaching the row", async () => {
+    const report = withCheck(REAL_DOCTOR, "extension-installed", { status: "fail", message: 42, remediation: { text: "x" } });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(typeof r.detail).toBe("string");
+    expect((r.action as { steps: string[] }).steps[0]).toContain("chrome://extensions");
+  });
+
+  // A stale unpacked load needs Chrome's reload arrow; loading unpacked again
+  // wipes the reconnect token and forces a re-pair.
+  test("extension-loaded fails with a remedy -> the row's steps are doctor's remedy", async () => {
+    const remediation = "Open chrome://extensions and click the reload arrow on Fast Browser.";
+    const report = withCheck(REAL_DOCTOR, "extension-loaded", { status: "fail", remediation });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(r.action).toEqual({ type: "steps", label: "Show steps…", steps: [remediation] });
+  });
+
+  test("extension-installed check absent from the report -> error naming the remedy", async () => {
+    const p = withChrome(doctorExec(withoutCheck(REAL_DOCTOR, "extension-installed")));
+    const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("error");
+    expect(r.detail).toContain("extension-installed");
+    expect(r.action).toEqual({ type: "run", label: "Re-check", verb: ["setup", "status"] });
   });
 
   // doctor's own "pairing" check already passes whenever the connection mode
@@ -471,6 +539,8 @@ describe("toolRows - tool.fast-browser-extension", () => {
       doctorExec(withCheckStatus(REAL_DOCTOR, "pairing", "fail")),
       doctorExec(withoutCheck(REAL_DOCTOR, "extension-loaded")),
       doctorExec(withoutCheck(REAL_DOCTOR, "pairing")),
+      doctorExec(withCheckStatus(REAL_DOCTOR, "extension-installed", "fail")),
+      doctorExec(withoutCheck(REAL_DOCTOR, "extension-installed")),
     ];
     for (const exec of scenarios) {
       const r = await pickRow(toolRows(withChrome(exec), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
@@ -485,7 +555,7 @@ describe("toolRows — well-formed-JSON-but-wrong-shape doctor payloads: no thro
     return { ...NOOP_SEAMS, resolveTool: (_p, tool) => (tool === "fast-browser" ? { tool, bundled: "node", exec: ["node", "fast-browser.mjs"], userCopy: null, linked: false, chosen: "node" } : noopResolution(tool)) };
   }
   function doctorExec(report: unknown): ExecScript {
-    return (argv) => (argv[2] === "doctor" && argv[3] === "--json" ? ok(JSON.stringify(report)) : ok());
+    return (argv) => (argv[2] === "doctor" ? ok(JSON.stringify(report)) : ok());
   }
   function withChrome(exec: ExecScript) {
     const p = fakeProbes({ exec });
@@ -1084,7 +1154,7 @@ describe("Done-screen contract: optional rows with a manual action", () => {
 
   test("fast-browser extension not loaded and a pack declaring chrome sign-in: both are the allowlisted manual steps", async () => {
     const reqs: PackRequirements[] = [{ pack: "somepack", integrations: [], tools: [], chrome: { required: true, signedIntoApp: "work@example.com" } }];
-    const exec: ExecScript = (argv) => (argv[2] === "doctor" && argv[3] === "--json" ? ok(JSON.stringify(withCheckStatus(REAL_DOCTOR, "extension-loaded", "fail"))) : ok());
+    const exec: ExecScript = (argv) => (argv[2] === "doctor" ? ok(JSON.stringify(withCheckStatus(REAL_DOCTOR, "extension-loaded", "fail"))) : ok());
     const p = fakeProbes({ exec });
     p.mkdirp("/Applications/Google Chrome.app");
     const rows = await toolRows(p, reqs, { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams());
