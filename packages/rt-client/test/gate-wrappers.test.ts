@@ -56,7 +56,7 @@ describe("gateForkCheck", () => {
       "gate:fork-check": { ok: true, data: { allow: true, match: "pane", gateId: "gt-1" } },
     });
     stops.push(stop);
-    const payload = { sessionId: "sess-1", paneId: "wKW:p2", subject: "herd:x/y", worktrees: ["/wt/a", "/private/wt/a"] };
+    const payload = { sessionIds: ["sess-hook", "sess-env"], paneId: "wKW:p2", subject: "herd:x/y", worktrees: ["/wt/a", "/private/wt/a"] };
     const res = await gateForkCheck(payload, { sockPath: sock });
     expect(res.ok).toBe(true);
     expect(res.data).toEqual({ allow: true, match: "pane", gateId: "gt-1" });

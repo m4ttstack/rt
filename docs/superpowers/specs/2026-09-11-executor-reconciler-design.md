@@ -173,18 +173,22 @@ stamped at launch: `RT_AGENT_ID`, `RT_GATE_SUBJECT`, `RT_DAEMON_SOCK`.
 
 Hook logic, in order (updated 2026-09-23: the script now hands the hook
 payload to `rt gate fork-check`, and the daemon's `gate:fork-check` verb
-decides; the list below supersedes the original three steps):
+decides; the list below supersedes the original three steps). No step
+counts a `pane-attention` gate, which the reconciler files under
+`RT_GATE_SUBJECT` to report on the pane. The caller's sessions are the
+hook payload's `session_id` and `CLAUDE_CODE_SESSION_ID`, which
+`rt gate ask` stamps as the nudge session and which can differ.
 
 1. No `rt`, daemon unreachable, or no verdict: **allow** (degraded mode
    stays legal). A 10s hook timeout makes a wedged `rt` fail open too.
 2. An open or parked gate exists for `RT_GATE_SUBJECT`: **allow**.
 3. An open form gate on any subject was asked from this pane
-   (`origin.paneId`, else the `pane` column), its pane is still live
-   (executor not `gone`, delivery not `dead-pane`), and its nudge session
-   is the caller's when both carry one: **allow**.
+   (`origin.paneId`, else the `pane` column), its executor is not
+   `gone`, and its nudge session is one of the caller's when both sides
+   carry one (the real guard, since herdr reuses pane ids): **allow**.
 4. An open `run:` gate's `origin.worktree` is this pane's cwd: **allow**.
-5. An open gate exists on the subject `rt gate ask` would resolve for this
-   session (the same resolver): **allow**.
+5. An open gate exists on the subject `rt gate ask` would resolve for
+   either of the caller's sessions (the same resolver): **allow**.
 6. Otherwise: **deny**, telling the agent to run `rt gate ask` and act on
    the returned presentation (form: ask it in the pane, which step 3 then
    allows; wait: background `rt gate wait <id>`).

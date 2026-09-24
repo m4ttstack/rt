@@ -63,7 +63,7 @@ describe("gate:fork-check pane rule", () => {
     expect(row.origin?.presentation).toBe("form");
 
     const res = await handlers["gate:fork-check"]({
-      sessionId: SESSION, paneId: PANE, subject: LAUNCH, worktrees: ["/wt/eomer"],
+      sessionIds: [SESSION], paneId: PANE, subject: LAUNCH, worktrees: ["/wt/eomer"],
     });
     expect(res).toEqual({ ok: true, data: { allow: true, match: "pane", gateId: asked.data.id } });
   });
@@ -71,7 +71,7 @@ describe("gate:fork-check pane rule", () => {
   test("a form gate asked with an explicit subject from this pane allows", async () => {
     const { handlers, open } = harness();
     const gate = open("mr:https://x/1", { origin: { ...FORM, paneId: PANE }, nudge: SESSION });
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, paneId: PANE, subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], paneId: PANE, subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: true, match: "pane", gateId: gate.id } });
   });
 
@@ -110,18 +110,18 @@ describe("gate:fork-check pane rule", () => {
     expect(res).toEqual({ ok: true, data: { allow: false } });
   });
 
-  test("a stale pane id denies: the gate's last push found a dead pane", async () => {
-    const { handlers, store, open } = harness();
-    store.markDelivery(open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE } }).id, "dead-pane");
-    const res = await handlers["gate:fork-check"]({ paneId: PANE, subject: LAUNCH });
-    expect(res).toEqual({ ok: true, data: { allow: false } });
-  });
-
   test("a reused pane id under a different session denies", async () => {
     const { handlers, open } = harness();
     open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE }, nudge: "sess-previous-launch" });
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, paneId: PANE, subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], paneId: PANE, subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: false } });
+  });
+
+  test("hook and env session ids that differ: a gate stamped with the env id still allows", async () => {
+    const { handlers, open } = harness();
+    const gate = open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE }, nudge: "sess-env" });
+    const res = await handlers["gate:fork-check"]({ sessionIds: ["sess-hook", "sess-env"], paneId: PANE, subject: LAUNCH });
+    expect(res).toEqual({ ok: true, data: { allow: true, match: "pane", gateId: gate.id } });
   });
 
   test("a wait gate from this pane denies", async () => {
@@ -130,12 +130,33 @@ describe("gate:fork-check pane rule", () => {
     const res = await handlers["gate:fork-check"]({ paneId: PANE, subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: false } });
   });
+});
 
-  test("a pane-attention gate on this pane denies", async () => {
-    const { handlers, open } = harness();
-    open("agent:ag-1", { kind: "pane-attention", origin: { presentation: "wait", paneId: PANE, worktree: "/wt/eomer" } });
+describe("gate:fork-check never counts a pane-attention gate", () => {
+  const ATTENTION = { kind: "pane-attention", origin: { presentation: "wait" as const, paneId: PANE, worktree: "/wt/eomer" } };
+
+  test("filed under the launch subject, open or parked, it denies", async () => {
+    const { handlers, store, open } = harness();
+    const gate = open(LAUNCH, ATTENTION);
     const res = await handlers["gate:fork-check"]({ paneId: PANE, subject: LAUNCH, worktrees: ["/wt/eomer"] });
     expect(res).toEqual({ ok: true, data: { allow: false } });
+    store.park(gate.id);
+    const parked = await handlers["gate:fork-check"]({ paneId: PANE, subject: LAUNCH });
+    expect(parked).toEqual({ ok: true, data: { allow: false } });
+  });
+
+  test("filed under a run: subject for this worktree, it denies", async () => {
+    const { handlers, open } = harness();
+    open("run:r1", ATTENTION);
+    const res = await handlers["gate:fork-check"]({ subject: LAUNCH, worktrees: ["/wt/eomer"] });
+    expect(res).toEqual({ ok: true, data: { allow: false } });
+  });
+
+  test("filed under the subject the session resolves to, it denies", async () => {
+    const { handlers, open } = harness(runSession("r1"));
+    open("run:r1", ATTENTION);
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], subject: LAUNCH });
+    expect(res).toEqual({ ok: true, data: { allow: false, subject: "run:r1" } });
   });
 });
 
@@ -143,7 +164,7 @@ describe("gate:fork-check launch subject rule", () => {
   test("an open gate on the launch subject allows, without walking run DBs", async () => {
     const { handlers, open, seen } = harness(runSession("r1"));
     const gate = open(LAUNCH);
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: true, match: "subject", gateId: gate.id } });
     expect(seen).toEqual([]);
   });
@@ -179,7 +200,7 @@ describe("gate:fork-check worktree rule", () => {
     const elsewhere = await handlers["gate:fork-check"]({ subject: LAUNCH, worktrees: ["/wt/eomer"] });
     expect(elsewhere).toEqual({ ok: true, data: { allow: false } });
     const mine = open("run:r2", { origin: { presentation: "wait", runId: "r2", worktree: "/wt/eomer" } });
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, subject: LAUNCH, worktrees: ["/private/wt/eomer", "/wt/eomer"] });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], subject: LAUNCH, worktrees: ["/private/wt/eomer", "/wt/eomer"] });
     expect(res).toEqual({ ok: true, data: { allow: true, match: "worktree", gateId: mine.id } });
     expect(seen).toEqual([]);
   });
@@ -203,28 +224,36 @@ describe("gate:fork-check session rule", () => {
   test("a relaunched pane (new pane id, same session) reaches its run gate through the resolver", async () => {
     const { handlers, open, seen } = harness(runSession("r1"));
     const gate = open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE }, nudge: SESSION });
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, paneId: "wKW:p5", subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], paneId: "wKW:p5", subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: true, match: "session", gateId: gate.id } });
     expect(seen).toEqual([{ sessionId: SESSION }]);
+  });
+
+  test("differing hook and env session ids: each is resolved, and the env one reaches its run", async () => {
+    const { handlers, open, seen } = harness(runSession("r1"));
+    const gate = open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE }, nudge: SESSION });
+    const res = await handlers["gate:fork-check"]({ sessionIds: ["sess-hook", SESSION], paneId: "wKW:p5", subject: LAUNCH });
+    expect(res).toEqual({ ok: true, data: { allow: true, match: "session", gateId: gate.id } });
+    expect(seen).toEqual([{ sessionId: "sess-hook" }, { sessionId: SESSION }]);
   });
 
   test("a parked gate on the resolved run subject denies, naming that subject", async () => {
     const { handlers, store, open } = harness(runSession("r1"));
     store.park(open("run:r1", { origin: { ...FORM, runId: "r1", paneId: PANE }, nudge: SESSION }).id);
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, paneId: "wKW:p5", subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], paneId: "wKW:p5", subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: false, subject: "run:r1" } });
   });
 
   test("nothing open denies and reports the subject rt gate ask would file under", async () => {
     const { handlers, seen } = harness(runSession("r1"));
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, paneId: PANE, subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], paneId: PANE, subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: false, subject: "run:r1" } });
     expect(seen).toEqual([{ sessionId: SESSION }]);
   });
 
   test("a resolver refusal denies with no subject to name", async () => {
     const { handlers } = harness(() => ({ ok: false, error: "multiple running runs for this session" }));
-    const res = await handlers["gate:fork-check"]({ sessionId: SESSION, subject: LAUNCH });
+    const res = await handlers["gate:fork-check"]({ sessionIds: [SESSION], subject: LAUNCH });
     expect(res).toEqual({ ok: true, data: { allow: false } });
   });
 });

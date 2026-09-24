@@ -788,14 +788,17 @@ export interface Commands {
   };
   /** The AskUserQuestion hook's verdict for the calling pane: allow only
       when a live gate backs the form. The session rule uses gate:ask's own
-      resolver for `sessionId`, so the hook and the ceremony can never
-      disagree about which gate is this pane's. `subject` is the launch
-      subject (RT_GATE_SUBJECT), the one rule that accepts a parked gate;
-      `paneId` matches open form gates on any subject whose pane is still
-      live, and `worktrees` matches open run: gates. On a deny,
+      resolver for each of `sessionIds`, so the hook and the ceremony can
+      never disagree about which gate is this pane's. `sessionIds` carries
+      both the hook payload's session and CLAUDE_CODE_SESSION_ID, since
+      gate:ask stamps its nudge from the latter and the two can differ.
+      `subject` is the launch subject (RT_GATE_SUBJECT), the one rule that
+      accepts a parked gate; `paneId` matches open form gates on any
+      subject whose nudge session is the caller's, and `worktrees` matches
+      open run: gates. No rule counts a pane-attention gate. On a deny,
       `data.subject` is what `rt gate ask` would file under, when resolvable. */
   "gate:fork-check": {
-    payload: { sessionId?: string; paneId?: string; subject?: string; worktrees?: string[] };
+    payload: { sessionIds?: string[]; paneId?: string; subject?: string; worktrees?: string[] };
     data: {
       allow: boolean;
       match?: "session" | "subject" | "pane" | "worktree";

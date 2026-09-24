@@ -240,8 +240,10 @@ export const FORK_CHECK_ALLOW = {
   hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
 } as const;
 
-/** Claude Code's PreToolUse stdin carries `session_id` and `cwd`; the env
-    session and the process cwd are fallbacks for a caller that pipes none.
+/** Claude Code's PreToolUse stdin carries `session_id` and `cwd`; the
+    process cwd is the fallback for a caller that pipes none. Both session
+    ids ride along because `rt gate ask` stamps its gate from
+    CLAUDE_CODE_SESSION_ID, which need not equal the hook's `session_id`.
     Null means this pane is not an `rt agent` launch (no RT_GATE_SUBJECT):
     such a pane is allowed without asking the daemon. */
 export function buildForkCheckPayload(
@@ -258,8 +260,9 @@ export function buildForkCheckPayload(
   } catch { /* no payload: fall back to env and process cwd */ }
 
   const payload: Commands["gate:fork-check"]["payload"] = { subject };
-  const sessionId = typeof hook.session_id === "string" && hook.session_id ? hook.session_id : env.CLAUDE_CODE_SESSION_ID;
-  if (sessionId) payload.sessionId = sessionId;
+  const sessionIds = [...new Set([hook.session_id, env.CLAUDE_CODE_SESSION_ID])]
+    .filter((s): s is string => typeof s === "string" && s.length > 0);
+  if (sessionIds.length > 0) payload.sessionIds = sessionIds;
   if (env.HERDR_PANE_ID) payload.paneId = env.HERDR_PANE_ID;
   // Both spellings: a run records whichever path its pipeline saw, and a
   // symlinked tree differs between the logical and the physical one.

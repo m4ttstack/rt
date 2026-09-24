@@ -117,9 +117,12 @@ describe("AskUserQuestion hook e2e", () => {
     rmSync(tree, { recursive: true, force: true });
   });
 
-  const hook = (pane: string, session: string) => finished(spawnTracked(
+  const hook = (pane: string, session: string, envSession?: string) => finished(spawnTracked(
     [HOOK_PATH],
-    baseEnv(home, { HERDR_PANE_ID: pane, RT_GATE_SUBJECT: LAUNCH_SUBJECT, RT_AGENT_ID: "ag-e2e" }),
+    baseEnv(home, {
+      HERDR_PANE_ID: pane, RT_GATE_SUBJECT: LAUNCH_SUBJECT, RT_AGENT_ID: "ag-e2e",
+      ...(envSession ? { CLAUDE_CODE_SESSION_ID: envSession } : {}),
+    }),
     JSON.stringify({ session_id: session, cwd: tree, hook_event_name: "PreToolUse", tool_name: "AskUserQuestion" }),
     tree,
   ));
@@ -132,6 +135,12 @@ describe("AskUserQuestion hook e2e", () => {
 
   test("pane rule: the pane and session that asked get the form", async () => {
     const res = await hook(ASK_PANE, ASK_SESSION);
+    expect(res.exitCode).toBe(0);
+    expect(JSON.parse(res.stdout)).toEqual(ALLOW);
+  }, 30_000);
+
+  test("pane rule: a hook session id that differs from the env one gate ask stamped still gets the form", async () => {
+    const res = await hook(ASK_PANE, "sess-hook-differs", ASK_SESSION);
     expect(res.exitCode).toBe(0);
     expect(JSON.parse(res.stdout)).toEqual(ALLOW);
   }, 30_000);

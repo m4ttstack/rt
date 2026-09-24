@@ -11,20 +11,30 @@ const agentEnv = {
 } as NodeJS.ProcessEnv;
 
 describe("buildForkCheckPayload", () => {
-  test("the hook stdin's session and cwd win over the env and process cwd", () => {
+  test("sends the hook stdin's session and the env session, and the stdin cwd over the process cwd", () => {
     const stdin = JSON.stringify({ session_id: "sess-hook", cwd: "/does/not/exist", hook_event_name: "PreToolUse" });
     expect(buildForkCheckPayload(stdin, agentEnv, "/elsewhere")).toEqual({
       subject: "herd:acme-x/acme-1234-attorney",
-      sessionId: "sess-hook",
+      sessionIds: ["sess-hook", "sess-env"],
       paneId: "wKW:p2",
       worktrees: ["/does/not/exist"],
     });
   });
 
+  test("one session id when stdin and env agree", () => {
+    const stdin = JSON.stringify({ session_id: "sess-env" });
+    expect(buildForkCheckPayload(stdin, agentEnv, "/x")?.sessionIds).toEqual(["sess-env"]);
+  });
+
   test("no stdin payload falls back to the env session and the process cwd", () => {
     const p = buildForkCheckPayload("", agentEnv, "/does/not/exist");
-    expect(p?.sessionId).toBe("sess-env");
+    expect(p?.sessionIds).toEqual(["sess-env"]);
     expect(p?.worktrees).toEqual(["/does/not/exist"]);
+  });
+
+  test("no session anywhere leaves the field absent", () => {
+    const env = { RT_GATE_SUBJECT: "herd:x/y" } as NodeJS.ProcessEnv;
+    expect(buildForkCheckPayload("{}", env, "/x")?.sessionIds).toBeUndefined();
   });
 
   test("a symlinked cwd sends both the logical and the physical path", () => {
