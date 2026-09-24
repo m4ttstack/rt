@@ -438,6 +438,13 @@ export function buildModel(input: {
   branches: BranchInfo[];
   guards: Map<string, string>;
   worktrees: WorktreeRow[];
+  /**
+   * The current worktree's badge from this session's own live git read.
+   * `rows` and `worktrees` carry the daemon's swept cache, which lags any
+   * action taken here, so every row describing the current worktree shows
+   * this instead.
+   */
+  currentBadge: GitWorktreeBadge;
   stagingDiff: StagingDiff | null;
   lastCommit: MissionLastCommit | null;
   action: ActionState;
@@ -455,25 +462,31 @@ export function buildModel(input: {
   stashDiff?: { path: string | null; status: string; diff: StagingDiff | null; oversizedOverride: boolean };
   canStash?: boolean;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff, stash, stashDiff } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, currentBadge, stagingDiff, lastCommit, action, headShortSha, defaultBranch, now = new Date(), historyDiff, stash, stashDiff } = input;
   const tab = input.tab ?? "changes";
 
-  const repos: MissionRepoRow[] = rows.map((row) => ({
-    id: row.repo,
-    label: repoLabel(row.repo),
-    group: repoGroup(row.repo),
-    badge: row.worktrees[0] ? toMissionBadge(row.worktrees[0]) : EMPTY_BADGE,
-    current: row.repo === state.currentRepo,
-  }));
+  const repos: MissionRepoRow[] = rows.map((row) => {
+    const shown = row.worktrees[0];
+    return {
+      id: row.repo,
+      label: repoLabel(row.repo),
+      group: repoGroup(row.repo),
+      badge: shown ? toMissionBadge(shown.worktree === state.currentWorktree ? currentBadge : shown) : EMPTY_BADGE,
+      current: row.repo === state.currentRepo,
+    };
+  });
 
-  const worktreeRows: MissionWorktreeRow[] = worktrees.map((worktree) => ({
-    path: worktree.path,
-    name: worktree.name,
-    branch: worktree.branch,
-    badge: toMissionBadge(worktree.badge),
-    current: worktree.path === state.currentWorktree,
-    onDeck: worktree.onDeck,
-  }));
+  const worktreeRows: MissionWorktreeRow[] = worktrees.map((worktree) => {
+    const current = worktree.path === state.currentWorktree;
+    return {
+      path: worktree.path,
+      name: worktree.name,
+      branch: worktree.branch,
+      badge: toMissionBadge(current ? currentBadge : worktree.badge),
+      current,
+      onDeck: worktree.onDeck,
+    };
+  });
 
   const branchRows: MissionBranchRow[] = buildBranchRows(branches, guards, defaultBranch, now);
 

@@ -154,6 +154,7 @@ function makeFakeClient(overrides: {
   localCommits?: GitClient["localCommits"];
   changedFiles?: GitClient["changedFiles"];
   commitDiff?: GitClient["commitDiff"];
+  fetchState?: GitClient["fetchState"];
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = {
     stagingDiff: [],
@@ -190,7 +191,7 @@ function makeFakeClient(overrides: {
     dropDesktopStashEntry: async () => {},
     popStashEntry: async () => {},
     stashedFiles: async () => [],
-    fetchState: async () => ({ lastFetchedAt: null }),
+    fetchState: overrides.fetchState ?? (async () => ({ lastFetchedAt: null })),
     fetch: async () => {},
     stagingDiff: async (path: string) => {
       calls.stagingDiff.push(path);
@@ -519,9 +520,6 @@ describe("MissionDriver: badge resolution", () => {
     const session = new FakeSession([{ t: "intent", name: "quit" }]);
     let opened: MissionModel | null = null;
     const client = makeFakeClient({
-      // No upstream at all in the live snapshot either, so the synthetic
-      // fallback badge genuinely has none -- this isolates "never borrows
-      // /elsewhere's badge" from the live-snapshot fallback covered below.
       snapshot: async () => baseSnapshot({ upstream: null, ahead: null, behind: null }),
     });
     const deps = baseDeps({
@@ -539,18 +537,12 @@ describe("MissionDriver: badge resolution", () => {
 
     await new MissionDriver(deps, START).run();
 
-    // No upstream anywhere it's allowed to look, so publish-branch; borrowing
+    // The live read has no upstream, so publish-branch; borrowing
     // /elsewhere's badge (ahead 9, upstream set) would say push instead.
     expect(opened!.action.kind).toBe("publish-branch");
   });
 
-  // Owner-confirmed real-repo defect: on a repo the daemon has never swept,
-  // currentBadge() fell back to EMPTY_GIT_BADGE (null upstream), so the
-  // action segment claimed "Publish branch · Never fetched" even when the
-  // branch demonstrably has an upstream and is ahead. Fixed by falling back
-  // to the live snapshot's own upstream/ahead/behind (already fetched on
-  // every refresh, independent of the daemon) instead of a blank badge.
-  test("a missing badge falls back to the live snapshot's own upstream/ahead/behind, not a blank badge", async () => {
+  test("a repo the daemon has never swept still shows the live snapshot's own upstream/ahead/behind, not a blank badge", async () => {
     const session = new FakeSession([{ t: "intent", name: "quit" }]);
     let opened: MissionModel | null = null;
     const client = makeFakeClient({
@@ -569,10 +561,153 @@ describe("MissionDriver: badge resolution", () => {
 
     await new MissionDriver(deps, START).run();
 
-    // Real upstream + ahead 1, behind 0 -> push, never the false
-    // publish-branch/"Never fetched" the empty-badge fallback produced.
     expect(opened!.action.kind).toBe("push");
-    expect(opened!.action.meta).toBe("Never fetched"); // still accurate: the DAEMON hasn't fetched
+    // The fake's fetchState has no FETCH_HEAD.
+    expect(opened!.action.meta).toBe("Never fetched");
+  });
+});
+
+/**
+ * The daemon's repos:status cache for /repo is stale by `current`, as it is
+ * between an action landing and the next sweep. /repo2 and other-repo are
+ * never the current worktree, so their cached badges are the only source.
+ */
+function staleDaemon(current: Partial<GitWorktreeBadge>): MissionDeps["daemonQuery"] {
+  return async (cmd: string) =>
+    cmd === "worktree:list"
+      ? {
+          ok: true,
+          data: {
+            trees: [
+              { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+              { path: "/repo2", name: "frodo", branch: "feature", state: "claimed" },
+            ],
+          },
+        }
+      : {
+          ok: true,
+          data: {
+            repos: [
+              {
+                repo: "repo-tools",
+                error: null,
+                worktrees: [badge({ worktree: "/repo", ...current }), badge({ worktree: "/repo2", branch: "feature", ahead: 4, behind: 2 })],
+              },
+              { repo: "other-repo", error: null, worktrees: [badge({ worktree: "/other/tree", branch: "dev", ahead: 3 })] },
+            ],
+          },
+        };
+}
+
+describe("MissionDriver: the current worktree's status is the live read, never the daemon's cache", () => {
+  async function openedModel(client: GitClient, daemonCurrent: Partial<GitWorktreeBadge>): Promise<MissionModel> {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({ session, client, daemonQuery: staleDaemon(daemonCurrent) });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+    await new MissionDriver(deps, START).run();
+    return opened!;
+  }
+
+  test("after a push: the daemon still says 6 ahead, the live read says 0, so the action is Fetch origin", async () => {
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: 0 }) });
+
+    const model = await openedModel(client, { ahead: 6, upstream: "origin/main" });
+
+    expect(model.action.kind).toBe("fetch");
+    expect(model.action.title).toBe("Fetch origin");
+    expect(model.action.ahead).toBe(0);
+  });
+
+  test("after a commit: the daemon says 0 ahead, the live read says 1, so the action is Push origin, 1 ahead", async () => {
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: 1 }) });
+
+    const model = await openedModel(client, { ahead: 0 });
+
+    expect(model.action.kind).toBe("push");
+    expect(model.action.title).toBe("Push origin");
+    expect(model.action.ahead).toBe(1);
+  });
+
+  test("after publishing a branch: the daemon has no upstream, the live read does, so the action is not Publish branch", async () => {
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ upstream: "origin/main", ahead: 0 }) });
+
+    const model = await openedModel(client, { upstream: null });
+
+    expect(model.action.kind).not.toBe("publish-branch");
+    expect(model.action.kind).toBe("fetch");
+  });
+
+  test("the current worktree's foldout row shows the live counts; another worktree's row keeps the daemon's", async () => {
+    const client = makeFakeClient({
+      snapshot: async () =>
+        baseSnapshot({
+          ahead: 0,
+          clean: false,
+          files: [
+            { path: "a.txt", kind: "modified", staged: true, unstaged: false },
+            { path: "b.txt", kind: "untracked", staged: false, unstaged: true },
+          ],
+        }),
+    });
+
+    const model = await openedModel(client, { ahead: 6, staged: 0, untracked: 0, clean: true });
+
+    expect(model.worktrees.find((w) => w.path === "/repo")!.badge).toMatchObject({ ahead: 0, behind: 0, staged: 1, unstaged: 0, untracked: 1, clean: false });
+    expect(model.worktrees.find((w) => w.path === "/repo2")!.badge).toMatchObject({ ahead: 4, behind: 2 });
+  });
+
+  test("the current repo's foldout row shows the live badge when it describes the current worktree; other repos keep the daemon's", async () => {
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: 0 }) });
+
+    const model = await openedModel(client, { ahead: 6 });
+
+    expect(model.repos.find((r) => r.id === "repo-tools")!.badge.ahead).toBe(0);
+    expect(model.repos.find((r) => r.id === "other-repo")!.badge.ahead).toBe(3);
+  });
+
+  test("lastFetchedAt comes from the client's fetchState, not the daemon's badge", async () => {
+    const fetchedAt = "2026-09-17T10:00:00.000Z";
+    const client = makeFakeClient({ fetchState: async () => ({ lastFetchedAt: fetchedAt }) });
+
+    const model = await openedModel(client, { lastFetchedAt: null });
+
+    expect(model.worktrees.find((w) => w.path === "/repo")!.badge.lastFetchedAt).toBe(fetchedAt);
+    expect(model.worktrees.find((w) => w.path === "/repo2")!.badge.lastFetchedAt).toBe("2026-01-01T00:00:00Z");
+    expect(model.action.meta).toStartWith("Last fetched");
+  });
+
+  test("a git-status refresh re-reads fetchState alongside the snapshot", async () => {
+    const reads = ["2026-09-17T10:00:00.000Z", "2026-09-17T11:00:00.000Z"];
+    let fetchStateCalls = 0;
+    const client = makeFakeClient({
+      fetchState: async () => ({ lastFetchedAt: reads[Math.min(fetchStateCalls++, reads.length - 1)]! }),
+    });
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: staleDaemon({ lastFetchedAt: null }),
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.worktrees.find((w) => w.path === "/repo")!.badge.lastFetchedAt).toBe(reads[1]!);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 });
 
@@ -599,14 +734,10 @@ describe("MissionDriver: real remote name, pull.rebase, and guards", () => {
       { t: "intent", name: "mission:action" },
       { t: "intent", name: "quit" },
     ]);
-    const client = makeFakeClient({ remotes: async () => [{ name: "upstream" }] });
+    const client = makeFakeClient({ remotes: async () => [{ name: "upstream" }], snapshot: async () => baseSnapshot({ ahead: 1, behind: 0 }) });
     const deps = baseDeps({
       session,
       client,
-      daemonQuery: async (cmd: string) =>
-        cmd === "worktree:list"
-          ? { ok: true, data: { trees: defaultTrees() } }
-          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 1, behind: 0 })] }] } },
       runAction: async (_cwd, _kind, opts) => {
         capturedOpts = opts;
         return { ok: true, detail: "" };
@@ -623,10 +754,7 @@ describe("MissionDriver: real remote name, pull.rebase, and guards", () => {
     let opened: MissionModel | null = null;
     const deps = baseDeps({
       session,
-      daemonQuery: async (cmd: string) =>
-        cmd === "worktree:list"
-          ? { ok: true, data: { trees: defaultTrees() } }
-          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 0, behind: 1 })] }] } },
+      client: makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: 0, behind: 1 }) }),
       readPullRebase: () => true,
     });
     deps.openSession = async (_view, model) => {
@@ -1157,11 +1285,12 @@ describe("MissionDriver: worktree", () => {
     expect(session.pushed).toHaveLength(0); // never switched, never pushed
   });
 
-  test("switching worktree re-seeds worktree:list and pushes a model whose Current joins the new path's real name and badge", async () => {
+  test("switching worktree re-seeds worktree:list and pushes a model whose Current joins the new path's real name and live badge", async () => {
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { path: "/repo2" } },
       { t: "intent", name: "quit" },
     ]);
+    const repo2 = makeFakeClient({ snapshot: async () => baseSnapshot({ branch: "feature", upstream: "origin/feature", ahead: 4 }) });
     const deps = baseDeps({
       session,
       daemonQuery: async (cmd: string) =>
@@ -1182,12 +1311,14 @@ describe("MissionDriver: worktree", () => {
                   {
                     repo: "repo-tools",
                     error: null,
-                    worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/repo2", branch: "feature", ahead: 4 })],
+                    worktrees: [badge({ worktree: "/repo", ahead: 7 }), badge({ worktree: "/repo2", branch: "feature", ahead: 9 })],
                   },
                 ],
               },
             },
     });
+    const repo = makeFakeClient();
+    deps.client = (dir: string) => (dir === "/repo2" ? repo2 : repo);
 
     await new MissionDriver(deps, START).run();
 
@@ -1199,6 +1330,7 @@ describe("MissionDriver: worktree", () => {
     expect(row?.name).toBe("frodo");
     expect(row?.onDeck).toBe(true);
     expect(row?.badge.ahead).toBe(4);
+    expect(last.worktrees.find((w) => w.path === "/repo")?.badge.ahead).toBe(7);
   });
 });
 
@@ -1799,10 +1931,7 @@ describe("MissionDriver: action", () => {
     ]);
     const deps = baseDeps({
       session,
-      daemonQuery: async () => ({
-        ok: true,
-        data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 1, behind: 0 })] }] },
-      }),
+      client: makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: 1, behind: 0 }) }),
       runAction: async () => {
         await Promise.resolve();
         return { ok: true, detail: "" };
@@ -1815,6 +1944,35 @@ describe("MissionDriver: action", () => {
     expect(session.pushed[0]!.action.busy).toBe(true);
     const last = session.pushed.at(-1)!;
     expect(last.action.busy).toBe(false);
+  });
+
+  test("after a successful push, the next model reflects the live snapshot the client returns after it", async () => {
+    let pushed = false;
+    const kinds: string[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:action" },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ snapshot: async () => baseSnapshot({ ahead: pushed ? 0 : 6 }) });
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: staleDaemon({ ahead: 6 }),
+      runAction: async (_cwd, kind) => {
+        kinds.push(kind);
+        pushed = true;
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(kinds).toEqual(["push"]);
+    const last = session.pushed.at(-1)!;
+    expect(last.action.kind).toBe("fetch");
+    expect(last.action.title).toBe("Fetch origin");
+    expect(last.action.ahead).toBe(0);
+    expect(last.worktrees.find((w) => w.path === "/repo")!.badge.ahead).toBe(0);
   });
 
   test("a rejected runAction still clears busyAction via the finally cleanup", async () => {
