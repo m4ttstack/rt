@@ -3,7 +3,7 @@
 How every mattstack app (rt, deck, board, gitq) declares, reads, and writes
 human-intent configuration. Read this before adding a key, porting an app, or
 building anything that touches `~/.mattstack`. The dated design records live in
-`docs/superpowers/specs/` (2026-08-20 suite spec, [2026-08-21 re-root spec](docs/superpowers/specs/2026-08-21-home-repo-reroot.md)) and
+`docs/superpowers/specs/` (2026-08-20 suite spec, [2026-08-21 re-root spec](superpowers/specs/2026-08-21-home-repo-reroot.md)) and
 Linear (MAT-374, RT-30/31/32); this file is the live contract.
 
 ## The three-layer rule
