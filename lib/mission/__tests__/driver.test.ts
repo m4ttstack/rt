@@ -801,6 +801,28 @@ describe("MissionDriver: real remote name, pull.rebase, and guards", () => {
     expect(last.action.kind).toBe("publish-repo");
   });
 
+  test("a publish whose push fails after gh added origin leaves Publish repository and keeps gh's message", async () => {
+    let remotes: { name: string }[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:publish", payload: { name: "acme-app", private: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client: makeFakeClient({ remotes: async () => remotes }),
+      publishRepo: async () => {
+        remotes = [{ name: "origin" }];
+        return { ok: false, detail: "error: failed to push some refs" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("error: failed to push some refs");
+    expect(last.action.kind).not.toBe("publish-repo");
+  });
+
   test("a blank publish name runs nothing", async () => {
     let calls = 0;
     const session = new FakeSession([

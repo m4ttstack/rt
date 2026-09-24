@@ -784,20 +784,20 @@ export class MissionDriver {
     await this.runBusy(() => this.deps.publishRepo(this.state.currentWorktree, { name, private: payload?.private !== false }));
   }
 
-  /** One remote action under the busy segment: a failure is the notice, a success refreshes. */
+  /**
+   * One remote action under the busy segment: a failure is the notice, and
+   * either way it refreshes, since a failure can still change the repo (gh
+   * adds origin before the push that fails, so remoteName moves).
+   */
   private async runBusy(run: () => Promise<{ ok: boolean; detail: string }>, onOk?: () => void): Promise<void> {
     this.state.busyAction = true;
     this.recomputeAction();
     this.push();
     try {
       const result = await run();
-      if (!result.ok) {
-        this.state.notice = result.detail;
-      } else {
-        this.state.notice = "";
-        onOk?.();
-        await this.refresh();
-      }
+      this.state.notice = result.ok ? "" : result.detail;
+      if (result.ok) onOk?.();
+      await this.refresh();
     } finally {
       // Reached on a rejection too, so a stalled/failed action never leaves
       // the model stuck busy for the caller's error boundary to clean up.
