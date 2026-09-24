@@ -37,7 +37,7 @@
 
 ---
 
-### Task 1: Board gate cache carries owner and keeps openedAt
+### Task 1: Board gate cache carries owner, ignores duplicate opened frames, never regresses status
 
 Repo: mattstack-apps.
 
@@ -48,11 +48,11 @@ Repo: mattstack-apps.
 - Test: `apps/board/src/__tests__/gates-cache.test.ts`, `apps/board/src/__tests__/gates-ingest.test.ts`
 
 **Interfaces:**
-- Produces: `GateRow.owner?: string` (board client row). `attachGates` and `buildQueueExtras` set it from the facility row's `owner` when non-null. `GateCache.applyEvent` on `gate/opened` stores `owner` from the payload and keeps a cached row's `openedAt` when the id is already known.
+- Produces: `GateRow.owner?: string` (board client row). `attachGates` and `buildQueueExtras` set it from the facility row's `owner` when non-null. `GateCache.applyEvent` on `gate/opened` stores `owner` from the payload and ignores a frame whose id is already cached. `GateCache.applyRow` never moves a known id backwards in status (open, parked, answered, closed). `GateCache.revision: number` increases on every write that changes the cache (Task 2 reads it).
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `apps/board/src/__tests__/gates-cache.test.ts`:
+Append to `apps/board/src/__tests__/gates-cache.test.ts` (add `cachedExecution` to its existing import from `../gates/cache.ts`):
 
 ```ts
 describe('GateCache opened frames', () => {
@@ -88,6 +88,35 @@ describe('GateCache opened frames', () => {
       payload: { id: 'g3', subject: 'agent:a3', kind: 'pane-attention', questions: [], owner: 'human' },
     });
     expect(cache.get('agent:a3', 'pane-attention')?.openedAt).toBe(1000);
+  });
+});
+
+describe('GateCache status is monotonic per id', () => {
+  test('a stale open copy of an answered gate does not reopen it', () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ id: 'g5', subject: 'agent:a5', kind: 'pane-attention', status: 'answered' }));
+    cache.applyRow(row({ id: 'g5', subject: 'agent:a5', kind: 'pane-attention', status: 'open' }));
+    expect(cache.get('agent:a5', 'pane-attention')?.status).toBe('answered');
+  });
+
+  test('a resync copy with a new execution value on the same status still lands', () => {
+    const cache = new GateCache();
+    const base = row({ id: 'g10', subject: 'agent:a10', kind: 'pane-attention', status: 'answered' });
+    cache.applyRow(base);
+    cache.applyRow({ ...base, execution: 'unassigned' } as FacilityGateRow);
+    expect(cachedExecution(cache.get('agent:a10', 'pane-attention')!)).toBe('unassigned');
+  });
+
+  test('revision moves on a real change and not on a no-op', () => {
+    const cache = new GateCache();
+    const r0 = cache.revision;
+    cache.applyRow(row({ id: 'g6', subject: 'agent:a6', kind: 'pane-attention', status: 'open' }));
+    const r1 = cache.revision;
+    cache.applyRow(row({ id: 'g6', subject: 'agent:a6', kind: 'pane-attention', status: 'open' }));
+    expect(r1).toBeGreaterThan(r0);
+    expect(cache.revision).toBe(r1);
+    cache.applyRow(row({ id: 'g6', subject: 'agent:a6', kind: 'pane-attention', status: 'answered' }));
+    expect(cache.revision).toBeGreaterThan(r1);
   });
 });
 
@@ -151,7 +180,7 @@ describe('buildQueueExtras owner', () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd apps/board && bun test src/__tests__/gates-cache.test.ts src/__tests__/gates-ingest.test.ts`
-Expected: FAIL. The owner tests get `null`/`undefined`; the duplicate-frame test gets a receipt-time `openedAt`.
+Expected: FAIL for the owner-carrying tests, the duplicate-frame test (receipt-time `openedAt`), the monotonic-status test, and the revision test. "an opened frame without an owner stores null" already passes today; it is a guard, not a failing test.
 
 - [ ] **Step 3: Implement**
 
@@ -163,15 +192,67 @@ Expected: FAIL. The owner tests get `null`/`undefined`; the duplicate-frame test
   owner?: string;
 ```
 
-`apps/board/src/gates/cache.ts`, in `applyOpened` replace the `openedAt: Date.now(),` line and the `owner: null,` line:
+`apps/board/src/gates/cache.ts`:
+
+Add above `export class GateCache`:
 
 ```ts
-      openedAt: this.findById(id)?.openedAt ?? Date.now(),
+/** A gate only moves forward through these, so an older copy of a known
+    id (a resync read that raced a live patch) must never overwrite it. */
+const STATUS_RANK: Record<FacilityGateRow['status'], number> = {
+  open: 0,
+  parked: 1,
+  answered: 2,
+  closed: 3,
+};
+
+/** Whole-row comparison: resync is the only path that updates fields no
+    bus frame patches (delivery, execution, escalatedAt), so a narrower
+    check would silently freeze them. */
+function sameRow(a: FacilityGateRow, b: FacilityGateRow): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 ```
+
+Replace `applyRow` with:
+
+```ts
+  /** Increases on every write that changes a row, so a caller can tell a
+      no-op resync from one that found something. */
+  revision = 0;
+
+  applyRow(row: FacilityGateRow): void {
+    const key = cacheKey(row.subject, row.kind);
+    const existing = this.byKey.get(key);
+    if (existing && existing.id !== row.id && existing.openedAt > row.openedAt)
+      return;
+    if (
+      existing &&
+      existing.id === row.id &&
+      STATUS_RANK[existing.status] > STATUS_RANK[row.status]
+    )
+      return;
+    if (existing && sameRow(existing, row)) return;
+    this.byKey.set(key, row);
+    this.revision++;
+  }
+```
+
+If `FacilityGateRow['status']` has members other than those four, `bun run typecheck` will say so; add each with the rank that matches its place in the lifecycle.
+
+In `applyOpened`, add as the first line after the three `if (...) return;` guards:
+
+```ts
+    if (this.findById(id)) return;
+```
+
+(A frame for a known id carries nothing the cached row lacks, and replaying it would reset status, answer, and `openedAt`.) Then replace `this.byKey.set(cacheKey(subject, kind), {` with `this.applyRow({` and keep the object literal; replace `owner: null,` inside it with:
 
 ```ts
       owner: typeof payload.owner === 'string' ? payload.owner : null,
 ```
+
+`applyRow`'s older-sibling check can now drop an opened frame whose receipt-time `openedAt` is older than a cached different-id row on the same subject and kind; that cannot happen with receipt time, which is always now.
 
 Delete the now-false sentence "so the optimistic row starts supersededBy, owner, escalatedAt, and consumedAt empty" by rewriting that comment to:
 
@@ -220,11 +301,12 @@ Repo: mattstack-apps.
 
 **Interfaces:**
 - Consumes: `reconcileGatesOnBoot(list, cache)`, `reconcileAttentionGatesOnBoot(list, cache)` (existing, `ingest.ts`).
-- Produces: `class GateResync { constructor(list, cache, onError: (message: string) => void); run(): Promise<void> }`. `run()` runs both reconciles; a call while one is in flight returns without starting another.
+- Consumes: `GateCache.revision` (Task 1).
+- Produces: exported `GateListPayload`, `GateListResult` types; `class GateResync { constructor(list, cache: GateReconcileTarget & { readonly revision: number }, onError: (message: string) => void); run(): Promise<boolean> }`. `run()` runs both reconciles and resolves `true` when the cache changed; a call while one is in flight resolves `false` without starting another.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `apps/board/src/__tests__/gates-ingest.test.ts` (add `GateResync` to the `../gates/ingest.ts` import):
+Append to `apps/board/src/__tests__/gates-ingest.test.ts` (add `GateResync` to the `../gates/ingest.ts` import). The `row()` helper used below is the one in `gates-cache.test.ts`; copy it into this file if it is not already defined here:
 
 ```ts
 describe('GateResync', () => {
@@ -260,6 +342,27 @@ describe('GateResync', () => {
     expect(cache.get(`mr:${url}`, 'review-post')?.status).toBe('answered');
   });
 
+  test('a live answered patch is not undone by a resync that read the gate as open', async () => {
+    const cache = new GateCache();
+    const subject = 'mr:https://x/-/merge_requests/7';
+    cache.applyEvent({
+      topic: 'gate/opened/g7',
+      payload: { id: 'g7', subject, kind: 'review-post', questions: [], owner: 'human' },
+    });
+    const staleOpen = { ...cache.get(subject, 'review-post')! };
+    cache.applyEvent({ topic: 'gate/answered/g7', payload: { id: 'g7', answers: { q: 'a' }, by: 'pane' } });
+    const { list } = listOf([staleOpen]);
+    await new GateResync(list, cache, () => {}).run();
+    expect(cache.get(subject, 'review-post')?.status).toBe('answered');
+  });
+
+  test('run() reports whether the cache changed', async () => {
+    const cache = new GateCache();
+    const fresh = row({ id: 'g8', subject: 'mr:https://x/-/merge_requests/8', kind: 'review-post' });
+    expect(await new GateResync(listOf([fresh]).list, cache, () => {}).run()).toBe(true);
+    expect(await new GateResync(listOf([fresh]).list, cache, () => {}).run()).toBe(false);
+  });
+
   test('a run() while one is in flight does not start a second pass', async () => {
     let release!: () => void;
     const gate = new Promise<void>(r => (release = r));
@@ -286,7 +389,7 @@ Expected: FAIL with `GateResync` not exported.
 
 - [ ] **Step 3: Implement**
 
-Append to `apps/board/src/gates/ingest.ts`:
+In `apps/board/src/gates/ingest.ts`, change `type GateListPayload = {` to `export type GateListPayload = {` and `type GateListResult = {` to `export type GateListResult = {`. Then append:
 
 ```ts
 /** Re-lists every gate scope the board caches. The relay is broadcast-only
@@ -294,16 +397,17 @@ Append to `apps/board/src/gates/ingest.ts`:
     is what brings the cache back in line after a gap. Overlapping calls
     collapse into the one already running. */
 export class GateResync {
-  private inFlight: Promise<void> | null = null;
+  private inFlight: Promise<boolean> | null = null;
 
   constructor(
     private readonly list: (payload: GateListPayload) => Promise<GateListResult>,
-    private readonly cache: GateReconcileTarget,
+    private readonly cache: GateReconcileTarget & { readonly revision: number },
     private readonly onError: (message: string) => void
   ) {}
 
-  run(): Promise<void> {
-    if (this.inFlight) return Promise.resolve();
+  run(): Promise<boolean> {
+    if (this.inFlight) return Promise.resolve(false);
+    const before = this.cache.revision;
     this.inFlight = (async () => {
       try {
         await reconcileGatesOnBoot(this.list, this.cache);
@@ -313,6 +417,7 @@ export class GateResync {
       } finally {
         this.inFlight = null;
       }
+      return this.cache.revision !== before;
     })();
     return this.inFlight;
   }
@@ -333,10 +438,16 @@ const gateResync = new GateResync(gateList, gateCache, m => console.error(m));
 
 ```ts
 if (!FIXTURE_DIR) {
-  void gateResync.run().then(sseNudge);
-  setInterval(() => void gateResync.run().then(sseNudge), GATE_RESYNC_INTERVAL_MS);
+  const resyncAndNudge = () =>
+    void gateResync.run().then(changed => {
+      if (changed) sseNudge();
+    });
+  resyncAndNudge();
+  setInterval(resyncAndNudge, GATE_RESYNC_INTERVAL_MS);
 }
 ```
+
+(A nudge makes every open board tab re-pull `/data.json`, which runs the off-board prune and the reconciler fetch, so the timer nudges only when something changed.)
 
 4. In the relay callback `subscribe((type, data) => { ... })`, as its first statement:
 
@@ -344,7 +455,10 @@ if (!FIXTURE_DIR) {
       // The daemon sends mr:status on every socket open, so this is the
       // reconnect signal; it also fires on connection-state changes, which
       // only costs an extra idempotent resync.
-      if (type === 'mr:status') void gateResync.run().then(sseNudge);
+      if (type === 'mr:status')
+        void gateResync.run().then(changed => {
+          if (changed) sseNudge();
+        });
 ```
 
 If `reconcileGatesOnBoot` / `reconcileAttentionGatesOnBoot` are now unused imports in `server.ts`, remove them from the import.
@@ -372,7 +486,8 @@ Repo: mattstack-apps.
 
 **Files:**
 - Create: `apps/board/src/gates/badge.ts`
-- Modify: `apps/board/src/server.ts` (new `case '/api/badge'` in the main route switch, next to `case '/data.json'`)
+- Modify: `apps/board/src/cache.ts` (`SnapshotCache.peek`)
+- Modify: `apps/board/src/server.ts` (new `case '/api/badge'` in the pre-token route switch, next to `case '/healthz'`)
 - Modify: `apps/board/mattstack.deck.json`
 - Test: `apps/board/src/__tests__/gates-badge.test.ts`
 
@@ -387,7 +502,11 @@ Create `apps/board/src/__tests__/gates-badge.test.ts`:
 ```ts
 import { describe, expect, test } from 'bun:test';
 
+import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
+
 import { ATTENTION_MIN_AGE_MS, boardBadge, countsForBadge } from '../gates/badge.ts';
+import { GateCache } from '../gates/cache.ts';
+import { buildQueueExtras } from '../gates/ingest.ts';
 import type { GateRow } from '../gates/store.ts';
 
 const NOW = 10_000_000;
@@ -438,6 +557,19 @@ describe('countsForBadge', () => {
 });
 
 describe('boardBadge', () => {
+  test('an escalated herd-owned attention gate admitted to queueExtras is not counted', () => {
+    const cache = new GateCache();
+    cache.applyRow({
+      id: 'g-herd', subject: 'herd:h1/job1', kind: 'pane-attention', questions: [], meta: null,
+      status: 'open', answer: null, openedAt: 0, parkedAt: null, closedAt: null, closedReason: null,
+      agent: null, pane: null, nudge: null, delivery: null, released: false, supersededBy: null,
+      owner: 'herd:h1', escalatedAt: 5, consumedAt: null, context: null, origin: null,
+    } as FacilityGateRow);
+    const extras = buildQueueExtras(cache.rows());
+    expect(extras).toHaveLength(1);
+    expect(boardBadge(extras, NOW).count).toBe(0);
+  });
+
   test('zero counted gates yields count 0 and no path', () => {
     expect(boardBadge([gate({ status: 'answered' })], NOW)).toEqual({ count: 0 });
   });
@@ -491,13 +623,22 @@ export function boardBadge(gates: GateRow[], now: number): BoardBadge {
 }
 ```
 
-`apps/board/src/server.ts`: import `boardBadge` from `./gates/badge.ts` and `buildQueueExtras` if not already imported. In the main `switch (pathname)` (the one containing `case '/data.json': {` near line 1095), add directly before `case '/data.json': {`:
+`apps/board/src/cache.ts`, add to `SnapshotCache`:
+
+```ts
+  /** The current snapshot without triggering a fetch; null before the first lands. */
+  peek(): Snapshot | null {
+    return this.snapshot;
+  }
+```
+
+`apps/board/src/server.ts`: import `boardBadge` from `./gates/badge.ts` and `buildQueueExtras` if not already imported. The route must sit in the pre-token `switch (pathname)` (the one with `case '/healthz':`, before the `getGitlabToken()` round trip), because the tray times out at 2s and a wedged daemon stalls that round trip. It must never await a fetch. Add directly after `case '/healthz': return new Response('ok');`:
 
 ```ts
       case '/api/badge': {
-        const snapshot = await cache.get();
         const visible = config.members.filter(m => !m.hidden);
-        const mrGates = attachGates(visibleMrsFor(snapshot.mrs, visible), gateCache).flatMap(
+        const mrs = cache.peek()?.mrs ?? [];
+        const mrGates = attachGates(visibleMrsFor(mrs, visible), gateCache).flatMap(
           mr => mr.gates
         );
         return Response.json(
@@ -505,6 +646,8 @@ export function boardBadge(gates: GateRow[], now: number): BoardBadge {
         );
       }
 ```
+
+In fixture mode the fixture switch falls through to this one, so the route answers `{"count":0}` from the empty cache.
 
 `apps/board/mattstack.deck.json`: add a top-level key after `"includeInBundle": true,`:
 
@@ -517,19 +660,12 @@ export function boardBadge(gates: GateRow[], now: number): BoardBadge {
 Run: `cd apps/board && bun test src/__tests__/gates-badge.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Verify the route against a running board, then commit**
+- [ ] **Step 5: Typecheck and commit**
 
 Run: `cd apps/board && bun run typecheck`
 Expected: exit 0.
 
-Run the board from this worktree on a spare port and hit the route (do not restart the deck-managed board):
-
-```bash
-cd apps/board && PORT=11906 bun src/server.ts > /tmp/board-badge.log 2>&1 &
-sleep 5; curl -s http://127.0.0.1:11906/api/badge; kill %1
-```
-
-Expected: a JSON body like `{"count":0}` or `{"count":N,"path":"/?gate=..."}`. If the server needs a different port variable, read the top of `src/server.ts` for how it binds and use that; report what you ran.
+Do not start a second board process to smoke-test the route: it shares the real state dir, can claim the writer lease, and runs the off-board gate prune. The live route is exercised in Task 8.
 
 ```bash
 git add apps/board/src/gates/badge.ts apps/board/src/server.ts apps/board/mattstack.deck.json apps/board/src/__tests__/gates-badge.test.ts
@@ -898,7 +1034,7 @@ test('discovery omits badge when the manifest has none', async () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd apps/deck && bun test src/registry/deck-manifest.test.ts src/api/discovery.test.ts`
-Expected: FAIL (`badge` undefined in the pass-through tests).
+Expected: FAIL for "reads a relative badge path" and "discovery passes a manifest badge path through". "drops a badge that is absolute or protocol-relative" and "discovery omits badge when the manifest has none" already pass today; they are guards.
 
 - [ ] **Step 3: Implement**
 
@@ -1065,7 +1201,7 @@ let badgeChecks: [Check] = [
                            OpenRequest(app: "console", pathAndQuery: "/runs/acme/r2"))
         c.expect(BadgeBook.firstBadged(["board": BadgeReading(count: 0, path: nil)], order: ["board"]) == nil)
     },
-    Check("firstBadged with no path opens the app root") { c in
+    Check("firstBadged with no path selects the tab without navigating") { c in
         try c.requireEqual(BadgeBook.firstBadged(["board": BadgeReading(count: 2, path: nil)], order: ["board"]),
                            OpenRequest(app: "board", pathAndQuery: ""))
     },
@@ -1126,13 +1262,17 @@ public enum BadgeParse {
         return URL(string: app.url + path)
     }
 
+    private struct Payload: Decodable {
+        let count: Int
+        let path: String?
+    }
+
+    /// `JSONDecoder` rejects a fractional, boolean, or missing count.
     public static func parse(_ data: Data) -> BadgeReading? {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let number = object["count"] as? NSNumber,
-              CFNumberIsFloatType(number) == false,
-              number.intValue >= 0 else { return nil }
-        let path = (object["path"] as? String).flatMap { isInAppPath($0) ? $0 : nil }
-        return BadgeReading(count: number.intValue, path: path)
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              payload.count >= 0 else { return nil }
+        return BadgeReading(count: payload.count,
+                            path: payload.path.flatMap { isInAppPath($0) ? $0 : nil })
     }
 }
 
@@ -1307,21 +1447,29 @@ private let badgeFill = ShellChrome.badgeFill.color
 private let badgeText = ShellChrome.badgeText.color
 ```
 
-In `TabButton.body`, inside the `HStack(spacing: 6)`, between the `Text(app.displayName.lowercased())...lineLimit(1)` view and `Spacer(minLength: 0)`, add:
+A Button's label is one hit target on macOS, so the pill cannot live inside the tab Button's label; it must be a sibling Button. In `TabButton.body`, wrap the whole existing `Button { model.select(app.name) } label: { ... }` expression, together with its trailing modifiers (`.buttonStyle(.plain)`, `.help`, `.modifier(TabShortcut(...))`, `.contextMenu`), in:
 
 ```swift
-                    if let count = model.badges[app.name]?.count, let label = BadgeBook.label(count) {
-                        Text(label)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(badgeText)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(Capsule().fill(badgeFill))
-                            .fixedSize()
-                            .help("Open the oldest waiting decision")
-                            .highPriorityGesture(TapGesture().onEnded { model.openBadge(for: app.name) })
-                    }
+        ZStack(alignment: .trailing) {
+            // existing tab Button and its modifiers, unchanged
+            if let count = model.badges[app.name]?.count, let label = BadgeBook.label(count) {
+                Button { model.openBadge(for: app.name) } label: {
+                    Text(label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(badgeText)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Capsule().fill(badgeFill))
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+                .help("Open the oldest waiting decision")
+            }
+        }
 ```
+
+and change the label `HStack`'s `.padding(.leading, 10)` to `.padding(.leading, 10).padding(.trailing, 30)` so a long app name truncates before the pill instead of under it.
 
 Add `import MattstackCore` at the top of the file if it is not already imported.
 
@@ -1346,9 +1494,9 @@ Add `import MattstackCore` at the top of the file if it is not already imported.
 
 ```swift
             Task { @MainActor in
-                if let model = self.windowModel, let request = model.firstBadgedRequest(),
-                   await model.open(request) {
-                    return
+                if let model = self.windowModel, let request = model.firstBadgedRequest() {
+                    self.mattstackWindow?.show()
+                    if await model.open(request) { return }
                 }
                 // `windowModel.controller` is a weak back-reference; fall
                 // back to the strongly-held `mattstackWindow` ivar if it's
@@ -1361,7 +1509,7 @@ Add `import MattstackCore` at the top of the file if it is not already imported.
             }
 ```
 
-`WindowModel.open` calls `controller?.show()`, which is the weak reference; if the checks in Step 5 show the window does not appear on a badged dock click, show `mattstackWindow` before calling `open`.
+A failed `open` (the app is no longer in the catalog) falls through to today's plain show.
 
 - [ ] **Step 5: Build and run the checks**
 
