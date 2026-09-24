@@ -1114,9 +1114,16 @@ async function connectSlack(args: string[], deps: ConnectDeps): Promise<void> {
   }
 
   const clientSecret = await deps.teamSecrets.read(snapshot.slug, "board", "slackClientSecret");
-  // Honest about the interim single-recipient store: a missing value here means "not readable on THIS machine",
-  // never "the app doesn't exist" — advising a re-create would spawn a duplicate Slack app.
-  if (!clientSecret) throw new UserActionableError("slack-app-missing", `no Slack client secret found for team "${snapshot.slug}" on this machine`);
+  // A missing value means "not readable on THIS machine": a joiner's age key
+  // decrypts team secrets only after the owner's members sync lands, and the
+  // app itself exists (clientId is set), so advising a re-create would spawn a
+  // duplicate Slack app.
+  if (!clientSecret) {
+    throw new UserActionableError(
+      "slack-app-missing",
+      `the Slack client secret for team "${snapshot.slug}" is not readable on this machine yet: the team owner must run \`rt team members sync\` and push before your key can decrypt team secrets; pull the team clone and try again after that`,
+    );
+  }
 
   const tokenRes = await deps.probes.fetch("https://slack.com/api/oauth.v2.access", {
     method: "POST",

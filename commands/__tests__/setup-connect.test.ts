@@ -506,6 +506,22 @@ describe("integrationConnect — slack (OAuth flow)", () => {
     expect(payload.error.message.toLowerCase()).not.toContain("recreate");
   });
 
+  test("clientId present but no readable client secret -> the detail names the owner's members sync as the wait", async () => {
+    const deps = baseDeps({
+      probes: fakeProbes({ exec: async () => ok() }),
+      teamSnapshot: () => slackTeamSnapshot(),
+      randomState: () => "state-abc",
+      listen: async () => "auth-code",
+      teamSecrets: { read: async () => null, write: neverCalled("teamSecrets.write") },
+    });
+
+    await expectExit(() => integrationConnect("slack", ["--json"], deps));
+
+    const payload = JSON.parse(deps.lines[0]!) as { error: { code: string; message: string } };
+    expect(payload.error.message).toContain("rt team members sync");
+    expect(payload.error.message).toContain("team owner");
+  });
+
   test("a listen() rejection (state mismatch, timeout, busy port) maps to exit 2, never an unhandled rejection", async () => {
     const deps = baseDeps({
       teamSnapshot: () => slackTeamSnapshot(),
