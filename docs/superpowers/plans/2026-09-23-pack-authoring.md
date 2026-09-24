@@ -2025,10 +2025,10 @@ Open a PR from `pack-authoring` in mattstack-skills, wait for checks, merge. The
 
 ```bash
 rt skills sync --pack mattstack
-rt skills check --pack claimview
+rt skills check --pack <existing team pack>
 ```
 
-Expected: sync reports the new version installed; claimview check reports no engine drift (no engine changed). If sync warns about a cswap session, repeat the update with that session's `CLAUDE_CONFIG_DIR`.
+Expected: sync reports the new version installed; the existing team pack's check reports no engine drift (no engine changed). If sync warns about a cswap session, repeat the update with that session's `CLAUDE_CONFIG_DIR`.
 
 - [ ] **Step 4: Verify live**
 
