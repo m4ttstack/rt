@@ -490,6 +490,24 @@ describe("rt release update-machine", () => {
       expect(calls.some((c) => c.startsWith("ditto") && c.includes("mattstack-dev.app"))).toBe(false);
     });
 
+    test("a dev app that was not running is replaced but never opened, since opening it would take the Mac over", async () => {
+      const { seams, calls } = fakeSeams({ devPidsBefore: [] });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("ok");
+      expect(leg.detail).toContain("not running");
+      expect(calls).toContain("ditto /work/rt-dev-bundle/rt-tray/mattstack-dev.app /Applications/mattstack-dev.app");
+      expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack-dev.app"))).toBe(false);
+    });
+
+    test("a failed swap does not reopen a dev app that was not running", async () => {
+      const { seams, calls } = fakeSeams({ devPidsBefore: [], devDittoExit: 1 });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("error");
+      expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack-dev.app"))).toBe(false);
+    });
+
     test("a kill that races the process's own exit (ESRCH) is tolerated, not an error", async () => {
       const { seams } = fakeSeams({ killRaceExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });

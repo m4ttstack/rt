@@ -391,7 +391,11 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
   const build = await seams.exec(["rt-tray/build.sh", "dev"], { cwd: bundleDir });
   if (build.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `build.sh dev failed: ${execTail(build)}`);
 
-  for (const pid of await pgrepPids(seams, DEV_APP_ANCHOR)) {
+  // Opening the dev app by hand takes the Mac over from mattstack.app, so it
+  // is relaunched only when it was the app running before.
+  const runningBefore = await pgrepPids(seams, DEV_APP_ANCHOR);
+  const wasRunning = runningBefore.length > 0;
+  for (const pid of runningBefore) {
     const kill = await seams.exec(["kill", String(pid)]);
     if (kill.exitCode !== 0) {
       // A process that already exited between pgrep and kill (ESRCH) is not a failure.
@@ -411,11 +415,16 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
     if (failure.atDest === "unsafe") {
       return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; not reopened, ${DEV_APP_PATH} is not safe to launch`);
     }
+    if (!wasRunning) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; not reopened, it was not running`);
     const which = failure.atDest === "previous" ? "reopened the previous app" : "opened the new app";
     const reopen = await seams.exec(["open", DEV_APP_PATH]);
     const pids = reopen.exitCode === 0 ? await pollForPids(seams, DEV_APP_ANCHOR, 5, 500) : [];
     const tail = pids.length > 0 ? `${which} (pid ${pids[0]})` : `opening ${DEV_APP_PATH} did not bring up a process${reopen.exitCode === 0 ? "" : `: ${execTail(reopen)}`}`;
     return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `${failure.error}; ${tail}`);
+  }
+
+  if (!wasRunning) {
+    return okLeg("dev-bundle", DEV_BUNDLE_LABEL, `${DEV_APP_PATH} rebuilt at ${ctx.sha.slice(0, 12)}; not relaunched, it was not running`);
   }
 
   const open = await seams.exec(["open", DEV_APP_PATH]);
