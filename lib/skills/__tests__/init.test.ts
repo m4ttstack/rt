@@ -327,6 +327,21 @@ describe("initPack", () => {
     expect(calls.claude).toContainEqual(["plugin", "install", "acme@acme-market"]);
   });
 
+  test("install failing with stderr empty still surfaces the CLI's stdout detail", async () => {
+    const { deps } = world({
+      claude: async (args) => {
+        if (args[2] === "list") return ok("[]");
+        if (args[2] === "add") return ok("");
+        if (args[0] === "plugin" && args[1] === "install") return { code: 1, stdout: "no such plugin", stderr: "" };
+        return ok("");
+      },
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: false, code: "install-failed" });
+    if (out.ok || out.refused) return;
+    expect(out.detail).toContain("no such plugin");
+  });
+
   test("refuses before writing: pack-exists when the declaring zone already has a pack", async () => {
     const { deps, fs } = world({
       files: {

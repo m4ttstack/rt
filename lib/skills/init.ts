@@ -359,14 +359,14 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
     const added = await attempt("install-failed", () => claude(["plugin", "marketplace", "add", zone.dir]));
     if ("outcome" in added) return added.outcome;
     if (added.value.code !== 0 && !isAlreadyDone(added.value)) {
-      return failed("install-failed", `claude plugin marketplace add exited ${added.value.code}: ${added.value.stderr.trim()}`);
+      return failed("install-failed", `claude plugin marketplace add exited ${added.value.code}: ${added.value.stderr.trim() || added.value.stdout.trim()}`);
     }
   }
   const pluginId = `${pack}@${marketplace}`;
   const installed = await attempt("install-failed", () => claude(["plugin", "install", pluginId]));
   if ("outcome" in installed) return installed.outcome;
   if (installed.value.code !== 0 && !isAlreadyDone(installed.value)) {
-    return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.value.code}: ${installed.value.stderr.trim()}`);
+    return failed("install-failed", `claude plugin install ${pluginId} exited ${installed.value.code}: ${installed.value.stderr.trim() || installed.value.stdout.trim()}`);
   }
 
   return {
