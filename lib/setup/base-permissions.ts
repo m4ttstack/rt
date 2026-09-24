@@ -18,6 +18,13 @@
  * without them every such call prompts on a fresh Mac. Both write only the
  * caller's own run and gates, and the mattstack MCP server (allowed above)
  * already exposes the gate verbs, so they add no reach.
+ *
+ * The git entries are the verbs the compiled team packs run from Bash in
+ * those same panes (ship pushes and rebases, receive-review pushes before
+ * a Fixed reply, every stage reads status, diff and log). A pane in a mode
+ * stricter than auto prompts on each without them. No reset, clean,
+ * branch -D or push --force: force-with-lease is the strongest push a pack
+ * issues.
  */
 export const BASE_PERMISSIONS: string[] = [
   "mcp__plugin_fast-browser_fast-browser",
@@ -30,4 +37,11 @@ export const BASE_PERMISSIONS: string[] = [
   "Bash(rt skills sync *)",
   "Bash(rt runs *)",
   "Bash(rt gate *)",
+  "Bash(git commit *)",
+  "Bash(git push *)",
+  "Bash(git fetch *)",
+  "Bash(git rebase *)",
+  "Bash(git status *)",
+  "Bash(git diff *)",
+  "Bash(git log *)",
 ];
