@@ -274,16 +274,18 @@ export async function initPack(opts: { repoDir: string; zone: string | null }, d
 
   let zones = readZones(deps.fs, deps.home);
   let choice = chooseZone(zones, repo, opts.zone);
+  let wantedZone = opts.zone;
   if (choice.kind === "missing" && opts.zone === null) {
     if (!deps.isTTY) {
       return refuse("zone-missing", `no team zone without a pack covers ${repo.host}; run rt team create <Name> --remote <url>, then re-run`);
     }
     const answer = await deps.promptZone();
     const created = await deps.createZone(answer.name, answer.remote);
+    wantedZone = created.slug;
     zones = readZones(deps.fs, deps.home);
     choice = chooseZone(zones, repo, created.slug);
   }
-  if (choice.kind === "missing") return refuse("zone-missing", `no team zone named "${opts.zone}"`);
+  if (choice.kind === "missing") return refuse("zone-missing", `no team zone named "${wantedZone}"`);
   if (choice.kind === "ambiguous") {
     return refuse("zone-ambiguous", `several zones could host this pack: ${choice.zones.map((z) => z.slug).join(", ")}; pass --zone <slug>`);
   }

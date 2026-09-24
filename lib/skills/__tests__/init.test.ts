@@ -408,6 +408,20 @@ describe("initPack", () => {
     expect(fs.readFile(`${HOME}/.mattstack/teams/beta/mattstack/team.jsonc`)).toContain("gitlab.example.com");
   });
 
+  test("zone-missing with a TTY: createZone reports a slug but writes no zone files, so the re-resolve miss names that slug, not null", async () => {
+    const { deps } = world({
+      gitRemote: async () => ({ kind: "ok", url: "git@gitlab.example.com:acme/api.git" }),
+      isTTY: true,
+      promptZone: async () => ({ name: "Beta", remote: "https://gitlab.example.com/acme/mattstack-team-beta.git" }),
+      createZone: async () => ({ slug: "beta", dir: `${HOME}/.mattstack/teams/beta` }),
+    });
+    const out = await initPack({ repoDir: REPO, zone: null }, deps);
+    expect(out).toMatchObject({ ok: false, refused: true, code: "zone-missing" });
+    if (out.ok || !out.refused) return;
+    expect(out.detail).toContain("beta");
+    expect(out.detail).not.toContain("null");
+  });
+
   test("a compile failure after writing reports every written path", async () => {
     const { deps } = world({ compile: async () => ({ ok: false, errors: ["boom"] }) });
     const out = await initPack({ repoDir: REPO, zone: null }, deps);
