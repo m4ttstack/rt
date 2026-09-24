@@ -4,14 +4,16 @@ import type { DirtClass, DirtKind } from "../dirt-class.ts";
 import type { KeepRecord } from "../registry.ts";
 import { keepStillHolds, type Fingerprint } from "./fingerprint.ts";
 
-export type TriageGroup = "safe" | "look" | "only-copy" | "waiting" | "broken" | "kept";
+export type BrokenKind = "gone" | "unlinked";
+export type TriageGroup ="safe" | "look" | "only-copy" | "waiting" | "broken" | "kept";
 export type TriageAction = "dispose" | "review" | "push-branch" | "keep" | "unkeep" | "stop-process"
   | "open-herd" | "open-run" | "remove" | "open-finder" | "open-terminal" | "copy-path";
 export type PushKind = "pushed" | "in-main" | "remote-deleted" | "unpushed";
 export interface TriageHold { kind: "process" | "orphan-stopping" | "herd" | "run"; detail: string }
 export interface TriageFacts {
   repo: string; tree: string; path: string; branch: string | null;
-  broken: boolean;
+  /** "gone": the folder itself is missing. "unlinked": the folder is there but its git link is not. */
+  broken: BrokenKind | null;
   mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
   ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
   remoteBranchExists: boolean; ahead: number;
@@ -60,7 +62,9 @@ function safeVerdict(f: TriageFacts): string {
 
 function verdictOf(f: TriageFacts, group: TriageGroup): string {
   switch (group) {
-    case "broken": return "Its repo or git directory is gone. Nothing to recover.";
+    case "broken": return f.broken === "unlinked"
+      ? "Its git link is broken. The folder still has files; Remove moves it to the trash."
+      : "Its folder is gone. Nothing to recover.";
     case "kept": return "Kept. Comes back here if it changes.";
     case "waiting": return `Waiting: ${f.hold!.detail.trimEnd().replace(/\.$/, "")}.`;
     case "only-copy": return "Only copy of this work. Push the branch to keep it, or dispose to drop it.";

@@ -1,11 +1,11 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { closeStateDb } from "../../../state/index.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../registry.ts";
-import { collectFacts, isStuck, triageRepo, type TriageDeps } from "../facts.ts";
+import { collectFacts, isStuck, linkedGitdir, triageRepo, type TriageDeps } from "../facts.ts";
 
 const GIT_ID = "-c user.email=t@t -c user.name=t";
 const sh = (c: string, cwd?: string) => execSync(c, { cwd, shell: "/bin/zsh", stdio: "pipe" }).toString().trim();
@@ -48,6 +48,11 @@ describe("isStuck", () => {
     expect(isStuck(rec, null, true)).toBe(true);
     expect(isStuck({ ...rec, kind: "main" }, "merged", false)).toBe(false);
   });
+
+  test("a creating or on-deck tree is never stuck, even when it reads as broken", () => {
+    expect(isStuck({ ...rec, state: "creating" }, null, true)).toBe(false);
+    expect(isStuck({ ...rec, state: "on-deck" }, "merged", true)).toBe(false);
+  });
 });
 
 describe("collectFacts", () => {
@@ -56,7 +61,7 @@ describe("collectFacts", () => {
     mkdirSync(join(rec.path, ".visual"));
     writeFileSync(join(rec.path, ".visual", "a.png"), "x");
     const f = await collectFacts(repoName, repo, rec, deps(merged("alpha")));
-    expect([f.containment, f.dirt.kind, f.mr?.title, f.broken]).toEqual(["on-remote", "junk", "T alpha", false]);
+    expect([f.containment, f.dirt.kind, f.mr?.title, f.broken]).toEqual(["on-remote", "junk", "T alpha", null]);
   });
 
   test("an unpushed tree reports how far ahead it is", async () => {
@@ -68,7 +73,27 @@ describe("collectFacts", () => {
   test("a tree whose directory vanished is broken", async () => {
     const rec = tree("charlie");
     rmSync(rec.path, { recursive: true, force: true });
-    expect((await collectFacts(repoName, repo, rec, deps(merged("charlie")))).broken).toBe(true);
+    expect((await collectFacts(repoName, repo, rec, deps(merged("charlie")))).broken).toBe("gone");
+  });
+
+  test("a tree whose gitdir vanished but whose folder remains is unlinked, not gone", async () => {
+    const rec = tree("charlie2");
+    rmSync(join(repo, ".git", "worktrees", "charlie2"), { recursive: true, force: true });
+    expect((await collectFacts(repoName, repo, rec, deps(merged("charlie2")))).broken).toBe("unlinked");
+  });
+
+  test("a relative gitdir (worktree.useRelativePaths) resolves against the tree, not the cwd", async () => {
+    const rec = tree("charlie3");
+    writeFileSync(join(rec.path, ".git"), "gitdir: ../../.git/worktrees/charlie3\n");
+    const f = await collectFacts(repoName, repo, rec, deps(merged("charlie3")));
+    expect(f.broken).toBeNull();
+    expect(linkedGitdir(rec.path)).toBe(join(repo, ".git", "worktrees", "charlie3"));
+  });
+
+  test("an unreadable run scan holds the tree as waiting on the run", async () => {
+    const rec = tree("delta2");
+    const f = await collectFacts(repoName, repo, rec, { ...deps(merged("delta2")), findRunningRun: () => ({ kind: "incomplete" }) });
+    expect(f.hold).toEqual({ kind: "run", detail: "run state unreadable" });
   });
 
   test("a held tree carries its hold: reactor held reason, then herd, then live run", async () => {
@@ -90,5 +115,20 @@ describe("triageRepo", () => {
     tree("foxtrot");
     const rows = await triageRepo(repoName, repo, deps(merged("echo")));
     expect(rows.map((r) => r.tree)).toEqual(["echo"]);
+  });
+
+  test("one tree with an unreadable .git is left out with one warning; the rest of the repo still lists", async () => {
+    const bad = tree("golf");
+    tree("hotel");
+    chmodSync(join(bad.path, ".git"), 0o000);
+    const warnings: object[] = [];
+    try {
+      const rows = await triageRepo(repoName, repo, { ...deps({ ...merged("golf"), ...merged("hotel") }), log: { warn: (o) => { warnings.push(o); } } });
+      expect(rows.map((r) => r.tree)).toEqual(["hotel"]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatchObject({ tree: "golf" });
+    } finally {
+      chmodSync(join(bad.path, ".git"), 0o644);
+    }
   });
 });

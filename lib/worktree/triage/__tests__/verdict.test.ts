@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { triageCounts, triageRow, type TriageFacts } from "../verdict.ts";
 
 const base: TriageFacts = {
-  repo: `remote:${encodeURIComponent("github.com/m4ttstack/rt")}`, tree: "t", path: "/p/t", branch: "b", broken: false,
+  repo: `remote:${encodeURIComponent("github.com/m4ttstack/rt")}`, tree: "t", path: "/p/t", branch: "b", broken: null,
   mr: { iid: 1, state: "merged", title: "x", at: null, url: null }, ticket: null,
   remoteBranchExists: true, ahead: 0, containment: "on-remote",
   dirt: { kind: "none", files: [], discardable: [] },
@@ -57,8 +57,14 @@ describe("triageRow", () => {
     expect(r.actions.every((a) => ["open-finder", "open-terminal", "copy-path"].includes(a))).toBe(true);
   });
   test("a broken tree beats every other state and only offers remove", () => {
-    const r = row({ broken: true, containment: "none", hold: { kind: "process", detail: "d" } });
+    const r = row({ broken: "gone", containment: "none", hold: { kind: "process", detail: "d" } });
     expect([r.group, r.actions]).toEqual(["broken", ["remove", "copy-path"]]);
+  });
+  test("a broken tree whose folder is still there never says there is nothing to recover", () => {
+    expect(row({ broken: "gone" }).verdict).toBe("Its folder is gone. Nothing to recover.");
+    const unlinked = row({ broken: "unlinked" });
+    expect(unlinked.group).toBe("broken");
+    expect(unlinked.verdict).toBe("Its git link is broken. The folder still has files; Remove moves it to the trash.");
   });
   test("a keep holds while the fingerprint matches, and lapses when it doesn't", () => {
     const kept = { keptAt: "2026-09-24T00:00:00Z", headSha: "h", dirtHash: "d", mrState: "merged" };
@@ -67,7 +73,7 @@ describe("triageRow", () => {
     expect(row({ kept: { ...kept, headSha: "old" }, containment: "none" }).group).toBe("only-copy");
   });
   test("every row names its verdict in one sentence", () => {
-    for (const r of [row({}), row({ containment: "none" }), row({ broken: true })]) expect(r.verdict).toMatch(/^[A-Z].*\.$/);
+    for (const r of [row({}), row({ containment: "none" }), row({ broken: "gone" }), row({ broken: "unlinked" })]) expect(r.verdict).toMatch(/^[A-Z].*\.$/);
   });
   test("a hold with detail ending in period has it stripped from the verdict", () => {
     const r = row({ hold: { kind: "herd", detail: "pid 7 has its cwd inside." } });
@@ -83,7 +89,7 @@ describe("triageRow", () => {
 
 describe("triageCounts", () => {
   test("waiting and kept never count toward needsDecision; broken does", () => {
-    const rows = [row({}), row({ containment: "none" }), row({ broken: true }), row({ hold: { kind: "herd", detail: "d" } }),
+    const rows = [row({}), row({ containment: "none" }), row({ broken: "gone" }), row({ hold: { kind: "herd", detail: "d" } }),
       row({ kept: { keptAt: "x", headSha: "h", dirtHash: "d", mrState: "merged" }, containment: "none" })];
     expect(triageCounts(rows)).toEqual({ needsDecision: 3, safe: 1, waiting: 1, kept: 1 });
   });

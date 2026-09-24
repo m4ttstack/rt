@@ -129,6 +129,7 @@ export function createWorktreeTriageHandlers(
     jobTreeHold: opts.jobTreeHold,
     findRunningRun: opts.findRunningRunByWorktree,
     fetch: async () => false,
+    log: ctx.log,
   });
 
   const findTree = (repo: string, name: string): TreeRecord | null =>
