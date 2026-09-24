@@ -628,8 +628,8 @@ export interface TriageHold { kind: "process" | "orphan-stopping" | "herd" | "ru
 export interface TriageFacts {
   repo: string; tree: string; path: string; branch: string | null;
   broken: boolean;
-  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null } | null;
-  ticket: { identifier: string; title: string; stateName: string | null } | null;
+  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
+  ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
   remoteBranchExists: boolean; ahead: number;
   containment: Containment; dirt: DirtClass; fingerprint: Fingerprint;
   kept: KeepRecord | null; hold: TriageHold | null;
@@ -746,8 +746,8 @@ export interface TriageHold { kind: "process" | "orphan-stopping" | "herd" | "ru
 export interface TriageFacts {
   repo: string; tree: string; path: string; branch: string | null;
   broken: boolean;
-  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null } | null;
-  ticket: { identifier: string; title: string; stateName: string | null } | null;
+  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
+  ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
   remoteBranchExists: boolean; ahead: number;
   containment: Containment; dirt: DirtClass; fingerprint: Fingerprint;
   kept: KeepRecord | null; hold: TriageHold | null;
@@ -1049,8 +1049,8 @@ function holdOf(rec: TreeRecord, deps: TriageDeps): TriageHold | null {
 export async function collectFacts(repo: string, repoPath: string, rec: TreeRecord, deps: TriageDeps): Promise<TriageFacts> {
   const entry = cacheEntry(repo, rec.branch, deps.cacheEntries);
   const mrRaw = entry?.mr ?? null;
-  const mr = mrRaw ? { iid: mrRaw.iid, state: mrRaw.state, title: mrRaw.title, at: mrRaw.mergedAt ?? mrRaw.closedAt ?? mrRaw.updatedAt ?? null } : null;
-  const ticket = entry?.ticket ? { identifier: entry.ticket.identifier, title: entry.ticket.title, stateName: entry.ticket.stateName ?? null } : null;
+  const mr = mrRaw ? { iid: mrRaw.iid, state: mrRaw.state, title: mrRaw.title, at: mrRaw.mergedAt ?? mrRaw.closedAt ?? mrRaw.updatedAt ?? null, url: mrRaw.webUrl ?? mrRaw.url ?? null } : null;
+  const ticket = entry?.ticket ? { identifier: entry.ticket.identifier, title: entry.ticket.title, stateName: entry.ticket.stateName ?? null, url: entry.ticket.url ?? null } : null;
   const empty = { kind: "none" as const, files: [], discardable: [] };
   if (isBroken(rec)) {
     return { repo, tree: rec.name, path: rec.path, branch: rec.branch, broken: true, mr, ticket, remoteBranchExists: false, ahead: 0,
@@ -1082,7 +1082,7 @@ export async function triageRepo(repo: string, repoPath: string, deps: TriageDep
 }
 ```
 
-Before writing `mr.at`, open `node_modules/@mattstack/glance` (`grep -rn "MRDashboardProps" node_modules/@mattstack/glance --include=*.d.ts`) and use the real merged/closed timestamp field names; keep `null` when none exists. Confirm `composeKey` is exported from `lib/state/branch-cache.ts` (it is what `worktree:list` uses at `handlers/worktree.ts:712`); if it lives elsewhere, import from there.
+Before writing `mr.at` and `mr.url`, open `node_modules/@mattstack/glance` (`grep -rn "MRDashboardProps" node_modules/@mattstack/glance --include=*.d.ts`) and use the real merged/closed timestamp field names; keep `null` when none exists. Confirm `composeKey` is exported from `lib/state/branch-cache.ts` (it is what `worktree:list` uses at `handlers/worktree.ts:712`); if it lives elsewhere, import from there.
 
 - [ ] **Step 4: Implement the verb, the types, and the router wiring**
 
@@ -1711,8 +1711,8 @@ public struct TriageFingerprint: Codable, Sendable, Equatable {
 }
 
 public struct TriageRow: Decodable, Sendable, Identifiable, Equatable {
-    public struct MR: Decodable, Sendable, Equatable { public let iid: Int; public let state: String; public let title: String; public let at: String? }
-    public struct Ticket: Decodable, Sendable, Equatable { public let identifier: String; public let title: String; public let stateName: String? }
+    public struct MR: Decodable, Sendable, Equatable { public let iid: Int; public let state: String; public let title: String; public let at: String?; public let url: String? }
+    public struct Ticket: Decodable, Sendable, Equatable { public let identifier: String; public let title: String; public let stateName: String?; public let url: String? }
     public struct Push: Decodable, Sendable, Equatable { public let kind: String; public let ahead: Int? }
     public struct Dirt: Decodable, Sendable, Equatable { public let kind: String; public let files: [String] }
     public struct Hold: Decodable, Sendable, Equatable { public let kind: String; public let detail: String }
@@ -1892,12 +1892,21 @@ final class WorktreePanelController: ObservableObject {
     @Published var status: PanelStatus?
     @Published var busy: Set<String> = []
     @Published var isLoading = true
+    /// (done, total) while Clean up N safe works through its rows; nil otherwise.
+    @Published var bulkProgress: (Int, Int)?
 
     private let client = DaemonClient()
     private var timer: Timer?
     private var statusGeneration = 0
+    private let fixture: TriageData?
+
+    init(fixture: TriageData? = nil) {
+        self.fixture = fixture
+        if let f = fixture { rows = f.rows; counts = f.counts; banners = f.banners; isLoading = false }
+    }
 
     func startPolling() {
+        guard fixture == nil else { return }
         refresh()
         let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(t, forMode: .common)
@@ -1948,8 +1957,29 @@ final class WorktreePanelController: ObservableObject {
     func stopHolders(_ row: TriageRow) { run(row, "worktree:stop-holders", [:], done: "processes stopped") }
     func remove(_ row: TriageRow) { run(row, "worktree:triage-remove", [:], done: "removed") }
 
+    /// One at a time, so the footer and the button can report "1 of 2" and a
+    /// refusal on one row doesn't hide behind the others.
     func cleanUpSafe() {
-        for row in rows where row.group == "safe" { dispose(row) }
+        let safe = rows.filter { $0.group == "safe" }
+        guard !safe.isEmpty, bulkProgress == nil else { return }
+        bulkProgress = (0, safe.count)
+        Task {
+            var failures: [String] = []
+            for (i, row) in safe.enumerated() {
+                await MainActor.run { busy.insert(row.id); bulkProgress = (i, safe.count) }
+                let r: ActionReply? = await client.command("worktree:triage-dispose", payload: [
+                    "repoName": row.repo, "tree": row.tree, "fingerprint": fp(row), "discard": "classified",
+                ])
+                await MainActor.run { busy.remove(row.id) }
+                if r?.ok != true { failures.append("\(row.tree): \(Self.explain(r?.error))") }
+            }
+            await MainActor.run {
+                bulkProgress = nil
+                if failures.isEmpty { setStatus("Cleaned up \(safe.count) worktree\(safe.count == 1 ? "" : "s") (restorable for 14 days)", isError: false) }
+                else { setStatus(failures.joined(separator: "; "), isError: true) }
+                refresh()
+            }
+        }
     }
 
     func diff(_ row: TriageRow) async -> [TriageDiffFile] {
@@ -2072,9 +2102,14 @@ import SwiftUI
 import MattstackCore
 
 struct WorktreePanelView: View {
-    @StateObject private var controller = WorktreePanelController()
+    @StateObject private var controller: WorktreePanelController
     @State private var reviewing: TriageRow?
-    @State private var keptOpen = false
+    @State private var keptOpen: Bool
+
+    init(controller: WorktreePanelController = WorktreePanelController(), keptOpen: Bool = false) {
+        _controller = StateObject(wrappedValue: controller)
+        _keptOpen = State(initialValue: keptOpen)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2162,6 +2197,50 @@ struct WorktreePanelView: View {
 
 `TriageRowView` (same file): an `HStack` of the 30 pt tinted circle icon (`checkmark.circle` safe, `doc.badge.ellipsis` look, `exclamationmark.triangle` risk, `lock` held, `arrow.triangle.2.circlepath` busy, `link.badge.plus` broken, `bookmark` kept), a `VStack(alignment: .leading, spacing: 3)` with the MR title (`.headline`; fall back to the branch, then the tree name, when there is no MR), a line with the tree name (`.subheadline.weight(.medium)`, secondary) and `"\(repoLabel) · \(branch)"` (monospaced, secondary), a chip row (MR chip `"!\(iid)"` for GitLab identities, `"#\(iid)"` for GitHub, plus the state and `at` date; push chip text from `push.kind` as `pushed`, `in main`, `remote deleted`, `\(ahead) unpushed`; ticket chip `"\(identifier) · \(stateName)"`), and the verdict (`.callout`, secondary); then the primary button for `actions[0]` (prominent only for `push-branch`) and a `Menu` with `…` holding Keep/Un-keep, **Dispose anyway** (role `.destructive`, only for `only-copy` rows), Open in Finder, Open in terminal, Copy path. A `busy` row shows a `ProgressView` in place of the button. Button titles by action: `dispose` Dispose, `review` Review, `push-branch` Push branch, `unkeep` Un-keep, `stop-process` Stop process, `open-herd` Open herd, `open-run` Open run, `remove` Remove.
 
+**Interaction states** (board: `docs/design/worktrees/interaction-states-*.png`). Build these as reusable pieces in the same file so the snapshot harness can force each state:
+
+```swift
+enum TriageInteraction { case rest, hover, pressed, disabled, busy }
+
+/// Secondary (bordered) and primary (accent) row buttons. `forced` pins a
+/// state for the snapshot harness; live use leaves it nil and reads hover
+/// and press from the environment.
+struct TriageButtonStyle: ButtonStyle {
+    var primary = false
+    var busyLabel: String? = nil
+    var forced: TriageInteraction? = nil
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let state: TriageInteraction = forced ?? (busyLabel != nil ? .busy : !isEnabled ? .disabled : configuration.isPressed ? .pressed : hovering ? .hover : .rest)
+        return HStack(spacing: 6) {
+            if state == .busy { ProgressView().controlSize(.mini) }
+            if state == .busy, let busyLabel { Text(busyLabel) } else { configuration.label }
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 11).padding(.vertical, 6)
+        .foregroundStyle(primary ? Color.white : (state == .busy ? Color.secondary : Color.primary))
+        .background(RoundedRectangle(cornerRadius: 6).fill(fill(state)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(primary ? .clear : (state == .hover || state == .pressed ? Color.primary.opacity(0.22) : Color.primary.opacity(0.12))))
+        .opacity(state == .disabled ? 0.45 : 1)
+        .onHover { hovering = $0 }
+    }
+
+    private func fill(_ s: TriageInteraction) -> Color {
+        if primary {
+            switch s { case .hover: return Color.accentColor.opacity(0.88); case .pressed: return Color.accentColor.opacity(0.75); default: return .accentColor }
+        }
+        switch s { case .hover: return Color.primary.opacity(0.05); case .pressed: return Color.primary.opacity(0.10); default: return Color(nsColor: .controlBackgroundColor) }
+    }
+}
+```
+
+- **Row:** `TriageRowView` takes `forceHover: Bool = false`. On `.onHover` (or `forceHover`) the row background lifts to `Color.primary.opacity(0.025)` over the card fill, the border moves from `.primary.opacity(0.10)` to `.primary.opacity(0.20)`, and the `…` button gets a 26 pt rounded hover well (`Color.primary.opacity(0.06)`). A busy row (`busy == true`) dims the icon and text column to 0.55 opacity, disables `…` (0.35), and its primary button renders `TriageButtonStyle(busyLabel:)` with the action's progressive form: Disposing…, Pushing…, Keeping…, Stopping…, Removing….
+- **Bulk button:** `Clean up N safe` with the `sparkles` icon; while `controller.bulkProgress` is set it shows the spinner and `Cleaning up \(done + 1) of \(total)…` and is disabled.
+- **Chips as links:** the MR chip opens `row.mr.url` and the ticket chip opens `row.ticket.url` (`NSWorkspace.shared.open`), only when the URL is non-nil. On hover (or `forceHover` on the chip) the label underlines, an `arrow.up.right` glyph appears after it, the ticket chip's text goes from secondary to primary and its background darkens one step, and the cursor becomes `NSCursor.pointingHand` (push `onHover(true)`, pop on exit). The push chip is not a link and has no hover state.
+- **`…` menu:** a SwiftUI `Menu` rendered by the system: hover highlight is the system accent for every item (including **Dispose anyway**, whose text is red at rest via `role: .destructive`). This is intentionally system-drawn; the board shows the same.
+
 `open-herd` and `open-run` post the existing notifications the tray already uses for those surfaces if they exist (`grep -n "Notification.Name(" rt-tray/Sources/NotificationManager.swift`); if there is no herd or run surface in the tray, open the console URL for the run/herd via `NSWorkspace.shared.open` using the same base URL the tray's "Open mattstack" window uses. Do not invent a new surface.
 
 - [ ] **Step 2: Implement `WorktreeReviewSheet.swift`**
@@ -2220,14 +2299,93 @@ struct WorktreeReviewSheet: View {
 Run: `cd rt-tray && swift build 2>&1 | tail -5 && swift run mattstack-checks`
 Expected: builds clean, checks pass.
 
-- [ ] **Step 4: Visual validation in both appearances**
+- [ ] **Step 4: Offscreen render harness for the coded views**
 
-Build a dev app in a scratch tree per `AGENTS.md` ("Tray and shim changes need a dev app rebuild": `scripts/fetch-deps.sh arm64`, then `rt-tray/build.sh dev`, never in the shared checkout's `rt-tray/`). Hand the swap of `/Applications/mattstack-dev.app` to Matt (GUI launches from a worker are blocked; see the `rt:build-dev-app` skill). With the dev app running on a machine that has stuck trees (or with fixture rows from `worktree:triage` on a seeded HOME):
-- open **Worktrees…** from the tray, screenshot in Light and in Dark (`defaults write -g AppleInterfaceStyle Dark` / delete, or System Settings), and screenshot the Review sheet on a `look` row;
-- compare each against `docs/design/worktrees/panel-*.png`, `state-catalog-*.png` and `review-sheet-*.png` by eye;
-- write down plainly what looks wrong (spacing, colour budget broken, clipped text, chip wrapping) and fix it before continuing. A passing build is not this step's evidence; the screenshots are.
+Add a debug-only entry to the tray binary that renders the real views to PNGs with fixture data and exits, so the coded UI can be compared to the boards without launching or swapping the app.
 
-- [ ] **Step 5: Full suites, then commit**
+Create `rt-tray/Tests/fixtures/worktree-triage-catalog.json`: a `worktree:triage` payload with one row per state on `docs/design/worktrees/state-catalog-light.png`, using the same titles, tree names, repo/branch, MR numbers and dates, push kinds, ticket ids and statuses, verdicts and actions as the board (12 rows plus one `mergeCleanupOff` banner for `fast-browser`). Create `rt-tray/Tests/fixtures/worktree-triage-panel.json` with the five rows on `panel-light.png` (olive-marble, voldemort, charlie, neville, smaug) and one kept row (gollum), and `rt-tray/Tests/fixtures/worktree-triage-diff.json` with the charlie file from `review-sheet-light.png`.
+
+Create `rt-tray/Sources/WorktreeSnapshot.swift`:
+
+```swift
+import AppKit
+import SwiftUI
+import MattstackCore
+
+/// `mattstack --render-worktree-snapshots <fixtures-dir> <out-dir>`: renders the
+/// Worktrees panel and Review sheet from fixture JSON, light and dark, and exits.
+/// DEBUG only; the design gate in the plan compares these PNGs to the boards.
+enum WorktreeSnapshot {
+    @MainActor
+    static func runIfRequested() -> Bool {
+        #if DEBUG
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--render-worktree-snapshots"), args.count > i + 2 else { return false }
+        let fixtures = URL(fileURLWithPath: args[i + 1]), out = URL(fileURLWithPath: args[i + 2])
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        func load(_ name: String) -> TriageData {
+            let data = try! Data(contentsOf: fixtures.appendingPathComponent(name))
+            return try! JSONDecoder().decode(TriagePayload.self, from: data).data!
+        }
+        let diff = try! JSONDecoder().decode([TriageDiffFile].self, from: Data(contentsOf: fixtures.appendingPathComponent("worktree-triage-diff.json")))
+        let panel = load("worktree-triage-panel.json"), catalog = load("worktree-triage-catalog.json")
+        let look = catalog.rows.first { $0.group == "look" }!
+        for scheme in [ColorScheme.light, .dark] {
+            let tag = scheme == .light ? "light" : "dark"
+            render(WorktreePanelView(controller: WorktreePanelController(fixture: panel)), width: 780, scheme, out.appendingPathComponent("panel-\(tag).png"))
+            render(WorktreePanelView(controller: WorktreePanelController(fixture: catalog), keptOpen: true), width: 780, scheme, out.appendingPathComponent("state-catalog-\(tag).png"))
+            render(WorktreeReviewSheet(row: look, controller: WorktreePanelController(fixture: catalog), initialFiles: diff), width: 680, scheme, out.appendingPathComponent("review-sheet-\(tag).png"))
+            render(InteractionStatesSnapshot(row: catalog.rows.first { $0.tree == "voldemort" }!), width: 1400, scheme, out.appendingPathComponent("interaction-states-\(tag).png"))
+        }
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    @MainActor
+    private static func render<V: View>(_ view: V, width: CGFloat, _ scheme: ColorScheme, _ url: URL) {
+        let r = ImageRenderer(content: view.frame(width: width).fixedSize(horizontal: false, vertical: true)
+            .environment(\.colorScheme, scheme).background(Color(nsColor: .windowBackgroundColor)))
+        r.scale = 2
+        guard let cg = r.cgImage else { fatalError("render failed: \(url.lastPathComponent)") }
+        let rep = NSBitmapImageRep(cgImage: cg)
+        try! rep.representation(using: .png, properties: [:])!.write(to: url)
+    }
+}
+```
+
+`InteractionStatesSnapshot` (in `WorktreeSnapshot.swift`, DEBUG only) lays out the same groups as `interaction-states-light.png`: a Buttons row (`Button("Dispose")` with `TriageButtonStyle(forced:)` for rest, hover, pressed, disabled, busy, then `Button("Push branch")` primary for rest, hover, pressed, busy), a Bulk button row (rest, hover, busy "Cleaning up 1 of 2…"), a Chips row (MR rest and forced hover, ticket rest and forced hover, push chip), and a Rows column (`TriageRowView` for the voldemort row at rest, with `forceHover: true`, and with `busy: true`), each under the same small caption text as the board. The `…` menu is system-drawn and is not snapshotted.
+
+Give `WorktreeReviewSheet` an `initialFiles: [TriageDiffFile] = []` init parameter that seeds `files` (the `.task` still loads from the daemon when it is empty), and make `TriageDiffFile` `Decodable` from an array. Render the panel with its `ScrollView` content laid out at full height: when `ImageRenderer` clips a `ScrollView`, swap the `ScrollView` for a plain `VStack` behind an `isSnapshot` flag passed through the init, so the snapshot shows every row. In `main.swift` (or `AppDelegate.applicationDidFinishLaunching`, whichever runs first), call `if WorktreeSnapshot.runIfRequested() { exit(0) }` before any window, status item or daemon work is set up.
+
+Run: `cd rt-tray && swift build && .build/debug/mattstack --render-worktree-snapshots Tests/fixtures $TMPDIR/wt-snap`
+Expected: eight PNGs in `$TMPDIR/wt-snap` (`panel`, `state-catalog`, `review-sheet`, `interaction-states`, each light and dark). If the executable product has a different name, use the one `swift build` prints. If `ImageRenderer` can't render a view type the panel uses (it can't render `NSViewRepresentable`), replace that piece with a SwiftUI equivalent rather than skipping the snapshot.
+
+- [ ] **Step 5: Design gate: the coded views must match the boards before anyone else sees them**
+
+This step is done by the controlling session, never delegated to an implementer subagent, and nothing about the panel is shown to Matt until it passes.
+
+For each pair (`$TMPDIR/wt-snap/panel-light.png` vs `docs/design/worktrees/panel-light.png`, and the same for `panel-dark`, `state-catalog-light`, `state-catalog-dark`, `review-sheet-light`, `review-sheet-dark`, `interaction-states-light`, `interaction-states-dark`), open both images and compare them side by side against this checklist. Write the result as a table in the task report, one row per item per pair, marked match or mismatch with what differs:
+
+1. Section order and titles: repo banner, Needs a decision (safe, then look, then only-copy), Waiting, Broken, Kept (collapsed on the panel board, expanded on the catalog board).
+2. Header: count title wording, subtitle, **Clean up N safe** button present only when safe > 0.
+3. Row anatomy, top to bottom: MR title (bold), tree + mono `repo · branch`, chip line, verdict line; icon circle on the left; primary button and `…` on the right.
+4. Chip content per row: MR number, state and date; push chip wording (`pushed`, `in main`, `remote deleted`, `N unpushed`); ticket `ID · Status`.
+5. Colour budget: only the verdict icon and the MR chip are coloured (merged blue, closed red, open green), plus the red icon on `N unpushed`; verdict text and push/ticket chips neutral; kept row fully neutral; only-copy's **Push branch** is the only prominent row button.
+6. Verdict wording matches the board row for row.
+7. Spacing and density: row padding, gaps between rows, chip padding, and section-label spacing within roughly a few points of the board; nothing clipped, nothing wrapping onto an extra line that the board keeps on one.
+8. Review sheet: header text, file bar with path and status, neutral diff background with only the `+` gutter green, the footer note, and the three buttons in order (Keep, Commit and push, Discard and dispose as the prominent one).
+9. Dark mode: every token reads at the same weight it does on the dark board; no text lower contrast than the board's secondary text.
+10. Interaction states: secondary and primary buttons in rest, hover, pressed, disabled and busy each read as distinct from their neighbours the way the board's do (hover a step lighter/darker, pressed a further step, disabled faded, busy with spinner and progressive label); the row hover lifts the surface and darkens the border without shifting layout; the busy row dims text and `…` but not the spinner button; link chips underline with the arrow glyph on hover and the push chip doesn't; the bulk button's busy label counts.
+
+Fix every mismatch in the SwiftUI code, re-run Step 4, and repeat until every row of the table is a match or a deliberate, written exception (for example, system font metrics that differ from the board's Inter; SF Pro is expected and is an exception, not a mismatch). A green build is not evidence for this step; the side-by-side table and the final snapshots are.
+
+- [ ] **Step 6: Live check in the dev app**
+
+Only after Step 5 passes: build a dev app in a scratch tree per `AGENTS.md` ("Tray and shim changes need a dev app rebuild": `scripts/fetch-deps.sh arm64`, then `rt-tray/build.sh dev`, never in the shared checkout's `rt-tray/`), and hand the swap of `/Applications/mattstack-dev.app` to Matt (GUI launches from a worker are blocked; see the `rt:build-dev-app` skill). Open **Worktrees…** from the tray with real stuck trees, screenshot light and dark, and confirm the live window matches the Step 5 snapshots (same layout, real data). Then exercise the live states by hand and screenshot each: hover a row, hover and press a button, hover an MR chip and a ticket chip (pointer cursor, underline, arrow, and the link opens the right MR or ticket), open the `…` menu, click Dispose on a safe row and catch the busy state, and run Clean up N safe to see the counting label. Say plainly what differs from the snapshots, fix it, and only then present the panel, with the final snapshot and board pairs attached side by side.
+
+- [ ] **Step 7: Full suites, then commit**
 
 Run: `bun run test:all > $TMPDIR/triage-all.txt 2>&1; tail -20 $TMPDIR/triage-all.txt`
 Expected: no new failures (compare any failure against a clean `main` run before calling it pre-existing).

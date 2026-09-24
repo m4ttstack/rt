@@ -50,8 +50,8 @@ interface TriageRow {
   tree: string;                 // registry name, e.g. "olive-marble"
   path: string;
   branch: string | null;
-  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null } | null;
-  ticket: { identifier: string; title: string; stateName: string | null } | null;
+  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
+  ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
   push: { kind: "pushed" | "in-main" | "remote-deleted" | "unpushed"; ahead?: number };
   containment: "in-default" | "on-remote" | "patch-identical" | "none";
   dirt: { kind: "none" | "junk" | "lockfile" | "real"; files: string[] };
@@ -181,6 +181,16 @@ layer is not used: it only triggers commands on events and has no clock.
   shown files with a generated message and pushes; the row then re-triages.
 - **Row menu (…):** Keep / Un-keep, Dispose anyway (red), Open in Finder,
   Open in terminal, Copy path.
+- **Interaction states** (`interaction-states-*.png`): buttons have rest,
+  hover, pressed, disabled and busy (spinner plus Disposing…/Pushing…); a
+  row lifts on hover and dims while its action runs; the MR and ticket chips
+  are links to the MR and the ticket (underline, arrow, pointer cursor on
+  hover), the push chip is not; the bulk button counts ("Cleaning up 1 of
+  2…"). The `…` menu is system-drawn.
+- **Design gate:** the coded views are rendered offscreen from fixtures
+  matching the boards, in both schemes, and compared side by side against
+  every board (including the states board) until they match, before the
+  panel is shown to anyone. Then the live dev app is checked the same way.
 
 ## Testing
 
