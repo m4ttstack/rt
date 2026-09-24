@@ -112,6 +112,7 @@ final class WindowModel: ObservableObject {
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var splashVisible = false
     @Published private(set) var splashOpacity: Double = 1
+    @Published var badges: [String: BadgeReading] = [:]
 
     let store: WebViewStore
     weak var controller: MattstackWindowController?
@@ -179,6 +180,16 @@ final class WindowModel: ObservableObject {
 
     func select(_ name: String) {
         activeApp = name
+    }
+
+    /// The pill opens the oldest counted decision; with no path it just selects the tab.
+    func openBadge(for name: String) {
+        guard let path = badges[name]?.path else { select(name); return }
+        Task { _ = await open(OpenRequest(app: name, pathAndQuery: path)) }
+    }
+
+    func firstBadgedRequest() -> OpenRequest? {
+        BadgeBook.firstBadged(badges, order: apps.map(\.name))
     }
 
     /// No-op on every call after the first per process: `show()` calls this

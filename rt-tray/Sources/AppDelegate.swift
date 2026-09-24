@@ -59,6 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // MainActor hop, and `private` would not reach a sibling top-level type.
     fileprivate var windowModel: WindowModel?
     private var mattstackWindow: MattstackWindowController?
+    private var badgePoller: BadgePoller?
     private var hotkey: HotkeyManager?
     /// A `mattstack://join/<code>` event can arrive before `buildServices()`
     /// builds the coordinator (launch-by-link). Stashed here and drained at
@@ -392,6 +393,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             // pane the user is being sent to.
             if Date() < suppressReopenShowUntil { return true }
             Task { @MainActor in
+                if let model = self.windowModel, let request = model.firstBadgedRequest() {
+                    self.mattstackWindow?.show()
+                    if await model.open(request) { return }
+                }
                 // `windowModel.controller` is a weak back-reference; fall
                 // back to the strongly-held `mattstackWindow` ivar if it's
                 // ever nil so a Dock click can't silently no-op.
@@ -460,6 +465,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // fetch and blow the caller's 300ms budget, which fails open and
         // serves the page in the browser instead.
         Task { await model.ensureCatalogLoaded() }
+        let poller = BadgePoller(model: model)
+        badgePoller = poller
+        poller.start()
         let windowBridge = WindowOpenBridge()
         windowBridge.appDelegate = self
         notificationManager.appDelegate = self

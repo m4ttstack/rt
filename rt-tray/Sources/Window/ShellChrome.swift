@@ -26,4 +26,6 @@ enum ShellChrome {
     static let accent = Role(r: 0x7a, g: 0xa2, b: 0xf7)
     static let ok = Role(r: 0x3e, g: 0xb9, b: 0x53)
     static let warn = Role(r: 0xf7, g: 0x76, b: 0x8e)
+    static let badgeFill = warn
+    static let badgeText = bar
 }
