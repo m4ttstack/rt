@@ -84,9 +84,10 @@ type Mission struct {
 	menuTarget    menuTarget
 	menuOnHistory bool
 	menuPrevFocus focusKind
-	// switchSeq is the newest SwitchPrompt.Seq opened, so a push repeating a
-	// prompt never reopens it.
-	switchSeq int
+	// switchSeq and publishSeq are the newest SwitchPrompt/PublishPrompt Seq
+	// opened, so a push repeating a prompt never reopens it.
+	switchSeq  int
+	publishSeq int
 	// localNotice is a client-only refusal cue (the detached-HEAD branch
 	// guard), kept separate from the wire model's own Notice field: that one
 	// carries the driver's own guard refusals, this one covers a refusal the
@@ -341,6 +342,10 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if p := m.model.SwitchPrompt; p != nil && p.Seq > m.switchSeq {
 		m.switchSeq = p.Seq
 		m.openSwitchPrompt(*p)
+	}
+	if p := m.model.PublishPrompt; p != nil && p.Seq > m.publishSeq {
+		m.publishSeq = p.Seq
+		m.openPublishDialog(*p)
 	}
 	return nil
 }
