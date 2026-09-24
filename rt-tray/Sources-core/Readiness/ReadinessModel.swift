@@ -103,8 +103,8 @@ public final class ReadinessModel: ObservableObject {
 
     /// For a screen that wants a fresh read but may open while another screen
     /// sharing this model is still loading: starting a second fetch would bump
-    /// the generation and discard the first reply, so the screen waits on the
-    /// slower of two overlapping `rt setup plan` runs instead of the one
+    /// the generation and discard the first reply, so the screen would wait on
+    /// the second of two overlapping `rt setup plan` runs rather than the one
     /// already underway.
     public func refreshUnlessLoading() async {
         guard !isLoading else { return }

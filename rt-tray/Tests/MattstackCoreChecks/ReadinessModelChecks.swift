@@ -23,6 +23,9 @@ final class FakePlans: PlanSource, @unchecked Sendable {
         return next
     }
 }
+/// Lets a check see that an async call returned without awaiting it, so a
+/// regression that parks the call on a held fetch fails instead of hanging.
+@MainActor final class ReturnedFlag { var value = false }
 /// Checks set `snapshot` from the check's task while the visible ticker's own
 /// task is calling `snapshot()`, so every field goes through the lock.
 final class FakePermissions: PermissionProbing, @unchecked Sendable {
@@ -512,10 +515,13 @@ let readinessModelChecks: [Check] = [
         let m = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
         let first = Task { await m.loadIfNeeded() }
         try c.require(await waitUntil { held.fetches == 1 }, "first load never registered")
-        await m.refreshUnlessLoading()
+        let refreshed = await MainActor.run { ReturnedFlag() }
+        let second = Task { @MainActor in await m.refreshUnlessLoading(); refreshed.value = true }
+        _ = await waitUntil { refreshed.value || held.fetches > 1 }
         c.expectEqual(held.fetches, 1, "a second fetch would bump the generation and throw away the first load's reply")
-        held.releaseNewest(makePlan())
+        held.release(makePlan())
         await first.value
+        await second.value
         c.expect(await MainActor.run { !m.groups.isEmpty }, "the in-flight load's reply must still land")
     },
     Check("refreshUnlessLoading re-fetches an already loaded plan when nothing is in flight") { c in
