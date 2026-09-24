@@ -181,6 +181,10 @@ if [ -n "$DEV" ]; then
     cmp -s "$DEV/Contents/Helpers/deck" "$DEV/Contents/Helpers/deck-pinned" \
         && fail "dev Helpers/deck is not the shim (identical to deck-pinned)" \
         || pass "dev Helpers/deck differs from deck-pinned"
+    assert_eq "dev Helpers/deck codesign identifier" "Identifier=com.mattstack.helper.deck" \
+        "$(codesign -dv "$DEV/Contents/Helpers/deck" 2>&1 | grep '^Identifier=' || true)"
+    assert_eq "dev Helpers/deck-pinned codesign identifier" "Identifier=com.mattstack.helper.deck-pinned" \
+        "$(codesign -dv "$DEV/Contents/Helpers/deck-pinned" 2>&1 | grep '^Identifier=' || true)"
     codesign --verify --strict "$DEV/Contents/Helpers/deck-pinned" >/dev/null 2>&1 \
         && pass "dev Helpers/deck-pinned passes codesign --verify --strict" \
         || fail "dev Helpers/deck-pinned failed codesign --verify --strict"
