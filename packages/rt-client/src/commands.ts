@@ -510,6 +510,33 @@ export interface WorktreeAdoptData {
   refused: Array<{ tree: string; reason: string; detail?: string }>;
 }
 
+export interface TriageHold { kind: "process" | "orphan-stopping" | "herd" | "run"; detail: string }
+export interface TriageRow {
+  repo: string; tree: string; path: string; branch: string | null;
+  mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
+  ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
+  push: { kind: "pushed" | "in-main" | "remote-deleted" | "unpushed"; ahead?: number };
+  containment: "in-default" | "on-remote" | "patch-identical" | "none";
+  dirt: { kind: "none" | "junk" | "lockfile" | "real"; files: string[] };
+  group: "safe" | "look" | "only-copy" | "waiting" | "broken" | "kept";
+  verdict: string;
+  actions: Array<"dispose" | "review" | "push-branch" | "keep" | "unkeep" | "stop-process" | "open-herd" | "open-run" | "remove" | "open-finder" | "open-terminal" | "copy-path">;
+  hold?: TriageHold;
+  keptAt?: string;
+  fingerprint: { headSha: string; dirtHash: string; mrState: string | null };
+}
+export interface TriageCounts { needsDecision: number; safe: number; waiting: number; kept: number }
+export interface WorktreeTriageData {
+  rows: TriageRow[];
+  banners: Array<
+    { repo: string; path: string; forge: "github" | "gitlab" } & (
+      | { reason: "no-branches-grant"; mode: "live" | "poll" | "off"; caches: Array<"branches" | "project-mrs" | "discussions"> }
+      | { reason: "no-token" }
+    )
+  >;
+  counts: TriageCounts;
+}
+
 /** Duplicated shape on purpose: mirrors lib/endpoint/store.ts's EndpointClaim. */
 export interface EndpointClaim { worktree: string; role: string; port: number; ts: number }
 export interface EndpointRoleRef { port: number; url: string; running: boolean }
@@ -876,6 +903,7 @@ export interface Commands {
   "worktree:restore": { payload: { repoName: string; tree: string }; data: WorktreeRestoreData };
   "worktree:freshen": { payload: { repoName?: string; tree?: string }; data: WorktreeFreshenData };
   "worktree:adopt": { payload: { repoName: string; claim?: boolean }; data: WorktreeAdoptData };
+  "worktree:triage": { payload: { repoName?: string }; data: WorktreeTriageData };
 
   // ─── Background server (daemon-owned background herdr session) ──────────
   "bg:ensure": { payload: { claim?: string }; data: { socket: string; started: boolean; parity: { ok: boolean; drift: string[] } | null } };
@@ -1000,6 +1028,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "worktree:restore",
   "worktree:freshen",
   "worktree:adopt",
+  "worktree:triage",
 
   "bg:ensure",
   "bg:status",
