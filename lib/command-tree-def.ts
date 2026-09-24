@@ -1817,16 +1817,13 @@ export const TREE: Record<string, CommandNode> = {
         requiresTTY: true,
         args: [],
       },
-      "dev-mode": {
-        description: "Toggle between local dev source and the installed production binary",
+      "source-path": {
+        description: "Show or set the rt source checkout the dev app runs",
         module: "./commands/settings.ts",
-        fn: "toggleDevMode",
-        omitBehavior: "prompt",
-        // A TTY is needed only to PROMPT for a target: an explicit target,
-        // --json, and the bare read-only tuple print are all non-interactive.
-        requiresTTY: () => false,
+        fn: "sourcePathCommand",
         args: [
-          { name: "Target", type: "select", hint: "Omit to be prompted interactively", options: [{ value: "dev", label: "dev", hint: "Run from local source" }, { value: "prod", label: "prod", hint: "Run the installed binary (from mattstack.app)" }] },
+          { name: "Path", type: "text", optional: true, placeholder: "~/Documents/GitHub/repo-tools", hint: "Omit to show the current checkout" },
+          SETUP_JSON_ARG,
         ],
       },
     },
@@ -2427,6 +2424,23 @@ export const TREE: Record<string, CommandNode> = {
       sdm: integrationNode("sdm", "StrongDM"),
       doppler: integrationNode("doppler", "Doppler"),
       ldcli: integrationNode("ldcli", "LaunchDarkly"),
+    },
+  },
+
+  flavor: {
+    description: "Which app (mattstack.app or mattstack-dev.app) runs this Mac",
+    subcommands: {
+      takeover: {
+        description: "Retire the other app and point ~/.local/bin/rt at this one (the app runs this when opened by hand)",
+        module: "./commands/flavor.ts",
+        fn: "flavorTakeover",
+        hidden: true,
+        omitBehavior: { exempt: "called by the app with its own flavor; a person switches by opening the other app" },
+        args: [
+          { name: "Flavor", type: "select", options: [{ value: "dev", label: "dev", hint: "mattstack-dev.app, rt from source" }, { value: "prod", label: "prod", hint: "mattstack.app, its compiled rt" }] },
+          SETUP_JSON_ARG,
+        ],
+      },
     },
   },
 

@@ -29,6 +29,12 @@ describe("renderDevModeWrapper", () => {
     expect(execIdx).toBeGreaterThan(cdIdx);
   });
 
+  test("labels every process it launches as the dev app's before exec", () => {
+    const exportIdx = wrapper.indexOf("export MATTSTACK_FLAVOR=dev\n");
+    expect(exportIdx).toBeGreaterThan(-1);
+    expect(exportIdx).toBeLessThan(wrapper.indexOf(`exec "${BUN}"`));
+  });
+
   test("preloads the cwd-restore script and runs cli.ts with forwarded args", () => {
     expect(wrapper).toContain(`--preload="${DEV_MODE_PRELOAD}"`);
     expect(wrapper).toContain(`"${SOURCE}/cli.ts" "$@"`);

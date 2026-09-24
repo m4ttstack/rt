@@ -141,7 +141,7 @@ if (args[0] === "--version" || args[0] === "-V") {
   // handler untouched; RT_APP_SOCKET means mattstack.app is driving rt and
   // already knows the setup state.
   const FIRST_RUN_HINT_SKIP = new Set([
-    "setup", "team", "deps", "services", "tools", "repos", "skills", "cron", "uninstall", "home", "secrets", "restore", "verify",
+    "setup", "team", "deps", "services", "flavor", "tools", "repos", "skills", "cron", "uninstall", "home", "secrets", "restore", "verify",
   ]);
   if (
     process.env.CI !== "true" &&

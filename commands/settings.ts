@@ -7,18 +7,12 @@
  *   settings gitlab token   — set GitLab personal access token
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { homedir } from "os";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "fs";
+import { dirname, join, resolve as resolvePath } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
-import {
-  rtDir,
-  TRAY_APP_NAME, DEV_TRAY_APP_NAME, TRAY_APP_BUNDLE,
-  trayAppPath, devTrayAppPath,
-} from "../lib/rt-paths.ts";
-import { DEV_MODE_TAG, installRtBinary } from "../lib/dev-mode.ts";
-import { describeTuple, tupleWarning, type FlavorTuple } from "./daemon.ts";
-import { RT_BUNDLE_PATH } from "../lib/bundle-layout.ts";
+import { rtDir } from "../lib/rt-paths.ts";
+import { DEV_MODE_TAG, installRtBinary, isDevModeWrapperContent, readWrapperPrefix, rtBinaryPath } from "../lib/dev-mode.ts";
+import { envelope } from "../lib/setup/contract.ts";
 import { spawnSync } from "child_process";
 import { bold, cyan, dim, green, red, reset, yellow } from "../lib/tui.ts";
 import {
@@ -32,7 +26,6 @@ import {
   saveNotificationPrefs,
   NOTIFICATION_TYPES,
 } from "../lib/notifier.ts";
-import { installShellIntegration } from "../lib/shell-integration.ts";
 import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import {
@@ -354,9 +347,8 @@ export async function sendTestPushNotification(): Promise<void> {
   }
 }
 
-// ─── Dev mode toggle ─────────────────────────────────────────────────────────
+// ─── Dev app source checkout and the ~/.local/bin/rt it runs ─────────────────
 
-const DEV_MODE_WRAPPER = `${Bun.env.HOME}/.local/bin/rt`;
 export const DEV_MODE_PRELOAD = join(rtDir(), "dev-restore-cwd.ts");
 
 // kv row (ns='dev-mode', k='config') — see lib/state/db.ts's note on the kv
@@ -454,10 +446,8 @@ export function bunPathForStorage(detected: string): string | undefined {
   return detected.startsWith("/") ? detected : undefined;
 }
 
-export function enableDevMode(sourcePath: string): void {
-  const bunPath = detectBunPath();
-
-  // Save source + bun paths — also read by rt-daemon-shim inside mattstack.app.
+/** Stores the checkout the dev wrapper and the dev daemon launcher run. */
+function saveSourcePath(sourcePath: string, bunPath: string): void {
   // readDevModeConfig() first folds in (and safely imports/renames) any
   // legacy dev-mode.json — a save reached without a prior load would
   // otherwise strand an unread legacy file the moment this write makes the
@@ -465,24 +455,66 @@ export function enableDevMode(sourcePath: string): void {
   readDevModeConfig();
   const storedBunPath = bunPathForStorage(bunPath);
   setKvValue(DEV_MODE_NS, DEV_MODE_KEY, storedBunPath ? { sourcePath, bunPath: storedBunPath } : { sourcePath });
+}
 
-  // Ensure rtDir()/~/.local/bin exist for the preload script + wrapper writes below.
+export function enableDevMode(sourcePath: string): void {
+  const bunPath = detectBunPath();
+  saveSourcePath(sourcePath, bunPath);
+
   mkdirSync(rtDir(), { recursive: true });
-  mkdirSync(`${Bun.env.HOME}/.local/bin`, { recursive: true });
+  mkdirSync(dirname(rtBinaryPath()), { recursive: true });
 
-  // Write wrapper script. Use the absolute bun path (not bare `bun`) and
-  // prepend the common tool dirs to PATH so the wrapper works even when
-  // launched without the user's interactive PATH — e.g. mattstack.app spawns
-  // `rt daemon logs` under launchd, whose PATH is only
-  // /usr/bin:/bin:/usr/sbin:/sbin. Without this, both `bun` (the wrapper's
-  // own interpreter) and the tools cli.ts shells out to (logdy, lnav, bunx)
-  // fail to resolve, so the log viewer never starts.
+  // The absolute bun path, not bare `bun`: mattstack.app spawns rt under
+  // launchd, whose PATH is only /usr/bin:/bin:/usr/sbin:/sbin.
   writeFileSync(DEV_MODE_PRELOAD, renderDevModePreload());
   writeDevModeWrapperFile(renderDevModeWrapper(sourcePath, bunPath));
 }
 
+export interface SourcePathSeams {
+  log: (line: string) => void;
+  error: (line: string) => void;
+  exit: (code: number) => never;
+}
+
 /**
- * Prod mode may have left a SYMLINK at DEV_MODE_WRAPPER (installRtBinary, ->
+ * `rt settings source-path [<path>]`: reads or sets the rt checkout the dev
+ * app runs. Setting it while the dev wrapper owns ~/.local/bin/rt rewrites
+ * the wrapper too, so the CLI and the next dev daemon boot agree.
+ */
+export async function sourcePathCommand(
+  args: string[],
+  _ctx: CommandContext = {},
+  seams: SourcePathSeams = { log: (l) => console.log(l), error: (l) => console.error(l), exit: (c) => process.exit(c) },
+): Promise<void> {
+  const json = args.includes("--json");
+  const given = args.find((a) => !a.startsWith("--"));
+
+  if (given === undefined) {
+    const current = readDevModeConfig().sourcePath ?? null;
+    seams.log(json ? JSON.stringify(envelope({ sourcePath: current })) : (current ?? "no source checkout set"));
+    return;
+  }
+
+  const sourcePath = resolvePath(given);
+  if (!existsSync(join(sourcePath, "cli.ts"))) {
+    const message = `${sourcePath} is not an rt checkout (no cli.ts)`;
+    if (json) seams.log(JSON.stringify(envelope({ ok: false, error: { code: "not-rt-source", message } })));
+    else seams.error(`rt settings source-path: ${message}`);
+    seams.exit(2);
+    return;
+  }
+
+  const prefix = readWrapperPrefix(rtBinaryPath());
+  const wrapperOwnsRt = prefix !== null && isDevModeWrapperContent(prefix);
+  if (wrapperOwnsRt) enableDevMode(sourcePath);
+  else saveSourcePath(sourcePath, detectBunPath());
+
+  if (json) seams.log(JSON.stringify(envelope({ ok: true, sourcePath, wrapperRewritten: wrapperOwnsRt })));
+  else seams.log(`  source checkout: ${sourcePath}${wrapperOwnsRt ? ` (${rtBinaryPath()} rewritten)` : ""}`);
+}
+
+/**
+ * The prod app may have left a SYMLINK at ~/.local/bin/rt (installRtBinary, ->
  * Contents/MacOS/rt inside the app bundle). writeFileSync opens-and-
  * truncates through a symlink, which would overwrite the bundle's real
  * binary instead of replacing the wrapper — corrupting the app's code
@@ -491,10 +523,11 @@ export function enableDevMode(sourcePath: string): void {
  * points at.
  */
 function writeDevModeWrapperFile(content: string): void {
-  const tmp = `${DEV_MODE_WRAPPER}.new`;
+  const dest = rtBinaryPath();
+  const tmp = `${dest}.new`;
   rmSync(tmp, { force: true });
   writeFileSync(tmp, content, { mode: 0o755 });
-  renameSync(tmp, DEV_MODE_WRAPPER);
+  renameSync(tmp, dest);
 }
 
 // Bun transpiles with the tsconfig found in the *cwd*, so running rt from a
@@ -521,6 +554,7 @@ export function renderDevModeWrapper(sourcePath: string, bunPath: string): strin
     // line cds into the source checkout.
     `export PATH="\${PATH:+\$PATH:}${bunDir}:/opt/homebrew/bin:/usr/local/bin"`,
     `export RT_LAUNCH_CWD="$PWD"`,
+    `export MATTSTACK_FLAVOR=dev`,
     `cd "${sourcePath}" || { echo "rt: dev-mode source checkout missing: ${sourcePath}" >&2; exit 1; }`,
     `exec "${bunPath}" run --preload="${DEV_MODE_PRELOAD}" "${sourcePath}/cli.ts" "$@"`,
   ].join("\n") + "\n";
@@ -528,7 +562,7 @@ export function renderDevModeWrapper(sourcePath: string, bunPath: string): strin
 
 export function renderDevModePreload(): string {
   return [
-    `// Written by \`rt settings dev-mode\` (commands/settings.ts, RT-25).`,
+    `// Written by the dev app's takeover (commands/settings.ts, RT-25).`,
     `// The dev wrapper cds into the rt source repo before exec'ing bun; this`,
     `// puts the process back in the directory the user launched from.`,
     `const launchCwd = process.env.RT_LAUNCH_CWD;`,
@@ -546,337 +580,20 @@ export function renderDevModePreload(): string {
 }
 
 /**
- * Leaving dev mode must leave a WORKING `rt` behind. The only compiled rt on
- * this machine is the one mattstack.app carries at Contents/MacOS/rt
- * (the daemon and the CLI are the same binary), so prod mode installs THAT
- * over the wrapper path: the app provides the binary.
- *
- * Throws when the prod app is absent: stranding the CLI with no rt on PATH is
- * worse than refusing the switch.
+ * Points ~/.local/bin/rt at the prod app's compiled rt and drops the dev
+ * wrapper's preload. `prodBinary` must exist: stranding the CLI with no rt
+ * on PATH is worse than refusing.
  */
-function disableDevMode(exists: (path: string) => boolean = existsSync): void {
-  const prodAppPath = trayAppPath(exists);
-  const prodBinary = join(prodAppPath, RT_BUNDLE_PATH);
-  if (!exists(prodBinary)) {
-    throw new Error(
-      `cannot switch to prod: ${TRAY_APP_BUNDLE} is not installed, so there is no compiled rt to install at ${DEV_MODE_WRAPPER}. Install the app first (rt --post-install), then retry.`,
-    );
-  }
-
+export function installProdRt(prodBinary: string): void {
   installRtBinary(prodBinary);
-
   if (existsSync(DEV_MODE_PRELOAD)) {
     rmSync(DEV_MODE_PRELOAD);
   }
 }
 
-// ─── Flavor handoff (MAT-383 §3) ─────────────────────────────────────────────
-//
-// `rt settings dev-mode on|off` is a handoff between two independently
-// registered tray apps (mattstack.app / mattstack-dev.app), not a binary
-// swap: (0) the incoming flavor's bundle must exist on disk BEFORE the
-// running flavor is touched at all; (1) the outgoing tray gives up its own
-// daemon LaunchAgent + login-item registrations via POST /flavor/retire,
-// and a hand-installed deck LaunchAgent is retired (lib/deck-hand-agent.ts);
-// (2) the outgoing tray is quit by ITS OWN flavor names (never the incoming
-// flavor's); (3) we poll until it is actually gone — a CONNECT-probe of the
-// shared tray socket (a pkill'd tray leaks the socket file, so existence
-// alone would lie) plus `launchctl list` on its own label; (4) the incoming
-// app is launched. Never mutates a bundle in place.
-
-interface FlavorInfo {
-  mode: "dev" | "prod";
-  /** CFBundleExecutable AND osascript display name — build.sh templates them identically. */
-  name: string;
-  appPath: string;
+/** The stored checkout when it still holds cli.ts, else the best guess (this source tree, then common locations). */
+export function resolveStoredSourcePath(): string | null {
+  const saved = readDevModeConfig().sourcePath;
+  if (saved && existsSync(`${saved}/cli.ts`)) return saved;
+  return detectSourcePath();
 }
-
-function flavorFor(mode: "dev" | "prod", exists: (path: string) => boolean = existsSync): FlavorInfo {
-  // passing `exists` through keeps this resolution testable without ever
-  // touching the real /Applications.
-  const appPath = mode === "dev" ? devTrayAppPath(exists) : trayAppPath(exists);
-  return {
-    mode,
-    name: mode === "dev" ? DEV_TRAY_APP_NAME : TRAY_APP_NAME,
-    appPath,
-  };
-}
-
-function launchdLabelFor(mode: "dev" | "prod"): string {
-  return mode === "dev" ? "com.mattstack.daemon.dev" : "com.mattstack.daemon";
-}
-
-const HANDOFF_POLL_TIMEOUT_MS = 3_000;
-const HANDOFF_POLL_INTERVAL_MS = 75;
-
-/** CONNECT-probe, not file existence — a pkill'd tray leaks the socket file. */
-async function traySocketIsLive(sockPath: string): Promise<boolean> {
-  if (!existsSync(sockPath)) return false;
-  try {
-    const response = await fetch("http://localhost/health", {
-      unix: sockPath,
-      method: "GET",
-      signal: AbortSignal.timeout(500),
-    } as any);
-    return response.status > 0;
-  } catch {
-    return false; // connection refused / socket gone / timed out
-  }
-}
-
-function launchdStillRegistered(label: string): boolean {
-  // env explicitly forwarded: Bun resolves a bare command against the
-  // process-start PATH snapshot unless an env is passed, so a runtime PATH
-  // fake (tests) would otherwise be silently ignored.
-  const result = spawnSync("launchctl", ["list", label], { encoding: "utf8", stdio: "pipe", env: process.env });
-  if (result.error || result.status !== 0) return false;
-  const out = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  return !out.includes("Could not find");
-}
-
-/** Bounded poll: both the socket AND the outgoing launchd label must clear. */
-async function waitUntilGone(sockPath: string, outgoingLabel: string): Promise<boolean> {
-  const deadline = Date.now() + HANDOFF_POLL_TIMEOUT_MS;
-  for (;;) {
-    const gone = !(await traySocketIsLive(sockPath)) && !launchdStillRegistered(outgoingLabel);
-    if (gone) return true;
-    if (Date.now() >= deadline) return false;
-    await Bun.sleep(HANDOFF_POLL_INTERVAL_MS);
-  }
-}
-
-async function handoffToFlavor(outgoing: FlavorInfo, incoming: FlavorInfo, target: "dev" | "prod"): Promise<void> {
-  const { trayQuery } = await import("../lib/daemon-client.ts");
-  const { TRAY_SOCK_PATH } = await import("../lib/daemon-config.ts");
-  const outgoingLabel = launchdLabelFor(outgoing.mode);
-
-  // 1. Retire the outgoing tray's own registrations (its daemon LaunchAgent
-  // and its login item) before quitting it — TrayServer's /flavor/retire.
-  const retire = await trayQuery("/flavor/retire", "POST");
-  if (retire?.ok) {
-    console.log(`  ${green}✓${reset} ${outgoing.name} retired its registrations`);
-  } else {
-    // Unreachable (retire never ran) and a reachable-but-{ok:false} reply both
-    // leave the outgoing LaunchAgent registered — either way waitUntilGone
-    // would poll a launchd label that was never booted out and time out, so
-    // both share the direct bootout fallback.
-    console.log(retire
-      ? `  ${yellow}⚠${reset} flavor retire: ${(retire as any).error ?? "failed"}`
-      : `  ${yellow}⚠${reset} flavor retire: ${outgoing.name} not reachable`);
-    spawnSync("launchctl", ["bootout", `gui/${process.getuid?.() ?? 501}/${outgoingLabel}`], { stdio: "pipe", env: process.env });
-    console.log(`  ${yellow}⚠${reset} booted out ${outgoingLabel} directly`);
-  }
-
-  // A hand-installed deck agent would hold deck's ports against the incoming
-  // flavor's SMAppService deck helper, so it goes before the launch.
-  const { describeHandDeckRetire, realHandDeckAgentSeams, retireHandInstalledDeckAgent } = await import("../lib/deck-hand-agent.ts");
-  const handDeck = retireHandInstalledDeckAgent(realHandDeckAgentSeams());
-  const handDeckLine = describeHandDeckRetire(handDeck);
-  if (handDeckLine) console.log(`  ${handDeck.kind === "failed" ? `${yellow}⚠` : `${green}✓`}${reset} ${handDeckLine}`);
-
-  // 2. Quit the outgoing tray by ITS OWN flavor's names. env forwarded
-  // explicitly for the same reason as launchdStillRegistered above.
-  spawnSync("osascript", ["-e", `tell application "${outgoing.name}" to quit`], { stdio: "pipe", timeout: 3_000, env: process.env });
-  spawnSync("pkill", ["-x", outgoing.name], { stdio: "pipe", env: process.env });
-
-  // 3. Poll until the outgoing pair is actually gone — required because the
-  // incoming tray's ping-then-exit socket guard would otherwise see the
-  // dying socket and abort its own startup.
-  const gone = await waitUntilGone(TRAY_SOCK_PATH, outgoingLabel);
-  console.log(gone
-    ? `  ${green}✓${reset} ${outgoing.name} quit`
-    : `  ${yellow}⚠${reset} ${outgoing.name} did not fully quit — launching ${incoming.name} anyway`);
-
-  // Write the intended mode BEFORE launching the incoming bundle — its tray
-  // reads this on first activation, and reading it before `open` means it
-  // never sees a stale mode in the window between launch and this write.
-  setSetting("mattstack.mode", target, "machine");
-
-  // 4. Launch the incoming app.
-  spawnSync("open", [incoming.appPath], { stdio: "pipe", env: process.env });
-  console.log(`  ${green}✓${reset} launched ${incoming.appPath}`);
-}
-
-/**
- * deck's `isDevMode` cache refreshes every 2 seconds on its own, so this poke
- * only shortens that wait: it must never fail the toggle it rides along
- * with. Every failure path (missing/unparseable api.json, a non-2xx answer,
- * a network error, a timeout) degrades to a returned note instead of a throw.
- */
-/** Only the call signature, so a plain async test double satisfies it: Bun's
-    `typeof fetch` also carries `preconnect`, which no double supplies. */
-type FetchImpl = (...args: Parameters<typeof fetch>) => Promise<Response>;
-
-export async function pokeDeckReresolve(deps: {
-  readApiFile?: () => string | null;
-  fetchImpl?: FetchImpl;
-} = {}): Promise<string> {
-  const read = deps.readApiFile ?? (() => {
-    try {
-      return readFileSync(join(process.env.HOME ?? homedir(), ".mattstack", "deck", "api.json"), "utf8");
-    } catch {
-      return null;
-    }
-  });
-  const doFetch = deps.fetchImpl ?? fetch;
-  try {
-    const raw = read();
-    if (raw === null) return "deck not poked (no api.json); managed apps follow on their next resolve";
-    const port = (JSON.parse(raw) as { port?: unknown }).port;
-    if (typeof port !== "number") return "deck not poked (bad api.json); managed apps follow on their next resolve";
-    const res = await doFetch(`http://127.0.0.1:${port}/api/v1/apps/managed/reresolve`, {
-      method: "POST",
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) return `deck answered ${res.status} on reresolve; managed apps follow on their next resolve`;
-    const body = (await res.json()) as { restarted?: string[]; unchanged?: string[]; failed?: Array<{ name: string; error: string }> };
-    const restarted = body.restarted ?? [];
-    const failed = body.failed ?? [];
-    const parts = [`${restarted.length} restarted`, `${(body.unchanged ?? []).length} unchanged`];
-    if (failed.length) parts.push(`${failed.length} failed (${failed.map((f) => f.name).join(", ")})`);
-    return `deck re-resolved managed apps: ${parts.join(", ")}`;
-  } catch (e) {
-    return `deck not poked (${(e as Error).message}); managed apps follow on their next resolve`;
-  }
-}
-
-export type GuardVerdict = "noop" | "repair" | "switch";
-
-/** "already in X mode" is earned only when every leg agrees; a serving daemon of the wrong flavor makes the toggle a repair even when the CLI already matches. */
-export function devModeGuardVerdict(target: "dev" | "prod", t: FlavorTuple): GuardVerdict {
-  if (target !== t.cliFlavor) return "switch";
-  const daemonAgrees = t.daemon === null || t.daemon.flavor === target;
-  const intentAgrees = t.intended.mode === target;
-  return daemonAgrees && intentAgrees ? "noop" : "repair";
-}
-
-export function renderTupleReadout(t: FlavorTuple, json: boolean): string {
-  if (json) return JSON.stringify(t);
-  const lines = [
-    `  intended: ${t.intended.mode} (${t.intended.provenance})`,
-    `  cli:      ${t.cliFlavor}`,
-    `  daemon:   ${t.daemon ? `${t.daemon.flavor} (pid ${t.daemon.pid})` : "not running"}`,
-  ];
-  const warning = tupleWarning(t);
-  if (warning) lines.push(`  ⚠ ${warning}`);
-  return lines.join("\n");
-}
-
-export async function toggleDevMode(args: string[], _ctx: CommandContext = {}, exists: (path: string) => boolean = existsSync): Promise<void> {
-  const tuple = await describeTuple();
-  const mode = tuple.cliFlavor;
-  const sourcePath = detectSourcePath();
-  const json = args.includes("--json");
-
-  // Resolve target from args (a literal "dev"/"prod"; "--json" and anything
-  // else fall through to undefined, same as the bare-invocation case).
-  let target = args[0] as "dev" | "prod" | undefined;
-  if (target !== "dev" && target !== "prod") target = undefined;
-
-  if (!target) {
-    // A TTY is needed only to PROMPT for a target — --json and a piped/
-    // scripted caller both get the read-only tuple instead, undecorated so
-    // --json output stays one parseable JSON line (the Swift tray parses
-    // exactly this: `rt settings dev-mode --json`).
-    if (!process.stdin.isTTY || json) {
-      console.log(renderTupleReadout(tuple, json));
-      return;
-    }
-  }
-
-  // Show current state (human-facing paths only, below this point).
-  console.log("");
-  const modeLabel = mode === "dev"
-    ? `${green}dev${reset}  ${dim}(local source)${reset}`
-    : `${bold}prod${reset}  ${dim}(mattstack.app binary)${reset}`;
-  console.log(`  ${bold}${cyan}rt dev mode${reset}  currently: ${modeLabel}`);
-  if (mode === "dev" && sourcePath) {
-    console.log(`  ${dim}source: ${sourcePath}${reset}`);
-  }
-  console.log("");
-
-  if (!target) {
-    const { select } = await import("../lib/rt-render.ts");
-    target = await select({
-      message: "Switch to",
-      options: [
-        { value: "dev",  label: "Dev",  hint: `mattstack-dev.app — daemon and CLI run from local source` },
-        { value: "prod", label: "Prod", hint: "mattstack.app — daemon and CLI are its compiled binary" },
-      ],
-    }) as "dev" | "prod";
-  }
-
-  const verdict = devModeGuardVerdict(target, tuple);
-  if (verdict === "noop") {
-    console.log(`  ${dim}already in ${target} mode${reset}\n`);
-    return;
-  }
-
-  const incoming = flavorFor(target, exists);
-  // Only two flavors exist, so "the other one" is always the outgoing side —
-  // NOT necessarily `mode` (the CLI's own flavor). A repair's whole point is
-  // a half-state where the CLI already matches target but the wrong flavor's
-  // daemon/tray is what's actually serving; quitting "mode" there would
-  // pkill a name nothing is running under and leave the real offender alive.
-  const outgoing = flavorFor(target === "dev" ? "prod" : "dev", exists);
-
-  // 0. Precondition — the incoming flavor's bundle must exist on disk BEFORE
-  // we touch the running flavor at all, so the toggle can never leave the
-  // machine tray-less.
-  if (!exists(incoming.appPath)) {
-    console.log(`  ${red}✗${reset} ${incoming.appPath} not found`);
-    console.log(`  ${dim}run: build.sh ${target === "dev" ? "dev" : "install"} first${reset}\n`);
-    return;
-  }
-
-  if (target === "dev") {
-    // Need a source path
-    let resolvedPath = sourcePath;
-
-    if (!resolvedPath) {
-      const { textInput } = await import("../lib/rt-render.ts");
-      const defaultGuess = `${Bun.env.HOME}/Documents/GitHub/repo-tools`;
-      const entered = await textInput({
-        message: "Path to repo-tools source directory",
-        defaultValue: defaultGuess,
-      });
-      const path = entered?.trim();
-      if (!path) {
-        console.log(`  ${red}✗${reset} no path entered\n`);
-        return;
-      }
-      if (!existsSync(`${path}/cli.ts`)) {
-        console.log(`  ${red}✗${reset} cli.ts not found at: ${path}\n`);
-        return;
-      }
-      resolvedPath = path;
-    }
-
-    enableDevMode(resolvedPath!);
-
-    // Ensure shell integration exists (idempotent — handles zsh/bash/fish)
-    const shellResult = installShellIntegration();
-    if (shellResult.written) {
-      console.log(`  ${green}✓${reset} added shell integration to ${shellResult.rcPath}`);
-    }
-
-    console.log(`  ${green}✓${reset} CLI switched to dev mode`);
-    console.log(`  ${dim}wrapper → ${DEV_MODE_WRAPPER}${reset}`);
-    console.log(`  ${dim}source  → ${resolvedPath}${reset}`);
-
-    await handoffToFlavor(outgoing, incoming, target);
-    console.log(`  ${dim}${await pokeDeckReresolve()}${reset}`);
-
-    console.log(`  ${dim}restart your terminal (or: source ${shellResult.rcPath ?? "~/.zshrc"}) to activate${reset}`);
-
-  } else {
-    disableDevMode(exists);
-    console.log(`  ${green}✓${reset} CLI restored to prod mode  ${dim}(mattstack.app binary installed at ~/.local/bin/rt)${reset}`);
-
-    await handoffToFlavor(outgoing, incoming, target);
-    console.log(`  ${dim}${await pokeDeckReresolve()}${reset}`);
-  }
-
-  console.log("");
-}
-
