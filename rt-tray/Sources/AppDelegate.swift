@@ -795,10 +795,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             item.isEnabled = state.devRebuild != .building
             menu.addItem(item)
         }
+        let building = state.devRebuild == .building
+        guard !building else { return }
         let from = NSMenuItem(title: "Rebuild from", action: nil, keyEquivalent: "")
         from.setAccessibilityIdentifier(AXID.trayDevRebuildFrom)
         let sub = NSMenu()
-        let building = state.devRebuild == .building
         populateRebuildFrom(sub, last: last, building: building)
         // Menus can be edited while open, so a list that arrives late fills
         // the submenu in place.
