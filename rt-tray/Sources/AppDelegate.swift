@@ -797,7 +797,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         let from = NSMenuItem(title: "Rebuild from", action: nil, keyEquivalent: "")
         from.setAccessibilityIdentifier(AXID.trayDevRebuildFrom)
-        from.submenu = rebuildFromMenu(last: last, building: state.devRebuild == .building)
+        let sub = NSMenu()
+        let building = state.devRebuild == .building
+        populateRebuildFrom(sub, last: last, building: building)
+        // Menus can be edited while open, so a list that arrives late fills
+        // the submenu in place.
+        watcher.onSourcesChanged = { [weak self, weak sub] in
+            guard let self, let sub else { return }
+            self.populateRebuildFrom(sub, last: DevBuildWatcher.shared.lastSource, building: building)
+        }
+        from.submenu = sub
         menu.addItem(from)
         watcher.refreshSources()
     }
@@ -806,8 +815,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// checkout, the few most recently active trees, and the rest one level
     /// down.
     @MainActor
-    private func rebuildFromMenu(last: String?, building: Bool) -> NSMenu {
-        let menu = NSMenu()
+    private func populateRebuildFrom(_ menu: NSMenu, last: String?, building: Bool) {
+        menu.removeAllItems()
         let watcher = DevBuildWatcher.shared
         let groups = RebuildSources.group(watcher.sources, recentLimit: 5)
         func item(_ source: RebuildSource) -> NSMenuItem {
@@ -822,7 +831,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             let loading = NSMenuItem(title: "Loading worktrees…", action: nil, keyEquivalent: "")
             loading.isEnabled = false
             menu.addItem(loading)
-            return menu
+            return
         }
         if !groups.main.isEmpty {
             menu.addItem(.sectionHeader(title: "Main checkout"))
@@ -848,7 +857,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             more.submenu = sub
             menu.addItem(more)
         }
-        return menu
     }
 
     @MainActor @objc private func devRebuildChanged() {

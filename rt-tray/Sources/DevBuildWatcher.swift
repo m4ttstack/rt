@@ -25,12 +25,30 @@ final class DevBuildWatcher {
     private(set) var sources: [RebuildSource] = []
     private static let rtRepoName = "remote:github.com%2Fm4ttstack%2Frt"
 
+    /// Called with the new list, so an open Rebuild from… submenu can refill
+    /// in place instead of waiting for the menu to be reopened.
+    var onSourcesChanged: (() -> Void)?
+    private var refreshing = false
+
+    /// Retries for a while: right after a relaunch the daemon is still
+    /// starting and the first queries fail.
     func refreshSources() {
-        guard BundleFlavor.isDevBuild else { return }
+        guard BundleFlavor.isDevBuild, !refreshing else { return }
+        refreshing = true
         Task {
-            guard let payload = await DaemonClient().queryWorktreeList() else { return }
-            let found = RebuildSources.sources(from: payload, repoName: Self.rtRepoName)
-            await MainActor.run { self.sources = found }
+            var payload: WorktreeListPayload?
+            for attempt in 0..<15 {
+                payload = await DaemonClient().queryWorktreeList()
+                if payload != nil { break }
+                if attempt < 14 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+            }
+            let found = payload.map { RebuildSources.sources(from: $0, repoName: Self.rtRepoName) }
+            await MainActor.run {
+                self.refreshing = false
+                guard let found, found != self.sources else { return }
+                self.sources = found
+                self.onSourcesChanged?()
+            }
         }
     }
 
