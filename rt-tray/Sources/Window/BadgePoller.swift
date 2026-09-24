@@ -40,7 +40,7 @@ final class BadgePoller {
         }
         book.retain(apps: Set(targets.map(\.0)))
         for (name, reading) in results { book.record(app: name, reading: reading) }
-        model.badges = book.readings
+        if model.badges != book.readings { model.badges = book.readings }
         NSApp.dockTile.badgeLabel = BadgeBook.label(book.total)
     }
 

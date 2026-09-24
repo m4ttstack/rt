@@ -182,7 +182,7 @@ final class WindowModel: ObservableObject {
         activeApp = name
     }
 
-    /// The pill opens the oldest counted decision; with no path it just selects the tab.
+    /// Opens the oldest counted decision.
     func openBadge(for name: String) {
         guard let path = badges[name]?.path else { select(name); return }
         Task { _ = await open(OpenRequest(app: name, pathAndQuery: path)) }

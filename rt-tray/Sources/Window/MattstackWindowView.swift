@@ -118,6 +118,12 @@ private struct TabButton: View {
     let shortcutIndex: Int?
 
     private var isActive: Bool { model.activeApp == app.name }
+    /// Computed once and used for both the reserved trailing space and the
+    /// pill's own `if`, so the two can never disagree about whether a pill
+    /// is showing.
+    private var pillLabel: String? {
+        model.badges[app.name].flatMap { BadgeBook.label($0.count) }
+    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -142,7 +148,7 @@ private struct TabButton: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.leading, 10)
-                    .padding(.trailing, 30)
+                    .padding(.trailing, pillLabel != nil ? 40 : 0)
                     .frame(width: tabWidth, height: barHeight, alignment: .leading)
 
                     if isActive {
@@ -162,7 +168,7 @@ private struct TabButton: View {
 
             // A Button's label is one hit target on macOS, so the pill is a
             // sibling Button, not nested inside the tab's own label.
-            if let count = model.badges[app.name]?.count, let label = BadgeBook.label(count) {
+            if let label = pillLabel {
                 Button { model.openBadge(for: app.name) } label: {
                     Text(label)
                         .font(.system(size: 10, weight: .semibold))
