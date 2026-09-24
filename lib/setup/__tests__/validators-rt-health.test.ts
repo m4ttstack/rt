@@ -472,7 +472,7 @@ describe("rtHealthRows — tool.flavor", () => {
     expect(r.status).toBe("invalid");
     expect(r.detail).toContain("prod daemon");
     expect(r.detail).toContain("dev CLI");
-    expect(r.detail).toContain("mattstack-dev.app");
+    expect(r.detail).toContain("quit mattstack-dev.app and open it again");
     expect(r.detail).not.toContain("dev-mode");
     expect(r.required).toBe(true);
   });

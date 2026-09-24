@@ -89,7 +89,7 @@ export function formatFreshnessParts(
 export function tupleWarning(t: FlavorTuple): string | null {
   if (!t.daemon || t.daemon.flavor === t.cliFlavor) return null;
   const pid = t.daemon.pid ? ` (pid ${t.daemon.pid})` : "";
-  return `a ${t.daemon.flavor} daemon${pid} answers this ${t.cliFlavor} CLI. Fix: open ${flavorHintPath(t.cliFlavor)} to hand this Mac to it`;
+  return `a ${t.daemon.flavor} daemon${pid} answers this ${t.cliFlavor} CLI. Fix: quit ${flavorHintPath(t.cliFlavor)} and open it again, which hands this Mac to it`;
 }
 
 /** Bundle to point an "open it" hint at for `flavor`. */
@@ -112,7 +112,7 @@ export function flavorMismatchLines(
   const verb = op === "stop" ? "still holds" : "answered on";
   return [
     `a ${holder.flavor} daemon ${verb} rt.sock${pidPart}, not ${flavor}`,
-    `Fix: open ${flavorHintPath(flavor)}`,
+    `Fix: quit ${flavorHintPath(flavor)} and open it again`,
   ];
 }
 
