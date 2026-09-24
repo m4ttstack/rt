@@ -32,6 +32,10 @@ public enum FlavorLaunch {
         /// and agents registered, and only this app can unregister them.
         case retire(owner: String)
         case ask(other: String)
+        /// A link or unidentified launch on a Mac the installed other app
+        /// owns (its ~/.local/bin/rt) while its tray is not running: the
+        /// link goes to that app and this one quits, registering nothing.
+        case handOff(owner: String)
     }
 
     /// `rtOwner` is `RtLinkOwner.flavor` of ~/.local/bin/rt; nil (foreign,
@@ -49,7 +53,9 @@ public enum FlavorLaunch {
             if let rtOwner, rtOwner != myFlavor, ownerInstalled { return .retire(owner: rtOwner) }
             return .serve
         case .urlLaunch, .unknown:
-            return otherTrayAlive.map { .ask(other: $0) } ?? .serve
+            if let otherTrayAlive { return .ask(other: otherTrayAlive) }
+            if let rtOwner, rtOwner != myFlavor, ownerInstalled { return .handOff(owner: rtOwner) }
+            return .serve
         }
     }
 

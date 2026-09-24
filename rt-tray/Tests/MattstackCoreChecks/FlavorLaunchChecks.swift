@@ -46,11 +46,22 @@ let flavorLaunchChecks: [Check] = [
     },
     Check("plan: an unidentified launch asks when the other app runs, else serves without taking over or retiring") { c in
         c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: "dev", rtOwner: nil, ownerInstalled: true), .ask(other: "dev"))
-        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: nil, rtOwner: "dev", ownerInstalled: true), .serve)
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: nil, rtOwner: nil, ownerInstalled: true), .serve)
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .unknown, otherTrayAlive: nil, rtOwner: "prod", ownerInstalled: true), .serve)
     },
-    Check("plan: a url launch asks when the other app runs, else serves; it never takes over or retires") { c in
+    Check("plan: a url launch asks when the other app runs; it never takes over or retires") { c in
         c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: "dev", rtOwner: "dev", ownerInstalled: true), .ask(other: "dev"))
-        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: nil, rtOwner: "dev", ownerInstalled: true), .serve)
+    },
+    Check("plan: a url or unknown launch on a Mac whose rt the installed other app owns hands off to it") { c in
+        for origin in [LaunchOrigin.urlLaunch, .unknown] {
+            c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: origin, otherTrayAlive: nil, rtOwner: "dev", ownerInstalled: true),
+                          .handOff(owner: "dev"))
+        }
+    },
+    Check("plan: a url launch serves when the other app is not installed or rt is its own or nobody's") { c in
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: nil, rtOwner: "dev", ownerInstalled: false), .serve)
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: nil, rtOwner: "prod", ownerInstalled: true), .serve)
+        c.expectEqual(FlavorLaunch.plan(myFlavor: "prod", origin: .urlLaunch, otherTrayAlive: nil, rtOwner: nil, ownerInstalled: true), .serve)
     },
     Check("rt owner: the marked dev wrapper belongs to dev") { c in
         c.expectEqual(RtLinkOwner.flavor(linkTarget: nil, linkTargetExists: false,

@@ -11,6 +11,13 @@ enum FlavorLaunchState {
     /// licenses evicting the other flavor's live tray from the socket.
     static var takingOver = false
 
+    /// Links this launch was asked to open, kept in case the launch is
+    /// handed to the other app.
+    static var launchURLs: [URL] = []
+
+    /// Set once a launch is being handed to the other app: later links follow it.
+    static var handOffApp: URL?
+
     /// Whether LaunchServices knows the other flavor's bundle anywhere.
     static func siblingInstalled() -> Bool {
         guard let mine = Bundle.main.bundleIdentifier else { return false }

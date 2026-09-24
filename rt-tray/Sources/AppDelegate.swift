@@ -114,6 +114,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             retireSelf(body: FlavorStandDownCopy.notificationBody(myFlavor: myFlavor, other: other))
         case .retire(let owner):
             retireSelf(body: FlavorStandDownCopy.retiredBody(myFlavor: myFlavor, owner: owner))
+        case .handOff(let owner):
+            if let url = TrayLaunchOrigin.launchURL(), !FlavorLaunchState.launchURLs.contains(url) {
+                FlavorLaunchState.launchURLs.append(url)
+            }
+            handOff(owner: owner)
         case .ask(let other): askToTakeOver(other: other)
         }
     }
@@ -313,6 +318,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSApp.terminate(nil) }
         }
+    }
+
+    /// Opens the launch's link(s), or just the app, in the owner and quits
+    /// before anything registers. A link that arrives afterwards follows.
+    @MainActor
+    private func handOff(owner: String) {
+        guard let mine = Bundle.main.bundleIdentifier,
+              let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: FlavorIdentity.sibling(ofBundleID: mine))
+        else {
+            startNormalOperation()
+            return
+        }
+        FlavorLaunchState.handOffApp = app
+        let urls = FlavorLaunchState.launchURLs
+        TrayLog.info("handing the launch to the app that owns this Mac", ["owner": owner, "app": app.path, "urls": urls.count])
+        let finished: @Sendable (NSRunningApplication?, Error?) -> Void = { _, error in
+            if let error { TrayLog.warn("hand-off open failed", ["err": String(describing: error)]) }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+        if urls.isEmpty {
+            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: finished)
+        } else {
+            NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: finished)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { NSApp.terminate(nil) }
     }
 
     /// A launch this process could not identify while the other app runs:
@@ -531,6 +561,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, with reply: NSAppleEventDescriptor) {
         guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: s) else { return }
+        let seen = FlavorLaunchState.launchURLs.contains(url)
+        if !seen { FlavorLaunchState.launchURLs.append(url) }
+        if let owner = FlavorLaunchState.handOffApp {
+            if !seen { NSWorkspace.shared.open([url], withApplicationAt: owner, configuration: NSWorkspace.OpenConfiguration()) }
+            return
+        }
         if let code = JoinLink.code(from: url) {
             Task { @MainActor in
                 guard let coordinator else {

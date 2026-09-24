@@ -14,4 +14,13 @@ enum TrayLaunchOrigin {
                                    propData: event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue,
                                    isDefaultLaunch: notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool)
     }
+
+    /// The link a GURL launch event carries, if that is what launched us.
+    static func launchURL() -> URL? {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventClass == AEEventClass(kInternetEventClass), event.eventID == AEEventID(kAEGetURL),
+              let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue
+        else { return nil }
+        return URL(string: s)
+    }
 }
