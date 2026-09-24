@@ -56,13 +56,14 @@ struct WorktreeReviewSheet: View {
             HStack(spacing: 8) {
                 Text("Discarded files stay in the trash for 14 days.")
                     .font(.system(size: 12.5)).foregroundStyle(.tertiary)
-                Spacer()
+                    .lineLimit(1).layoutPriority(-1)
+                Spacer(minLength: 8)
                 Button("Keep") { onStart("keep"); controller.keep(row); dismiss() }
-                    .buttonStyle(TriageButtonStyle(large: true))
+                    .buttonStyle(TriageButtonStyle())
                 Button("Commit and push") { onStart("push-branch"); controller.pushBranch(row, commitDirty: true); dismiss() }
-                    .buttonStyle(TriageButtonStyle(large: true))
+                    .buttonStyle(TriageButtonStyle())
                 Button("Discard and dispose") { onStart("dispose"); controller.dispose(row, discard: "all"); dismiss() }
-                    .buttonStyle(TriageButtonStyle(primary: true, large: true))
+                    .buttonStyle(TriageButtonStyle(primary: true))
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
         }

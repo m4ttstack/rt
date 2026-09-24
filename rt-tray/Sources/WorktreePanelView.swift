@@ -366,7 +366,7 @@ struct TriageRowView: View {
                 .fill(TriagePalette.card(scheme))
                 .overlay(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(lifted ? 0.025 : 0)))
         )
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(lifted ? 0.20 : 0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(lifted ? 0.20 : 0.11)))
         .onHover { hovering = $0 }
     }
 
@@ -539,7 +539,7 @@ struct TriageMRChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "arrow.triangle.pull").font(.system(size: 10.5))
+            Image(systemName: mr.state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 10.5))
             Text(text).underline(hot)
             if hot { Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .semibold)) }
         }
@@ -615,6 +615,7 @@ private struct TriageButtonBody: View {
         }
         .font(.system(size: large ? 14 : 13, weight: .semibold))
         .lineLimit(1)
+        .fixedSize()
         .padding(.horizontal, large ? 13 : 11).padding(.vertical, large ? 7 : 5.5)
         .foregroundStyle(primary ? Color.white : (s == .busy ? Color.secondary : Color.primary))
         .background(RoundedRectangle(cornerRadius: 6).fill(fill(s)))
