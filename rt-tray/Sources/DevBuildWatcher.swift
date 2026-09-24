@@ -124,17 +124,26 @@ final class DevBuildWatcher {
             let ok = p.terminationStatus == 0
             try? log.close()
             Task { @MainActor in
-                TrayState.shared.devRebuild = ok ? .idle : .failed
+                DevBuildWatcher.shared.setRebuild(ok ? .idle : .failed, tree: tree)
                 DevBuildWatcher.shared.check()
             }
         }
+        log.write(Data("\n== rebuild from \(tree) at \(Date())\n".utf8))
         do {
             try proc.run()
-            TrayState.shared.devRebuild = .building
+            setRebuild(.building, tree: tree)
         } catch {
             try? log.close()
             TrayLog.error("dev rebuild failed to start", ["err": String(describing: error)])
-            TrayState.shared.devRebuild = .failed
+            setRebuild(.failed, tree: tree)
         }
+    }
+
+    var buildLogPath: String { NSHomeDirectory() + "/.mattstack/rt/logs/dev-app-build.log" }
+
+    private func setRebuild(_ state: DevRebuildState, tree: String) {
+        TrayState.shared.devRebuild = state
+        TrayState.shared.devRebuildTree = (tree as NSString).lastPathComponent
+        NotificationCenter.default.post(name: .rtDevRebuildChanged, object: nil)
     }
 }

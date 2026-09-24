@@ -70,7 +70,13 @@ if (parsed.local) {
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, content);
         },
-        exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts }),
+        // The build step streams, so a terminal or the tray's build log shows
+        // progress for the minutes it runs; its errors are already on screen.
+        exec: async (argv, opts) => {
+          if (!argv.includes("rt-tray/build.sh")) return runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts });
+          const proc = Bun.spawn(argv, { cwd: opts?.cwd, stdout: "inherit", stderr: "inherit" });
+          return { stdout: "", stderr: "", exitCode: await proc.exited };
+        },
       },
       process.cwd(),
     );

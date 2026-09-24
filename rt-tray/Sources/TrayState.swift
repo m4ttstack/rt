@@ -57,6 +57,8 @@ class TrayState: ObservableObject {
     /// app's (DevBuildWatcher).
     @Published var stagedBuildStamp: String? = nil
     @Published var devRebuild: DevRebuildState = .idle
+    /// The tree the running or last failed rebuild came from.
+    @Published var devRebuildTree: String? = nil
 
     var healthColor: Color {
         switch health {
@@ -84,4 +86,5 @@ extension Notification.Name {
     static let rtQuitMattstack   = Notification.Name("rtQuitMattstack")
     static let showMattstackWindow = Notification.Name("showMattstackWindow")
     static let rtDevRestartIntoStaged = Notification.Name("rtDevRestartIntoStaged")
+    static let rtDevRebuildChanged = Notification.Name("rtDevRebuildChanged")
 }

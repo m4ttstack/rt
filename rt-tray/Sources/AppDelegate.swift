@@ -154,6 +154,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(restartIntoStagedBuild), name: .rtDevRestartIntoStaged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(devRebuildChanged), name: .rtDevRebuildChanged, object: nil)
         DevBuildWatcher.shared.start()
         // The process panel's own gear-menu "Quit mattstack" (distinct from
         // the tray menu's, which calls quitFromTray() directly) posts this
@@ -849,6 +851,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         return menu
     }
 
+    @MainActor @objc private func devRebuildChanged() {
+        updateMenuBarTitle(status: TrayState.shared.health)
+    }
+
     @MainActor @objc private func restartIntoStagedBuild() {
         DevBuildWatcher.shared.restartIntoStaged { [weak self] in self?.quitFromTray() }
     }
@@ -939,7 +945,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                 .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
                 .foregroundColor: NSColor.systemOrange,
             ]
-            attributed.append(NSAttributedString(string: " dev", attributes: devAttrs))
+            // The status button is only ever touched on main.
+            let building = MainActor.assumeIsolated { TrayState.shared.devRebuild == .building }
+            attributed.append(NSAttributedString(string: building ? " dev · building…" : " dev", attributes: devAttrs))
         }
 
         // Space

@@ -219,27 +219,49 @@ private struct NewBuildPill: View {
     @ObservedObject private var state = TrayState.shared
 
     var body: some View {
-        if let stamp = state.stagedBuildStamp, state.devRebuild != .building {
-            Button {
-                NotificationCenter.default.post(name: .rtDevRestartIntoStaged, object: nil)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("New build · Restart")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .foregroundColor(badgeText)
-                .padding(.horizontal, 8)
-                .frame(height: 20)
-                .background(Capsule().fill(tabAccentColor))
-                .fixedSize()
+        if state.devRebuild == .building {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("Building \(state.devRebuildTree ?? "")…")
+                    .font(.system(size: 11, weight: .medium))
             }
-            .buttonStyle(.plain)
+            .foregroundColor(inactiveLabelColor)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Capsule().stroke(separatorColor))
+            .fixedSize()
             .padding(.trailing, 10)
-            .help("Quit and reopen mattstack-dev on the staged build (\(stamp))")
+            .help("Building the dev app; the restart button appears here when it is ready")
+        } else if state.devRebuild == .failed {
+            pill("exclamationmark.triangle", "Rebuild failed · Log", fill: badgeFill,
+                 help: "Open the build log (\(DevBuildWatcher.shared.buildLogPath))") {
+                NSWorkspace.shared.open(URL(fileURLWithPath: DevBuildWatcher.shared.buildLogPath))
+            }
+        } else if let stamp = state.stagedBuildStamp {
+            pill("arrow.clockwise", "New build · Restart", fill: tabAccentColor,
+                 help: "Quit and reopen mattstack-dev on the staged build (\(stamp))") {
+                NotificationCenter.default.post(name: .rtDevRestartIntoStaged, object: nil)
+            }
             .accessibilityIdentifier(AXID.windowDevRestart)
         }
+    }
+
+    private func pill(_ symbol: String, _ title: String, fill: Color, help: String,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(badgeText)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Capsule().fill(fill))
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 10)
+        .help(help)
     }
 }
 
