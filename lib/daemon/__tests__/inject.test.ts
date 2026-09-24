@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { herdrRequest } from "../../herdr/client.ts";
 import { fakeHerdr, HerdrFakeError, type FakeHerdrHandler } from "../../herdr/__tests__/fake-herdr.ts";
-import { injectAfterTurn, injectIntoPane } from "../inject.ts";
+import { composerDraft, injectAfterTurn, injectIntoPane } from "../inject.ts";
 import { bgSocketPath } from "../bg-service.ts";
 
 const stops: Array<() => void> = [];
@@ -147,7 +147,7 @@ test("every herdr call carries the caller's sockPath through the full accept flo
   };
   const res = await injectIntoPane({ paneId: "w1:p2", text: "do the thing", herdr: fakeHerdrWithSock, sockPath: "/tmp/bg/herdr.sock" });
   expect(res).toEqual({ ok: true, data: { paneId: "w1:p2", delivered: "accepted" } });
-  expect(seenSockPaths).toEqual(["/tmp/bg/herdr.sock", "/tmp/bg/herdr.sock"]);
+  expect(seenSockPaths).toEqual(["/tmp/bg/herdr.sock", "/tmp/bg/herdr.sock", "/tmp/bg/herdr.sock"]);
 });
 
 test("the stall nudge and its recovery wait also carry sockPath", async () => {
@@ -163,7 +163,149 @@ test("the stall nudge and its recovery wait also carry sockPath", async () => {
   const res = await injectIntoPane({ paneId: "w1:p2", text: "x", herdr: fakeHerdrWithSock, sockPath: "/tmp/bg/herdr.sock" });
   expect(res).toEqual({ ok: true, data: { paneId: "w1:p2", delivered: "queued" } });
   expect(seenSockPaths.every((s) => s === "/tmp/bg/herdr.sock")).toBe(true);
-  expect(seenSockPaths).toHaveLength(4);
+  expect(seenSockPaths).toHaveLength(5);
+});
+
+// ─── draft stash ───────────────────────────────────────────────────────────
+
+// Shaped on a real `pane.read` of Claude Code 2.1.281 with format "ansi" and strip_ansi false.
+const RULE = `\x1b[0m\x1b[38;2;136;136;136m${"─".repeat(60)}\x1b[0m`;
+const GRAY = (s: string) => `\x1b[0m\x1b[38;2;153;153;153m${s}\x1b[0m`;
+const composerScreen = (body: string[], above = "") =>
+  ["⏺ ok", "", above, RULE, ...body, RULE, `  ${GRAY("O 5.5 [high] | offline")}`, ""].map((l) => `${l}\r`).join("\n");
+const readReply = (text: string) => ({ type: "pane_read", read: { text } });
+
+test("composerDraft reads typed text and ignores the prompt marker", () => {
+  expect(composerDraft(composerScreen(["❯\xa0my half typed draft"]))).toEqual({ draft: "my half typed draft", stashHeld: false });
+  expect(composerDraft(composerScreen(["❯\xa0"]))).toEqual({ draft: "", stashHeld: false });
+});
+
+test("composerDraft keeps every line of a multi-line draft", () => {
+  expect(composerDraft(composerScreen(["❯\xa0first", "  second"]))?.draft).toBe("first\n  second");
+});
+
+test("composerDraft treats dim ghost text as empty but keeps truecolor-styled text", () => {
+  expect(composerDraft(composerScreen([`❯\xa0\x1b[2mTry "fix lint errors"\x1b[22m`]))?.draft).toBe("");
+  expect(composerDraft(composerScreen([`❯\xa0${GRAY("[Pasted text #1 +20 lines]")}`]))?.draft).toBe("[Pasted text #1 +20 lines]");
+});
+
+test("composerDraft sees a stash Claude is already holding", () => {
+  expect(composerDraft(composerScreen(["❯\xa0mine"], `${" ".repeat(40)}${GRAY("› stashed")}`))?.stashHeld).toBe(true);
+});
+
+test("composerDraft is null when no prompt box is on screen", () => {
+  expect(composerDraft("⏺ ok\r\n\r\nsome output\r\n")).toBeNull();
+  expect(composerDraft([RULE, "  Do you trust this folder?", RULE].join("\n"))).toBeNull();
+});
+
+test("composerDraft is null for a numbered menu whose cursor row wears the prompt marker", () => {
+  expect(composerDraft(composerScreen(["❯ 1. Yes", "  2. No"]))).toBeNull();
+});
+
+test("composerDraft skips 256-colour params and honours a mid-line dim reset", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[38;5;2mtyped\x1b[0m"]))?.draft).toBe("typed");
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2mghost\x1b[0mtyped"]))?.draft).toBe("typed");
+});
+
+test("composerDraft reads colon SGR, private CSI and OSC 8 as escapes, never as draft text", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2;38:2::153:153:153mTry \"x\"\x1b[0m"]))?.draft).toBe("");
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[?25l\x1b]8;;file:///a\x1b\\\x1b]8;;\x1b\\"]))?.draft).toBe("");
+});
+
+test("composerDraft carries a dim run across a wrapped line", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2mTry \"a long", "  placeholder\"\x1b[0m"]))?.draft).toBe("");
+});
+
+test("composerDraft finds the stash hint a few rows above the box", () => {
+  expect(composerDraft(composerScreen(["❯\xa0new"], `${GRAY("› stashed")}\r\n  queued: do the thing`))?.stashHeld).toBe(true);
+});
+
+const EMPTY_STASHED = composerScreen(["❯\xa0"], GRAY("› stashed"));
+
+/** A Claude pane whose composer shows `screen` until ctrl+s, then `stashedScreen`. */
+function draftPane(screen: string, status = "idle", prompt: () => unknown = () => ({ type: "agent_prompted", agent: agent("working").agent }), stashedScreen = EMPTY_STASHED) {
+  let current = screen;
+  return on((method, params) => {
+    if (method === "agent.get") return agent(status);
+    if (method === "pane.read") return readReply(current);
+    if (method === "pane.send_keys") { if ((params.keys as string[])[0] === "ctrl+s") current = current === stashedScreen ? screen : stashedScreen; return { type: "ok" }; }
+    if (method === "agent.prompt") return prompt();
+    return new HerdrFakeError("invalid_request", method);
+  });
+}
+
+test("stashes a typed draft with ctrl+s and waits for the composer to empty before the prompt", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0my half typed draft"]));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "watchdog: hi", herdr });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "accepted" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt"]);
+  expect(seen.find((s) => s.method === "pane.read")!.params).toEqual({ pane_id: "w1:p1", source: "visible", format: "ansi", strip_ansi: false });
+  expect(seen.find((s) => s.method === "pane.send_keys")!.params).toEqual({ pane_id: "w1:p1", keys: ["ctrl+s"] });
+});
+
+test("stashes before a queued prompt on a working pane too", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0draft during turn"]), "working");
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "later", herdr });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt"]);
+});
+
+test("keeps polling until the stash shows, then prompts", async () => {
+  let reads = 0;
+  const draft = composerScreen(["❯\xa0slow"]);
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.get") return agent("idle");
+    if (method === "pane.read") return readReply(++reads < 4 ? draft : EMPTY_STASHED);
+    if (method === "pane.send_keys") return { type: "ok", keys: params.keys };
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "pane.read", "pane.read", "agent.prompt"]);
+});
+
+test("a refused prompt after a stash pops the draft straight back", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "working", () => new HerdrFakeError("agent_blocked", "blocked"));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "at a prompt" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt", "pane.read", "pane.send_keys"]);
+});
+
+test("a herdr error after a stash pops the draft straight back", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "idle", () => new HerdrFakeError("agent_not_found", "gone"));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(res.ok).toBe(false);
+  expect(seen.filter((s) => s.method === "pane.send_keys")).toHaveLength(2);
+});
+
+test("a failed prompt leaves the stash alone when the composer is not empty, since ctrl+s would stash again", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "idle", () => new HerdrFakeError("agent_not_found", "gone"), composerScreen(["❯\xa0x"], GRAY("› stashed")));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.filter((s) => s.method === "pane.send_keys")).toHaveLength(1);
+});
+
+test("never presses ctrl+s on an empty composer, where it would pop a stash into the prompt", async () => {
+  const { herdr, seen } = draftPane(composerScreen([`❯\xa0\x1b[2mTry "fix lint errors"\x1b[22m`]));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
+});
+
+test("leaves a draft alone when Claude already holds a stash, rather than overwrite it", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0new draft"], GRAY("› stashed")));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
+});
+
+test("still sends the prompt when the screen read fails", async () => {
+  const { herdr, seen } = on((method) => {
+    if (method === "agent.get") return agent("idle");
+    if (method === "pane.read") return new HerdrFakeError("pane_not_found", "gone");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "accepted" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "agent.prompt"]);
 });
 
 // ─── injectAfterTurn ───────────────────────────────────────────────────────
@@ -200,9 +342,9 @@ test("injectAfterTurn waits for the turn to end, then injects the continuation",
   const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
   const methods = seen.map((s) => s.method);
-  expect(methods).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(methods).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.wait", "agent.get", "agent.get", "pane.read", "agent.prompt"]);
   expect(seen[1]!.params).toEqual({ target: "w1:p1", until: ["idle", "done"], timeout_ms: 50 });
-  expect(seen[6]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(seen[7]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
   expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "accepted" });
 });
 
@@ -216,8 +358,8 @@ test("injectAfterTurn injects at once when the turn is parked on background agen
   const logged: unknown[] = [];
   const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
-  expect(seen[3]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.get", "pane.read", "agent.prompt"]);
+  expect(seen[4]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
   expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "queued" });
 });
 
@@ -230,7 +372,7 @@ test("injectAfterTurn injects during the hold after the slash command ran, readi
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.explain", "pane.read", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.explain", "pane.read", "agent.get", "pane.read", "agent.prompt"]);
   expect(seen[1]!.params).toEqual({ pane_id: "w1:p1", source: "visible" });
 });
 
@@ -244,7 +386,7 @@ test("injectAfterTurn does not treat a working pane without the background line 
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.wait", "agent.get", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn falls through to the wait when a hold clears during the settle window", async () => {
@@ -257,7 +399,7 @@ test("injectAfterTurn falls through to the wait when a hold clears during the se
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.wait", "agent.get", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn sees a hold that begins mid-leg on the next leg", async () => {
@@ -270,7 +412,7 @@ test("injectAfterTurn sees a hold that begins mid-leg on the next leg", async ()
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn keeps waiting when the background line shows under a blocking prompt", async () => {
@@ -283,7 +425,7 @@ test("injectAfterTurn keeps waiting when the background line shows under a block
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn treats an explain error as no hold and keeps waiting", async () => {
@@ -294,7 +436,7 @@ test("injectAfterTurn treats an explain error as no hold and keeps waiting", asy
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn abandons on a herdr error that is not a leg timeout", async () => {
@@ -326,7 +468,7 @@ test("injectAfterTurn passes sockPath through the hold check, the wait and the i
   });
   stops.push(stop);
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", sockPath: sock, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "pane.read", "agent.prompt"]);
 });
 
 test("injectAfterTurn re-probes after a transient idle, then injects once truly settled", async () => {

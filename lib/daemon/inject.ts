@@ -17,6 +17,94 @@ export type InjectDelivery = "accepted" | "queued" | "refused";
 export interface InjectResult { paneId: string; delivered: InjectDelivery; reason?: string }
 export interface InjectOptions { paneId: string; text: string; callerPane?: string; herdr?: typeof herdrRequest; promptWaitMs?: number; sockPath?: string }
 
+const RULE_LINE = /^─{8,}$/;
+const PROMPT_MARKER = /^\s*❯\s?/;
+const MENU_OPTION = /^\s*❯\s*\d+\.\s/;
+const STASH_HINT = /›\s*stashed\s*$/;
+// The hint shares the rows above the box with queued lines and spinners, so a
+// few rows are searched; a stray match only costs the stash, never a draft.
+const STASH_HINT_REACH = 4;
+const STASH_POLLS = 10;
+const STASH_POLL_MS = 50;
+const ESCAPE_OR_TEXT = /\x1b\[([0-9;:?<=>]*)[ -/]*([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[\s\S]?|[^\x1b]+/g;
+
+/** Drops every escape and every dim run, keeping line breaks: Claude paints
+    its placeholder and prompt suggestions dim, and a composer showing only
+    those is empty. Dim state carries across lines, as a terminal's does.
+    Semicolon extended-colour params are skipped whole so their `2`/`5` never
+    read as dim. */
+function undimmedText(ansi: string): string {
+  let dim = false;
+  let out = "";
+  for (const m of ansi.matchAll(ESCAPE_OR_TEXT)) {
+    if (m[0][0] !== "\x1b") { out += dim ? m[0].replace(/[^\n]/g, "") : m[0]; continue; }
+    if (m[2] !== "m" || /[?<=>]/.test(m[1] ?? "")) continue;
+    const params = (m[1] || "0").split(";");
+    for (let i = 0; i < params.length; i++) {
+      const [p, ...sub] = params[i]!.split(":");
+      if ((p === "38" || p === "48" || p === "58") && sub.length === 0) i += params[i + 1] === "5" ? 2 : 4;
+      else if (p === "2") dim = true;
+      else if (p === "0" || p === "22" || p === "") dim = false;
+    }
+  }
+  return out;
+}
+
+/**
+ * The typed text in a Claude Code composer, read off an ANSI screen: the body
+ * between the last two horizontal rules, whose first line carries the `❯`
+ * marker. `stashHeld` is Claude's `› stashed` hint above the box, meaning its
+ * single stash slot is taken. Null when no prompt box is on screen, including
+ * a numbered menu whose cursor row wears the same marker.
+ */
+export function composerDraft(ansi: string): { draft: string; stashHeld: boolean } | null {
+  const lines = undimmedText(ansi).split("\n").map((l) => l.replace(/\r$/, ""));
+  const bottom = lines.findLastIndex((l) => RULE_LINE.test(l.trim()));
+  const top = lines.findLastIndex((l, i) => i < bottom && RULE_LINE.test(l.trim()));
+  const first = lines[top + 1] ?? "";
+  if (top < 0 || !PROMPT_MARKER.test(first) || MENU_OPTION.test(first)) return null;
+  const body = lines.slice(top + 1, bottom);
+  body[0] = first.replace(PROMPT_MARKER, "");
+  return {
+    draft: body.join("\n").trim(),
+    stashHeld: lines.slice(Math.max(0, top - STASH_HINT_REACH), top).some((l) => STASH_HINT.test(l)),
+  };
+}
+
+async function readComposer(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined) {
+  const screen = await herdr<{ read: { text: string } }>("pane.read", { pane_id: paneId, source: "visible", format: "ansi", strip_ansi: false }, { sockPath });
+  return screen.ok ? composerDraft(screen.result.read.text) : null;
+}
+
+/**
+ * Ctrl+S is Claude Code's `chat:stash`: it moves a non-empty composer into a
+ * one-slot stash, and the next submit pops it back ("Draft restored"). On an
+ * empty composer the same key pops the stash instead, and a second stash
+ * overwrites the first, so it is pressed only over a draft with the slot free.
+ * The key and the prompt are separate writes a busy TUI can read as one
+ * chunk, so the prompt waits until the screen shows the composer emptied.
+ * True when the key was sent.
+ */
+async function stashDraft(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined): Promise<boolean> {
+  const composer = await readComposer(herdr, paneId, sockPath);
+  if (!composer || composer.draft === "" || composer.stashHeld) return false;
+  const pressed = await herdr("pane.send_keys", { pane_id: paneId, keys: ["ctrl+s"] }, { sockPath });
+  if (!pressed.ok) return false;
+  for (let i = 0; i < STASH_POLLS; i++) {
+    if ((await readComposer(herdr, paneId, sockPath))?.draft === "") break;
+    await Bun.sleep(STASH_POLL_MS);
+  }
+  return true;
+}
+
+/** Pops the stash straight back when the prompt never landed. Only over an
+    empty composer still showing the hint; a dialog or a half-landed prompt is
+    left alone, and Claude pops the stash on the next submit instead. */
+async function restoreDraft(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined): Promise<void> {
+  const composer = await readComposer(herdr, paneId, sockPath);
+  if (composer?.draft === "" && composer.stashHeld) await herdr("pane.send_keys", { pane_id: paneId, keys: ["ctrl+s"] }, { sockPath });
+}
+
 /**
  * herdr's injection delivery, shared by chat:invite and pane:send. Returns the
  * CommandResult shape both handlers already return: a refused/accepted/queued
@@ -25,7 +113,9 @@ export interface InjectOptions { paneId: string; text: string; callerPane?: stri
  * agent.get first: not-claude and blocked are refused; working is queued (prompt,
  * no wait); else agent.prompt with a wait until working, and on a stall (the
  * prompt fails with `timeout`/`agent_prompt_stalled`) one `pane.send_keys` Enter
- * nudge then an agent.wait, accepted or queued honestly.
+ * nudge then an agent.wait, accepted or queued honestly. Before the prompt, a
+ * draft already typed in the composer is stashed (`stashDraft`) so Claude
+ * restores it after the submit; a refused or failed prompt puts it back.
  *
  * `paneId` here is always a bare herdr id: callers (pane:send, chat:invite)
  * resolve the incoming ref to `{ paneId, sockPath }` before calling in.
@@ -51,25 +141,33 @@ export async function injectIntoPane(opts: InjectOptions): Promise<{ ok: true; d
   }
   if (probe.result.agent.agent !== "claude") return ok("refused", "not a claude pane");
   if (probe.result.agent.agent_status === "blocked") return ok("refused", "at a prompt");
+  const working = probe.result.agent.agent_status === "working";
+  const stashed = await stashDraft(herdr, paneId, sockPath);
 
-  if (probe.result.agent.agent_status === "working") {
-    const queued = await herdr("agent.prompt", { target: paneId, text }, { sockPath });
-    if (!queued.ok) return queued.code === "agent_blocked" ? ok("refused", "at a prompt") : herdrError(queued);
+  const submit = async () => {
+    if (working) {
+      const queued = await herdr("agent.prompt", { target: paneId, text }, { sockPath });
+      if (!queued.ok) return queued.code === "agent_blocked" ? ok("refused", "at a prompt") : herdrError(queued);
+      return ok("queued");
+    }
+
+    const prompted = await herdr("agent.prompt", { target: paneId, text, wait: { until: ["working"], timeout_ms: waitMs } }, { timeoutMs: waitTimeout(waitMs), sockPath });
+    if (prompted.ok) return ok("accepted");
+    if (prompted.code === "agent_blocked") return ok("refused", "at a prompt");
+    if (prompted.code !== "timeout" && prompted.code !== "agent_prompt_stalled") return herdrError(prompted);
+
+    // The Claude TUI can absorb the bundled Enter into the composer; one nudge, one more wait.
+    const nudge = await herdr("pane.send_keys", { pane_id: paneId, keys: ["enter"] }, { sockPath });
+    if (!nudge.ok) return herdrError(nudge);
+    const nudged = await herdr("agent.wait", { target: paneId, until: ["working"], timeout_ms: waitMs }, { timeoutMs: waitTimeout(waitMs), sockPath });
+    if (nudged.ok) return ok("accepted");
+    if (nudged.code !== "timeout" && nudged.code !== "agent_prompt_stalled") return herdrError(nudged);
     return ok("queued");
-  }
+  };
 
-  const prompted = await herdr("agent.prompt", { target: paneId, text, wait: { until: ["working"], timeout_ms: waitMs } }, { timeoutMs: waitTimeout(waitMs), sockPath });
-  if (prompted.ok) return ok("accepted");
-  if (prompted.code === "agent_blocked") return ok("refused", "at a prompt");
-  if (prompted.code !== "timeout" && prompted.code !== "agent_prompt_stalled") return herdrError(prompted);
-
-  // The Claude TUI can absorb the bundled Enter into the composer; one nudge, one more wait.
-  const nudge = await herdr("pane.send_keys", { pane_id: paneId, keys: ["enter"] }, { sockPath });
-  if (!nudge.ok) return herdrError(nudge);
-  const nudged = await herdr("agent.wait", { target: paneId, until: ["working"], timeout_ms: waitMs }, { timeoutMs: waitTimeout(waitMs), sockPath });
-  if (nudged.ok) return ok("accepted");
-  if (nudged.code !== "timeout" && nudged.code !== "agent_prompt_stalled") return herdrError(nudged);
-  return ok("queued");
+  const res = await submit();
+  if (stashed && (!res.ok || res.data.delivered === "refused")) await restoreDraft(herdr, paneId, sockPath);
+  return res;
 }
 
 const AFTER_TURN_STATES = ["idle", "done"];
