@@ -739,8 +739,8 @@ describe("runDevAppRebuild", () => {
   });
 
   test("assertDevAppRef accepts branches, tags, and shas and refuses path or flag shapes", () => {
-    for (const good of ["main", "renovate/deps", "v2.11.0", "abc123", "pull/403/head"]) expect(() => assertDevAppRef(good)).not.toThrow();
-    for (const bad of ["../x", "-rf", "a b", "", "a..b"]) expect(() => assertDevAppRef(bad)).toThrow(UserActionableError);
+    for (const good of ["main", "renovate/deps", "v2.11.0", "abc123"]) expect(() => assertDevAppRef(good)).not.toThrow();
+    for (const bad of ["../x", "-rf", "a b", "", "a..b", "pull/403/head"]) expect(() => assertDevAppRef(bad)).toThrow(UserActionableError);
   });
 
   test("a failed build is an error leg, and the running app is never touched", async () => {

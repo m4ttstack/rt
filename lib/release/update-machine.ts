@@ -411,10 +411,11 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
 }
 
 /** The ref lands in a gh api URL path, so anything shaped like a path
- *  escape or a flag is refused before any call. */
+ *  escape or a flag is refused before any call. A pull/ ref resolves through
+ *  the API but its commit is absent from a plain clone, so it is refused too. */
 export function assertDevAppRef(ref: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..")) {
-    throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO}, got "${ref}"`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref) || ref.includes("..") || ref.startsWith("pull/")) {
+    throw new UserActionableError("dev-app-bad-ref", `the ref must be a branch, tag, or sha of ${RELEASE_REPO} (for a PR, its branch name), got "${ref}"`);
   }
 }
 
