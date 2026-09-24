@@ -317,7 +317,13 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
 
   const installed = probe.doctor.checks?.find((c) => c.id === "extension-installed");
   if (!installed) return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-installed check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
-  if (installed.status !== "pass") return row({ ...base, status: "needs-you", detail: installed.message ?? "not installed in Chrome", action: FAST_BROWSER_LOAD_STEPS });
+  if (installed.status !== "pass") {
+    // doctor tells a missing extension from a store copy on another version;
+    // only its own remedy fits each, and the load steps would trade a store
+    // copy for one that never auto-updates.
+    const action: Action = installed.remediation ? { type: "steps", label: "Show steps…", steps: [installed.remediation] } : FAST_BROWSER_LOAD_STEPS;
+    return row({ ...base, status: "needs-you", detail: installed.message ?? "not installed in Chrome", action });
+  }
 
   const extension = checkState(probe.doctor, "extension-loaded");
   if (extension === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-loaded check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });

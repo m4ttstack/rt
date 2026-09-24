@@ -439,6 +439,17 @@ describe("toolRows - tool.fast-browser-extension", () => {
     expect(steps[0]).toContain("chrome://extensions");
   });
 
+  // doctor distinguishes a missing extension from a store copy on another
+  // version, and only its own remedy fits each; the load steps would swap a
+  // store copy for one that never auto-updates.
+  test("extension-installed fails with a remedy -> the row's steps are doctor's remedy", async () => {
+    const remediation = "Chrome updates it once the store has 0.2.12. To check now, open chrome://extensions, turn on Developer mode, and click Update.";
+    const report = withCheck(REAL_DOCTOR, "extension-installed", { status: "fail", message: "The Chrome Web Store copy is at 0.2.11; this Fast Browser pins 0.2.12.", remediation });
+    const r = await pickRow(toolRows(withChrome(doctorExec(report)), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
+    expect(r.status).toBe("needs-you");
+    expect(r.action).toEqual({ type: "steps", label: "Show steps…", steps: [remediation] });
+  });
+
   test("extension-installed check absent from the report -> error naming the remedy", async () => {
     const p = withChrome(doctorExec(withoutCheck(REAL_DOCTOR, "extension-installed")));
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
