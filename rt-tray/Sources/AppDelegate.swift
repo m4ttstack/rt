@@ -780,7 +780,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         menu.addItem(ActionMenuItem("Relaunch", axid: AXID.trayDevRelaunch) { [weak self] in
             watcher.relaunch { self?.quitFromTray() }
         })
-        if let tree = watcher.lastSource {
+        let last = watcher.lastSource
+        if let tree = last {
             let name = (tree as NSString).lastPathComponent
             let title: String
             switch state.devRebuild {
@@ -792,6 +793,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             item.isEnabled = state.devRebuild != .building
             menu.addItem(item)
         }
+        let from = NSMenuItem(title: "Rebuild from", action: nil, keyEquivalent: "")
+        from.setAccessibilityIdentifier(AXID.trayDevRebuildFrom)
+        from.submenu = rebuildFromMenu(last: last, building: state.devRebuild == .building)
+        menu.addItem(from)
+        watcher.refreshSources()
+    }
+
+    /// Grouped so a pile of worktrees stays out of the way: the main
+    /// checkout, the few most recently active trees, and the rest one level
+    /// down.
+    @MainActor
+    private func rebuildFromMenu(last: String?, building: Bool) -> NSMenu {
+        let menu = NSMenu()
+        let watcher = DevBuildWatcher.shared
+        let groups = RebuildSources.group(watcher.sources, recentLimit: 5)
+        func item(_ source: RebuildSource) -> NSMenuItem {
+            let label = source.branch.map { $0 == source.name ? source.name : "\(source.name) · \($0)" } ?? source.name
+            let it = ActionMenuItem(label, state: source.path == last ? .on : .off, axid: AXID.trayDevRebuildSource) {
+                watcher.rebuild(from: source.path)
+            }
+            it.isEnabled = !building
+            return it
+        }
+        if watcher.sources.isEmpty {
+            let loading = NSMenuItem(title: "Loading worktrees…", action: nil, keyEquivalent: "")
+            loading.isEnabled = false
+            menu.addItem(loading)
+            return menu
+        }
+        if !groups.main.isEmpty {
+            menu.addItem(.sectionHeader(title: "Main checkout"))
+            groups.main.forEach { menu.addItem(item($0)) }
+        }
+        if !groups.recent.isEmpty {
+            menu.addItem(.sectionHeader(title: "Recent worktrees"))
+            groups.recent.forEach { menu.addItem(item($0)) }
+        }
+        let older = groups.moreRt + groups.moreOther
+        if !older.isEmpty {
+            menu.addItem(.separator())
+            let more = NSMenuItem(title: "More worktrees (\(older.count))", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            if !groups.moreRt.isEmpty {
+                sub.addItem(.sectionHeader(title: "rt worktrees"))
+                groups.moreRt.forEach { sub.addItem(item($0)) }
+            }
+            if !groups.moreOther.isEmpty {
+                sub.addItem(.sectionHeader(title: "Other"))
+                groups.moreOther.forEach { sub.addItem(item($0)) }
+            }
+            more.submenu = sub
+            menu.addItem(more)
+        }
+        return menu
     }
 
     @MainActor @objc private func restartIntoStagedBuild() {

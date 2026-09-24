@@ -21,12 +21,28 @@ final class DevBuildWatcher {
 
     private static func read(_ path: String) -> Data? { FileManager.default.contents(atPath: path) }
 
+    /// repo-tools trees the daemon knows, for the Rebuild from… submenu.
+    private(set) var sources: [RebuildSource] = []
+    private static let rtRepoName = "remote:github.com%2Fm4ttstack%2Frt"
+
+    func refreshSources() {
+        guard BundleFlavor.isDevBuild else { return }
+        Task {
+            guard let payload = await DaemonClient().queryWorktreeList() else { return }
+            let found = RebuildSources.sources(from: payload, repoName: Self.rtRepoName)
+            await MainActor.run { self.sources = found }
+        }
+    }
+
     /// The tree the last `--local` build came from, which Rebuild repeats.
+    /// Worktrees are disposed after merge, so a path the daemon no longer
+    /// lists is dropped; the tray never stats it itself, since a checkout
+    /// under ~/Documents would raise a privacy prompt for the dev app.
     var lastSource: String? {
         guard let raw = try? String(contentsOfFile: root + "/last-source", encoding: .utf8) else { return nil }
         let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Worktrees are disposed after merge; Rebuild must not point at one that is gone.
-        guard !path.isEmpty, FileManager.default.fileExists(atPath: path + "/scripts/build-dev-app.ts") else { return nil }
+        guard !path.isEmpty else { return nil }
+        if !sources.isEmpty, !sources.contains(where: { $0.path == path }) { return nil }
         return path
     }
 
@@ -47,6 +63,7 @@ final class DevBuildWatcher {
             MainActor.assumeIsolated { self?.check() }
         }
         check()
+        refreshSources()
     }
 
     func check() {
@@ -82,8 +99,8 @@ final class DevBuildWatcher {
         quit()
     }
 
-    func rebuild() {
-        guard let tree = lastSource, TrayState.shared.devRebuild != .building else { return }
+    func rebuild(from path: String? = nil) {
+        guard let tree = path ?? lastSource, TrayState.shared.devRebuild != .building else { return }
         let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
         let logPath = logs + "/dev-app-build.log"
