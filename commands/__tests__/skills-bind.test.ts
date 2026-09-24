@@ -544,11 +544,14 @@ describe("bind writes the team pack fragment", () => {
 
   test("the fragment gains the binding, comments kept, and the manifest gets it too", async () => {
     const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1,\n  "bindings": {}\n}\n`);
+    const fragmentPath = join(pack, "pack", "skills.jsonc");
     await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
-    const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
+    const fragment = readFileSync(fragmentPath, "utf8");
     expect(fragment).toContain("// acme fragment");
     expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
     expect(readManifestBindings(manifest)["mattstack:stage-plan"]).toEqual({ domain: "acme:plan-policy" });
+    // The summary suffix is the only observable proof the fragment write ran.
+    expect(logs.some((l) => l.includes(`fragment updated: ${fragmentPath}`))).toBe(true);
   });
 
   test("a standalone pack whose fragment is the manifest is written once", async () => {
@@ -557,5 +560,16 @@ describe("bind writes the team pack fragment", () => {
     await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", own]);
     const text = readFileSync(own, "utf8");
     expect(text.match(/acme:plan-policy/g)?.length).toBe(1);
+    // A second write onto the same text is idempotent, so the count above alone
+    // cannot prove the realpath guard skipped it; the missing summary suffix can.
+    expect(logs.some((l) => l.includes("fragment updated"))).toBe(false);
+  });
+
+  test("a fragment with no top-level bindings key gains one", async () => {
+    const { pack, ms, manifest } = fixtureWithFragment(`// acme fragment\n{\n  "version": 1\n}\n`);
+    await skillsBind(["stage-plan", "domain", "acme:plan-policy", "--pack-dir", pack, "--mattstack-dir", ms, "--manifest", manifest]);
+    const fragment = readFileSync(join(pack, "pack", "skills.jsonc"), "utf8");
+    expect(fragment).toContain("// acme fragment");
+    expect(JSON.parse(stripJsonc(fragment)).bindings).toEqual({ "mattstack:stage-plan": { domain: "acme:plan-policy" } });
   });
 });
