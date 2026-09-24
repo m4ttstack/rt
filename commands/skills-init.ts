@@ -63,7 +63,7 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function realDeps(): InitDeps {
+function realDeps(opts: { json: boolean }): InitDeps {
   const p = createRealProbes();
   const claudeBin = resolveClaudeBin();
   const run = async (cmd: string, args: string[]) => {
@@ -87,13 +87,13 @@ function realDeps(): InitDeps {
         return { kind: "not-a-repo" };
       }
       try {
-        const url = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+        const url = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
         return url ? { kind: "ok", url } : { kind: "no-remote" };
       } catch {
         return { kind: "no-remote" };
       }
     },
-    isTTY: Boolean(process.stdin.isTTY) && !process.env.RT_BATCH,
+    isTTY: Boolean(process.stdin.isTTY) && !opts.json && !process.env.RT_BATCH,
     promptZone: async () => ({
       name: await textInput({ message: "Team name (a new zone will be created)", stderr: true }),
       remote: await textInput({ message: "Empty git remote URL for the team zone", stderr: true }),
@@ -142,7 +142,7 @@ function realDeps(): InitDeps {
   };
 }
 
-export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps: InitDeps = realDeps()): Promise<void> {
+export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps?: InitDeps): Promise<void> {
   let parsed: InitArgs;
   try {
     parsed = parseInitArgs(args);
@@ -154,7 +154,23 @@ export async function skillsInit(args: string[], _ctx: CommandContext = {}, deps
     }
     throw err;
   }
-  const out = await initPack({ repoDir: parsed.repo, zone: parsed.zone }, deps);
+  const resolvedDeps = deps ?? realDeps({ json: parsed.json });
+  let out: InitOutcome;
+  try {
+    out = await initPack({ repoDir: parsed.repo, zone: parsed.zone }, resolvedDeps);
+  } catch (err) {
+    // A dep the pre-attempt setup calls directly (promptZone, createZone) can throw a
+    // UserActionableError before initPack's own post-write attempt() wrapper is reached;
+    // that must still refuse cleanly rather than crash to a bare stack.
+    if (err instanceof UserActionableError) {
+      const refusal = { ok: false as const, refused: true as const, code: err.code, detail: err.message };
+      if (parsed.json) console.log(JSON.stringify(envelope(refusal)));
+      else console.error(`rt skills init: ${err.message}`);
+      process.exitCode = 2;
+      return;
+    }
+    throw err;
+  }
   if (parsed.json) console.log(JSON.stringify(envelope(out)));
   else console.log(renderInitOutcome(out));
   if (!out.ok) process.exitCode = out.refused ? 2 : 1;

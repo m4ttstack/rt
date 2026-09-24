@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { parseInitArgs, renderInitOutcome } from "../skills-init.ts";
-import type { InitOutcome } from "../../lib/skills/init.ts";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { parseInitArgs, renderInitOutcome, skillsInit } from "../skills-init.ts";
+import type { InitDeps, InitOutcome } from "../../lib/skills/init.ts";
+import { UserActionableError } from "../../lib/setup/errors.ts";
 
 describe("parseInitArgs", () => {
   test("defaults: cwd repo, no zone, human output", () => {
@@ -42,5 +43,84 @@ describe("renderInitOutcome", () => {
     expect(text).toContain("boom");
     expect(text).toContain("/a");
     expect(text).toContain("/b");
+  });
+});
+
+function stubDeps(overrides: Partial<InitDeps> = {}): InitDeps {
+  return {
+    fs: { exists: () => false, readFile: () => null, writeFile: () => {}, mkdirp: () => {}, readDir: () => [] },
+    home: "/h",
+    gitRemote: async () => ({ kind: "no-remote" }),
+    isTTY: false,
+    promptZone: async () => { throw new Error("promptZone should not be called"); },
+    createZone: async () => { throw new Error("createZone should not be called"); },
+    engineDescription: () => "engine description",
+    claude: async () => ({ code: 0, stdout: "", stderr: "" }),
+    registerRepo: async () => "repo-slug",
+    materialize: async () => ({ ok: true, detail: "materialized" }),
+    compile: async () => ({ ok: true, errors: [] }),
+    check: async () => ({ drift: false }),
+    ...overrides,
+  };
+}
+
+describe("skillsInit", () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
+  test("a plain refusal (no-remote) prints the human message and exits 2", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await skillsInit([], {}, stubDeps());
+      expect(logSpy.mock.calls.length).toBe(1);
+      expect(String(logSpy.mock.calls[0]?.[0])).toContain("rt skills init:");
+      expect(process.exitCode).toBe(2);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("--json: a thrown UserActionableError from the zone-creation prompt path refuses cleanly", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const deps = stubDeps({
+      gitRemote: async () => ({ kind: "ok", url: "https://gitlab.com/acme/api.git" }),
+      isTTY: true,
+      promptZone: async () => ({ name: "Beta", remote: "" }),
+      createZone: async () => {
+        throw new UserActionableError("remote-required", "a remote is required");
+      },
+    });
+    try {
+      await skillsInit(["--json"], {}, deps);
+      expect(logSpy.mock.calls.length).toBe(1);
+      const printed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+      expect(printed.ok).toBe(false);
+      expect(printed.refused).toBe(true);
+      expect(printed.code).toBe("remote-required");
+      expect(printed.detail).toBe("a remote is required");
+      expect(process.exitCode).toBe(2);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("without --json, the same crash-path refusal prints rt skills init: <message>", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const deps = stubDeps({
+      gitRemote: async () => ({ kind: "ok", url: "https://gitlab.com/acme/api.git" }),
+      isTTY: true,
+      promptZone: async () => ({ name: "Beta", remote: "" }),
+      createZone: async () => {
+        throw new UserActionableError("remote-required", "a remote is required");
+      },
+    });
+    try {
+      await skillsInit([], {}, deps);
+      expect(errorSpy).toHaveBeenCalledWith("rt skills init: a remote is required");
+      expect(process.exitCode).toBe(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
