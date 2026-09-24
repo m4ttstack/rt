@@ -975,10 +975,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             attributed.append(NSAttributedString(string: " "))
             attributed.append(mark)
             // The status button is only ever touched on main.
-            if MainActor.assumeIsolated({ TrayState.shared.devRebuild == .building }) {
-                attributed.append(NSAttributedString(string: " building…", attributes: [
+            let (rebuild, staged) = MainActor.assumeIsolated {
+                (TrayState.shared.devRebuild, TrayState.shared.stagedBuildStamp)
+            }
+            let status: (String, NSColor)? = switch (rebuild, staged) {
+            case (.building, _): (" building…", .secondaryLabelColor)
+            case (.failed, _): (" build failed", .systemRed)
+            case (.idle, .some): (" new build ready", .systemBlue)
+            case (.idle, .none): nil
+            }
+            if let (text, color) = status {
+                attributed.append(NSAttributedString(string: text, attributes: [
                     .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .foregroundColor: color,
                 ]))
             }
         }

@@ -87,7 +87,10 @@ final class DevBuildWatcher {
     func check() {
         guard BundleFlavor.isDevBuild else { return }
         let staged = DevBuild.stamp(atBundle: stagedApp, readFile: Self.read)
-        TrayState.shared.stagedBuildStamp = DevBuild.newerBuildReady(running: runningStamp, staged: staged) ? staged : nil
+        let ready = DevBuild.newerBuildReady(running: runningStamp, staged: staged) ? staged : nil
+        guard ready != TrayState.shared.stagedBuildStamp else { return }
+        TrayState.shared.stagedBuildStamp = ready
+        NotificationCenter.default.post(name: .rtDevRebuildChanged, object: nil)
     }
 
     func restartIntoStaged(quit: () -> Void) {
