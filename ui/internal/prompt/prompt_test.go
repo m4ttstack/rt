@@ -281,12 +281,21 @@ func TestTallCardNeverReachesTheMainScreen(t *testing.T) {
 // paintedScreen replays the tty up to Bubble Tea's final clear, the one it
 // writes just before leaving the alternate screen, so the prompt block is
 // still on the emulated screen when the test measures it. A cut at the leave
-// sequence itself would replay the already-cleared screen.
+// sequence itself would replay the already-cleared screen. Under CPU load
+// Bubble Tea can write that final clear twice back to back, so the cut walks
+// back past any clear that only follows an already-blank screen.
 func paintedScreen(tty string) string {
-	if i := strings.LastIndex(tty, "\x1b[H\x1b[2J"); i > 0 {
-		tty = tty[:i]
+	const clearScreen = "\x1b[H\x1b[2J"
+	for end := len(tty); ; {
+		i := strings.LastIndex(tty[:end], clearScreen)
+		if i <= 0 {
+			return testutil.Screen(tty[:end])
+		}
+		if screen := testutil.Screen(tty[:i]); strings.TrimSpace(screen) != "" {
+			return screen
+		}
+		end = i
 	}
-	return testutil.Screen(tty)
 }
 
 func TestCardIsCappedNarrowerThanTheTerminal(t *testing.T) {
