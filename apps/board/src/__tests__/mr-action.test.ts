@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { ReadBackFailedError } from '@mattstack/glance';
 import {
   mergeRefusalReason,
   parseMrActionBody,
@@ -81,6 +82,34 @@ describe('runMrAction', () => {
     await expect(
       runMrAction(provider, 'org/repo', 7, 'rebase')
     ).rejects.toThrow('rebase in progress');
+  });
+
+  const readBackFailed = (writeApplied: boolean) =>
+    new ReadBackFailedError('Merged MR but failed to fetch it back', {
+      operation: 'mergePullRequest',
+      projectPath: 'org/repo',
+      iid: 7,
+      writeApplied,
+    });
+
+  test('a merge that landed but could not be read back counts as merged', async () => {
+    const provider = fakeProvider([]);
+    provider.mergePullRequest = async () => {
+      throw readBackFailed(true);
+    };
+    await expect(
+      runMrAction(provider, 'org/repo', 7, 'merge')
+    ).resolves.toBeUndefined();
+  });
+
+  test('a read-back failure with no write applied still fails', async () => {
+    const provider = fakeProvider([]);
+    provider.mergePullRequest = async () => {
+      throw readBackFailed(false);
+    };
+    await expect(runMrAction(provider, 'org/repo', 7, 'merge')).rejects.toThrow(
+      'failed to fetch it back'
+    );
   });
 });
 

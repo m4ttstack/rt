@@ -1,4 +1,4 @@
-import type { PullRequest } from '@mattstack/glance';
+import { ReadBackFailedError, type PullRequest } from '@mattstack/glance';
 
 /** The GitLab-side MR actions the board's context menu can fire. Merge sends
     no MergePullRequestInput so the project's own merge settings (squash,
@@ -72,7 +72,14 @@ export async function runMrAction(
 ): Promise<void> {
   switch (action) {
     case 'merge':
-      await provider.mergePullRequest(projectPath, iid);
+      try {
+        await provider.mergePullRequest(projectPath, iid);
+      } catch (err) {
+        // The merge reached GitLab and only describing it back failed; a
+        // retry would merge twice, so this is a success.
+        if (err instanceof ReadBackFailedError && err.writeApplied) return;
+        throw err;
+      }
       return;
     case 'rebase':
       await provider.rebasePullRequest(projectPath, iid);
