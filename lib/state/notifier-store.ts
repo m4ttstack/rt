@@ -46,6 +46,10 @@ export interface NotificationEvent {
   /** herdr pane_id the source event named, when there is one: lets a
    *  consumer suppress or route the notification by pane focus. */
   paneId?: string;
+  /** Team slug and invitee handle for member_joined: the tray's confirm
+   *  runs `rt team members sync --team <team>` from them. */
+  team?: string;
+  handle?: string;
 }
 
 const NOTIFIER_NS = "notifier";

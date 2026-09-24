@@ -36,7 +36,11 @@ import {
   redirectNativeStderr,
   type DaemonLoggerHandle,
 } from "./daemon-logger.ts";
-import { onNotification, notifyEnabled } from "./notifier.ts";
+import { onNotification, notifyEnabled, notifyEvent, loadNotificationPrefs } from "./notifier.ts";
+import { checkInviteReplies, INVITE_REPLIES_NS, listInviteSlugs, MEMBER_JOINED_CATEGORY } from "./daemon/invite-replies.ts";
+import { readInviteRecords } from "./team/invite-records.ts";
+import { createRelayClient, inviteRelayUrl } from "./team/relay-client.ts";
+import { hasKvValue, setKvValue } from "./state/kv-blob.ts";
 import { appBundleRoot } from "./bundle-layout.ts";
 import { reconcile as reconcileLinks } from "./deps/links.ts";
 import { createRealProbes } from "./setup/probes.ts";
@@ -903,6 +907,30 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             if (removed > 0) log.info({ removed }, "pruned old agent records");
           },
           { bootDelayMs: 60_000, intervalMs: 24 * 60 * 60 * 1000 },
+          log,
+        ));
+        // Invites last at most 7 days and only exist on the owner's machine,
+        // so the switchboard read is a no-op almost everywhere.
+        sweepHandles.push(scheduleSweep(
+          "invite-replies",
+          async () => {
+            const probes = createRealProbes();
+            const relay = createRelayClient(probes.fetch, inviteRelayUrl(probes.env));
+            const db = getStateDb("daemon");
+            const { notified } = await checkInviteReplies({
+              slugs: () => listInviteSlugs(probes.home),
+              records: (slug) => readInviteRecords(probes, slug),
+              readReply: (id, creatorSecret) => relay.readReply(id, creatorSecret),
+              isNotified: (id) => hasKvValue(INVITE_REPLIES_NS, id, db),
+              markNotified: (id) => setKvValue(INVITE_REPLIES_NS, id, { notifiedAt: Date.now() }, db),
+              notify: notifyEvent,
+              enabled: () => loadNotificationPrefs()[MEMBER_JOINED_CATEGORY] !== false,
+              now: () => Date.now(),
+              warn: (message) => log.warn({ sweep: "invite-replies" }, message),
+            });
+            for (const n of notified) log.info(n, "invite reply landed; owner notified");
+          },
+          { bootDelayMs: 90_000, intervalMs: 5 * 60 * 1000 },
           log,
         ));
         sweepHandles.push(scheduleSweep(
