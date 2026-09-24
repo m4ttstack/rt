@@ -59,15 +59,27 @@ shadows, no radii).
   (titled "Actions"), disabled rows, the Discard question step, the Create
   Tag name step, the History "File Does Not Exist on Disk" menu, and hover
   versus cursor rows.
+- `Stash.png`: the Changes tab with the stash view open over the file and
+  diff panes -- header "Stashed changes" with Restore and Discard buttons
+  and "Restore will move your stashed files to the Changes list.", a file
+  column, a read-only diff, the "Stashed Changes" strip docked above the
+  commit box, and the stash keybar.
+- `StashStates.png`: Switch Branch with and without an existing stash on the
+  current branch (Leave gains the overwrite-warning row only in the second
+  case), the strip's rest / hover / selected treatments and its icon note,
+  Overwrite Stash?, Discard Stash? (always asks), Discard All Changes…, the
+  Changes list menu right-clicked with no stash yet versus with a stash and
+  no changes (Discard All/Stash All greyed, Show Stashed Changes still
+  live), ctrl-k inside the stash view, and the clean-tree empty state's
+  added `h` hint line.
 
 ## Ratified deviations from GitHub Desktop
 
 - `@@` hunk headers stay visible (terminal-native); the header row itself is
   the hunk stage toggle. GitHub Desktop hides hunk text behind expand
   handles and a hunk-handle gutter.
-- Guarded checkout replaces the stash-and-switch dialog: rt's worktree model
-  refuses checkout of a branch owned by another worktree instead of offering
-  to move changes.
+- A branch checked out in another worktree is refused; GitHub Desktop
+  switches to that worktree instead.
 - Repository rows carry numeric badges where GitHub Desktop shows a dot plus
   bare arrows.
 - A worktree segment and foldout exist; GitHub Desktop has no worktree
@@ -97,6 +109,18 @@ shadows, no radii).
 - A failed move to the Trash reports the error and stops; glitter never
   offers GitHub Desktop's fallback permanent delete.
 - View on GitHub is not offered yet.
+- `S` and `h` stand in for GitHub Desktop's ⌘⇧S and Ctrl+H, which a terminal
+  cannot receive.
+- Discard Stash? always asks; GitHub Desktop offers a "Do not show this
+  message again" setting on it.
+- Switch Branch shows the Leave and Bring descriptions, and the
+  overwrite-stash warning under Leave when the branch has a stash, as rows
+  indented two spaces under their option rather than GitHub Desktop's
+  radio-button layout: `picker.Menu` has no per-row color or footer, so the
+  descriptions and the warning glyph together paint Faint like any other
+  disabled row -- the menu engine cannot color just the glyph.
+- There is no "always leave" or "always bring" setting. Every switch with
+  changes asks.
 
 ## Deferred to v2
 
@@ -116,8 +140,6 @@ line here and a ticket there; removing one means removing all three.
   cherry-pick, copy tag, delete tag, and the multi-commit menu. Not built;
   Undo Commit, Create Branch from Commit, Create Tag, and Copy SHA ship on
   the commit row's context menu.
-- **Stash foldout.** The strip shows a count and a chevron; a click
-  answers "Stash foldout lands in v2". No restore, apply, or drop.
 - **Publish repository.** The action segment renders the state for
   parity; activating it answers "publishing a repository is not wired
   yet".
@@ -236,6 +258,71 @@ are the signed-off reference for every state: anchored and centered
 placement, disabled rows, both step kinds, the History "File Does Not
 Exist on Disk" menu, and hover versus cursor treatment.
 
+## Stash: GitHub Desktop's one-stash-per-branch model (2026-09-23)
+
+Parity reference: GitHub Desktop's `app/src/ui/stashing` (stash-diff-viewer,
+stash-diff-header, confirm-discard-stash) and `app/src/ui/stash-changes`
+(stash-and-switch-branch-dialog, overwrite-stashed-changes-dialog).
+
+**The marker and interop.** `S` (Stash All Changes) writes the stash with
+the message `!!GitHub_Desktop<branch>` -- the same tag a real GitHub Desktop
+writes -- so a stash created in either tool shows up, restores, and
+discards correctly in the other. Each branch holds at most one such entry:
+the new one is created before the branch's previous entry is dropped, never
+the reverse, so a create that fails partway never leaves a branch with zero
+stashes when it had one.
+
+**The strip.** "Stashed Changes" docks above the commit box the moment the
+current branch has an entry (`StashStrip` in the terminal-geometry table),
+in rest / hover / selected (view open) treatments, with a leading icon
+(Nerd Font `nf-oct-stack`, U+F51E -- GitHub Desktop draws its own stack
+glyph) and trailing chevron. Clicking it, or pressing `h`, opens or closes
+the view; `h` is also on the board-wide menu section as Show/Hide Stashed
+Changes.
+
+**The view.** Opening replaces the file and diff panes with the stash's own
+committed pane, built on the same shared pane History's right side uses:
+header "Stashed changes" with Restore and Discard buttons and "Restore will
+move your stashed files to the Changes list.", a file column, and a
+read-only diff (no stage gutter). `R` restores, `D` asks "Discard Stash?",
+and `h`/esc hide -- all three bound alike whether the stash file list or the
+stash diff has focus, so a reader mid-diff never has to step back to the
+file list first.
+
+**The store owns the view state.** Which file is selected, its diff, and
+whether the view is showing all live in the driver's `StashStore`
+(`lib/mission/stash.ts`), not in the Go view: every key press just emits an
+intent (`mission:stash-select`, `mission:stash-restore`,
+`mission:stash-discard`, `mission:stash-hide`) and the view repaints from
+whatever the next push carries, the same round trip every other glitter
+action takes.
+
+**The dialogs.** "Overwrite Stash?" (`S` when the branch already has an
+entry) and "Discard Stash?" (`D`, or Discard from the stash view's header
+button or its ctrl-k menu) are Desktop's own confirmations, ported as
+centered question menus: prose row(s) above a rule, the choices below it.
+Overwrite Stash?'s one-sentence body is split across two rows -- one row
+would widen the box past most panes. The Switch Branch prompt arrives
+unprompted on a push, whenever a checkout would clobber changes on the
+current branch (never for a detached or unborn HEAD, which always bring):
+"Leave my changes on *branch*" or "Bring my changes to *target*", each with
+its own description as a row underneath; when the current branch already
+has a stash, Leave also carries the warning "Your current stash will be
+overwritten by creating a new stash". A switch prompt that arrives while
+another menu is already open replaces it outright, the same rule every
+question in this build follows.
+
+**Leave versus bring.** Leave stashes the current branch's changes -- same
+create-then-drop sequencing as `S` -- then checks out the target. Bring
+checks the target out directly; only if git refuses because local changes
+would be overwritten does it fall back to a transient stash tagged for the
+*target* branch, checkout, then an immediate pop, and it never touches or
+replaces the current branch's own stash entry.
+
+The `Stash.png` and `StashStates.png` boards (see Boards above) are the
+signed-off reference for every state: the strip's three treatments, the
+view's header and buttons, both Switch Branch variants, and every dialog.
+
 ## Terminal-fidelity deltas (same set the picker ratified)
 
 No drop shadows (modal lift = Surface token + Panel border + parent dim),
@@ -349,6 +436,10 @@ pre-ratification drawing:
   "u undo", names the adaptive segment key "f action", omits "? help").
   Both tabs also add "⌃k menu" right after the tab-switch key, so it
   survives a narrow terminal.
+- The stash view is a third keybar mode, replacing the Changes keybar
+  outright while showing: "↑↓ files · enter diff · R restore · D discard ·
+  h hide · ⌃k menu · b branch · w worktree · r repo · q quit". `Stash.png`
+  shows it in place.
 - The commit button renders the disabled treatment whenever the wire says
   it cannot commit (empty summary); the boards draw the enabled pink for
   visual reference.
