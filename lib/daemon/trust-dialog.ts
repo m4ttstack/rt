@@ -62,34 +62,67 @@ export type RelocationPrompt =
   | { kind: "accept"; path: string; resolvesTo?: string; keys: Array<"up" | "down" | "enter"> }
   | { kind: "undrivable" };
 
-// Everything this parser reads comes from the LIVE prompt's own box: the
-// last contiguous numbered-options block on screen, plus the body lines
-// above it up to the box top. Transcript text above the box routinely quotes
-// the reason line and the proceed question (a session discussing the very
-// prompt it hit, or these tests on an editor screen), and an ordinary
-// tool-permission prompt asks the same proceed question, so a whole-screen
-// match would let transcript text steer a keypress at an unrelated dialog.
-// The reason template, from the installed binary: `permission-root
-// relocation to "<path>"[ (resolves to "<realpath>")][ (path sanitized for
-// display)] — a model-supplied worktree outside .claude/worktrees/`.
-// \s* between words because the box wrap can drop an inter-word space when
-// lines are rejoined.
+// Everything this parser reads comes from the LIVE prompt's own body: the
+// last contiguous numbered-options block on screen, plus the lines above it
+// up to the dialog's top (a box top, or on Claude Code 2.1.x the full-width
+// rule every permission prompt paints under). Transcript text above that
+// routinely quotes the reason line and the proceed question (a session
+// discussing the very prompt it hit, or these tests on an editor screen), and
+// an ordinary tool-permission prompt asks the same proceed question, so a
+// whole-screen match would let transcript text steer a keypress at an
+// unrelated dialog. The reason template, from the installed binary:
+// `permission-root relocation to "<path>"[ (resolves to "<realpath>")][ (path
+// sanitized for display)] — a model-supplied worktree outside
+// .claude/worktrees/`. \s* between words because the wrap can drop an
+// inter-word space when lines are rejoined.
 const REASON_RE = /permission-root\s*relocation\s*to\s*"(?<path>[^"]*)"/i;
+const REASON_PHRASE_RE = /permission-root\s*relocation\s*to/i;
 const RESOLVES_RE = /\(\s*resolves\s*to\s*"(?<real>[^"]*)"\s*\)/i;
 const PROCEED_RE = /do\s*you\s*want\s*to\s*proceed/i;
-const BOX_TOP_RE = /[╭┌]/;
-// The dialog body (reason + suffixes + question) fits well inside this many
-// lines above the options even with a long wrapped path; the cap only
-// matters for an unboxed screen, where it keeps transcript text out.
+// A Bash, Edit or MCP prompt sits under the same rule (or box), asks the same
+// proceed question, and shows text the model wrote: a command, a diff, tool
+// arguments, all painted indented under the prompt's own heading. So every
+// anchor here is matched at its exact column, never after trimming: a
+// command line cannot start at column 0 or 1, cannot be the box top, and
+// cannot sit where the heading sits. Under a rule the tool line must also
+// echo the path the reason names. A path split across rows is never
+// rejoined for a keypress: a wrap at a space drops that space, and the
+// collapsed path can read as a different, registered tree.
+const BOX_TOP_RE = /^[╭┌]─+[╮┐]\s*$/;
+const BOXED_HEADING_RE = /^[│┃╎┆|] EnterWorktree\s+[│┃╎┆|]\s*$/;
+const RULE_RE = /^─{8,}\s*$/;
+const TOOL_USE_RE = /^ Tool use\s*$/;
+const ENTER_ECHO_START = "   Entering worktree(";
+const REASON_GUTTER_RE = /^ [│┃╎┆|] permission-root\s*relocation\s*to/i;
+// The dialog body (heading, echo, reason, suffixes, question) fits well
+// inside this many lines above the options even with a long wrapped path;
+// the cap keeps transcript text out when the top has scrolled off.
 const WINDOW_CAP = 16;
 
-/** Box lines rejoined so a wrapped path reads back byte for byte: borders
-    stripped, each line trimmed at its ends only, lines joined with NOTHING
-    between them. A wrap break contributes no character, and a REAL space
-    inside a value survives, so a path with a space can never collapse into
-    a different (registered) one. */
+/** Body lines joined into one text so wrapped prose (the reason's suffixes,
+    the question) matches across rows: borders stripped, ends trimmed, joined
+    with nothing between. A path is never taken from this join, only from a
+    single row. */
 function joinBoxLines(lines: string[]): string {
   return lines.map((l) => l.replace(/[│┃╎┆|╭╮╰╯]/g, " ").replace(/^[\s─]+|[\s─]+$/g, "")).join("");
+}
+
+type EchoRead = { kind: "path"; path: string } | { kind: "split" } | null;
+
+/**
+ * The path the ruled dialog's own tool line echoes; null when the lines
+ * under the rule are not this dialog's heading, echo and gutter reason at
+ * their own columns; "split" when a narrow pane wrapped the echo.
+ */
+function ruledEchoPath(bodyLines: string[]): EchoRead {
+  const nonBlank = bodyLines.filter((l) => l.trim() !== "");
+  if (!TOOL_USE_RE.test(nonBlank[0] ?? "")) return null;
+  const echoStart = nonBlank[1] ?? "";
+  if (!echoStart.startsWith(ENTER_ECHO_START)) return null;
+  if (!bodyLines.some((l) => REASON_GUTTER_RE.test(l))) return null;
+  const echo = echoStart.slice(ENTER_ECHO_START.length).trimEnd();
+  if (!echo.endsWith(")")) return { kind: "split" };
+  return { kind: "path", path: echo.slice(0, -1) };
 }
 
 /**
@@ -111,16 +144,25 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   const block = optionIdx.slice(start);
   const first = block[0] as number;
   const last = block[block.length - 1] as number;
-  // No box top within reach means the body cannot be bounded, and an
+  // No box top or rule within reach means the body cannot be bounded, and an
   // unbounded body lets transcript text supply the path (a partial capture
   // with the ╭ scrolled off reproduced exactly that), so this fails closed:
-  // the real dialog always paints boxed.
+  // the real dialog always paints under one or the other.
   let top = -1;
   for (let i = first - 1; i >= Math.max(0, first - WINDOW_CAP); i--) {
-    if (BOX_TOP_RE.test(lines[i] as string)) { top = i; break; }
+    const line = lines[i] as string;
+    if (BOX_TOP_RE.test(line) || RULE_RE.test(line)) { top = i; break; }
   }
   if (top < 0) return null;
-  const body = joinBoxLines(lines.slice(top, first));
+  const topLine = (lines[top] as string).trimEnd();
+  const ruled = RULE_RE.test(topLine);
+  // The real rule spans the pane; text a command paints is capped short of
+  // it, so a rule narrower than some other line on screen is not the top.
+  if (ruled && lines.some((l) => l.trimEnd().length > topLine.length)) return null;
+  const bodyLines = lines.slice(top + 1, first);
+  const echo = ruled ? ruledEchoPath(bodyLines) : null;
+  if (ruled ? echo === null : !BOXED_HEADING_RE.test(bodyLines[0] ?? "")) return null;
+  const body = joinBoxLines(bodyLines);
   if (!PROCEED_RE.test(body)) return null;
   // The LAST reason match: the live dialog's reason sits nearest its own
   // options, so anything earlier in the body is quoted text, never the
@@ -129,10 +171,15 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   if (!reason) {
     // The reason phrase without a readable quoted path is still this
     // dialog; a dialog whose path cannot be read is never guessed at.
-    return /permission-root\s*relocation\s*to/i.test(body) ? { kind: "undrivable" } : null;
+    return REASON_PHRASE_RE.test(body) ? { kind: "undrivable" } : null;
   }
   const path = reason.groups?.path ?? "";
   if (path.length === 0) return { kind: "undrivable" };
+  // The path the keypress commits to must sit whole on one row: the last
+  // row carrying a complete quoted path must name the one the join found.
+  const wholeOnRow = bodyLines.map((l) => REASON_RE.exec(l)?.groups?.path).filter((p): p is string => p !== undefined).at(-1);
+  if (wholeOnRow !== path) return { kind: "undrivable" };
+  if (echo !== null && (echo.kind === "split" || echo.path !== path)) return { kind: "undrivable" };
   const resolvesTo = RESOLVES_RE.exec(body.slice(reason.index))?.groups?.real;
   return walkToAccept(readOptions(lines.slice(first, last + 1).join("\n")), (keys) => ({
     kind: "accept", path, ...(resolvesTo !== undefined && resolvesTo.length > 0 ? { resolvesTo } : {}), keys,
