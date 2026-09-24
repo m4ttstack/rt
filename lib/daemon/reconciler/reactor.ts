@@ -12,7 +12,7 @@ import type { Logger } from "pino";
 import { canon } from "../../fs-canon.ts";
 import { rtDir } from "../../rt-paths.ts";
 import { getKvValue, hasKvValue, importLegacyJsonFile, renameLegacyOutOfTheWay, setKvValue } from "../../state/index.ts";
-import { findByBranch, loadRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { findByBranch, findByPath, loadRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import { patchTree } from "../../worktree/patch.ts";
 import { MR_TERMINAL_STATES } from "../../enrich.ts";
 import {
@@ -32,6 +32,7 @@ import { classifyDirtyAsync, disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
 import { hasLiveCwdInside, liveProcessCwds } from "./stale-claims.ts";
+import { describeHolders, isStaleOrphan, stopProcesses, treeHolders, type TreeHolder } from "./tree-holders.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 
 /**
@@ -110,6 +111,54 @@ export interface ReactorDeps {
   findRunningRun: (worktree: string) => RunningRunScan;
   /** Injectable for tests; defaults to the stale-claim sweep's lsof snapshot. */
   liveCwds?: () => Promise<Set<string>>;
+  /** Why a `disposal: "job"` tree is still its owner's, or null once released
+      (wired from herd-store via job-release.ts). Unwired, every job tree stays held. */
+  jobTreeHold?: (rec: TreeRecord) => string | null;
+  /** Injectable for tests; default is tree-holders.ts. */
+  treeHolders?: (treePath: string) => Promise<TreeHolder[]>;
+  stopProcesses?: (pids: number[]) => void;
+}
+
+function jobHold(deps: ReactorDeps, rec: TreeRecord): string | null {
+  if (rec.disposal !== "job") return null;
+  return deps.jobTreeHold ? deps.jobTreeHold(rec) : `job tree owned by ${rec.owner ?? "nobody"}`;
+}
+
+/** Written only on change: the reactor re-evaluates a held tree every pass. */
+function recordHold(deps: ReactorDeps, rec: TreeRecord, reason: string): void {
+  if (findByPath(loadRegistry(deps.repoName), rec.path)?.heldReason === reason) return;
+  patchTree(deps.repoName, rec.path, (r) => {
+    r.heldReason = reason;
+  });
+  deps.log.info({ repo: deps.repoName, tree: rec.name, reason }, `worktree ${rec.name} held after merge: ${reason}`);
+}
+
+/**
+ * A live cwd inside a merged tree defers its dispose. When every holder is a
+ * stale orphan (a test runner or dev server whose session is long gone) it is
+ * stopped here, and the next pass finds the tree free.
+ */
+async function holdForLiveProcess(deps: ReactorDeps, rec: TreeRecord): Promise<void> {
+  let holders: TreeHolder[] = [];
+  try {
+    holders = await (deps.treeHolders ?? treeHolders)(rec.path);
+  } catch (err) {
+    deps.log.warn({ err, repo: deps.repoName, tree: rec.name }, "reactor: could not describe the processes holding a tree");
+  }
+  if (holders.length === 0) {
+    recordHold(deps, rec, "a live process has its cwd inside");
+    return;
+  }
+  if (holders.every(isStaleOrphan)) {
+    (deps.stopProcesses ?? stopProcesses)(holders.map((h) => h.pid));
+    deps.log.info(
+      { repo: deps.repoName, tree: rec.name, pids: holders.map((h) => h.pid) },
+      `reactor: stopped stale orphan process(es) holding ${rec.name}`,
+    );
+    recordHold(deps, rec, `stopped stale orphan ${describeHolders(holders)}; disposing next pass`);
+    return;
+  }
+  recordHold(deps, rec, `${describeHolders(holders)} has its cwd inside`);
 }
 
 /**
@@ -132,6 +181,7 @@ function markDisposable(deps: ReactorDeps, rec: TreeRecord, reason: string): voi
   patchTree(deps.repoName, rec.path, (r) => {
     r.state = "disposable";
     r.disposableReason = reason;
+    delete r.heldReason;
   });
   deps.emit("worktree:disposable", {
     repo: deps.repoName,
@@ -281,11 +331,16 @@ async function actOnTree(
     return mrState === "merged" ? autoReturnMain(deps, rec, branch, appConfig) : "done";
   }
   if (rec.kind !== "ephemeral") return "done";
-  // Job trees are the caller's to end, MR or no MR.
-  if (rec.disposal === "job") return "done";
   // claimed AND disposable both react, so a reopened-then-merged MR still
   // disposes; on-deck/creating trees never carry MR branches.
   if (rec.state !== "claimed" && rec.state !== "disposable") return "done";
+  // A job tree is its owner's until released. "done" leaves the fired key
+  // unspent, so every pass re-checks and the release is picked up.
+  const hold = jobHold(deps, rec);
+  if (hold) {
+    recordHold(deps, rec, hold);
+    return "done";
+  }
 
   if (mrState === "closed") {
     markDisposable(deps, rec, "MR closed without merge");
@@ -342,11 +397,19 @@ function worse(a: Reaction, b: Reaction): Reaction {
 /** An MR back to `opened` un-disposables the trees on its branch: work resumed. */
 async function resumeTrees(deps: ReactorDeps, branch: string): Promise<void> {
   for (const rec of findByBranch(loadRegistry(deps.repoName), branch)) {
-    if (rec.kind !== "ephemeral" || rec.state !== "disposable") continue;
+    if (rec.kind !== "ephemeral") continue;
+    if (rec.state === "claimed" && rec.heldReason !== undefined) {
+      patchTree(deps.repoName, rec.path, (r) => {
+        delete r.heldReason;
+      });
+      continue;
+    }
+    if (rec.state !== "disposable") continue;
     await withTreeLock(rec.path, async () => {
       patchTree(deps.repoName, rec.path, (r) => {
         r.state = "claimed";
         delete r.disposableReason;
+        delete r.heldReason;
       });
       deps.log.info(
         { repo: deps.repoName, tree: rec.name, branch },
@@ -484,19 +547,27 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
     // tree (a reused branch name, a fresh ledger), so it gets the same
     // liveness gate the stale-claim sweep applies: a tree someone is sitting
     // in is deferred, and the fired key stays unspent so the dispose happens
-    // once the session ends. A witnessed edge keeps its existing guards.
+    // once the session ends. A witnessed edge keeps its existing guards,
+    // except for a released job tree: its worker may still be sitting in it.
+    // A job tree still held skips the gate; actOnTree records its hold.
     let skippedLive = false;
-    if (!witnessed && trees.length > 0) {
+    const gated = trees.filter(
+      (r) => r.kind === "ephemeral" && (!witnessed || r.disposal === "job") && jobHold(deps, r) === null,
+    );
+    if (gated.length > 0) {
       const cwds = await liveCwdsOnce();
-      if (cwds === null) continue;
-      const alive = trees.filter((r) => hasLiveCwdInside(cwds, r.path));
+      const alive = cwds === null ? gated : gated.filter((r) => hasLiveCwdInside(cwds, r.path));
+      if (cwds === null && !witnessed) continue;
       if (alive.length > 0) {
         skippedLive = true;
         trees = trees.filter((r) => !alive.includes(r));
-        log.info(
-          { repo: repoName, branch, trees: alive.map((r) => r.name) },
-          "reactor: unwitnessed catch-up deferred; live process cwd inside the tree",
-        );
+        if (cwds !== null) {
+          for (const r of alive) await holdForLiveProcess(deps, r);
+          log.info(
+            { repo: repoName, branch, trees: alive.map((r) => r.name) },
+            "reactor: dispose deferred; live process cwd inside the tree",
+          );
+        }
       }
     }
 

@@ -40,6 +40,7 @@ export interface TreeRecord {
   handoff?: "pending" | "done"; // claim delivery marker; still "pending" after the handler replied means the provision died mid-flight (RT-99)
   readyFailure?: string; // failed step name from the last background settle
   disposableReason?: string;
+  heldReason?: string; // why the merge reactor is not disposing a claimed tree whose MR merged
   retryFailures?: number; // shared backoff counter (create/freshen)
   nextRetryAt?: string; // ISO; skip mutating work until then
   // Set only by a freshen failure that may have left the working tree out of
