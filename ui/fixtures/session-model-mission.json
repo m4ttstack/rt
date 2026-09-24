@@ -4,7 +4,7 @@
     "repoLabel": "repo-tools",
     "worktree": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf",
     "worktreeName": "gandalf",
-    "branch": "rt-191-mission-tui",
+    "branch": "mission-tui",
     "detached": false,
     "settling": false
   },
@@ -25,23 +25,23 @@
       "current": false }
   ],
   "worktrees": [
-    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf", "name": "gandalf", "branch": "rt-191-mission-tui",
+    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf", "name": "gandalf", "branch": "mission-tui",
       "badge": { "ahead": 3, "behind": 2, "staged": 1, "unstaged": 2, "untracked": 1, "conflicted": 0, "clean": false, "lastFetchedAt": "2026-09-18T12:00:00Z" },
       "current": true, "onDeck": false },
-    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo", "name": "frodo", "branch": "rt-190-picker-polish",
+    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo", "name": "frodo", "branch": "picker-polish",
       "badge": { "ahead": 0, "behind": 1, "staged": 0, "unstaged": 0, "untracked": 0, "conflicted": 0, "clean": true, "lastFetchedAt": "" },
       "current": false, "onDeck": true }
   ],
   "branches": [
     { "name": "main", "current": false, "ahead": 0, "behind": 5, "guardedBy": "", "group": "default branch", "default": true, "when": "2 days ago" },
-    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "recent", "default": false, "when": "" },
-    { "name": "rt-189-recent-a", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "yesterday" },
-    { "name": "rt-188-recent-b", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "3 days ago" },
-    { "name": "rt-187-recent-c", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "4 days ago" },
-    { "name": "rt-186-recent-d", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "5 days ago" },
-    { "name": "rt-185-recent-e", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "6 days ago" },
-    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded", "default": false, "when": "3 days ago" },
-    { "name": "rt-100-ancient-other", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "other", "default": false, "when": "last month" }
+    { "name": "mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "recent", "default": false, "when": "" },
+    { "name": "recent-a", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "yesterday" },
+    { "name": "recent-b", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "3 days ago" },
+    { "name": "recent-c", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "4 days ago" },
+    { "name": "recent-d", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "5 days ago" },
+    { "name": "recent-e", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "6 days ago" },
+    { "name": "picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded", "default": false, "when": "3 days ago" },
+    { "name": "ancient-other", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "other", "default": false, "when": "last month" }
   ],
   "changes": [
     { "path": "ui/internal/views/mission/mission.go", "origPath": "", "status": "modified", "include": "partial" },
@@ -72,7 +72,7 @@
     "description": "",
     "placeholder": "Summary (required)",
     "amending": false,
-    "buttonLabel": "Commit 3 files to rt-191-mission-tui",
+    "buttonLabel": "Commit 3 files to mission-tui",
     "canCommit": true,
     "lastCommit": { "summary": "rt-ui: mission view skeleton behind an opt-in mouse session option", "when": "2 minutes ago", "undoable": true }
   },
@@ -82,7 +82,7 @@
   "editorLabel": "Zed",
   "stash": {
     "sha": "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e",
-    "branch": "rt-191-mission-tui",
+    "branch": "mission-tui",
     "files": [{ "path": "docs/design/mission/notes.md", "origPath": "", "status": "modified", "onDisk": false }],
     "showing": false,
     "selectedFile": ""

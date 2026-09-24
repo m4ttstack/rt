@@ -513,7 +513,7 @@ func TestBranchNamingEnterEmitsCheckoutNewWithTypedName(t *testing.T) {
 	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) ||
-		!strings.Contains(l, `"payload":{"new":true,"from":"rt-191-mission-tui","name":"my-feature"}`) {
+		!strings.Contains(l, `"payload":{"new":true,"from":"mission-tui","name":"my-feature"}`) {
 		t.Fatalf("branch naming intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)

@@ -33,7 +33,7 @@ func fgSGR(c color.Color) string {
 
 func pullModel() Model {
 	return Model{
-		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", WorktreeName: "gandalf", Branch: "rt-191-mission-tui"},
+		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", WorktreeName: "gandalf", Branch: "mission-tui"},
 		Action:  ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2},
 	}
 }
@@ -209,7 +209,7 @@ func TestRenderActionSegmentPillsStayFlush(t *testing.T) {
 
 func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
 	out := renderTopBar(pullModel(), theme.SpinnerFrames[0], 140, zoneNone, zoneNone)
-	for _, want := range []string{"Current Repository", "repo-tools", "Current Worktree", "gandalf", "Current Branch", "rt-191-mission-tui", "Pull origin"} {
+	for _, want := range []string{"Current Repository", "repo-tools", "Current Worktree", "gandalf", "Current Branch", "mission-tui", "Pull origin"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in top bar:\n%s", want, out)
 		}
@@ -751,20 +751,20 @@ func lineContaining(t *testing.T, out, want string) string {
 // fixture's field values) without paying JSON decode cost per test.
 func modalFixtureModel() Model {
 	return Model{
-		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", Branch: "rt-191-mission-tui"},
+		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", Branch: "mission-tui"},
 		Repos: []RepoRow{
 			{ID: "repo-tools", Label: "repo-tools", Group: "recent", Current: true,
 				Badge: Badge{Staged: 1, Unstaged: 2, Untracked: 1, Ahead: 3, Behind: 2}},
 			{ID: "chat", Label: "chat", Group: "recent", Badge: Badge{Clean: true}},
 		},
 		Branches: []BranchRow{
-			{Name: "rt-191-mission-tui", Current: true, Ahead: 3, Behind: 2, Group: "other"},
+			{Name: "mission-tui", Current: true, Ahead: 3, Behind: 2, Group: "other"},
 			{Name: "main", Ahead: 0, Behind: 5, Group: "default branch", Default: true, When: "2 days ago"},
-			{Name: "rt-190-picker-polish", GuardedBy: "checked out in worktree frodo", Group: "guarded", When: "3 days ago"},
+			{Name: "picker-polish", GuardedBy: "checked out in worktree frodo", Group: "guarded", When: "3 days ago"},
 		},
 		Worktrees: []WorktreeRow{
-			{Path: "/w/gandalf", Name: "gandalf", Branch: "rt-191-mission-tui", Current: true},
-			{Path: "/w/frodo", Name: "frodo", Branch: "rt-190-picker-polish", OnDeck: true},
+			{Path: "/w/gandalf", Name: "gandalf", Branch: "mission-tui", Current: true},
+			{Path: "/w/frodo", Name: "frodo", Branch: "picker-polish", OnDeck: true},
 		},
 	}
 }
@@ -1067,7 +1067,7 @@ func TestModalFilterNarrowsViaMatchRank(t *testing.T) {
 func TestModalGuardedBranchRowSkippedByCursorMovement(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
-	if row, ok := m.modal.selectedRow(); !ok || row.value != "rt-191-mission-tui" {
+	if row, ok := m.modal.selectedRow(); !ok || row.value != "mission-tui" {
 		t.Fatalf("initial cursor: %+v ok=%v", row, ok)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
@@ -1272,7 +1272,7 @@ func TestModalGuardedBranchRowNameOnlyReasonMovedToHeader(t *testing.T) {
 	}
 	nameLine := ""
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "rt-190-picker-polish") {
+		if strings.Contains(line, "picker-polish") {
 			nameLine = line
 			break
 		}
@@ -1280,7 +1280,7 @@ func TestModalGuardedBranchRowNameOnlyReasonMovedToHeader(t *testing.T) {
 	if nameLine == "" {
 		t.Fatalf("guarded row name missing from the modal:\n%s", out)
 	}
-	nameIdx := strings.Index(nameLine, "rt-190-picker-polish")
+	nameIdx := strings.Index(nameLine, "picker-polish")
 	lockIdx := strings.Index(nameLine, theme.GlyphLock)
 	if lockIdx == -1 || lockIdx < nameIdx {
 		t.Fatalf("lock glyph should trail the branch name (right edge, badge slot): %q", nameLine)
@@ -1372,7 +1372,7 @@ func TestBranchModalCurrentRowKeepsPillsNotDate(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	out := ansi.Strip(m.View().Content)
-	line := lineContaining(t, out, "rt-191-mission-tui")
+	line := lineContaining(t, out, "mission-tui")
 	if !strings.Contains(line, "↓") || !strings.Contains(line, "↑") {
 		t.Fatalf("current row should keep its ahead/behind pills: %q", line)
 	}
@@ -1385,7 +1385,7 @@ func TestBranchModalGuardedRowKeepsLockEvenWithADate(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	out := m.View().Content
-	line := lineContaining(t, ansi.Strip(out), "rt-190-picker-polish")
+	line := lineContaining(t, ansi.Strip(out), "picker-polish")
 	if strings.Contains(line, "3 days ago") {
 		t.Fatalf("guarded row should show the lock glyph, not its date: %q", line)
 	}
@@ -1548,7 +1548,7 @@ func TestModalBranchActionRowWearsLavAndActionHighlight(t *testing.T) {
 		t.Fatalf("setup: expected the action slot, cursor=%d", m.modal.cursor)
 	}
 	out := m.View().Content
-	if !strings.Contains(out, "New branch from rt-191-mission-tui") {
+	if !strings.Contains(out, "New branch from mission-tui") {
 		t.Fatalf("missing the action row label:\n%s", out)
 	}
 	// The row's foreground and background combine into one SGR escape, so

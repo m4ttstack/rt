@@ -178,7 +178,7 @@ describe("buildModel golden fixture handshake", () => {
         worktrees: [
           badge({
             worktree: "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf",
-            branch: "rt-191-mission-tui",
+            branch: "mission-tui",
             staged: 1,
             unstaged: 2,
             untracked: 1,
@@ -186,7 +186,7 @@ describe("buildModel golden fixture handshake", () => {
             clean: false,
             ahead: 3,
             behind: 2,
-            upstream: "origin/rt-191-mission-tui",
+            upstream: "origin/mission-tui",
             lastFetchedAt: "2026-09-18T12:00:00Z",
           }),
         ],
@@ -202,20 +202,20 @@ describe("buildModel golden fixture handshake", () => {
       {
         path: "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf",
         name: "gandalf",
-        branch: "rt-191-mission-tui",
+        branch: "mission-tui",
         onDeck: false,
         badge: rows[0]!.worktrees[0]!,
       },
       {
         path: "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo",
         name: "frodo",
-        branch: "rt-190-picker-polish",
+        branch: "picker-polish",
         onDeck: true,
         badge: badge({
           worktree: "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo",
-          branch: "rt-190-picker-polish",
+          branch: "picker-polish",
           behind: 1,
-          upstream: "origin/rt-190-picker-polish",
+          upstream: "origin/picker-polish",
           lastFetchedAt: null,
         }),
       },
@@ -229,25 +229,25 @@ describe("buildModel golden fixture handshake", () => {
     // fixture's own branches array is the SORTED OUTPUT order buildBranchRows
     // produces from this input, not this input's own (irrelevant) order.
     const branches: BranchInfo[] = [
-      branchInfo({ name: "rt-191-mission-tui", current: true, ahead: 3, behind: 2 }),
+      branchInfo({ name: "mission-tui", current: true, ahead: 3, behind: 2 }),
       branchInfo({ name: "main", ahead: 0, behind: 5, committedAt: "2026-09-16T15:00:00Z" }), // 2 days ago
-      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }), // guarded; date irrelevant to its group
-      branchInfo({ name: "rt-189-recent-a", committedAt: "2026-09-17T15:00:00Z" }), // yesterday -- newest of the 5 budgeted recent rows
-      branchInfo({ name: "rt-188-recent-b", committedAt: "2026-09-15T15:00:00Z" }),
-      branchInfo({ name: "rt-187-recent-c", committedAt: "2026-09-14T15:00:00Z" }),
-      branchInfo({ name: "rt-186-recent-d", committedAt: "2026-09-13T15:00:00Z" }),
-      branchInfo({ name: "rt-185-recent-e", committedAt: "2026-09-12T15:00:00Z" }), // 6 days ago -- 5th and last budgeted recent row
-      branchInfo({ name: "rt-100-ancient-other", committedAt: "2026-08-09T15:00:00Z" }), // last month -- 6th candidate, spills to "other"
+      branchInfo({ name: "picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }), // guarded; date irrelevant to its group
+      branchInfo({ name: "recent-a", committedAt: "2026-09-17T15:00:00Z" }), // yesterday -- newest of the 5 budgeted recent rows
+      branchInfo({ name: "recent-b", committedAt: "2026-09-15T15:00:00Z" }),
+      branchInfo({ name: "recent-c", committedAt: "2026-09-14T15:00:00Z" }),
+      branchInfo({ name: "recent-d", committedAt: "2026-09-13T15:00:00Z" }),
+      branchInfo({ name: "recent-e", committedAt: "2026-09-12T15:00:00Z" }), // 6 days ago -- 5th and last budgeted recent row
+      branchInfo({ name: "ancient-other", committedAt: "2026-08-09T15:00:00Z" }), // last month -- 6th candidate, spills to "other"
     ];
-    const guards = new Map([["rt-190-picker-polish", "checked out in worktree frodo"]]);
+    const guards = new Map([["picker-polish", "checked out in worktree frodo"]]);
 
     const selectedPath = "ui/internal/views/mission/mission.go";
     const selections = new Map<string, DiffSelection>([[selectedPath, missionGoSelection()]]);
 
     const snapshot: RepoSnapshot = {
-      branch: "rt-191-mission-tui",
+      branch: "mission-tui",
       detached: false,
-      upstream: "origin/rt-191-mission-tui",
+      upstream: "origin/mission-tui",
       ahead: 3,
       behind: 2,
       clean: false,
@@ -274,7 +274,7 @@ describe("buildModel golden fixture handshake", () => {
       currentBadge: rows[0]!.worktrees[0]!,
       stagingDiff: missionGoStagingDiff(),
       stash: {
-        entry: { name: "refs/stash@{0}", stashSha: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e", branchName: "rt-191-mission-tui", tree: "t", parents: ["p", "i"] },
+        entry: { name: "refs/stash@{0}", stashSha: "5d1c2e7a9b3f4e6d8c0a1b2c3d4e5f6a7b8c9d0e", branchName: "mission-tui", tree: "t", parents: ["p", "i"] },
         files: [
           {
             path: "docs/design/mission/notes.md",

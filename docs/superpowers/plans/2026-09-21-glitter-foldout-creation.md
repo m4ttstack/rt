@@ -159,7 +159,7 @@ func TestNamingEnterEmitsTypedName(t *testing.T) {
 		intent string
 		want   string
 	}{
-		{"branch", "b", "mission:checkout", `{"new":true,"from":"rt-191-mission-tui","name":"my-feature"}`},
+		{"branch", "b", "mission:checkout", `{"new":true,"from":"mission-tui","name":"my-feature"}`},
 		{"worktree", "w", "mission:worktree", `{"new":true,"name":"my-feature"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
