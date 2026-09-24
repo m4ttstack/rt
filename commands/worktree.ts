@@ -659,10 +659,19 @@ export async function worktreeTriage(args: string[], _ctx: unknown): Promise<voi
   const res = await daemonQuery("worktree:triage", repoName ? { repoName } : undefined);
   const ok = requireQueryResult(parsed.json, res);
   if (parsed.json) { console.log(JSON.stringify(ok.data, null, 2)); return; }
-  const { rows, counts } = ok.data as { rows: Array<Record<string, any>>; counts: { needsDecision: number } };
-  console.log(`\n  ${bold}${counts.needsDecision} worktree${counts.needsDecision === 1 ? "" : "s"} need a decision${reset}\n`);
+  const { rows, banners, counts } = ok.data as {
+    rows: Array<Record<string, any>>;
+    banners: Array<{ repo: string; reason: string }>;
+    counts: { needsDecision: number };
+  };
+  const header = counts.needsDecision === 1 ? "1 worktree needs a decision" : `${counts.needsDecision} worktrees need a decision`;
+  console.log(`\n  ${bold}${header}${reset}\n`);
+  for (const b of banners ?? []) {
+    console.log(`  ${dim}${repoLabel(b.repo)}: merge cleanup is off (${b.reason})${reset}`);
+  }
   for (const r of rows) {
-    const mr = r.mr ? `  ${dim}!${r.mr.iid} ${r.mr.state}${reset}` : "";
+    const marker = r.repo.startsWith("github.com/") ? "#" : "!";
+    const mr = r.mr ? `  ${dim}${marker}${r.mr.iid} ${r.mr.state}${reset}` : "";
     console.log(`  ${bold}${repoLabel(r.repo)}/${r.tree}${reset}  ${dim}${r.group}${reset}${mr}  ${r.verdict}`);
   }
   console.log("");

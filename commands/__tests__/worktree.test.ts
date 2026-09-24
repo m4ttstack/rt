@@ -394,6 +394,8 @@ describe("worktree CLI identity plumbing", () => {
     try { await worktreeTriage([], {}); await worktreeTriage(["--json"], {}); } finally { console.log = orig; }
     const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
     expect(plain.some((l) => l.includes("olive") && l.includes("safe") && l.includes("Every commit is in main."))).toBe(true);
+    expect(plain.some((l) => l.includes("1 worktree needs a decision"))).toBe(true);
+    expect(plain.some((l) => l.includes("#47 merged"))).toBe(true);
     expect(JSON.parse(plain[plain.length - 1]!).counts.needsDecision).toBe(1);
   });
 });
