@@ -14,7 +14,9 @@
  */
 
 import { randomBytes } from "crypto";
+import { join } from "path";
 import { dim, green, red, reset, yellow } from "../lib/ansi.ts";
+import { hasUrlCredentials, withoutUrls } from "../lib/team/redact.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { createRealAgeKeySeam } from "../lib/home/age-key.ts";
 import { promptSecret } from "../lib/prompt-secret.ts";
@@ -526,6 +528,140 @@ export async function setupRepoRootSet(args: string[], _ctx: CommandContext = {}
       json
         ? JSON.stringify(envelope({ path: check.path, tccWarning: check.tccWarning }, deps.probes.now()))
         : `setup repo-root set: ${check.path}${check.tccWarning ? ` (${check.tccWarning})` : ""}`,
+    );
+  } catch (err) {
+    if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);
+    throw err;
+  }
+}
+
+// ─── home remote (`rt home remote set`) ────────────────────────────────────
+
+export interface HomeRemoteDeps {
+  probes: Probes;
+  print: (s: string) => void;
+  exit: (code: number) => never;
+  isTTY: () => boolean;
+  /** Reads the full stdin body: valid JSON parses to its value; anything else comes back as the trimmed raw string; empty stdin is null. Never throws. */
+  stdin: () => Promise<unknown>;
+}
+
+export function realHomeRemoteDeps(): HomeRemoteDeps {
+  return {
+    probes: createRealProbes(),
+    print: (s) => console.log(s),
+    exit: process.exit,
+    isTTY: () => process.stdin.isTTY === true,
+    stdin: readSmartStdin,
+  };
+}
+
+const HOME_REMOTE_DEFAULT_NAME = "mattstack-home";
+const HOME_REMOTE_USAGE = "usage: rt home remote set <url> | --create [--name <repo>] [--json]";
+/** A gh repo name: what `gh repo create` accepts, and never something argv could read as a flag. */
+const REPO_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+/** URL remotes (https, ssh, git) and scp-style remotes (`[user@]host:path`, ssh-config aliases included). Local paths are not a backup, so they stay out. */
+const GIT_REMOTE_URL_PATTERN = /^(?:(?:https?|ssh|git):\/\/[^\s/]+\/\S+|(?:[\w.-]+@)?[\w.-]+:[^\s-]\S*)$/;
+/** git must fail rather than prompt: the app and the daemon have no terminal to answer on. */
+const NO_PROMPT_ENV = { GIT_TERMINAL_PROMPT: "0" };
+
+function extractHomeRemoteInput(input: unknown): { url?: string; create?: boolean; name?: string } {
+  if (typeof input === "string" && input.trim() !== "") return { url: input.trim() };
+  if (!isPlainObject(input)) return {};
+  const out: { url?: string; create?: boolean; name?: string } = {};
+  if (typeof input.url === "string" && input.url.trim() !== "") out.url = input.url.trim();
+  if (input.alternative === "create" || input.create === true) out.create = true;
+  if (typeof input.name === "string" && input.name.trim() !== "") out.name = input.name.trim();
+  return out;
+}
+
+function assertRemoteUrl(url: string): void {
+  if (hasUrlCredentials(url)) {
+    throw new UserActionableError("bad-url", "the remote URL carries a password; drop it and let a credential helper (gh auth setup-git) supply it");
+  }
+  if (!GIT_REMOTE_URL_PATTERN.test(url)) {
+    throw new UserActionableError("bad-url", `"${withoutUrls(url)}" is not a git remote (https://host/owner/repo.git, git@host:owner/repo.git or host:owner/repo.git)`);
+  }
+}
+
+/**
+ * Points the home repo at a remote and pushes, or creates the remote first
+ * with `gh repo create` (private). The row that offers this is optional, so a
+ * refusal here never blocks Finish; every failure is an exit-2 envelope the
+ * app renders on the row. Output and errors pass through `withoutUrls`: git
+ * echoes the remote (credentials included) in its own messages.
+ */
+export async function homeRemoteSet(args: string[], _ctx: CommandContext = {}, deps: HomeRemoteDeps = realHomeRemoteDeps()): Promise<void> {
+  const json = args.includes("--json");
+  const verb = "home remote set";
+  try {
+    const nameFlagAt = args.indexOf("--name");
+    const nameValueAt = nameFlagAt >= 0 ? nameFlagAt + 1 : -1;
+    let url = args.find((a, i) => !a.startsWith("--") && i !== nameValueAt);
+    let create = args.includes("--create");
+    let name = nameFlagAt >= 0 ? args[nameFlagAt + 1] : undefined;
+    if (nameFlagAt >= 0 && (name === undefined || !REPO_NAME_PATTERN.test(name))) {
+      throw new UserActionableError("usage", `--name needs a repo name (letters, digits, dots, dashes); ${HOME_REMOTE_USAGE}`);
+    }
+    if (url && create) throw new UserActionableError("usage", `give a URL or --create, not both; ${HOME_REMOTE_USAGE}`);
+    if (!url && !create) {
+      if (deps.isTTY()) throw new UserActionableError("usage", HOME_REMOTE_USAGE);
+      const input = extractHomeRemoteInput(await deps.stdin());
+      url = input.url;
+      create = input.create ?? false;
+      name = input.name ?? name;
+      if (!url && !create) throw new UserActionableError("bad-stdin", 'no remote provided; pipe {"url": "<git url>"} or {"alternative": "create"} on stdin instead');
+      if (name !== undefined && !REPO_NAME_PATTERN.test(name)) throw new UserActionableError("bad-stdin", "name must be a repo name (letters, digits, dots, dashes)");
+    }
+    if (url) assertRemoteUrl(url);
+
+    const repoDir = join(deps.probes.home, ".mattstack", "user");
+    if (!deps.probes.exists(homeGitDir(deps.probes.home))) {
+      throw new UserActionableError("no-home-repo", `no home repo at ${repoDir} yet; Install creates it (rt home init)`);
+    }
+
+    let created = false;
+    if (!url) {
+      const repoName = name ?? HOME_REMOTE_DEFAULT_NAME;
+      const gh = await deps.probes.exec(["gh", "repo", "create", repoName, "--private"], { timeoutMs: 60_000, env: NO_PROMPT_ENV });
+      if (gh.code !== 0) {
+        throw new UserActionableError("create-failed", `gh repo create ${repoName} failed: ${withoutUrls((gh.stderr || gh.stdout).trim()) || `exit ${gh.code}`}`);
+      }
+      const printed = gh.stdout.trim().split("\n").find((line) => /^https?:\/\//.test(line.trim()))?.trim();
+      if (!printed) throw new UserActionableError("create-failed", `gh repo create ${repoName} printed no repository URL`);
+      url = printed.endsWith(".git") ? printed : `${printed}.git`;
+      assertRemoteUrl(url);
+      created = true;
+    }
+
+    const existing = await deps.probes.exec(["git", "-C", repoDir, "remote", "get-url", "origin"]);
+    const previous = existing.code === 0 ? existing.stdout.trim() : null;
+    const remote: "added" | "updated" = previous !== null ? "updated" : "added";
+    const set = await deps.probes.exec(
+      remote === "updated"
+        ? ["git", "-C", repoDir, "remote", "set-url", "origin", url]
+        : ["git", "-C", repoDir, "remote", "add", "origin", url],
+    );
+    if (set.code !== 0) throw new UserActionableError("remote-failed", `git remote ${remote === "updated" ? "set-url" : "add"} failed: ${withoutUrls(set.stderr.trim()) || `exit ${set.code}`}`);
+
+    const push = await deps.probes.exec(["git", "-C", repoDir, "push", "-u", "origin", "HEAD"], { timeoutMs: 120_000, env: NO_PROMPT_ENV });
+    if (push.code !== 0) {
+      const reason = withoutUrls(push.stderr.trim()) || `exit ${push.code}`;
+      if (previous !== null) {
+        // The old origin was working; a URL that cannot take a push must not replace it.
+        const restore = await deps.probes.exec(["git", "-C", repoDir, "remote", "set-url", "origin", previous]);
+        if (restore.code !== 0) {
+          throw new UserActionableError("push-failed", `the push to the new URL failed, and the previous origin could not be restored (${withoutUrls(restore.stderr.trim()) || `exit ${restore.code}`}); check git remote -v in ${repoDir}: ${reason}`);
+        }
+        throw new UserActionableError("push-failed", `the push to the new URL failed (origin restored to the previous remote): ${reason}`);
+      }
+      throw new UserActionableError("push-failed", `origin is set, but the push failed: ${reason}`);
+    }
+
+    deps.print(
+      json
+        ? JSON.stringify(envelope({ url, remote, pushed: true, created }, deps.probes.now()))
+        : `home remote set: origin -> ${url}, pushed${created ? " (repo created)" : ""}`,
     );
   } catch (err) {
     if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);
@@ -1114,9 +1250,16 @@ async function connectSlack(args: string[], deps: ConnectDeps): Promise<void> {
   }
 
   const clientSecret = await deps.teamSecrets.read(snapshot.slug, "board", "slackClientSecret");
-  // Honest about the interim single-recipient store: a missing value here means "not readable on THIS machine",
-  // never "the app doesn't exist" — advising a re-create would spawn a duplicate Slack app.
-  if (!clientSecret) throw new UserActionableError("slack-app-missing", `no Slack client secret found for team "${snapshot.slug}" on this machine`);
+  // A missing value means "not readable on THIS machine": a joiner's age key
+  // decrypts team secrets only after the owner's members sync lands, and the
+  // app itself exists (clientId is set), so advising a re-create would spawn a
+  // duplicate Slack app.
+  if (!clientSecret) {
+    throw new UserActionableError(
+      "slack-app-missing",
+      `the Slack client secret for team "${snapshot.slug}" is not readable on this machine yet: the team owner must run \`rt team members sync\` first (the team clone pushes it on its next cycle); try again once your clone has pulled that`,
+    );
+  }
 
   const tokenRes = await deps.probes.fetch("https://slack.com/api/oauth.v2.access", {
     method: "POST",

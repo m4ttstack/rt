@@ -719,11 +719,8 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
   test("path.link: links fast-browser/gitq/deck, skips rt when the dev-mode wrapper owns ~/.local/bin/rt, installs shell + zshenv precedence", async () => {
     // isDevModeWrapper reads through p.readPrefix (Probes-routed, bounded),
     // so the fake in-memory files map is enough -- no real fs write needed.
-    // (A real write here would also flip the REAL currentMode(), which this
-    // describe block's `home` is real HOME for: appBundleRoot() would then
-    // hunt for the dev-flavor bundle name and miss this fixture's prod-named
-    // appRoot entirely, skipping fast-browser/gitq/deck too.) Content must be
-    // genuinely recognized (the marker), not any bare "#!" script.
+    // Content must be genuinely recognized (the marker), not any bare "#!"
+    // script.
     const rtLinkPath = linkPath(home, "rt");
     const wrapperContent = `#!/bin/sh\n${DEV_MODE_TAG}\nexec bun run cli.ts "$@"\n`;
     const p = bundleProbe({ files: { [rtLinkPath]: wrapperContent } });
@@ -733,7 +730,7 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     expect(outcome.state).toBe("done");
     expect((outcome as { detail: string }).detail).toContain("linked: fast-browser, gitq, deck");
     expect((outcome as { detail: string }).detail).toContain("skipped: rt");
-    expect(logs.some((l) => l.line.includes("dev-mode wrapper"))).toBe(true);
+    expect(logs.some((l) => l.line.includes("mattstack-dev.app's source wrapper"))).toBe(true);
 
     // real fs side effects
     expect(getSetting<string>("mattstack.appPath").value).toBe(appRoot); // untouched by this step

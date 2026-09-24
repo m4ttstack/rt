@@ -14,6 +14,13 @@ import { closeStateDb, setKvValue } from "../../lib/state/index.ts";
 import { worktreePicker } from "../cd.ts";
 import { __test__ as pickImplTest, type PickImpl } from "../../lib/ui/pick.ts";
 
+describe("SHELL_FUNCTION", () => {
+  test("carries no branch for the retired rt settings dev-mode", async () => {
+    const { SHELL_FUNCTION } = await import("../cd.ts");
+    expect(SHELL_FUNCTION).not.toContain("dev-mode");
+  });
+});
+
 // Satisfies ensureShellFunction()'s early-return check so worktreePicker
 // never reaches the interactive "install rt cd?" prompt.
 const UP_TO_DATE_RC = 'rt() {\n  whence -p rt\n  "$rt_bin" nav\n}\n';

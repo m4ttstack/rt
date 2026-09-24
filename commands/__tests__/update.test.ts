@@ -9,7 +9,7 @@ interface Harness {
 }
 
 function harness(opts: {
-  mode?: "dev" | "prod";
+  flavor?: "dev" | "prod";
   tray?: (endpoint: string, method: "GET" | "POST") => Promise<{ ok: boolean; error?: string } | null>;
 }): Harness {
   const calls: string[] = [];
@@ -21,7 +21,7 @@ function harness(opts: {
       calls.push(`${method} ${endpoint}`);
       return opts.tray ? opts.tray(endpoint, method) : null;
     },
-    currentMode: () => opts.mode ?? "prod",
+    flavor: () => opts.flavor ?? "prod",
     log: (line) => logs.push(line),
     exit: ((code: number) => {
       exitCode = code;
@@ -33,24 +33,24 @@ function harness(opts: {
 }
 
 describe("runUpdate", () => {
-  test("dev mode — refuses without ever calling the tray, exit 2", async () => {
-    const h = harness({ mode: "dev" });
+  test("the dev app's rt refuses without ever calling the tray, exit 2", async () => {
+    const h = harness({ flavor: "dev" });
     await runUpdate([], {}, h.deps);
     expect(h.calls).toEqual([]);
-    expect(h.logs[0]).toBe("dev mode is active — switch to prod first: rt settings dev-mode prod");
+    expect(h.logs[0]).toBe("this rt belongs to mattstack-dev.app, which runs from source and never updates through Sparkle; open mattstack.app to switch to it");
     expect(h.exitCode).toBe(2);
   });
 
-  test("dev mode with --json — envelope error code dev-mode, exit 2", async () => {
-    const h = harness({ mode: "dev" });
+  test("the dev app's rt with --json: envelope error code dev-app, exit 2", async () => {
+    const h = harness({ flavor: "dev" });
     await runUpdate(["--json"], {}, h.deps);
     const body = JSON.parse(h.logs[0]!);
-    expect(body.error.code).toBe("dev-mode");
+    expect(body.error.code).toBe("dev-app");
     expect(h.exitCode).toBe(2);
   });
 
   test("prod mode, app answers ok:true — asks mattstack.app, no exit call", async () => {
-    const h = harness({ mode: "prod", tray: async () => ({ ok: true }) });
+    const h = harness({ flavor: "prod", tray: async () => ({ ok: true }) });
     await runUpdate([], {}, h.deps);
     expect(h.calls).toEqual(["POST /update/check"]);
     expect(h.logs[0]).toBe("asked mattstack.app to check for updates (Sparkle) — watch the menu bar");
@@ -58,7 +58,7 @@ describe("runUpdate", () => {
   });
 
   test("prod mode, app answers ok:true, --json — envelope asked:true", async () => {
-    const h = harness({ mode: "prod", tray: async () => ({ ok: true }) });
+    const h = harness({ flavor: "prod", tray: async () => ({ ok: true }) });
     await runUpdate(["--json"], {}, h.deps);
     const body = JSON.parse(h.logs[0]!);
     expect(body.asked).toBe(true);
@@ -66,7 +66,7 @@ describe("runUpdate", () => {
   });
 
   test("app not running (tray null) — points at the releases URL, exit 2", async () => {
-    const h = harness({ mode: "prod", tray: async () => null });
+    const h = harness({ flavor: "prod", tray: async () => null });
     await runUpdate([], {}, h.deps);
     expect(h.calls).toEqual(["POST /update/check"]);
     expect(h.logs[0]).toContain(RELEASES_URL);
@@ -74,7 +74,7 @@ describe("runUpdate", () => {
   });
 
   test("app not running, --json — envelope error code app-not-running", async () => {
-    const h = harness({ mode: "prod", tray: async () => null });
+    const h = harness({ flavor: "prod", tray: async () => null });
     await runUpdate(["--json"], {}, h.deps);
     const body = JSON.parse(h.logs[0]!);
     expect(body.error.code).toBe("app-not-running");
@@ -82,7 +82,7 @@ describe("runUpdate", () => {
   });
 
   test("app too old (ok:false) — points at the menu bar, exit 2", async () => {
-    const h = harness({ mode: "prod", tray: async () => ({ ok: false, error: "unknown route" }) });
+    const h = harness({ flavor: "prod", tray: async () => ({ ok: false, error: "unknown route" }) });
     await runUpdate([], {}, h.deps);
     expect(h.logs[0]).toContain("Check for Updates");
     expect(h.logs[0]).toContain("unknown route");
@@ -90,7 +90,7 @@ describe("runUpdate", () => {
   });
 
   test("app too old, --json — envelope error code app-too-old", async () => {
-    const h = harness({ mode: "prod", tray: async () => ({ ok: false, error: "unknown route" }) });
+    const h = harness({ flavor: "prod", tray: async () => ({ ok: false, error: "unknown route" }) });
     await runUpdate(["--json"], {}, h.deps);
     const body = JSON.parse(h.logs[0]!);
     expect(body.error.code).toBe("app-too-old");

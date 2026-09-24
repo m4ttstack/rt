@@ -29,6 +29,7 @@ import { loadRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import { patchTree } from "../../worktree/patch.ts";
 import { disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
 import type { WorktreeRepoConfig } from "../../worktree/config.ts";
+import { childEnv } from "../../subprocess.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,11 +53,10 @@ export interface StaleClaimSweepDeps extends DisposeDeps {
  * failure or non-zero exit — an empty set from a broken lsof would read as
  * "nothing is live" and let the sweep dispose a tree an active session sits
  * in, so the caller must fail closed instead. `argv` is injectable for the
- * failure-path tests (Bun.spawn resolves PATH at process start, so a PATH
- * shim cannot substitute the binary).
+ * failure-path tests.
  */
 export async function liveProcessCwds(argv: string[] = ["lsof", "-d", "cwd", "-Fn"]): Promise<Set<string>> {
-  const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  const proc = Bun.spawn(argv, { env: childEnv(), stdin: "ignore", stdout: "pipe", stderr: "ignore" });
   const out = await new Response(proc.stdout).text();
   const exitCode = await proc.exited;
   if (exitCode !== 0) throw new Error(`${argv[0]} exited ${exitCode}`);

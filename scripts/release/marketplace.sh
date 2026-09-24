@@ -113,7 +113,7 @@ if [ -d "$SRC/plugins" ]; then cp -R "$SRC/plugins" "$STAGE/plugins"; fi
 # a symlink as a link, so a clone of the published repo would get a dangling
 # pointer instead of the plugin. The local dev marketplace uses them
 # deliberately; the published one must never.
-if find "$STAGE" -path "$STAGE/.git" -prune -o -type l -print | grep -q .; then
+if find "$STAGE" -path "$STAGE/.git" -prune -o -type l -print | grep -c . >/dev/null; then
     echo "✗ staged tree contains symlinks — a clone would get dangling pointers" >&2
     find "$STAGE" -path "$STAGE/.git" -prune -o -type l -print >&2
     exit 1

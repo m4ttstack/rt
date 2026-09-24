@@ -40,90 +40,72 @@ let flavorHandoffChecks: [Check] = [
     },
     Check("socket ownership: a dead holder is taken over") { c in
         c.expectEqual(SocketOwnership.decide(myFlavor: "dev", holderIsLive: false, holderFlavor: nil,
-                                             intentConfirmed: true), .takeOver)
+                                             takingOver: true), .takeOver)
     },
     Check("socket ownership: a same-flavor holder keeps the socket") { c in
         c.expectEqual(SocketOwnership.decide(myFlavor: "dev", holderIsLive: true, holderFlavor: "dev",
-                                             intentConfirmed: true), .standAside)
+                                             takingOver: true), .standAside)
     },
     Check("socket ownership: an unidentifiable holder keeps the socket") { c in
         c.expectEqual(SocketOwnership.decide(myFlavor: "prod", holderIsLive: true, holderFlavor: nil,
-                                             intentConfirmed: true), .standAside)
+                                             takingOver: true), .standAside)
     },
-    Check("socket ownership: a wrong-flavor holder is evicted") { c in
+    Check("socket ownership: a wrong-flavor holder is evicted by a takeover") { c in
         c.expectEqual(SocketOwnership.decide(myFlavor: "prod", holderIsLive: true, holderFlavor: "dev",
-                                             intentConfirmed: true), .evictThenTakeOver)
+                                             takingOver: true), .evictThenTakeOver)
     },
-    Check("socket ownership: an unconfirmed intent never evicts anyone") { c in
+    Check("socket ownership: a launch that is not taking over never evicts anyone") { c in
         c.expectEqual(SocketOwnership.decide(myFlavor: "prod", holderIsLive: true, holderFlavor: "dev",
-                                             intentConfirmed: false), .standAside)
-    },
-    Check("intent is confirmed only by a read that names one flavor") { c in
-        let devTuple = #"{"intended":{"mode":"dev","provenance":"setting"},"cliFlavor":"dev","daemon":null}"#
-        c.expect(FlavorIntent.confirms(myFlavorIsDev: true, modeReadResult: devTuple), "the dev tray is named")
-        c.expect(!FlavorIntent.confirms(myFlavorIsDev: false, modeReadResult: devTuple), "the prod tray is not")
-        c.expect(!FlavorIntent.confirms(myFlavorIsDev: true, modeReadResult: nil), "a failed read confirms nothing")
-        c.expect(!FlavorIntent.confirms(myFlavorIsDev: true, modeReadResult: "not json"), "garbage confirms nothing")
-        c.expect(!FlavorIntent.confirms(myFlavorIsDev: true, modeReadResult: #"{"intended":{"mode":"banana"}}"#),
-                 "an unrecognized mode confirms nothing")
+                                             takingOver: false), .standAside)
     },
     Check("sibling bundle id round-trips between the flavors") { c in
         c.expectEqual(FlavorIdentity.sibling(ofBundleID: "com.mattstack.app"), "com.mattstack.app.dev")
         c.expectEqual(FlavorIdentity.sibling(ofBundleID: "com.mattstack.app.dev"), "com.mattstack.app")
+        c.expectEqual(FlavorIdentity.bundleName(ofFlavor: "dev"), "mattstack-dev.app")
+        c.expectEqual(FlavorIdentity.bundleName(ofFlavor: "prod"), "mattstack.app")
     },
-    Check("launch kind: only the login-item Apple Event may stand down silently") { c in
-        let loginItem = LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: UInt32(keyAELaunchedAsLogInItem))
+    Check("launch kind: only the login-item Apple Event is a login item") { c in
+        let loginItem = LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: UInt32(keyAELaunchedAsLogInItem),
+                                            isDefaultLaunch: true)
         c.expectEqual(loginItem, .loginItem)
-        c.expect(LaunchKind.mayStandDownSilently(loginItem))
     },
-    Check("launch kind: a plain open, another event, or no event at all never stands down silently") { c in
-        let opened = LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil)
-        let urlLaunch = LaunchKind.classify(eventID: UInt32(kAEOpenDocuments), propData: nil)
-        let noEvent = LaunchKind.classify(eventID: nil, propData: nil)
-        c.expectEqual(opened, .userLaunch)
-        c.expectEqual(urlLaunch, .userLaunch)
-        c.expectEqual(noEvent, .unknown)
-        for origin in [opened, urlLaunch, noEvent] {
-            c.expect(!LaunchKind.mayStandDownSilently(origin), "\(origin) must take the alert path")
-        }
+    Check("launch kind: a plain default open is a user launch; no event at all is unknown") { c in
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: true), .userLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: nil), .userLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: nil, propData: nil, isDefaultLaunch: nil), .unknown)
     },
-    Check("bundle presence: either Applications directory counts") { c in
-        c.expectEqual(FlavorBundle.presence(ofFlavor: "prod", home: "/Users/x",
-                                            fileExists: { $0 == "/Applications/mattstack.app" }),
-                      .present(path: "/Applications/mattstack.app"))
-        c.expectEqual(FlavorBundle.presence(ofFlavor: "dev", home: "/Users/x",
-                                            fileExists: { $0 == "/Users/x/Applications/mattstack-dev.app" }),
-                      .present(path: "/Users/x/Applications/mattstack-dev.app"))
-    },
-    Check("bundle presence: a dev bundle in neither place is unlocatable, prod is not installed") { c in
-        c.expectEqual(FlavorBundle.presence(ofFlavor: "dev", home: "/Users/x", fileExists: { _ in false }), .unlocatable)
-        c.expectEqual(FlavorBundle.presence(ofFlavor: "prod", home: "/Users/x", fileExists: { _ in false }), .notInstalled)
-        // The prod bundle's own path must never satisfy a dev lookup.
-        c.expectEqual(FlavorBundle.presence(ofFlavor: "dev", home: "/Users/x",
-                                            fileExists: { $0.hasSuffix("/mattstack.app") }), .unlocatable)
-    },
-    Check("stand-down is silent only for a login item with notifications and a bundle to hand over to") { c in
-        let installed = BundlePresence.present(path: "/Applications/mattstack.app")
-        c.expectEqual(StandDownPlan.route(origin: .loginItem, notificationsAuthorized: true, intendedBundle: installed), .silent)
-        c.expectEqual(StandDownPlan.route(origin: .loginItem, notificationsAuthorized: false, intendedBundle: installed), .alert,
-                      "no notification means no trace, so the user decides")
-        c.expectEqual(StandDownPlan.route(origin: .loginItem, notificationsAuthorized: true, intendedBundle: .notInstalled), .alert,
-                      "retiring for a flavor that is not installed leaves the Mac tray-less")
-        c.expectEqual(StandDownPlan.route(origin: .loginItem, notificationsAuthorized: true, intendedBundle: .unlocatable), .alert)
-        c.expectEqual(StandDownPlan.route(origin: .userLaunch, notificationsAuthorized: true, intendedBundle: installed), .alert)
-        c.expectEqual(StandDownPlan.route(origin: .unknown, notificationsAuthorized: true, intendedBundle: installed), .alert)
+    Check("launch kind: a launch to open a link or document is a url launch, never a user launch") { c in
+        c.expectEqual(LaunchKind.classify(eventID: 0x4755_524C /* 'GURL' */, propData: nil, isDefaultLaunch: nil), .urlLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenDocuments), propData: nil, isDefaultLaunch: nil), .urlLaunch)
+        c.expectEqual(LaunchKind.classify(eventID: UInt32(kAEOpenApplication), propData: nil, isDefaultLaunch: false), .urlLaunch)
     },
     Check("a stuck holder is named to the user with a remedy") { c in
         let body = FlavorStandDownCopy.stuckHolderBody(holderFlavor: "dev", myFlavor: "prod")
         c.expect(FlavorStandDownCopy.stuckHolderTitle(holderFlavor: "dev").contains("dev"))
         c.expect(body.contains("dev") && body.contains("prod"))
         c.expect(body.contains("log out"), "the remedy has to be in the body, not just the log")
-        c.expect(FlavorStandDownCopy.missingBundleNote(intended: "dev").contains("dev"))
     },
-    Check("stand-down copy names the intended mode and the flavor being offered") { c in
-        c.expectEqual(FlavorStandDownCopy.alertTitle(intended: "dev"), "This Mac is in dev mode")
-        c.expectEqual(FlavorStandDownCopy.switchButton(myFlavor: "prod"), "Switch to prod here")
+    Check("stand-down copy names the app keeping the Mac and the way back, never a mode") { c in
+        let body = FlavorStandDownCopy.notificationBody(myFlavor: "prod", other: "dev")
+        let retired = FlavorStandDownCopy.retiredBody(myFlavor: "prod", owner: "dev")
+        c.expect(retired.contains("dev app"), retired)
+        c.expect(retired.contains("Open mattstack.app"), retired)
+        c.expect(!retired.contains("mode"), retired)
         c.expect(FlavorStandDownCopy.notificationTitle(myFlavor: "prod").contains("prod"))
-        c.expect(FlavorStandDownCopy.notificationBody(intended: "dev").contains("dev"))
+        c.expect(body.contains("dev app is running"))
+        c.expect(body.contains("Open mattstack.app"))
+        c.expectEqual(FlavorStandDownCopy.askTitle(other: "dev"), "The dev app is running")
+        c.expect(FlavorStandDownCopy.askBody(myFlavor: "prod", other: "dev").contains("quits the dev app"))
+        c.expectEqual(FlavorStandDownCopy.switchButton(myFlavor: "prod"), "Switch to prod here")
+        for text in [body, FlavorStandDownCopy.askBody(myFlavor: "prod", other: "dev")] {
+            c.expect(!text.contains("mode"), "no intended mode exists any more: \(text)")
+        }
+    },
+    Check("settings switch copy names the other app to open") { c in
+        c.expectEqual(FlavorSwitchCopy.buttonTitle(isDevBuild: false), "Switch to the dev app")
+        c.expectEqual(FlavorSwitchCopy.buttonTitle(isDevBuild: true), "Switch to mattstack.app")
+        c.expectEqual(FlavorSwitchCopy.confirmTitle(isDevBuild: false), "Open mattstack-dev.app?")
+        c.expect(FlavorSwitchCopy.confirmBody(isDevBuild: false).contains("mattstack.app quits"))
+        c.expect(FlavorSwitchCopy.notInstalled(isDevBuild: true).contains("mattstack.app"))
     },
 ]

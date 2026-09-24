@@ -213,6 +213,10 @@ func (m *Mission) openQuestion(title string, items []picker.MenuItem, t menuTarg
 // showMenu replaces an open foldout or menu, since a question can arrive on
 // a push; closing it returns where the one it replaced would have.
 func (m *Mission) showMenu(title string, items []picker.MenuItem, t menuTarget, anchor *picker.MenuAnchor) {
+	m.showMenuBox(picker.NewMenu(title, items, anchor), t)
+}
+
+func (m *Mission) showMenuBox(menu *picker.Menu, t menuTarget) {
 	switch {
 	case m.modal != nil:
 		m.modal = nil
@@ -221,7 +225,7 @@ func (m *Mission) showMenu(title string, items []picker.MenuItem, t menuTarget, 
 		m.menuPrevFocus = m.focus
 	}
 	m.blurCommitInputs()
-	m.menu = picker.NewMenu(title, items, anchor)
+	m.menu = menu
 	m.menu.FitParentHeight()
 	m.menuTarget = t
 	m.menuOnHistory = m.historyTab()
@@ -320,6 +324,10 @@ func (m *Mission) runMenuOutcome(out picker.MenuOutcome) (tea.Model, tea.Cmd) {
 	case picker.MenuClosed:
 		m.closeMenu()
 	case picker.MenuNamed:
+		if out.Item.ID == publishNameID {
+			m.menu.Push(publishTitle, publishVisibilityItems(out.Name))
+			return m, nil
+		}
 		m.closeMenu()
 		return m, m.emitMenuAction("create-tag", t, out.Name)
 	case picker.MenuChosen:
@@ -349,6 +357,9 @@ func (m *Mission) runMenuItem(it picker.MenuItem) (tea.Model, tea.Cmd) {
 		return m, m.emitMenuAction("ignore-folder", menuTarget{path: folder}, "")
 	}
 	switch it.ID {
+	case publishPrivateID, publishPublicID:
+		m.closeMenu()
+		return m, m.emitPublish(it.Value, it.ID == publishPrivateID)
 	case "discard-file":
 		m.menu.Push("Discard all changes to "+path.Base(t.path)+"?", []picker.MenuItem{
 			questionChoice("discard-confirm", "Discard Changes"),

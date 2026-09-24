@@ -86,7 +86,7 @@ import { getSetting } from "../lib/settings/resolve.ts";
 import { readIntent as readIntentFromDisk, type SetupIntent } from "../lib/setup/intent.ts";
 import { deckHelperLabel } from "../lib/setup/need.ts";
 import { createRealProbes } from "../lib/setup/probes.ts";
-import { currentMode } from "../lib/dev-mode.ts";
+import { processFlavor } from "../lib/flavor.ts";
 
 export interface HomeProbes {
   isGitRepo(dir: string): boolean;
@@ -443,7 +443,7 @@ export async function probeDeckHealthy(probe: DeckHealthProbe): Promise<boolean>
 export async function defaultMaterializeEnv(
   exec: MaterializeExecSeam,
   deckHealth: DeckHealthProbe = defaultDeckHealthProbe(),
-  deckHelper: () => string | null = () => deckHelperLabel(currentMode(), createRealProbes()),
+  deckHelper: () => string | null = () => deckHelperLabel(processFlavor(), createRealProbes()),
 ): Promise<MaterializeEnv> {
   // Deliberately not run through STEP_TIMEOUT_MS (runMaterialize's steps) — a
   // plain `which` never blocks like `rt daemon install`'s tray poll does, so

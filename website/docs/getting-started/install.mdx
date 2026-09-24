@@ -39,7 +39,22 @@ Before Install (when the home repo doesn't exist yet), the answer is staged. Aft
 
 ## Agent permissions
 
-Install seeds a baseline `permissions.allow` list into Claude Code's settings so agents don't stall on per-tool prompts for calls rt already trusts. The seeded entries cover `glab` commands, the Fast Browser plugin, `EnterWorktree`, the mattstack MCP server, and `rt skills sync`. Existing entries are preserved; only missing ones are appended.
+Install seeds a baseline `permissions.allow` list into Claude Code's settings so agents don't stall on per-tool prompts for calls rt already trusts. The seeded entries cover `glab` commands, the Fast Browser plugin, `EnterWorktree`, the mattstack MCP server, `rt skills sync`, `rt runs`, and `rt gate`. Existing entries are preserved; only missing ones are appended.
+
+When a Claude config dir sets no `permissions.defaultMode`, Install seeds `auto`. Claude Code starts in auto mode by itself only on some plans; Enterprise and Console-key sessions otherwise start in manual mode and prompt for routine git. A mode you already chose is left alone.
+
+## Plugins
+
+Install adds rt's Claude Code plugins (`mattstack`, `fast-browser`, and `chat` from the mattstack marketplace) and `superpowers` from `claude-plugins-official`, which the mattstack skills and every team pack call. An existing install from `superpowers-marketplace` counts; rt does not add a second copy.
+
+## Home repo backup
+
+Your home repo (`~/.mattstack/user`) starts local-only. To back it up, point it at an empty repo you own, or let rt create a private one with `gh`:
+
+```bash
+rt home remote set https://github.com/you/mattstack-home.git
+rt home remote set --create        # creates a private mattstack-home repo first
+```
 
 ## Integration health
 
@@ -65,7 +80,21 @@ Install seeds a baseline `permissions.allow` list into Claude Code's settings so
 
 ## Finishing setup
 
-The setup wizard gates its Finish step on one optional prerequisite: the [Fast Browser](https://chrome.google.com/webstore/detail/fast-browser) extension. Without it, agents cannot capture screenshots or annotate evidence from your browser.
+The setup wizard gates its Finish step on two things: a writing style, and the [Fast Browser](https://chrome.google.com/webstore/detail/fast-browser) extension.
+
+### Writing style
+
+Every review or reply an agent drafts is written in one writing style. The Done screen asks you to pick one of the mattstack plugin's presets or name your own skill, and this row cannot be skipped. From a terminal:
+
+```bash
+rt skills writing-style list                       # the three presets, then styles you can type
+rt skills writing-style use <skill-id>             # choose one (omit the id to pick)
+rt skills writing-style new my-voice --from sparse # start your own style from a preset
+```
+
+### Fast Browser
+
+Without the extension, agents cannot capture screenshots or annotate evidence from your browser.
 
 If Chrome is not installed, the gate is skipped automatically. Otherwise, the Done screen shows "One step left before you finish" with Finish disabled until the extension is detected.
 
@@ -84,4 +113,4 @@ In the app's Settings, the Fast Browser pane shows "Skipped on this Mac" with an
 rt update
 ```
 
-[`rt update`](/reference/update) asks mattstack.app (Sparkle) to check for an update — the app owns the whole upgrade lifecycle (signature verification, staged install, restart); `rt` never downloads or installs its own updates. If the app isn't running, `rt update` points you at the latest release instead.
+[`rt update`](/reference/update) asks mattstack.app (Sparkle) to check for an update; the app owns the whole upgrade lifecycle (signature verification, staged install, restart); `rt` never downloads or installs its own updates. If the app isn't running, `rt update` points you at the latest release instead.

@@ -34,6 +34,7 @@ import type {
   MissionModel,
   MissionRepoRow,
   MissionStashModel,
+  MissionPublishPrompt,
   MissionSwitchPrompt,
   MissionWorktreeRow,
 } from "../ui/protocol.ts";
@@ -55,6 +56,7 @@ export type {
   MissionModel,
   MissionRepoRow,
   MissionStashModel,
+  MissionPublishPrompt,
   MissionSwitchPrompt,
   MissionWorktreeRow,
 };
@@ -77,6 +79,7 @@ export interface MissionState {
   selections: Map<string, DiffSelection>;
   settling: boolean;
   switchPrompt: MissionSwitchPrompt | null;
+  publishPrompt: MissionPublishPrompt | null;
 }
 
 /** No `rt worktree list` row shape carries a pre-joined git badge; the driver joins one before calling buildModel. */
@@ -634,6 +637,7 @@ export function buildModel(input: {
         }
       : null,
     switchPrompt: state.switchPrompt ?? null,
+    publishPrompt: state.publishPrompt ?? null,
     canStash: input.canStash ?? false,
   };
 }

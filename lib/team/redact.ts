@@ -23,3 +23,11 @@ const CREDENTIAL_TOKEN_RE = /\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xo
 export function withoutUrls(message: string): string {
   return message.replace(URL_RE, "<remote>").replace(SSH_REMOTE_RE, "<remote>").replace(CREDENTIAL_TOKEN_RE, "<redacted>");
 }
+
+/** `user:password@` on any scheme, or any userinfo at all on http(s): a bare token as the username (`https://ghp_x@github.com/...`) is how forges take a token. An ssh username (`ssh://git@host/...`) is not a secret. */
+const CREDENTIALED_URL_RE = /^(?:[a-z][a-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|https?:\/\/[^\s/@]+@)/i;
+
+/** A URL whose userinfo carries a credential: never logged, never accepted as a remote. */
+export function hasUrlCredentials(value: string): boolean {
+  return CREDENTIALED_URL_RE.test(value);
+}

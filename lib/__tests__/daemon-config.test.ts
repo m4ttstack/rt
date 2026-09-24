@@ -1,10 +1,6 @@
 /**
- * lib/daemon-config.ts — activeLaunchdLabel() (MAT-383 §1).
- *
- * activeLaunchdLabel() = currentMode() === "dev" ? "com.mattstack.daemon.dev" :
- * "com.mattstack.daemon". currentMode() itself is exercised in
- * lib/__tests__/dev-mode.test.ts; this test only pins the per-mode mapping,
- * driven the same way (wrapper-file presence at ~/.local/bin/rt).
+ * lib/daemon-config.ts: activeLaunchdLabel() follows this process's own
+ * flavor (MATTSTACK_FLAVOR, else the build), never a file on disk.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
@@ -16,17 +12,25 @@ const WRAPPER_PATH = join(process.env.HOME!, ".local", "bin", "rt");
 
 describe("activeLaunchdLabel", () => {
   afterEach(() => {
-    try { rmSync(WRAPPER_PATH); } catch { /* already absent */ }
+    process.env.MATTSTACK_FLAVOR = "prod";
+    rmSync(WRAPPER_PATH, { force: true });
   });
 
-  test("resolves to com.mattstack.daemon in prod mode (no wrapper)", () => {
+  test("a prod-labelled process names the prod daemon job", () => {
+    process.env.MATTSTACK_FLAVOR = "prod";
     expect(activeLaunchdLabel()).toBe("com.mattstack.daemon");
   });
 
-  test("resolves to com.mattstack.daemon.dev in dev mode (wrapper present)", () => {
+  test("a dev-labelled process names the dev daemon job", () => {
+    process.env.MATTSTACK_FLAVOR = "dev";
+    expect(activeLaunchdLabel()).toBe("com.mattstack.daemon.dev");
+  });
+
+  test("the dev wrapper on disk does not decide it", () => {
     mkdirSync(join(process.env.HOME!, ".local", "bin"), { recursive: true });
     writeFileSync(WRAPPER_PATH, `#!/bin/sh\n${DEV_MODE_TAG}\nexit 0\n`, { mode: 0o755 });
-    expect(activeLaunchdLabel()).toBe("com.mattstack.daemon.dev");
+    process.env.MATTSTACK_FLAVOR = "prod";
+    expect(activeLaunchdLabel()).toBe("com.mattstack.daemon");
   });
 });
 

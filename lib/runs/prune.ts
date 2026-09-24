@@ -10,6 +10,7 @@ import { join, sep } from "path";
 import { canon } from "../fs-canon.ts";
 import { getSetting } from "../settings/resolve.ts";
 import { runsRoot } from "./store.ts";
+import { childEnv } from "../subprocess.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -52,6 +53,7 @@ function realDirNames(path: string): string[] {
 function reapAsync(path: string): void {
   try {
     const proc = Bun.spawn(["rm", "-rf", "--", path], {
+      env: childEnv(),
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",

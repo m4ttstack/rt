@@ -46,6 +46,7 @@ import {
   removeQueuedNotification,
   type NotificationEvent,
 } from "./state/index.ts";
+import { childEnv } from "./subprocess.ts";
 const log = lazyChildLogger("notifier");
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -125,6 +126,7 @@ export const NOTIFICATION_TYPES = [
   { key: "evidence_failed",      label: "Evidence capture failed", description: "A queued evidence capture failed in the sandbox" },
   { key: CHAT_NOTIFICATION_CATEGORY, label: "Chat mention", description: "When an agent mentions you in a chat room" },
   { key: "credential_health", label: "Credential health", description: "When an integration token is rejected or nearing expiry" },
+  { key: "member_joined",     label: "Member joined",       description: "When someone you invited replies, so you can add their key to the team" },
   { key: "worktree_triage", label: "Worktree summary", description: "Once a day, when worktrees need a decision" },
 ] as const;
 
@@ -431,6 +433,8 @@ export interface Notifier {
   onNotification(hook: (type: string, data: any) => void): void;
   /** Queue a notification, persist it, and attempt to push to the tray app. Falls back to osascript if no tray app is available. */
   notify(title: string, message: string, url?: string, category?: string, pids?: number[], id?: string): void;
+  /** notify() for an event that carries fields beyond the positional shape (team, handle, paneId); the same queue, broadcast and tray push. False when the durable queue write was dropped (busy retries exhausted): the live tray push still goes out, but nothing survives a tray restart. */
+  notifyEvent(event: NotifyEventInput): boolean;
   /**
    * notify() gated on the user's preference for `category`, loading prefs per
    * call. For emitters outside the transition loop (which loads prefs once per
@@ -448,6 +452,9 @@ export interface Notifier {
   drainNotifications(): NotificationEvent[];
   peekNotifications(): NotificationEvent[];
 }
+
+/** What a caller supplies to notifyEvent: the queued event minus what the notifier mints (id, timestamp) and the category default. */
+export type NotifyEventInput = Omit<NotificationEvent, "id" | "timestamp" | "category"> & { id?: string; category?: string };
 
 /** Shape `notify` and every function that calls it (through `api.notify`) share. */
 type NotifyFn = (
@@ -501,7 +508,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
     const body = `${title}: ${message}`;
     const argv = [fallbackNotifierPath, "-e", `display notification "${escapeAppleScript(body)}" with title "rt"`];
     try {
-      const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      const proc = Bun.spawn(argv, { env: childEnv(), stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       const term = setTimeout(() => { try { proc.kill("SIGTERM"); } catch { /* already exited */ } }, FALLBACK_TERM_MS);
       const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch { /* already exited */ } }, FALLBACK_KILL_MS);
       void proc.exited.finally(() => { clearTimeout(term); clearTimeout(kill); });
@@ -516,18 +523,21 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
     pids?: number[],
     id?: string,
   ): void {
+    notifyEvent({ id, title, message, url, category, pids });
+  }
+
+  function notifyEvent(input: NotifyEventInput): boolean {
+    const { title, message, url } = input;
+    const category = input.category ?? "general";
     const event: NotificationEvent = {
-      id: id ?? crypto.randomUUID(),
-      title,
-      message,
-      url,
+      ...input,
+      id: input.id ?? crypto.randomUUID(),
       category,
       timestamp: Date.now(),
-      pids,
     };
 
     // 1. Queue + persist
-    enqueueNotification(event);
+    const queued = enqueueNotification(event);
 
     // 1b. Broadcast to WebSocket clients
     if (broadcastHook) broadcastHook("notification", event);
@@ -578,6 +588,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
         log.warn({ err }, "chat push failed");
       }
     }
+    return queued;
   }
 
   /**
@@ -699,6 +710,7 @@ export function createNotifier(deps: NotifierDeps = {}): Notifier {
   const api: Notifier & { __setFallbackNotifier(path: string | null): void; __notifyFallback: typeof notifyFallback } = {
     onNotification,
     notify,
+    notifyEvent,
     notifyEnabled,
     checkAndNotify,
     checkRunawayProcesses,
@@ -1019,6 +1031,11 @@ export function notify(
   id?: string,
 ): void {
   getDefaultNotifier().notify(title, message, url, category, pids, id);
+}
+
+/** notify() for an event carrying fields beyond the positional shape (team, handle, paneId); false when the durable queue write was dropped. */
+export function notifyEvent(event: NotifyEventInput): boolean {
+  return getDefaultNotifier().notifyEvent(event);
 }
 
 /**

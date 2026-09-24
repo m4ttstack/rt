@@ -163,4 +163,42 @@ class DaemonLifecycle: @unchecked Sendable {
         return await startDaemonUngated(origin: origin)
     }
 
+    // MARK: - Re-register
+
+    /// Replaces the job definition launchd holds with the bundle's current
+    /// plist. Gated like restart: a client herd POSTing /daemon/start while
+    /// the job is briefly unregistered parks behind this op instead of
+    /// racing it.
+    @discardableResult
+    func reregisterDaemon(origin: String) async -> Bool {
+        await gate.run(.restart, origin: origin) { await self.reregisterDaemonUngated(origin: origin) }
+    }
+
+    private func reregisterDaemonUngated(origin: String) async -> Bool {
+        guard let services else {
+            TrayLog.error("reregisterDaemon with no services registrar wired", ["label": label, "origin": origin])
+            return false
+        }
+        let plist = plistName
+        let outcome = await AgentReregister.run(
+            unregister: {
+                do {
+                    try await self.service.unregister()
+                    return true
+                } catch {
+                    return self.service.status == .notRegistered
+                }
+            },
+            register: { await services.register(plists: [plist]).allSatisfy(\.ok) },
+            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) })
+        let fields = ["label": label, "origin": origin, "outcome": String(describing: outcome),
+                      "status": TrayServer.statusName(service.status)]
+        if outcome.succeeded {
+            TrayLog.info("daemon re-registered", fields)
+        } else {
+            TrayLog.warn("daemon re-register failed", fields)
+        }
+        return outcome.succeeded
+    }
+
 }

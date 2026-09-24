@@ -16,7 +16,10 @@
 
 import { dispatch } from "./lib/command-tree.ts";
 import { TREE } from "./lib/command-tree-def.ts";
+import { captureProcessFlavor } from "./lib/flavor.ts";
 import { rtDir, migrateLegacyRtDir, migrateLegacyPluginsDir, LEGACY_RT_LABEL, RT_DIR_LABEL, trayAppPath } from "./lib/rt-paths.ts";
+
+captureProcessFlavor();
 
 const args = process.argv.slice(2);
 
@@ -141,7 +144,7 @@ if (args[0] === "--version" || args[0] === "-V") {
   // handler untouched; RT_APP_SOCKET means mattstack.app is driving rt and
   // already knows the setup state.
   const FIRST_RUN_HINT_SKIP = new Set([
-    "setup", "team", "deps", "services", "tools", "repos", "skills", "cron", "uninstall", "home", "secrets", "restore", "verify",
+    "setup", "team", "deps", "services", "flavor", "tools", "repos", "skills", "cron", "uninstall", "home", "secrets", "restore", "verify",
   ]);
   if (
     process.env.CI !== "true" &&

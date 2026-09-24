@@ -262,7 +262,7 @@ describe("watchdog actuators", () => {
       db: freshDb(),
       socketFor: over.socketFor ?? ((pane) => (pane.startsWith("bg:") ? BG : DEFAULT)),
       inject: async (o) => { injected.push(o); return over.inject ? over.inject(o) : { ok: true, data: { paneId: o.paneId, delivered: "accepted" } }; },
-      enqueue: (event) => { notified.push(event); },
+      enqueue: (event) => { notified.push(event); return true; },
       log,
     });
     return { a, injected, statuses, notified };
@@ -310,7 +310,7 @@ describe("watchdog actuators", () => {
       db: freshDb(),
       socketFor: (pane) => (pane.startsWith("bg:") ? BG : DEFAULT),
       herdr,
-      enqueue: () => {},
+      enqueue: () => true,
       log,
       trustSettleMs: 1,
       trustStepMs: 1,
@@ -329,7 +329,7 @@ describe("watchdog actuators", () => {
       db: freshDb(),
       socketFor: () => DEFAULT,
       herdr: (async () => { throw new Error("socket exploded"); }) as any,
-      enqueue: () => {},
+      enqueue: () => true,
       log,
     });
     expect(await a.acceptTrustModal("demo-1", "job-a", "w1:p1")).toBe(false);

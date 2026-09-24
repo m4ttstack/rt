@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ServiceManagement
 import MattstackCore
@@ -8,15 +9,12 @@ struct GeneralPane: View {
     @State private var chooseRow: PlanRow?
     @State private var startAtLogin = SMAppService.mainApp.status == .enabled
     @State private var autoUpdates = false
-    @State private var devModeBusy = false
-    @State private var devModeError: String?
-    @State private var devModeOn: Bool
+    @State private var switchError: String?
     @State private var confirmingSwitch = false
 
     init(env: SettingsEnvironment) {
         self.env = env
         self.readiness = env.readiness
-        _devModeOn = State(initialValue: env.isDevBuild)
     }
 
     var body: some View {
@@ -62,18 +60,11 @@ struct GeneralPane: View {
                 }
             }
             Section("Developer") {
-                Toggle("Dev mode", isOn: $devModeOn)
-                    .toggleStyle(.switch).controlSize(.small)
-                    .disabled(devModeBusy)
-                    .accessibilityIdentifier(AXID.settingsGeneralDevMode)
-                    .onChange(of: devModeOn) { _, on in
-                        // The snap-back write on Cancel re-enters here already matching the flavor.
-                        guard on != env.isDevBuild else { return }
-                        confirmingSwitch = true
-                    }
-                Text(env.isDevBuild ? "On: this is the dev app (mattstack-dev.app)." : "Off: this is the installed app (mattstack.app).")
+                Button(FlavorSwitchCopy.buttonTitle(isDevBuild: env.isDevBuild)) { confirmingSwitch = true }
+                    .accessibilityIdentifier(AXID.settingsGeneralSwitchApp)
+                Text(FlavorSwitchCopy.caption(isDevBuild: env.isDevBuild))
                     .font(.caption).foregroundStyle(.secondary)
-                if let devModeError { Text(devModeError).font(.caption).foregroundStyle(.red) }
+                if let switchError { Text(switchError).font(.caption).foregroundStyle(.red) }
             }
             Section { LabeledContent("Version") { Text(env.version) } }
         }
@@ -90,31 +81,28 @@ struct GeneralPane: View {
             autoUpdates = env.updater.automaticallyChecks
             startAtLogin = SMAppService.mainApp.status == .enabled
         }
-        .alert(devModeOn ? "Switch to the dev app?" : "Switch to the installed app?", isPresented: $confirmingSwitch) {
-            Button("Switch") { performFlavorSwitch() }
-            Button("Cancel", role: .cancel) { devModeOn = env.isDevBuild }
+        .alert(FlavorSwitchCopy.confirmTitle(isDevBuild: env.isDevBuild), isPresented: $confirmingSwitch) {
+            Button("Open") { openOtherApp() }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This quits \(env.isDevBuild ? "mattstack-dev.app" : "mattstack.app") and launches the other flavor.")
+            Text(FlavorSwitchCopy.confirmBody(isDevBuild: env.isDevBuild))
         }
     }
 
-    private func performFlavorSwitch() {
-        devModeBusy = true
-        devModeError = nil
-        Task {
-            let verb = "settings dev-mode"
-            do {
-                // `rt settings dev-mode <dev|prod>` drops its TTY requirement when the target is given, so the app can spawn it.
-                let r = try await env.rt.run(["settings", "dev-mode", env.isDevBuild ? "prod" : "dev"], stdin: nil)
-                if let e = r.userError { devModeError = e.message }
-                else if r.exitCode != 0 { devModeError = r.failureCopy(verb: verb) }
-            } catch {
-                devModeError = (error as? RtClientError)?.copy ?? "rt \(verb) failed to start."
-            }
-            if let devModeError { TrayLog.warn("dev-mode handoff failed", ["err": devModeError]) }
-            devModeBusy = false
-            // A failed handoff leaves this app running; the switch shows the real flavor again.
-            if devModeError != nil { devModeOn = env.isDevBuild }
+    /// Opened this way the other app counts as opened by hand, so it takes
+    /// the Mac over by itself, quitting this one on the way.
+    private func openOtherApp() {
+        switchError = nil
+        guard let mine = Bundle.main.bundleIdentifier,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: FlavorIdentity.sibling(ofBundleID: mine))
+        else {
+            switchError = FlavorSwitchCopy.notInstalled(isDevBuild: env.isDevBuild)
+            return
+        }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            guard let error else { return }
+            TrayLog.warn("could not open the other app", ["url": url.path, "err": String(describing: error)])
+            Task { @MainActor in switchError = "Couldn't open \(url.lastPathComponent)." }
         }
     }
 

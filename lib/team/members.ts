@@ -80,7 +80,7 @@ function bech32HrpExpand(hrp: string): number[] {
  * the fresh-team path has no other gate, since `reencryptTeamSecrets` is a
  * no-op with zero domain files.
  */
-function isValidAgePublicKey(key: string): boolean {
+export function isValidAgePublicKey(key: string): boolean {
   if (key.length !== AGE_HRP.length + 1 + AGE_DATA_CHARS) return false;
   if (key !== key.toLowerCase()) return false;
   if (!key.startsWith(`${AGE_HRP}1`)) return false;
@@ -101,7 +101,7 @@ function isValidAgePublicKey(key: string): boolean {
   return bech32Polymod([...bech32HrpExpand(AGE_HRP), ...values]) === 1;
 }
 
-function base64ToKey(b64: string): Uint8Array {
+export function base64ToKey(b64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, "base64"));
 }
 
@@ -189,7 +189,10 @@ export function teamRemote(p: Probes, slug: string): string | null {
 }
 
 export interface MembersSyncResult {
+  /** Age public keys added as recipients, the owner's own bootstrap key included. */
   added: string[];
+  /** Invitee handles whose reply was added this run: what a consumer matches a named invitee against, since `added` holds keys. */
+  addedHandles: string[];
   pending: string[];
   reencrypted: string[];
 }
@@ -238,6 +241,7 @@ export async function membersSync(
   assertNotJoined(p, slug);
 
   const added: string[] = [];
+  const addedHandles: string[] = [];
   const pending: string[] = [];
   const reencrypted = new Set<string>();
 
@@ -292,6 +296,7 @@ export async function membersSync(
       recordRosterKey(seams, slug, handle, agePublicKey);
       removeInviteRecord(p, slug, handle);
       added.push(agePublicKey);
+      addedHandles.push(handle);
     }
   } catch (err) {
     // A usage-shaped refusal (a corrupt invite-records file, an invalid
@@ -302,7 +307,7 @@ export async function membersSync(
     throw new MembersSyncAbortedError(added, pending, err instanceof Error ? err.message : String(err));
   }
 
-  return { added, pending, reencrypted: [...reencrypted].sort() };
+  return { added, addedHandles, pending, reencrypted: [...reencrypted].sort() };
 }
 
 export interface MembersRemoveResult {

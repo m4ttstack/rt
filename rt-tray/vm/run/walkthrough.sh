@@ -85,7 +85,7 @@ skip_if_dry() { [ "$DRY" = 1 ] && { vm_phase_end "$1" skip "dry-run"; return 0; 
 vm_phase_begin preflight
 if [ "$DRY" = 0 ]; then
   vm_require_cmd tart "brew install openai/tools/tart"
-  tart list 2>/dev/null | awk '{print $2}' | grep -qx "$GOLDEN" || { vm_phase_end preflight fail "golden $GOLDEN missing — run golden/build-golden.sh $VER"; exit 1; }
+  tart list 2>/dev/null | awk '{print $2}' | grep -cx "$GOLDEN" >/dev/null || { vm_phase_end preflight fail "golden $GOLDEN missing — run golden/build-golden.sh $VER"; exit 1; }
   [ -f "$VM_SSH_KEY" ] || { vm_phase_end preflight fail "no ssh key at $VM_SSH_KEY (built by build-golden.sh)"; exit 1; }
 fi
 if [ -z "$DMG" ]; then
@@ -166,6 +166,8 @@ TRUSTED=1; vm_trust_key "$RUN_VM" || TRUSTED=0
 if vm_wait_ssh "$VM_TESTER_USER" "$RUN_VM" 420; then
   [ "$GRAPHICS" = 1 ] && { shot_watcher & SHOT_PID=$!; }
   if [ "$VERIFY_GOLDEN" = 1 ]; then "$VM_ROOT/golden/verify-golden.sh" "$VER" "$RUN_VM" >>"$VM_RUN_DIR/logs/verify-golden.log" 2>&1 || { vm_phase_end boot fail "golden verification failed in the clone"; exit 1; }; fi
+  # A frontmost Setup Assistant swallows the driver's keystrokes: fields stay empty and Continue never enables.
+  vm_dismiss_setup_assistant "$RUN_VM"
   vm_phase_end boot pass
 else vm_phase_end boot fail "ssh as tester never came up$([ "$TRUSTED" = 0 ] && echo "; the key re-trust step failed first, so this is auth, not boot")"; exit 1; fi
 

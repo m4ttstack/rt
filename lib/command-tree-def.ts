@@ -1126,7 +1126,7 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   version: {
-    description: "Show current version and prod/dev mode",
+    description: "Show the current version and which app (prod or dev) this rt belongs to",
     module: "./commands/version.ts",
     fn: "runVersion",
     args: [],
@@ -1827,16 +1827,13 @@ export const TREE: Record<string, CommandNode> = {
         requiresTTY: true,
         args: [],
       },
-      "dev-mode": {
-        description: "Toggle between local dev source and the installed production binary",
+      "source-path": {
+        description: "Show or set the rt source checkout the dev app runs",
         module: "./commands/settings.ts",
-        fn: "toggleDevMode",
-        omitBehavior: "prompt",
-        // A TTY is needed only to PROMPT for a target: an explicit target,
-        // --json, and the bare read-only tuple print are all non-interactive.
-        requiresTTY: () => false,
+        fn: "sourcePathCommand",
         args: [
-          { name: "Target", type: "select", hint: "Omit to be prompted interactively", options: [{ value: "dev", label: "dev", hint: "Run from local source" }, { value: "prod", label: "prod", hint: "Run the installed binary (from mattstack.app)" }] },
+          { name: "Path", type: "text", optional: true, placeholder: "~/Documents/GitHub/repo-tools", hint: "Omit to show the current checkout" },
+          SETUP_JSON_ARG,
         ],
       },
     },
@@ -1895,6 +1892,22 @@ export const TREE: Record<string, CommandNode> = {
             args: [
               { name: "Stdin", flag: "--stdin", type: "boolean", default: false, hint: "Read the private key from stdin instead of a no-echo prompt (scripting)" },
               { name: "Force", flag: "--force", type: "boolean", default: false, hint: "Overwrite a key already in the keychain" },
+            ],
+          },
+        },
+      },
+      remote: {
+        description: "Where the home repo is backed up",
+        subcommands: {
+          set: {
+            description: "Point the home repo at a remote and push, or create a private repo for it with gh",
+            module: "./commands/setup.ts",
+            fn: "homeRemoteSet",
+            args: [
+              { name: "URL", type: "text", optional: true, placeholder: "https://github.com/you/mattstack-home.git", hint: "An empty repo you own; omit with --create, or pipe {\"url\"} on stdin" },
+              { name: "Create", flag: "--create", type: "boolean", default: false, hint: "Create a private repo with gh first, then use it as the remote" },
+              { name: "Name", flag: "--name", type: "text", placeholder: "mattstack-home", hint: "Repo name for --create (default mattstack-home)" },
+              SETUP_JSON_ARG,
             ],
           },
         },
@@ -2437,6 +2450,24 @@ export const TREE: Record<string, CommandNode> = {
       sdm: integrationNode("sdm", "StrongDM"),
       doppler: integrationNode("doppler", "Doppler"),
       ldcli: integrationNode("ldcli", "LaunchDarkly"),
+    },
+  },
+
+  flavor: {
+    description: "Which app (mattstack.app or mattstack-dev.app) runs this Mac",
+    hidden: true,
+    subcommands: {
+      takeover: {
+        description: "Retire the other app and point ~/.local/bin/rt at this one (the app runs this when opened by hand)",
+        module: "./commands/flavor.ts",
+        fn: "flavorTakeover",
+        hidden: true,
+        omitBehavior: { exempt: "called by the app with its own flavor; a person switches by opening the other app" },
+        args: [
+          { name: "Flavor", type: "select", options: [{ value: "dev", label: "dev", hint: "mattstack-dev.app, rt from source" }, { value: "prod", label: "prod", hint: "mattstack.app, its compiled rt" }] },
+          SETUP_JSON_ARG,
+        ],
+      },
     },
   },
 

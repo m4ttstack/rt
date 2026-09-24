@@ -154,6 +154,7 @@ export function realDeps(sandbox: Sandbox, session: LiveSession, opened: (model:
       return { close: () => {} };
     },
     runAction: async () => ({ ok: true, detail: "" }),
+    publishRepo: async () => ({ ok: false, detail: "publishing is not exercised here" }),
     commit: commitStaged,
     amend: amendStaged,
     guard: async () => ({ verdict: "clear" }) as BranchGuardVerdict,

@@ -21,7 +21,8 @@ export type RowKind = "scalar" | "enum" | CompositeShape["kind"] | "readonly";
 export const NOTIFICATION_EVENTS = [
   "pipeline_failed", "pipeline_passed", "mr_approved", "mr_merged", "mr_closed", "mr_ready",
   "merge_conflicts", "needs_rebase", "merge_error", "new_comment", "stale_port", "runaway_process",
-  "evidence_batch_ready", "evidence_failed", "chat_mention", "credential_health", "worktree_triage",
+  "evidence_batch_ready", "evidence_failed", "chat_mention", "credential_health", "member_joined",
+  "worktree_triage",
 ] as const;
 
 /** board's slack-emoji.ts DEFAULT_SLACK_EMOJI; board asserts parity. */
@@ -96,7 +97,6 @@ export const ENUMS: Record<string, readonly string[]> = {
   "agent.provider": ["claude", "codex"],
   "rt.logLevel": ["trace", "debug", "info", "warn", "error"],
   "boxscore.defaultRange": ["7d", "30d", "90d"],
-  "mattstack.mode": ["dev", "prod"],
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {

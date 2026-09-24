@@ -9,6 +9,7 @@
  */
 
 import type { ArgInject } from "./config.ts";
+import { childEnv } from "../subprocess.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ export async function runRoleHook(hook: string, input: HookInput, timeoutMs = 50
   let proc: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined;
   try {
     proc = Bun.spawn(["sh", "-c", hook], {
+      env: childEnv(),
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",

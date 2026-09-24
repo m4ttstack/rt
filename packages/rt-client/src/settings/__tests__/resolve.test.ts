@@ -328,6 +328,16 @@ describe("settings/resolve", () => {
       expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("rt.fromANewerRt"))).toBe(true);
     });
 
+    test("a retired key left in a store is neither listed nor warned about", () => {
+      writeMachine({ "mattstack.mode": "dev" });
+
+      const listed = listSettings();
+
+      expect(listed.find((e) => e.key === "mattstack.mode")).toBeUndefined();
+      expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("mattstack.mode"))).toBe(false);
+      expect(() => getSetting("mattstack.mode")).toThrow(/unknown setting/);
+    });
+
     test("a type-invalid value skips only its own scope; weaker scopes still apply", () => {
       writeTeam(TEAM, { "rt.intercepts": [{ id: "team" }] });
       writeUser({ "rt.intercepts": { not: "an array" } }); // rt.intercepts is type array
@@ -513,8 +523,10 @@ describe("settings/resolve", () => {
 
       const got = getSetting("rt.notifications", { repoIdentity: IDENTITY });
 
-      expect(got.value).toEqual({ pushes: true });
-      expect(got.provenance).toEqual([{ scope: "user", file: userSettingsPath() }]);
+      // The registry default is merged in underneath; the repo section's `false` never is.
+      expect((got.value as Record<string, boolean>).pushes).toBe(true);
+      expect(got.provenance).toContainEqual({ scope: "user", file: userSettingsPath() });
+      expect(got.provenance.some((p) => String(p.scope).includes("repo"))).toBe(false);
     });
 
     test("explain omits repo rungs when there is no identity to reach them with", () => {

@@ -121,6 +121,13 @@ shadows, no radii).
   disabled row -- the menu engine cannot color just the glyph.
 - There is no "always leave" or "always bring" setting. Every switch with
   changes asks.
+- Publish Repository is two menu steps, the name (the repo's own, filled
+  in) and then "Keep this code private" or "Public", instead of GitHub
+  Desktop's single dialog. There is no description field and no
+  organization dropdown: `owner/name` in the name field publishes to an
+  organization. It runs `gh repo create --source --remote origin --push`
+  (no `--push` for a repo with no commits yet), so it needs the GitHub CLI
+  signed in.
 
 ## Deferred to v2
 
@@ -139,9 +146,6 @@ removing one means removing all three.
   reorder, revert, cherry-pick, copy tag, delete tag, and the multi-commit
   menu. Not built; Undo Commit, Create Branch from Commit, Create Tag, and
   Copy SHA ship on the commit row's context menu.
-- **Publish repository** (RT-229). The action segment renders the state
-  for parity; activating it answers "publishing a repository is not wired
-  yet".
 - **Not copied from GitHub Desktop at all** (RT-230): the Pull Requests
   tab and its merge-into footer, image diffs (submodule diffs collapse
   into the binary message today), drag-and-drop cherry-pick, and clone or

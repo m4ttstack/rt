@@ -126,7 +126,7 @@ on every install (stated at the `board.*` block in registry-defs).
   the cwd pin, the regex, and the `--filename-override` move in lockstep
   (`lib/secrets/store.ts`), and decrypting a `.tmp` staging file needs
   `--input-type json` (sops infers the store from the extension).
-- The dev-mode `rt` wrapper runs from the main repo-tools checkout — whatever
+- The dev app's `rt` wrapper runs from the main repo-tools checkout: whatever
   branch that checkout has is what `rt` and a restarted daemon run.
 - Settings are boot-read in deck/board — a store change needs an app restart;
   the config-file watchers do not see store edits.

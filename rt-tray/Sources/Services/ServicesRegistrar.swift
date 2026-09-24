@@ -47,6 +47,77 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     @discardableResult
     func registerAll() async -> [ServiceRegisterResult] { await register(plists: agents.map(\.fileName)) }
 
+    /// The launch registration pass. An agent whose shipped plist changed
+    /// since this app last registered it is unregistered and registered
+    /// again first, because launchd keeps the definition it bootstrapped;
+    /// the daemon goes through `reregisterDaemon` so its lifecycle gate
+    /// covers the gap. `registerAll` then runs as before, which also puts
+    /// back any agent a failed re-register left unregistered.
+    @discardableResult
+    func registerAllAtLaunch(store: KeyValueStore, daemonLabel: String,
+                             reregisterDaemon: () async -> Bool) async -> [ServiceRegisterResult] {
+        let dir = bundlePath + "/Contents/Library/LaunchAgents"
+        let plan = AgentPlistRefresh.plan(agents.map { agent in
+            AgentPlistState(label: agent.label,
+                            bundleHash: FileManager.default.contents(atPath: dir + "/" + agent.fileName)
+                                .map(AgentPlistRefresh.hash),
+                            recordedHash: store.string(forKey: AgentPlistRefresh.storeKey(label: agent.label)),
+                            registration: Self.registration(service(agent).status))
+        })
+        for (agent, entry) in zip(agents, plan) {
+            guard case .reregister(let hash) = entry.action else { continue }
+            TrayLog.info("agent plist changed; re-registering", ["label": agent.label])
+            let ok = agent.label == daemonLabel ? await reregisterDaemon() : await reregister(agent)
+            if ok {
+                store.set(hash, forKey: AgentPlistRefresh.storeKey(label: agent.label))
+            } else {
+                TrayLog.warn("agent plist change not applied; retrying next launch", ["label": agent.label])
+            }
+        }
+        let results = await registerAll()
+        for (agent, (entry, result)) in zip(agents, zip(plan, results)) {
+            guard case .recordAfterRegister(let hash) = entry.action,
+                  AgentPlistRefresh.shouldRecordAfterRegister(ok: result.ok,
+                                                              registration: Self.registration(service(agent).status))
+            else { continue }
+            store.set(hash, forKey: AgentPlistRefresh.storeKey(label: agent.label))
+        }
+        return results
+    }
+
+    private func reregister(_ agent: AgentPlist) async -> Bool {
+        let svc = service(agent)
+        let outcome = await AgentReregister.run(
+            unregister: {
+                do {
+                    try await svc.unregister()
+                    return true
+                } catch {
+                    return svc.status == .notRegistered
+                }
+            },
+            register: { await self.register(plists: [agent.fileName]).allSatisfy(\.ok) },
+            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) })
+        let fields = ["label": agent.label, "outcome": String(describing: outcome),
+                      "status": TrayServer.statusName(svc.status)]
+        if outcome.succeeded {
+            TrayLog.info("agent re-registered", fields)
+        } else {
+            TrayLog.warn("agent re-register failed", fields)
+        }
+        return outcome.succeeded
+    }
+
+    static func registration(_ status: SMAppService.Status) -> AgentRegistration {
+        switch status {
+        case .enabled: return .enabled
+        case .notRegistered: return .notRegistered
+        case .requiresApproval: return .requiresApproval
+        case .notFound: return .notFound
+        @unknown default: return .notFound
+        }
+    }
+
     /// launchd gives a label to whichever job loads first, so a hand-installed
     /// com.mattstack.deck that won it at login keeps the prod helper from ever
     /// running. It has to go before the helper registers, never after.

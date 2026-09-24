@@ -300,7 +300,7 @@ rules, each written after it cost real damage:
   scratch directory instead. Re-signing invalidates Login Items and TCC grants,
   and the failure is silent.
 - **Check `git branch --show-current` before syncing the main checkout.** It is
-  shared with other sessions and is what the dev-mode `rt` wrapper executes;
+  shared with other sessions and is what the dev app's `rt` wrapper executes;
   it is not always on `main`. That second half makes it operational, not
   hygiene: **the branch that checkout sits on is the dev daemon's deployed
   code.** A daemon that has been up for hours is running whatever was checked

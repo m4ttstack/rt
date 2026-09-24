@@ -7,6 +7,7 @@
  */
 import { join } from "path";
 import type { DaemonResponse } from "../daemon-client.ts";
+import { childEnv } from "../subprocess.ts";
 
 export interface CreateHookInput { cwd: string; name: string }
 export type CreateDecision =
@@ -45,11 +46,11 @@ export async function decideCreate(input: CreateHookInput, deps: CreateHookDeps)
 }
 
 export async function stockWorktreeAdd(cwd: string, name: string): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
-  const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], { cwd });
+  const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], { cwd, env: childEnv() });
   if (top.exitCode !== 0) return { ok: false, error: "not a git repository" };
   const root = top.stdout.toString().trim();
   const path = join(root, ".claude", "worktrees", name);
-  const add = Bun.spawnSync(["git", "worktree", "add", "-b", name, path], { cwd: root });
+  const add = Bun.spawnSync(["git", "worktree", "add", "-b", name, path], { cwd: root, env: childEnv() });
   if (add.exitCode !== 0) return { ok: false, error: add.stderr.toString().trim().split("\n").pop() ?? "git worktree add failed" };
   return { ok: true, path };
 }

@@ -28,15 +28,21 @@ import type { Server } from "bun";
 import type { Logger } from "pino";
 import type { Database } from "bun:sqlite";
 
-import { RT_DIR, DAEMON_PID_PATH, activeLaunchdLabel } from "./daemon-config.ts";
-import { resolveIntendedMode } from "./dev-mode.ts";
+import { RT_DIR, DAEMON_PID_PATH } from "./daemon-config.ts";
+import { buildFlavor, captureProcessFlavor } from "./flavor.ts";
 import {
   getDaemonLogger,
   installCrashHandlers,
   redirectNativeStderr,
   type DaemonLoggerHandle,
 } from "./daemon-logger.ts";
-import { onNotification, notifyEnabled } from "./notifier.ts";
+import { onNotification, notifyEnabled, notifyEvent, loadNotificationPrefs } from "./notifier.ts";
+import { checkInviteReplies, INVITE_REPLIES_NS, listInviteSlugs, MEMBER_JOINED_CATEGORY } from "./daemon/invite-replies.ts";
+import { readInviteRecords } from "./team/invite-records.ts";
+import { createRelayClient, inviteRelayUrl } from "./team/relay-client.ts";
+import { openReply } from "./team/invite-crypto.ts";
+import { base64ToKey, isValidAgePublicKey } from "./team/members.ts";
+import { hasKvValue, setKvValueCritical } from "./state/kv-blob.ts";
 import { appBundleRoot } from "./bundle-layout.ts";
 import { reconcile as reconcileLinks } from "./deps/links.ts";
 import { createRealProbes } from "./setup/probes.ts";
@@ -50,7 +56,7 @@ import { readSecret, createRealSecretsExecSeam, type SecretsSeams } from "./secr
 
 import { SystemProcessScanner } from "./daemon/system-process-scanner.ts";
 
-import { parkUntilIntended, probeSocketHolder, daemonFlavor, launchdLabelFromEnv } from "./daemon/park.ts";
+import { parkUntilServable, probeSocketHolder, daemonFlavor, launchdLabelFromEnv } from "./daemon/park.ts";
 import { evictStaleDaemon } from "./daemon/boot-reconcile.ts";
 import { resolveUserPath } from "./daemon/user-path.ts";
 import { shortReqId, makeSuppressor } from "./daemon/command-attribution.ts";
@@ -238,7 +244,7 @@ export function createHandleCommand(deps: HandleCommandDeps): HandleCommand {
  */
 export interface BootSeams {
   redirectNativeStderr: () => void;
-  /** Flavor/park gate; seamed so the boot test isn't subject to ambient dev-mode intent (which would park a source build indefinitely). */
+  /** Flavor/park gate; seamed so the boot test isn't subject to an ambient launchd label or a live rt.sock holder. */
   parkGate: (log: Logger) => Promise<void>;
   /** Login-shell PATH scrape (spawns shells); seamed so the boot test stays hermetic. */
   resolveUserPath: (log: Logger) => Promise<string>;
@@ -277,12 +283,10 @@ function realSeams(): BootSeams {
   return {
     redirectNativeStderr,
     parkGate: (log) =>
-      parkUntilIntended({
+      parkUntilServable({
         myFlavor: daemonFlavor(),
-        resolveIntent: resolveIntendedMode,
         probeHolder: probeSocketHolder,
         myLaunchdLabel: () => launchdLabelFromEnv(),
-        activeLaunchdLabel,
         sleep: (ms) => Bun.sleep(ms),
         log,
       }),
@@ -434,8 +438,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   };
 
   // Injected at compile time via `bun build --define RT_VERSION=...` (see
-  // cli.ts): undefined when running from source, which is also how
-  // daemonFlavor() tells dev from prod.
+  // cli.ts): undefined when running from source.
   const rtVersion = (): string => (typeof RT_VERSION !== "undefined" ? RT_VERSION : "source");
 
   // ─── Serving-core closures (defined once, invoked once units are wired) ────
@@ -817,7 +820,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
       async start() {
         // Daemon self-description. Only a dev daemon runs from a real checkout,
         // so only dev can shell out for the commit it serves from.
-        const sourceRev = daemonFlavor() === "dev"
+        const sourceRev = buildFlavor() === "dev"
           ? await runCapture(["git", "rev-parse", "--short", "HEAD"], { cwd: import.meta.dir, timeoutMs: 5_000 })
               .then((r) => r.stdout.trim() || null)
               .catch(() => null)
@@ -905,6 +908,37 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             if (removed > 0) log.info({ removed }, "pruned old agent records");
           },
           { bootDelayMs: 60_000, intervalMs: 24 * 60 * 60 * 1000 },
+          log,
+        ));
+        // Invites last at most 7 days and only exist on the owner's machine,
+        // so the switchboard read is a no-op almost everywhere.
+        sweepHandles.push(scheduleSweep(
+          "invite-replies",
+          async () => {
+            const probes = createRealProbes();
+            const relay = createRelayClient(probes.fetch, inviteRelayUrl(probes.env));
+            const db = getStateDb("daemon");
+            const { notified } = await checkInviteReplies({
+              slugs: () => listInviteSlugs(probes.home),
+              records: (slug) => readInviteRecords(probes, slug),
+              readReply: (id, creatorSecret) => relay.readReply(id, creatorSecret),
+              openReply: async (blob, keyB64, id) => {
+                const opened = await openReply(blob, base64ToKey(keyB64), id);
+                if (!isValidAgePublicKey(opened.agePublicKey)) throw new Error("reply's age public key is not a well-formed age1 recipient");
+                return opened.agePublicKey;
+              },
+              isNotified: (id) => hasKvValue(INVITE_REPLIES_NS, id, db),
+              // Critical: a dropped mark re-announces the same reply next sweep.
+              markNotified: (id, outcome) => { setKvValueCritical(INVITE_REPLIES_NS, id, { outcome, at: Date.now() }, db); },
+              notify: notifyEvent,
+              enabled: () => loadNotificationPrefs()[MEMBER_JOINED_CATEGORY] !== false,
+              now: () => Date.now(),
+              // An unreachable relay repeats every tick while offline; that is debug, not a warning.
+              warn: (message) => (message.includes("relay-unreachable") ? log.debug : log.warn).call(log, { sweep: "invite-replies" }, message),
+            });
+            for (const n of notified) log.info({ team: n.slug, handle: n.handle }, "invite reply landed; owner notified");
+          },
+          { bootDelayMs: 90_000, intervalMs: 5 * 60 * 1000 },
           log,
         ));
         sweepHandles.push(scheduleSweep(
@@ -1417,5 +1451,6 @@ declare const RT_VERSION: string | undefined;
 
 // Auto-run when executed directly (source mode: bun run lib/daemon.ts).
 if (import.meta.main) {
+  captureProcessFlavor();
   startDaemon();
 }

@@ -258,6 +258,12 @@ export interface MissionSwitchPrompt {
   hasStash: boolean;
 }
 
+/** One-shot, like MissionSwitchPrompt: the view opens GitHub Desktop's Publish Repository dialog with `name` filled in. */
+export interface MissionPublishPrompt {
+  seq: number;
+  name: string;
+}
+
 export interface MissionActionModel {
   kind: "fetch" | "pull" | "pull-rebase" | "push" | "force-push" | "publish-branch" | "publish-repo" | "busy" | "detached";
   title: string;
@@ -317,6 +323,7 @@ export interface MissionModel {
   /** The current branch's Desktop stash entry, null when it has none. */
   stash: MissionStashModel | null;
   switchPrompt: MissionSwitchPrompt | null;
+  publishPrompt: MissionPublishPrompt | null;
   /** GHD's Stash All Changes enablement. */
   canStash: boolean;
 }
@@ -357,6 +364,7 @@ const SESSION_INTENT_NAMES = [
   "mission:stash-discard",
   "mission:stash-select",
   "mission:stash-hide",
+  "mission:publish",
 ] as const;
 
 export interface SessionIntent {

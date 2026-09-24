@@ -45,6 +45,7 @@ import { repoLabel } from "../lib/repo-arg.ts";
 import { runPick } from "../lib/ui/pick.ts";
 import type { PickAction, PickRow, PickSegment } from "../lib/ui/protocol.ts";
 import { runSeededBoard, tmuxAvailable, type SeedEntry } from "./runner.ts";
+import { childEnv } from "../lib/subprocess.ts";
 
 const LAUNCH_ALL_SENTINEL = "__rt:launch-all__";
 const SAVE_PRESET_SENTINEL = "__rt:save-preset__";
@@ -1174,6 +1175,7 @@ export async function runCommand(
 
   const proc = Bun.spawn([SHELL, "-c", cmd], {
     cwd: packagePath,
+    env: childEnv(),
     stdio: ["inherit", "inherit", "inherit"],
   });
 
@@ -1269,6 +1271,7 @@ export async function runAgainCommand(
 
   const proc = Bun.spawn([SHELL, "-c", entry.cmd], {
     cwd: entry.cwd,
+    env: childEnv(),
     stdio: ["inherit", "inherit", "inherit"],
   });
 

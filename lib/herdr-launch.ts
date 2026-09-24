@@ -3,6 +3,7 @@
  * board is available to seed instead.
  */
 import { dim, red, reset, bold } from "./tui.ts";
+import { childEnv } from "./subprocess.ts";
 
 export interface LaunchItem {
   label: string;
@@ -24,6 +25,7 @@ export function launchFallback(items: LaunchItem[], reason: string): void {
     process.stderr.write(`  ${bold}${item.label}${reset}\n`);
     const result = Bun.spawnSync(["sh", "-c", item.command], {
       cwd: item.cwd,
+      env: childEnv(),
       stdio: ["inherit", "inherit", "inherit"],
     });
     if (result.exitCode !== 0) {

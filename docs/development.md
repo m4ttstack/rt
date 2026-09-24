@@ -5,35 +5,37 @@ Deeper notes for working on rt itself. The README covers the short version
 need once you are changing the install path, the editor extension, the menu bar
 app, or the release.
 
-## Dev mode: local source vs the installed binary
+## Two apps: mattstack.app and mattstack-dev.app
 
-Once mattstack.app is installed alongside your source checkout, use the
-built-in toggle:
+A machine runs one of two apps at a time:
+
+- **mattstack.app** (prod): its daemon, deck and CLI are the compiled rt
+  inside the bundle.
+- **mattstack-dev.app** (dev, `rt-tray/build.sh dev`): its daemon and CLI run
+  your source checkout through bun.
+
+To switch, open the other app, by hand or from Settings > General >
+Developer. Opening an app by hand takes the Mac over: the other app's tray
+gives up its daemon agent and login item and quits, the other app's launchd
+jobs are booted out, and `~/.local/bin/rt` is pointed at the opened app (the
+dev app writes a wrapper that runs `bun run <checkout>/cli.ts`; the prod app
+links its bundled rt). Whatever sat at `~/.local/bin/rt` before is replaced.
+A login-item launch never takes over: if the other app is running, it quits
+quietly instead. Nothing records a mode; which app is active is simply the
+one installed and running.
+
+Each process knows its own flavor from whoever launched it:
+`MATTSTACK_FLAVOR=dev|prod` in each app's launchd plists, exported by the dev
+wrapper, and otherwise the build (a compiled rt is prod, a source run is dev).
+`rt version` names the app the CLI belongs to.
+
+The checkout the dev app runs is stored in `~/.mattstack/rt/state.db` (the
+`dev-mode` kv row, which the dev daemon launcher also reads):
 
 ```bash
-rt settings dev-mode        # interactive picker: dev / prod
-rt settings dev-mode dev    # switch to local source
-rt settings dev-mode prod   # switch back to the installed binary
+rt settings source-path                     # show it
+rt settings source-path ~/code/repo-tools   # set it (rewrites the dev wrapper if it owns ~/.local/bin/rt)
 ```
-
-How it works:
-
-- **dev** writes a wrapper script at `~/.local/bin/rt` that calls
-  `bun run /path/to/cli.ts "$@"` and hands the tray over to
-  `mattstack-dev.app`.
-- **prod** installs the compiled binary carried inside `mattstack.app` at that
-  same path and hands the tray back to `mattstack.app`.
-- `~/.local/bin` is added to your PATH by the installer (and again on the first
-  `dev-mode dev`).
-- The source path is remembered in `~/.mattstack/rt/state.db` as a `kv` row in
-  namespace `dev-mode`, so there is no re-entry when toggling back.
-
-Both modes write to the same `~/.local/bin/rt` path, so the presence of that
-file is not the mode signal. The signal is the `# mattstack-dev-mode` marker
-line inside the wrapper script.
-
-`rt version` tells you which mode is active (and the source path in dev mode).
-`rt --version` is the short form that just prints the version string.
 
 ## Exercising the installer
 

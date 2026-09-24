@@ -42,6 +42,7 @@ import {
   type LinearTicket,
 } from "./linear.ts";
 import type { PickSegment } from "./ui/protocol.ts";
+import { childEnv } from "./subprocess.ts";
 
 /** Best-effort serialized identity for a remote URL; undefined with no remote. */
 function identityForRemote(remoteUrl: string | undefined): string | undefined {
@@ -757,6 +758,7 @@ function spawnCacheRefresh(
       remoteUrl,
     });
     const child = Bun.spawn(["bun", "run", scriptPath, payload], {
+      env: childEnv(),
       stdio: ["ignore", "ignore", "ignore"],
     });
     child.unref();

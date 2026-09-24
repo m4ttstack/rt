@@ -131,13 +131,13 @@ describe("classifyDaemonStatus", () => {
     expect(v).toMatchObject({ state: "alive-not-serving", pid: 42, detail: "quarantined" });
   });
 
-  test("alive pid whose breadcrumb flavor disagrees with the intended flavor -> parked", () => {
+  test("alive pid whose breadcrumb flavor disagrees with the CLI's flavor -> parked", () => {
     const v = classifyDaemonStatus({
       installed: true,
       pingOk: false,
       pidAlive: true,
       pid: 42,
-      intendedFlavor: "prod",
+      cliFlavor: "prod",
       breadcrumb: { phase: "start", flavor: "dev" },
       supervision: emptySupervision(),
     });

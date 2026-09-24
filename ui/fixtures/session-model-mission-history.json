@@ -156,6 +156,7 @@
     "editorLabel": "",
     "stash": null,
     "switchPrompt": null,
+    "publishPrompt": null,
     "canStash": false
   }
 }

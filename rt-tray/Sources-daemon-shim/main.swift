@@ -16,13 +16,13 @@
 // LEGACY FALLBACK: if state.db has no row yet, this also reads the retired
 // ~/.mattstack/rt/dev-mode.json directly (read-only — this shim never
 // migrates or writes state.db; that stays commands/settings.ts's job). The
-// TS-side importer is reachable only from `rt settings dev-mode`, and this
-// shim runs before bun exists, so it cannot depend on any prior rt
-// invocation having migrated the file first. Without this fallback, an
-// existing dev-mode machine that just picks up a new dev bundle loses its
-// daemon silently on the next restart until someone happens to re-run
-// `rt settings dev-mode`. Remove this fallback once enough time has passed
-// that no machine still has an un-migrated dev-mode.json.
+// TS-side importer runs only when the dev app takes a Mac over or on
+// `rt settings source-path`, and this shim runs before bun exists, so it
+// cannot depend on any prior rt invocation having migrated the file first.
+// Without this fallback, an existing dev machine that just picks up a new
+// dev bundle loses its daemon silently on the next restart until one of
+// those runs. Remove this fallback once enough time has passed that no
+// machine still has an un-migrated dev-mode.json.
 //
 // TRUST: whichever source supplies the config chooses the binary the daemon
 // execs at every boot, so BOTH state.db and the legacy dev-mode.json are only
@@ -132,7 +132,7 @@ private func sqliteErrorMessage(_ db: OpaquePointer?) -> String {
 /// whose JSON doesn't validate) so the caller's `standDown` can say
 /// specifically why, distinguishing "never configured" from a transient
 /// read failure. `busy_timeout` is set before any query so a concurrent CLI
-/// writer (`rt settings dev-mode on`, which opens the same db to
+/// writer (`rt flavor takeover dev` or `rt settings source-path`, which open the same db to
 /// migrate/write) cannot wedge daemon boot — this shim waits, briefly,
 /// rather than either blocking forever or failing hard on the first
 /// SQLITE_BUSY.
