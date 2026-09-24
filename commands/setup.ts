@@ -988,7 +988,14 @@ async function connectCredential(id: Integration, args: string[], deps: ConnectD
   // A team can declare a self-hosted forge/switchboard, but that declaration
   // is never sent a credential on its own — the user confirms it once, here,
   // by passing --host; ctxFor then only ever trusts the confirmed value.
-  const hostFlag = id === "gitlab" || id === "switchboard" ? flagValue(args, "--host") : undefined;
+  let hostFlag = id === "gitlab" || id === "switchboard" ? flagValue(args, "--host") : undefined;
+  // The app's Confirm sheet has no flag to pass, so switchboard (the one
+  // fieldless integration) reads the host from the same stdin channel every
+  // credential field uses. A TTY caller still passes --host.
+  if (hostFlag === undefined && id === "switchboard" && !deps.isTTY()) {
+    const input = await deps.stdin();
+    if (isPlainObject(input) && typeof input.host === "string" && input.host.trim() !== "") hostFlag = input.host.trim();
+  }
   if (hostFlag !== undefined && !hostFlagValid(id, hostFlag)) {
     throw new UserActionableError(
       "bad-host",

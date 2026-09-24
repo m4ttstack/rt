@@ -11,6 +11,8 @@ export interface ConnectField {
   label: string;
   secret: boolean;
   hint?: string;
+  /** What the app prefills; the user can still edit it before submitting. */
+  value?: string;
 }
 
 export interface ChooseOption {

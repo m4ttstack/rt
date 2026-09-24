@@ -275,14 +275,19 @@ describe("accountRows — account.linear declared / not declared", () => {
 // the same user-confirmed-host latch every self-hosted forge/switchboard
 // declaration uses. No secret is ever stored or read.
 describe("accountRows — account.switchboard", () => {
-  test("host NOT user-confirmed -> error, unverified, no network call, no action (nothing to connect)", async () => {
+  test("host NOT user-confirmed -> error, unverified, no network call, and a Confirm action that carries the declared URL for the app to send back", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const p = fakeProbes();
     const r = await pickRow(accountRows(p, team, [], fakeSecrets(), JOIN_INTENT), "account.switchboard");
     expect(r.status).toBe("error");
     expect(r.detail).toContain("unverified");
     expect(p.calls.fetch).toEqual([]);
-    expect(r.action).toBeNull();
+    expect(r.action).toEqual({
+      type: "connect",
+      label: "Confirm",
+      integration: "switchboard",
+      fields: [{ name: "host", label: "Switchboard URL", secret: false, hint: "Your team declares this URL. Confirming it lets rt reach the switchboard from this Mac.", value: "https://sw.example.com" }],
+    });
   });
 
   test("host user-confirmed, /healthz 200 -> ready, no intent-based decoration, no token involved", async () => {
@@ -296,7 +301,7 @@ describe("accountRows — account.switchboard", () => {
     expect(r.detail).toBe("switchboard reachable");
   });
 
-  test("host user-confirmed, /healthz unhealthy -> error, no action", async () => {
+  test("host user-confirmed, /healthz unhealthy -> error, the Confirm action stays so the URL can be re-confirmed", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const fetch = async () => ({ status: 401, body: "", headers: {} });
     const r = await pickRow(
@@ -304,6 +309,16 @@ describe("accountRows — account.switchboard", () => {
       "account.switchboard",
     );
     expect(r.status).toBe("error");
+    expect(r.action?.type).toBe("connect");
+  });
+
+  test("host user-confirmed and reachable -> no action", async () => {
+    const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
+    const fetch = async (url: string) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const r = await pickRow(
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets(), null, { switchboardUrl: "https://sw.example.com" }),
+      "account.switchboard",
+    );
     expect(r.action).toBeNull();
   });
 
