@@ -66,6 +66,10 @@ if serving {
 }
 
 let run = deckExec(choice: choice, bundleRoot: root, args: args)
+// The source choice never sets DECK_RUN_REASON (only pinned carries a
+// reason); unset it so a value inherited from this process's own
+// environment does not ride along into a source-run deck.
+if case .source = choice { unsetenv("DECK_RUN_REASON") }
 for (key, value) in run.env { setenv(key, value, 1) }
 var cArgs: [UnsafeMutablePointer<CChar>?] = run.argv.map { strdup($0) }
 cArgs.append(nil)
