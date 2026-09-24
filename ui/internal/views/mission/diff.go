@@ -32,6 +32,11 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.model.Diff.ReadOnly && (key == "space" || key == "s" || key == "d") {
 		return m, nil
 	}
+	if m.stashShowing() {
+		if cmd, ok := m.stashEntryKey(key); ok {
+			return m, cmd
+		}
+	}
 	switch key {
 	case "esc":
 		switch {

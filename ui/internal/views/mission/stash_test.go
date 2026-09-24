@@ -478,6 +478,9 @@ func TestLeavingASubFocusReturnsToTheStashFiles(t *testing.T) {
 
 func TestStashKeybar(t *testing.T) {
 	out := ansi.Strip(renderKeybar(150, "stash"))
+	if !strings.Contains(out, "R restore · D discard · h hide") {
+		t.Fatalf("D discard sits between restore and hide: %s", out)
+	}
 	for _, want := range []string{"↑↓ files", "enter diff", "R restore", "h hide", "⌃k menu", "b branch", "w worktree", "r repo", "q quit"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stash keybar missing %q: %s", want, out)
@@ -499,5 +502,297 @@ func TestEmptyStateOffersTheStash(t *testing.T) {
 	}
 	if out := ansi.Strip(stashMission(false).View().Content); !strings.Contains(out, "view your stashed changes") {
 		t.Fatalf("a clean tree with a stash should offer it:\n%s", out)
+	}
+}
+
+func TestShiftSStashesOrAsksToOverwrite(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.CanStash = true
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'S', Text: "S"}); cmd == nil || m.menu != nil {
+		t.Fatalf("S without a stash emits at once")
+	}
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	m.Update(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	if m.menu == nil || m.menu.Title() != "Overwrite Stash?" {
+		t.Fatalf("S with a stash asks Overwrite Stash?")
+	}
+	m = newMouseTestMission()
+	m.model.CanStash = false
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'S', Text: "S"}); cmd != nil || m.menu != nil {
+		t.Fatalf("S does nothing when stashing is disabled")
+	}
+}
+
+// TestOverwriteStashPaintsTheBoardsTwoBodyRows: StashStates.png wraps the
+// body onto two disabled rows above Overwrite (the cursor) and Cancel.
+func TestOverwriteStashPaintsTheBoardsTwoBodyRows(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.CanStash = true
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	m.Update(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	out := ansi.Strip(m.View().Content)
+	for _, want := range []string{"esc dismiss", "Are you sure you want to proceed? This will overwrite", "your existing stash with your current changes.", theme.GlyphBar + " Overwrite", "Cancel"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu != nil || m.focus != focusList {
+		t.Fatalf("Cancel closes without emitting and returns to the list (focus %v)", m.focus)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Overwrite emits the stash and closes")
+	}
+}
+
+func TestDAsksDiscardStash(t *testing.T) {
+	m := stashMission(true)
+	m.Update(tea.KeyPressMsg{Code: 'D', Text: "D"})
+	if m.menu == nil || m.menu.Title() != "Discard Stash?" {
+		t.Fatalf("D should ask Discard Stash?")
+	}
+	out := ansi.Strip(m.View().Content)
+	if !strings.Contains(out, "Are you sure you want to discard these stashed changes?") {
+		t.Fatalf("body missing:\n%s", out)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil || m.focus != focusStashFiles {
+		t.Fatalf("Discard emits and returns to the stash files (focus %v)", m.focus)
+	}
+}
+
+func TestDiscardStashCancelEmitsNothing(t *testing.T) {
+	m := stashMission(true)
+	m.Update(tea.KeyPressMsg{Code: 'D', Text: "D"})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu != nil {
+		t.Fatal("Cancel closes without emitting")
+	}
+}
+
+func TestClickingDiscardAsksDiscardStash(t *testing.T) {
+	m := stashMission(true)
+	y := stashButtonRowY(t, m)
+	_, _, ds, _ := stashHeaderButtons(m.diffWidth())
+	if _, cmd := m.Update(tea.MouseClickMsg{X: sidebarWidth + 1 + ds, Y: y, Button: tea.MouseLeft}); cmd != nil || m.menu == nil || m.menu.Title() != "Discard Stash?" {
+		t.Fatal("clicking Discard asks Discard Stash? and emits nothing yet")
+	}
+}
+
+// TestStashDiffKeysActOnTheStash: R, D and h act on the entry from the stash
+// diff exactly as they do from the stash files.
+func TestStashDiffKeysActOnTheStash(t *testing.T) {
+	diff := func() *Mission {
+		m := stashMission(true)
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.focus != focusDiff || !m.diffFromStash {
+			t.Fatalf("setup: enter should focus the stash diff")
+		}
+		return m
+	}
+	m := diff()
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'R', Text: "R"}); cmd == nil {
+		t.Fatal("R in the stash diff emits a restore")
+	}
+	m = diff()
+	m.Update(tea.KeyPressMsg{Code: 'D', Text: "D"})
+	if m.menu == nil || m.menu.Title() != "Discard Stash?" {
+		t.Fatal("D in the stash diff asks Discard Stash?")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.focus != focusDiff {
+		t.Fatalf("esc returns to the stash diff, got %v", m.focus)
+	}
+	m = diff()
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"}); cmd == nil || m.focus != focusList {
+		t.Fatalf("h in the stash diff hides the view (focus %v)", m.focus)
+	}
+}
+
+func TestChangesDiffLeavesTheStashKeysAlone(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Stash = &StashModel{Sha: "s1", Branch: "main"}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	for _, k := range []rune{'R', 'D', 'h'} {
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: k, Text: string(k)}); cmd != nil || m.menu != nil {
+			t.Fatalf("%c in the Changes diff acts on the stash", k)
+		}
+	}
+}
+
+func TestCtrlKInTheStashViewOffersRestoreAndDiscard(t *testing.T) {
+	m := stashMission(true)
+	m.model.CanStash = true
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	if m.menu == nil || m.menu.Title() != "Stashed Changes" {
+		t.Fatal("ctrl-k in the stash view opens Stashed Changes")
+	}
+	_, items := m.menuItems(menuTarget{})
+	got := strings.Join(labels(items), "|")
+	if want := "Restore|Discard…|Commit|"; !strings.HasPrefix(got, want) {
+		t.Fatalf("rows %q", got)
+	}
+	if !strings.Contains(got, "Stash All Changes…|Hide Stashed Changes") {
+		t.Fatalf("board rows %q", got)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || m.menu == nil || m.menu.Title() != "Discard Stash?" {
+		t.Fatal("Discard… pushes Discard Stash?")
+	}
+	if out := ansi.Strip(m.View().Content); !strings.Contains(out, "esc back") {
+		t.Fatalf("the pushed question steps back:\n%s", out)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Discard emits and closes")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Restore emits and closes")
+	}
+}
+
+func switchPromptMission(t *testing.T, hasStash bool) *Mission {
+	t.Helper()
+	m := newMouseTestMission()
+	next := m.model
+	next.SwitchPrompt = &SwitchPrompt{Seq: 1, Branch: "other", Current: "main", HasStash: hasStash}
+	pushModel(t, m, next)
+	return m
+}
+
+func TestSwitchPromptOpensOncePerSeq(t *testing.T) {
+	m := newMouseTestMission()
+	next := m.model
+	next.SwitchPrompt = &SwitchPrompt{Seq: 1, Branch: "other", Current: "main", HasStash: true}
+	pushModel(t, m, next)
+	if m.menu == nil || m.menu.Title() != "Switch Branch" {
+		t.Fatalf("prompt should open Switch Branch")
+	}
+	out := ansi.Strip(m.View().Content)
+	for _, want := range []string{
+		"You have changes on this branch. What would you like to do with them?",
+		"Leave my changes on main",
+		"Your in-progress work will be stashed on this branch for you to return to later",
+		"Your current stash will be overwritten by creating a new stash",
+		"Bring my changes to other",
+		"Your in-progress work will follow you to the new branch",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	pushModel(t, m, next)
+	if m.menu != nil {
+		t.Fatalf("a seen seq must not reopen")
+	}
+	next.SwitchPrompt = &SwitchPrompt{Seq: 2, Branch: "other", Current: "main"}
+	pushModel(t, m, next)
+	if m.menu == nil || m.menu.Title() != "Switch Branch" {
+		t.Fatal("a new seq opens again")
+	}
+}
+
+// TestSwitchPromptRowsAreTheBoards: each description sits indented under its
+// option, the warning under Leave's only when the branch has a stash, and
+// the cursor starts on Leave.
+func TestSwitchPromptRowsAreTheBoards(t *testing.T) {
+	m := switchPromptMission(t, true)
+	rows := switchItems(SwitchPrompt{Branch: "other", Current: "main", HasStash: true})
+	want := []string{
+		"You have changes on this branch. What would you like to do with them? (disabled)",
+		"Leave my changes on main",
+		"  Your in-progress work will be stashed on this branch for you to return to later (disabled)",
+		"  " + theme.GlyphWarn + " Your current stash will be overwritten by creating a new stash (disabled)",
+		"Bring my changes to other",
+		"  Your in-progress work will follow you to the new branch (disabled)",
+	}
+	if got := labels(rows); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("rows\n got %q\nwant %q", got, want)
+	}
+	if rows[0].Section == rows[1].Section {
+		t.Fatal("a rule separates the body from the choices")
+	}
+	if got := labels(switchItems(SwitchPrompt{Branch: "other", Current: "main"})); strings.Contains(strings.Join(got, "|"), "overwritten") {
+		t.Fatalf("no stash, no warning: %q", got)
+	}
+	if out := ansi.Strip(m.View().Content); !strings.Contains(out, theme.GlyphBar+" Leave my changes on main") {
+		t.Fatalf("the cursor bar should start on Leave:\n%s", out)
+	}
+}
+
+func TestSwitchLeaveWithAStashAsksToOverwrite(t *testing.T) {
+	m := switchPromptMission(t, true)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.menu == nil || m.menu.Title() != "Overwrite Stash?" {
+		t.Fatalf("Leave with a stash goes to Overwrite Stash?")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.menu == nil || m.menu.Title() != "Switch Branch" {
+		t.Fatal("esc steps back to Switch Branch")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Overwrite emits the leave and closes")
+	}
+}
+
+func TestSwitchLeaveWithoutAStashEmitsAtOnce(t *testing.T) {
+	m := switchPromptMission(t, false)
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatal("Leave without a stash should close the question and emit")
+	}
+}
+
+func TestSwitchBringEmitsAtOnce(t *testing.T) {
+	m := newMouseTestMission()
+	next := m.model
+	next.SwitchPrompt = &SwitchPrompt{Seq: 1, Branch: "other", Current: "main"}
+	pushModel(t, m, next)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || m.menu != nil {
+		t.Fatalf("Bring should close the question and emit")
+	}
+}
+
+func TestSwitchPromptClosesAnOpenFoldout(t *testing.T) {
+	m := newMouseTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+	next := m.model
+	next.SwitchPrompt = &SwitchPrompt{Seq: 1, Branch: "other", Current: "main"}
+	pushModel(t, m, next)
+	if m.modal != nil || m.menu == nil {
+		t.Fatal("the question replaces the foldout")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.focus != focusList {
+		t.Fatalf("dismissing it lands on the list, got %v", m.focus)
+	}
+}
+
+// TestStashDialogsFitEveryWidth: the question paints every frame line at the
+// frame's width, and a click on its painted choice runs it.
+func TestStashDialogsFitEveryWidth(t *testing.T) {
+	for width := 80; width <= 200; width += 7 {
+		m := switchPromptMission(t, true)
+		m.width = width
+		frame := m.View().Content
+		for y, line := range strings.Split(frame, "\n") {
+			if w := ansi.StringWidth(line); w != width {
+				t.Fatalf("width %d: line %d is %d wide", width, y, w)
+			}
+		}
+		x, y := -1, -1
+		for row, line := range strings.Split(ansi.Strip(frame), "\n") {
+			if i := strings.Index(line, "Bring my changes"); i >= 0 {
+				x, y = ansi.StringWidth(line[:i]), row
+			}
+		}
+		if y < 0 {
+			t.Fatalf("width %d: Bring never painted", width)
+		}
+		if _, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}); cmd == nil || m.menu != nil {
+			t.Fatalf("width %d: a click on Bring runs it", width)
+		}
 	}
 }

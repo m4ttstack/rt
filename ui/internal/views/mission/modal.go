@@ -91,7 +91,8 @@ type repoPayload struct {
 }
 
 type checkoutPayload struct {
-	Branch string `json:"branch"`
+	Branch   string `json:"branch"`
+	Strategy string `json:"strategy,omitempty"`
 }
 
 type checkoutNewPayload struct {

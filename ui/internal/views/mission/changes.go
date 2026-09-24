@@ -372,7 +372,7 @@ func renderKeybar(width int, mode string) string {
 		}
 	case "stash":
 		pairs = [][2]string{
-			{"↑↓", "files"}, {"enter", "diff"}, {"R", "restore"}, {"h", "hide"}, {"⌃k", "menu"},
+			{"↑↓", "files"}, {"enter", "diff"}, {"R", "restore"}, {"D", "discard"}, {"h", "hide"}, {"⌃k", "menu"},
 			{"b", "branch"}, {"w", "worktree"}, {"r", "repo"},
 		}
 	}

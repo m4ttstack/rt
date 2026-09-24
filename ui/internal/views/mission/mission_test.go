@@ -1378,6 +1378,77 @@ const stashOversizedModel = `{"current":{"repo":"repo-tools","branch":"main"},"c
 	`"stash":{"sha":"s1","branch":"main","files":[{"path":"a.txt","origPath":"","status":"modified","onDisk":false}],"showing":true,"selectedFile":"a.txt"},` +
 	`"notice":""}`
 
+const noStashModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
+	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"none"},{"path":"b.go","origPath":"","status":"modified","include":"none"}],` +
+	`"changedTotal":2,"stagedTotal":0,"filter":"",` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stash":null,"canStash":true,"notice":""}`
+
+func switchPromptModel(hasStash bool) string {
+	return strings.TrimSuffix(noStashModel, `}`) + fmt.Sprintf(`,"switchPrompt":{"seq":1,"branch":"other","current":"main","hasStash":%t}}`, hasStash)
+}
+
+func TestShiftSEmitsStash(t *testing.T) {
+	s := openMission(t, noStashModel, "a.go")
+	s.Type("S")
+	if l := waitIntent(t, s, "mission:stash"); strings.Contains(l, `"payload"`) {
+		t.Fatalf("stash carries no payload: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestSwitchBringEmitsCheckoutBring(t *testing.T) {
+	s := openMission(t, switchPromptModel(false), "Switch Branch")
+	s.Type(keyDown, keyEnter)
+	if l := waitIntent(t, s, "mission:checkout"); !strings.Contains(l, `"payload":{"branch":"other","strategy":"bring"}`) {
+		t.Fatalf("bring: %q", l)
+	}
+	s.WaitForGone("Switch Branch")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestSwitchLeaveThenOverwriteEmitsCheckoutLeave(t *testing.T) {
+	s := openMission(t, switchPromptModel(true), "Switch Branch")
+	s.Type(keyEnter)
+	s.WaitForPaint("Overwrite Stash?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:checkout"); !strings.Contains(l, `"payload":{"branch":"other","strategy":"leave"}`) {
+		t.Fatalf("leave: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestDiscardStashConfirmEmitsItsSha(t *testing.T) {
+	s := openMission(t, stashShowingModel, "Stashed changes")
+	s.Type("D")
+	s.WaitForPaint("Discard Stash?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:stash-discard"); !strings.Contains(l, `"payload":{"sha":"s1"}`) {
+		t.Fatalf("stash-discard: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestDiscardAllConfirmEmitsTheMenuAction right-clicks the "2 changed files"
+// row (frame row 11: topH(4) + the tabs/tabs-gap/filter rows) and confirms.
+func TestDiscardAllConfirmEmitsTheMenuAction(t *testing.T) {
+	s := openMission(t, noStashModel, "a.go")
+	s.Type(sgrClick(2, 5, 11))
+	s.WaitForPaint("Discard All Changes…")
+	s.Type(keyEnter)
+	s.WaitForPaint("Discard all 2 changed files?")
+	s.Type(keyEnter)
+	if l := waitIntent(t, s, "mission:menu-action"); !strings.Contains(l, `"payload":{"action":"discard-all"}`) {
+		t.Fatalf("discard-all: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 func TestOversizedStashDiffEnterAsksTheStashForIt(t *testing.T) {
 	s := openMission(t, stashOversizedModel, "Stashed changes")
 	s.Type(keyEnter, keyEnter)

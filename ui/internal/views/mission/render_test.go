@@ -1886,6 +1886,13 @@ func changesRowY(m *Mission, idx int) int {
 	return m.layout().topH + 3 + 1 + 3 + 1 + idx
 }
 
+// masterRowFrameY returns the absolute frame row renderMasterRow paints: the
+// last of the sidebar's fixed pre-list rows, directly above changesRowY's
+// row 0.
+func masterRowFrameY(m *Mission) int {
+	return m.layout().topH + sidebarFixedTopRows - 1
+}
+
 // filterRowY returns the absolute frame row of the filter box's own first
 // row (any of its three rows resolves to hitFilterRow), derived from
 // m.layout()'s own topH plus the fixed tabs(3) + tabs-gap(1) prefix.

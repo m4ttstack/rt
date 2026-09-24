@@ -1,7 +1,9 @@
 // Stash view: the Changes tab's right pane while the current branch's stash
 // entry is shown, painted through History's committed pane under the stash
-// header. Parity reference: GitHub Desktop's app/src/ui/stashing
-// (stash-diff-viewer, stash-diff-header).
+// header, and the stash questions. Parity reference: GitHub Desktop's
+// app/src/ui/stashing (stash-diff-viewer, stash-diff-header,
+// confirm-discard-stash) and app/src/ui/stash-changes
+// (stash-and-switch-branch-dialog, overwrite-stashed-changes-dialog).
 package mission
 
 import (
@@ -13,6 +15,7 @@ import (
 
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 const (
@@ -20,6 +23,10 @@ const (
 	stashDiscardLabel = " Discard "
 	stashRestoreHint  = "Restore will move your stashed files to the Changes list."
 	stashButtonRow    = 1
+
+	overwriteStashTitle = "Overwrite Stash?"
+	discardStashTitle   = "Discard Stash?"
+	switchBranchTitle   = "Switch Branch"
 )
 
 type stashSelectPayload struct {
@@ -101,6 +108,113 @@ func (m *Mission) restoreStash() tea.Cmd {
 	return m.em.Emit(protocol.Intent{Name: "mission:stash-restore", Payload: mustPayload(stashEntryPayload{Sha: m.model.Stash.Sha})})
 }
 
+func (m *Mission) emitStashDiscard(sha string) tea.Cmd {
+	return m.em.Emit(protocol.Intent{Name: "mission:stash-discard", Payload: mustPayload(stashEntryPayload{Sha: sha})})
+}
+
+func (m *Mission) emitStash() tea.Cmd {
+	return m.em.Emit(protocol.Intent{Name: "mission:stash"})
+}
+
+func (m *Mission) emitSwitch(branch, strategy string) tea.Cmd {
+	return m.em.Emit(protocol.Intent{Name: "mission:checkout", Payload: mustPayload(checkoutPayload{Branch: branch, Strategy: strategy})})
+}
+
+// stashAllLabel ends in an ellipsis exactly when the row asks first.
+func (m *Mission) stashAllLabel() string {
+	if m.model.Stash != nil {
+		return "Stash All Changes…"
+	}
+	return "Stash All Changes"
+}
+
+// stashAllChanges is Desktop's Stash All Changes: a branch that already has
+// an entry asks before a new stash overwrites it.
+func (m *Mission) stashAllChanges() tea.Cmd {
+	switch {
+	case !m.model.CanStash:
+		return nil
+	case m.model.Stash != nil:
+		m.openQuestion(overwriteStashTitle, overwriteStashItems(), menuTarget{kind: targetStash})
+		return nil
+	}
+	return m.emitStash()
+}
+
+func (m *Mission) askDiscardStash() {
+	if m.model.Stash == nil {
+		return
+	}
+	m.openQuestion(discardStashTitle, discardStashItems(m.model.Stash.Sha), menuTarget{kind: targetStash})
+}
+
+func (m *Mission) openSwitchPrompt(p SwitchPrompt) {
+	m.openQuestion(switchBranchTitle, switchItems(p), menuTarget{kind: targetSwitch, prompt: p})
+}
+
+// overwriteStashItems wraps Desktop's one-sentence body onto two rows, as
+// StashStates.png does: one row would widen the box past most panes.
+func overwriteStashItems() []picker.MenuItem {
+	return []picker.MenuItem{
+		questionBody("Are you sure you want to proceed? This will overwrite"),
+		questionBody("your existing stash with your current changes."),
+		questionChoice("overwrite", "Overwrite"),
+		cancelChoice(),
+	}
+}
+
+// discardStashItems carries the entry's sha on the confirm row, so a push
+// that replaces the stash while the question is open cannot retarget it.
+func discardStashItems(sha string) []picker.MenuItem {
+	confirm := questionChoice("stash-discard", "Discard")
+	confirm.Value = sha
+	return []picker.MenuItem{
+		questionBody("Are you sure you want to discard these stashed changes?"),
+		confirm,
+		cancelChoice(),
+	}
+}
+
+// switchItems is Desktop's radio dialog as menu rows. picker.Menu has no
+// per-row color or footer, so each description is a Faint row under its
+// option and the warning glyph paints Faint with its text.
+func switchItems(p SwitchPrompt) []picker.MenuItem {
+	items := []picker.MenuItem{
+		questionBody("You have changes on this branch. What would you like to do with them?"),
+		questionChoice("switch-leave", "Leave my changes on "+p.Current),
+		questionNote("Your in-progress work will be stashed on this branch for you to return to later"),
+	}
+	if p.HasStash {
+		items = append(items, questionNote(theme.GlyphWarn+" Your current stash will be overwritten by creating a new stash"))
+	}
+	return append(items,
+		questionChoice("switch-bring", "Bring my changes to "+p.Branch),
+		questionNote("Your in-progress work will follow you to the new branch"),
+	)
+}
+
+func stashViewItems() []picker.MenuItem {
+	return []picker.MenuItem{
+		{ID: "stash-restore", Label: "Restore"},
+		{ID: "stash-discard-ask", Label: "Discard…"},
+	}
+}
+
+// stashEntryKey runs the keys that act on the entry itself, bound alike in
+// the stash files and the stash diff.
+func (m *Mission) stashEntryKey(key string) (tea.Cmd, bool) {
+	switch key {
+	case "R":
+		return m.restoreStash(), true
+	case "D":
+		m.askDiscardStash()
+		return nil, true
+	case "h":
+		return m.toggleStash(), true
+	}
+	return nil, false
+}
+
 func (m *Mission) emitStashFile() tea.Cmd {
 	return m.em.Emit(protocol.Intent{Name: "mission:stash-select", Payload: mustPayload(stashSelectPayload{Path: m.stashFile})})
 }
@@ -132,6 +246,9 @@ func (m *Mission) clickStashFile(idx int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Mission) stashFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.stashEntryKey(v.String()); ok {
+		return m, cmd
+	}
 	switch v.String() {
 	case "up":
 		return m, m.stashFileMove(-1)
@@ -140,10 +257,8 @@ func (m *Mission) stashFilesKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.focusDiffPane()
 		return m, nil
-	case "h", "esc":
+	case "esc":
 		return m, m.toggleStash()
-	case "R":
-		return m, m.restoreStash()
 	case "ctrl+k":
 		m.openMenu(menuTarget{}, nil)
 		return m, nil

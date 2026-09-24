@@ -82,6 +82,9 @@ type Mission struct {
 	menuTarget    menuTarget
 	menuOnHistory bool
 	menuPrevFocus focusKind
+	// switchSeq is the newest SwitchPrompt.Seq opened, so a push repeating a
+	// prompt never reopens it.
+	switchSeq int
 	// localNotice is a client-only refusal cue (the detached-HEAD branch
 	// guard), kept separate from the wire model's own Notice field: that one
 	// carries the driver's own guard refusals, this one covers a refusal the
@@ -316,6 +319,12 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	if m.focus != focusFilter {
 		m.filterText = m.model.Filter
 	}
+	// Last: the question takes focus, and the filter check above must still
+	// see the focus the push arrived under.
+	if p := m.model.SwitchPrompt; p != nil && p.Seq > m.switchSeq {
+		m.switchSeq = p.Seq
+		m.openSwitchPrompt(*p)
+	}
 	return nil
 }
 
@@ -468,6 +477,8 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.emitTab("history")
 	case "h":
 		return m, m.toggleStash()
+	case "S":
+		return m, m.stashAllChanges()
 	case "ctrl+k":
 		m.openMenu(m.focusedTarget(), nil)
 	case "q":
@@ -921,6 +932,7 @@ const (
 	hitStashFile
 	hitStashRestore
 	hitStashDiscard
+	hitMasterRow
 )
 
 // hit is hitTest's result: idx is a Changes/Diff.Lines/modal-matches/History
@@ -1033,7 +1045,7 @@ func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	}
 	row += 3
 	if y == row {
-		return hit{} // master row: no wire affordance to toggle select-all yet
+		return hit{kind: hitMasterRow}
 	}
 	row++
 	if y < row+listRegionH {
@@ -1249,6 +1261,8 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m.clickStashFile(h.idx)
 	case hitStashRestore:
 		return m, m.restoreStash()
+	case hitStashDiscard:
+		m.askDiscardStash()
 	case hitCommitSummary:
 		m.focus = focusSummary
 		return m, m.summaryInput.Focus()
@@ -1275,9 +1289,9 @@ func (m *Mission) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 // rightClick moves the cursor to the row first, as a left-click would, then
-// opens that row's menu at the pointer. A right-click with a foldout open only
-// closes it; inside a range selection it keeps the range and opens the
-// board-wide section alone.
+// opens that row's menu at the pointer; the changed-files header opens the
+// list's own menu. A right-click with a foldout open only closes it; inside a
+// range selection it keeps the range and opens the board-wide section alone.
 func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.Cmd) {
 	if m.modal != nil {
 		m.closeModal()
@@ -1303,6 +1317,8 @@ func (m *Mission) rightClick(h hit, anchor *picker.MenuAnchor) (tea.Model, tea.C
 		model, cmd := m.clickHistoryFile(h.idx)
 		m.openMenu(m.historyFileTarget(m.model.History.Files[h.idx].Path), anchor)
 		return model, cmd
+	case hitMasterRow:
+		m.openMenu(menuTarget{kind: targetChangesList}, anchor)
 	}
 	return m, nil
 }
