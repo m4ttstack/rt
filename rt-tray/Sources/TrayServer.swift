@@ -367,64 +367,17 @@ class TrayServer {
                 }
 
             } else if method == "POST" && path == "/flavor/retire" {
-                // Flavor handoff. `rt flavor takeover`, run by the app being
-                // opened, calls this on the OUTGOING tray before quitting it:
-                // this app gives up both of its registrations — its own
-                // daemon LaunchAgent (its MSDaemonLabel job) and its own
-                // login item — so the incoming flavor is the only registered
-                // pair. Without it two agents stay registered and their
-                // daemons fight over rt.pid/rt.sock.
-                //
-                // Replaces the deleted login-item reset route (the LWCR
-                // re-register dance), which existed only for the in-place
-                // binary swaps that no longer happen.
-                //
-                // The reply is sent only after the awaits below settle, so it
-                // still reflects the actual post-state, not an intention. The
-                // teardown stop goes through the lifecycle gate: it waits out
-                // any in-flight start/restart and latches later ones off, so
-                // the client herd can't re-register the agent behind the
-                // retire (CodeRabbit #219 finding).
+                // `rt flavor takeover`, run by the app being opened, calls
+                // this on the OUTGOING tray before quitting it: this app gives
+                // up every registration it holds (AppFlavorTeardown), so the
+                // incoming app's jobs are the only ones left to load. The
+                // reply waits for the teardown, so it states the post-state,
+                // and the daemon stop goes through the lifecycle gate so the
+                // client herd can't re-register the agent behind the retire.
                 Task { @MainActor in
-                    var errs: [String] = []
-                    var daemonAfter = "unknown"
-                    var loginAfter = "unknown"
-                    if let lifecycle = self.daemonLifecycle {
-                        await lifecycle.stopDaemonForTeardown(origin: DaemonOrigin.flavorRetire)   // service.unregister(), logs itself
-                        daemonAfter = Self.statusName(lifecycle.status)
-                    } else {
-                        errs.append("no daemonLifecycle wired")
-                    }
-                    do {
-                        try await SMAppService.mainApp.unregister()
-                    } catch {
-                        // Unregistering an already-unregistered login item
-                        // throws; the status check below is the ground truth.
-                        TrayLog.warn("mainApp.unregister failed", ["err": String(describing: error)])
-                        errs.append(String(describing: error))
-                    }
-                    loginAfter = Self.statusName(SMAppService.mainApp.status)
-                    let handDeck = await Self.retireHandDeckAgent()
-
-                    // Ground truth, not intention: retired means neither
-                    // registration is enabled any more. A hand deck agent
-                    // that would not retire is logged, never a retire failure.
-                    let retired = daemonAfter != "enabled" && loginAfter != "enabled"
-                    if retired {
-                        TrayLog.info("flavor retired",
-                                     ["daemon": daemonAfter, "loginItem": loginAfter,
-                                      "label": self.daemonLifecycle?.label ?? "(none)"])
-                        self.sendResponse(connection: connection, status: 200,
-                                          body: "{\"ok\":true,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\"}")
-                    } else {
-                        let errMsg = errs.joined(separator: "; ")
-                            .replacingOccurrences(of: "\"", with: "\\\"")
-                        TrayLog.error("flavor retire failed",
-                                      ["daemon": daemonAfter, "loginItem": loginAfter, "err": errMsg])
-                        self.sendResponse(connection: connection, status: 500,
-                                          body: "{\"ok\":false,\"daemon\":\"\(daemonAfter)\",\"loginItem\":\"\(loginAfter)\",\"handDeck\":\"\(handDeck.name)\",\"error\":\"\(errMsg)\"}",
-                                          path: path)
-                    }
+                    let result = await AppFlavorTeardown.run(lifecycle: self.daemonLifecycle)
+                    self.sendResponse(connection: connection, status: result.retired ? 200 : 500,
+                                      body: result.replyJSON, path: result.retired ? nil : path)
                 }
 
             } else if method == "GET" && path == "/daemon/status" {

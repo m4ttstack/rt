@@ -275,19 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private func retireSelf(body: String) {
         let myFlavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         Task { @MainActor in
-            await daemonLifecycle.stopDaemonForTeardown(origin: DaemonOrigin.flavorRetire)
-            let registrar = ServicesRegistrar(bundlePath: Bundle.main.bundlePath, runner: SystemCommandRunner())
-            let agents = await registrar.unregister(plists: registrar.agents.map(\.fileName))
-            do {
-                try await SMAppService.mainApp.unregister()
-            } catch {
-                // Unregistering an already-unregistered login item throws; the
-                // status logged below is the ground truth.
-                TrayLog.warn("login item unregister failed", ["err": String(describing: error)])
-            }
-            _ = await TrayServer.retireHandDeckAgent()
-            TrayLog.info("stood down", ["agents": agents.map { "\($0.plist)=\($0.status)" }.joined(separator: ","),
-                                        "loginItem": TrayServer.statusName(SMAppService.mainApp.status)])
+            _ = await AppFlavorTeardown.run(lifecycle: daemonLifecycle)
             // The notification is the only trace this leaves, so the quit waits
             // for delivery, with a backstop for a callback that never comes.
             StandDownNotice.post(title: FlavorStandDownCopy.notificationTitle(myFlavor: myFlavor), body: body,
