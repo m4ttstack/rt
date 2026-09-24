@@ -6,7 +6,18 @@ import { __test__ as gate } from "../../lib/ui/gate.ts";
 import { __test__ as spawnTest, openSession } from "../../lib/ui/spawn.ts";
 import { HerdrEngine } from "../../lib/runner/engine.ts";
 import { TmuxEngine } from "../../lib/runner/tmux-engine.ts";
-import { acquireBgSocket, buildRunnerDeps, buildTmuxRunnerDeps, focusBgPane, runnerCommand, runSeededBoard, tmuxAvailable } from "../runner.ts";
+import {
+  acquireBgSocket,
+  buildRunnerDeps,
+  buildTmuxRunnerDeps,
+  focusBgPane,
+  loadSeedFile,
+  parseSeedEnvelope,
+  resolveSeedFileArg,
+  runnerCommand,
+  runSeededBoard,
+  tmuxAvailable,
+} from "../runner.ts";
 
 const REAL_PATH = process.env.PATH ?? "";
 const REAL_HOME = process.env.HOME;
@@ -265,4 +276,136 @@ test("runSeededBoard exits 1 with one line when tmux is off PATH (its default ba
   expect(exits).toEqual([1]);
   expect(errs).toHaveLength(1);
   expect(errs[0]).toContain("tmux on PATH");
+});
+
+// ─── --seed-file: a host hands rt runner the rows rt run --resolve-only printed ───
+
+test("parseSeedEnvelope accepts the envelope: string name/command/cwd required, pkg/repo default to empty", () => {
+  const result = parseSeedEnvelope(JSON.stringify({
+    seed: [
+      { name: "dev", command: "pnpm run dev", cwd: "/abs/path/web", pkg: "web", repo: "acme" },
+      { name: "api", command: "node server.js", cwd: "/abs/path/api" },
+    ],
+  }));
+  expect(result).toEqual({
+    ok: true,
+    seed: [
+      { name: "dev", command: "pnpm run dev", cwd: "/abs/path/web", pkg: "web", repo: "acme" },
+      { name: "api", command: "node server.js", cwd: "/abs/path/api", pkg: "", repo: "" },
+    ],
+  });
+});
+
+test("parseSeedEnvelope rejects invalid JSON", () => {
+  const result = parseSeedEnvelope("not json{");
+  expect(result.ok).toBe(false);
+});
+
+test("parseSeedEnvelope rejects a payload without a seed array", () => {
+  expect(parseSeedEnvelope(JSON.stringify({ rows: [] })).ok).toBe(false);
+  expect(parseSeedEnvelope(JSON.stringify({ seed: "nope" })).ok).toBe(false);
+  expect(parseSeedEnvelope(JSON.stringify([])).ok).toBe(false);
+});
+
+test("parseSeedEnvelope rejects an empty seed array", () => {
+  const result = parseSeedEnvelope(JSON.stringify({ seed: [] }));
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("no rows");
+});
+
+test("parseSeedEnvelope rejects a row missing a required string field", () => {
+  const result = parseSeedEnvelope(JSON.stringify({ seed: [{ name: "dev", cwd: "/x" }] }));
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("command");
+});
+
+test("loadSeedFile reads and validates a real file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-"));
+  const path = join(dir, "seed.json");
+  writeFileSync(path, JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web" }] }));
+  try {
+    const result = loadSeedFile(path);
+    expect(result).toEqual({
+      ok: true,
+      seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "", repo: "" }],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadSeedFile names the path on a missing file", () => {
+  const result = loadSeedFile("/definitely/not/a/real/path/seed.json");
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("/definitely/not/a/real/path/seed.json");
+});
+
+test("resolveSeedFileArg passes args through untouched when --seed-file is absent", () => {
+  expect(resolveSeedFileArg(["--herdr"])).toEqual({ cleanArgs: ["--herdr"] });
+});
+
+test("resolveSeedFileArg extracts --seed-file <path>, leaving other flags in place", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-arg-"));
+  const path = join(dir, "seed.json");
+  writeFileSync(path, JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "web", repo: "acme" }] }));
+  try {
+    const resolved = resolveSeedFileArg(["--herdr", "--seed-file", path]);
+    expect(resolved).toEqual({
+      cleanArgs: ["--herdr"],
+      seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web", pkg: "web", repo: "acme" }],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolveSeedFileArg errors when --seed-file has no path after it", () => {
+  const resolved = resolveSeedFileArg(["--seed-file"]);
+  expect(resolved.error).toBeDefined();
+  expect(resolved.cleanArgs).toEqual([]);
+});
+
+test("resolveSeedFileArg errors, naming the path, when the file cannot be read", () => {
+  const resolved = resolveSeedFileArg(["--seed-file", "/nope/seed.json"]);
+  expect(resolved.error).toContain("/nope/seed.json");
+});
+
+test("runnerCommand with a missing --seed-file exits 1 with a message, before checking interactive or tmux", async () => {
+  // No gate.setInteractive: bun test's own stdin is never a TTY, so if
+  // validation ran after the interactive gate this would say "interactive
+  // terminal" instead of naming the file -- proving the order.
+  const exits: number[] = [];
+  spawnTest.setExit((code) => { exits.push(code); throw new Error(`exit ${code}`); });
+  const errs: string[] = [];
+  const real = process.stderr.write;
+  process.stderr.write = ((c: string | Uint8Array) => { errs.push(String(c)); return true; }) as typeof process.stderr.write;
+  try {
+    await expect(runnerCommand(["--seed-file", "/nope/seed.json"], {} as never)).rejects.toThrow("exit 1");
+  } finally {
+    process.stderr.write = real;
+  }
+  expect(exits).toEqual([1]);
+  expect(errs.join("")).toContain("/nope/seed.json");
+  expect(errs.join("")).not.toContain("interactive terminal");
+});
+
+test("runnerCommand with a valid --seed-file reaches the normal backend gate (tmux missing), proving the file parsed and nothing short-circuited)", async () => {
+  gate.setInteractive(() => true);
+  process.env.PATH = "/nonexistent-empty-dir";
+  const dir = mkdtempSync(join(tmpdir(), "rt-seed-file-cmd-"));
+  const path = join(dir, "seed.json");
+  writeFileSync(path, JSON.stringify({ seed: [{ name: "dev", command: "pnpm run dev", cwd: "/abs/web" }] }));
+  const exits: number[] = [];
+  spawnTest.setExit((code) => { exits.push(code); throw new Error(`exit ${code}`); });
+  const errs: string[] = [];
+  const real = process.stderr.write;
+  process.stderr.write = ((c: string | Uint8Array) => { errs.push(String(c)); return true; }) as typeof process.stderr.write;
+  try {
+    await expect(runnerCommand(["--seed-file", path], {} as never)).rejects.toThrow("exit 1");
+  } finally {
+    process.stderr.write = real;
+    rmSync(dir, { recursive: true, force: true });
+  }
+  expect(exits).toEqual([1]);
+  expect(errs.join("")).toContain("tmux on PATH");
 });

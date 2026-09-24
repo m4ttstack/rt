@@ -6,6 +6,7 @@
  */
 import { spawnSync } from "child_process";
 import { randomBytes } from "crypto";
+import { readFileSync } from "fs";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { herdrRequest } from "../lib/herdr/client.ts";
 import { bgEnsure, bgRelease, formatPaneRef, paneFocus } from "../packages/rt-client/src/index.ts";
@@ -23,6 +24,76 @@ export function tmuxAvailable(path: string = process.env.PATH ?? ""): boolean {
 }
 
 export type { SeedEntry };
+
+type SeedResult = { ok: true; seed: SeedEntry[] } | { ok: false; error: string };
+
+/**
+ * Validates the `{"seed":[...]}` envelope `rt run --resolve-only` prints:
+ * string `name`/`command`/`cwd` on every row, `pkg`/`repo` optional strings
+ * defaulted to "", at least one row. Pure -- no fs -- so the shape check is
+ * directly testable against arbitrary JSON.
+ */
+export function parseSeedEnvelope(raw: string): SeedResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: "not valid JSON" };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || !("seed" in parsed) || !Array.isArray((parsed as { seed: unknown }).seed)) {
+    return { ok: false, error: 'expected {"seed": [...]}' };
+  }
+  const rows = (parsed as { seed: unknown[] }).seed;
+  if (rows.length === 0) return { ok: false, error: "seed has no rows" };
+
+  const seed: SeedEntry[] = [];
+  for (const [i, row] of rows.entries()) {
+    if (typeof row !== "object" || row === null) return { ok: false, error: `row ${i}: not an object` };
+    const r = row as Record<string, unknown>;
+    for (const field of ["name", "command", "cwd"] as const) {
+      if (typeof r[field] !== "string") return { ok: false, error: `row ${i}: ${field} must be a string` };
+    }
+    for (const field of ["pkg", "repo"] as const) {
+      if (r[field] !== undefined && typeof r[field] !== "string") return { ok: false, error: `row ${i}: ${field} must be a string` };
+    }
+    seed.push({
+      name: r.name as string,
+      command: r.command as string,
+      cwd: r.cwd as string,
+      pkg: (r.pkg as string | undefined) ?? "",
+      repo: (r.repo as string | undefined) ?? "",
+    });
+  }
+  return { ok: true, seed };
+}
+
+/** Reads and validates a --seed-file path. A missing or unreadable file folds into the same error shape as an invalid one -- the caller prints one line either way. */
+export function loadSeedFile(path: string): SeedResult {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    return { ok: false, error: `cannot read ${path}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  return parseSeedEnvelope(raw);
+}
+
+/**
+ * Extracts `--seed-file <path>` from a runner invocation's args, loading and
+ * validating the file it names. Pure aside from the one file read, so the
+ * wiring between --seed-file and the seed handed to Runner is directly
+ * testable without a live board.
+ */
+export function resolveSeedFileArg(args: string[]): { cleanArgs: string[]; seed?: SeedEntry[]; error?: string } {
+  const idx = args.indexOf("--seed-file");
+  if (idx === -1) return { cleanArgs: args };
+  const path = args[idx + 1];
+  const cleanArgs = [...args.slice(0, idx), ...args.slice(idx + 2)];
+  if (!path) return { cleanArgs, error: "--seed-file requires a path" };
+  const result = loadSeedFile(path);
+  if (!result.ok) return { cleanArgs, error: result.error };
+  return { cleanArgs, seed: result.seed };
+}
 
 /** rtCommand's own daemon-down message shape (transport.ts); the only bg:release failure worth swallowing rather than warning about. */
 function isDaemonUnreachable(error: string | undefined): boolean {
@@ -223,7 +294,12 @@ async function gateAndRun(ctx: CommandContext, args: string[], seed?: SeedEntry[
 }
 
 export async function runnerCommand(args: string[], ctx: CommandContext): Promise<void> {
-  return gateAndRun(ctx, args);
+  const resolved = resolveSeedFileArg(args);
+  if (resolved.error) {
+    process.stderr.write(`rt runner: ${resolved.error}\n`);
+    return exit(1);
+  }
+  return gateAndRun(ctx, resolved.cleanArgs, resolved.seed);
 }
 
 /** Opens the board pre-seeded with resolved rows (e.g. from `rt run` on a preset); the in-board `a` key still falls back to the normal resolve flow. */
