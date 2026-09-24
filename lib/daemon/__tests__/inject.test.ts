@@ -198,21 +198,47 @@ test("composerDraft is null when no prompt box is on screen", () => {
   expect(composerDraft([RULE, "  Do you trust this folder?", RULE].join("\n"))).toBeNull();
 });
 
-function draftPane(screen: string, status = "idle") {
-  return on((method) => {
+test("composerDraft is null for a numbered menu whose cursor row wears the prompt marker", () => {
+  expect(composerDraft(composerScreen(["❯ 1. Yes", "  2. No"]))).toBeNull();
+});
+
+test("composerDraft skips 256-colour params and honours a mid-line dim reset", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[38;5;2mtyped\x1b[0m"]))?.draft).toBe("typed");
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2mghost\x1b[0mtyped"]))?.draft).toBe("typed");
+});
+
+test("composerDraft reads colon SGR, private CSI and OSC 8 as escapes, never as draft text", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2;38:2::153:153:153mTry \"x\"\x1b[0m"]))?.draft).toBe("");
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[?25l\x1b]8;;file:///a\x1b\\\x1b]8;;\x1b\\"]))?.draft).toBe("");
+});
+
+test("composerDraft carries a dim run across a wrapped line", () => {
+  expect(composerDraft(composerScreen(["❯\xa0\x1b[2mTry \"a long", "  placeholder\"\x1b[0m"]))?.draft).toBe("");
+});
+
+test("composerDraft finds the stash hint a few rows above the box", () => {
+  expect(composerDraft(composerScreen(["❯\xa0new"], `${GRAY("› stashed")}\r\n  queued: do the thing`))?.stashHeld).toBe(true);
+});
+
+const EMPTY_STASHED = composerScreen(["❯\xa0"], GRAY("› stashed"));
+
+/** A Claude pane whose composer shows `screen` until ctrl+s, then `stashedScreen`. */
+function draftPane(screen: string, status = "idle", prompt: () => unknown = () => ({ type: "agent_prompted", agent: agent("working").agent }), stashedScreen = EMPTY_STASHED) {
+  let current = screen;
+  return on((method, params) => {
     if (method === "agent.get") return agent(status);
-    if (method === "pane.read") return readReply(screen);
-    if (method === "pane.send_keys") return { type: "ok" };
-    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    if (method === "pane.read") return readReply(current);
+    if (method === "pane.send_keys") { if ((params.keys as string[])[0] === "ctrl+s") current = current === stashedScreen ? screen : stashedScreen; return { type: "ok" }; }
+    if (method === "agent.prompt") return prompt();
     return new HerdrFakeError("invalid_request", method);
   });
 }
 
-test("stashes a typed draft with ctrl+s before the prompt, so Claude restores it after", async () => {
+test("stashes a typed draft with ctrl+s and waits for the composer to empty before the prompt", async () => {
   const { herdr, seen } = draftPane(composerScreen(["❯\xa0my half typed draft"]));
   const res = await injectIntoPane({ paneId: "w1:p1", text: "watchdog: hi", herdr });
   expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "accepted" } });
-  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt"]);
   expect(seen.find((s) => s.method === "pane.read")!.params).toEqual({ pane_id: "w1:p1", source: "visible", format: "ansi", strip_ansi: false });
   expect(seen.find((s) => s.method === "pane.send_keys")!.params).toEqual({ pane_id: "w1:p1", keys: ["ctrl+s"] });
 });
@@ -221,7 +247,41 @@ test("stashes before a queued prompt on a working pane too", async () => {
   const { herdr, seen } = draftPane(composerScreen(["❯\xa0draft during turn"]), "working");
   const res = await injectIntoPane({ paneId: "w1:p1", text: "later", herdr });
   expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued" } });
-  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt"]);
+});
+
+test("keeps polling until the stash shows, then prompts", async () => {
+  let reads = 0;
+  const draft = composerScreen(["❯\xa0slow"]);
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.get") return agent("idle");
+    if (method === "pane.read") return readReply(++reads < 4 ? draft : EMPTY_STASHED);
+    if (method === "pane.send_keys") return { type: "ok", keys: params.keys };
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: agent("working").agent };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "pane.read", "pane.read", "agent.prompt"]);
+});
+
+test("a refused prompt after a stash pops the draft straight back", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "working", () => new HerdrFakeError("agent_blocked", "blocked"));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "at a prompt" } });
+  expect(seen.map((s) => s.method)).toEqual(["agent.get", "pane.read", "pane.send_keys", "pane.read", "agent.prompt", "pane.read", "pane.send_keys"]);
+});
+
+test("a herdr error after a stash pops the draft straight back", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "idle", () => new HerdrFakeError("agent_not_found", "gone"));
+  const res = await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(res.ok).toBe(false);
+  expect(seen.filter((s) => s.method === "pane.send_keys")).toHaveLength(2);
+});
+
+test("a failed prompt leaves the stash alone when the composer is not empty, since ctrl+s would stash again", async () => {
+  const { herdr, seen } = draftPane(composerScreen(["❯\xa0keep me"]), "idle", () => new HerdrFakeError("agent_not_found", "gone"), composerScreen(["❯\xa0x"], GRAY("› stashed")));
+  await injectIntoPane({ paneId: "w1:p1", text: "x", herdr });
+  expect(seen.filter((s) => s.method === "pane.send_keys")).toHaveLength(1);
 });
 
 test("never presses ctrl+s on an empty composer, where it would pop a stash into the prompt", async () => {
