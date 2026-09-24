@@ -102,6 +102,7 @@ t "gatekeeper-check asserts the fixture is rejected before launching it" bash -c
 t "setup assistant suppressed per-run and in provisioning" bash -c \
   'grep -q "^vm_dismiss_setup_assistant()" lib/common.sh \
    && grep -q "vm_dismiss_setup_assistant" run/gatekeeper-check.sh \
+   && grep -q "vm_dismiss_setup_assistant" run/walkthrough.sh \
    && grep -q "DidSeeCloudSetup" golden/provision-guest.sh'
 t "gatekeeper-check proves the probe on a known-bad app first" bash -c '
   ctrl=$(grep -n "vm_phase_begin control" run/gatekeeper-check.sh | cut -d: -f1)
