@@ -232,11 +232,15 @@ release publishes the packaged tarballs; the PR job opens one deps.lock PR on
 For one served app (board, chat, console, boxscore) on an otherwise pin-only
 main, `rt release app <name>` drives this workflow as part of a whole patch
 release (`lib/release/release-app.ts`): it bumps the app on apps main,
-dispatches with `apps=<name>`, checks the bot PR moves only that row, that
-the published asset's sha256 matches it and that codesign shows
-`com.mattstack.helper.<name>` under a Developer ID authority, merges on
-green CI, then commits the notes, tags and runs `rt release verify`. deck
-stays on the full release because its pin is walkthrough-gated.
+dispatches with `apps=<name>`, checks the bot PR is the workflow's own and
+moves only that row's pin, that the published asset's sha256 matches it and
+that the binary passes `codesign --verify --strict` as
+`com.mattstack.helper.<name>` under a Developer ID authority of the
+`DEVELOPMENT_TEAM` in `rt-tray/project.yml`, merges on green CI, then commits
+the notes, tags and runs `rt release verify`. It finds a run it can adopt by
+the workflow's `run-name` (`Bundle apps: <apps>`, plus ` (dry run)`), so keep
+that line in step with `bundleRunTargets`. deck stays on the full release
+because its pin is walkthrough-gated.
 
 Since the apps fold-in (m4ttstack/apps, 2026-09-06): chat, console, board and
 deck are monorepo rows whose deps.lock entry carries `subdir` (e.g.
