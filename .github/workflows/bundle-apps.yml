@@ -116,6 +116,12 @@ jobs:
             echo "VERSION=$VERSION"
             echo "TAG=$TAG"
           } >> "$GITHUB_ENV"
+      # Identity is source data shipped beside the binary, never a build
+      # output, so it is staged before BUILD_CMD runs.
+      - name: Stage app identity
+        env:
+          APP_NAME: ${{ matrix.name }}
+        run: bun scripts/bundle-ci/stage-identity.ts "$APP_DIR" identity-stage "$APP_NAME"
       - name: Refuse an already-released version
         if: ${{ !inputs.dry_run }}
         env:
@@ -160,6 +166,7 @@ jobs:
           mkdir stage
           cp "$APP_DIR/$ARTIFACT" "stage/$APP_NAME"
           if [ -d "$APP_DIR/skills" ]; then cp -R "$APP_DIR/skills" stage/skills; fi
+          if [ -d identity-stage ]; then cp -R identity-stage stage/identity; fi
           printf '{"name":"%s","version":"%s","tag":"%s","repo":"%s","sourceSha":"%s"}\n' \
             "$APP_NAME" "$VERSION" "$TAG" "$APP_REPO" "$SOURCE_SHA" > stage/facts.json
           cat stage/facts.json
