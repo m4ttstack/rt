@@ -1259,9 +1259,9 @@ describe("MissionDriver: commit rebuilds the index from selections", () => {
     expect(client.calls.stageSelection[0]!.diff.path).toBe("renamed-partial.txt");
   });
 
-  test("a Partial on a file that became a typechange before commit drops to None, never a line stage", async () => {
-    // Display reads pass withSources; the commit-time read passes none, so the
-    // symlink swap lands between the line pick and the commit.
+  test("a Partial on a file that became a typechange refuses the commit and drops to None", async () => {
+    // Display reads pass withSources and the commit-time read does not, which
+    // models the file becoming a symlink after its lines were picked.
     const client: ReturnType<typeof makeFakeClient> = makeFakeClient({
       snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "f.txt", kind: "modified", staged: false, unstaged: true }] }),
       stagingDiff: async (path) =>
@@ -1278,7 +1278,10 @@ describe("MissionDriver: commit rebuilds the index from selections", () => {
 
     expect(client.calls.stageSelection).toEqual([]);
     expect(client.calls.stageFileFully).toEqual([]);
-    expect((session.pushed.at(-1) as MissionModel).changes.find((c) => c.path === "f.txt")?.include).toBe("none");
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("commit failed: f.txt changed type since its lines were picked; check it whole or leave it out");
+    expect(last.commit.summary).toBe("after the swap");
+    expect(last.changes.find((c) => c.path === "f.txt")?.include).toBe("none");
   });
 });
 

@@ -176,7 +176,7 @@ export async function getCommitRangeDiff(
   const latestCommit = commits.at(-1) ?? "";
   try {
     const stdout = await rawGit(ctx.dir, [
-      "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color",
+      "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color", "-M",
       "--", file.path, ...oldPathArgs(file),
     ]);
     const diff = buildCommitDiff(stdout, file);
