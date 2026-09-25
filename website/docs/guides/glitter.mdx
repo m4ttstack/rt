@@ -14,46 +14,49 @@ rt glitter
 ## The board
 
 - **Top bar.** Three segments (repository, worktree, branch) and an action button on the right. Click a segment, or press `r`, `w` or `b`, to open its foldout.
-- **Changes list.** Every changed file with a checkbox, and a summary line reading "N changed files · M staged". `/` filters the list.
+- **Changes list.** Every changed file with a checkbox, and a summary line reading "N changed files · M staged", where M counts ticked files. `/` filters the list: type, then press `enter`.
 - **Diff pane.** The selected file's full change against `HEAD`.
 - **Commit box.** A summary field, a description field, and the commit button, docked under the changes list.
-- **Keybar.** The keys that work right now. It changes on the History tab and in the stash view.
+- **Keybar.** The main keys for the current tab. It changes on the History tab and in the stash view.
 
 `1` and `2` switch between the Changes and History tabs.
 
 ## Checkboxes decide what goes into a commit
 
-A checkbox means "put this in the next commit". It does not mean "already staged". Ticking or unticking a file, a hunk, or a single line never runs a git command. Every new file starts fully ticked.
+A checkbox means "put this in the next commit". It does not mean "already staged". Ticking or unticking a file, a hunk, or a single line never changes the git index.
 
-When you commit, glitter resets the git index to `HEAD` and rebuilds it from the checkboxes, then runs `git commit`. This is how GitHub Desktop works too, and it has one consequence worth knowing:
+Every changed file starts fully ticked, and switching branch, worktree, or repo ticks everything again. After a commit, a file you had only partly ticked is left unticked, so you review what is left.
+
+When you commit, glitter resets the git index to `HEAD`, rebuilds it from the checkboxes, then runs `git commit`. This is how GitHub Desktop works too, and it has one consequence worth knowing:
 
 :::caution
-Anything staged outside glitter (a plain `git add`, or another agent working in the same checkout) is thrown away at the next commit. The commit contains exactly what the checkboxes say.
+Anything staged outside glitter (a plain `git add`, or another agent working in the same checkout) is unstaged at the next commit. Your edits stay in the working tree, but the commit contains exactly what the checkboxes say.
 :::
 
 In the diff pane, `space` ticks or unticks the line under the cursor and `s` does the whole hunk. Clicking the `@@` hunk header toggles that hunk too.
 
 ## Committing
 
-Press `c` to jump to the summary field, and `tab` to move between summary and description. `ctrl+enter` commits. The button stays disabled until the summary has text.
+Press `c` to jump to the summary field, and `tab` to move between summary and description. `ctrl+enter` commits. If your terminal sends `ctrl+enter` as a plain `enter` (Terminal.app does), click the commit button instead. The button stays disabled until at least one file is ticked (or you are amending) and the summary has text.
 
-`a` (or `ctrl+a` while typing) switches to amending the last commit. A banner reading "Amending last commit" stays up until you press it again.
+`a` (or `ctrl+a` while typing) switches to amending the last commit. A banner reading "Amending last commit" stays up until you press it again. The summary is not filled in for you; type the message you want the amended commit to have.
 
-After a commit, a strip shows "Committed *when* · *summary*" with an Undo chip. `u` undoes that commit and puts its changes back in the list. It refuses a commit that is already pushed, the repo's first commit, and a merge.
+When the branch is ahead of its upstream, a strip shows "Committed *when* · *summary*" with an Undo chip. `u` undoes the last commit and puts its changes back in the list. It refuses a commit that is already pushed, the repo's first commit, and a merge.
 
 ## The action button
 
-The button on the right of the top bar always offers the next sensible remote step, the way Desktop's does: Fetch, Pull, Push, Publish branch, Publish repository, or Force push after an amend or rebase. `f` runs whatever it currently shows.
+The button on the right of the top bar always offers the next sensible remote step, the way Desktop's does: Fetch, Pull, Push, Publish branch, or Publish repository. After you amend or undo a commit in glitter, it recommends Force push. `f` runs whatever it currently shows.
 
 - When the branch has diverged, one Pull button shows both counts. There is no combined pull-and-push step.
 - When `pull.rebase` is set, it reads "Pull origin with rebase".
+- On a detached HEAD it reads "Detached HEAD", and `f` refuses with a notice.
 - Publish repository asks for a name, then private or public. Type `owner/name` to publish to an organization. It runs `gh repo create`, so the GitHub CLI must be signed in.
 
 ## Repos, worktrees and branches
 
-- `r` opens the repository foldout. Repos are grouped by host and owner, and each worktree shows badges for its dirty, ahead, and behind counts.
+- `r` opens the repository foldout. Repos are grouped by host and owner, and each repo shows a badge with its dirty count and ahead and behind arrows.
 - `w` opens the worktree foldout, including the on-deck pool. `ctrl+n` turns the filter into a name field for a new worktree. The name you type is the **branch** name; rt picks the folder name itself.
-- `b` opens the branch foldout. A branch that is checked out in another worktree is refused. Desktop would switch to that worktree instead.
+- `b` opens the branch foldout, and `ctrl+n` there names a new branch. A branch that is checked out in another worktree, or that a gitq stack protects, is refused. Desktop would switch to the other worktree instead.
 
 Switching branches with uncommitted changes asks what to do: **Leave** them on the current branch as a stash, or **Bring** them to the new branch.
 
@@ -63,7 +66,7 @@ glitter keeps one stash per branch, in the same format GitHub Desktop uses, so a
 
 - `S` stashes every change on the current branch. If the branch already has a stash, it asks before overwriting it.
 - A "Stashed Changes" strip appears above the commit box whenever the branch has a stash. Click it or press `h` to open the stash view.
-- In the stash view, `R` restores the stash into the Changes list, `D` discards it (always asks first), and `h` or `esc` closes the view.
+- In the stash view, `R` restores the stash into the Changes list, `D` discards it (always asks first), and `h` closes the view. `esc` closes it from the file list, or steps back to the file list from the stash's diff.
 
 ## History
 
@@ -72,21 +75,25 @@ The History tab lists commits grouped by date (Today, Yesterday, and so on), wit
 - `↑`/`↓` pick a commit and `enter` moves to its changed files.
 - `shift+↑`/`↓` select a range of commits, so you can see their combined changes.
 - `e` expands the commit header to show the full message.
-- `/` filters the loaded commits. The last row, "Load 100 more commits", pages in older ones.
+- `/` filters the loaded commits as you type. The last row, "Load 100 more commits" ("Search 100 more commits" while filtering), pages in older ones.
 
 History diffs are read-only.
 
 ## Menus
 
-Right-click a changed file, a commit, or a History file to open its menu. `ctrl+k` opens the menu for whatever has focus. With nothing selected it opens "Actions", the board-wide section that lists every key.
+Right-click a changed file, a commit, or a History file to open its menu. Right-clicking the "N changed files" line offers Discard All Changes and Stash All Changes. `ctrl+k` opens the menu for whatever has focus. With nothing selected it opens "Actions", the board-wide section with the main keys.
 
-Type to filter a menu's rows. Each row shows its key, and that key works while the menu is open.
+Type to filter a menu's rows. The board-wide rows show their key as a reminder: choose the row, or close the menu and press the key.
 
 - **Discard** asks first, then moves the file to the Trash before touching git. If the Trash fails, glitter stops and says so; it never deletes permanently.
 - **Create Tag** asks for a name. The new tag shows in History right away.
 - **Open Repository in *Editor*** uses the editor `rt code` resolved for the repo. Run `rt code` once if none is set.
 
-In the diff pane, `d` discards the line under the cursor, or the whole hunk when the cursor is on its `@@` header. Press it twice within a few seconds; the first press only asks.
+In the diff pane, `d` discards the line under the cursor, or the whole hunk when the cursor is on its `@@` header. Press it twice within 5 seconds; the first press only asks, and any other action in between cancels it.
+
+:::caution
+A `d` discard is permanent. It does not use the Trash, and it does not work on new, untracked files; use the file menu's Discard for those.
+:::
 
 ## Keys
 
@@ -100,7 +107,7 @@ In the diff pane, `d` discards the line under the cursor, or the whole hunk when
 | `u` | Undo the last commit |
 | `f` | Run the action button |
 | `b` / `w` / `r` | Branch, worktree, repository foldouts |
-| `/` | Filter files |
+| `/` | Filter files (type, then `enter`) |
 | `S` / `h` | Stash all changes / show the stash |
 | `2` | History tab |
 | `ctrl+k` | Menu |
@@ -111,7 +118,7 @@ In the diff pane, `d` discards the line under the cursor, or the whole hunk when
 | `↑`/`↓` | Move the line cursor |
 | `space` | Tick or untick the line |
 | `s` | Tick or untick the hunk |
-| `d` | Discard the line or hunk (press twice) |
+| `d` | Discard the line or hunk (press twice; permanent) |
 | `esc` | Back to the file list |
 
 ## Mouse
@@ -120,4 +127,4 @@ Rows, segments, and buttons take clicks, lists scroll with the wheel, and hoveri
 
 ## Not built yet
 
-These GitHub Desktop features are not in glitter yet: branch compare, hiding whitespace in diffs, most commit actions (revert, cherry-pick, reset to a commit), the Pull Requests tab, and image diffs. The commit menu does offer Undo Commit, Create Branch from Commit, Create Tag, and Copy SHA.
+These GitHub Desktop features are not in glitter yet: branch compare, hiding whitespace in diffs, most commit actions (revert, cherry-pick, reset to a commit), the Pull Requests tab, and image diffs. The commit menu offers Create Branch from Commit, Create Tag, Copy SHA, and, on the newest unpushed commit, Undo Commit.
