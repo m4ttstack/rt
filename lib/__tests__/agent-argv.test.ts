@@ -53,48 +53,46 @@ describe("buildClaudeArgv", () => {
     expect(argv).not.toContain("/abs/claude");
   });
 
-  test("interactive start with a reserved handle passes --name and the inbound-accept settings", () => {
+  test("interactive start with inbound accept passes the inbound-accept settings and never --name", () => {
     const argv = buildClaudeArgv({
-      name: "kai",
+      inboundAccept: true,
       session: { kind: "start", sessionId: UUID }, headless: false,
     }, bins);
     expect(argv).toEqual([
-      "/abs/claude", "--name", "kai", "--settings", '{"crossSessionInbound":"accept"}', "--session-id", UUID,
+      "/abs/claude", "--settings", '{"crossSessionInbound":"accept"}', "--session-id", UUID,
     ]);
   });
 
-  test("headless start with a reserved handle emits neither --name nor --settings", () => {
+  test("headless start with inbound accept emits no --settings", () => {
     const argv = buildClaudeArgv({
-      name: "kai",
+      inboundAccept: true,
       session: { kind: "start", sessionId: UUID }, headless: true, prompt: "go",
     }, bins);
-    expect(argv).not.toContain("--name");
     expect(argv).not.toContain("--settings");
   });
 
-  test("no reserved handle emits neither flag", () => {
+  test("no inbound accept emits no --settings", () => {
     const argv = buildClaudeArgv({ session: { kind: "start", sessionId: UUID }, headless: false }, bins);
-    expect(argv).not.toContain("--name");
     expect(argv).not.toContain("--settings");
   });
 
   // A launch never emits two --settings flags: settingsPath REPLACES the
-  // --name-triggered inline JSON on the argv line. The caller is on the
+  // inbound-accept inline JSON on the argv line. The caller is on the
   // hook for folding that same object into the settingsPath file's content
   // (lib/agent-hooks.ts's mergeGateForkHookSettings, exercised in
   // lib/daemon/__tests__/agent-handlers.test.ts).
-  test("settingsPath replaces --name's inline JSON on the argv line, never both", () => {
+  test("settingsPath replaces the inbound-accept inline JSON on the argv line, never both", () => {
     const argv = buildClaudeArgv({
-      name: "kai", settingsPath: "/hooks/ag-1.json",
+      inboundAccept: true, settingsPath: "/hooks/ag-1.json",
       session: { kind: "start", sessionId: UUID }, headless: false,
     }, bins);
     expect(argv).toEqual([
-      "/abs/claude", "--name", "kai", "--settings", "/hooks/ag-1.json", "--session-id", UUID,
+      "/abs/claude", "--settings", "/hooks/ag-1.json", "--session-id", UUID,
     ]);
     expect(argv.filter((a) => a === "--settings")).toHaveLength(1);
   });
 
-  test("settingsPath alone (no name) still emits --settings for headless", () => {
+  test("settingsPath alone (no inbound accept) still emits --settings for headless", () => {
     const argv = buildClaudeArgv({
       settingsPath: "/hooks/ag-2.json",
       session: { kind: "start", sessionId: UUID }, headless: true, prompt: "go",
@@ -133,12 +131,12 @@ describe("buildPaneCommand", () => {
     expect(cmd).toBe(`cd '/r' && cswap run 'a@b.c' -- '--session-id' '${UUID}'`);
   });
 
-  test("single-quotes --name and the JSON --settings value", () => {
+  test("single-quotes the JSON --settings value", () => {
     const cmd = buildPaneCommand("/r", {
-      name: "kai",
+      inboundAccept: true,
       session: { kind: "start", sessionId: UUID }, headless: false,
     });
-    expect(cmd).toBe(`cd '/r' && claude '--name' 'kai' '--settings' '{"crossSessionInbound":"accept"}' '--session-id' '${UUID}'`);
+    expect(cmd).toBe(`cd '/r' && claude '--settings' '{"crossSessionInbound":"accept"}' '--session-id' '${UUID}'`);
   });
 
   test("buildPaneCommand prefixes single-quoted env assignments before the claude head", () => {

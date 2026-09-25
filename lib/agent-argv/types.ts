@@ -16,8 +16,8 @@ export interface AgentInvocation {
   yolo?: boolean;
   /** claude-only: cswap account email. */
   account?: string;
-  /** claude-only: reserved chat handle; interactive only, see claude.ts's claudeArgs. */
-  name?: string;
+  /** claude-only: accept cross-session inbox deliveries even under bypass permissions; interactive only, see claude.ts's claudeArgs. */
+  inboundAccept?: boolean;
   /** claude-only: absolute path to a --settings JSON file. */
   settingsPath?: string;
 }
