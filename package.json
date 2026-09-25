@@ -11,6 +11,7 @@
   "scripts": {
     "test": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
     "test:watch": "bun test --watch lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
+    "test:timings": "rm -f test-timings.json && bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers --timings=test-timings.json --update-timings",
     "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/",
     "test:pty": "bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
     "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/ && bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
