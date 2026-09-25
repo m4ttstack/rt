@@ -593,12 +593,12 @@ export class MissionDriver {
       this.deps.daemonQuery("repos:status", {}),
       client.snapshot(),
       client.fetchState(),
-      selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
+      selectedPath ? client.stagingDiff(selectedPath, { withSources: true }) : Promise.resolve(null),
     ]);
     const afterRead = check();
     if (afterRead) return afterRead;
     const nextPath = reconcileSelectedPath(snapshot.files, selectedPath, filter);
-    const nextDiff = nextPath === selectedPath ? stagingDiff : nextPath ? await client.stagingDiff(nextPath) : null;
+    const nextDiff = nextPath === selectedPath ? stagingDiff : nextPath ? await client.stagingDiff(nextPath, { withSources: true }) : null;
     const afterDiff = check();
     if (afterDiff) return afterDiff;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
@@ -616,12 +616,12 @@ export class MissionDriver {
   }
 
   private async refreshDiff(client: GitClient): Promise<void> {
-    this.stagingDiff = this.state.selectedPath ? await client.stagingDiff(this.state.selectedPath) : null;
+    this.stagingDiff = this.state.selectedPath ? await client.stagingDiff(this.state.selectedPath, { withSources: true }) : null;
   }
 
   /** Reads the diff before moving the selection: a push during the read must not pair one file's header with another's hunks. */
   private async selectPath(path: string | null): Promise<void> {
-    const diff = path ? await this.deps.client(this.state.currentWorktree).stagingDiff(path) : null;
+    const diff = path ? await this.deps.client(this.state.currentWorktree).stagingDiff(path, { withSources: true }) : null;
     this.state.selectedPath = path;
     this.stagingDiff = diff;
   }

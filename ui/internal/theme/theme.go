@@ -156,6 +156,21 @@ const gutterHoverBlend = 0.5
 // blended half-way toward Bg, the boards' faint-pink preview swatch.
 var GutterHoverBar = blendToward(Pink, Bg, gutterHoverBlend)
 
+// diffTintBlend and diffGutterBlend sink a diff kind's accent toward Bg:
+// the row reads as tinted, not as a highlight, and the number column sits
+// one visible step stronger so the gutter reads as its own strip.
+const (
+	diffTintBlend   = 0.84
+	diffGutterBlend = 0.72
+)
+
+var (
+	DiffAddBg       = blendToward(Mint, Bg, diffTintBlend)
+	DiffAddGutterBg = blendToward(Mint, Bg, diffGutterBlend)
+	DiffDelBg       = blendToward(Coral, Bg, diffTintBlend)
+	DiffDelGutterBg = blendToward(Coral, Bg, diffGutterBlend)
+)
+
 func Hex(c color.Color) string {
 	r, g, b, _ := c.RGBA()
 	return fmt.Sprintf("#%02X%02X%02X", r>>8, g>>8, b>>8)

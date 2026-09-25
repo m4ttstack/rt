@@ -8,6 +8,7 @@ import {
   type BranchInfo,
   type Commit,
   type CommittedFileChange,
+  type DiffReadOpts,
   type GitClient,
   type RepoSnapshot,
   type StagingDiff,
@@ -124,6 +125,7 @@ function historyFile(path: string, commitish = "x"): CommittedFileChange {
 
 interface FakeClientCalls {
   stagingDiff: string[];
+  stagingDiffOpts: (DiffReadOpts | undefined)[];
   stageSelection: { diff: StagingDiff; selection: DiffSelection }[];
   discardSelection: { diff: StagingDiff; selection: DiffSelection }[];
   checkoutBranch: string[];
@@ -158,6 +160,7 @@ function makeFakeClient(overrides: {
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = {
     stagingDiff: [],
+    stagingDiffOpts: [],
     stageSelection: [],
     discardSelection: [],
     checkoutBranch: [],
@@ -193,8 +196,9 @@ function makeFakeClient(overrides: {
     stashedFiles: async () => [],
     fetchState: overrides.fetchState ?? (async () => ({ lastFetchedAt: null })),
     fetch: async () => {},
-    stagingDiff: async (path: string) => {
+    stagingDiff: async (path: string, opts?: DiffReadOpts) => {
       calls.stagingDiff.push(path);
+      calls.stagingDiffOpts.push(opts);
       return overrides.stagingDiff ? overrides.stagingDiff(path) : oneHunkDiff(path);
     },
     stageSelection: async (diff, selection) => {
@@ -433,6 +437,20 @@ describe("MissionDriver: staging (selection-only, ratified 2026-09-21)", () => {
 
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.changes[0]!.include).toBe("all");
+  });
+
+  test("the displayed diff is fetched with sources; the stage handler's fetch is not", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
+      { t: "intent", name: "quit" },
+    ]);
+    await new MissionDriver(baseDeps({ session, client }), START).run();
+
+    expect(client.calls.stagingDiffOpts[0]).toEqual({ withSources: true });
+    expect(client.calls.stagingDiffOpts).toContain(undefined);
   });
 });
 

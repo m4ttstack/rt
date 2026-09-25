@@ -129,7 +129,7 @@ export class StashStore {
     this.selectedFile = file;
     this.diff = null;
     if (file === null) return;
-    const diff = await client.commitDiff(file, entry.stashSha);
+    const diff = await client.commitDiff(file, entry.stashSha, { withSources: true });
     if (this.entry?.stashSha === entry.stashSha && this.selectedFile === file) this.diff = diff;
   }
 

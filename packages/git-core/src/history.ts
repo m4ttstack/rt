@@ -11,7 +11,8 @@ import {
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
 import { DiffParser } from "./vendor/ghd/diff-parser.ts";
 import { classifyDiffText } from "./diff-classify.ts";
-import type { ChangesetData, Commit, StagingDiff } from "./types.ts";
+import { commitDiffSources } from "./diff-sources.ts";
+import type { ChangesetData, Commit, DiffReadOpts, StagingDiff } from "./types.ts";
 
 /** GHD's CommitBatchSize (app/src/lib/stores/git-store.ts). */
 export const COMMIT_BATCH_SIZE = 100;
@@ -147,12 +148,19 @@ export async function getCommitRangeChangedFiles(
 }
 
 /** Port of GHD getCommitDiff (app/src/lib/git/diff.ts). */
-export async function getCommitDiff(ctx: ClientContext, file: CommittedFileChange, commitish: string): Promise<StagingDiff> {
+export async function getCommitDiff(
+  ctx: ClientContext,
+  file: CommittedFileChange,
+  commitish: string,
+  opts: DiffReadOpts = {},
+): Promise<StagingDiff> {
   const stdout = await rawGit(ctx.dir, [
     "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color",
     "--", file.path, ...oldPathArgs(file),
   ]);
-  return buildCommitDiff(stdout, file);
+  const diff = buildCommitDiff(stdout, file);
+  if (!opts.withSources || diff.kind !== "text") return diff;
+  return { ...diff, sources: await commitDiffSources(ctx, file, `${commitish}^`, commitish) };
 }
 
 /** Port of GHD getCommitRangeDiff (app/src/lib/git/diff.ts); commits oldest first. */
@@ -161,6 +169,7 @@ export async function getCommitRangeDiff(
   file: CommittedFileChange,
   commits: ReadonlyArray<string>,
   useNullTreeSHA = false,
+  opts: DiffReadOpts = {},
 ): Promise<StagingDiff> {
   if (commits.length === 0) throw new Error("No commits to diff...");
   const oldestCommitRef = useNullTreeSHA ? NULL_TREE_SHA : `${commits[0]}^`;
@@ -170,9 +179,11 @@ export async function getCommitRangeDiff(
       "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color",
       "--", file.path, ...oldPathArgs(file),
     ]);
-    return buildCommitDiff(stdout, file);
+    const diff = buildCommitDiff(stdout, file);
+    if (!opts.withSources || diff.kind !== "text") return diff;
+    return { ...diff, sources: await commitDiffSources(ctx, file, oldestCommitRef, latestCommit) };
   } catch (err) {
-    if (!useNullTreeSHA && isBadRevision(err)) return getCommitRangeDiff(ctx, file, commits, true);
+    if (!useNullTreeSHA && isBadRevision(err)) return getCommitRangeDiff(ctx, file, commits, true, opts);
     throw err;
   }
 }

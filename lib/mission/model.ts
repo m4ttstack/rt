@@ -441,6 +441,7 @@ function buildDiffModel(input: {
     });
   }
 
+  const sources = stagingDiff.sources;
   return {
     path,
     status,
@@ -449,6 +450,8 @@ function buildDiffModel(input: {
     lang: langFor(path),
     lines,
     readOnly,
+    ...(sources?.old !== undefined ? { oldSource: sources.old } : {}),
+    ...(sources?.new !== undefined ? { newSource: sources.new } : {}),
   };
 }
 

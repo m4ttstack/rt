@@ -911,6 +911,36 @@ describe("oversized diff gate", () => {
     return { path: "big.txt", kind: "text", untracked: false, hunks: [hunk] };
   }
 
+  function withSources(diff: StagingDiff, sources: StagingDiff["sources"]): StagingDiff {
+    return { ...diff, sources };
+  }
+
+  test("a text diff carries its sources; a missing side stays absent", () => {
+    const model = buildModel(
+      baseInput({
+        state: { selectedPath: "big.txt" },
+        snapshot: { files: [changedFile({ path: "big.txt", staged: true, unstaged: false })] },
+        stagingDiff: withSources(bigStagingDiff(3), { old: "a\n", new: undefined }),
+      }),
+    );
+    expect(model.diff.kind).toBe("text");
+    expect(model.diff.oldSource).toBe("a\n");
+    expect("newSource" in model.diff).toBe(false);
+  });
+
+  test("an oversized diff never carries sources", () => {
+    const model = buildModel(
+      baseInput({
+        state: { selectedPath: "big.txt" },
+        snapshot: { files: [changedFile({ path: "big.txt", staged: true, unstaged: false })] },
+        stagingDiff: withSources(bigStagingDiff(3001), { old: "a", new: "b" }),
+      }),
+    );
+    expect(model.diff.kind).toBe("oversized");
+    expect(model.diff.oldSource).toBeUndefined();
+    expect(model.diff.newSource).toBeUndefined();
+  });
+
   test("over the 3000-line cutoff renders as oversized", () => {
     const model = buildModel(
       baseInput({

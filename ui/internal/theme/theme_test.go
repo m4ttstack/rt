@@ -122,3 +122,27 @@ func TestTopBarStateOrdering(t *testing.T) {
 			Hex(TopBarBg), rest, Hex(TopBarHoverBg), hover)
 	}
 }
+
+func TestDiffTintsSitBetweenBgAndTheirAccent(t *testing.T) {
+	for name, c := range map[string]struct{ tint, gutter, accent color.Color }{
+		"add": {DiffAddBg, DiffAddGutterBg, Mint},
+		"del": {DiffDelBg, DiffDelGutterBg, Coral},
+	} {
+		if Hex(c.tint) == Hex(Bg) || Hex(c.gutter) == Hex(Bg) {
+			t.Fatalf("%s tint collapsed onto Bg", name)
+		}
+		if dist(c.gutter, Bg) <= dist(c.tint, Bg) {
+			t.Fatalf("%s gutter must be one step stronger than its row tint", name)
+		}
+		if dist(c.gutter, c.accent) >= dist(Bg, c.accent) {
+			t.Fatalf("%s gutter must lean toward its accent", name)
+		}
+	}
+}
+
+func dist(a, b color.Color) int {
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	d := func(x, y uint32) int { v := int(x>>8) - int(y>>8); return v * v }
+	return d(ar, br) + d(ag, bg) + d(ab, bb)
+}

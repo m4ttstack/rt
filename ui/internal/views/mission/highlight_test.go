@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/chroma/v2"
+
 	"charm.land/lipgloss/v2"
 
 	"rt-ui/internal/theme"
@@ -18,10 +20,16 @@ var sgrColorRe = regexp.MustCompile(`38;2;\d+;\d+;\d+`)
 // caller's own base (an unmapped token, or plain text, paints flat in base).
 func allowedHighlightSGR(base color.Color) map[string]bool {
 	allowed := map[string]bool{fgSGR(base): true}
-	for _, c := range chromaStyleTable {
-		allowed[fgSGR(c)] = true
+	for _, s := range chromaStyleTable {
+		if s.fg != nil {
+			allowed[fgSGR(s.fg)] = true
+		}
 	}
 	return allowed
+}
+
+func sameColor(a, b color.Color) bool {
+	return a != nil && b != nil && theme.Hex(a) == theme.Hex(b)
 }
 
 func TestHighlightLineTypeScriptUsesAtLeastTwoThemeAccentsAndNoStrayHex(t *testing.T) {
@@ -63,5 +71,51 @@ func TestHighlightLineTokensCarryBackground(t *testing.T) {
 	out := highlightLine("typescript", `const total = 1`, theme.TextSoft, theme.Bg)
 	if !strings.Contains(out, bgSGR(theme.Bg)) {
 		t.Fatalf("highlighted tokens should carry the row's Bg: %q", out)
+	}
+}
+
+func TestTokenizeLinesRecognisesAMarkdownHeading(t *testing.T) {
+	lines := tokenizeLines("markdown", "# Title\nplain\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 lines, got %d", len(lines))
+	}
+	if spansText(lines[0]) != "# Title" || spansText(lines[1]) != "plain" {
+		t.Fatalf("line text changed: %q / %q", spansText(lines[0]), spansText(lines[1]))
+	}
+	want := chromaStyleTable[chroma.GenericHeading]
+	if !sameColor(lines[0][0].style.fg, want.fg) || !lines[0][0].style.bold {
+		t.Fatalf("heading painted %+v, want %+v", lines[0][0].style, want)
+	}
+}
+
+func TestTokenizeLinesSplitsAMultiLineToken(t *testing.T) {
+	lines := tokenizeLines("go", "a := `one\ntwo`\n")
+	if len(lines) != 2 || spansText(lines[0]) != "a := `one" || spansText(lines[1]) != "two`" {
+		t.Fatalf("got %+v", lines)
+	}
+	last := lines[1][0].style.fg
+	if !sameColor(last, chromaStyleTable[chroma.LiteralString].fg) {
+		t.Fatalf("second half of the raw string lost its colour: %v", last)
+	}
+}
+
+func TestTokenizeLinesStripsCarriageReturns(t *testing.T) {
+	lines := tokenizeLines("go", "x := 1\r\ny := 2\r\n")
+	if spansText(lines[0]) != "x := 1" || spansText(lines[1]) != "y := 2" {
+		t.Fatalf("CR survived: %q / %q", spansText(lines[0]), spansText(lines[1]))
+	}
+}
+
+func TestTokenizeLinesEmptyLangIsPlain(t *testing.T) {
+	lines := tokenizeLines("", "a\nb")
+	if len(lines) != 2 || len(lines[0]) != 1 || lines[0][0].style.fg != nil {
+		t.Fatalf("got %+v", lines)
+	}
+}
+
+func TestHighlightLineMarkdownHeadingIsColoured(t *testing.T) {
+	out := highlightLine("markdown", "# Title", theme.TextSoft, theme.Bg)
+	if !strings.Contains(out, fgSGR(chromaStyleTable[chroma.GenericHeading].fg)) {
+		t.Fatalf("heading not coloured:\n%q", out)
 	}
 }

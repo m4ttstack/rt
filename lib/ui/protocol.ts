@@ -189,6 +189,10 @@ export interface MissionDiffModel {
   lines: MissionDiffLine[];
   /** A committed diff (History): no stage gutter, nothing toggles. */
   readOnly: boolean;
+  /** The whole old-side file, when readable and under the size cap. */
+  oldSource?: string;
+  /** The whole new-side file, when readable and under the size cap. */
+  newSource?: string;
 }
 
 export interface MissionHistoryCommitRow {
