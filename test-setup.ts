@@ -8,12 +8,13 @@
  * fake HOME per-test keep doing so on top of this; e2e fixtures pass their
  * own explicit HOME when spawning the binary, so this never reaches them.
  */
-import { afterAll } from "bun:test";
+import { afterAll, afterEach, beforeEach } from "bun:test";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
+import { homeProblem } from "./lib/__tests__/home-env.ts";
 
 // Before the HOME repoint, while HOME still names the real home: strips
 // ambient live-daemon pointers (RT_DAEMON_SOCK is set in herdr panes and
@@ -65,6 +66,21 @@ afterAll(() => {
     stdio: "ignore",
   }).unref();
 });
+
+// A HOME left unset, "undefined" or relative sends every later HOME-derived
+// path into the cwd (the repo checkout) or, via os.homedir(), the real home.
+// This afterEach runs after the test's own afterEach hooks, so it fails the
+// test that broke HOME. bun skips the remaining afterEach hooks once one
+// throws, and an afterAll can break HOME too, so the beforeEach twin catches
+// what slips past. Both repair HOME before throwing.
+function guardHome(when: string): void {
+  const problem = homeProblem(process.env.HOME);
+  if (!problem) return;
+  process.env.HOME = home;
+  throw new Error(`${when}: ${problem}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
+}
+afterEach(() => guardHome("After this test"));
+beforeEach(() => guardHome("Before this test started"));
 
 function removeTree(path: string): void {
   try {
