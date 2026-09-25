@@ -37,6 +37,14 @@ describe("launchctl-print.jq", () => {
     expect(parse("").loaded).toBe(false);
   });
 
+  // served-apps.sh captures stderr with stdout, so a warning can land ahead of
+  // the header, and a loaded tool read as unloaded would pass the tool check.
+  test("a line ahead of the header does not hide a loaded job", () => {
+    const job = parse(`launchctl: a warning\n${fixture("launchctl-print-chat.txt")}`);
+    expect(job.loaded).toBe(true);
+    expect(job.pid).toBe(17594);
+  });
+
   // Derived from the chat capture: the shape launchd prints for a job that
   // refused to spawn (exit 78) and is waiting to retry, with no pid line.
   test("a loaded job with no pid keeps its last exit code", () => {

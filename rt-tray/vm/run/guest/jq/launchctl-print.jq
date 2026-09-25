@@ -12,7 +12,7 @@ split("\n") as $lines
         | ($rest | index("\t}")) as $j
         | $rest[: ($j // ($rest | length))] | map(ltrimstr("\t\t"))
       end;
-  { loaded: (($lines[0] // "") | endswith(" = {")),
+  { loaded: any($lines[]; test("^[^\t ].* = \\{$")),
     program: top("program"),
     argv: argv,
     cwd: top("working directory"),
