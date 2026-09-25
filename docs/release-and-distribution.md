@@ -334,14 +334,17 @@ maintainer-only skills off user machines.
 Identity rides the artifacts too. Before the recipe runs, bundle-apps stages
 `identity/` into the tarball: an identity-only `mattstack.deck.json` (name,
 displayName, description, icon, badge, in one fixed serialized form) plus the
-svg it names, validated against deck's own rules (svg-rooted, at most 64 KB,
-a path inside the app dir with no dotted directories). An app whose manifest
-declares no displayName or icon (deck itself) stages nothing. `fetch-deps.sh`
-materializes `deps/arm64/<name>-identity/` under its own sha stamp, and
-`build.sh` lands it at `Contents/Resources/apps/<name>/` for exactly the
-deps.lock rows that carry `serve`. `check-bundle.sh` fails a served row with
-no identity (its pin predates identity: re-run bundle-apps for it) and any
-`Resources/apps` entry no served row declares. Deck reads this copy for a
+svg it names. It is validated against deck's rules (svg-rooted, at most
+64 KB, inside the app dir) and the bundle's own: the icon is a regular file,
+never a symlink, and neither the app name nor any icon directory has a dot,
+which codesign would read as a nested bundle. An app whose manifest declares
+no displayName or icon (deck itself) stages nothing, unless deps.lock gives
+it a `serve` block, which fails the leg. `fetch-deps.sh` materializes
+`deps/arm64/<name>-identity/` under its own sha stamp, and `build.sh` lands
+it at `Contents/Resources/apps/<name>/` for exactly the deps.lock rows that
+carry `serve`. `check-bundle.sh` fails a served row with no identity (its pin
+predates identity: bump the app's version and re-run bundle-apps for it) and
+any `Resources/apps` entry no served row declares. Deck reads this copy for a
 managed app with no linked checkout, so prod tabs have names and icons on a
 clean install.
 
