@@ -6,7 +6,14 @@
  */
 import { UserActionableError } from "../setup/errors.ts";
 import type { RunResult } from "../subprocess.ts";
-import { findCachedBuild, readBundleIdentity, sameBuild, snapshotTree, type CacheSeams } from "./dev-app-cache.ts";
+import {
+  dropCachedEntry,
+  findCachedBuild,
+  readBundleIdentity,
+  sameBuild,
+  snapshotTree,
+  type CacheSeams,
+} from "./dev-app-cache.ts";
 
 export interface StageSeams extends CacheSeams {
   home: string;
@@ -20,7 +27,15 @@ export interface StageSeams extends CacheSeams {
   log(line: string): void;
 }
 
-class CachedBundleRejected extends Error {}
+/** Staging from the cache failed in a way a real build gets past. */
+class CachedBundleUnusable extends Error {
+  constructor(
+    message: string,
+    readonly badSignature: boolean,
+  ) {
+    super(message);
+  }
+}
 
 export type StageResult =
   | { outcome: "built" | "cached"; stamp: string; stagedPath: string }
@@ -80,16 +95,21 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
             await seams.exec(["rm", "-rf", dest]);
             copy = await seams.exec(["ditto", cached.bundle, dest]);
           }
-          if (copy.exitCode !== 0) return copy;
+          if (copy.exitCode !== 0) throw new CachedBundleUnusable(tail(copy), false);
           const verify = await seams.exec(["codesign", "--verify", "--strict", dest]);
-          if (verify.exitCode !== 0) throw new CachedBundleRejected(tail(verify));
+          if (verify.exitCode !== 0) throw new CachedBundleUnusable(tail(verify), true);
           return verify;
         });
         seams.writeFile(paths.lastSourceFile, source);
         return { outcome: "cached", stamp: cached.stamp ?? stamp, stagedPath };
       } catch (err) {
-        if (!(err instanceof CachedBundleRejected)) throw err;
-        seams.log(`cached build ${cached.bundle} failed its signature check, building instead: ${err.message}`);
+        if (!(err instanceof CachedBundleUnusable)) throw err;
+        if (err.badSignature) {
+          seams.log(`cached build ${cached.bundle} failed its signature check, dropping it and building instead: ${err.message}`);
+          await dropCachedEntry(seams, paths.buildsDir, cached.entry);
+        } else {
+          seams.log(`could not copy cached build ${cached.bundle}, building instead: ${err.message}`);
+        }
       }
     }
   }

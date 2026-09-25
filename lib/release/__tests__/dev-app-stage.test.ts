@@ -345,6 +345,25 @@ describe("stageLocalDevApp", () => {
     expect(cleanup).toBeGreaterThan(verify);
     expect(build).toBeGreaterThan(cleanup);
     expect(logs.some((l) => l.includes("signature") && l.includes(`${BUILDS}/tree-abc/bundle`))).toBe(true);
+    const drop = calls.indexOf(`rm -rf ${BUILDS}/tree-abc`);
+    expect(drop).toBeGreaterThan(verify);
+    expect(build).toBeGreaterThan(drop);
+  });
+
+  test("a cached bundle that cannot be copied at all is built instead, and the entry is kept", async () => {
+    const { seams, calls, logs } = fakeSeams({
+      cacheEntries: ["tree-abc"],
+      plists: { [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildStamp: "s" } },
+    });
+    const exec = seams.exec;
+    seams.exec = (argv, o) =>
+      (argv[0] === "cp" || argv[0] === "ditto") && argv.includes(`${BUILDS}/tree-abc/bundle`)
+        ? (calls.push(argv.join(" ")), Promise.resolve({ stdout: "", stderr: "disk full", exitCode: 1 }))
+        : exec(argv, o);
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result.outcome).toBe("built");
+    expect(calls).not.toContain(`rm -rf ${BUILDS}/tree-abc`);
+    expect(logs.some((l) => l.includes("could not copy") && l.includes("disk full"))).toBe(true);
   });
 
   test("the copy is driven by the same git listing the key hashes, not by .gitignore alone", async () => {

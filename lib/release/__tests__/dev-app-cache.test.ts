@@ -5,6 +5,7 @@ import { join } from "path";
 import {
   CACHED_BUNDLE_NAME,
   CLEAN_DIFF_HASH,
+  dropCachedEntry,
   findCachedBuild,
   readBundleIdentity,
   sameBuild,
@@ -192,7 +193,7 @@ describe("bundle identity and the cache", () => {
       },
     });
     const hit = await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH, version: "v2.11.0" });
-    expect(hit).toEqual({ bundle: `${builds}/match/bundle`, stamp: "cached stamp" });
+    expect(hit).toEqual({ bundle: `${builds}/match/bundle`, entry: `${builds}/match`, stamp: "cached stamp" });
     expect(seams.calls.some((c) => c.includes(".incoming-1"))).toBe(false);
     expect(await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: "dirty", version: "v2.11.0" })).toBeNull();
   });
@@ -227,4 +228,18 @@ describe.skipIf(process.platform !== "darwin")("a cached bundle's signature", ()
 test("the cached bundle folder name matches the tray's, which files builds under it", () => {
   const swift = readFileSync(join(import.meta.dir, "../../../rt-tray/Sources-core/Services/DevBuild.swift"), "utf8");
   expect(swift).toContain(`public static let cachedBundleName = "${CACHED_BUNDLE_NAME}"`);
+});
+
+describe("dropCachedEntry", () => {
+  test("deletes only a plain, visible child of the builds dir", async () => {
+    const builds = "/h/.mattstack/rt/dev-app/builds";
+    for (const bad of [builds, `${builds}/`, `${builds}/../x`, `${builds}/a/b`, `${builds}/.incoming-1`, "/elsewhere/x", `${builds}x/y`]) {
+      const seams = fakeSeams();
+      expect(await dropCachedEntry(seams, builds, bad)).toBe(false);
+      expect(seams.calls).toEqual([]);
+    }
+    const seams = fakeSeams();
+    expect(await dropCachedEntry(seams, builds, `${builds}/tree-abc`)).toBe(true);
+    expect(seams.calls).toEqual([`rm -rf ${builds}/tree-abc`]);
+  });
 });

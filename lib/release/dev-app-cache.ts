@@ -145,12 +145,21 @@ export async function findCachedBuild(
   seams: CacheSeams,
   buildsDir: string,
   want: BuildIdentity,
-): Promise<{ bundle: string; stamp: string | null } | null> {
+): Promise<{ bundle: string; entry: string; stamp: string | null } | null> {
   for (const name of seams.listDir(buildsDir)) {
     if (name.startsWith(".")) continue;
-    const bundle = `${buildsDir}/${name}/${CACHED_BUNDLE_NAME}`;
+    const entry = `${buildsDir}/${name}`;
+    const bundle = `${entry}/${CACHED_BUNDLE_NAME}`;
     const id = await readBundleIdentity(seams, bundle);
-    if (id && sameBuild(id, want)) return { bundle, stamp: id.stamp };
+    if (id && sameBuild(id, want)) return { bundle, entry, stamp: id.stamp };
   }
   return null;
+}
+
+/** Recursive delete, so it refuses anything but a plain child of the builds dir. */
+export async function dropCachedEntry(seams: CacheSeams, buildsDir: string, entry: string): Promise<boolean> {
+  const name = entry.startsWith(`${buildsDir}/`) ? entry.slice(buildsDir.length + 1) : "";
+  if (name === "" || name.includes("/") || name.startsWith(".")) return false;
+  await seams.exec(["rm", "-rf", entry]);
+  return true;
 }
