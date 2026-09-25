@@ -64,6 +64,25 @@ let badgeChecks: [Check] = [
         book.retain(apps: ["console"])
         try c.requireEqual(book.total, 2)
     },
+    Check("a reading carries the gate ids its app counted") { c in
+        try c.requireEqual(BadgeParse.parse(Data(#"{"count":2,"path":"/?gate=a","ids":["a","b"]}"#.utf8)),
+                           BadgeReading(count: 2, path: "/?gate=a", ids: ["a", "b"]))
+        try c.requireEqual(BadgeParse.parse(Data(#"{"count":1}"#.utf8))?.ids, [])
+    },
+    Check("the dock counts a gate two apps both badge once") { c in
+        var book = BadgeBook()
+        book.record(app: "board", reading: BadgeReading(count: 2, path: nil, ids: ["run-gate", "mr-gate"]))
+        book.record(app: "console", reading: BadgeReading(count: 1, path: nil, ids: ["run-gate"]))
+        try c.requireEqual(book.readings["board"]?.count, 2)
+        try c.requireEqual(book.readings["console"]?.count, 1)
+        try c.requireEqual(book.total, 2)
+    },
+    Check("a reading without ids still adds its count to the dock") { c in
+        var book = BadgeBook()
+        book.record(app: "board", reading: BadgeReading(count: 1, path: nil, ids: ["g1"]))
+        book.record(app: "other", reading: BadgeReading(count: 3, path: nil))
+        try c.requireEqual(book.total, 4)
+    },
     Check("label hides zero and caps at 99+") { c in
         c.expect(BadgeBook.label(0) == nil)
         try c.requireEqual(BadgeBook.label(7), "7")
