@@ -21,6 +21,7 @@ import type { SetupIntent } from "../intent.ts";
 import type { Probes } from "../probes.ts";
 import type { PackRequirements } from "../requirements.ts";
 import type { TeamSnapshot, UserIntegrationOverrides } from "../team-settings.ts";
+import { tokenCreateLink, tokenField, type ForgeProvider, type ForgeRole } from "../token-create.ts";
 
 /** Reads user-scope secrets: the real implementation goes through lib/secrets/store.readSecret (null on NoAgeKeyError) plus staged values (staging.ts) — that wiring is a later task's job; validators only depend on this narrow shape. */
 export interface SecretPresence {
@@ -29,9 +30,28 @@ export interface SecretPresence {
 
 const SLACK_OAUTH_ACTION: Action = { type: "oauth", label: "Connect", integration: "slack", verb: ["setup", "slack", "connect"] };
 
+/**
+ * A forge row's token field and create link are cut to the role: an owner's
+ * token pushes the home repo and syncs members, a joiner's only reads. The
+ * link opens a web page and never carries the token, so the team-declared
+ * host may name it before the user has confirmed that host for API calls.
+ */
+interface ForgeConnect {
+  provider: ForgeProvider;
+  role: ForgeRole;
+  host: string | null;
+}
+
 /** `def.alternatives` (github's `use-gh`) is only ever a real affordance when the probe behind it succeeded — attaching it unconditionally would offer "use your gh session" on exactly the row where there is no session to use. */
-function connectAction(def: IntegrationDef, includeAlternatives: boolean): Action {
-  return { type: "connect", label: "Connect", integration: def.id, fields: def.fields, ...(includeAlternatives && def.alternatives ? { alternatives: def.alternatives } : {}) };
+function connectAction(def: IntegrationDef, includeAlternatives: boolean, forge?: ForgeConnect): Action {
+  return {
+    type: "connect",
+    label: "Connect",
+    integration: def.id,
+    fields: forge ? [tokenField(forge.provider, forge.role)] : def.fields,
+    ...(includeAlternatives && def.alternatives ? { alternatives: def.alternatives } : {}),
+    ...(forge ? { create: tokenCreateLink(forge.provider, forge.role, forge.host) } : {}),
+  };
 }
 
 function secretSpec(def: IntegrationDef): { domain: string; key: string } {
@@ -117,7 +137,7 @@ function declaredIntegrations(team: TeamSnapshot, reqs: PackRequirements[]): Dec
   return [...entries.values()];
 }
 
-async function githubRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx): Promise<Row> {
+async function githubRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx, forge: ForgeConnect): Promise<Row> {
   const spec = secretSpec(def);
   const stored = await secrets.has(spec.domain, spec.key);
 
@@ -128,7 +148,7 @@ async function githubRow(p: Probes, base: Omit<Row, "status" | "detail" | "actio
       return row({ ...base, status: "ready", detail: user ? `via gh (${user})` : "via gh" });
     }
     const detail = ghStatus.code === 127 ? "no GitHub account connected (gh CLI not installed)" : "no GitHub account connected";
-    return row({ ...base, status: "missing", detail, action: connectAction(def, false) });
+    return row({ ...base, status: "missing", detail, action: connectAction(def, false, forge) });
   }
 
   const result = await def.validate(p, stored, ctx);
@@ -137,7 +157,7 @@ async function githubRow(p: Probes, base: Omit<Row, "status" | "detail" | "actio
   // A stored token that's now invalid/unreachable still needs a replaceable action — check whether a healthy
   // gh session sits right there before deciding whether "use gh instead" is an affordance that can actually work.
   const ghStatus = await p.exec(["gh", "auth", "status"]);
-  return row({ ...base, status: result.status, detail: result.detail, action: connectAction(def, ghStatus.code === 0) });
+  return row({ ...base, status: result.status, detail: result.detail, action: connectAction(def, ghStatus.code === 0, forge) });
 }
 
 /** The oauth Connect action only makes sense once the team's own Slack app exists (`clientId` set) — before that, this row explains the dependency on account.slack-app instead of offering a flow that would run against an app that doesn't exist yet. */
@@ -184,7 +204,7 @@ async function switchboardRow(p: Probes, base: Omit<Row, "status" | "detail" | "
   });
 }
 
-async function genericRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx): Promise<Row> {
+async function genericRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx, forge?: ForgeConnect): Promise<Row> {
   if (!def.secret) {
     // CLI-owned session (doppler/ldcli) — rt holds no credential for it; validate() reaches the CLI directly.
     // No action here: the tools group already owns install/sign-in for this CLI (declaredIntegrations forces
@@ -193,10 +213,17 @@ async function genericRow(p: Probes, base: Omit<Row, "status" | "detail" | "acti
     return row({ ...base, status: result.status, detail: result.detail });
   }
   const stored = await secrets.has(def.secret.domain, def.secret.key);
-  if (stored === null) return row({ ...base, status: "missing", detail: `no ${def.title} account connected`, action: connectAction(def, true) });
+  if (stored === null) return row({ ...base, status: "missing", detail: `no ${def.title} account connected`, action: connectAction(def, true, forge) });
   const result = await def.validate(p, stored, ctx);
   if (result.status === "ready") return row({ ...base, status: "ready", detail: result.detail });
-  return row({ ...base, status: result.status, detail: result.detail, action: connectAction(def, true) });
+  return row({ ...base, status: result.status, detail: result.detail, action: connectAction(def, true, forge) });
+}
+
+function forgeConnectFor(id: Integration, ctx: ValidateCtx, intent: SetupIntent | null): ForgeConnect | undefined {
+  if (id !== "github" && id !== "gitlab") return undefined;
+  const role: ForgeRole = intent?.mode === "create" ? "owner" : "member";
+  const host = id === "gitlab" ? (ctx.host ?? ctx.declaredHost ?? null) : null;
+  return { provider: id, role, host };
 }
 
 /** doppler/ldcli's real blocker (install + sign in) already has a required row in the tools group (tool.team.<name>) — a second required, action-less row here for the same fact would be both a duplicate and a dead end. */
@@ -225,11 +252,12 @@ async function accountRowFor(p: Probes, entry: DeclaredEntry, team: TeamSnapshot
     optionalNote: cliOwned ? CLI_SESSION_OPTIONAL_NOTE : entry.optionalNote,
   };
   const ctx = ctxFor(id, team, overrides);
+  const forge = forgeConnectFor(id, ctx, intent);
 
-  if (id === "github") return githubRow(p, base, def, secrets, ctx);
+  if (id === "github") return githubRow(p, base, def, secrets, ctx, forge!);
   if (id === "slack") return slackRow(p, base, def, secrets, ctx, team);
   if (id === "switchboard") return switchboardRow(p, base, def, ctx);
-  return genericRow(p, base, def, secrets, ctx);
+  return genericRow(p, base, def, secrets, ctx, forge);
 }
 
 const ACCOUNT_RECHECK_ACTION: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };

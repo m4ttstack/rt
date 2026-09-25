@@ -51,9 +51,39 @@ describe("accountRows — account.gitlab", () => {
       optionalNote: null,
       status: "missing",
       detail: "no GitLab account connected",
-      action: { type: "connect", label: "Connect", integration: "gitlab", fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user" }] },
+      action: {
+        type: "connect",
+        label: "Connect",
+        integration: "gitlab",
+        fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user, read_repository" }],
+        create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user%2Cread_repository" },
+      },
       recheck: "on-change",
     });
+  });
+
+  test("create intent -> the owner's scopes in the hint and the create link", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.com", provider: "gitlab" } } });
+    const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), CREATE_INTENT), "account.gitlab");
+    expect(r.action).toEqual({
+      type: "connect",
+      label: "Connect",
+      integration: "gitlab",
+      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "api, read_user, write_repository" }],
+      create: { label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=api%2Cread_user%2Cwrite_repository" },
+    });
+  });
+
+  test("the create link opens the host the user confirmed over the one the team declares", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+    const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), JOIN_INTENT, { forgeHost: "git.internal.example" }), "account.gitlab");
+    expect((r.action as { create?: { url: string } }).create?.url).toStartWith("https://git.internal.example/-/user_settings/personal_access_tokens?");
+  });
+
+  test("no forge declared and nothing confirmed -> the create link falls back to gitlab.com", async () => {
+    const reqs: PackRequirements[] = [{ pack: "somepack", integrations: ["gitlab"], tools: [] }];
+    const r = await pickRow(accountRows(fakeProbes(), baseTeam(), reqs, fakeSecrets(), null), "account.gitlab");
+    expect((r.action as { create?: { url: string } }).create?.url).toStartWith("https://gitlab.com/-/user_settings/personal_access_tokens?");
   });
 
   test("secret present, host user-confirmed, validate 200s -> ready", async () => {
@@ -79,7 +109,13 @@ describe("accountRows — account.gitlab", () => {
       "account.gitlab",
     );
     expect(r.status).toBe("invalid");
-    expect(r.action).toEqual({ type: "connect", label: "Connect", integration: "gitlab", fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user" }] });
+    expect(r.action).toEqual({
+      type: "connect",
+      label: "Connect",
+      integration: "gitlab",
+      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user, read_repository" }],
+      create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user%2Cread_repository" },
+    });
   });
 
   test("secret present, host NOT user-confirmed -> error, and the token is never sent (R-F2)", async () => {
@@ -139,7 +175,13 @@ describe("accountRows — account.github", () => {
     const exec: ExecScript = (argv) => (argv[0] === "gh" && argv[1] === "auth" ? { code: 1, stdout: "", stderr: "not logged in" } : ok());
     const r = await pickRow(accountRows(fakeProbes({ exec }), githubTeam(), [], fakeSecrets(), null), "account.github");
     expect(r.status).toBe("missing");
-    expect(r.action).toEqual({ type: "connect", label: "Connect", integration: "github", fields: [{ name: "token", label: "GitHub token", secret: true, hint: "repo, read:org" }] });
+    expect(r.action).toEqual({
+      type: "connect",
+      label: "Connect",
+      integration: "github",
+      fields: [{ name: "token", label: "GitHub token", secret: true, hint: "repo, read:org" }],
+      create: { label: "Create a token on GitHub…", url: "https://github.com/settings/tokens/new?description=mattstack&scopes=repo%2Cread%3Aorg" },
+    });
   });
 
   test("gh CLI not installed (127) -> missing, detail names it, no alternatives", async () => {
@@ -170,6 +212,7 @@ describe("accountRows — account.github", () => {
       integration: "github",
       fields: [{ name: "token", label: "GitHub token", secret: true, hint: "repo, read:org" }],
       alternatives: [{ id: "use-gh", label: "Use your existing gh CLI session instead" }],
+      create: { label: "Create a token on GitHub…", url: "https://github.com/settings/tokens/new?description=mattstack&scopes=repo%2Cread%3Aorg" },
     });
   });
 
