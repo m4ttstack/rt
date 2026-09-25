@@ -42,6 +42,22 @@ private func probe(_ label: String, _ tally: Tally, answersOnCall: Int? = nil, a
         })
 }
 
+private func outcome(_ label: String, _ action: AgentPlistRefreshAction, before: AgentRegistration,
+                     reregistered: Bool? = nil, registerOk: Bool = true,
+                     after: AgentRegistration = .enabled) -> LaunchAgentOutcome {
+    LaunchAgentOutcome(label: label, action: action, before: before, reregistered: reregistered,
+                       registerOk: registerOk, after: after)
+}
+
+private func progress(_ change: VersionChange, failedRegisters: [String] = [],
+                      failedKickstarts: [String] = []) -> VersionChangeProgress {
+    VersionChangeProgress(change: change, failedRegisters: failedRegisters, failedKickstarts: failedKickstarts)
+}
+
+private let noPending = LaunchRegistration(registeredThisLaunch: [], pendingHashes: [:])
+private let bothAnswered = LaunchSettleReport(answered: ["daemon": true, "deck": true])
+private let upgrade = VersionChange.changed(from: "2.12.0", to: "2.13.0")
+
 let launchLifecycleChecks: [Check] = [
     Check("answer wait: probes before sleeping and stops at the first answer") { c in
         let tally = Tally()
@@ -123,5 +139,79 @@ let launchLifecycleChecks: [Check] = [
         c.expectEqual(await tally.count("slow.heal") + tally.count("gated.heal"), 0)
         c.expect(log.events.contains(.left(label: "slow", reason: "job is running")))
         c.expect(log.events.contains(.left(label: "gated", reason: "registration is requiresApproval")))
+    },
+    Check("launch record: agent roles come from the daemon label and deck's program") { c in
+        c.expectEqual(AgentRole.of(AgentPlist(label: "com.mattstack.daemon", fileName: "a.plist",
+                                              bundleProgram: "Contents/MacOS/rt"),
+                                   daemonLabel: "com.mattstack.daemon"), .daemon)
+        c.expectEqual(AgentRole.of(AgentPlist(label: "com.mattstack.deck.dev", fileName: "b.plist",
+                                              bundleProgram: "Contents/Helpers/deck"),
+                                   daemonLabel: "com.mattstack.daemon.dev"), .deck)
+        c.expectEqual(AgentRole.of(AgentPlist(label: "com.mattstack.other", fileName: "c.plist",
+                                              bundleProgram: "Contents/Helpers/other"),
+                                   daemonLabel: "com.mattstack.daemon"), .other)
+    },
+    Check("launch record: a successful re-register is bootstrapped this launch and its hash waits") { c in
+        c.expectEqual(LaunchRecording.summarize([outcome("d", .reregister(hash: "h2"), before: .enabled, reregistered: true)]),
+                      LaunchRegistration(registeredThisLaunch: ["d"], pendingHashes: ["d": "h2"]))
+    },
+    Check("launch record: a failed re-register is neither bootstrapped nor pending") { c in
+        c.expectEqual(LaunchRecording.summarize([outcome("d", .reregister(hash: "h2"), before: .enabled, reregistered: false)]),
+                      noPending)
+    },
+    Check("launch record: a fresh register from notRegistered is bootstrapped this launch") { c in
+        let registration = LaunchRecording.summarize([
+            outcome("a", .recordAfterRegister(hash: "h1"), before: .notRegistered),
+            outcome("b", .leave, before: .notRegistered),
+            outcome("c", .recordAfterRegister(hash: "h3"), before: .notRegistered, after: .requiresApproval),
+            outcome("e", .leave, before: .enabled),
+        ])
+        c.expectEqual(registration, LaunchRegistration(registeredThisLaunch: ["a", "b"], pendingHashes: ["a": "h1"]))
+    },
+    Check("launch record: a version change kickstarts only agents not bootstrapped this launch, in order") { c in
+        c.expectEqual(LaunchRecording.kickstartLabels(["daemon", "deck", "other"], registeredThisLaunch: ["deck"]),
+                      ["daemon", "other"])
+    },
+    Check("launch record: a pending hash is recorded once its agent answers and held otherwise") { c in
+        let registration = LaunchRegistration(registeredThisLaunch: [], pendingHashes: ["d": "h1", "k": "h2", "x": "h3"])
+        let plan = LaunchRecording.plan(registration: registration, progress: progress(.unchanged),
+                                        report: LaunchSettleReport(answered: ["d": true, "k": false]))
+        c.expectEqual(plan, LaunchRecordPlan(hashes: ["d": "h1", "x": "h3"], heldHashes: ["k"], recordVersion: false))
+    },
+    Check("launch record: a changed version is recorded once every probed agent answers") { c in
+        c.expect(LaunchRecording.plan(registration: noPending, progress: progress(upgrade), report: bothAnswered).recordVersion)
+        c.expect(!LaunchRecording.plan(registration: noPending, progress: progress(upgrade),
+                                       report: LaunchSettleReport(answered: ["daemon": true, "deck": false])).recordVersion)
+        c.expect(!LaunchRecording.plan(registration: noPending, progress: progress(upgrade),
+                                       report: LaunchSettleReport(answered: ["daemon": false, "deck": true])).recordVersion)
+    },
+    Check("launch record: a failed register, or a failed kickstart the heal did not cover, keeps the version unrecorded") { c in
+        c.expect(!LaunchRecording.plan(registration: noPending, progress: progress(upgrade, failedRegisters: ["a.plist"]),
+                                       report: bothAnswered).recordVersion)
+        c.expect(!LaunchRecording.plan(registration: noPending, progress: progress(upgrade, failedKickstarts: ["daemon"]),
+                                       report: bothAnswered).recordVersion)
+        c.expect(LaunchRecording.plan(registration: noPending, progress: progress(upgrade, failedKickstarts: ["daemon"]),
+                                      report: LaunchSettleReport(answered: ["daemon": true, "deck": true],
+                                                                 healed: ["daemon"])).recordVersion)
+    },
+    Check("launch record: an unchanged or first-launch version is never recorded here") { c in
+        for change in [VersionChange.unchanged, .firstLaunch] {
+            c.expect(!LaunchRecording.plan(registration: noPending, progress: progress(change),
+                                           report: bothAnswered).recordVersion, "\(change)")
+        }
+    },
+    Check("launch record: served apps restart once after a changed version's deck answers, apart from the record") { c in
+        c.expect(LaunchRecording.restartsServedApps(progress: progress(upgrade), report: bothAnswered, deckLabel: "deck"))
+        c.expect(!LaunchRecording.restartsServedApps(progress: progress(upgrade),
+                                                     report: LaunchSettleReport(answered: ["daemon": true, "deck": false]),
+                                                     deckLabel: "deck"))
+        c.expect(!LaunchRecording.restartsServedApps(progress: progress(upgrade), report: bothAnswered, deckLabel: nil))
+        for change in [VersionChange.unchanged, .firstLaunch] {
+            c.expect(!LaunchRecording.restartsServedApps(progress: progress(change), report: bothAnswered,
+                                                         deckLabel: "deck"), "\(change)")
+        }
+        let held = progress(upgrade, failedRegisters: ["a.plist"])
+        c.expect(!LaunchRecording.plan(registration: noPending, progress: held, report: bothAnswered).recordVersion)
+        c.expect(LaunchRecording.restartsServedApps(progress: held, report: bothAnswered, deckLabel: "deck"))
     },
 ]
