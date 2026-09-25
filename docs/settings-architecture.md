@@ -159,11 +159,18 @@ path formatted `[0].pattern` or `emoji.looking`.
   Annotations (`title`, `description`, `default`, `labels`, `placeholder`
   and the like) never count, except inside a `oneOf` branch, which is
   compared as a whole.
-  A breaking change passes only when the key's `storeVersion` went up and
-  `breaking-schema-changes.json` (next to the registry) gives the key a
-  one-line reason; a removed key needs only the reason. CI runs the diff
-  against `main` on every PR, and release preflight's `schema lock` row runs
-  it against the lock at the previous release tag.
+  A breaking change passes only with the key's `storeVersion` bumped by one
+  and a `migrateFrom` entry for the previous version whose schema matches
+  the lock being diffed against. `breaking-schema-changes.json` (next to
+  the registry) stands in for that, with a one-line reason, only for a key
+  the lock at the latest release tag does not have (never shipped), and
+  only in CI, no bump needed. A removed key needs either a rename heir
+  (listed in `RENAMES`, whose chain then continues under the new name) or
+  the same one-line reason. CI runs the diff against `main` on every PR
+  (one `storeVersion` step allowed per key); release preflight's
+  `schema lock` row runs it against the lock at the previous release tag,
+  where the chain must cover every version since that tag and the
+  never-shipped reason no longer applies (a key in that lock has shipped).
 - A typed optional property added to a loose object is safe for the
   classifier but can collide with a stored extra of the same name and a
   different type; `rt settings check` before release is what catches that.

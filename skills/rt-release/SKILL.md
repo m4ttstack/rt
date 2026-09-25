@@ -96,7 +96,8 @@ when Matt wants several apps bumped and bundled in one release.
    agent envelope) performs every mechanical check in steps 1-2c at once:
    git/tag state (on `main`, tree clean, commits since the last tag), the
    picker conformance gate, the settings schema lock against the last
-   tag, per-app pin freshness, the standalone
+   tag, the candidate's own settings check against the real stores,
+   per-app pin freshness, the standalone
    gitq/fast-browser rows, tool-row drift against upstreams, plugin
    catalog pin drift, Chrome extension currency, rt-client npm-vs-source
    parity, and the gate (fast path vs full) the pending diff implies.
@@ -106,8 +107,9 @@ when Matt wants several apps bumped and bundled in one release.
    row (off main, dirty tree). A stale `schema lock` row names a key
    whose schema changed in a breaking way since the last tag without a
    `storeVersion` bump and a `migrateFrom` chain covering every version
-   since that tag (a key never released may instead carry a one-line
-   reason in `packages/rt-client/src/settings/breaking-schema-changes.json`);
+   since that tag (a removed key that no key was renamed from may instead
+   carry a one-line reason in
+   `packages/rt-client/src/settings/breaking-schema-changes.json`);
    land the migration (`rt settings schema diff --draft` drafts it) or
    revert the change on main before tagging. A stale `settings stores` row
    is the candidate's own `rt settings check` failing against the real
