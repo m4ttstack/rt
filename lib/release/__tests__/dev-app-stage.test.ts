@@ -414,4 +414,47 @@ describe("stageLocalDevApp", () => {
     expect(calls).not.toContain(`rm -rf ${paths.stagedDir}`);
     expect(calls.some((c) => c.startsWith("rsync"))).toBe(false);
   });
+
+  for (const code of [23, 24]) {
+    test(`a file that vanishes mid-copy (rsync exit ${code}) is retried once from a fresh listing, and left uncached`, async () => {
+      const { seams, calls, writes } = fakeSeams({ untracked: "gone.ts\0" });
+      const exec = seams.exec;
+      let rsyncs = 0;
+      seams.exec = (argv, o) => {
+        const cmd = argv.join(" ");
+        if (argv[0] === "rsync") {
+          calls.push(cmd);
+          rsyncs++;
+          return Promise.resolve({ stdout: "", stderr: "gone.ts: stat: No such file", exitCode: rsyncs === 1 ? code : 0 });
+        }
+        if (cmd === "git ls-files -z --others --exclude-standard" && rsyncs > 0) {
+          calls.push(cmd);
+          return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+        }
+        return exec(argv, o);
+      };
+      const result = await stageLocalDevApp(seams, "/src/tree");
+      expect(result.outcome).toBe("built");
+      const copies = calls.filter((c) => c.startsWith("rsync"));
+      expect(copies.length).toBe(2);
+      const second = copies[1]!.match(/--files-from=(\S+)/)![1]!;
+      expect(writes[second]).toBe("cli.ts\0rt-tray/build.sh\0");
+      expect(calls.indexOf("rm -rf /scratch")).toBeGreaterThan(calls.indexOf(copies[0]!));
+      expect(calls.find((c) => c.includes("rt-tray/build.sh dev"))).not.toContain("MS_BUILD_SHA");
+    });
+  }
+
+  test("a copy that fails again after the retry, or fails some other way, still fails the stage", async () => {
+    for (const codes of [[23, 23], [12]]) {
+      const { seams, calls } = fakeSeams();
+      const exec = seams.exec;
+      let n = 0;
+      seams.exec = (argv, o) =>
+        argv[0] === "rsync"
+          ? (calls.push(argv.join(" ")), Promise.resolve({ stdout: "", stderr: "broke", exitCode: codes[Math.min(n++, codes.length - 1)]! }))
+          : exec(argv, o);
+      await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow("copying /src/tree failed");
+      expect(calls.filter((c) => c.startsWith("rsync")).length).toBe(codes.length);
+    }
+  });
 });

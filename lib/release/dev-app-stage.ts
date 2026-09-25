@@ -95,21 +95,20 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   }
 
   const scratch = seams.scratchDir();
-  // --files-from turns off the recursion -a implies; -r puts it back for the
-  // one kind of directory entry git lists, an untracked nested repo.
-  const listFile = `${paths.root}/.copy-list-${Date.now()}`;
-  seams.writeFile(listFile, snapshot.files.map((p) => `${p}\0`).join(""));
-  const copy = await seams.exec([
-    "rsync",
-    "-a",
-    "-r",
-    "--exclude=.git",
-    `--files-from=${listFile}`,
-    "--from0",
-    `${source}/`,
-    `${scratch}/`,
-  ]);
-  await seams.exec(["rm", "-f", listFile]);
+  let copy = await copyTree(seams, paths, source, scratch, snapshot.files);
+  // Partial-transfer codes: a listed file vanished before rsync reached it,
+  // as when another agent deletes one mid-copy. One retry from a fresh listing
+  // into an emptied scratch copy; the identity recheck below then sees the
+  // change and leaves the build uncached.
+  if (copy.exitCode === 23 || copy.exitCode === 24) {
+    const again = await snapshotTree(seams, source, version);
+    if (again) {
+      seams.log(`files changed while ${source} was copied; copying again`);
+      await seams.exec(["rm", "-rf", scratch]);
+      await seams.exec(["mkdir", "-p", scratch]);
+      copy = await copyTree(seams, paths, source, scratch, again.files);
+    }
+  }
   if (copy.exitCode !== 0) throw new UserActionableError("dev-app-copy-failed", `copying ${source} failed: ${tail(copy)}`);
 
   // An edit that lands during the copy is in the build but not in the key
@@ -158,6 +157,31 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   );
   seams.writeFile(paths.lastSourceFile, source);
   return { outcome: "built", stamp, stagedPath };
+}
+
+async function copyTree(
+  seams: StageSeams,
+  paths: ReturnType<typeof devAppStagePaths>,
+  source: string,
+  scratch: string,
+  files: string[],
+): Promise<RunResult> {
+  // --files-from turns off the recursion -a implies; -r puts it back for the
+  // one kind of directory entry git lists, an untracked nested repo.
+  const listFile = `${paths.root}/.copy-list-${Date.now()}`;
+  seams.writeFile(listFile, files.map((p) => `${p}\0`).join(""));
+  const copy = await seams.exec([
+    "rsync",
+    "-a",
+    "-r",
+    "--exclude=.git",
+    `--files-from=${listFile}`,
+    "--from0",
+    `${source}/`,
+    `${scratch}/`,
+  ]);
+  await seams.exec(["rm", "-f", listFile]);
+  return copy;
 }
 
 /** By rename, like `installStaged`, so a restart mid-way sees a whole bundle or none. */
