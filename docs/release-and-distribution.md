@@ -229,6 +229,15 @@ carrying a `repo` field; build runs on macos-15 (arm64), one leg per app;
 release publishes the packaged tarballs; the PR job opens one deps.lock PR on
 `bundle-ci/<run_id>`. Nothing pushes to main.
 
+For one served app (board, chat, console, boxscore) on an otherwise pin-only
+main, `rt release app <name>` drives this workflow as part of a whole patch
+release (`lib/release/release-app.ts`): it bumps the app on apps main,
+dispatches with `apps=<name>`, checks the bot PR moves only that row, that
+the published asset's sha256 matches it and that codesign shows
+`com.mattstack.helper.<name>` under a Developer ID authority, merges on
+green CI, then commits the notes, tags and runs `rt release verify`. deck
+stays on the full release because its pin is walkthrough-gated.
+
 Since the apps fold-in (m4ttstack/apps, 2026-09-06): chat, console, board and
 deck are monorepo rows whose deps.lock entry carries `subdir` (e.g.
 `apps/chat`) alongside `repo`. A subdir leg installs the workspace and builds
