@@ -5,13 +5,14 @@ struct ConnectSheet: View {
     let title: String
     let fields: [ActionField]
     let alternatives: [ActionAlternative]
+    let create: ActionLink?
     let onSubmit: ([String: String]?, String?) -> Void   // (values, alternativeId)
     @State private var values: [String: String]
     @Environment(\.dismiss) private var dismiss
 
-    init(title: String, fields: [ActionField], alternatives: [ActionAlternative],
+    init(title: String, fields: [ActionField], alternatives: [ActionAlternative], create: ActionLink? = nil,
          onSubmit: @escaping ([String: String]?, String?) -> Void) {
-        self.title = title; self.fields = fields; self.alternatives = alternatives; self.onSubmit = onSubmit
+        self.title = title; self.fields = fields; self.alternatives = alternatives; self.create = create; self.onSubmit = onSubmit
         var prefilled: [String: String] = [:]
         for f in fields { if let v = f.value, !v.isEmpty { prefilled[f.name] = v } }
         _values = State(initialValue: prefilled)
@@ -20,6 +21,11 @@ struct ConnectSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Connect \(title)").font(.headline)
+            if let create, let url = URL(string: create.url) {
+                Button(create.label) { NSWorkspace.shared.open(url) }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier(AXID.connectCreate)
+            }
             ForEach(fields, id: \.name) { f in
                 SetupField(label: f.label, note: f.hint) {
                     Group {

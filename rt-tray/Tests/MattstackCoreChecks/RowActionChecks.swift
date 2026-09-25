@@ -8,8 +8,14 @@ let rowActionChecks: [Check] = [
     },
     Check("connect: collect first, then rt setup <integration> connect with JSON on stdin; use-gh alternative") { c in
         let fields = [ActionField(name: "token", label: "Token", secret: true, hint: "read_api")]
-        let a = RowAction(type: .connect, label: "Connect", integration: "gitlab", fields: fields, alternatives: [ActionAlternative(id: "use-gh", label: "Use gh login")])
-        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "gitlab", alternatives: a.alternatives!))
+        let create = ActionLink(label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?scopes=read_api")
+        let a = RowAction(type: .connect, label: "Connect", integration: "gitlab", fields: fields, alternatives: [ActionAlternative(id: "use-gh", label: "Use gh login")], create: create)
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "gitlab", alternatives: a.alternatives!, create: create))
+        // The sheet hands the link straight to the browser, so only https ever reaches it.
+        for bad in ["http://gitlab.com/-/user_settings/personal_access_tokens", "file:///etc/passwd", "not a url ::"] {
+            let unsafe = RowAction(type: .connect, label: "Connect", integration: "gitlab", fields: fields, create: ActionLink(label: "Create…", url: bad))
+            c.expectEqual(RowActionDispatcher.dispatch(unsafe, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "gitlab", alternatives: [], create: nil), bad)
+        }
         let d = RowActionDispatcher.dispatch(a, fieldValues: ["token": "glpat-xyz"], alternative: nil)
         c.expectEqual(d, .rtVerb(args: ["setup", "gitlab", "connect", "--json"], stdin: Data("{\"token\":\"glpat-xyz\"}".utf8)))
         c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: "use-gh"), .rtVerb(args: ["setup", "gitlab", "connect", "--json"], stdin: Data("{\"useGh\":true}".utf8)))
@@ -18,7 +24,7 @@ let rowActionChecks: [Check] = [
         let fields = [ActionField(name: "url", label: "Remote URL", secret: false, hint: "an empty private repo")]
         let alts = [ActionAlternative(id: "create", label: "Create a private repo for me")]
         let a = RowAction(type: .form, label: "Add remote…", fields: fields, alternatives: alts, verb: ["home", "remote", "set"])
-        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "", alternatives: alts))
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .collectFields(fields, integration: "", alternatives: alts, create: nil))
         // JSONEncoder escapes slashes; the verb parses JSON, so the escaped form is the contract.
         c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: ["url": "https://x/y.git"], alternative: nil),
                       .rtVerb(args: ["home", "remote", "set", "--json"], stdin: Data("{\"url\":\"https:\\/\\/x\\/y.git\"}".utf8)))

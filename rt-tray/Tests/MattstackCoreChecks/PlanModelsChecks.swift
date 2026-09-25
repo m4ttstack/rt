@@ -42,6 +42,13 @@ let planModelsChecks: [Check] = [
         c.expectEqual(plan.requiredMissing, ["perm.fda", "account.gitlab"])
         c.expectEqual(plan.canInstall, false)
     },
+    Check("a connect action carries its create-token link, and reads nil when rt sends none") { c in
+        let json = Data(#"{"type":"connect","label":"Connect","integration":"gitlab","fields":[],"create":{"label":"Create a token on GitLab…","url":"https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api"}}"#.utf8)
+        let action = try JSONDecoder().decode(RowAction.self, from: json)
+        c.expectEqual(action.create, ActionLink(label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api"))
+        let bare = try JSONDecoder().decode(RowAction.self, from: Data(#"{"type":"connect","label":"Connect","integration":"gitlab","fields":[]}"#.utf8))
+        c.expectEqual(bare.create, nil)
+    },
     Check("a connect field carries the app's prefill value, and reads nil when rt sends none") { c in
         let prefilled = try JSONDecoder().decode(
             ActionField.self,

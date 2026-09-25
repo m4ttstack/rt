@@ -19,6 +19,7 @@ import { UserActionableError } from "./errors.ts";
 import { isValidHttpsUrl } from "./host-validate.ts";
 import type { Probes } from "./probes.ts";
 import { interpretSdmStatus } from "../sdm/core.ts";
+import { tokenField } from "./token-create.ts";
 
 export interface ValidateResult {
   status: "ready" | "invalid" | "error";
@@ -141,7 +142,7 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
     id: "github",
     title: "GitHub",
     why: (teamHost) => (teamHost ? `Lets rt open PRs, check CI, and read repo metadata on ${teamHost}.` : "Lets rt open PRs, check CI status, and read repo metadata on GitHub."),
-    fields: [{ name: "token", label: "GitHub token", secret: true, hint: "repo, read:org" }],
+    fields: [tokenField("github", "member")],
     alternatives: [{ id: "use-gh", label: "Use your existing gh CLI session instead" }],
     secret: { domain: "rt", key: "githubToken" },
     async validate(p, token, ctx) {
@@ -167,7 +168,7 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
     id: "gitlab",
     title: "GitLab",
     why: (teamHost) => (teamHost ? `Lets rt open MRs, check pipelines, and read project metadata on ${teamHost}.` : "Lets rt open MRs, check pipelines, and read project metadata on GitLab."),
-    fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user" }],
+    fields: [tokenField("gitlab", "member")],
     secret: { domain: "rt", key: "gitlabToken" },
     async validate(p, token, ctx) {
       // A team can declare a self-hosted GitLab, but a joined team is not
