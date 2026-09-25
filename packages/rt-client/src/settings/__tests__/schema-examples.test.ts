@@ -1,14 +1,12 @@
 /**
  * One good, one bad and (deep keys) one partial-layer example per composite
- * key, run through the runtime check. Completeness widens as namespaces land.
+ * key, run through the runtime check.
  */
 
 import { describe, expect, test } from "bun:test";
 import { allDefs, getDef } from "../registry-machinery.ts";
 import { checkSchema } from "../schema.ts";
 import { EXAMPLES } from "./schema-examples.ts";
-
-export const COVERED_PREFIXES = ["rt.", "mattstack.", "setup.", "claude.", "deck."];
 
 describe("schema examples", () => {
   for (const [key, ex] of Object.entries(EXAMPLES)) {
@@ -37,9 +35,9 @@ describe("schema examples", () => {
     });
   }
 
-  test("every composite key in a covered namespace has a schema and an example", () => {
-    const covered = allDefs().filter((d) => (d.type === "object" || d.type === "array") && COVERED_PREFIXES.some((p) => d.key.startsWith(p)));
-    expect(covered.filter((d) => !d.schema).map((d) => d.key)).toEqual([]);
-    expect(covered.map((d) => d.key).filter((k) => !(k in EXAMPLES))).toEqual([]);
+  test("every composite key has a schema and an example", () => {
+    const composite = allDefs().filter((d) => d.type === "object" || d.type === "array");
+    expect(composite.filter((d) => !d.schema).map((d) => d.key)).toEqual([]);
+    expect(composite.map((d) => d.key).filter((k) => !(k in EXAMPLES))).toEqual([]);
   });
 });

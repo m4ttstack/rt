@@ -1,4 +1,363 @@
 {
+  "board.botUsernames": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "board.cwds": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "review": {
+          "type": "string"
+        },
+        "respond": {
+          "type": "string"
+        },
+        "doctor": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "board.hiddenMembers": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "board.members": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "agePublicKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "additionalProperties": {}
+      }
+    }
+  },
+  "board.projects": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "board.reReview": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "board.slack": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "singleTemplate": {
+          "type": "string"
+        },
+        "multiHeader": {
+          "type": "string"
+        },
+        "multiItem": {
+          "type": "string"
+        },
+        "autoResolveIntervalMinutes": {
+          "type": "number"
+        },
+        "emoji": {
+          "type": "object",
+          "properties": {
+            "looking": {
+              "placeholder": "eyes",
+              "type": "string"
+            },
+            "commented": {
+              "placeholder": "speech_balloon",
+              "type": "string"
+            },
+            "approved": {
+              "placeholder": "white_check_mark",
+              "type": "string"
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "board.tabs": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "authors"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "codeowners"
+                  },
+                  "section": {
+                    "type": "string"
+                  },
+                  "excludeMembers": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "section"
+                ],
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "slackChannel": {
+            "type": "string"
+          },
+          "reviewSkill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "source"
+        ],
+        "additionalProperties": {}
+      }
+    }
+  },
+  "board.ticketPrefixes": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "board.triage": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "cooldownMinutes": {
+          "type": "number"
+        },
+        "dailyAttemptBudget": {
+          "type": "number"
+        },
+        "notify": {
+          "type": "string",
+          "enum": [
+            "rt",
+            "badge-only"
+          ]
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "api",
+            "checkout"
+          ]
+        },
+        "fixClasses": {
+          "type": "object",
+          "properties": {
+            "retryFlake": {
+              "type": "boolean"
+            },
+            "inheritedNoteDraft": {
+              "type": "boolean"
+            },
+            "cleanApiRebase": {
+              "type": "boolean"
+            },
+            "mechanicalLint": {
+              "type": "boolean"
+            },
+            "codeFix": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "board.workspaces": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "reviews": {
+          "type": "string"
+        },
+        "responds": {
+          "type": "string"
+        },
+        "doctors": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "boxscore.botPatterns": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.excludeFilePatterns": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.hiddenMembers": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.ignoredMrs": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.linearDoneStates": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.projects": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "boxscore.sizeBand": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "tooSmall": {
+          "type": "number"
+        },
+        "tooLarge": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
   "claude.marketplaces": {
     "storeVersion": 1,
     "schema": {
@@ -195,6 +554,102 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": {}
+    }
+  },
+  "gitq.board": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "repos": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": {}
+              }
+            ]
+          }
+        },
+        "port": {
+          "type": "number"
+        },
+        "herdrWorkspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "gitq.forges": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "gitlab",
+              "github"
+            ]
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "tokenEnv": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "additionalProperties": {}
+      },
+      "labels": {
+        "key": "host",
+        "value": "forge"
+      }
+    }
+  },
+  "gitq.workSlots": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workSlotLocation": {
+          "type": "string"
+        },
+        "maxWorkSlots": {
+          "type": "number"
         }
       },
       "additionalProperties": {}

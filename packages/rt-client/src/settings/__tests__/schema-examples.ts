@@ -240,4 +240,115 @@ export const EXAMPLES: Record<string, Example> = {
     ],
     layer: [{ publicDomain: "apps.example.com" }, { tunnel: { uuid: "00000000-0000-4000-8000-000000000000" } }],
   },
+  "board.projects": { good: [[], ["acme/app", "acme/docs"]], bad: [{ value: [{ path: "acme/app" }], path: [0] }] },
+  "board.members": {
+    good: [[], [{ username: "dev1" }, { username: "dev2", name: "Dev Two", hidden: true }]],
+    bad: [
+      { value: [{ name: "Dev One" }], path: [0, "username"] },
+      { value: [{ username: "dev1", hidden: "yes" }], path: [0, "hidden"] },
+    ],
+  },
+  "board.botUsernames": { good: [[], ["release-bot"]], bad: [{ value: [false], path: [0] }] },
+  "board.ticketPrefixes": { good: [[], ["ACME", "OPS"]], bad: [{ value: "ACME", path: [] }] },
+  "board.slack": {
+    good: [
+      {},
+      {
+        channel: "acme-review",
+        singleTemplate: "{title}: {url}",
+        multiHeader: "{count} MRs ready for review",
+        multiItem: "- {title}: {url}",
+        autoResolveIntervalMinutes: 15,
+        emoji: { looking: "eyes", commented: "speech_balloon", approved: "white_check_mark" },
+      },
+    ],
+    bad: [
+      { value: { autoResolveIntervalMinutes: "15" }, path: ["autoResolveIntervalMinutes"] },
+      { value: { emoji: { looking: 1 } }, path: ["emoji", "looking"] },
+    ],
+    layer: [{ emoji: { approved: "tada" } }],
+  },
+  "board.tabs": {
+    good: [
+      [],
+      [
+        { id: "team", label: "Team", source: { kind: "authors" } },
+        { id: "platform", label: "Platform", source: { kind: "codeowners", section: "Platform", excludeMembers: true }, slackChannel: "acme-platform", reviewSkill: "review" },
+      ],
+    ],
+    bad: [
+      { value: [{ id: "team", source: { kind: "authors" } }], path: [0, "label"] },
+      { value: [{ id: "team", label: "Team", source: { kind: "authors" }, slackChannel: 7 }], path: [0, "slackChannel"] },
+    ],
+  },
+  "board.workspaces": {
+    good: [{}, { reviews: "reviews", responds: "responses", doctors: "doctors" }],
+    bad: [{ value: { reviews: 1 }, path: ["reviews"] }],
+    layer: [{ doctors: "doctors" }],
+  },
+  "board.hiddenMembers": { good: [[], ["dev2"]], bad: [{ value: [{ username: "dev2" }], path: [0] }] },
+  "board.triage": {
+    good: [
+      {},
+      {
+        enabled: true,
+        cooldownMinutes: 30,
+        dailyAttemptBudget: 3,
+        notify: "badge-only",
+        tier: "checkout",
+        fixClasses: { retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: false, codeFix: false },
+      },
+    ],
+    bad: [
+      { value: { tier: "full" }, path: ["tier"] },
+      { value: { fixClasses: { codeFix: "on" } }, path: ["fixClasses", "codeFix"] },
+    ],
+    layer: [{ fixClasses: { retryFlake: false } }],
+  },
+  "board.reReview": {
+    good: [{}, { enabled: false }],
+    bad: [{ value: { enabled: "no" }, path: ["enabled"] }],
+    layer: [{ enabled: true }],
+  },
+  "board.cwds": {
+    good: [{}, { review: "/Users/dev/src/app", respond: "", doctor: "/Users/dev/src/app" }],
+    bad: [{ value: { review: ["/Users/dev/src/app"] }, path: ["review"] }],
+    layer: [{ respond: "/Users/dev/src/app" }],
+  },
+  "boxscore.projects": { good: [[], ["acme/app"]], bad: [{ value: [7], path: [0] }] },
+  "boxscore.linearDoneStates": { good: [[], ["Done", "Released"]], bad: [{ value: [null], path: [0] }] },
+  "boxscore.sizeBand": {
+    good: [{}, { tooSmall: 10, tooLarge: 400 }],
+    bad: [{ value: { tooLarge: "400" }, path: ["tooLarge"] }],
+    layer: [{ tooSmall: 5 }],
+  },
+  "boxscore.excludeFilePatterns": { good: [[], ["**/*.json", "**/generated/**"]], bad: [{ value: [true], path: [0] }] },
+  "boxscore.ignoredMrs": { good: [[], ["!123", "acme/app!456"]], bad: [{ value: [123], path: [0] }] },
+  "boxscore.botPatterns": { good: [[], ["^renovate", "-bot$"]], bad: [{ value: [{ pattern: "-bot$" }], path: [0] }] },
+  "boxscore.hiddenMembers": { good: [[], ["dev2"]], bad: [{ value: [2], path: [0] }] },
+  "gitq.workSlots": {
+    good: [{}, { workSlotLocation: "/Users/dev/.gitq-slots", maxWorkSlots: 3 }],
+    bad: [{ value: { maxWorkSlots: "3" }, path: ["maxWorkSlots"] }],
+    layer: [{ maxWorkSlots: 5 }],
+  },
+  "gitq.forges": {
+    good: [{}, { "gitlab.example.com": { provider: "gitlab", tokenEnv: "ACME_GITLAB_TOKEN" }, work: { provider: "github", baseUrl: "https://github.example.com" } }],
+    bad: [
+      { value: { "gitlab.example.com": { provider: "bitbucket" } }, path: ["gitlab.example.com", "provider"] },
+      { value: { "gitlab.example.com": { tokenEnv: "ACME_GITLAB_TOKEN" } }, path: ["gitlab.example.com", "provider"] },
+    ],
+    layer: [{ "gitlab.example.com": { tokenEnv: "ACME_GITLAB_TOKEN" } }],
+  },
+  "gitq.board": {
+    good: [
+      { repos: [] },
+      { repos: ["app"], port: 11008 },
+      { repos: [{ path: "/Users/dev/src/app", name: "app" }, { path: "/Users/dev/src/docs" }], port: 11008, herdrWorkspace: "gitq" },
+    ],
+    bad: [
+      { value: { port: 11008 }, path: ["repos"] },
+      { value: { repos: [{ name: "app" }] }, path: ["repos", 0] },
+    ],
+    layer: [{ port: 11009 }],
+  },
 };

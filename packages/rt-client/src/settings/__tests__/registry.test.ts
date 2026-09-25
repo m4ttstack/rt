@@ -441,6 +441,13 @@ describe("settings/registry", () => {
         if (def.merge === "deep" && def.type === "object") expect(def.layerSchema).toBeDefined();
       }
     });
+
+    test("every object or array def carries a schema", () => {
+      for (const def of allDefs()) {
+        if (def.type !== "object" && def.type !== "array") continue;
+        expect(def.schema, `${def.key} has no schema`).toBeDefined();
+      }
+    });
   });
 
   describe("validateValue", () => {

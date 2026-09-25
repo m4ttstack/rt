@@ -61,6 +61,20 @@ const oauthRule = z.union([
   z.looseObject({ mode: z.literal("domains"), domains: z.array(z.string()).min(1) }),
 ]);
 
+const tab = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  source: z.union([
+    z.looseObject({ kind: z.literal("authors") }),
+    z.looseObject({ kind: z.literal("codeowners"), section: z.string(), excludeMembers: z.boolean().optional() }),
+  ]),
+  slackChannel: z.string().optional(),
+  reviewSkill: z.string().optional(),
+});
+
+// rt's board.keys setup step writes bare repo names; gitq's own loader reads { path, name? }.
+const gitqRepo = z.union([z.string(), z.looseObject({ path: z.string(), name: z.string().optional() })]);
+
 export const SCHEMAS = {
   "rt.roles": z.record(z.string(), role),
   "rt.intercepts": z.array(z.looseObject({ command: z.string().min(1), matches: z.array(interceptMatch) })),
@@ -158,6 +172,51 @@ export const SCHEMAS = {
     tunnel: z.looseObject({ name: z.string(), uuid: z.string() }).nullable().optional(),
     railway: z.looseObject({ projectId: z.string(), environmentId: z.string() }).nullable().optional(),
   }),
+  "board.projects": z.array(z.string()),
+  "board.members": z.array(z.looseObject({ username: z.string(), name: z.string().optional(), hidden: z.boolean().optional(), agePublicKey: z.string().optional() })),
+  "board.botUsernames": z.array(z.string()),
+  "board.ticketPrefixes": z.array(z.string()),
+  "board.slack": z.looseObject({
+    channel: z.string().optional(),
+    singleTemplate: z.string().optional(),
+    multiHeader: z.string().optional(),
+    multiItem: z.string().optional(),
+    autoResolveIntervalMinutes: z.number().optional(),
+    emoji: z.looseObject({
+      looking: z.string().optional().meta({ placeholder: "eyes" }),
+      commented: z.string().optional().meta({ placeholder: "speech_balloon" }),
+      approved: z.string().optional().meta({ placeholder: "white_check_mark" }),
+    }).optional(),
+  }),
+  "board.tabs": z.array(tab),
+  "board.workspaces": z.looseObject({ reviews: z.string().optional(), responds: z.string().optional(), doctors: z.string().optional() }),
+  "board.hiddenMembers": z.array(z.string()),
+  "board.triage": z.looseObject({
+    enabled: z.boolean().optional(),
+    cooldownMinutes: z.number().optional(),
+    dailyAttemptBudget: z.number().optional(),
+    notify: z.enum(["rt", "badge-only"]).optional(),
+    tier: z.enum(["api", "checkout"]).optional(),
+    fixClasses: z.looseObject({
+      retryFlake: z.boolean().optional(), inheritedNoteDraft: z.boolean().optional(), cleanApiRebase: z.boolean().optional(),
+      mechanicalLint: z.boolean().optional(), codeFix: z.boolean().optional(),
+    }).optional(),
+  }),
+  "board.reReview": z.looseObject({ enabled: z.boolean().optional() }),
+  "board.cwds": z.looseObject({ review: z.string().optional(), respond: z.string().optional(), doctor: z.string().optional() }),
+  "boxscore.projects": z.array(z.string()),
+  "boxscore.linearDoneStates": z.array(z.string()),
+  "boxscore.sizeBand": z.looseObject({ tooSmall: z.number().optional(), tooLarge: z.number().optional() }),
+  "boxscore.excludeFilePatterns": z.array(z.string()),
+  "boxscore.ignoredMrs": z.array(z.string()),
+  "boxscore.botPatterns": z.array(z.string()),
+  "boxscore.hiddenMembers": z.array(z.string()),
+  "gitq.workSlots": z.looseObject({ workSlotLocation: z.string().optional(), maxWorkSlots: z.number().optional() }),
+  "gitq.forges": z.record(
+    z.string(),
+    z.looseObject({ provider: z.enum(["gitlab", "github"]), baseUrl: z.string().optional(), tokenEnv: z.string().optional() }),
+  ).meta({ labels: { key: "host", value: "forge" } }),
+  "gitq.board": z.looseObject({ repos: z.array(gitqRepo), port: z.number().optional(), herdrWorkspace: z.string().optional() }),
 } satisfies Record<string, z.ZodType>;
 
 export type Value<K extends keyof typeof SCHEMAS> = z.infer<(typeof SCHEMAS)[K]>;
