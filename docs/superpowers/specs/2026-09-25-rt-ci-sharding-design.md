@@ -70,9 +70,10 @@ lockfile sync (`bun install && git diff --exit-code -- bun.lock`),
 `bunx tsc --noEmit`, workflow lint, `bun run ui:test`, `bun run docs:check`,
 `bun run picker:check`. `actionlint` arrives through its release download
 script pinned to one version (no brew on ubuntu); the lint list gains
-nothing and still grandfathers `release.yml`. The plan's first task runs
-each step on ubuntu before anything else is written. A step that turns
-out to need macOS goes into a fourth job, `static-macos`, that runs on
+nothing and still grandfathers `release.yml`. The PR's first run is what
+proves each step on ubuntu (the fallback below is cheap enough that a
+separate probe buys nothing). A step that turns out to need macOS goes
+into a fourth job, `static-macos`, that runs on
 every PR (never into `unit`, which skips on some PRs; `docs:check` on a
 docs-only PR is the case that rules that out), and the `checks` job's
 `needs:` list and pass condition gain it. No such step is expected: no
