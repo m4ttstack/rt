@@ -1,11 +1,11 @@
 ---
 sidebar_position: 6
-title: The tray app
+title: The menu bar app
 ---
 
-# The tray app
+# The menu bar app
 
-The `rt-tray` menu bar app shows daemon health at a glance and delivers native notifications, so you don't need a terminal open to know something happened.
+mattstack.app is the macOS menu bar app that `rt` ships inside. It registers the daemon with launchd, shows its health at a glance, and delivers native notifications, so you don't need a terminal open to know something happened.
 
 ## The dot
 
@@ -13,22 +13,28 @@ The `rt-tray` menu bar app shows daemon health at a glance and delivers native n
 | --- | --- |
 | Green | daemon running normally |
 | Yellow | daemon starting |
-| Orange | pending notifications |
+| Orange | pending notifications, or a runaway process detected |
+| Pink | daemon reachable but reporting a health problem |
 | Red | daemon not reachable |
+| Grey | state unknown (before the first status poll) |
 
 ## Menu actions
 
-From the tray menu you can:
+From the menu bar menu you can:
 
-- restart the daemon
-- stop the daemon
-- toggle launch-at-login
+- open the mattstack window (Ctrl-Opt-Cmd-M)
+- open **Processes…** or **Worktrees…**
+- restart the daemon, or view its logs
+- open **Settings…**
+- toggle **Start at Login**
 - check for updates
-- open **Worktrees…**
+- quit
+
+The **Processes…** panel's gear menu adds **Stop Daemon**, the crash log, setup status, and **Uninstall mattstack…**.
 
 ## Worktrees panel
 
-**Worktrees…** lists the worktrees that were not cleaned up after their merge request merged. The menu item shows how many there are, and a summary notification once a day (at 09:00 local) opens the panel when clicked.
+**Worktrees…** lists the worktrees that were not cleaned up after their merge request merged or closed. The menu item shows how many there are, and once a day (from 09:00 local, when at least one tree needs a decision) a summary notification opens the panel when clicked.
 
 Each row says why the tree is stuck and whether its work is safe somewhere else: already in the default branch, pushed to the remote, or patch-identical to what merged. It offers one guarded action: dispose, keep, push the branch, review the diff, stop the processes holding the tree, or remove it. Every action re-checks the tree before it runs. A removed tree goes to rt's 14-day trash rather than being deleted, and a tree holding the only copy of its work can only be forced after you confirm.
 
@@ -36,7 +42,7 @@ Each row says why the tree is stuck and whether its work is safe somewhere else:
 
 ## Pane focus
 
-When `rt pane focus` targets a pane, the tray activates the terminal window hosting it. This works for both regular panes and daemon-hosted background panes.
+When `rt pane focus` targets a pane, the app activates the terminal window hosting it. This works for both regular panes and daemon-hosted background panes.
 
 ## Window behavior
 
@@ -50,6 +56,8 @@ Settings opens as a native tabbed window (General, Permissions, Fast Browser, Te
 
 ## Updates
 
-The tray app never self-upgrades. When a newer release is available, it notifies you and prompts you to run `rt update` yourself; it does not download or install anything on your behalf.
+mattstack.app updates itself through Sparkle, which verifies the release signature, stages the install, and relaunches the app. It checks every 6 hours and downloads a new release on its own. Instead of a window stealing focus, the menu item changes to **Update Available: &lt;version&gt;**; the update installs right away when none of the app's windows are open and setup isn't running, and otherwise when you quit the app.
+
+**Check for Updates…** checks on demand, and `rt update` asks the running app to do the same; the CLI never downloads or installs anything itself, and points you at the latest release on GitHub if the app isn't running. The dev build (mattstack-dev.app) runs from source and never updates through Sparkle.
 
 See also: the [daemon guide](/guides/daemon) for what the daemon itself does, and [`rt daemon`](/reference/daemon) / [`rt update`](/reference/update) in the command reference.
