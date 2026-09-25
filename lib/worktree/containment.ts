@@ -1,4 +1,4 @@
-import { branchExistsLocalAsync, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
+import { headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
 import { childEnv } from "../subprocess.ts";
 
 export type Containment = "in-default" | "on-remote" | "in-merged-mr" | "patch-identical" | "none";
@@ -67,17 +67,24 @@ async function patchIds(treePath: string, range: string): Promise<Set<string> | 
   return new Set(out.split("\n").filter(Boolean).map((l) => l.split(" ")[0]!));
 }
 
+type Fetch = (sha: string) => Promise<boolean>;
+
+/** The commit is local, fetching it first when it is not. */
+async function haveCommit(treePath: string, sha: string, fetch: Fetch = (s) => fetchSha(treePath, s)): Promise<boolean> {
+  return (await hasObject(treePath, sha)) || ((await fetch(sha)) && (await hasObject(treePath, sha)));
+}
+
 /**
- * Every commit on HEAD that the default branch lacks has a patch-identical
+ * Every commit on `tip` that the default branch lacks has a patch-identical
  * twin on the MR side. Squash merges never match (their one commit is a new
  * patch); they still pass through the MR-sha ancestry check in containmentOf.
  * Missing objects fail closed.
  *
- * The MR side ranges from merge-base(HEAD, mrSha), not merge-base(defaultRef,
+ * The MR side ranges from merge-base(tip, mrSha), not merge-base(defaultRef,
  * mrSha): once the forge's own merge (a merge commit or a fast-forward) has
  * landed, mrSha is itself an ancestor of defaultRef, collapsing
- * merge-base(defaultRef, mrSha) to mrSha and leaving the range empty. HEAD
- * never moved, so merge-base(HEAD, mrSha) still finds the real fork point.
+ * merge-base(defaultRef, mrSha) to mrSha and leaving the range empty. The tip
+ * never moved, so merge-base(tip, mrSha) still finds the real fork point.
  *
  * --no-merges on the local side would pass a local merge commit's own diff
  * (a conflict resolution, a file staged only at merge time) through unseen,
@@ -88,10 +95,10 @@ export async function patchIdenticalToMr(
   treePath: string,
   mrSha: string,
   defaultRef: string,
-  fetch: (sha: string) => Promise<boolean> = (sha) => fetchSha(treePath, sha),
+  fetch?: Fetch,
   tip = "HEAD",
 ): Promise<boolean> {
-  if (!(await hasObject(treePath, mrSha)) && !((await fetch(mrSha)) && (await hasObject(treePath, mrSha)))) return false;
+  if (!(await haveCommit(treePath, mrSha, fetch))) return false;
   const localMerges = await runGit(treePath, ["rev-list", "--merges", `${defaultRef}..${tip}`]);
   if (localMerges.exitCode !== 0 || localMerges.stdout.trim().length > 0) return false;
   const mrBase = await runGit(treePath, ["merge-base", tip, mrSha]);
@@ -108,10 +115,16 @@ type MrHead = { state?: string | null; sha?: string | null };
 /** Weakest first: a tree is only as contained as its least-contained tip. */
 const STRENGTH: Containment[] = ["none", "patch-identical", "in-merged-mr", "on-remote", "in-default"];
 
-/** Every tip dispose drops: HEAD, and the branch it deletes, which need not be checked out. */
+/**
+ * Every tip dispose drops: HEAD, and the branch it deletes, which need not be
+ * checked out. A branch at HEAD's own commit is left out, so the patch-id
+ * pass never runs twice for one commit.
+ */
 async function droppedTips(treePath: string, branch: string | null): Promise<string[]> {
   const tips = ["HEAD"];
-  if (branch && (await branchExistsLocalAsync(treePath, branch))) tips.push(`refs/heads/${branch}`);
+  if (!branch) return tips;
+  const tip = await runGit(treePath, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`]);
+  if (tip.exitCode === 0 && tip.stdout.trim() !== (await headSha(treePath))) tips.push(`refs/heads/${branch}`);
   return tips;
 }
 
@@ -141,23 +154,26 @@ export async function mergedMrCoversTips(treePath: string, branch: string | null
  * inside a merged MR's source head, or patch-identical to it. The MR checks
  * exist because squash and rebase merges leave local heads diverged from
  * what landed, so every ancestry check against the target reads "unpushed"
- * for work that demonstrably merged. The default branch alone is enough
- * because origin/<branch> outlives a forge's delete-on-merge until a prune.
+ * for work that demonstrably merged; the MR's commit is fetched when it is
+ * not local, before either MR check. A tip in the default branch is
+ * contained even when a stale origin/<branch> disagrees: a forge's
+ * delete-on-merge leaves the tracking ref behind until a prune.
  * Full refs, so a local branch named `origin/main` can never vouch.
  */
 export async function containmentOf(
   treePath: string,
   branch: string | null,
   mr: MrHead | null,
-  fetch?: (sha: string) => Promise<boolean>,
+  fetch?: Fetch,
 ): Promise<Containment> {
   const defaultRef = `refs/remotes/${await remoteDefaultRef(treePath)}`;
   const branchRef = branch && (await remoteRefExists(treePath, branch)) ? `refs/remotes/origin/${branch}` : null;
   const mergedSha = mergedShaOf(mr);
+  let mrLocal: Promise<boolean> | undefined;
   const tipContainment = async (tip: string): Promise<Containment> => {
     if (await isAncestorAsync(treePath, tip, defaultRef)) return "in-default";
     if (branchRef && (await isAncestorAsync(treePath, tip, branchRef))) return "on-remote";
-    if (!mergedSha) return "none";
+    if (!mergedSha || !(await (mrLocal ??= haveCommit(treePath, mergedSha, fetch)))) return "none";
     if (await isAncestorAsync(treePath, tip, mergedSha)) return "in-merged-mr";
     return (await patchIdenticalToMr(treePath, mergedSha, defaultRef, fetch, tip)) ? "patch-identical" : "none";
   };

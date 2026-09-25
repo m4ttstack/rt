@@ -40,6 +40,12 @@ const SCENARIOS: Scenario[] = [
     sh(`git push -q origin ${rec.branch}`, rec.path);
     return null;
   } },
+  { name: "pushed branch with an uncommitted file", group: "look", build: (rec) => {
+    commit(rec.path, "a.txt");
+    sh(`git push -q origin ${rec.branch}`, rec.path);
+    writeFileSync(join(rec.path, "notes.txt"), "wip\n");
+    return null;
+  } },
   { name: "unpushed branch", group: "only-copy", build: (rec) => {
     commit(rec.path, "a.txt");
     return null;
@@ -92,7 +98,7 @@ describe("triage offers dispose exactly where dispose's containment guard passes
       const outcome = await disposeTree({
         repoName, repoPath: repo, cacheEntries, emit: () => {}, log: { info: () => {}, warn: () => {} },
         killProcesses: false, findRunningRun: () => ({ kind: "none" }),
-      }, rec, {});
+      }, rec, { acceptDirty: s.group === "look" });
 
       expect(row.group).toBe(s.group);
       expect(outcome.disposed ? "disposed" : outcome.refusal).toBe(s.group === "only-copy" ? "unpushed" : "disposed");
