@@ -379,13 +379,18 @@ func (m *Mission) renderDiffLines(width, height int) string {
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
 	restOn := lipgloss.NewStyle().Background(theme.Bg)
 
+	hl := m.diffHL.forDiff(m.model.Diff)
 	rows := make([]string, height)
 	for i := 0; i < height; i++ {
 		idx := top + i
 		line := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
 		if idx < len(lines) {
 			hover := idx == m.hoverDiffLine
-			line = renderDiffRows(m.model.Diff, lines[idx], lineSpans(m.model.Diff.Lang, lines[idx]), contentW, hover, hover && m.hoverGutter)[0]
+			spans := lineSpans(m.model.Diff.Lang, lines[idx])
+			if hl != nil && hl[idx] != nil {
+				spans = hl[idx]
+			}
+			line = renderDiffRows(m.model.Diff, lines[idx], spans, contentW, hover, hover && m.hoverGutter)[0]
 		}
 		rows[i] = line + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}

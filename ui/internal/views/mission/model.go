@@ -67,6 +67,11 @@ type DiffModel struct {
 	Lang     string     `json:"lang"`  // chroma lexer hint, e.g. "typescript"; "" = plain
 	Lines    []DiffLine `json:"lines"`
 	ReadOnly bool       `json:"readOnly"` // a committed diff (History): no stage gutter, nothing toggles
+
+	// OldSource/NewSource are the whole old- and new-side files; nil when the
+	// driver could not supply one (over its size cap, binary, or absent).
+	OldSource *string `json:"oldSource,omitempty"`
+	NewSource *string `json:"newSource,omitempty"`
 }
 
 type HistoryCommitRow struct {

@@ -73,6 +73,7 @@ type Mission struct {
 	diffCursor int
 	diffTop    int
 	diffPath   string
+	diffHL     diffHighlighter
 
 	// modal is the open repo/branch/worktree foldout, nil when none is open.
 	modal *modalState
