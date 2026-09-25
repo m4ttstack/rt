@@ -181,6 +181,81 @@ describe("startNotifyBridge", () => {
     expect(enqueued[0]!.message).toBe("");
   });
 
+  async function renderHeadlineSummary(payload: Record<string, unknown>): Promise<NotificationEvent> {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/*", category: "gate", title: "{headline}", message: "{summary}" }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", { id: 11, topic: "gate/opened/g11", payload, emittedAt: Date.now() });
+    expect(enqueued).toHaveLength(1);
+    return enqueued[0]!;
+  }
+
+  test("{headline} and {summary} read the gate's meta when it carries them", async () => {
+    const e = await renderHeadlineSummary({
+      label: "respond gate !45819",
+      meta: { label: "respond gate !45819", headline: "Replies on !45819 need you", summary: "2 review threads waiting on your call" },
+      questions: [{ id: "thread-1", label: "apps/x.ts:119" }],
+    });
+    expect(e.title).toBe("Replies on !45819 need you");
+    expect(e.message).toBe("2 review threads waiting on your call");
+  });
+
+  test("{headline} falls back to label and {summary} to the first question's label", async () => {
+    const e = await renderHeadlineSummary({
+      label: "review gate !7",
+      meta: { label: "review gate !7" },
+      questions: [{ id: "q1", label: "Approve this MR?" }],
+    });
+    expect(e.title).toBe("review gate !7");
+    expect(e.message).toBe("Approve this MR?");
+  });
+
+  test("a top-level headline or summary wins over meta", async () => {
+    const e = await renderHeadlineSummary({
+      headline: "herd h1: 2 gates waiting",
+      summary: "job a, job b",
+      meta: { headline: "ignored", summary: "ignored" },
+    });
+    expect(e.title).toBe("herd h1: 2 gates waiting");
+    expect(e.message).toBe("job a, job b");
+  });
+
+  test("an empty meta headline or summary falls through to the fallback", async () => {
+    const e = await renderHeadlineSummary({
+      label: "review gate !8",
+      meta: { headline: "", summary: 42 },
+      questions: [{ id: "q1", label: "Post which findings?" }],
+    });
+    expect(e.title).toBe("review gate !8");
+    expect(e.message).toBe("Post which findings?");
+  });
+
+  test("a field named after an Object built-in still renders literally", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/*", category: "gate", title: "{constructor} {toString}", message: "{__proto__}" }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", { id: 12, topic: "gate/opened/g12", payload: { label: "x" }, emittedAt: Date.now() });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.title).toBe("{constructor} {toString}");
+    expect(enqueued[0]!.message).toBe("{__proto__}");
+  });
+
+  test("{headline} renders empty, like {summary}, when nothing supplies it", async () => {
+    const e = await renderHeadlineSummary({ meta: {} });
+    expect(e.title).toBe("");
+    expect(e.message).toBe("");
+  });
+
   test("an unknown template field renders literally, not as undefined", async () => {
     const bus = fakeBus();
     const enqueued: NotificationEvent[] = [];
