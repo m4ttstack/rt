@@ -18,6 +18,13 @@ final class UpdaterController: NSObject, UpdateChecking, SPUUpdaterDelegate, SPU
 
     private let feedOverride: String?
 
+    // These delegate methods are optional, so a Sparkle rename would leave
+    // ours compiling but never called; naming them here fails the build.
+    private static let requiredDelegateSelectors = [
+        #selector(SPUUpdaterDelegate.updater(_:willInstallUpdate:)),
+        #selector(SPUUpdaterDelegate.updater(_:didFinishUpdateCycleFor:error:)),
+    ]
+
     init(isDevBuild: Bool, isBusy: @escaping () -> Bool) {
         self.isBusy = isBusy
         let info = Bundle.main.infoDictionary

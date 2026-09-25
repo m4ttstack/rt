@@ -517,13 +517,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// may it block Sparkle's installer, whose quit is what lets an update
     /// install and relaunch.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
-            .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        let quitEvent = NSAppleEventManager.shared().currentAppleEvent
+        let reasonCode = quitEvent?.paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        let senderPID = quitEvent?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value ?? 0
+        let senderBundleIdentifier = senderPID > 0
+            ? NSRunningApplication(processIdentifier: senderPID)?.bundleIdentifier : nil
         let window = mattstackWindow?.window
         let windowOnScreen = (window?.isVisible ?? false) || (window?.isMiniaturized ?? false)
-        if QuitReason.shouldTerminate(quitConfirmed: quitConfirmed, sessionEnding: systemSessionEnding,
-                                      updateInstalling: updateInstalling,
-                                      reasonCode: reasonCode, windowOnScreen: windowOnScreen) {
+        let terminate = QuitReason.shouldTerminate(quitConfirmed: quitConfirmed, sessionEnding: systemSessionEnding,
+                                                   updateInstalling: updateInstalling,
+                                                   senderBundleIdentifier: senderBundleIdentifier,
+                                                   reasonCode: reasonCode, windowOnScreen: windowOnScreen)
+        if updateInstalling {
+            TrayLog.info("quit during update install", ["sender": senderBundleIdentifier ?? "none",
+                                                        "terminate": terminate])
+        }
+        if terminate {
             return .terminateNow
         }
         Task { @MainActor in
