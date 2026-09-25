@@ -9,7 +9,8 @@ import { DiffHunk } from "./vendor/ghd/raw-diff.ts";
  * shifted past the earlier ones so every line keeps a unique selection index.
  */
 export function parseFileDiff(text: string): { hunks: DiffHunk[]; typechange: boolean } {
-  const blocks = text.split(/^(?=diff --git )/m).filter((block) => block.trim() !== "");
+  // Split at \n only: a multiline ^ also matches after a lone \r inside a content line.
+  const blocks = text.split(/(?<=\n)(?=diff --git )/).filter((block) => block.trim() !== "");
   const hunks: DiffHunk[] = [];
   let offset = 0;
   for (const block of blocks) {

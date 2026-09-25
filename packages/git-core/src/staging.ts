@@ -54,6 +54,9 @@ export async function stageSelection(
   if (diff.kind !== "text") {
     throw new Error(`cannot line-stage ${diff.kind} file: ${diff.path}`);
   }
+  if (diff.typechange) {
+    throw new Error(`cannot line-stage a typechange, stage it whole: ${diff.path}`);
+  }
 
   if (opts.originalPath !== undefined && diff.untracked) {
     // An untracked diff was computed against /dev/null (all-additions,
@@ -136,6 +139,9 @@ export async function discardSelection(
   }
   if (diff.kind !== "text") {
     throw new Error(`cannot line-discard ${diff.kind} file: ${diff.path}`);
+  }
+  if (diff.typechange) {
+    throw new Error(`cannot line-discard a typechange, discard it whole: ${diff.path}`);
   }
 
   const patch = formatPatchToDiscardChanges(diff.path, { hunks: diff.hunks }, selection);

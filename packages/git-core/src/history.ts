@@ -155,7 +155,7 @@ export async function getCommitDiff(
   opts: DiffReadOpts = {},
 ): Promise<StagingDiff> {
   const stdout = await rawGit(ctx.dir, [
-    "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color",
+    "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color", "-M",
     "--", file.path, ...oldPathArgs(file),
   ]);
   const diff = buildCommitDiff(stdout, file);

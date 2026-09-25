@@ -463,6 +463,27 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
     }
   });
 
+  it("10b. a typechange refuses a line selection to stage or discard, leaving the index alone", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "one\ntwo\n");
+      await sb.write("other.txt", "x\n");
+      await sb.commitAll("base");
+      await unlink(`${sb.dir}/f.txt`);
+      await symlink("other.txt", `${sb.dir}/f.txt`);
+      const client = createGitClient(sb.dir);
+      const diff = await client.stagingDiff("f.txt");
+      const partial = selectLine(diff.hunks, "-one", DiffSelection.fromInitialSelection(DiffSelectionType.None));
+
+      await expect(client.stageSelection(diff, partial)).rejects.toThrow(/typechange/);
+      await expect(client.discardSelection(diff, partial)).rejects.toThrow(/typechange/);
+      expect(await sb.git(["diff", "--cached", "--raw"])).toBe("");
+      expect(await sb.git(["status", "--porcelain"])).toContain("T f.txt");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("10a. an ordinary diff is not flagged as a typechange", async () => {
     const sb = await makeSandbox();
     try {

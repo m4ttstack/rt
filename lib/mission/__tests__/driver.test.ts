@@ -1258,6 +1258,28 @@ describe("MissionDriver: commit rebuilds the index from selections", () => {
     expect(client.calls.stageFileFully).toEqual([{ path: "renamed-all.txt", originalPath: "old-all.txt" }]);
     expect(client.calls.stageSelection[0]!.diff.path).toBe("renamed-partial.txt");
   });
+
+  test("a Partial on a file that became a typechange before commit drops to None, never a line stage", async () => {
+    // Display reads pass withSources; the commit-time read passes none, so the
+    // symlink swap lands between the line pick and the commit.
+    const client: ReturnType<typeof makeFakeClient> = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "f.txt", kind: "modified", staged: false, unstaged: true }] }),
+      stagingDiff: async (path) =>
+        client.calls.stagingDiffOpts.at(-1)?.withSources ? oneHunkDiff(path) : { ...oneHunkDiff(path), typechange: true },
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "f.txt", mode: "line", selIdx: 1 } }, // All -> Partial
+      { t: "intent", name: "mission:commit", payload: { summary: "after the swap" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.stageSelection).toEqual([]);
+    expect(client.calls.stageFileFully).toEqual([]);
+    expect((session.pushed.at(-1) as MissionModel).changes.find((c) => c.path === "f.txt")?.include).toBe("none");
+  });
 });
 
 // GHD's own model (ratified 2026-09-21): selections are the user's own

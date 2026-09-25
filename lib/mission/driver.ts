@@ -1023,6 +1023,12 @@ export class MissionDriver {
         continue;
       }
       const diff = await client.stagingDiff(file.path);
+      // A file swapped for a symlink since its lines were picked has no
+      // line-stageable shape left: the same shape-shift rule as a commit's.
+      if (diff.typechange) {
+        this.state.selections.set(file.path, DiffSelection.fromInitialSelection(DiffSelectionType.None));
+        continue;
+      }
       await client.stageSelection(diff, selection, file.originalPath ? { originalPath: file.originalPath } : {});
     }
   }
