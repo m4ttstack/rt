@@ -22,7 +22,7 @@
 - Never run a built binary or a second daemon against the real `~/.mattstack`. Smoke tests call handlers directly.
 - Never touch an employer GitLab project. Smoke tests use the harness test project only.
 - Employer-visible repos and packs never carry `RT-315` or any mattstack ticket id. mattstack repos may.
-- Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. PR bodies end with the Claude Code attribution line.
+- Commits and PR bodies end with the attribution lines the executing session's own harness reminder names (the model differs per executor, so never copy another session's trailer).
 
 ## Review Focus
 
