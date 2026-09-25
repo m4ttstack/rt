@@ -39,6 +39,7 @@ import {
   type Resolved,
 } from "../lib/settings/resolve.ts";
 import { setSetting, unsetSetting } from "../lib/settings/write.ts";
+import { currentStoreName } from "../lib/settings/migrate.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
 import { firstIssueText, formatIssuePath } from "../lib/settings/schema.ts";
 import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
@@ -446,6 +447,8 @@ export function renderListRow(s: ListedSetting): string {
   for (const inv of s.invalid ?? []) labels.push(`invalid[${inv.scope}]: ${inv.reason}`);
   for (const nc of s.nonconforming ?? []) labels.push(`nonconforming[${nc.scope}]: ${firstIssueText(nc.issues)}`);
   if (s.mergedIssues && s.mergedIssues.length > 0) labels.push(`merged: ${firstIssueText(s.mergedIssues)}`);
+  for (const d of s.diverged ?? []) labels.push(`diverged[${d.scope}]: ${d.storeNames.join(", ")}`);
+  if (s.newer) labels.push("from a newer rt");
 
   const labelStr = labels.length > 0 ? `  ${yellow}(${labels.join("; ")})${reset}` : "";
   return `  ${bold}${s.key}${reset} = ${formatValueInline(s.value)}${labelStr}`;
@@ -467,10 +470,13 @@ export async function settingsExplain(args: string[]): Promise<void> {
     failWithError(err);
   }
 
+  const def = getDef(key) as SettingDef; // explainSetting already threw for an unregistered key
+  const currentName = currentStoreName(def);
+
   console.log("");
   console.log(`  ${bold}${key}${reset}`);
   for (const row of rows) {
-    console.log(renderExplainRow(row));
+    console.log(renderExplainRow(row, currentName));
   }
   console.log("");
 }
@@ -481,9 +487,16 @@ export async function settingsExplain(args: string[]): Promise<void> {
  * show their authored value; shadowed (teamLocked) and invalid rows are
  * marked but not applied.
  */
-export function renderExplainRow(row: ExplainRow): string {
+export function renderExplainRow(row: ExplainRow, currentName?: string): string {
   const scopeLabel = row.scope.padEnd(11);
   const fileLabel = row.file ?? (row.scope === "default" ? "(registry default)" : "(no file)");
+  const from =
+    currentName !== undefined && row.storeName !== undefined && row.storeName !== currentName
+      ? `  ${dim}[read from ${row.storeName}, version ${row.storedVersion}]${reset}`
+      : "";
+  const older = (row.olderNames ?? [])
+    .map((o) => `\n      ${o.label === "diverged" ? red : dim}older ${o.storeName}: ${o.label}${reset}${o.label === "diverged" ? `  ${formatValueInline(o.value)}` : ""}`)
+    .join("");
 
   if (!row.present) {
     return `  ${dim}${scopeLabel} ${fileLabel}  —${reset}`;
@@ -496,21 +509,28 @@ export function renderExplainRow(row: ExplainRow): string {
     return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${red}[invalid: ${row.invalid}]${reset}`;
   }
   if (row.nonconforming) {
-    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}`;
+    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}${from}${older}`;
   }
-  return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}`;
+  return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}${from}${older}`;
 }
 
 // ─── check ──────────────────────────────────────────────────────────────────
 
-/** A header line per finding, then one line per issue. A `merged` finding
+/** A header line per finding, then values or issues. A `merged` finding
     carries no scope or file, so its header names only the repo, if any. */
 export function renderCheckFinding(f: CheckFinding): string {
   const where = [f.scope, f.repo].filter(Boolean).join("/");
   const label = where ? `${where}  ` : "";
   const file = f.file ? `  ${dim}${f.file}${reset}` : "";
+  const kindText = f.newer ? "unregistered (from a newer rt)" : f.kind;
+  const kind = f.kind === "stale" || f.kind === "leftover" ? `${dim}${kindText}${reset}` : `${red}${kindText}${reset}`;
+  const name = f.storeName ? `  ${f.storeName}` : "";
+  const values =
+    f.kind === "diverged" && "olderValue" in f
+      ? `\n      ${f.storeName}: ${formatValueInline(f.olderValue)}\n      current: ${formatValueInline(f.currentValue)}`
+      : "";
   const issues = f.issues.map((i) => `\n      ${formatIssuePath(i.path)}: ${i.message}`).join("");
-  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${file}${issues}`;
+  return `  ${bold}${f.key}${reset}  ${label}${kind}${name}${file}${values}${issues}`;
 }
 
 export async function settingsCheck(args: string[]): Promise<void> {
@@ -523,7 +543,8 @@ export async function settingsCheck(args: string[]): Promise<void> {
     console.log("");
     for (const f of report.findings) console.log(renderCheckFinding(f));
     const unregistered = report.findings.filter((f) => f.kind === "unregistered").length;
-    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered`);
+    const older = report.findings.filter((f) => f.kind === "stale" || f.kind === "leftover").length;
+    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered, ${older} stale or leftover`);
     console.log("");
   }
 
