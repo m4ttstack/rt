@@ -13,10 +13,11 @@
 import { existsSync, readFileSync } from "fs";
 import { basename, isAbsolute, join } from "path";
 import { markDaemonUninstalled } from "../daemon-config.ts";
-import { processFlavor } from "../flavor.ts";
+import { otherFlavor, processFlavor } from "../flavor.ts";
 import { DEFAULT_EXPOSED, isOurLink, unlink } from "../deps/links.ts";
 import { appBundlePath, resolveTool } from "../deps/resolve.ts";
 import { detectEditors, type DetectedEditor } from "../editors.ts";
+import { DEV_TRAY_APP_BUNDLE, installedTrayAppPath, TRAY_APP_BUNDLE } from "../rt-paths.ts";
 import { detectShell, MARKER, removeShellIntegration, removeZshenvPrecedence, shellRcPath } from "../shell-integration.ts";
 import type { ApplyContext, StepOutcome } from "./apply.ts";
 import type { UninstallActionId, StepKind } from "./contract.ts";
@@ -146,7 +147,18 @@ function managedRemoveReply(body: string): { removed: string[]; failed: string[]
   return removed !== null && failed !== null ? { removed, failed } : null;
 }
 
+/** Both flavors' decks read one registry, so while the other flavor's app is installed a managed remove would delete its rows and their dev links. */
+function otherFlavorApp(p: Pick<Probes, "exists">): string | null {
+  return installedTrayAppPath(otherFlavor(processFlavor()) === "dev" ? DEV_TRAY_APP_BUNDLE : TRAY_APP_BUNDLE, p.exists);
+}
+
 async function deckManagedRemoveRun(ctx: ApplyContext): Promise<ActionResult> {
+  const otherApp = otherFlavorApp(ctx.p);
+  if (otherApp !== null) {
+    const name = basename(otherApp);
+    return { outcome: { state: "skipped", detail: `kept for ${name}, which shares deck's registry` }, stayed: [`deck's mattstack apps (kept for ${name})`] };
+  }
+
   const port = readDeckApiPort(ctx);
   const healthy = port !== null && (await deckIsHealthy(ctx, port));
   if (!healthy) return { outcome: { state: "skipped", detail: "deck is not running; nothing to unmanage" } };
@@ -160,7 +172,8 @@ async function deckManagedRemoveRun(ctx: ApplyContext): Promise<ActionResult> {
 
   const removed = reply.removed.length > 0 ? `removed: ${reply.removed.join(", ")}` : "no mattstack apps in deck";
   if (reply.failed.length > 0) {
-    return { outcome: { state: "failed", detail: `${removed}; teardown failed, record kept: ${reply.failed.join(", ")}`, remedy: "Retry" } };
+    const kept = reply.failed.join(", ");
+    return { outcome: { state: "failed", detail: `${removed}; teardown failed, record kept: ${kept}`, remedy: `Retry; if deck keeps ${kept} again, deck's board shows the issue to fix first` } };
   }
   return { outcome: { state: "done", detail: removed } };
 }

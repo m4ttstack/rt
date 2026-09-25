@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, join } from "path";
 import { __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
 import { linkPath } from "../../deps/links.ts";
+import { __resetCapturedFlavor, captureProcessFlavor } from "../../flavor.ts";
 import {
   MARKER,
   ZSHENV_MARKER,
@@ -329,10 +330,15 @@ describe("rt uninstall", () => {
   describe("deck.managed-remove", () => {
     type FetchInit = Parameters<Probes["fetch"]>[1];
 
-    function deckUp(answer: { status: number; body: string }): { p: ReturnType<typeof fakeProbes>; seen: { url: string; init: FetchInit }[] } {
+    afterEach(() => {
+      __resetCapturedFlavor();
+    });
+
+    function deckUp(answer: { status: number; body: string }, dirs: Record<string, string[]> = {}): { p: ReturnType<typeof fakeProbes>; seen: { url: string; init: FetchInit }[] } {
       const seen: { url: string; init: FetchInit }[] = [];
       const p = bareProbes({
         ...pathTool("deck"),
+        dirs,
         files: { ...pathTool("deck").files, [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
         fetch: async (url, init) => {
           if (url.endsWith("/healthz")) return { status: 200, body: "ok", headers: {} };
@@ -378,12 +384,34 @@ describe("rt uninstall", () => {
       expect(lastStep(events)).toMatchObject({ state: "done", detail: "no mattstack apps in deck" });
     });
 
-    test("partial teardown (ok:false) -> failed with Retry, names what was removed and what was kept", async () => {
-      const { p } = deckUp({ status: 200, body: JSON.stringify({ ok: false, removed: ["board"], failed: ["chat"] }) });
+    test("partial teardown (ok:false) -> failed, names what was removed and what was kept, and where to look when Retry keeps failing", async () => {
+      const { p } = deckUp({ status: 200, body: JSON.stringify({ ok: false, removed: ["board"], failed: ["chat", "console"] }) });
       const { ctx, events } = makeCtx(p);
       expect((await runUninstall(ctx, action)).ok).toBe(false);
-      expect(lastStep(events)).toMatchObject({ state: "failed", detail: "removed: board; teardown failed, record kept: chat", remedy: "Retry" });
+      expect(lastStep(events)).toMatchObject({
+        state: "failed",
+        detail: "removed: board; teardown failed, record kept: chat, console",
+        remedy: "Retry; if deck keeps chat, console again, deck's board shows the issue to fix first",
+      });
     });
+
+    for (const [flavor, otherApp] of [
+      ["prod", "/Applications/mattstack-dev.app"],
+      ["dev", "/Applications/mattstack.app"],
+    ] as const) {
+      test(`${flavor} uninstall with ${basename(otherApp)} still installed: keeps deck's rows for it, never calls the managed remove`, async () => {
+        captureProcessFlavor({ MATTSTACK_FLAVOR: flavor });
+        const { p, seen } = deckUp({ status: 200, body: JSON.stringify({ ok: true, removed: ["board"], failed: [] }) }, { [otherApp]: [] });
+        const { ctx, events } = makeCtx(p);
+
+        const result = await runUninstall(ctx, action);
+
+        expect(result.ok).toBe(true);
+        expect(seen).toEqual([]);
+        expect(lastStep(events)).toMatchObject({ state: "skipped", detail: `kept for ${basename(otherApp)}, which shares deck's registry` });
+        expect(result.stayed).toContain(`deck's mattstack apps (kept for ${basename(otherApp)})`);
+      });
+    }
 
     for (const [label, answer, detail] of [
       ["a 500", { status: 500, body: "{}" }, "deck answered 500 to the managed remove"],
