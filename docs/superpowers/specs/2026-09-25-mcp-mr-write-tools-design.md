@@ -90,7 +90,10 @@ Two new verbs. Everything else reuses verbs that already exist.
   `provider.createPullRequest` through the existing `getContext` override
   seam, then `applyMRWriteback` with the returned PR so the board sees the new
   MR without waiting for a sweep. It uses the same `decodeIndexedRepo` guard
-  as `mr:action`.
+  as `mr:action`. glance reads a created MR back and can throw
+  `ReadBackFailedError` with `writeApplied` after the MR exists; that case
+  returns `ok` with the error's `iid` and a null `url`, never `ok: false`,
+  which would invite a duplicate create.
 - Both are added to rt-client's `Commands`, `COMMAND_NAMES`, and
   `lib/daemon/__tests__/rt-client-commands.test.ts`. `packages/rt-client`
   gets a `bun run build`, and `dist-freshness` guards that.
@@ -134,9 +137,9 @@ GitHub until phase 2. Edits go through `mattstack:editing-skills` and
   on the generic path, `mr_ready` for Mark ready.
 - `attachments/pipeline/watch-ci/SKILL.md` and `stage-watch-ci/SKILL.md`:
   `mr_ready` for mark-ready, and `mr_retry` with the job id triage printed for
-  the Retry answer. `ci-triage.sh`'s `retry:` hint line names the tool on
-  GitLab. The `ci-forge-gitlab` adapter's `retry-job` stays, because the
-  ci-forge@1 contract is shared.
+  the Retry answer. `ci-triage.sh` and the `ci-forge-gitlab` adapter's
+  `retry-job` stay unchanged, because the ci-forge@1 contract is shared: the
+  skill text is what routes a GitLab retry to the tool.
 
 **mattstack-apps**
 
