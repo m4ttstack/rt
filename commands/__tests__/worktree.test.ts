@@ -290,11 +290,13 @@ describe("worktree CLI identity plumbing", () => {
     const logs: string[] = [];
     const originalLog = console.log;
     console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(" ")); };
+    const originalExitCode = process.exitCode;
 
     try {
       await worktreeDispose(["tree-a"], {});
     } finally {
       console.log = originalLog;
+      process.exitCode = originalExitCode;
     }
 
     expect(logs.some((l) =>
