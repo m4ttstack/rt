@@ -12,6 +12,7 @@ final class FakeServices: ServicesProviding, @unchecked Sendable {
     var registered: [[String]] = []
     var unregistered: [[String]] = []
     var restarted: [String] = []
+    var started: [String] = []
     var registerDelayNs: UInt64 = 0
     func statuses() async -> [ServiceStatusEntry] { [ServiceStatusEntry(label: "com.mattstack.daemon", status: "enabled")] }
     func register(plists: [String]) async -> [ServiceRegisterResult] {
@@ -24,6 +25,7 @@ final class FakeServices: ServicesProviding, @unchecked Sendable {
         return plists.map { ServiceRegisterResult(plist: $0, ok: true, status: "notRegistered") }
     }
     func restart(label: String) async -> Bool { restarted.append(label); return true }
+    func start(label: String) async -> Bool { started.append(label); return true }
 }
 final class FakePrivileged: PrivilegedInstalling, @unchecked Sendable {
     var calls = 0

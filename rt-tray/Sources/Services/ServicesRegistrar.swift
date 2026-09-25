@@ -88,16 +88,11 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     private func reregister(_ agent: AgentPlist) async -> Bool {
         let svc = service(agent)
         let outcome = await AgentReregister.run(
-            unregister: {
-                do {
-                    try await svc.unregister()
-                    return true
-                } catch {
-                    return svc.status == .notRegistered
-                }
-            },
+            unregister: { await self.unregister(plists: [agent.fileName]).allSatisfy(\.ok) },
+            settle: { try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds) },
             register: { await self.register(plists: [agent.fileName]).allSatisfy(\.ok) },
-            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) })
+            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) },
+            start: { _ = await self.start(label: agent.label) })
         let fields = ["label": agent.label, "outcome": String(describing: outcome),
                       "status": TrayServer.statusName(svc.status)]
         if outcome.succeeded {
@@ -217,6 +212,15 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
         let (exe, args) = Kickstart.arguments(label: label, uid: uid)
         let out = await runner.run(exe, args)
         if !out.ok { TrayLog.warn("kickstart failed", ["label": label, "stderr": out.stderr]) }
+        return out.ok
+    }
+
+    func start(label: String) async -> Bool {
+        let (exe, args) = StartJob.arguments(label: label, uid: uid)
+        let out = await runner.run(exe, args)
+        if !out.ok {
+            TrayLog.warn("start after register failed", ["label": label, "exit": Int(out.exitCode), "stderr": out.stderr])
+        }
         return out.ok
     }
 

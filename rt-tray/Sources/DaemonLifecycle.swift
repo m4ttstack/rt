@@ -159,7 +159,8 @@ class DaemonLifecycle: @unchecked Sendable {
         // unregister and the register below found no service to kickstart, and
         // left the job unregistered (2026-09-09).
         TrayLog.warn("kickstart failed; falling back to re-register", ["label": label, "origin": origin])
-        try? await service.unregister()
+        _ = unregisterSynchronously()
+        try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds)
         return await startDaemonUngated(origin: origin)
     }
 
@@ -180,17 +181,13 @@ class DaemonLifecycle: @unchecked Sendable {
             return false
         }
         let plist = plistName
+        let label = self.label
         let outcome = await AgentReregister.run(
-            unregister: {
-                do {
-                    try await self.service.unregister()
-                    return true
-                } catch {
-                    return self.service.status == .notRegistered
-                }
-            },
+            unregister: { self.unregisterSynchronously() },
+            settle: { try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds) },
             register: { await services.register(plists: [plist]).allSatisfy(\.ok) },
-            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) })
+            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) },
+            start: { _ = await services.start(label: label) })
         let fields = ["label": label, "origin": origin, "outcome": String(describing: outcome),
                       "status": TrayServer.statusName(service.status)]
         if outcome.succeeded {
@@ -199,6 +196,18 @@ class DaemonLifecycle: @unchecked Sendable {
             TrayLog.warn("daemon re-register failed", fields)
         }
         return outcome.succeeded
+    }
+
+    /// Not async on purpose: in an async context Swift picks SMAppService's
+    /// async `unregister()`, and the sequence that recovered a job launchd
+    /// would not spawn used this synchronous form, as `stopDaemonUngated` does.
+    private func unregisterSynchronously() -> Bool {
+        do {
+            try service.unregister()
+            return true
+        } catch {
+            return service.status == .notRegistered
+        }
     }
 
 }

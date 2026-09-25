@@ -21,4 +21,5 @@ public protocol ServicesProviding: Sendable {
     func register(plists: [String]) async -> [ServiceRegisterResult]
     func unregister(plists: [String]) async -> [ServiceRegisterResult]
     func restart(label: String) async -> Bool
+    func start(label: String) async -> Bool
 }

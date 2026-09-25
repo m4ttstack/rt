@@ -73,6 +73,14 @@ public enum Kickstart {
     }
 }
 
+/// Without -k: a job RunAtLoad already started is left alone, where -k
+/// would kill it and can wait out the plist's whole ExitTimeOut.
+public enum StartJob {
+    public static func arguments(label: String, uid: uid_t) -> (String, [String]) {
+        ("/bin/launchctl", ["kickstart", "gui/\(uid)/\(label)"])
+    }
+}
+
 public enum DeckRestart {
     public static func arguments(deckPath: String) -> (String, [String]) { (deckPath, ["restart", "--managed"]) }
 }

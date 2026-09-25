@@ -59,48 +59,60 @@ let agentPlistRefreshChecks: [Check] = [
         c.expect(!AgentPlistRefresh.shouldRecordAfterRegister(ok: true, registration: .requiresApproval))
         c.expect(!AgentPlistRefresh.shouldRecordAfterRegister(ok: false, registration: .enabled))
     },
-    Check("reregister: unregister then register once when both succeed") { c in
+    Check("reregister: unregister, settle, register, then start once") { c in
         let log = StepLog()
         let outcome = await AgentReregister.run(
             unregister: { await log.add("unregister"); return true },
+            settle: { await log.add("settle") },
             register: { await log.add("register"); return true },
-            beforeRetry: { await log.add("pause") })
+            beforeRetry: { await log.add("pause") },
+            start: { await log.add("start") })
         c.expectEqual(outcome, .reregistered)
-        c.expectEqual(await log.steps, ["unregister", "register"])
+        c.expectEqual(await log.steps, ["unregister", "settle", "register", "start"])
     },
-    Check("reregister: a failed register is retried once") { c in
+    Check("reregister: a failed register is retried once, then started") { c in
         let log = StepLog()
         let attempts = StepLog()
         let outcome = await AgentReregister.run(
             unregister: { await log.add("unregister"); return true },
+            settle: { await log.add("settle") },
             register: {
                 await log.add("register")
                 await attempts.add("x")
                 return await attempts.steps.count > 1
             },
-            beforeRetry: { await log.add("pause") })
+            beforeRetry: { await log.add("pause") },
+            start: { await log.add("start") })
         c.expectEqual(outcome, .reregisteredOnRetry)
-        c.expectEqual(await log.steps, ["unregister", "register", "pause", "register"])
+        c.expectEqual(await log.steps, ["unregister", "settle", "register", "pause", "register", "start"])
     },
-    Check("reregister: a register that fails twice reports it and stops") { c in
+    Check("reregister: a register that fails twice reports it and never starts") { c in
         let log = StepLog()
         let outcome = await AgentReregister.run(
             unregister: { await log.add("unregister"); return true },
+            settle: { await log.add("settle") },
             register: { await log.add("register"); return false },
-            beforeRetry: { await log.add("pause") })
+            beforeRetry: { await log.add("pause") },
+            start: { await log.add("start") })
         c.expectEqual(outcome, .registerFailed)
-        c.expectEqual(await log.steps, ["unregister", "register", "pause", "register"])
+        c.expectEqual(await log.steps, ["unregister", "settle", "register", "pause", "register"])
         c.expect(!outcome.succeeded)
     },
     Check("reregister: a failed unregister never registers over the still-registered job") { c in
         let log = StepLog()
         let outcome = await AgentReregister.run(
             unregister: { await log.add("unregister"); return false },
+            settle: { await log.add("settle") },
             register: { await log.add("register"); return true },
-            beforeRetry: { await log.add("pause") })
+            beforeRetry: { await log.add("pause") },
+            start: { await log.add("start") })
         c.expectEqual(outcome, .unregisterFailed)
         c.expectEqual(await log.steps, ["unregister"])
         c.expect(!outcome.succeeded)
+    },
+    Check("reregister: the settle is a real gap and shorter than the retry pause") { c in
+        c.expect(AgentReregister.settleNanoseconds >= 500_000_000)
+        c.expect(AgentReregister.settleNanoseconds < AgentReregister.retryPauseNanoseconds)
     },
     Check("reregister: both success outcomes count as succeeded") { c in
         c.expect(AgentReregisterOutcome.reregistered.succeeded)

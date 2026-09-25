@@ -39,6 +39,12 @@ let servicesChecks: [Check] = [
         c.expectEqual(d, "/Applications/mattstack.app/Contents/Helpers/deck")
         c.expectEqual(dargs, ["restart", "--managed"])
     },
+    Check("StartJob starts a job without killing a running one") { c in
+        let (exe, args) = StartJob.arguments(label: "com.mattstack.daemon", uid: 501)
+        c.expect(exe.hasPrefix("/bin/") && exe.hasSuffix("ctl"), "launchd's control tool, by absolute path")
+        c.expectEqual(args, ["kickstart", "gui/501/com.mattstack.daemon"])
+        c.expect(!args.contains("-k"))
+    },
     Check("VersionChangeDetector: first launch, unchanged, changed; record persists") { c in
         let store = MemoryKeyValueStore()
         c.expectEqual(VersionChangeDetector.evaluate(current: "2.8.0", store: store), .firstLaunch)
