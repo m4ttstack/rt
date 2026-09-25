@@ -170,6 +170,39 @@ function revMatches(sourceRev: string, target: string): boolean {
   return sourceRev.startsWith(target) || target.startsWith(sourceRev);
 }
 
+/** GitHub's compare status for base...head: "ahead" or "identical" means head contains base. */
+async function compareContains(seams: UpdateMachineSeams, base: string, head: string): Promise<{ status: string } | { error: string }> {
+  const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/compare/${base}...${head}`, "--jq", ".status"]);
+  if (r.exitCode === 0) return { status: r.stdout.trim() };
+  const hint = /HTTP 404/.test(r.stderr) ? " (commit not on GitHub; is the shared checkout on an unpushed commit?)" : "";
+  return { error: `${execTail(r)}${hint}` };
+}
+
+/** The dev daemon runs whatever the shared checkout holds, and main keeps
+ *  moving during a release, so a later main that contains the released
+ *  commit is as current as the tag itself. The checkout can also sit on
+ *  another lane's pushed branch, which may contain the release without
+ *  being merged, so the rev must also be on main. */
+async function daemonRevCheck(
+  seams: UpdateMachineSeams,
+  sourceRev: string,
+  sha: string,
+): Promise<{ ok: true; exact: boolean } | { ok: false; reason: string }> {
+  if (revMatches(sourceRev, sha)) return { ok: true, exact: true };
+  if (!/^[0-9a-f]{4,40}$/.test(sourceRev)) return { ok: false, reason: `daemon reports source rev "${sourceRev}", which is not a commit sha` };
+  const release = await compareContains(seams, sha, sourceRev);
+  if ("error" in release) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with ${sha.slice(0, 12)}: ${release.error}` };
+  if (release.status !== "ahead" && release.status !== "identical") {
+    return { ok: false, reason: `daemon reports source rev ${sourceRev}, which does not contain ${sha.slice(0, 12)} (${release.status || "no status"})` };
+  }
+  const main = await compareContains(seams, sourceRev, "main");
+  if ("error" in main) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with main: ${main.error}` };
+  if (main.status !== "ahead" && main.status !== "identical") {
+    return { ok: false, reason: `daemon source rev ${sourceRev} contains ${sha.slice(0, 12)} but is not on main (${main.status || "no status"})` };
+  }
+  return { ok: true, exact: false };
+}
+
 function deckPinFromDepsLock(raw: string | null): string | null {
   if (!raw) return null;
   try {
@@ -527,10 +560,13 @@ async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pro
   const status = await seams.exec(["rt", "daemon", "status", "--json"]);
   const sourceRev = parseDaemonSourceRev(status.stdout);
   if (!sourceRev) return errorLeg("daemon", DAEMON_LABEL, "daemon reports no source rev (prod daemon?)");
-  if (!revMatches(sourceRev, ctx.sha)) {
-    return errorLeg("daemon", DAEMON_LABEL, `daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
-  }
-  return okLeg("daemon", DAEMON_LABEL, `daemon restarted and reports ${ctx.tag} (${sourceRev})`);
+  const rev = await daemonRevCheck(seams, sourceRev, ctx.sha);
+  if (!rev.ok) return errorLeg("daemon", DAEMON_LABEL, rev.reason);
+  return okLeg(
+    "daemon",
+    DAEMON_LABEL,
+    rev.exact ? `daemon restarted and reports ${ctx.tag} (${sourceRev})` : `daemon restarted on ${sourceRev}, which contains ${ctx.tag}`,
+  );
 }
 
 async function runServedSuiteLeg(seams: UpdateMachineSeams, deck: string): Promise<{ result: LegResult; witness: RestartWitness | null }> {
@@ -605,7 +641,10 @@ async function runVerifyLeg(
     const daemonStatus = await seams.exec(["rt", "daemon", "status", "--json"]);
     sourceRev = parseDaemonSourceRev(daemonStatus.stdout);
     if (!sourceRev) problems.push("daemon reports no source rev (prod daemon?)");
-    else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
+    else {
+      const rev = await daemonRevCheck(seams, sourceRev, ctx.sha);
+      if (!rev.ok) problems.push(rev.reason);
+    }
   }
 
   const deck = bundleDeck(devNotRunning);
