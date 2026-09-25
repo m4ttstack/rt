@@ -38,10 +38,15 @@ const APPS_FILES: Record<string, string> = {
 };
 
 interface Commit { sha: string; parent: string | null; files: string[]; lock: string; notes: string; subject: string }
-interface Run { id: number; workflow: "bundle" | "release"; status: string; conclusion: string | null; created_at: string; html_url: string; display_title: string; tag?: string }
+interface Run {
+  id: number; workflow: "bundle" | "release"; status: string; conclusion: string | null; created_at: string; html_url: string; display_title: string; tag?: string;
+  path?: string; headBranch?: string;
+  /** Listed by the workflow runs endpoint but 404 when fetched by id. */
+  gone?: boolean;
+}
 interface Pr {
   number: number; state: string; url: string; headRefOid: string; headRefName: string;
-  author: { login: string }; isCrossRepository: boolean; files: string[]; lock: string; base: string;
+  author: { login: string }; isCrossRepository: boolean; files: string[]; lock: string; base: string; commitAuthor: string;
 }
 type ChecksPoll = { name: string; bucket: string }[] | "error" | "none";
 
@@ -73,6 +78,7 @@ class World {
   assetSha = ASSET_SHA;
   bundleConclusion = "success";
   releaseConclusion = "success";
+  releaseRunStatus = "completed";
   prMutate: ((pr: Pr) => void) | null = null;
   afterMerge: (() => void) | null = null;
   notesCommitExtraFiles: string[] = [];
@@ -114,10 +120,10 @@ class World {
     return sha;
   }
 
-  releaseRun(tag: string, conclusion: string): void {
+  releaseRun(tag: string, conclusion: string, status = "completed"): void {
     const id = this.seq++;
     this.runs.set(id, {
-      id, workflow: "release", status: "completed", conclusion, tag, display_title: tag,
+      id, workflow: "release", status, conclusion: status === "completed" ? conclusion : null, tag, display_title: tag,
       created_at: new Date(this.clock).toISOString(), html_url: `https://github.com/m4ttstack/rt/actions/runs/${id}`,
     });
   }
@@ -150,7 +156,7 @@ class World {
     const versions = Object.fromEntries(current.tools.map((t) => [t.name, t.version]));
     const pr: Pr = {
       number: runId + 1000, state: "OPEN", url: `https://github.com/m4ttstack/rt/pull/${runId + 1000}`,
-      headRefOid: `prhead${runId}`, headRefName: `bundle-ci/${runId}`, author: { login: BUNDLE_PR_AUTHOR }, isCrossRepository: false,
+      headRefOid: `prhead${runId}`, headRefName: `bundle-ci/${runId}`, author: { login: BUNDLE_PR_AUTHOR }, isCrossRepository: false, commitAuthor: "bundle-apps workflow",
       files: ["rt-tray/deps.lock"], lock: lockText({ ...versions, board: version }, { board: ASSET_SHA }), base: this.main, ...extra,
     };
     this.prMutate?.(pr);
@@ -224,7 +230,7 @@ class World {
       if (this.tagPushFails) return err("remote rejected");
       const tag = m[1]!;
       this.remoteTags.set(tag, this.localTags.get(tag)!);
-      this.releaseRun(tag, this.releaseConclusion);
+      this.releaseRun(tag, this.releaseConclusion, this.releaseRunStatus);
       return ok();
     }
 
@@ -293,6 +299,16 @@ class World {
       const apps = argv.find((a) => a.startsWith("apps="))!.slice("apps=".length);
       return this.dispatch(apps, argv.includes("dry_run=true"));
     }
+    if ((m = cmd.match(/^gh api repos\/m4ttstack\/rt\/actions\/runs\/(\d+)$/))) {
+      const r = this.runs.get(Number(m[1]));
+      if (!r || r.gone) return err("gh: Not Found (HTTP 404)");
+      const path = r.path ?? `.github/workflows/${r.workflow === "bundle" ? "bundle-apps" : "release"}.yml`;
+      return ok(JSON.stringify({ id: r.id, path, head_branch: r.headBranch ?? (r.workflow === "bundle" ? "main" : r.tag), status: r.status }));
+    }
+    if ((m = cmd.match(/^gh api repos\/m4ttstack\/rt\/commits\/(\S+) --jq \.commit\.author\.name$/))) {
+      const pr = this.prs.find((p) => p.headRefOid === m![1]);
+      return pr ? ok(`${pr.commitAuthor}\n`) : err("gh: Not Found (HTTP 404)");
+    }
     if ((m = cmd.match(/^gh run view (\d+) --repo m4ttstack\/rt --json status,conclusion$/))) {
       const r = this.runs.get(Number(m[1]));
       return r ? ok(JSON.stringify({ status: r.status, conclusion: r.conclusion })) : err("no run");
@@ -358,7 +374,8 @@ class World {
     }
     if ((m = cmd.match(/^gh release view (\S+) --repo m4ttstack\/rt --json body,assets,isDraft,isPrerelease,publishedAt$/))) {
       const tag = m[1]!;
-      if (!this.remoteTags.has(tag)) return err("release not found");
+      const published = [...this.runs.values()].some((r) => r.workflow === "release" && r.tag === tag && r.status === "completed");
+      if (!this.remoteTags.has(tag) || !published) return err("release not found");
       return ok(JSON.stringify({ body: this.commits.get(this.remoteTags.get(tag)!)!.notes, assets: this.assets(tag), isDraft: false, isPrerelease: false, publishedAt: new Date(this.clock).toISOString() }));
     }
 
@@ -600,6 +617,17 @@ describe("runReleaseApp: qualification", () => {
     const r = await runReleaseApp(w.seams(), opts());
     expect(lastStep(r)).toMatchObject({ id: "qualify", status: "failed" });
     expect(lastStep(r).detail).toContain("deck");
+    expect(mutations(w.calls)).toEqual([]);
+  });
+
+  test("a pin moved below the version the last tag shipped is refused as a revert", async () => {
+    const w = new World();
+    w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, board: "0.1.6" }) });
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "qualify", status: "failed" });
+    expect(lastStep(r).detail).toContain("board 0.1.7 → 0.1.6");
+    expect(lastStep(r).detail).toContain("revert");
+    expect(r.resume).toBeNull();
     expect(mutations(w.calls)).toEqual([]);
   });
 
@@ -870,6 +898,26 @@ describe("runReleaseApp: the bot PR is verified before it merges", () => {
     }
   });
 
+  test("a bundle-ci PR whose head commit or run is not the workflow's is never merged", async () => {
+    const runOf = (w: World, pr: Pr) => w.runs.get(Number(pr.headRefName.slice("bundle-ci/".length)))!;
+    const cases: [(w: World, pr: Pr) => void, string][] = [
+      [(_w, pr) => { pr.commitAuthor = "Mallory"; }, 'head commit authored by "Mallory"'],
+      [(w, pr) => { runOf(w, pr).headBranch = "evil"; }, "ran on evil, not main"],
+      [(w, pr) => { runOf(w, pr).path = ".github/workflows/ci.yml"; }, "is .github/workflows/ci.yml, not .github/workflows/bundle-apps.yml"],
+      [(w, pr) => { runOf(w, pr).gone = true; }, "does not exist"],
+    ];
+    for (const [edit, want] of cases) {
+      const w = new World();
+      w.prMutate = (pr) => edit(w, pr);
+      const r = await runReleaseApp(w.seams(), opts());
+      expect(lastStep(r)).toMatchObject({ id: "pr", status: "failed" });
+      expect(lastStep(r).detail).toContain("not opened by the bundle workflow");
+      expect(lastStep(r).detail).toContain(want);
+      expect(r.resume).toBeNull();
+      expect(w.calls.some((c) => c.startsWith("gh pr merge"))).toBe(false);
+    }
+  });
+
   test("a closed bot PR found by the scan, with no run to follow, gets the reopen message", async () => {
     const w = new World();
     w.appsVersion = "0.1.8";
@@ -935,7 +983,8 @@ describe("runReleaseApp: notes approval", () => {
       expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
       expect(lastStep(r).detail).toContain(`--yes-notes ${token} does not match`);
       expect(r.notes).toContain("### Board 0.1.8");
-      expect(r.resume).toContain(`--yes-notes ${r.notesHash}`);
+      expect(r.resume).toBe(`rt release app board --json --yes-notes ${r.notesHash}`);
+      expect(lastStep(r).detail).toContain("review these notes");
       expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
     }
   });
@@ -959,6 +1008,31 @@ describe("runReleaseApp: notes approval", () => {
 });
 
 describe("runReleaseApp: main moving or refusing mid-run", () => {
+  test("a held app whose pin merges mid-run ships in the notes and is no longer listed as held", async () => {
+    const w = new World();
+    w.appsMoved = { "board-v0.1.7": ["apps/board"], "chat-v0.1.3": ["apps/chat"] };
+    w.afterMerge = () => {
+      w.appsTags.add("chat-v0.1.4");
+      w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, board: "0.1.8", chat: "0.1.4" }, { board: ASSET_SHA }) });
+    };
+    const r = await runReleaseApp(w.seams(), opts({ json: true, yesNotes: null }));
+    expect(r.status).toBe("awaiting-approval");
+    expect(r.notes).toContain("### Chat 0.1.4");
+    expect(r.notes).not.toContain("Held pins");
+    expect(r.heldApps).toEqual([]);
+  });
+
+  test("a pin reverted mid-run is caught at the notes, before anything is committed", async () => {
+    const w = new World();
+    w.afterMerge = () => {
+      w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, board: "0.1.8", chat: "0.1.2" }, { board: ASSET_SHA }) });
+    };
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
+    expect(lastStep(r).detail).toContain("chat 0.1.3 → 0.1.2");
+    expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
+  });
+
   test("a non-pin merge landing mid-run is caught at the notes, before anything is committed", async () => {
     const w = new World();
     w.afterMerge = () => { w.land(["lib/team/invite.ts"]); };
@@ -1010,6 +1084,16 @@ describe("runReleaseApp: main moving or refusing mid-run", () => {
     expect(lastStep(r)).toMatchObject({ id: "tag", status: "failed" });
     expect(lastStep(r).detail).toContain("local tag v2.13.2 points at c0");
     expect(w.calls.some((c) => c.startsWith("git push"))).toBe(false);
+  });
+
+  test("a release.yml run still going after the watch ends pending, not failed, though the release does not exist yet", async () => {
+    const w = new World();
+    w.releaseRunStatus = "in_progress";
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(r.status).toBe("pending");
+    expect(lastStep(r)).toMatchObject({ id: "verify", status: "pending" });
+    expect(lastStep(r).detail).toContain("still in_progress");
+    expect(r.resume).toBe("rt release verify v2.13.2");
   });
 
   test("a releases/latest that has not caught up yet ends pending, not failed", async () => {
