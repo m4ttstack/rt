@@ -28,5 +28,22 @@ if (await runSubcommand(Bun.argv)) {
   process.exit(0);
 }
 
+// A bundled board on a machine whose team has no board settings yet: the
+// server below refuses to boot without them, and deck serves this app on every
+// install, so answer with a setup page until the settings exist.
+{
+  const { CONFIG_PATH, boardConfiguredAt } = await import('./config.ts');
+  if (!boardConfiguredAt(CONFIG_PATH)) {
+    const { serveUnconfigured } = await import('./unconfigured.ts');
+    serveUnconfigured({
+      port: Number(process.env.PORT) || 7930,
+      pollMs: 5_000,
+      isConfigured: () => boardConfiguredAt(CONFIG_PATH),
+      exit: code => process.exit(code),
+    });
+    await new Promise(() => {});
+  }
+}
+
 injectClientAssets({ appJs, appCss });
 await import('./server.ts');

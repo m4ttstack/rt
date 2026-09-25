@@ -789,6 +789,28 @@ function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
   );
 }
 
+/** Whether a file-less board can boot from the store alone. Any read failure
+    other than a missing file answers true, so the real server still surfaces
+    it loudly. Loading the whole config (not just checking the keys exist)
+    keeps an empty roster or project list on the setup page. */
+export function boardConfiguredAt(
+  path: string,
+  resolve: GetSettingFn = getSetting
+): boolean {
+  try {
+    readFileSync(path, 'utf8');
+    return true;
+  } catch (err) {
+    if (!isEnoent(err)) return true;
+  }
+  try {
+    loadConfigFrom(path, resolve);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Read `path`, layer the store on top — the shared reload every writer below
     returns through, so a write to one key never regresses another already-
     store-owned field back to its file value. A missing file degrades to the
