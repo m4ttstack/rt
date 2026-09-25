@@ -178,7 +178,7 @@ const EXPECTED_TOOL_NAMES = [
   "chat_ack", "chat_claim", "chat_dm", "chat_post", "chat_release",
   "gate_answer", "gate_ask", "gate_list",
   "herd_answer", "herd_ask", "herd_gates", "herd_report",
-  "mr_approve", "mr_comment", "mr_comment_inline", "mr_create", "mr_map", "mr_ready", "mr_rebase", "mr_reply_thread", "mr_resolve_thread", "mr_retry",
+  "mr_approve", "mr_comment", "mr_comment_inline", "mr_create", "mr_map", "mr_ready", "mr_rebase", "mr_reply_thread", "mr_resolve_thread", "mr_retry", "mr_update", "mr_upload",
   "rt_verb",
 ];
 

@@ -21,6 +21,7 @@ import { reverseLookupByName } from "../repo-name-lookup.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import { explainError } from "../explain-error.ts";
 import { runRtVerb } from "./rt-verb.ts";
+import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
 
 export interface McpToolDef {
   name: string;
@@ -71,14 +72,22 @@ function checkOptional(input: Record<string, unknown>, fields: Array<{ name: str
   return undefined;
 }
 
-/** mr:action only checks typeof on iid/jobId/pipelineId, so 0, negative, fractional or NaN
-    would otherwise reach the forge as a 404 instead of a clear input error. */
+/** mr:action only checks typeof on jobId/pipelineId, so 0, negative, fractional or NaN
+    would otherwise reach the forge as a 404 instead of a clear input error. iid gets the
+    same check inside resolveMrTarget. */
 function checkPositiveInts(input: Record<string, unknown>, names: string[]): string | undefined {
   for (const name of names) {
     const v = input[name];
     if (v === undefined) continue;
     if (typeof v !== "number" || !Number.isInteger(v) || v <= 0) return `"${name}" must be a positive integer`;
   }
+  return undefined;
+}
+
+function checkStringArray(input: Record<string, unknown>, name: string): string | undefined {
+  const v = input[name];
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `"${name}" must be an array of strings`;
   return undefined;
 }
 
@@ -99,7 +108,21 @@ const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside 
     Shared by every mr write tool for that reason. */
 const MR_WRITE_TIMEOUT_MS = 30_000;
 
-const REPO_NAME_RULE = "repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.";
+/** A 50 MB multipart POST over a slow link outlives the 30s write timeout. */
+const MR_UPLOAD_TIMEOUT_MS = 120_000;
+
+const REPO_NAME_RULE = "Name the target with repoName (the repo's serialized identity, e.g. remote:gitlab.com%2Facme%2Facme-dev, an absolute path to a local checkout or worktree, or a repo label that matches exactly one registered repo) or with mrUrl (the MR's https URL, which also supplies iid; its project must be registered with rt). Given both, they must agree.";
+
+const MR_TARGET_PROPS = {
+  repoName: { type: "string", description: "Serialized identity, absolute checkout or worktree path, or a label matching exactly one registered repo." },
+  iid: { type: "number", description: "The MR's iid; omit when mrUrl is given, which supplies it." },
+  mrUrl: { type: "string", description: "The MR's https URL; supplies both the repo and iid." },
+};
+
+const REPO_TARGET_PROPS = {
+  repoName: MR_TARGET_PROPS.repoName,
+  mrUrl: { type: "string", description: "An MR URL in the target project; names the repo, its iid is not used." },
+};
 
 /** A timed-out or gateway-timed-out create or post may still land daemon-side (see
     MR_WRITE_TIMEOUT_MS); the pattern also matches GitLab's own wording (e.g. "504 Gateway Timeout"). */
@@ -110,16 +133,11 @@ function withLandingHint(res: ToolResult, check: string): ToolResult {
 
 type MrActionName = Commands["mr:action"]["payload"]["action"];
 
-const MR_TARGET_FIELDS: Array<{ name: string; type: FieldType }> = [
-  { name: "repoName", type: "string" },
-  { name: "iid", type: "number" },
-];
-
 /** mr:action replies a bare {ok:true}, so each tool names its own result body. */
-async function runMrAction(input: Record<string, unknown>, action: MrActionName, args: unknown[], body: unknown): Promise<ToolResult> {
+async function runMrAction(target: { identity: string; iid: number }, action: MrActionName, args: unknown[], body: unknown): Promise<ToolResult> {
   const res = await rtCommand<Commands["mr:action"]["data"]>("mr:action", {
-    repoName: input.repoName as string,
-    iid: input.iid as number,
+    repoName: target.identity,
+    iid: target.iid,
     action,
     args,
   }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
@@ -416,29 +434,21 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_reply_thread",
-      description: `GitLab only. Reply to an existing MR discussion thread on the given repo and IID. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Reply to an existing MR discussion thread. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: {
-          repoName: { type: "string" },
-          iid: { type: "number" },
-          discussionId: { type: "string" },
-          body: { type: "string" },
-        },
-        required: ["repoName", "iid", "discussionId", "body"],
+        properties: { ...MR_TARGET_PROPS, discussionId: { type: "string" }, body: { type: "string" } },
+        required: ["discussionId", "body"],
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, [
-          { name: "repoName", type: "string" },
-          { name: "iid", type: "number" },
-          { name: "discussionId", type: "string" },
-          { name: "body", type: "string" },
-        ]);
+        const bad = checkRequired(input, [{ name: "discussionId", type: "string" }, { name: "body", type: "string" }]);
         if (bad) return err(bad);
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         const res = await rtCommand<Commands["discussions:reply"]["data"]>("discussions:reply", {
-          repoName: input.repoName as string,
-          iid: input.iid as number,
+          repoName: target.identity,
+          iid: target.iid,
           discussionId: input.discussionId as string,
           body: input.body as string,
         }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
@@ -451,29 +461,28 @@ export function mcpTools(): McpToolDef[] {
       inputSchema: {
         type: "object",
         properties: {
-          repoName: { type: "string" },
-          iid: { type: "number" },
+          ...MR_TARGET_PROPS,
           body: { type: "string" },
           path: { type: "string" },
           line: { type: "number" },
           oldPath: { type: "string" },
           oldLine: { type: "number" },
         },
-        required: ["repoName", "iid", "body", "path", "line"],
+        required: ["body", "path", "line"],
         additionalProperties: false,
       },
       async handler(input) {
         const bad = checkRequired(input, [
-          { name: "repoName", type: "string" },
-          { name: "iid", type: "number" },
           { name: "body", type: "string" },
           { name: "path", type: "string" },
           { name: "line", type: "number" },
-        ]);
+        ]) ?? checkOptional(input, [{ name: "oldPath", type: "string" }, { name: "oldLine", type: "number" }]);
         if (bad) return err(bad);
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         const payload: Commands["mr:comment-inline"]["payload"] = {
-          repoName: input.repoName as string,
-          iid: input.iid as number,
+          repoName: target.identity,
+          iid: target.iid,
           body: input.body as string,
           path: input.path as string,
           line: input.line as number,
@@ -488,28 +497,16 @@ export function mcpTools(): McpToolDef[] {
       description: `GitLab only. Post a NEW top-level note on an MR: a review's summary, or anything with no diff line to anchor to. resolvable (default true) opens a discussion a human can resolve; false posts a plain note, for a summary that carries nothing to resolve. Posts once and never retries. Returns noteId, discussionId (null for a plain note), resolvable as GitLab reports it, url (the note) and mrUrl. Use mr_comment_inline for a diff line and mr_reply_thread for an existing thread. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: {
-          repoName: { type: "string" },
-          iid: { type: "number" },
-          body: { type: "string" },
-          resolvable: { type: "boolean" },
-        },
-        required: ["repoName", "iid", "body"],
+        properties: { ...MR_TARGET_PROPS, body: { type: "string" }, resolvable: { type: "boolean" } },
+        required: ["body"],
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, [
-          { name: "repoName", type: "string" },
-          { name: "iid", type: "number" },
-          { name: "body", type: "string" },
-        ]) ?? checkOptional(input, [{ name: "resolvable", type: "boolean" }])
-          ?? checkPositiveInts(input, ["iid"]);
+        const bad = checkRequired(input, [{ name: "body", type: "string" }]) ?? checkOptional(input, [{ name: "resolvable", type: "boolean" }]);
         if (bad) return err(bad);
-        const payload: Commands["mr:comment"]["payload"] = {
-          repoName: input.repoName as string,
-          iid: input.iid as number,
-          body: input.body as string,
-        };
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        const payload: Commands["mr:comment"]["payload"] = { repoName: target.identity, iid: target.iid, body: input.body as string };
         if (input.resolvable !== undefined) payload.resolvable = input.resolvable as boolean;
         const res = await rtCommand<Commands["mr:comment"]["data"]>("mr:comment", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return withLandingHint(fromResponse(res), "the MR's discussions");
@@ -517,38 +514,98 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_create",
-      description: `GitLab only. Create a merge request from an already-pushed sourceBranch into targetBranch. Pass targetBranch explicitly (read the default branch from git); it is never guessed. draft defaults to true. Write the title, and optionally the description, yourself (e.g. from the branch's commits). Creates once and never retries. Returns iid and url (url is null when GitLab created the MR but reading it back failed). ${REPO_NAME_RULE}`,
+      description: `GitLab only. Create a merge request from an already-pushed sourceBranch into targetBranch. Pass targetBranch explicitly (read the default branch from git); it is never guessed. draft defaults to true. Write the title, and optionally the description, yourself (e.g. from the branch's commits). labels apply at creation; squash sets the MR's squash-on-merge flag right after it. Creates once and never retries. Returns iid, url (null when GitLab created the MR but reading it back failed) and, when squash was passed, squashApplied; squashApplied false with squashError means the MR exists, so set squash with mr_update rather than creating again. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: {
-          repoName: { type: "string" },
+          ...REPO_TARGET_PROPS,
           sourceBranch: { type: "string" },
           targetBranch: { type: "string" },
           title: { type: "string" },
           description: { type: "string" },
           draft: { type: "boolean" },
+          labels: { type: "array", items: { type: "string" } },
+          squash: { type: "boolean" },
         },
-        required: ["repoName", "sourceBranch", "targetBranch", "title"],
+        required: ["sourceBranch", "targetBranch", "title"],
         additionalProperties: false,
       },
       async handler(input) {
         const bad = checkRequired(input, [
-          { name: "repoName", type: "string" },
           { name: "sourceBranch", type: "string" },
           { name: "targetBranch", type: "string" },
           { name: "title", type: "string" },
-        ]) ?? checkOptional(input, [{ name: "description", type: "string" }, { name: "draft", type: "boolean" }]);
+        ]) ?? checkOptional(input, [{ name: "description", type: "string" }, { name: "draft", type: "boolean" }, { name: "squash", type: "boolean" }])
+          ?? checkStringArray(input, "labels");
         if (bad) return err(bad);
+        const target = await resolveRepoTarget(input);
+        if (!target.ok) return err(target.error);
         const payload: Commands["mr:create"]["payload"] = {
-          repoName: input.repoName as string,
+          repoName: target.identity,
           sourceBranch: input.sourceBranch as string,
           targetBranch: input.targetBranch as string,
           title: input.title as string,
         };
         if (input.description !== undefined) payload.description = input.description as string;
         if (input.draft !== undefined) payload.draft = input.draft as boolean;
+        if (input.labels !== undefined) payload.labels = input.labels as string[];
+        if (input.squash !== undefined) payload.squash = input.squash as boolean;
         const res = await rtCommand<Commands["mr:create"]["data"]>("mr:create", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return withLandingHint(fromResponse(res), "mr_map for an open MR on the source branch");
+      },
+    },
+    {
+      name: "mr_update",
+      description: `GitLab only. Edit an open MR: title, description, addLabels, removeLabels (add and remove, never the whole set, so labels CI or teammates set survive) and squash (the MR's squash-on-merge flag). Pass at least one. A title change keeps the MR's draft state. Title and description are written first, then labels and squash in one call; a partial failure names what landed, and every field is idempotent, so retry with only the failed fields. Returns iid, url and applied (the fields that landed). ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...MR_TARGET_PROPS,
+          title: { type: "string" },
+          description: { type: "string" },
+          addLabels: { type: "array", items: { type: "string" } },
+          removeLabels: { type: "array", items: { type: "string" } },
+          squash: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkOptional(input, [{ name: "title", type: "string" }, { name: "description", type: "string" }, { name: "squash", type: "boolean" }])
+          ?? checkStringArray(input, "addLabels") ?? checkStringArray(input, "removeLabels");
+        if (bad) return err(bad);
+        const changes = ["title", "description", "addLabels", "removeLabels", "squash"]
+          .filter((f) => input[f] !== undefined && !(Array.isArray(input[f]) && (input[f] as unknown[]).length === 0));
+        if (changes.length === 0) return err('nothing to update; pass at least one of "title", "description", "addLabels", "removeLabels" or "squash"');
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        const payload: Commands["mr:update"]["payload"] = { repoName: target.identity, iid: target.iid };
+        if (input.title !== undefined) payload.title = input.title as string;
+        if (input.description !== undefined) payload.description = input.description as string;
+        if (input.addLabels !== undefined) payload.addLabels = input.addLabels as string[];
+        if (input.removeLabels !== undefined) payload.removeLabels = input.removeLabels as string[];
+        if (input.squash !== undefined) payload.squash = input.squash as boolean;
+        const res = await rtCommand<Commands["mr:update"]["data"]>("mr:update", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+        return withLandingHint(fromResponse(res), "the MR's title, labels and squash setting");
+      },
+    },
+    {
+      name: "mr_upload",
+      description: `GitLab only. Upload one local image or video (png, jpg, jpeg, gif, webp, mp4, mov, webm; at most 50 MB) to the target project and get back url and markdown; paste the markdown into an MR description or note (mr_create, mr_update, mr_comment). Works before an MR exists. path must be absolute and under an allowed root: a worktree of the target repo, this user's Claude Code temp root (the session scratchpad lives there), or a directory in the rt.mcp.uploadRoots setting; anything else, a directory, or a file whose bytes do not match its extension is refused. Uploads once; a timed-out upload may have landed, but an unused upload is harmless, so retrying is safe. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { ...REPO_TARGET_PROPS, path: { type: "string", description: "Absolute path of the file to upload." } },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [{ name: "path", type: "string" }]);
+        if (bad) return err(bad);
+        const target = await resolveRepoTarget(input);
+        if (!target.ok) return err(target.error);
+        const res = await rtCommand<Commands["mr:upload"]["data"]>("mr:upload", { repoName: target.identity, path: input.path as string }, { timeoutMs: MR_UPLOAD_TIMEOUT_MS });
+        const out = fromResponse(res);
+        if (out.ok || !/timed ?out|timeout/i.test(out.error ?? "")) return out;
+        return err(`${out.error}; the upload may have landed anyway, and an unused upload is harmless, so retrying is safe`);
       },
     },
     {
@@ -556,16 +613,16 @@ export function mcpTools(): McpToolDef[] {
       description: `GitLab only. Approve an MR as the token's user, or withdraw that approval with approved: false. Call it only once approving is decided (a review's Approve disposition, after its findings have posted). ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: { repoName: { type: "string" }, iid: { type: "number" }, approved: { type: "boolean" } },
-        required: ["repoName", "iid"],
+        properties: { ...MR_TARGET_PROPS, approved: { type: "boolean" } },
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "approved", type: "boolean" }])
-          ?? checkPositiveInts(input, ["iid"]);
+        const bad = checkOptional(input, [{ name: "approved", type: "boolean" }]);
         if (bad) return err(bad);
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         const approved = input.approved !== false;
-        return runMrAction(input, approved ? "approve" : "unapprove", [], { approved });
+        return runMrAction(target, approved ? "approve" : "unapprove", [], { approved });
       },
     },
     {
@@ -573,20 +630,20 @@ export function mcpTools(): McpToolDef[] {
       description: `GitLab only. Resolve an MR discussion thread, or reopen it with resolved: false. Post any reply first with mr_reply_thread; resolving does not post. Returns {discussionId, resolved}. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: { repoName: { type: "string" }, iid: { type: "number" }, discussionId: { type: "string" }, resolved: { type: "boolean" } },
-        required: ["repoName", "iid", "discussionId"],
+        properties: { ...MR_TARGET_PROPS, discussionId: { type: "string" }, resolved: { type: "boolean" } },
+        required: ["discussionId"],
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, [...MR_TARGET_FIELDS, { name: "discussionId", type: "string" }])
-          ?? checkOptional(input, [{ name: "resolved", type: "boolean" }])
-          ?? checkPositiveInts(input, ["iid"]);
+        const bad = checkRequired(input, [{ name: "discussionId", type: "string" }]) ?? checkOptional(input, [{ name: "resolved", type: "boolean" }]);
         if (bad) return err(bad);
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         const discussionId = input.discussionId as string;
         const resolved = input.resolved !== false;
         const res = await rtCommand<Commands["discussions:resolve"]["data"]>("discussions:resolve", {
-          repoName: input.repoName as string,
-          iid: input.iid as number,
+          repoName: target.identity,
+          iid: target.iid,
           discussionId,
           resolved,
         }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
@@ -598,37 +655,37 @@ export function mcpTools(): McpToolDef[] {
       description: `GitLab only. Mark a draft MR ready for review, or back to draft with ready: false. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: { repoName: { type: "string" }, iid: { type: "number" }, ready: { type: "boolean" } },
-        required: ["repoName", "iid"],
+        properties: { ...MR_TARGET_PROPS, ready: { type: "boolean" } },
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "ready", type: "boolean" }])
-          ?? checkPositiveInts(input, ["iid"]);
+        const bad = checkOptional(input, [{ name: "ready", type: "boolean" }]);
         if (bad) return err(bad);
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         const ready = input.ready !== false;
-        return runMrAction(input, "toggleDraft", [!ready], { ready });
+        return runMrAction(target, "toggleDraft", [!ready], { ready });
       },
     },
     {
       name: "mr_retry",
-      description: `GitLab only. Retry one CI job (jobId) or a whole pipeline (pipelineId) on an MR; pass exactly one. iid names the MR whose state is refreshed afterward. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Retry one CI job (jobId) or a whole pipeline (pipelineId) on an MR; pass exactly one. The MR named by the target is the one whose state is refreshed afterward. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: { repoName: { type: "string" }, iid: { type: "number" }, jobId: { type: "number" }, pipelineId: { type: "number" } },
-        required: ["repoName", "iid"],
+        properties: { ...MR_TARGET_PROPS, jobId: { type: "number" }, pipelineId: { type: "number" } },
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS)
-          ?? checkOptional(input, [{ name: "jobId", type: "number" }, { name: "pipelineId", type: "number" }])
-          ?? checkPositiveInts(input, ["iid", "jobId", "pipelineId"]);
+        const bad = checkOptional(input, [{ name: "jobId", type: "number" }, { name: "pipelineId", type: "number" }])
+          ?? checkPositiveInts(input, ["jobId", "pipelineId"]);
         if (bad) return err(bad);
         const hasJob = input.jobId !== undefined;
         if (hasJob === (input.pipelineId !== undefined)) return err('pass exactly one of "jobId" or "pipelineId"');
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
         return hasJob
-          ? runMrAction(input, "retryJob", [input.jobId], { jobId: input.jobId })
-          : runMrAction(input, "retryPipeline", [input.pipelineId], { pipelineId: input.pipelineId });
+          ? runMrAction(target, "retryJob", [input.jobId], { jobId: input.jobId })
+          : runMrAction(target, "retryPipeline", [input.pipelineId], { pipelineId: input.pipelineId });
       },
     },
     {
@@ -636,14 +693,13 @@ export function mcpTools(): McpToolDef[] {
       description: `GitLab only. Ask GitLab to rebase the MR's source branch onto its target server-side (no checkout). GitLab accepts the request and rebases asynchronously, so re-read the MR before assuming the rebase finished or succeeded. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
-        properties: { repoName: { type: "string" }, iid: { type: "number" } },
-        required: ["repoName", "iid"],
+        properties: { ...MR_TARGET_PROPS },
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkPositiveInts(input, ["iid"]);
-        if (bad) return err(bad);
-        return runMrAction(input, "rebase", [], { rebased: true });
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        return runMrAction(target, "rebase", [], { rebased: true });
       },
     },
     {

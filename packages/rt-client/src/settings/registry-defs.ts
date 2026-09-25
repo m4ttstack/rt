@@ -286,6 +286,14 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "replace",
     description: "Browser Origins (scheme://host:port, exact string match) trusted to read the :9401 daemon API and subscribe to /ws without presenting the local api-token -- e.g. a locally-hosted console or chat-viewer dev server. Empty by default: every current mattstack consumer (the CLI, the Swift tray, rt-client from Bun/Node processes, the VS Code extension) is a non-browser client (sends no Origin header at all) and is unaffected either way.",
   },
+  {
+    key: "rt.mcp.uploadRoots",
+    type: "array",
+    scopes: ["machine"],
+    default: [],
+    merge: "replace",
+    description: "Absolute directories the mr_upload MCP tool may read files from, beside its built-in roots (the target repo's worktrees and this user's Claude Code temp root). Machine-only: path literals never travel. A non-absolute entry is ignored with a warning. A fresh key, not an ownership-latch port, so a default is fine here.",
+  },
 
   // --- mattstack (installer-lane) -----------------------------------------
   {

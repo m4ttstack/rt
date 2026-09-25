@@ -187,8 +187,16 @@ The `mr_*` tools in the same file are the rest of that grant.
 the server runs on every estate machine with no permission check, and a new
 `mr_*` tool is a forge write any agent can make unasked. They cover what
 board panes and pipeline verbs write (notes, approvals, resolves, draft
-state, retries, rebase, create). Merge, and anything equally irreversible,
-stays off the server so the classifier or a human stays in front of it.
+state, retries, rebase, create, update, upload). Merge, and anything equally
+irreversible, stays off the server so the classifier or a human stays in
+front of it. `mr_upload` is the one tool that reads local files, so its
+daemon guard (`lib/daemon/upload-guard.ts`) refuses anything outside the
+target repo's worktrees, the user's Claude Code temp root and
+`rt.mcp.uploadRoots`, and anything whose bytes do not match its image or
+video extension; widen the roots through that setting, never by loosening
+the guard. Target resolution (`repoName` as identity, path or label, or
+`mrUrl`) lives in `lib/mcp/mr-target.ts`; the daemon verbs still take the
+serialized identity only.
 
 Decision gates (`rt gate ask`, `rt gate wait`, the board's stage sheet) are
 the only way an unattended pane asks a human anything. The
