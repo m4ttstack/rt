@@ -10,6 +10,7 @@ done
 t "common.test.sh"               bash lib/__tests__/common.test.sh
 t "appcast-server.test.ts"       bun test run/helpers/__tests__/appcast-server.test.ts
 t "launchctl-print.test.ts"      bun test run/helpers/__tests__/launchctl-print.test.ts
+t "catalog.test.ts"              bun test run/helpers/__tests__/catalog.test.ts
 t "build-golden --dry-run"       bash golden/build-golden.sh 26 --dry-run
 # A pause nobody can answer used to exit mute under set -e, killing the VM
 # through the EXIT trap after 15 minutes of provisioning, with the failure
