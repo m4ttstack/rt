@@ -132,8 +132,17 @@ describe("rt release app: flags and output", () => {
   });
 
   test("the --yes-notes value is never mistaken for the app name", async () => {
-    const h = await invoke(["--yes-notes", "v2.13.2", "board"]);
-    expect(h.runs.map((r) => [r.name, r.yesNotes])).toEqual([["board", "v2.13.2"]]);
+    const h = await invoke(["--yes-notes", "0123456789ab", "board"]);
+    expect(h.runs.map((r) => [r.name, r.yesNotes])).toEqual([["board", "0123456789ab"]]);
+  });
+
+  test("--yes-notes takes only a notes hash: the tag form is a usage error", async () => {
+    for (const token of ["v2.13.2", "0123456789", "0123456789abcd", "0123456789AB"]) {
+      const h = await invoke(["board", "--yes-notes", token]);
+      expect(h.runs).toEqual([]);
+      expect(h.exitCalled).toBe(2);
+      expect(h.logs.join("\n")).toContain("--yes-notes <notes hash>");
+    }
   });
 
   test("--yes-notes without a value is a usage error", async () => {

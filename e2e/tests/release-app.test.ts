@@ -14,8 +14,12 @@ import { createTestHome, rt } from "../harness.ts";
 const FAKE_GH = `#!/bin/bash
 echo "$*" >> "$FAKE_GH_LOG"
 case "$*" in
-  "api repos/m4ttstack/apps/contents/apps/board/package.json?ref=main")
+  "api repos/m4ttstack/apps/git/ref/heads/main --jq .object.sha")
+    echo appshead ;;
+  "api -H Accept: application/vnd.github.raw+json repos/m4ttstack/apps/contents/apps/board/package.json?ref=appshead")
     printf '%s' "$FAKE_BOARD_PACKAGE" ;;
+  "api -H Accept: application/vnd.github.raw+json repos/m4ttstack/apps/contents/bun.lock?ref=appshead")
+    printf '%s' "$FAKE_APPS_BUNLOCK" ;;
   "api repos/m4ttstack/apps/git/ref/tags/"*)
     echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   "api repos/m4ttstack/rt/actions/workflows/release.yml/runs?event=push&branch=v0.1.1&per_page=5")
@@ -114,7 +118,8 @@ describe("rt release app --dry-run", () => {
       env: {
         PATH: `${fakeBin}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
         FAKE_GH_LOG: ghLog,
-        FAKE_BOARD_PACKAGE: JSON.stringify({ content: Buffer.from(pkg).toString("base64"), sha: "pkgsha" }),
+        FAKE_BOARD_PACKAGE: pkg,
+        FAKE_APPS_BUNLOCK: `{\n  "lockfileVersion": 1,\n  "workspaces": {\n    "apps/board": {\n      "name": "board",\n      "version": "0.1.7",\n    },\n  },\n}\n`,
         FAKE_RELEASE_VIEW: JSON.stringify({ body: "v0.1.1 notes\n", assets, isDraft: false, isPrerelease: false, publishedAt: "2026-09-25T00:00:00Z" }),
       },
     });
@@ -136,11 +141,13 @@ describe("rt release app --dry-run", () => {
     expect(body.steps.find((s) => s.id === "bundle")!.command).toBe("gh workflow run bundle-apps.yml --repo m4ttstack/rt --ref main -f apps=board -f dry_run=false");
 
     expect(readFileSync(ghLog, "utf8").trim().split("\n")).toEqual([
-      "api repos/m4ttstack/apps/contents/apps/board/package.json?ref=main",
+      "api repos/m4ttstack/apps/git/ref/heads/main --jq .object.sha",
+      "api -H Accept: application/vnd.github.raw+json repos/m4ttstack/apps/contents/apps/board/package.json?ref=appshead",
       "api repos/m4ttstack/rt/actions/workflows/release.yml/runs?event=push&branch=v0.1.1&per_page=5",
       "run view 1 --repo m4ttstack/rt --json status,conclusion",
       "release view v0.1.1 --repo m4ttstack/rt --json body,assets,isDraft,isPrerelease,publishedAt",
       "api repos/m4ttstack/apps/git/ref/tags/board-v0.1.8",
+      "api -H Accept: application/vnd.github.raw+json repos/m4ttstack/apps/contents/bun.lock?ref=appshead",
       "api repos/m4ttstack/rt/actions/workflows/bundle-apps.yml/runs?event=workflow_dispatch&per_page=20",
     ]);
     expect(git(checkout, "tag", "--list", "v0.1.2")).toBe("");

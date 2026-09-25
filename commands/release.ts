@@ -254,7 +254,7 @@ export interface ReleaseAppCommandDeps {
   run?: (seams: ReleaseAppSeams, opts: ReleaseAppOptions) => Promise<ReleaseAppReport>;
 }
 
-const RELEASE_APP_USAGE = "usage: rt release app <name> [--dry-run] [--json] [--yes-notes <notes hash|tag>]";
+const RELEASE_APP_USAGE = "usage: rt release app <name> [--dry-run] [--json] [--yes-notes <notes hash>]";
 
 async function pickReleaseApp(options: SelectOption[]): Promise<string | null> {
   const { filterableSelect } = await import("../lib/pick-wrappers.ts");
@@ -304,6 +304,7 @@ export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps
     } catch {
       return usage();
     }
+    if (yesNotes !== null && !/^[0-9a-f]{12}$/.test(yesNotes)) return usage();
     const yesAt = args.indexOf("--yes-notes");
     let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
     if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
