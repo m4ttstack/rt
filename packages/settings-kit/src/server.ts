@@ -14,18 +14,26 @@
 
 import {
   allDefs,
+  checkSchema,
   explainSetting,
   getDef,
+  hasSchema,
   isMigrated,
+  listStoreRepoIdentities,
+  listUnregisteredSettings,
+  repoSectionsFor,
   setSetting,
   unsetSetting,
   validateValue,
+  validateWrite,
   type ExplainRow,
+  type JsonSchema,
+  type SchemaIssue,
   type SettingDef,
   type SettingScope,
 } from "@mattstack/rt-client";
 import { overlay } from "./overlay.ts";
-import { matchesShape, SHAPES } from "./shapes.ts";
+import { SHAPES } from "./shapes.ts";
 
 export interface SettingDefWire {
   key: string;
@@ -43,11 +51,30 @@ export interface SettingDefWire {
   hasDefault: boolean;
   defaultValue: unknown;
   effective: EffectiveWire;
+  storeVersion: number;
+  schema?: JsonSchema;
+  layerSchema?: JsonSchema;
+  issues?: WireIssue[];
+  mergedIssues?: SchemaIssue[];
+  repos?: { identity: string; scopes: string[] }[];
 }
+
+/** A schema or path-guard problem on one store rung, flattened for a client
+    that never sees `ExplainRow`. `message` is already secret-safe (see
+    `issuesFromRows`); never derive a second copy from the raw row. */
+export type WireIssue = {
+  scope: string;
+  file: string | null;
+  repo?: string;
+  kind: string;
+  path: (string | number)[];
+  message: string;
+  [extra: string]: unknown;
+};
 
 export type ExplainRowWire = Pick<
   ExplainRow,
-  "scope" | "file" | "present" | "shadowed" | "invalid"
+  "scope" | "file" | "present" | "shadowed" | "invalid" | "nonconforming"
 > & { value?: unknown };
 
 /** The winning layer, precomputed server-side so a list view renders and
@@ -80,8 +107,16 @@ export interface RtSettingsApi {
   isMigrated: typeof isMigrated;
   explainSetting: typeof explainSetting;
   validateValue: typeof validateValue;
+  validateWrite: typeof validateWrite;
   setSetting: typeof setSetting;
   unsetSetting: typeof unsetSetting;
+  listUnregisteredSettings: typeof listUnregisteredSettings;
+  repoSectionsFor: typeof repoSectionsFor;
+  listStoreRepoIdentities: typeof listStoreRepoIdentities;
+  /** Repo identities known to the host app (e.g. its own repo registry), merged
+      with the store-derived list on `GET {base}/repos`. Optional: a host with
+      no such registry answers from stores alone. */
+  listRepos?: () => Promise<string[]>;
 }
 
 export interface SettingsHandlerOptions {
@@ -89,7 +124,8 @@ export interface SettingsHandlerOptions {
   basePath?: string;
   /** Admit composite (object/array) keys to the write path. `true` admits
       every composite as a whole-JSON replacement. `"shaped"` admits only a
-      key SHAPES declares (never `external`), and only a value matching it. */
+      key with a JSON Schema whose `SHAPES` kind is not `external`; the value
+      itself is checked by `validateWrite`, not by a shape match. */
   allowComposite?: boolean | "shaped";
   /** Override the rt-client functions (tests, instrumentation). */
   rt?: Partial<RtSettingsApi>;
@@ -115,8 +151,7 @@ type CompositeMode = boolean | "shaped";
 function compositeAllowed(def: SettingDef, mode: CompositeMode): boolean {
   if (!isComposite(def) || mode === true) return true;
   if (mode !== "shaped") return false;
-  const shape = SHAPES[def.key];
-  return shape !== undefined && shape.kind !== "external";
+  return hasSchema(def) && SHAPES[def.key]?.kind !== "external";
 }
 
 function isWritable(def: SettingDef, migrated: (def: SettingDef) => boolean = isMigrated, mode: CompositeMode = false): boolean {
@@ -128,8 +163,14 @@ function isJsonBody(req: Request): boolean {
   return type !== null && type.split(";", 1)[0]!.trim().toLowerCase() === "application/json";
 }
 
+/** The one place "" becomes "no repo": every reader (query param, body field)
+    funnels through this so validateWrite and setSetting see the same opts. */
+function normalizeRepo(value: string | null | undefined): string | undefined {
+  return value ? value : undefined;
+}
+
 export function defToWire(def: SettingDef, migrated: ((def: SettingDef) => boolean) | undefined, effective: EffectiveWire, composites: CompositeMode = false): SettingDefWire {
-  return {
+  const wire: SettingDefWire = {
     key: def.key,
     type: def.type,
     scopes: def.scopes,
@@ -142,7 +183,13 @@ export function defToWire(def: SettingDef, migrated: ((def: SettingDef) => boole
     hasDefault: "default" in def,
     defaultValue: def.default ?? null,
     effective,
+    storeVersion: def.storeVersion ?? 1,
   };
+  if (hasSchema(def)) {
+    wire.schema = def.schema;
+    if (def.merge === "deep" && def.type === "object" && def.layerSchema) wire.layerSchema = def.layerSchema;
+  }
+  return wire;
 }
 
 /**
@@ -158,12 +205,41 @@ export function sanitizeRows(def: SettingDef, rows: ExplainRow[]): ExplainRowWir
       present: row.present,
     };
     if (row.shadowed) wire.shadowed = row.shadowed;
-    if (row.invalid) wire.invalid = row.invalid;
+    if (row.invalid) wire.invalid = def.secret === true ? "refused" : row.invalid;
+    if (row.nonconforming) {
+      wire.nonconforming = def.secret === true
+        ? row.nonconforming.map((issue) => ({ path: issue.path, message: "does not match the schema" }))
+        : row.nonconforming;
+    }
     if (def.secret !== true && "value" in row) wire.value = row.value;
     return wire;
   });
 }
 
+/** Flattens explain rows into wire issues. A secret's message is replaced
+    outright, never derived from the row's own text: `row.invalid` for a
+    path-guard rejection quotes the literal it refused. `repo` is stamped
+    only on a row from a repo-section rung (`*.repo`): a global rung's issue
+    applies with no repo in play, even when the request asked for one. */
+function issuesFromRows(def: SettingDef, rows: ExplainRow[], repo?: string): WireIssue[] {
+  const out: WireIssue[] = [];
+  for (const row of rows) {
+    const rowRepo = repo && row.scope.endsWith(".repo") ? repo : undefined;
+    if (row.invalid) {
+      const issue: WireIssue = { scope: row.scope, file: row.file, kind: "invalid", path: [], message: def.secret === true ? "refused" : row.invalid };
+      if (rowRepo) issue.repo = rowRepo;
+      out.push(issue);
+    }
+    if (row.nonconforming) {
+      for (const nc of row.nonconforming) {
+        const issue: WireIssue = { scope: row.scope, file: row.file, kind: "nonconforming", path: nc.path, message: def.secret === true ? "does not match the schema" : nc.message };
+        if (rowRepo) issue.repo = rowRepo;
+        out.push(issue);
+      }
+    }
+  }
+  return out;
+}
 
 /** Winning layer from explain rows, which arrive weakest-first: the last
     present, un-shadowed row wins. A deep-merged object reports the merged
@@ -180,7 +256,7 @@ export function effectiveFromRows(def: SettingDef, rows: ExplainRow[]): Effectiv
     return { scope: null, file: null };
   }
   const wire: EffectiveWire = { scope: top.scope, file: top.file };
-  if (top.invalid) wire.invalid = top.invalid;
+  if (top.invalid) wire.invalid = def.secret === true ? "refused" : top.invalid;
   if (def.secret === true) return wire;
   if (def.merge === "deep" && def.type === "object") {
     let merged: unknown = undefined;
@@ -221,10 +297,11 @@ function json(body: unknown, status = 200): Response {
 
 /**
  * Answers:
- *   GET  {base}/defs[?prefix=board.]  → { defs: SettingDefWire[] }
- *   GET  {base}/explain/{key}         → { def, rows }
- *   POST {base}/set                   → { rows, effective } | { error }
- *   POST {base}/unset                 → { rows, effective } | { error }
+ *   GET  {base}/defs[?prefix=board.][?repo=host/owner/name]  → { defs: SettingDefWire[], unregistered }
+ *   GET  {base}/explain/{key}[?repo=host/owner/name]         → { def, rows }
+ *   GET  {base}/repos                                        → { repos: { identity, label }[] }
+ *   POST {base}/set                                          → { rows, effective } | { error, issues? }
+ *   POST {base}/unset                                        → { rows, effective } | { error }
  * Returns null for anything else so the host's routing continues.
  */
 export async function settingsHandler(
@@ -232,7 +309,20 @@ export async function settingsHandler(
   opts: SettingsHandlerOptions = {},
 ): Promise<Response | null> {
   const base = (opts.basePath ?? "/api/settings").replace(/\/+$/, "");
-  const rt: RtSettingsApi = { allDefs, getDef, isMigrated, explainSetting, validateValue, setSetting, unsetSetting, ...opts.rt };
+  const rt: RtSettingsApi = {
+    allDefs,
+    getDef,
+    isMigrated,
+    explainSetting,
+    validateValue,
+    validateWrite,
+    setSetting,
+    unsetSetting,
+    listUnregisteredSettings,
+    repoSectionsFor,
+    listStoreRepoIdentities,
+    ...opts.rt,
+  };
   let url: URL;
   try {
     url = new URL(req.url);
@@ -240,27 +330,59 @@ export async function settingsHandler(
     return null;
   }
   const path = url.pathname;
-  if (path !== `${base}/defs` && !path.startsWith(`${base}/explain/`) && path !== `${base}/set` && path !== `${base}/unset`) {
+  if (
+    path !== `${base}/defs` &&
+    !path.startsWith(`${base}/explain/`) &&
+    path !== `${base}/set` &&
+    path !== `${base}/unset` &&
+    path !== `${base}/repos`
+  ) {
     return null;
   }
 
   if (path === `${base}/defs` && req.method === "GET") {
     const prefix = url.searchParams.get("prefix") ?? "";
+    const repo = normalizeRepo(url.searchParams.get("repo"));
+    const mode = opts.allowComposite ?? false;
     const defs = rt.allDefs()
       .filter((d) => d.key.startsWith(prefix))
-      .map((d) => defToWire(d, rt.isMigrated, effectiveFromRows(d, rt.explainSetting(d.key)), opts.allowComposite ?? false));
-    return json({ defs });
+      .map((d) => {
+        const rows = rt.explainSetting(d.key, { repoIdentity: repo ?? null });
+        const effective = effectiveFromRows(d, rows);
+        const wire = defToWire(d, rt.isMigrated, effective, mode);
+        wire.issues = issuesFromRows(d, rows, repo);
+        if (hasSchema(d) && d.secret !== true && "value" in effective) {
+          wire.mergedIssues = checkSchema(d, effective.value, { layer: false });
+        }
+        if (d.repoScoped === true) wire.repos = rt.repoSectionsFor(d.key);
+        return wire;
+      });
+    return json({ defs, unregistered: rt.listUnregisteredSettings() });
   }
 
   if (path.startsWith(`${base}/explain/`) && req.method === "GET") {
     const key = decodeURIComponent(path.slice(`${base}/explain/`.length));
     const def = rt.getDef(key);
     if (!def) return json({ error: `unknown setting "${key}"` }, 404);
-    const rows = rt.explainSetting(key);
+    const repo = normalizeRepo(url.searchParams.get("repo"));
+    const rows = rt.explainSetting(key, { repoIdentity: repo ?? null });
     return json({
       def: defToWire(def, rt.isMigrated, effectiveFromRows(def, rows), opts.allowComposite ?? false),
       rows: sanitizeRows(def, rows),
     });
+  }
+
+  if (path === `${base}/repos` && req.method === "GET") {
+    const ids = new Set<string>(rt.listStoreRepoIdentities());
+    if (rt.listRepos) {
+      try {
+        for (const id of await rt.listRepos()) ids.add(id);
+      } catch {
+        // A host registry outage must not blank the identities already known from stores.
+      }
+    }
+    const repos = [...ids].sort().map((identity) => ({ identity, label: identity.slice(identity.indexOf("/") + 1) }));
+    return json({ repos });
   }
 
   if (path === `${base}/set` && req.method === "POST") {
@@ -277,6 +399,7 @@ export async function settingsHandler(
     const key = typeof body?.key === "string" ? body.key : "";
     const scope = (typeof body?.scope === "string" ? body.scope : "") as SettingScope;
     const team = typeof body?.team === "string" ? body.team : undefined;
+    const repo = normalizeRepo(typeof body?.repo === "string" ? body.repo : undefined);
     const value = body?.value;
 
     const def = rt.getDef(key);
@@ -295,19 +418,18 @@ export async function settingsHandler(
     if (!isWritable(def, rt.isMigrated, mode)) {
       return json({ error: `"${key}" is not writable through the resolver yet` }, 400);
     }
-    const check = rt.validateValue(def, value);
-    if (!check.ok) return json({ error: check.reason }, 400);
-    const shape = SHAPES[key];
-    if (mode === "shaped" && isComposite(def) && shape && !matchesShape(shape, value)) {
-      return json({ error: `value does not match ${key}'s shape` }, 400);
-    }
+    const check = rt.validateWrite(def, value, { scope, repoIdentity: repo, team });
+    if (!check.ok) return json({ error: check.reason, issues: check.issues }, 400);
 
+    const writeOpts: { team?: string; repoIdentity?: string } = {};
+    if (team) writeOpts.team = team;
+    if (repo) writeOpts.repoIdentity = repo;
     try {
-      rt.setSetting(key, value, scope, team ? { team } : {});
+      rt.setSetting(key, value, scope, writeOpts);
     } catch (err) {
       return json({ error: (err as Error).message }, 400);
     }
-    const after = rt.explainSetting(key);
+    const after = rt.explainSetting(key, { repoIdentity: repo ?? null });
     return json({ rows: sanitizeRows(def, after), effective: effectiveFromRows(def, after) });
   }
 
@@ -325,8 +447,9 @@ export async function settingsHandler(
     const key = typeof body?.key === "string" ? body.key : "";
     const scope = (typeof body?.scope === "string" ? body.scope : "") as SettingScope;
     const team = typeof body?.team === "string" ? body.team : undefined;
+    const repo = normalizeRepo(typeof body?.repo === "string" ? body.repo : undefined);
 
-    // Same ladder as set, minus the value check — removal has no value. The
+    // Same ladder as set, minus the value check: removal has no value. The
     // writable/composite gates stay: a row the UI renders read-only must not
     // be clearable through the API either.
     const def = rt.getDef(key);
@@ -346,12 +469,15 @@ export async function settingsHandler(
       return json({ error: `"${key}" is not writable through the resolver yet` }, 400);
     }
 
+    const unsetOpts: { team?: string; repoIdentity?: string } = {};
+    if (team) unsetOpts.team = team;
+    if (repo) unsetOpts.repoIdentity = repo;
     try {
-      rt.unsetSetting(key, scope, team ? { team } : {});
+      rt.unsetSetting(key, scope, unsetOpts);
     } catch (err) {
       return json({ error: (err as Error).message }, 400);
     }
-    const after = rt.explainSetting(key);
+    const after = rt.explainSetting(key, { repoIdentity: repo ?? null });
     return json({ rows: sanitizeRows(def, after), effective: effectiveFromRows(def, after) });
   }
 

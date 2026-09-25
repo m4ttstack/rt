@@ -43,6 +43,7 @@ import { identityFromRemote } from "../lib/settings/identity.ts";
 import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import type { SettingScope } from "../lib/settings/registry.ts";
+import type { Value } from "../lib/settings/registry-schemas.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,10 +87,10 @@ let warnedHooksStoreProbe = false;
  * (thrown by getSetting) counts as unowned too, with ONE warning across the
  * process that never echoes the store's value.
  */
-function probeHooksStore(repoIdentity: string | null): Partial<HooksConfig> | undefined {
+function probeHooksStore(repoIdentity: string | null): Value<"rt.hooks"> | undefined {
   if (!repoIdentity) return undefined;
   try {
-    return getSetting<Partial<HooksConfig>>(SETTING_KEY, { repoIdentity }).value;
+    return getSetting<Value<"rt.hooks">>(SETTING_KEY, { repoIdentity }).value;
   } catch (err) {
     if (!warnedHooksStoreProbe) {
       warnedHooksStoreProbe = true;

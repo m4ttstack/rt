@@ -128,7 +128,7 @@ describe("run-presets over the settings resolver", () => {
   });
 
   it("an unexpandable ${repoRoot} in a stored value degrades to empty instead of throwing", () => {
-    setSetting("rt.presets", { lite: { entries: "${repoRoot}" } }, "user", { repoIdentity: IDENTITY });
+    setSetting("rt.presets", { lite: { entries: [{ packageRelPath: "${repoRoot}", packageLabel: "root", script: "dev" }] } }, "user", { repoIdentity: IDENTITY });
 
     expect(() => loadPresets(IDENTITY)).not.toThrow();
   });

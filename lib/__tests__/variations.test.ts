@@ -63,7 +63,7 @@ describe("variations", () => {
       });
 
       test("an unexpandable ${repoRoot} in a stored value degrades to empty instead of throwing", () => {
-        setSetting("rt.variations", { "pkg/a:dev": "${repoRoot}" }, "team", { repoIdentity: IDENTITY });
+        setSetting("rt.variations", { "pkg/a:dev": [{ name: "root", command: "${repoRoot}/dev" }] }, "team", { repoIdentity: IDENTITY });
 
         expect(() => loadVariations(IDENTITY)).not.toThrow();
         expect(loadVariations(IDENTITY)).toEqual({});

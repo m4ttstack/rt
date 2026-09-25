@@ -20,15 +20,11 @@
 import { relative } from "path";
 import { getSetting } from "./settings/resolve.ts";
 import { setSetting } from "./settings/write.ts";
+import type { Value } from "./settings/registry-schemas.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export interface Variation {
-  /** User-facing label shown in the variations sub-picker. */
-  name: string;
-  /** Full shell command string to execute. */
-  command: string;
-}
+export type Variation = Value<"rt.variations">[string][number];
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
 

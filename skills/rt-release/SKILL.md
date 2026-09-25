@@ -95,16 +95,24 @@ when Matt wants several apps bumped and bundled in one release.
    (from source: `bun run cli.ts release preflight`; `--json` for the
    agent envelope) performs every mechanical check in steps 1-2c at once:
    git/tag state (on `main`, tree clean, commits since the last tag), the
-   picker conformance gate, per-app pin freshness, the standalone
+   picker conformance gate, the settings schema lock against the last
+   tag, per-app pin freshness, the standalone
    gitq/fast-browser rows, tool-row drift against upstreams, plugin
    catalog pin drift, Chrome extension currency, rt-client npm-vs-source
    parity, and the gate (fast path vs full) the pending diff implies.
    Exit 0 means every layer verified current. A stale row prints pinned
    vs current; an unverifiable row (`!`) is not a pass — rerun or check
    that layer by hand before proceeding. Abort on a stale `git state`
-   row (off main, dirty tree). Every other stale row is handled by the
-   policy in steps 2b-2c: cut the layer's release, or the user ratifies
-   holding the pin and the release notes record it.
+   row (off main, dirty tree). A stale `schema lock` row names a key
+   whose committed schema can reject a value the lock at the last tag
+   accepted, with no `storeVersion` bump or no entry in
+   `packages/rt-client/src/settings/breaking-schema-changes.json`; land
+   the bump and the one-line reason (or revert the tightening) on main
+   before tagging. `bun run cli.ts settings check` (source, so it checks
+   this release's registry) must also exit 0 against the real stores; a
+   finding is fixed in the schema, never in the store. Every other stale
+   row is handled by the policy in steps 2b-2c: cut the layer's release,
+   or the user ratifies holding the pin and the release notes record it.
 
 2. **Determine version bump.** From `git log --pretty=%s <last-tag>..HEAD`:
    any `feat(` or a new module/file is a minor bump; only `fix(` / `chore(` /

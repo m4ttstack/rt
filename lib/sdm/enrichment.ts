@@ -23,14 +23,9 @@ import { rtDir } from "../rt-paths.ts";
 import { join } from "node:path";
 import { stripJsonc } from "../jsonc.ts";
 import { getSetting } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 
-export interface EnrichmentEntry {
-  label?: string;
-  tier?: string;
-  production?: boolean;
-  reasonSuggestion?: string;
-  db?: { database?: string; schema?: string; user?: string };
-}
+export type EnrichmentEntry = Value<"rt.sdmEnrichment">[string];
 
 const SETTING_KEY = "rt.sdmEnrichment";
 

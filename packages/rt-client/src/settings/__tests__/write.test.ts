@@ -15,6 +15,7 @@ import { dirname, join } from "path";
 import { machineSettingsPath, teamLocalPath, teamSettingsPath, teamsDir, userSettingsPath } from "../paths.ts";
 import { setSetting, unsetSetting } from "../write.ts";
 import * as isolation from "../../test-isolation.ts";
+import { withSchema } from "./with-schema.ts";
 
 const IDENTITY = "gitlab.com/acme/acme-dev";
 const TEAM = "acme";
@@ -165,6 +166,20 @@ describe("settings/write", () => {
           repoIdentity: IDENTITY,
         }),
       ).toThrow(/path literal|\$\{team|\$\{repoRoot/i);
+    });
+
+    test("only a path-guard refusal suggests ${team:<name>} or ${repoRoot}", () => {
+      expect(() =>
+        setSetting("rt.roles", { backend: { hook: "/Users/matt/bin/dev.sh" } }, "user", { repoIdentity: IDENTITY }),
+      ).toThrow("use ${team:<name>} or ${repoRoot} instead");
+      let typeMessage = "";
+      try {
+        setSetting("rt.homeSnapshot", "nope", "machine");
+      } catch (err) {
+        typeMessage = (err as Error).message;
+      }
+      expect(typeMessage).toContain("expected object, got string");
+      expect(typeMessage).not.toContain("${team");
     });
 
     test("refuses a home-relative path literal in a pathGuardFields field", () => {
@@ -373,6 +388,16 @@ describe("settings/write", () => {
       const content = readUser();
       expect(content).toContain("// keep this comment");
       expect(content).toContain("// and this one");
+    });
+  });
+
+  // ─── schema gate ────────────────────────────────────────────────────────────
+
+  describe("schema gate", () => {
+    test("a value failing the schema is refused with its path", () => {
+      withSchema("rt.repoRoots", { type: "array", items: { type: "string" } }, () => {
+        expect(() => setSetting("rt.repoRoots", [1], "machine")).toThrow(/\[0\]: expected string/);
+      });
     });
   });
 

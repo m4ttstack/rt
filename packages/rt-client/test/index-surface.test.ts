@@ -54,3 +54,23 @@ describe("index.ts pane and invite surface", () => {
     expect(typeof rtClient.paneFocus).toBe("function");
   });
 });
+
+describe("index.ts settings schema surface", () => {
+  test("exports the schema check, write gate and audit API", () => {
+    expect(typeof rtClient.checkSchema).toBe("function");
+    expect(typeof rtClient.validateJson).toBe("function");
+    expect(typeof rtClient.validateWrite).toBe("function");
+    expect(typeof rtClient.checkStores).toBe("function");
+    expect(typeof rtClient.listUnregisteredSettings).toBe("function");
+    expect(typeof rtClient.repoSectionsFor).toBe("function");
+    expect(typeof rtClient.listStoreRepoIdentities).toBe("function");
+    expect(typeof rtClient.mergedValueWith).toBe("function");
+  });
+
+  test("keeps the zod-backed lock tooling off the runtime entry point", () => {
+    const surface = rtClient as Record<string, unknown>;
+
+    expect(surface.buildLock).toBeUndefined();
+    expect(surface.classifyLockDiff).toBeUndefined();
+  });
+});

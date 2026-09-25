@@ -10,24 +10,14 @@
  */
 
 import { getSetting } from "./settings/resolve.ts";
+import type { Value } from "./settings/registry-schemas.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface AutoResolveRule {
-  /**
-   * Glob pattern(s) to match against conflicted file paths (relative to repo root).
-   * Accepts a single pattern or an array — the rule matches if any pattern matches.
-   */
-  glob: string | string[];
-  /** Resolution strategy: "theirs" accepts incoming changes, "ours" keeps current. */
-  strategy: "theirs" | "ours";
-  /**
-   * Shell commands to run after this rule resolves a conflict.
-   * Only runs once per rebase even if the glob matches multiple files.
-   * Example: ["pnpm install"] after a lockfile conflict.
-   */
-  postResolve?: string[];
-}
+// A rule without a `strategy` resolves to "ours" at the point of use
+// (commands/git/rebase.ts, lib/worktree/dispose.ts): the schema leaves it
+// optional, so a bare `=== "theirs"` comparison is what applies that default.
+export type AutoResolveRule = NonNullable<Value<"rt.sync">["autoResolve"]>[number];
 
 export interface SyncConfig {
   autoResolve: AutoResolveRule[];

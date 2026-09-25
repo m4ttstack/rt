@@ -70,6 +70,7 @@ import { readJson, writeJson } from "../json-store.ts";
 import { rtDir, worktreePoolRoot } from "../rt-paths.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../settings/identity.ts";
 import { explainSetting, getSetting, SCOPE_ORDER, type ResolveOpts, type Scope } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 import { readReadyApproval, readyLadderHash } from "./ready-approval.ts";
 
 /**
@@ -483,7 +484,7 @@ export const WORKTREE_APP_ENABLE_COMMAND = 'rt settings set rt.worktreeApp \'{"e
  */
 function probeAppConfigStore(): { enabled?: boolean; killProcesses?: boolean } | undefined {
   try {
-    return getSetting<{ enabled?: boolean; killProcesses?: boolean }>(APP_SETTING_KEY).value;
+    return getSetting<Value<"rt.worktreeApp">>(APP_SETTING_KEY).value;
   } catch (err) {
     console.warn(`rt: ignoring "${APP_SETTING_KEY}" — ${(err as Error).message}`);
     return undefined;

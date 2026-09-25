@@ -154,7 +154,7 @@ export type { PaneServer, PaneRef } from "./pane-ref.ts";
 
 // ─── Settings (RT-50) ────────────────────────────────────────────────────────
 
-export { getSetting, listSettings, explainSetting, expandVariables, SCOPE_ORDER, setSettingsWarnSink } from "./settings/resolve.ts";
+export { getSetting, listSettings, explainSetting, expandVariables, SCOPE_ORDER, setSettingsWarnSink, mergedValueWith, currentMergedValue, listStoreRepoIdentities, listUnregisteredSettings, repoSectionsFor } from "./settings/resolve.ts";
 export type {
   Scope,
   Provenance,
@@ -168,9 +168,15 @@ export type {
 
 export { setSetting, unsetSetting } from "./settings/write.ts";
 export type { SetSettingOpts } from "./settings/write.ts";
+export { validateWrite } from "./settings/validate-write.ts";
+export type { WriteRefusalKind, WriteVerdict } from "./settings/validate-write.ts";
 
 export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-machinery.ts";
 export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";
+export { checkSchema, validateJson, layerJsonSchema, formatIssuePath, firstIssueText, hasSchema } from "./settings/schema.ts";
+export type { SchemaIssue, JsonSchema } from "./settings/schema.ts";
+export { checkStores } from "./settings/check.ts";
+export type { CheckFinding, CheckReport } from "./settings/check.ts";
 export { REGISTRY } from "./settings/registry-defs.ts";
 export { NOTIFICATION_EVENT_KEYS, NOTIFICATION_DEFAULTS } from "./settings/notification-events.ts";
 
