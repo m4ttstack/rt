@@ -23,7 +23,7 @@ const PRELOAD = "test-setup.ts";
 
 export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage()): string[] {
   const script = pkg.scripts.test ?? "";
-  const dirs = /^bun test ((?:[\w./-]+\s*)+)$/.exec(script)?.[1]?.trim();
+  const dirs = /^bun test ([\w./][\w./-]*(?: [\w./][\w./-]*)*)$/.exec(script)?.[1]?.trim();
   if (!dirs) throw new Error(`package.json test script is not a bare bun test run over directories: ${script}`);
   return dirs.split(/\s+/);
 }
@@ -44,7 +44,7 @@ function isDocs(f: string): boolean {
   return f.startsWith("docs/") || (f.endsWith(".md") && !f.startsWith("skills/"));
 }
 
-function isSwift(f: string): boolean {
+function isTray(f: string): boolean {
   return (
     f.startsWith("rt-tray/") &&
     !f.startsWith("rt-tray/Tests/stub-rt/") &&
@@ -75,11 +75,12 @@ function invisible(input: ScopeInput, f: string): string | undefined {
 
 export function decide(input: ScopeInput): Decision {
   if (input.event !== "pull_request") return { mode: "full", reason: `${input.event} is not a pull request` };
+  if (input.changed.length === 0) return { mode: "skip", reason: "no changed files" };
 
-  const skippable = input.changed.every((f) => (isDocs(f) || isSwift(f)) && !isFixture(f));
+  const skippable = input.changed.every((f) => (isDocs(f) || isTray(f)) && !isFixture(f));
   if (skippable) {
     const read = input.changed.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
-    if (!read) return { mode: "skip", reason: "only docs or swift, none of it read by a unit test" };
+    if (!read) return { mode: "skip", reason: "only docs or tray files, none of them read by a unit test" };
     return { mode: "full", reason: `${read[0]} is read by ${read[1]}` };
   }
 
@@ -149,7 +150,7 @@ function testFiles(dir: string): string[] {
 }
 
 function changedFiles(): string[] {
-  const diff = spawnSync("git", ["diff", "--name-only", "HEAD^1", "HEAD"], { cwd: ROOT, encoding: "utf8" });
+  const diff = spawnSync("git", ["diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"], { cwd: ROOT, encoding: "utf8" });
   if (diff.status !== 0) throw new Error(`git diff failed: ${diff.stderr}`);
   return diff.stdout.split("\n").filter(Boolean);
 }
@@ -157,7 +158,8 @@ function changedFiles(): string[] {
 if (import.meta.main) {
   const event = process.env.EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? "push";
   const changed = event === "pull_request" ? changedFiles() : [];
-  const decision = decide({ event, changed, ...collectSources() });
+  const scope = event === "pull_request" ? collectSources() : { sources: new Map<string, string>(), preloadImports: new Set<string>() };
+  const decision = decide({ event, changed, ...scope });
   const dirs = unitDirs().join(" ");
   const always = alwaysRun().join(" ");
   console.log(`mode=${decision.mode} (${decision.reason})`);
