@@ -16,6 +16,12 @@ public enum DispatchedAction: Equatable, Sendable {
 /// permission kinds; everything else is an rt verb, with any collected
 /// values on stdin as JSON (sorted keys so the payload is deterministic).
 public enum RowActionDispatcher {
+    /// The sheet hands a create link straight to the browser, so anything but https is dropped here rather than trusted there.
+    static func httpsOnly(_ link: ActionLink?) -> ActionLink? {
+        guard let link, let url = URL(string: link.url), url.scheme?.lowercased() == "https", url.host != nil else { return nil }
+        return link
+    }
+
     public static func dispatch(_ action: RowAction, fieldValues: [String: String]?, alternative: String?) -> DispatchedAction {
         switch action.type {
         case .openSettings: return .openSettings(target: action.target ?? "")
@@ -24,7 +30,7 @@ public enum RowActionDispatcher {
             guard let integration = action.integration else { return .none }
             if alternative == "use-gh" { return .rtVerb(args: ["setup", integration, "connect", "--json"], stdin: json(["useGh": true])) }
             if let values = fieldValues { return .rtVerb(args: ["setup", integration, "connect", "--json"], stdin: json(values)) }
-            return .collectFields(action.fields ?? [], integration: integration, alternatives: action.alternatives ?? [], create: action.create)
+            return .collectFields(action.fields ?? [], integration: integration, alternatives: action.alternatives ?? [], create: httpsOnly(action.create))
         case .ownerOnce:
             guard let integration = action.integration else { return .none }
             if let values = fieldValues { return .rtVerb(args: ["setup", integration, "create-app", "--json"], stdin: json(values)) }
