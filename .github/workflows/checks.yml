@@ -148,8 +148,9 @@ jobs:
           fi
           echo "shard $SHARD: $(( $(date +%s) - start ))s ($MODE)"
 
-  # The job branch protection requires. always() is what lets a skipped unit
-  # count: a required check that never runs reads as passing.
+  # The job branch protection requires. Without always(), a failed scope
+  # would skip unit and this job too, and a skipped required check reads as
+  # passing on GitHub.
   checks:
     needs: [scope, static, unit]
     if: always()
