@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -222,4 +222,9 @@ describe.skipIf(process.platform !== "darwin")("a cached bundle's signature", ()
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test("the cached bundle folder name matches the tray's, which files builds under it", () => {
+  const swift = readFileSync(join(import.meta.dir, "../../../rt-tray/Sources-core/Services/DevBuild.swift"), "utf8");
+  expect(swift).toContain(`public static let cachedBundleName = "${CACHED_BUNDLE_NAME}"`);
 });
