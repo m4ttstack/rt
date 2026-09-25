@@ -24,6 +24,8 @@ export function validateWrite(def: SettingDef, value: unknown, opts: { scope: Se
     opts.repoIdentity !== undefined ? [opts.repoIdentity] : def.repoScoped ? [null, ...listStoreRepoIdentities()] : [null];
   for (const repoIdentity of contexts) {
     const after = mergedValueWith(def, { scope: opts.scope, repoIdentity: opts.repoIdentity, team: opts.team, value }, { repoIdentity, expand: false });
+    // A team write with no local team store merges into nothing; setSetting refuses it afterwards.
+    if (after === undefined) continue;
     const afterIssues = checkSchema(def, after, { layer: false });
     if (afterIssues.length === 0) continue;
     const before = mergedNow(def, repoIdentity);

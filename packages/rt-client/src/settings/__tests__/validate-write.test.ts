@@ -142,4 +142,9 @@ describe("settings/validate-write", () => {
       expect(validateWrite(def, { b: 1 }, { scope: "team", team: TEAM })).toEqual({ ok: true });
     });
   });
+
+  test("a team write with no local team store has no merge to check and leaves the refusal to setSetting", () => {
+    expect(validateWrite(getDef("rt.roles")!, { backend: {} }, { scope: "team", repoIdentity: IDENTITY })).toEqual({ ok: true });
+    expect(validateWrite(getDef("rt.roles")!, { backend: {} }, { scope: "team", repoIdentity: IDENTITY, team: "ghost-team" })).toEqual({ ok: true });
+  });
 });
