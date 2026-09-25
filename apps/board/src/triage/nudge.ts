@@ -98,6 +98,61 @@ export function decideRequest(
   return { action: 'dispatch', reason: req.source };
 }
 
+/** A decideRequest reason code as the short phrase a desktop notification
+    shows. A code this does not know gets a generic phrase, never itself. */
+export function plainReason(reason: string, cfg: TriageConfig): string {
+  switch (reason) {
+    case 'stale':
+      return `The ask is over ${NUDGE_FRESH_MS / 3_600_000} hours old`;
+    case 'review-in-flight':
+      return 'A review is already running';
+    case 'respond-in-flight':
+      return 'Replies are already in progress';
+    case 'already-reviewed':
+      return 'Already reviewed';
+    case 'no-commented-review':
+      return 'No earlier review to follow up on';
+    case 'budget-exhausted': {
+      // One per-MR counter covers auto-fix, asks and the latch alike, so the
+      // phrase cannot say which kind of run spent it.
+      const n = cfg.dailyAttemptBudget;
+      return `Hit today's limit of ${n} automatic ${n === 1 ? 'run' : 'runs'}`;
+    }
+    case 'cooldown':
+      return `Last run was under ${cfg.cooldownMinutes} minutes ago`;
+    case 'disabled':
+      return 'Auto re-review is off';
+    case 'already-handled':
+      return 'Already handled';
+    default:
+      return 'Held back by a board limit';
+  }
+}
+
+const ASK_COPY: Record<
+  AskKind,
+  { noun: string; started: string; asked: string }
+> = {
+  review: {
+    noun: 'Review',
+    started: 'Review started',
+    asked: 'asked for a review',
+  },
+  're-review': {
+    noun: 'Re-review',
+    started: 'Re-review started',
+    asked: 'asked for another look',
+  },
+  respond: {
+    noun: 'Reply',
+    started: 'Replies started',
+    asked: 'asked for replies',
+  },
+};
+
+const lowerFirst = (s: string): string =>
+  s.charAt(0).toLowerCase() + s.slice(1);
+
 /** Adapter for the peer-nudge source, so runNudgePass and its callers keep
     their existing shape. */
 export function decideNudge(
@@ -136,7 +191,7 @@ export interface NudgePassDeps {
   memory: DispatchMemory;
   cfg: TriageConfig;
   appendAudit(entry: AuditEntry): void;
-  notify(title: string, message: string): Promise<void>;
+  notify(title: string, message: string, mrUrl: string): Promise<void>;
   now(): number;
 }
 
@@ -182,6 +237,7 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
       reason: decision.reason,
       attempt: m.attemptsToday + 1,
     });
+    const kind: AskKind = nudge.kind ?? 're-review';
     if (decision.action === 'expire' || decision.action === 'reject') {
       const outcome: NudgeResult =
         decision.action === 'expire' ? 'expired' : 'rejected';
@@ -193,14 +249,15 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
         result: outcome,
         reason: decision.reason,
       });
+      const why = plainReason(decision.reason, deps.cfg);
       await deps.notify(
-        `${nudge.kind ?? 're-review'} nudge ${outcome} on !${nudge.iid}`,
-        `${nudge.from} asked; ${decision.reason}`
+        `${ASK_COPY[kind].noun} request skipped on !${nudge.iid}`,
+        `${nudge.from} asked; ${lowerFirst(why)}`,
+        nudge.mrUrl
       );
       result[outcome === 'expired' ? 'expired' : 'rejected']++;
       continue;
     }
-    const kind: AskKind = nudge.kind ?? 're-review';
     const launch = await deps.launchAsk(nudge.mrUrl, nudge.iid, kind);
     if (launch.kind === 'error') {
       deps.markNudgeHandled(nudge.id, 'rejected', 'launch-failed');
@@ -240,8 +297,9 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
       attempt: m.attemptsToday,
     });
     await deps.notify(
-      `${kind} launched on !${nudge.iid}`,
-      `requested by ${nudge.from}`
+      `${ASK_COPY[kind].started} on !${nudge.iid}`,
+      `${nudge.from} ${ASK_COPY[kind].asked}`,
+      nudge.mrUrl
     );
     result.dispatched++;
   }

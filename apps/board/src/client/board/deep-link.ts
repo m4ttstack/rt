@@ -1,14 +1,24 @@
-/** Pure helpers behind the `?gate=<id>` deep link -- the DOM effect (scroll,
-    flash, strip) that consumes them lives in Board.tsx. */
+/** Pure helpers behind the `?gate=<id>` and `?mr=<url>` deep links -- the DOM
+    effect (scroll, flash, strip) that consumes them lives in Board.tsx. */
 
 import type { TabConfig } from '../../config.ts';
 import type { BoardMR } from '../../data.ts';
 import { filterByTab } from '../../view.ts';
 import type { ViewState } from '../../view.ts';
 
+const LINK_PARAMS = ['gate', 'mr'];
+
 /** The `gate` query param, or null when absent or empty. */
 export function gateParam(search: string): string | null {
   const value = new URLSearchParams(search).get('gate');
+  return value ? value : null;
+}
+
+/** The `mr` query param (an MR's web url, already decoded), or null when
+    absent or empty. Rows match on the url because an iid alone is ambiguous
+    across repos. */
+export function mrParam(search: string): string | null {
+  const value = new URLSearchParams(search).get('mr');
   return value ? value : null;
 }
 
@@ -21,34 +31,33 @@ export function mrForGate(
   return hit ? hit.iid : null;
 }
 
-/** A `?gate=<id>` deep link overrides the stored member/tab/slack/drafts
-    filters that would otherwise hide the linked MR rather than merely
-    widening them -- a notification click has to land, not silently no-op
-    behind whatever the viewer last had picked. Member always widens to
-    'all' (a link carries no author context worth preserving); the tab
-    only changes when the current one would not show the MR, switching to
-    the first configured tab whose filterByTab result includes it; the
-    slack and drafts filters only clear when they would otherwise filter
-    the MR out. */
-export function viewStateForGate<
+/** A deep link overrides the stored member/tab/slack/drafts filters that
+    would otherwise hide the linked MR rather than merely widening them -- a
+    notification click has to land, not silently no-op behind whatever the
+    viewer last had picked. Member always widens to 'all' (a link carries no
+    author context worth preserving); the tab only changes when the current
+    one would not show the MR, switching to the first configured tab whose
+    filterByTab result includes it; the slack and drafts filters only clear
+    when they would otherwise filter the MR out. */
+export function viewStateForMr<
   T extends BoardMR & { slack?: { posted?: boolean } | null },
 >(
   state: ViewState,
   mrs: T[],
   tabs: TabConfig[],
   rosterUsernames: Set<string>,
-  iid: number
+  isLinked: (mr: T) => boolean
 ): ViewState {
-  const mr = mrs.find(m => m.iid === iid);
+  const mr = mrs.find(isLinked);
   if (!mr) return state;
 
   let next: ViewState = { ...state, member: 'all' };
 
-  const showsIid = (tab: TabConfig) =>
-    filterByTab(mrs, tab, rosterUsernames).some(m => m.iid === iid);
+  const showsLinked = (tab: TabConfig) =>
+    filterByTab(mrs, tab, rosterUsernames).some(isLinked);
   const currentTab = tabs.find(t => t.id === next.tab);
-  if (!currentTab || !showsIid(currentTab)) {
-    const winningTab = tabs.find(showsIid);
+  if (!currentTab || !showsLinked(currentTab)) {
+    const winningTab = tabs.find(showsLinked);
     if (winningTab) next = { ...next, tab: winningTab.id };
   }
 
@@ -74,10 +83,32 @@ export function gateDeepLinkAction(
   return entries.some(e => e.gate.gateId === gateId) ? 'modal' : 'flash';
 }
 
-/** `search` without its `gate` param; every other param rides along untouched. */
-export function stripGateParam(search: string): string {
+/** The title of the group panel that renders the linked row, matched on the
+    same key the flash effect queries the DOM by (url for an MR link, iid for
+    a gate link), or null when no group holds it. */
+export function linkedGroupLabel(
+  groups: Array<{
+    label: string;
+    mrs: Array<{ iid: number; webUrl: string | null }>;
+  }>,
+  link: { iid: number | null; mrUrl: string | null }
+): string | null {
+  const { iid, mrUrl } = link;
+  const isLinked =
+    mrUrl !== null
+      ? (m: { webUrl: string | null }) => m.webUrl === mrUrl
+      : iid !== null
+        ? (m: { iid: number }) => m.iid === iid
+        : null;
+  if (!isLinked) return null;
+  return groups.find(g => g.mrs.some(isLinked))?.label ?? null;
+}
+
+/** `search` without its `gate` and `mr` params; every other param rides
+    along untouched. */
+export function stripDeepLinkParams(search: string): string {
   const params = new URLSearchParams(search);
-  params.delete('gate');
+  for (const name of LINK_PARAMS) params.delete(name);
   const s = params.toString();
   return s ? `?${s}` : '';
 }

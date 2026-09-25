@@ -90,19 +90,22 @@ if (merged.origin === 'auto') {
 }
 
 // Escalation is the one loud moment (spec §3): an AUTO doctor hitting `error`
-// pushes a one-line summary of the diagnosis to the tray (the full text stays
-// in the state row and audit log). Manual doctors stay quiet -- the human
-// launched that pane and is watching its badge.
+// pushes a one-line summary of the diagnosis to the tray, linked to the MR's
+// board row (the full text stays in the state row and audit log). Manual
+// doctors stay quiet -- the human launched that pane and is watching its badge.
 if (status === 'error' && merged.origin === 'auto') {
   try {
     const { loadTriageConfig } = await import('../src/triage/config.ts');
-    const { escalationBody, notifyEscalation } =
-      await import('../src/triage/notify.ts');
-    await notifyEscalation(
-      `doctor stuck on !${merged.iid}`,
-      escalationBody(merged.message ?? 'escalated without a message'),
-      loadTriageConfig().notify
-    );
+    const mode = loadTriageConfig().notify;
+    if (mode === 'rt') {
+      const { deckAppUrl } = await import('@mattstack/app-server/event-bridge');
+      const { doctorStuckNotice, notifyEscalation } =
+        await import('../src/triage/notify.ts');
+      const notice = doctorStuckNotice(merged, await deckAppUrl('board'));
+      await notifyEscalation(notice.title, notice.message, mode, {
+        url: notice.url,
+      });
+    }
   } catch (err) {
     console.error(
       `escalation notify failed: ${err instanceof Error ? err.message : err}`

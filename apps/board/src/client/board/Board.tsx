@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
@@ -67,9 +74,11 @@ import {
 import {
   gateDeepLinkAction,
   gateParam,
+  linkedGroupLabel,
   mrForGate,
-  stripGateParam,
-  viewStateForGate,
+  mrParam,
+  stripDeepLinkParams,
+  viewStateForMr,
 } from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, mrLine } from './format.ts';
@@ -108,6 +117,24 @@ declare global {
 
 const THEME_KEY = 'mrs-theme';
 const STATE_KEY = 'mrs-view-state';
+const PANEL_COLLAPSED_KEY = 'mrs-panel-collapsed';
+
+/** Drops `title` from the folded-panel set tui-kit's Panel persists under
+    PANEL_COLLAPSED_KEY (a JSON array of titles), so that panel mounts open. */
+function unfoldPanel(title: string): void {
+  try {
+    const folded: unknown = JSON.parse(
+      localStorage.getItem(PANEL_COLLAPSED_KEY) ?? '[]'
+    );
+    if (!Array.isArray(folded) || !folded.includes(title)) return;
+    localStorage.setItem(
+      PANEL_COLLAPSED_KEY,
+      JSON.stringify(folded.filter(t => t !== title))
+    );
+  } catch {
+    // Unreadable or blocked storage leaves the panel as the user folded it.
+  }
+}
 
 // A gate stuck on delivery or left execution-unassigned stays in the
 // decision queue despite being `answered` -- it still needs a human action
@@ -213,11 +240,13 @@ export function Board() {
     return parseViewState(location.search, stored, []);
   });
   const validatedOnce = useRef(false);
-  // The iid a `?gate=<id>` deep link resolved to on first load, consumed by
-  // the scroll/flash/strip effect below once that row has actually rendered.
-  const [gateDeepLink, setGateDeepLink] = useState<{
+  // What a `?gate=<id>` or `?mr=<url>` deep link resolved to on first load,
+  // consumed by the scroll/flash/strip effect below once that row has
+  // actually rendered. A gate link finds its row by iid, an MR link by url.
+  const [deepLink, setDeepLink] = useState<{
+    gateId: string | null;
     iid: number | null;
-    gateId: string;
+    mrUrl: string | null;
   } | null>(null);
 
   const pickTheme = (m: ThemeMode) => {
@@ -298,25 +327,37 @@ export function Board() {
       );
       const gateId = gateParam(location.search);
       const linkedIid = gateId ? mrForGate(d.mrs, gateId) : null;
+      const linkedUrl = gateId ? null : mrParam(location.search);
       if (linkedIid !== null) {
         // The stored/URL filters resolved above may hide the linked MR (wrong
         // tab, a member pick, "posted only") -- a deep link has to land, so
         // widen whatever would otherwise keep the row off-screen.
-        resolved = viewStateForGate(
+        resolved = viewStateForMr(
           resolved,
           d.mrs,
           tabs,
           new Set(usernames),
-          linkedIid
+          m => m.iid === linkedIid
         );
-        setGateDeepLink({ iid: linkedIid, gateId: gateId! });
+        setDeepLink({ gateId: gateId!, iid: linkedIid, mrUrl: null });
       } else if (
         gateId &&
         (d.queueExtras ?? []).some(g => g.gateId === gateId)
       ) {
         // A human-owned gate with no MR row (a pane-attention gate) has no
         // row to widen filters for or flash, but it can still open the modal.
-        setGateDeepLink({ iid: null, gateId });
+        setDeepLink({ gateId, iid: null, mrUrl: null });
+      } else if (linkedUrl !== null) {
+        // An MR the board does not hold leaves the view alone; the effect
+        // finds no row for it and only strips the param.
+        resolved = viewStateForMr(
+          resolved,
+          d.mrs,
+          tabs,
+          new Set(usernames),
+          m => m.webUrl === linkedUrl
+        );
+        setDeepLink({ gateId: null, iid: null, mrUrl: linkedUrl });
       }
       // Landing on the seat tab without a grouping in the URL means its own
       // grouping; a grouping the user picked there rides in the URL.
@@ -955,55 +996,78 @@ export function Board() {
     void load();
   };
 
-  // `?gate=<id>` deep link: by the time this runs, the linked row and queue
-  // entries have already rendered (gateDeepLink is set in the same batch as
-  // the data that produced them). history.replaceState strips the param so a
-  // refresh doesn't re-open. A gate still owed an answer opens the decision
-  // modal at that gate; an answered or unknown one degrades to the row
-  // scroll+flash.
+  // Panel applies its stored folded state in a passive mount effect, which
+  // runs after this layout effect: unfolding the linked row's panel here is
+  // what keeps that row mounted for the flash below. The modal path flashes
+  // nothing, so it leaves the panels as they were.
+  useLayoutEffect(() => {
+    if (deepLink === null || !boardView) return;
+    if (
+      deepLink.gateId !== null &&
+      gateDeepLinkAction(queueEntries, deepLink.gateId) === 'modal'
+    )
+      return;
+    const label = linkedGroupLabel(boardView.groups, deepLink);
+    if (label !== null) unfoldPanel(label);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot link consumption, same as the effect below
+  }, [deepLink]);
+
+  // `?gate=<id>` / `?mr=<url>` deep link: by the time this runs, the linked
+  // row and queue entries have already rendered (deepLink is set in the same
+  // batch as the data that produced them). history.replaceState strips the
+  // param so a refresh doesn't re-open. A gate still owed an answer opens the
+  // decision modal at that gate; an answered or unknown one, and every MR
+  // link, degrades to the row scroll+flash.
   //
-  // Deliberately keyed on gateDeepLink alone: this is a one-shot consumption
+  // Deliberately keyed on deepLink alone: this is a one-shot consumption
   // of the link, and re-running it when a poll reshuffles queueEntries would
   // re-scroll or re-open mid-flash. The closure's queueEntries/queue are from
-  // the same batch that set gateDeepLink, which is exactly the snapshot the
+  // the same batch that set deepLink, which is exactly the snapshot the
   // link should act on.
   useEffect(() => {
-    if (gateDeepLink === null) return;
+    if (deepLink === null) return;
     // An empty relative url is a no-op for replaceState (it keeps the
     // current query) -- fall back to the bare pathname, same as update().
     history.replaceState(
       null,
       '',
-      stripGateParam(location.search) || location.pathname
+      stripDeepLinkParams(location.search) || location.pathname
     );
-    if (gateDeepLinkAction(queueEntries, gateDeepLink.gateId) === 'modal') {
-      queue.openAt(gateDeepLink.gateId);
-      setGateDeepLink(null);
+    if (
+      deepLink.gateId !== null &&
+      gateDeepLinkAction(queueEntries, deepLink.gateId) === 'modal'
+    ) {
+      queue.openAt(deepLink.gateId);
+      setDeepLink(null);
       return;
     }
     const row =
-      gateDeepLink.iid === null
-        ? null
-        : document.querySelector(
-            `[data-mr-iid="${CSS.escape(String(gateDeepLink.iid))}"]`
-          );
+      deepLink.mrUrl !== null
+        ? document.querySelector(
+            `[data-mr-url="${CSS.escape(deepLink.mrUrl)}"]`
+          )
+        : deepLink.iid !== null
+          ? document.querySelector(
+              `[data-mr-iid="${CSS.escape(String(deepLink.iid))}"]`
+            )
+          : null;
     if (!row) {
-      setGateDeepLink(null);
+      setDeepLink(null);
       return;
     }
     row.scrollIntoView({ block: 'center' });
     row.classList.add('tui-row-flash');
-    // Resetting gateDeepLink changes this effect's own dependency, which
+    // Resetting deepLink changes this effect's own dependency, which
     // re-runs its cleanup -- doing that synchronously here would clearTimeout
     // the flash removal before it ever fires. Reset it from inside the
     // timeout instead, once the flash has actually been removed.
     const t = setTimeout(() => {
       row.classList.remove('tui-row-flash');
-      setGateDeepLink(null);
+      setDeepLink(null);
     }, 2000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot link consumption; see above
-  }, [gateDeepLink]);
+  }, [deepLink]);
 
   const now = Date.now();
   const freshness = data
@@ -1354,7 +1418,7 @@ export function Board() {
               // Pins the LEGACY persistence key: the recipe defaults to its own
               // "tui-panel-collapsed", and switching would orphan every panel a
               // user has already folded up.
-              storageKey="mrs-panel-collapsed"
+              storageKey={PANEL_COLLAPSED_KEY}
             >
               <RowView
                 mrs={g.mrs}

@@ -242,6 +242,7 @@ function RowView({
         key={mr.iid}
         className={nested ? 'tui-row tui-row-nested' : 'tui-row'}
         data-mr-iid={mr.iid}
+        data-mr-url={url ?? undefined}
         data-tone={status.bar ?? undefined}
         data-note={mr.note || noteOpen ? '1' : undefined}
         data-local={ctx.local ? '1' : undefined}

@@ -15,6 +15,7 @@ import {
   decideNudge,
   decideRequest,
   NUDGE_FRESH_MS,
+  plainReason,
   runNudgePass,
   type NudgePassDeps,
   type ReReviewRequest,
@@ -181,6 +182,8 @@ describe('decideNudge', () => {
 function deps(over: Partial<NudgePassDeps> = {}) {
   const audit: AuditEntry[] = [];
   const notifies: string[] = [];
+  const notifyCalls: Array<{ title: string; message: string; mrUrl: string }> =
+    [];
   const published: Array<{ to: string; payload: NudgeOutcomePayload }> = [];
   const handled: Array<{ id: string; result: NudgeResult; reason?: string }> =
     [];
@@ -196,14 +199,16 @@ function deps(over: Partial<NudgePassDeps> = {}) {
     memory,
     cfg,
     appendAudit: e => audit.push(e),
-    notify: async (_t, msg) => {
+    notify: async (title, msg, mrUrl) => {
       notifies.push(msg);
+      notifyCalls.push({ title, message: msg, mrUrl });
     },
     now: () => NOW,
   };
   return Object.assign(base, over, {
     audit,
     notifies,
+    notifyCalls,
     published,
     handled,
     memory,
@@ -434,6 +439,130 @@ describe('runNudgePass', () => {
     await runNudgePass(d);
     await runNudgePass(d);
     expect(d.audit).toHaveLength(0);
+  });
+});
+
+describe('runNudgePass notification copy', () => {
+  test('a re-review launch names the asker in plain words and points at the MR', async () => {
+    const d = deps();
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Re-review started on !1',
+        message: 'alice asked for another look',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+
+  test('a first-look launch reads as a review', async () => {
+    const d = deps({
+      readNudges: () => [{ ...nudge, kind: 'review' }],
+      readReviewStates: () => new Map(),
+    });
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Review started on !1',
+        message: 'alice asked for a review',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+
+  test('a respond launch reads as replies', async () => {
+    const d = deps({ readNudges: () => [{ ...nudge, kind: 'respond' }] });
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Replies started on !1',
+        message: 'alice asked for replies',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+
+  test('a rejection says why in plain words, never the reason code', async () => {
+    const d = deps({ readReviewStates: () => new Map() });
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Re-review request skipped on !1',
+        message: 'alice asked; no earlier review to follow up on',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+
+  test('an expired ask reads as skipped, with its age', async () => {
+    const d = deps({
+      readNudges: () => [{ ...nudge, receivedAt: NOW - (NUDGE_FRESH_MS + 1) }],
+    });
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Re-review request skipped on !1',
+        message: 'alice asked; the ask is over 48 hours old',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+
+  test('a respond rejection names the ask as a reply request', async () => {
+    const d = deps({
+      readNudges: () => [{ ...nudge, kind: 'respond' }],
+      readRespondStates: () =>
+        new Map([[nudge.mrUrl, { status: 'implementing' } as never]]),
+    });
+    await runNudgePass(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Reply request skipped on !1',
+        message: 'alice asked; replies are already in progress',
+        mrUrl: nudge.mrUrl,
+      },
+    ]);
+  });
+});
+
+describe('plainReason', () => {
+  test('every code decideRequest produces maps to a plain phrase', () => {
+    expect(plainReason('stale', cfg)).toBe('The ask is over 48 hours old');
+    expect(plainReason('review-in-flight', cfg)).toBe(
+      'A review is already running'
+    );
+    expect(plainReason('respond-in-flight', cfg)).toBe(
+      'Replies are already in progress'
+    );
+    expect(plainReason('already-reviewed', cfg)).toBe('Already reviewed');
+    expect(plainReason('no-commented-review', cfg)).toBe(
+      'No earlier review to follow up on'
+    );
+    expect(plainReason('budget-exhausted', cfg)).toBe(
+      "Hit today's limit of 3 automatic runs"
+    );
+    expect(plainReason('cooldown', cfg)).toBe(
+      'Last run was under 30 minutes ago'
+    );
+    expect(plainReason('disabled', cfg)).toBe('Auto re-review is off');
+    expect(plainReason('already-handled', cfg)).toBe('Already handled');
+  });
+
+  test('the budget phrase names the configured limit, singular at one', () => {
+    const budget = (n: number) =>
+      parseTriageBlock({ enabled: true, dailyAttemptBudget: n });
+    expect(plainReason('budget-exhausted', budget(1))).toBe(
+      "Hit today's limit of 1 automatic run"
+    );
+    expect(plainReason('budget-exhausted', budget(2))).toBe(
+      "Hit today's limit of 2 automatic runs"
+    );
+  });
+
+  test('an unknown code gets a generic phrase, never itself', () => {
+    expect(plainReason('some-new-code', cfg)).toBe(
+      'Held back by a board limit'
+    );
   });
 });
 

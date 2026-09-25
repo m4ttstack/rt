@@ -406,8 +406,8 @@ describe('boardBridgeRule', () => {
       pattern: 'gate/opened/*',
       subjectPrefix: 'mr:',
       category: 'gate',
-      title: '{label}',
-      message: '{question}',
+      title: '{headline}',
+      message: '{summary}',
       url: `${BOARD_URL}/?gate={id}`,
     });
   });
@@ -504,6 +504,29 @@ describe('installBoardBridgeRule', () => {
       stillWriter: () => true,
     });
     expect(io.writes).toEqual([[boardBridgeRule('https://board.local.test')]]);
+  });
+
+  test('deck answers: an installed rule with the old label/question templates is rewritten in place', async () => {
+    const installed: EventBridgeRule = {
+      ...boardBridgeRule('https://board.local.test'),
+      title: '{label}',
+      message: '{question}',
+    };
+    const other: EventBridgeRule = {
+      pattern: 'chat/mention/*',
+      category: 'chat',
+      title: 'mention',
+      message: '{body}',
+    };
+    const io = fakeIo([installed, other]);
+    await installBoardBridgeRule({
+      ...io,
+      resolveUrl: async () => 'https://board.local.test',
+      stillWriter: () => true,
+    });
+    expect(io.writes).toEqual([
+      [boardBridgeRule('https://board.local.test'), other],
+    ]);
   });
 
   test('deck does not answer: an existing rule is left exactly as it is', async () => {

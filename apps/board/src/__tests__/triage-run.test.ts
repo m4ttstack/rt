@@ -12,15 +12,19 @@ import {
   type TriageRunDeps,
 } from '../triage/run.ts';
 
+type NotifyCall = { title: string; message: string; mrUrl: string };
+
 function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
   audit: AuditEntry[];
   launches: any[];
   notifies: string[];
+  notifyCalls: NotifyCall[];
   paneNudges: Array<{ paneId: string; text: string }>;
 } {
   const audit: AuditEntry[] = [];
   const launches: any[] = [];
   const notifies: string[] = [];
+  const notifyCalls: NotifyCall[] = [];
   const paneNudges: Array<{ paneId: string; text: string }> = [];
   const base: TriageRunDeps = {
     triage: parseTriageBlock({ enabled: true, doctorSkill: 'team:doctor-api' }),
@@ -65,8 +69,9 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
     }),
     doctorFilePath: mrUrl => `/state/${mrUrl.split('/').pop()}.json`,
     appendAudit: e => audit.push(e),
-    notify: async (_t, m) => {
+    notify: async (title, m, mrUrl) => {
       notifies.push(m);
+      notifyCalls.push({ title, message: m, mrUrl });
     },
     memory: { identity: null, mrs: {} } as DispatchMemory,
     writeMemory: () => {},
@@ -80,7 +85,13 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
     now: () => 1_000_000_000,
     identity: 'matt',
   };
-  return Object.assign(base, over, { audit, launches, notifies, paneNudges });
+  return Object.assign(base, over, {
+    audit,
+    launches,
+    notifies,
+    notifyCalls,
+    paneNudges,
+  });
 }
 
 describe('runTriage', () => {
@@ -121,6 +132,28 @@ describe('runTriage', () => {
     await runTriage(d);
     expect(d.notifies).toHaveLength(1); // budgetEscalatedDay dedups
     expect(d.launches).toHaveLength(0);
+  });
+
+  test('budget exhausted notifies in plain words, pointing at the MR', async () => {
+    const d = deps({
+      memory: {
+        identity: null,
+        mrs: {
+          'https://x/mr/1': {
+            ...emptyMrMemory('1970-01-12'),
+            attemptsToday: 3,
+          },
+        },
+      },
+    });
+    await runTriage(d);
+    expect(d.notifyCalls).toEqual([
+      {
+        title: 'Auto-fix stopped on !1',
+        message: 'Out of tries for today, over to you',
+        mrUrl: 'https://x/mr/1',
+      },
+    ]);
   });
 
   test('an in-flight doctor on the MR skips without consuming budget', async () => {

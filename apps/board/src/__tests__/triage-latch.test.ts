@@ -98,6 +98,7 @@ function harness(
   const memory: DispatchMemory = { identity: null, mrs: {} };
   const resurrects: string[] = [];
   const drops: string[] = [];
+  const notifies: Array<{ title: string; message: string; mrUrl: string }> = [];
   const deps: LatchPassDeps = {
     readReviewStates: () => new Map([[MR, commented]]),
     readPrunedReviewStates: () => new Map(),
@@ -120,11 +121,22 @@ function harness(
     cfg,
     reReview: { enabled: true },
     appendAudit: () => {},
-    notify: async () => {},
+    notify: async (title, message, mrUrl) => {
+      notifies.push({ title, message, mrUrl });
+    },
     now: () => NOW,
     ...over,
   };
-  return { deps, calls, launches, memory, noteBodies, resurrects, drops };
+  return {
+    deps,
+    calls,
+    launches,
+    memory,
+    noteBodies,
+    resurrects,
+    drops,
+    notifies,
+  };
 }
 
 describe('step 0: no latch', () => {
@@ -411,6 +423,45 @@ describe('step 3: armed and resolved', () => {
     expect(launches).toEqual([]);
     expect(calls).toContain('reply:canon');
     expect(calls).toContain('resolve:extra');
+  });
+
+  test('a dispatch notifies in plain words, pointing at the MR', async () => {
+    const { deps, notifies } = harness({
+      detail: detail(
+        disc('d1', armedLatchBody(IMG), '2026-09-01T10:00:00Z', true)
+      ),
+    });
+    await runLatchPass(deps);
+    expect(notifies).toEqual([
+      {
+        title: 'Re-review started on !2317',
+        message: 'The author asked for another look',
+        mrUrl: MR,
+      },
+    ]);
+  });
+
+  test('a refusal notifies the plain reason, never the code', async () => {
+    const memory: DispatchMemory = {
+      identity: null,
+      mrs: {
+        [MR]: { ...emptyMrMemory('1970-01-12'), attemptsToday: 3 },
+      },
+    };
+    const { deps, notifies } = harness({
+      detail: detail(
+        disc('d1', armedLatchBody(IMG), '2026-09-01T10:00:00Z', true)
+      ),
+      memory,
+    });
+    await runLatchPass(deps);
+    expect(notifies).toEqual([
+      {
+        title: 'Re-review skipped on !2317',
+        message: "Hit today's limit of 3 automatic runs",
+        mrUrl: MR,
+      },
+    ]);
   });
 });
 

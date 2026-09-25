@@ -25,7 +25,7 @@ import type { ReviewState } from '../review-state.ts';
 import type { AuditEntry } from './audit.ts';
 import type { ReReviewConfig, TriageConfig } from './config.ts';
 import { emptyMrMemory, rollDay, type DispatchMemory } from './memory.ts';
-import { decideRequest } from './nudge.ts';
+import { decideRequest, plainReason } from './nudge.ts';
 
 export interface LatchMrFacts {
   mrUrl: string;
@@ -60,7 +60,7 @@ export interface LatchPassDeps {
   cfg: TriageConfig;
   reReview: ReReviewConfig;
   appendAudit(entry: AuditEntry): void;
-  notify(title: string, message: string): Promise<void>;
+  notify(title: string, message: string, mrUrl: string): Promise<void>;
   now(): number;
 }
 
@@ -312,7 +312,11 @@ export async function runLatchPass(
           canon.discussionId
         );
         await consume(deps, mr, canon, carriers);
-        await deps.notify(`re-review held off on !${mr.iid}`, decision.reason);
+        await deps.notify(
+          `Re-review skipped on !${mr.iid}`,
+          plainReason(decision.reason, policy),
+          mr.mrUrl
+        );
         result.rejected++;
         continue;
       }
@@ -352,8 +356,9 @@ export async function runLatchPass(
       );
       await consume(deps, mr, canon, carriers);
       await deps.notify(
-        `re-review launched on !${mr.iid}`,
-        'requested from the MR'
+        `Re-review started on !${mr.iid}`,
+        'The author asked for another look',
+        mr.mrUrl
       );
       result.dispatched++;
     } catch (err) {

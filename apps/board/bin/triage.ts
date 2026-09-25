@@ -1,6 +1,7 @@
 // Headless policy engine, second entry point of this repo (working name).
 // rt cron is the intended caller (spec §5); a human running it by hand gets
 // the same one idempotent evaluation pass. The board server NEVER runs this.
+import { deckAppUrl } from '@mattstack/app-server/event-bridge';
 import { GitLabProvider, parseRepoId, type MRDetail } from '@mattstack/glance';
 import { readDiscussions, readProjectMRs } from '@mattstack/rt-client';
 import {
@@ -51,7 +52,7 @@ import {
   tryClaimCron,
   writeMemory,
 } from '../src/triage/memory-store.ts';
-import { notifyEscalation } from '../src/triage/notify.ts';
+import { boardMrLink, notifyEscalation } from '../src/triage/notify.ts';
 import { runNudgePass } from '../src/triage/nudge.ts';
 import { collectProjectPRs } from '../src/triage/projects.ts';
 import {
@@ -78,6 +79,19 @@ if (lockToken === false) {
 try {
   const boardConfig = loadConfig();
   const memory = readMemory();
+
+  // The same deck lookup the server's gate bridge rule uses, made at most
+  // once per run and only when something actually notifies. Null (deck not
+  // answering) sends the notification without a click target.
+  let boardUrl: Promise<string | null> | undefined;
+  const notify = async (title: string, message: string, mrUrl: string) => {
+    if (triage.notify !== 'rt') return;
+    boardUrl ??= deckAppUrl('board');
+    const base = await boardUrl;
+    await notifyEscalation(title, message, triage.notify, {
+      url: base ? boardMrLink(base, mrUrl) : null,
+    });
+  };
 
   // The rt agent daemon's `repo` identity for a launch, resolved the same
   // way BoardMR.rtRepo is (config.rtRepos keyed by the MR's GitLab project
@@ -181,7 +195,7 @@ try {
     writeDoctorState,
     doctorFilePath: mrUrl => doctorFilePath(mrUrl),
     appendAudit,
-    notify: (title, message) => notifyEscalation(title, message, triage.notify),
+    notify,
     memory,
     writeMemory,
     readFreshMemory: readMemory,
@@ -264,8 +278,7 @@ try {
       memory,
       cfg: triage,
       appendAudit,
-      notify: (title, message) =>
-        notifyEscalation(title, message, triage.notify),
+      notify,
       now: () => Date.now(),
     });
     await drainOutbox(d => client.publish(d));
@@ -306,8 +319,7 @@ try {
         cfg: triage,
         reReview,
         appendAudit,
-        notify: (title, message) =>
-          notifyEscalation(title, message, triage.notify),
+        notify,
         now: () => Date.now(),
       });
       console.log(`latch pass: ${JSON.stringify(latchResult)}`);

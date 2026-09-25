@@ -12,6 +12,7 @@ import {
   openStateDb,
   readByHandle,
 } from '../state/index.ts';
+import { gateNotifyCopy } from './notify-copy.ts';
 import { domainForKind } from './sweep.ts';
 
 export type GateAnswers = Record<string, string | string[]>;
@@ -156,7 +157,10 @@ export async function gateOpen(
     subject: `mr:${state.mrUrl}`,
     kind,
     questions,
-    meta: { label: `${domain} gate !${state.iid}` },
+    meta: {
+      label: `${domain} gate !${state.iid}`,
+      ...gateNotifyCopy(kind, state.iid, questions),
+    },
     origin,
   };
   if (state.paneId) payload.paneId = state.paneId;

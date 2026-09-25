@@ -269,22 +269,23 @@ export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
 // ── Bridge rule: the board's own entry in rt.notify.eventBridges ──────────
 
 /** The rule this board contributes so opening a gate raises a desktop
-    notification that opens the gate in the board on click. `{label}` and
-    `{question}` interpolate from the `gate/opened/*` payload -- `label` is
-    the `meta.label` the wrapper sets at open time (e.g. "review gate
-    !4821"), already formatted for display, so the template needs no
-    `iid`/`kind` lookup of its own. `subjectPrefix: 'mr:'` is the rule's
-    identity half that keeps it from colliding with console's `run:` rule
-    on the same `gate/opened/*` pattern. Suppression is payload-driven on
-    the daemon side (a payload `paneId` matching the focused pane drops the
-    notification): no field on the rule itself. */
+    notification that opens the gate in the board on click. `{headline}` and
+    `{summary}` are rt's computed fields: the `meta.headline` /
+    `meta.summary` gateOpen sets (see gateNotifyCopy), falling back to the
+    label and first question for a gate opened without them. An rt whose
+    notify bridge predates those two fields renders them literally.
+    `subjectPrefix: 'mr:'` is the rule's identity half that
+    keeps it from colliding with console's `run:` rule on the same
+    `gate/opened/*` pattern. Suppression is payload-driven on the daemon side
+    (a payload `paneId` matching the focused pane drops the notification): no
+    field on the rule itself. */
 export function boardBridgeRule(boardUrl: string): EventBridgeRule {
   return {
     pattern: 'gate/opened/*',
     subjectPrefix: 'mr:',
     category: 'gate',
-    title: '{label}',
-    message: '{question}',
+    title: '{headline}',
+    message: '{summary}',
     url: `${boardUrl}/?gate={id}`,
   };
 }

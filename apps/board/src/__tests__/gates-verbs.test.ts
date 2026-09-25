@@ -191,7 +191,11 @@ describe('gateOpen', () => {
       kind: 'review-post',
       questions: QUESTIONS,
       paneId: 'pane-1',
-      meta: { label: `review gate !${IID}` },
+      meta: {
+        label: `review gate !${IID}`,
+        headline: `Your review of !${IID} is ready`,
+        summary: 'Pick what to post',
+      },
       origin: { surface: 'board', tabId: 'tab-1' },
     });
   });
@@ -378,7 +382,11 @@ describe("gateOpen: label and writer by kind's domain", () => {
     ).gateId;
 
     expect(gateId).toBe('gate-respond');
-    expect(calls.gateAsk[0]!.meta).toEqual({ label: `respond gate !${IID}` });
+    expect(calls.gateAsk[0]!.meta).toEqual({
+      label: `respond gate !${IID}`,
+      headline: `Replies on !${IID} need you`,
+      summary: '2 review threads waiting on your call',
+    });
     const respondState = readByHandle(respondPath, db) as RespondState;
     expect(respondState.gateId).toBe('gate-respond');
     expect(respondState.gateKind).toBe('respond-plan');
@@ -428,7 +436,11 @@ describe("gateOpen: label and writer by kind's domain", () => {
     ).gateId;
 
     expect(gateId).toBe('gate-doctor');
-    expect(calls.gateAsk[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
+    expect(calls.gateAsk[0]!.meta).toEqual({
+      label: `doctor gate !${IID}`,
+      headline: `!${IID} needs your call`,
+      summary: 'Waiting on your decision',
+    });
     const doctorState = readByHandle(doctorPath, db) as DoctorState;
     expect(doctorState.gateId).toBe('gate-doctor');
     expect(doctorState.gateKind).toBe('doctor-escalation');

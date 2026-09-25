@@ -157,7 +157,7 @@ export interface TriageRunDeps {
   ): DoctorState;
   doctorFilePath(mrUrl: string): string;
   appendAudit(entry: AuditEntry): void;
-  notify(title: string, message: string): Promise<void>;
+  notify(title: string, message: string, mrUrl: string): Promise<void>;
   memory: DispatchMemory;
   writeMemory(mem: DispatchMemory): void;
   /** A FRESH disk read, distinct from `memory` (this run's own in-process
@@ -328,8 +328,9 @@ export async function runTriage(
     if (decision.action === 'escalate') {
       result.escalated++;
       await deps.notify(
-        `auto-doctor budget exhausted on !${edge.iid}`,
-        `${edge.kind} on ${edge.mrUrl}: ${deps.triage.dailyAttemptBudget} attempts today, giving up until tomorrow or a human acts`
+        `Auto-fix stopped on !${edge.iid}`,
+        'Out of tries for today, over to you',
+        edge.mrUrl
       );
       markHandled(deps.memory, edge);
       m.budgetEscalatedDay = dayStamp;
