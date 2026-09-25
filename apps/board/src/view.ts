@@ -368,10 +368,21 @@ export function flattenStack<M extends BoardMR>(
   ];
 }
 
+/** GitLab counts approvals per rule, and one approver can fill several
+    rules, so `given` (approvers) and `required` (rule slots) are different
+    units. Every "n/m approved" reads this pair so the two never mix. */
+export function approvalSlots(mr: BoardMR): {
+  filled: number;
+  required: number;
+} {
+  const { required, remaining } = mr.reviews;
+  return { filled: Math.max(required - remaining, 0), required };
+}
+
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
-  const req = mr.reviews.required;
-  if (req > 0) return mr.reviews.given / req;
+  const { filled, required } = approvalSlots(mr);
+  if (required > 0) return filled / required;
   return mr.reviews.given > 0 ? 1 : 0;
 }
 
@@ -493,10 +504,7 @@ function ageBucket(
   return { label: 'Older', order: 9 };
 }
 
-/** The roster's verdict, not the approval rule's arithmetic: every assigned
-    reviewer has approved. An MR in this state reads approved even while a
-    project rule still wants more approvals -- the shortfall stays visible as
-    the awaiting-approvals blocker, not as the review state. */
+/** Every assigned reviewer has approved. */
 function allReviewersApproved(mr: BoardMR): boolean {
   const reviewers = mr.reviews.reviewers ?? [];
   return (
@@ -516,8 +524,10 @@ export function statusBucket(mr: BoardMR): { label: string; order: number } {
   // not their own groups, so an MR with conflicts still shows under its review
   // state instead of being hidden in a "conflicts" bucket.
   if (hasChangesRequested(mr)) return { label: 'changes requested', order: 0 };
-  if (mr.reviews.isApproved || allReviewersApproved(mr))
-    return { label: 'approved', order: 4 };
+  if (mr.reviews.isApproved) return { label: 'approved', order: 4 };
+  // A rule no assigned reviewer covers (a codeowner section) can still be owed.
+  if (allReviewersApproved(mr) && approvalSlots(mr).filled > 0)
+    return { label: 'needs review', order: 2 };
   if (mr.reviewerComments > 0) return { label: 'commented', order: 1 };
   // Reviewed and all threads resolved, just not formally approved — further along
   // than an untouched MR, so it sits between "needs review" and "approved".

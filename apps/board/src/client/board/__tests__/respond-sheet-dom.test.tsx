@@ -38,7 +38,7 @@ const MR = {
   pipelineState: 'passed',
   behindTarget: null,
   blockers: { any: false, hasConflicts: false },
-  reviews: { isApproved: false, given: 0, required: 1 },
+  reviews: { isApproved: false, given: 0, required: 1, remaining: 1 },
 } as unknown as BoardMRWithReview;
 
 const thread = (summary: string) =>

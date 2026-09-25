@@ -19,6 +19,7 @@ import {
 import type { GateItemDisplay } from '@mattstack/gate-kit/react';
 import { Button, Chip } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { approvalSlots } from '../../view.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { parseGateCtx, type PlanCtx, type PostCtx } from './gate-ctx.ts';
 import type { GateFormState } from './GateForm.tsx';
@@ -444,6 +445,7 @@ function ResponseRows({
     row's status pill never disagree. */
 function MrStatusCard({ mr }: { mr: BoardMRWithReview }) {
   const b = mr.blockers;
+  const { filled, required } = approvalSlots(mr);
   const ci =
     mr.pipelineState === 'passed'
       ? { chip: 'pass', intent: 'ok' as const, text: 'pipeline passing' }
@@ -458,7 +460,7 @@ function MrStatusCard({ mr }: { mr: BoardMRWithReview }) {
       key: 'approvals',
       chip: mr.reviews.isApproved ? 'ok' : 'wait',
       intent: mr.reviews.isApproved ? ('ok' as const) : ('warn' as const),
-      text: `${mr.reviews.given} of ${mr.reviews.required} approvals`,
+      text: `${filled} of ${required} approvals`,
     },
     b.hasConflicts
       ? {

@@ -7,6 +7,7 @@ import {
   EXECUTION_UNASSIGNED_MESSAGE,
   rowStatus,
   statusPhrase,
+  statusReasons,
 } from '../row-status.ts';
 
 const NOW = Date.parse('2026-09-12T12:00:00Z');
@@ -21,7 +22,13 @@ function mr(over: Partial<BoardMRWithReview> = {}): BoardMRWithReview {
     sourceBranch: 'feature/acme-2214',
     targetBranch: 'main',
     author: { username: 'pat', name: 'Pat' },
-    reviews: { isApproved: false, required: 1, given: 0, reviewers: [] },
+    reviews: {
+      isApproved: false,
+      required: 1,
+      given: 0,
+      remaining: 1,
+      reviewers: [],
+    },
     blockers: { any: false },
     mergeButton: { visible: false, disabled: false, loading: false },
     gates: [],
@@ -58,7 +65,13 @@ const settled = (over: Over = {}) =>
     ...over,
   } as never);
 const unapproved = (given: number, required: number) => ({
-  reviews: { isApproved: false, required, given, reviewers: [] },
+  reviews: {
+    isApproved: false,
+    required,
+    given,
+    remaining: required - given,
+    reviewers: [],
+  },
 });
 const blockedBy = (flags: Over) => ({ blockers: { any: true, ...flags } });
 const MERGEABLE = {
@@ -1590,6 +1603,40 @@ describe('statusPhrase: the pill says what the status group says', () => {
       text: '1/3 approved',
       hue: 'cyan',
     });
+  });
+
+  test('every assigned reviewer approved but a codeowner rule still open reads partial, not approved', () => {
+    const rosterApproved = {
+      reviews: {
+        isApproved: false,
+        required: 2,
+        given: 1,
+        remaining: 1,
+        reviewers: [{ username: 'pat', reviewState: 'APPROVED' }],
+      },
+    };
+    expect(statusPhrase(settled(rosterApproved))).toEqual({
+      text: '1/2 approved',
+      hue: 'cyan',
+    });
+    expect(
+      statusPhrase(settled({ ...rosterApproved, reviewerComments: 2 }))
+    ).toEqual({ text: '1/2 approved', hue: 'cyan' });
+  });
+
+  test('the count is rule slots filled, not approvers: one approver can fill many rules', () => {
+    const wide = settled({
+      reviews: {
+        isApproved: false,
+        required: 83,
+        given: 1,
+        remaining: 64,
+        reviewers: [{ username: 'pat', reviewState: 'APPROVED' }],
+      },
+      blockers: { any: true, awaitingApprovals: true },
+    });
+    expect(statusPhrase(wide)).toEqual({ text: '19/83 approved', hue: 'cyan' });
+    expect(statusReasons(wide)).toBe('blocked:\n· awaiting approvals (19/83)');
   });
 
   test('an untouched MR is amber', () => {

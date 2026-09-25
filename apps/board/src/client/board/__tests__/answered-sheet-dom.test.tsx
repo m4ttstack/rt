@@ -40,7 +40,7 @@ const MR = {
   author: { username: 'jvasquez', name: 'Joel Vasquez' },
   pipelineState: 'passed',
   blockers: { any: false, hasConflicts: false },
-  reviews: { isApproved: false, given: 0, required: 1 },
+  reviews: { isApproved: false, given: 0, required: 1, remaining: 1 },
 } as unknown as BoardMRWithReview;
 
 function shipped(overrides: Partial<GateRow> = {}): GateRow {
