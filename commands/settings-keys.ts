@@ -41,6 +41,7 @@ import {
 import { setSetting, unsetSetting } from "../lib/settings/write.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
 import { firstIssueText } from "../lib/settings/schema.ts";
+import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
 // ─── arg parsing (commands/events.ts conventions) ────────────────────────────
@@ -498,4 +499,31 @@ export function renderExplainRow(row: ExplainRow): string {
     return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}`;
   }
   return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}`;
+}
+
+// ─── check ──────────────────────────────────────────────────────────────────
+
+/** One line per finding: `merged` findings have no real scope, so they print without one. */
+export function renderCheckFinding(f: CheckFinding): string {
+  const where = f.kind === "merged" ? (f.repo ? `/${f.repo}` : "") : `${f.scope}${f.repo ? `/${f.repo}` : ""}`;
+  const label = where ? `${where}  ` : "";
+  const detail = f.issues.length > 0 ? `: ${firstIssueText(f.issues)}` : "";
+  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${detail}`;
+}
+
+export async function settingsCheck(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const report = checkStores();
+
+  if (json) {
+    console.log(JSON.stringify({ ok: report.failing === 0, findings: report.findings }));
+  } else {
+    console.log("");
+    for (const f of report.findings) console.log(renderCheckFinding(f));
+    const unregistered = report.findings.filter((f) => f.kind === "unregistered").length;
+    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered`);
+    console.log("");
+  }
+
+  if (report.failing > 0) process.exitCode = 1;
 }

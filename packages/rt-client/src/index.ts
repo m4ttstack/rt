@@ -175,6 +175,8 @@ export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-
 export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";
 export { checkSchema, validateJson, layerJsonSchema, formatIssuePath, firstIssueText, hasSchema } from "./settings/schema.ts";
 export type { SchemaIssue, JsonSchema } from "./settings/schema.ts";
+export { checkStores } from "./settings/check.ts";
+export type { CheckFinding, CheckReport } from "./settings/check.ts";
 export { REGISTRY } from "./settings/registry-defs.ts";
 export { NOTIFICATION_EVENT_KEYS, NOTIFICATION_DEFAULTS } from "./settings/notification-events.ts";
 

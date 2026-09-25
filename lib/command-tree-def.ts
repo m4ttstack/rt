@@ -1769,6 +1769,12 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — enables repo-scoped rungs" },
         ],
       },
+      check: {
+        description: "Check every stored settings value against its schema and list unregistered keys",
+        module: "./commands/settings-keys.ts",
+        fn: "settingsCheck",
+        args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" }],
+      },
       linear: {
         description: "Linear API configuration",
         subcommands: {
