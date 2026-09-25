@@ -1,6 +1,6 @@
 /**
- * settings/validate-write.ts — the one write gate: type check, layer schema,
- * then the merged result. Re-points HOME per test (the write.test.ts /
+ * settings/validate-write.ts: the one write gate, type check then layer
+ * schema then the merged result. Re-points HOME per test (the write.test.ts /
  * resolve.test.ts pattern): store files are process-global state.
  */
 
@@ -14,7 +14,9 @@ import { validateWrite } from "../validate-write.ts";
 import { withSchema } from "./with-schema.ts";
 
 const IDENTITY = "gitlab.com/acme/acme-dev";
+const IDENTITY2 = "gitlab.com/acme/acme-other";
 const TEAM = "acme";
+const OTHER_TEAM = "acme-two";
 
 const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
 const ROLES = { type: "object", properties: { a: { type: "string" }, b: { type: "number" } }, required: ["a"] };
@@ -101,7 +103,7 @@ describe("settings/validate-write", () => {
       writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 2 } } } });
       expect(validateWrite(def, { name: "x" }, { scope: "user" })).toEqual({ ok: true });
       writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: -1 } } } });
-      // The repo section already fails; an unrelated machine edit still lands.
+      // The repo section already fails; an unrelated global edit still lands.
       expect(validateWrite(def, { name: "y" }, { scope: "user" })).toEqual({ ok: true });
     });
   });
@@ -110,6 +112,34 @@ describe("settings/validate-write", () => {
     withSchema("rt.worktrees", WORKTREES, () => {
       const r = validateWrite(getDef("rt.worktrees")!, { onDeck: -1 }, { scope: "user", repoIdentity: IDENTITY });
       expect(r.ok).toBe(false);
+    });
+  });
+
+  test("a repo section write is checked against that repo's own merge, not another repo's", () => {
+    withSchema("rt.roles", ROLES, () => {
+      const def = getDef("rt.roles")!;
+      writeTeam(TEAM, { repos: { [IDENTITY2]: { "rt.roles": { a: "x" } } } });
+      // IDENTITY has nothing supplying "a" anywhere; the layer `{ b: 1 }`
+      // passes on its own (the layer schema makes "a" optional) but the
+      // merge for THIS repo section has no "a" at all.
+      const refused = validateWrite(def, { b: 1 }, { scope: "user", repoIdentity: IDENTITY });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.reason).toBe(`merged value for ${IDENTITY} would fail: a: required property "a" is missing`);
+      // IDENTITY2's team layer already supplies "a"; the same write there merges cleanly.
+      expect(validateWrite(def, { b: 1 }, { scope: "user", repoIdentity: IDENTITY2 })).toEqual({ ok: true });
+    });
+  });
+
+  test("a named team write patches only that team's store, not every local team", () => {
+    withSchema("rt.roles", ROLES, () => {
+      const def = getDef("rt.roles")!;
+      writeTeam(TEAM, {});
+      writeTeam(OTHER_TEAM, { "rt.roles": { a: "x" } });
+      // TEAM's own layer lacks "a"; OTHER_TEAM's real store already supplies
+      // it. If the write clobbered every local team store (rather than only
+      // the named one) OTHER_TEAM's "a" would be erased and this merge would
+      // wrongly fail.
+      expect(validateWrite(def, { b: 1 }, { scope: "team", team: TEAM })).toEqual({ ok: true });
     });
   });
 });

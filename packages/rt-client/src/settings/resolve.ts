@@ -228,15 +228,28 @@ function readStores(): StoreBundle {
  * The merged value the resolver would produce if `override.scope` (and its
  * repo section, when given) held `override.value`. The write gate uses it
  * to refuse a write that breaks the merge; reads never call it.
+ *
+ * `override.team` mirrors `setSetting`'s own team-selection rule: a named
+ * team patches only that team's store, matching where the real write would
+ * land (`write.ts#resolveStorePath`). With no team named, every local team
+ * store is patched, since a global (non-team-scoped) write has no single
+ * team to prefer. Patching every team store when one IS named would corrupt
+ * every OTHER team's real value for this key in the merge check, producing a
+ * false refusal for a write that only ever touches its own team's file.
  */
 export function mergedValueWith(
   def: SettingDef,
-  override: { scope: SettingScope; repoIdentity?: string; value: unknown },
+  override: { scope: SettingScope; repoIdentity?: string; team?: string; value: unknown },
   opts: ResolveOpts = {},
 ): unknown {
   const stores = readStores();
   const patched: StoreBundle = { user: cloneStore(stores.user), machine: cloneStore(stores.machine), teams: stores.teams.map(cloneStore) };
-  const targets = override.scope === "team" ? patched.teams : [override.scope === "user" ? patched.user : patched.machine];
+  const targets =
+    override.scope !== "team"
+      ? [override.scope === "user" ? patched.user : patched.machine]
+      : override.team === undefined
+        ? patched.teams
+        : patched.teams.filter((store) => store.file === teamSettingsPath(override.team as string));
   for (const store of targets) {
     if (override.repoIdentity !== undefined) {
       store.repos[override.repoIdentity] = { ...(store.repos[override.repoIdentity] ?? {}), [def.key]: override.value };

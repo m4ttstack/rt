@@ -23,7 +23,7 @@ export function validateWrite(def: SettingDef, value: unknown, opts: { scope: Se
   const contexts: (string | null)[] =
     opts.repoIdentity !== undefined ? [opts.repoIdentity] : def.repoScoped ? [null, ...listStoreRepoIdentities()] : [null];
   for (const repoIdentity of contexts) {
-    const after = mergedValueWith(def, { scope: opts.scope, repoIdentity: opts.repoIdentity, value }, { repoIdentity, expand: false });
+    const after = mergedValueWith(def, { scope: opts.scope, repoIdentity: opts.repoIdentity, team: opts.team, value }, { repoIdentity, expand: false });
     const afterIssues = checkSchema(def, after, { layer: false });
     if (afterIssues.length === 0) continue;
     const before = mergedNow(def, repoIdentity);
