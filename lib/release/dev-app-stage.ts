@@ -109,6 +109,17 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   await seams.exec(["rm", "-f", listFile]);
   if (copy.exitCode !== 0) throw new UserActionableError("dev-app-copy-failed", `copying ${source} failed: ${tail(copy)}`);
 
+  // An edit that lands during the copy is in the build but not in the key
+  // taken before it, so such a build is left unstamped and never reused.
+  let buildIdentity = identity;
+  if (identity) {
+    const after = await snapshotTree(seams, source, version);
+    if (!after?.identity || !sameBuild(identity, after.identity)) {
+      seams.log("the tree changed while it was copied; this build will not be cached");
+      buildIdentity = null;
+    }
+  }
+
   // rt-tray/deps is gitignored, so the copy skips it; reuse the tree's own when
   // it has one, and fetch whatever build.sh needs that it lacks.
   const deps = `${source}/rt-tray/deps`;
@@ -125,12 +136,12 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     }
   }
 
-  const identityEnv = identity
+  const identityEnv = buildIdentity
     ? [
-        `MS_BUILD_TREE=${identity.tree}`,
-        `MS_BUILD_SHA=${identity.sha}`,
-        `MS_BUILD_DIFF_HASH=${identity.diffHash}`,
-        `MS_BUILD_VERSION=${identity.version}`,
+        `MS_BUILD_TREE=${buildIdentity.tree}`,
+        `MS_BUILD_SHA=${buildIdentity.sha}`,
+        `MS_BUILD_DIFF_HASH=${buildIdentity.diffHash}`,
+        `MS_BUILD_VERSION=${buildIdentity.version}`,
       ]
     : [];
   const build = await seams.exec(

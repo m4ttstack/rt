@@ -29,6 +29,7 @@ function fakeSeams(
     plists?: Record<string, Record<string, string>>;
     cacheEntries?: string[];
     untracked?: string;
+    diffAfterCopy?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -70,7 +71,11 @@ function fakeSeams(
       if (cmd === "git rev-parse --show-toplevel") return ok("/src/tree\n");
       if (cmd === "git rev-parse --short HEAD") return ok("abc1234\n");
       if (cmd === "git rev-parse HEAD") return ok(`${FULL_SHA}\n`);
-      if (cmd.startsWith("git diff HEAD")) return ok(opts.dirty ? "diff --git a/x b/x\n+1\n" : "");
+      if (cmd.startsWith("git diff HEAD")) {
+        const copied = calls.some((c) => c.startsWith("rsync"));
+        if (copied && opts.diffAfterCopy !== undefined) return ok(opts.diffAfterCopy);
+        return ok(opts.dirty ? "diff --git a/x b/x\n+1\n" : "");
+      }
       if (cmd === "git ls-files -z --cached") return ok("cli.ts\0rt-tray/build.sh\0");
       if (cmd === "git ls-files -z --deleted") return ok("");
       if (cmd === "git ls-files -z --others --exclude-standard") return ok(opts.untracked ?? "");
@@ -369,5 +374,24 @@ describe("stageLocalDevApp", () => {
     const { seams, calls } = fakeSeams({ failCmd: "git ls-files -z --cached" });
     await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow(UserActionableError);
     expect(calls.some((c) => c.startsWith("rsync"))).toBe(false);
+  });
+
+  test("a tree edited while it was copied still builds, but without an identity it no longer matches", async () => {
+    const { seams, calls, logs } = fakeSeams({ diffAfterCopy: "diff --git a/y b/y\n+edited\n" });
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result.outcome).toBe("built");
+    const copy = calls.findIndex((c) => c.startsWith("rsync"));
+    const recheck = calls.findIndex((c, i) => i > copy && c.startsWith("git diff HEAD"));
+    expect(recheck).toBeGreaterThan(copy);
+    const build = calls.find((c) => c.includes("rt-tray/build.sh dev"))!;
+    for (const v of ["MS_BUILD_TREE", "MS_BUILD_SHA", "MS_BUILD_DIFF_HASH", "MS_BUILD_VERSION"]) expect(build).not.toContain(v);
+    expect(build).toContain("MS_BUILD_STAMP=");
+    expect(logs.some((l) => l.includes("changed while it was copied"))).toBe(true);
+  });
+
+  test("an unchanged tree keeps its identity through the copy", async () => {
+    const { seams, calls } = fakeSeams({ diffAfterCopy: "" });
+    await stageLocalDevApp(seams, "/src/tree");
+    expect(calls.find((c) => c.includes("rt-tray/build.sh dev"))).toContain("MS_BUILD_SHA=");
   });
 });
