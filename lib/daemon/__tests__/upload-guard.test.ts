@@ -4,6 +4,7 @@
  * handler test can trust the guard and cover only the POST.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { execSync } from "child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -38,9 +39,9 @@ describe("checkUploadPath", () => {
     return p;
   }
 
-  test("a png under a root passes and reports its realpath, name, mime and size", () => {
+  test("a png under a root passes and reports its realpath, name, mime, size and bytes", () => {
     const p = file(root, "shot.png", PNG);
-    expect(checkUploadPath(p, [root])).toEqual({ ok: true, realpath: join(rootReal, "shot.png"), filename: "shot.png", mime: "image/png", size: PNG.length });
+    expect(checkUploadPath(p, [root])).toEqual({ ok: true, realpath: join(rootReal, "shot.png"), filename: "shot.png", mime: "image/png", size: PNG.length, bytes: PNG });
   });
 
   test("a root given through a symlinked alias still contains the file (tmpdir is such an alias on macOS)", () => {
@@ -124,6 +125,26 @@ describe("checkUploadPath", () => {
 
   test("a root that does not exist on disk is skipped, not an error", () => {
     expect(checkUploadPath(file(root, "shot.png", PNG), ["/nonexistent/root", root]).ok).toBe(true);
+  });
+
+  test("a FIFO under a root with a .png name is refused and does not block", () => {
+    const p = join(root, "pipe.png");
+    execSync(`mkfifo "${p}"`);
+    const res = checkUploadPath(p, [root]);
+    expect(res).toEqual({ ok: false, error: "path is not a regular file" });
+  });
+
+  test("an empty, relative or non-string root is skipped, never resolved against the daemon's cwd", () => {
+    const p = file(root, "shot.png", PNG);
+    expect(checkUploadPath(p, [""]).ok).toBe(false);
+    expect(checkUploadPath(p, ["."]).ok).toBe(false);
+    expect(checkUploadPath(p, ["relative/dir"]).ok).toBe(false);
+    expect(checkUploadPath(p, [5 as unknown as string]).ok).toBe(false);
+  });
+
+  test("a bad root entry beside a valid one does not stop the valid root from admitting", () => {
+    const p = file(root, "shot.png", PNG);
+    expect(checkUploadPath(p, ["", ".", "relative/dir", root]).ok).toBe(true);
   });
 });
 

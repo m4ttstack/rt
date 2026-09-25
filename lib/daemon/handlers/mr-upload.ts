@@ -7,7 +7,6 @@
  * repo's index path and worktree registry, the Claude Code temp root for this
  * uid, and rt.mcp.uploadRoots read through the resolver at call time.
  */
-import { readFileSync } from "fs";
 import { isAbsolute } from "path";
 import { decodeRepo } from "../identity-decoder.ts";
 import { getRepoContext, providerRequestHook } from "../freshness.ts";
@@ -79,7 +78,7 @@ export function createMrUploadHandlers(
 
         const apiPath = `/projects/${repoCtx.projectId}/uploads`;
         const form = new FormData();
-        form.append("file", new Blob([readFileSync(checked.realpath)], { type: checked.mime }), checked.filename);
+        form.append("file", new Blob([checked.bytes], { type: checked.mime }), checked.filename);
         const timeout = AbortSignal.timeout(UPLOAD_FETCH_TIMEOUT_MS);
         const started = performance.now();
         const res = await fetchFn(`${repoCtx.provider.baseURL}/api/v4${apiPath}`, {
