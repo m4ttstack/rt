@@ -95,6 +95,33 @@ afterEach(() => {
   }
 });
 
+// A test that sets process.exitCode (to assert a CLI code path that would
+// otherwise exit the process) and never restores it leaks into every test
+// that runs after it in the same process. Serially that is usually masked
+// by some later test resetting it; under `--shard`, a shard can end on the
+// leak with no failing test, so this fails the leaking test by name and
+// resets exitCode so the leak cannot cascade into the rest of the shard.
+let exitCodeBrokenBeforeTest: number | string | null = null;
+function repairExitCode(): number | string | null {
+  const problem = process.exitCode;
+  // Bun's process.exitCode setter ignores undefined (the value sticks), so
+  // 0 is the only assignment that actually clears a prior non-zero code.
+  if (problem) process.exitCode = 0;
+  return problem ?? null;
+}
+beforeEach(() => {
+  exitCodeBrokenBeforeTest = repairExitCode();
+});
+afterEach(() => {
+  const inherited = exitCodeBrokenBeforeTest;
+  exitCodeBrokenBeforeTest = null;
+  const problem = repairExitCode();
+  if (problem) throw new Error(`After this test: process.exitCode was left at ${JSON.stringify(problem)}. Restore it (capture before the call, restore in this test's own afterEach or a finally).`);
+  if (inherited) {
+    throw new Error(`process.exitCode was already ${JSON.stringify(inherited)} when this test started (an afterAll, or an afterEach that threw, earlier).`);
+  }
+});
+
 function removeTree(path: string): void {
   try {
     rmSync(path, { recursive: true, force: true });
