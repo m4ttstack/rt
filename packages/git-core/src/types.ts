@@ -127,11 +127,22 @@ export interface FetchState {
   lastFetchedAt: string | null; // ISO 8601; null = never fetched
 }
 
+export interface DiffSources {
+  old?: string;
+  new?: string;
+}
+
+export interface DiffReadOpts {
+  /** Also read the whole old- and new-side files, for whole-file highlighting. */
+  withSources?: boolean;
+}
+
 export interface StagingDiff {
   path: string;
   kind: "text" | "binary" | "submodule";
   untracked: boolean;
   hunks: ReadonlyArray<import("./vendor/ghd/raw-diff.ts").DiffHunk>;
+  sources?: DiffSources;
 }
 
 export type UndoRefusal = "pushed" | "initial" | "merge";
@@ -156,7 +167,7 @@ export interface GitClient {
   stashDrop(index: number): Promise<void>;
   fetchState(): Promise<FetchState>;
   fetch(remote?: string, signal?: AbortSignal): Promise<void>;
-  stagingDiff(path: string): Promise<StagingDiff>;
+  stagingDiff(path: string, opts?: DiffReadOpts): Promise<StagingDiff>;
   stageSelection(
     diff: StagingDiff,
     selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
@@ -182,9 +193,9 @@ export interface GitClient {
   changedFiles(sha: string): Promise<ChangesetData>;
   /** shas oldest first (GHD's orderShasByHistory order). */
   commitRangeChangedFiles(shas: ReadonlyArray<string>): Promise<ChangesetData>;
-  commitDiff(file: CommittedFileChange, sha: string): Promise<StagingDiff>;
+  commitDiff(file: CommittedFileChange, sha: string, opts?: DiffReadOpts): Promise<StagingDiff>;
   /** shas oldest first. */
-  commitRangeDiff(file: CommittedFileChange, shas: ReadonlyArray<string>): Promise<StagingDiff>;
+  commitRangeDiff(file: CommittedFileChange, shas: ReadonlyArray<string>, opts?: DiffReadOpts): Promise<StagingDiff>;
   /** GHD appendIgnoreRule: patterns appended verbatim to the root .gitignore. */
   appendIgnoreRule(patterns: string | string[]): Promise<void>;
   /** GHD appendIgnoreFile: paths escaped (escapeGitSpecialCharacters) then appended. */

@@ -5,7 +5,8 @@ import { DiffParser } from "./vendor/ghd/diff-parser.ts";
 import type { DiffSelection } from "./vendor/ghd/diff-selection.ts";
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
 import { formatPatch, formatPatchToDiscardChanges } from "./vendor/ghd/patch-formatter.ts";
-import type { StagingDiff } from "./types.ts";
+import { workingDiffSources } from "./diff-sources.ts";
+import type { DiffReadOpts, StagingDiff } from "./types.ts";
 
 const APPLY_FLAGS = ["--unidiff-zero", "--whitespace=nowarn", "-"];
 
@@ -25,7 +26,7 @@ const APPLY_FLAGS = ["--unidiff-zero", "--whitespace=nowarn", "-"];
  *     unstaged changes together -- the point of the model: what you see is
  *     what you can select for the next commit, independent of the index.
  */
-export async function getStagingDiff(ctx: ClientContext, path: string): Promise<StagingDiff> {
+export async function getStagingDiff(ctx: ClientContext, path: string, opts: DiffReadOpts = {}): Promise<StagingDiff> {
   const status = await ctx.git.status();
   const untracked = status.not_added.includes(path);
   const renamed = status.renamed.some((r) => r.to === path);
@@ -42,7 +43,8 @@ export async function getStagingDiff(ctx: ClientContext, path: string): Promise<
   // DiffParser tolerates (and ignores) the `diff --git` / `index` preamble,
   // so the raw command output goes straight in.
   const hunks = text.trim() === "" ? [] : new DiffParser().parse(text).hunks;
-  return { path, kind: "text", untracked, hunks };
+  const sources = opts.withSources ? await workingDiffSources(ctx, path, { untracked, renamed }) : undefined;
+  return { path, kind: "text", untracked, hunks, ...(sources ? { sources } : {}) };
 }
 
 export async function stageSelection(
