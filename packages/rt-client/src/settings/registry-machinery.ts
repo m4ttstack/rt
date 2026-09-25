@@ -24,7 +24,8 @@
  */
 
 import { REGISTRY } from "./registry-defs.ts";
-import type { JsonSchema } from "./schema.ts";
+import LOCK from "./schema.lock.json" with { type: "json" };
+import { layerJsonSchema, type JsonSchema } from "./schema.ts";
 
 export type SettingScope = "user" | "team" | "machine";
 
@@ -49,7 +50,21 @@ export interface SettingDef {
   description: string;
 }
 
-const BY_KEY: Map<string, SettingDef> = new Map(REGISTRY.map((def) => [def.key, def]));
+type LockFile = Record<string, { storeVersion: number; schema: JsonSchema }>;
+
+function attachSchemas(defs: readonly SettingDef[]): SettingDef[] {
+  const lock = LOCK as LockFile;
+  return defs.map((def) => {
+    const entry = lock[def.key];
+    if (!entry) return def;
+    const withSchema: SettingDef = { ...def, schema: entry.schema, storeVersion: entry.storeVersion };
+    if (def.merge === "deep" && def.type === "object") withSchema.layerSchema = layerJsonSchema(entry.schema);
+    return withSchema;
+  });
+}
+
+const DEFS: readonly SettingDef[] = attachSchemas(REGISTRY);
+const BY_KEY: Map<string, SettingDef> = new Map(DEFS.map((def) => [def.key, def]));
 
 /**
  * Keys this suite once registered and no longer reads. A machine that still
@@ -69,7 +84,7 @@ export function getDef(key: string): SettingDef | undefined {
 
 /** Every registered def, in registry declaration order. */
 export function allDefs(): SettingDef[] {
-  return [...REGISTRY];
+  return [...DEFS];
 }
 
 /** True unless `def.migrated` is explicitly `false` — see the module doc. */

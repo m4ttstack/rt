@@ -5,7 +5,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
 import { allDefs, getDef, isMigrated, validateValue, type SettingDef } from "../registry-machinery.ts";
+import type { JsonSchema } from "../schema.ts";
 
 describe("settings/registry", () => {
   describe("getDef", () => {
@@ -426,6 +428,17 @@ describe("settings/registry", () => {
       for (const def of allDefs()) {
         if (def.key.startsWith("rt.")) continue; // wave-1 rows, covered above
         expect(def.repoScoped, `${def.key} should not be repoScoped`).toBeFalsy();
+      }
+    });
+
+    test("every def with a lock entry carries its schema and storeVersion from the lock", () => {
+      const lock = JSON.parse(readFileSync(new URL("../schema.lock.json", import.meta.url), "utf8")) as Record<string, { storeVersion: number; schema: JsonSchema }>;
+      for (const def of allDefs()) {
+        const entry = lock[def.key];
+        if (!entry) { expect(def.schema).toBeUndefined(); continue; }
+        expect(def.schema).toEqual(entry.schema);
+        expect(def.storeVersion ?? 1).toBe(entry.storeVersion);
+        if (def.merge === "deep" && def.type === "object") expect(def.layerSchema).toBeDefined();
       }
     });
   });

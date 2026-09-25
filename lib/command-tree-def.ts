@@ -1836,6 +1836,17 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      schema: {
+        description: "The settings schema lock: regenerate it from the registry, or diff the registry against a committed lock",
+        subcommands: {
+          lock: {
+            description: "Regenerate packages/rt-client/src/settings/schema.lock.json from the zod schemas",
+            module: "./commands/settings-schema.ts",
+            fn: "settingsSchemaLock",
+            args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
+          },
+        },
+      },
     },
   },
 
