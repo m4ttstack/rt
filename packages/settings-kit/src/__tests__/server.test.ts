@@ -58,18 +58,31 @@ const RT = {
     }
     if (key === "rt.secretThing") {
       return [
-        { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: "rt.secretThing-user-value", invalid: 'field "x" looks like a path literal ("/Users/someone/secret")' },
+        {
+          scope: "user",
+          file: "/home/user/settings.user.jsonc",
+          present: true,
+          value: "rt.secretThing-user-value",
+          invalid: 'field "x" looks like a path literal ("/Users/someone/secret")',
+          nonconforming: [{ path: ["x"], message: "quoted /Users/someone/secret" }],
+        },
         { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
       ];
     }
-    const rows: Array<{ scope: string; file: string; present: boolean; value?: unknown }> = [
+    if (key === "rt.roles") {
+      const rows = [
+        { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: { dev: { port: 3000 } }, nonconforming: [{ path: ["dev", "port"], message: "expected string, got number" }] },
+        { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+      ];
+      if (opts?.repoIdentity) {
+        rows.push({ scope: "team.repo", file: "/home/team/settings.team.jsonc", present: true, value: { dev: { port: 3000 } }, nonconforming: [{ path: ["dev", "port"], message: "expected string, got number" }] });
+      }
+      return rows;
+    }
+    return [
       { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: `${key}-user-value` },
       { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
     ];
-    if (key === "rt.roles" && opts?.repoIdentity) {
-      rows.push({ scope: "team.repo", file: "/home/team/settings.team.jsonc", present: true, value: { dev: { port: 3000 } } });
-    }
-    return rows;
   },
   validateValue: (_def: FakeDef, value: unknown) =>
     value === "invalid" ? { ok: false, reason: "value is invalid" } : { ok: true },
@@ -409,22 +422,31 @@ describe("schema on the wire", () => {
     expect(defs.defs.find((d: any) => d.key === "board.title").issues[0]).toMatchObject({ scope: "user", kind: "nonconforming", path: [], message: "bad" });
   });
 
-  test("a secret key's issues never carry a value, even a path-guard reason that quotes one", async () => {
+  test("a secret key's issues never carry a value, even a path-guard reason or nonconforming message that quotes one", async () => {
     const defs = (await (await handle(get("/api/settings/defs")))!.json()) as any;
     const secret = defs.defs.find((d: any) => d.key === "rt.secretThing");
-    expect(secret.issues).toEqual([{ scope: "user", file: "/home/user/settings.user.jsonc", kind: "invalid", path: [], message: "refused" }]);
+    expect(secret.issues).toEqual([
+      { scope: "user", file: "/home/user/settings.user.jsonc", kind: "invalid", path: [], message: "refused" },
+      { scope: "user", file: "/home/user/settings.user.jsonc", kind: "nonconforming", path: ["x"], message: "does not match the schema" },
+    ]);
     expect(secret.effective.invalid).toBe("refused");
     const explain = (await (await handle(get("/api/settings/explain/rt.secretThing")))!.json()) as any;
     expect(explain.rows[0].invalid).toBe("refused");
+    expect(explain.rows[0].nonconforming).toEqual([{ path: ["x"], message: "does not match the schema" }]);
     expect(explain.def.effective.invalid).toBe("refused");
     expect(JSON.stringify(explain)).not.toContain("/Users/someone/secret");
+    expect(JSON.stringify(defs)).not.toContain("/Users/someone/secret");
   });
 
-  test("?repo= resolves repo rungs and repos[] lists sections", async () => {
+  test("?repo= resolves repo rungs, repos[] lists sections, and repo is stamped only on repo-rung issues", async () => {
     const body = (await (await handle(get("/api/settings/defs?repo=gitlab.example.com%2Facme%2Fapp")))!.json()) as any;
     const roles = body.defs.find((d: any) => d.key === "rt.roles");
     expect(roles.effective.scope).toBe("team.repo");
     expect(roles.repos).toEqual([{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }]);
+    const userIssue = roles.issues.find((i: any) => i.scope === "user");
+    const repoIssue = roles.issues.find((i: any) => i.scope === "team.repo");
+    expect(userIssue.repo).toBeUndefined();
+    expect(repoIssue.repo).toBe("gitlab.example.com/acme/app");
   });
 
   test("GET /repos lists store identities with labels", async () => {
@@ -440,5 +462,15 @@ describe("schema on the wire", () => {
     const bad = await handle(post("/api/settings/set", { key: "board.title", scope: "user", value: "invalid" }));
     expect(bad!.status).toBe(400);
     expect(await bad!.json()).toEqual({ error: "value is invalid", issues: [{ path: [], message: "value is invalid" }] });
+  });
+
+  test("an empty repo string is normalized to no repo, for both set and defs", async () => {
+    const res = await handle(post("/api/settings/set", { key: "board.title", value: "My Board", scope: "user", repo: "" }));
+    expect(res!.status).toBe(200);
+    expect(setCalls.at(-1)).toEqual(["board.title", "My Board", "user", {}]);
+    const body = (await (await handle(get("/api/settings/defs?repo=")))!.json()) as any;
+    const roles = body.defs.find((d: any) => d.key === "rt.roles");
+    expect(roles.effective.scope).toBe("user");
+    expect(roles.repos).toEqual([{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }]);
   });
 });
