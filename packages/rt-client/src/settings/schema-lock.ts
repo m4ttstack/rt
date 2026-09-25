@@ -9,9 +9,10 @@ import { fileURLToPath } from "url";
 import { z } from "zod";
 import { REGISTRY } from "./registry-defs.ts";
 import { SCHEMAS } from "./registry-schemas.ts";
+import type { Lock } from "./schema-diff.ts";
 import type { JsonSchema } from "./schema.ts";
 
-export type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>;
+export { checkLockAgainst, classifyLockDiff, readBreakingChanges, type Change, type Lock } from "./schema-diff.ts";
 
 export const LOCK_PATH = fileURLToPath(new URL("./schema.lock.json", import.meta.url));
 

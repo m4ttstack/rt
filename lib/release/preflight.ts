@@ -1,15 +1,16 @@
 /**
  * rt release preflight — the release's mechanical checks (rt:release skill
  * steps 1-2c) as one read-only report: git/tag state, picker conformance,
- * per-layer pin freshness across every vendored surface, catalog pin drift,
- * extension currency, rt-client npm-vs-source parity, and the gate (fast vs
- * full) the pending diff implies.
+ * settings schema lock, per-layer pin freshness across every vendored
+ * surface, catalog pin drift, extension currency, rt-client npm-vs-source
+ * parity, and the gate (fast vs full) the pending diff implies.
  *
  * Read-only by contract: the catalog check re-resolves refs with
  * `git ls-remote` itself because `marketplace.sh --refresh` rewrites
  * marketplace.json in place (its --dry-run flag gates only the publish path).
  */
 import { join } from "path";
+import { checkLockAgainst, type Lock } from "../settings/schema-diff.ts";
 import type { RunResult } from "../subprocess.ts";
 
 export interface DepsRow {
@@ -177,6 +178,34 @@ export function checkPicker(seams: PreflightSeams): CheckRow {
     return { id: "picker", label: "picker:check", status: "stale", detail: `undeclared omitBehavior: ${v.map((x) => x.path).join(", ")}` };
   } catch (err) {
     return { id: "picker", label: "picker:check", status: "error", detail: String((err as Error).message ?? err) };
+  }
+}
+
+const SCHEMA_LOCK = "packages/rt-client/src/settings/schema.lock.json";
+const BREAKING_CHANGES = "packages/rt-client/src/settings/breaking-schema-changes.json";
+
+/**
+ * Reads the checkout's committed lock, never buildLock(): preflight runs from
+ * the installed binary, whose bundled registry is not the checkout's. CI's
+ * lock-in-sync step is what keeps the committed lock equal to the registry.
+ */
+export async function checkSchemaLock(seams: PreflightSeams, tag: string | null): Promise<CheckRow> {
+  const id = "schema-lock";
+  const label = "schema lock";
+  try {
+    if (!tag) throw new Error("no release tag to diff the lock against");
+    const raw = seams.readFile(join(seams.repoRoot, SCHEMA_LOCK));
+    if (!raw) throw new Error(`${SCHEMA_LOCK} not readable`);
+    const committed = JSON.parse(raw) as Lock;
+    const acknowledged = JSON.parse(seams.readFile(join(seams.repoRoot, BREAKING_CHANGES)) ?? "{}") as Record<string, string>;
+    const shown = await seams.exec(["git", "show", `${tag}:${SCHEMA_LOCK}`], { cwd: seams.repoRoot });
+    if (shown.exitCode !== 0) return { id, label, status: "ok", detail: `no lock at ${tag}` };
+    const { ok, problems } = checkLockAgainst(JSON.parse(shown.stdout) as Lock, committed, acknowledged);
+    return ok
+      ? { id, label, status: "ok", detail: `no unacknowledged breaking change since ${tag}` }
+      : { id, label, status: "stale", detail: problems.join("; ") };
+  } catch (err) {
+    return { id, label, status: "error", detail: String((err as Error).message ?? err) };
   }
 }
 
@@ -449,8 +478,9 @@ export async function runPreflight(seams: PreflightSeams): Promise<PreflightRepo
     lockError = { id: "deps-lock", label: "deps.lock", status: "error", detail: String((err as Error).message ?? err) };
   }
 
-  const [gate, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
+  const [gate, schemaLockRow, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
     gitState.tag ? checkGate(seams, gitState.tag) : Promise.resolve(null),
+    checkSchemaLock(seams, gitState.tag),
     checkAppPins(seams, apps),
     checkStandaloneRows(seams, standalone),
     checkToolRows(seams, tools),
@@ -462,6 +492,7 @@ export async function runPreflight(seams: PreflightSeams): Promise<PreflightRepo
   const rows: CheckRow[] = [
     gitState.row,
     checkPicker(seams),
+    schemaLockRow,
     ...(lockError ? [lockError] : []),
     ...appRows,
     ...standaloneRows,

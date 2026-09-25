@@ -1851,6 +1851,16 @@ export const TREE: Record<string, CommandNode> = {
             fn: "settingsSchemaLock",
             args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
           },
+          diff: {
+            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 on an unbumped or unacknowledged breaking change",
+            module: "./commands/settings-schema.ts",
+            fn: "settingsSchemaDiff",
+            args: [
+              { name: "Against", flag: "--against", type: "text", placeholder: "path/to/lock.json", hint: "Diff against a lock file; a missing file counts as no lock" },
+              { name: "Against ref", flag: "--against-ref", type: "text", placeholder: "origin/main", hint: "Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
+            ],
+          },
         },
       },
     },
