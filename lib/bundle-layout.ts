@@ -272,6 +272,16 @@ export function readDepsLock(root: string): DepsLock | null {
   return lock;
 }
 
+/** A pending row may carry serve ahead of its first release; it is not in the bundle, so it is not served. */
+export function servedAppCatalog(lock: DepsLock): Map<string, DepsLockServe> {
+  const catalog = new Map<string, DepsLockServe>();
+  for (const t of lock.tools) {
+    if (t.serve === undefined || t.kind !== "helper" || t.status !== "bundled") continue;
+    catalog.set(t.name, { port: t.serve.port, args: [...t.serve.args] });
+  }
+  return catalog;
+}
+
 function findBundledTool(name: string, root: string | null): { tool: DepsLockTool; root: string } | null {
   if (!root) return null;
   const lock = readDepsLock(root);
