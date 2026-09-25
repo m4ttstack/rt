@@ -331,6 +331,20 @@ copies the checkout's `skills/` whole to `Contents/Helpers/skills/rt/`,
 including `skills/.skillsignore`, the file `rt skills link` reads to keep
 maintainer-only skills off user machines.
 
+Identity rides the artifacts too. Before the recipe runs, bundle-apps stages
+`identity/` into the tarball: an identity-only `mattstack.deck.json` (name,
+displayName, description, icon, badge, in one fixed serialized form) plus the
+svg it names, validated against deck's own rules (svg-rooted, at most 64 KB,
+a path inside the app dir with no dotted directories). An app whose manifest
+declares no displayName or icon (deck itself) stages nothing. `fetch-deps.sh`
+materializes `deps/arm64/<name>-identity/` under its own sha stamp, and
+`build.sh` lands it at `Contents/Resources/apps/<name>/` for exactly the
+deps.lock rows that carry `serve`. `check-bundle.sh` fails a served row with
+no identity (its pin predates identity: re-run bundle-apps for it) and any
+`Resources/apps` entry no served row declares. Deck reads this copy for a
+managed app with no linked checkout, so prod tabs have names and icons on a
+clean install.
+
 Manual preconditions, once, both Actions secrets on repo-tools:
 
 - `MATTSTACK_RELEASE_TOKEN` ... a fine-grained org PAT with contents
