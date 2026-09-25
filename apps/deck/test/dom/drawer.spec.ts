@@ -1006,6 +1006,80 @@ test('remove: confirm DELETEs the app and closes the drawer', async () => {
   });
 }, 12000);
 
+test("remove: deck's own row offers no remove app", async () => {
+  await withBoard(async page => {
+    await openDrawer(page, 'forecast');
+    expect(
+      await page
+        .locator('[data-part="listgroup-action"] button', {
+          hasText: 'remove app',
+        })
+        .count()
+    ).toBe(0);
+  });
+});
+
+async function confirmRemove(page: Page, name: string): Promise<void> {
+  await openDrawer(page, name);
+  await page
+    .locator('[data-part="listgroup-action"] button', {
+      hasText: 'remove app',
+    })
+    .click();
+  await page
+    .locator('[data-part="modal"] button', { hasText: 'remove app' })
+    .click();
+}
+
+async function boardAlert(page: Page): Promise<string | null> {
+  const alert = page.locator('[data-part="alert"][data-intent="bad"]');
+  await alert.waitFor({ state: 'visible' });
+  return alert.textContent();
+}
+
+test('remove: a 200 whose body says ok:false shows the error on the board', async () => {
+  await withBoard(async page => {
+    await page.route('**/api/v1/apps/atlas', async route => {
+      if (route.request().method() !== 'DELETE') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: false,
+          error: 'Error: EACCES: permission denied',
+        }),
+      });
+    });
+
+    await confirmRemove(page, 'atlas');
+
+    expect(await boardAlert(page)).toContain(
+      'removing atlas failed: Error: EACCES: permission denied'
+    );
+  });
+}, 12000);
+
+test('remove: a request that never answers shows an error on the board', async () => {
+  await withBoard(async page => {
+    await page.route('**/api/v1/apps/atlas', async route => {
+      if (route.request().method() !== 'DELETE') {
+        await route.continue();
+        return;
+      }
+      await route.abort('connectionrefused');
+    });
+
+    await confirmRemove(page, 'atlas');
+
+    expect(await boardAlert(page)).toContain(
+      'removing atlas failed, the board did not answer.'
+    );
+  });
+}, 12000);
+
 test('remove: ArrowDown while the confirm dialog is open does not retarget the drawer', async () => {
   await withBoard(async page => {
     await openDrawer(page, 'atlas');

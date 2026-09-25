@@ -282,6 +282,32 @@ export function registerOutcome(
   return { kind: 'error', message: error || message || `failed (${status})` };
 }
 
+export interface RemoveAnswer {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  issues?: Array<{ message: string }>;
+}
+
+/** The notice a DELETE /api/v1/apps/:name answer earns, or null when the app
+    is gone. A refusal's message is shown verbatim (a managed row's carries
+    the `--force` escape hatch); a 200 can still say ok:false when a driver
+    failed and the row stays. */
+export function removeFailure(
+  name: string,
+  status: number,
+  body: RemoveAnswer
+): string | null {
+  const ok = status >= 200 && status < 300;
+  if (!ok) return body.message || body.error || `remove failed (${status})`;
+  if (body.ok !== false) return null;
+  const detail =
+    body.error || (body.issues ?? []).map(i => i.message).join('; ');
+  return detail
+    ? `removing ${name} failed: ${detail}`
+    : `removing ${name} failed.`;
+}
+
 export function editPatch(m: {
   name: string;
   port: string;

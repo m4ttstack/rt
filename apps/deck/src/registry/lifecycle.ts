@@ -4,6 +4,8 @@ import type { AppRecord } from './records.ts';
 /** Manager ids are generic; display names make the 409 read like the product. */
 export const MANAGER_DISPLAY: Record<string, string> = { rt: 'mattstack' };
 
+export const PLATFORM_REFUSAL = 'This is Deck itself: `deck uninstall`';
+
 export type StructuralVerdict =
   | { ok: true }
   | {
@@ -29,7 +31,7 @@ export function authorizeStructural(
 ): StructuralVerdict {
   if (force || record.managedBy === caller) return { ok: true };
   const message = isPlatformManagedBy(record.managedBy)
-    ? 'This is Deck itself: `deck uninstall`'
+    ? PLATFORM_REFUSAL
     : record.managedBy === 'user'
       ? `Managed by user: remove it from the board or \`deck remove ${record.name}\``
       : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy}: remove it anyway with \`deck remove ${record.name} --force\``;

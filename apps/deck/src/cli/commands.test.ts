@@ -91,6 +91,40 @@ test('remove on a managed record prints the escape hatch and exits 1', async () 
   expect(await runCommand(['remove', 't-rt', '--force'], f)).toBe(0);
 });
 
+test("remove reports a 200 ok:false: a route-only error as is, a kept record's issues by source", async () => {
+  const answers: Record<string, unknown> = {
+    '/api/v1/apps/gitq': { ok: false, error: 'still routed by pid 4242' },
+    '/api/v1/apps/myapp': {
+      ok: false,
+      issues: [{ source: 'launchd', message: 'bootout failed' }],
+    },
+  };
+  const deck = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch(req) {
+      const answer = answers[new URL(req.url).pathname];
+      return answer
+        ? Response.json(answer)
+        : Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  writeApiInfo(deck.port!);
+  try {
+    const routeOnly = io();
+    expect(await runCommand(['remove', 'gitq'], routeOnly)).toBe(1);
+    expect(routeOnly.lines.join('\n')).toBe(
+      'could not remove gitq: still routed by pid 4242'
+    );
+    const kept = io();
+    expect(await runCommand(['remove', 'myapp'], kept)).toBe(1);
+    expect(kept.lines.join('\n')).toContain('(launchd: bootout failed)');
+  } finally {
+    writeApiInfo(PORT);
+    deck.stop(true);
+  }
+});
+
 test('restart --managed / remove --managed only touch non-user records', async () => {
   // A managed row only serves what the resolver finds: stand up a helpers dir
   // holding the "bundled" binary and store the command under it.

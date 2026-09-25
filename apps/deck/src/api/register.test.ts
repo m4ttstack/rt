@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -67,6 +68,7 @@ type ServiceSpec = Parameters<
 >[0];
 const { agentsDir } = await import('../services/launchd.ts');
 const { catalogReport } = await import('../registry/catalog-report.ts');
+const { updatePlatformSettings } = await import('./platform-settings.ts');
 
 /** agentsDir() falls back to the real ~/Library/LaunchAgents when its env
     seam is unset, so a recursive rm checks it first. */
@@ -275,6 +277,150 @@ test('unregister: registrar-owned, 409 with escape hatch, force overrides', asyn
   expect(getRecord('myapp')).toBeUndefined();
   expect(drivers.manager.installed.size).toBe(0);
   expect(drivers.edge.aliases.size).toBe(0);
+});
+
+function writeRoutes(
+  hostnames: string[],
+  pids: Record<string, number> = {}
+): void {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify(
+      hostnames.map(hostname => ({
+        hostname,
+        port: 11008,
+        pid: pids[hostname] ?? 0,
+      }))
+    )
+  );
+}
+
+function routeHosts(): string[] {
+  return JSON.parse(
+    readFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, 'utf8')
+  ).map((r: { hostname: string }) => r.hostname);
+}
+
+test('unregister: a forced remove of a managed app also drops the .mattstack route deck wrote for it', async () => {
+  await registerApp({ ...input, managedBy: 'rt' }, drivers);
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['myapp.mattstack', 'myapp-docs.mattstack']);
+
+  const res = await unregisterApp('myapp', 'user', true, drivers);
+
+  expect(res).toEqual({ status: 200, body: { ok: true } });
+  expect(routeHosts()).toEqual(['myapp-docs.mattstack']);
+});
+
+test('unregister: a route-only row whose only route is name.mattstack loses that route', async () => {
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['gitq.mattstack', 'gitq-docs.mattstack']);
+
+  const res = await unregisterApp('gitq', 'user', false, drivers);
+
+  expect(res).toEqual({ status: 200, body: { ok: true } });
+  expect(routeHosts()).toEqual(['gitq-docs.mattstack']);
+});
+
+test('unregister: a route-only remove that cannot rewrite routes.json answers ok:false with the error', async () => {
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['gitq.mattstack']);
+  chmodSync(process.env.LOCAL_APPS_ROUTES_PATH!, 0o444);
+  try {
+    const res = await unregisterApp('gitq', 'user', false, drivers);
+    expect(res.status).toBe(200);
+    expect((res.body as any).ok).toBe(false);
+    expect((res.body as any).error).toMatch(/EACCES/);
+  } finally {
+    chmodSync(process.env.LOCAL_APPS_ROUTES_PATH!, 0o644);
+  }
+  expect(routeHosts()).toEqual(['gitq.mattstack']);
+});
+
+test("unregister: deck's own route-only row is refused, force or not, and its routes stay", async () => {
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['deck.localhost', 'deck.mattstack', 'local.localhost']);
+
+  for (const name of ['deck', 'local']) {
+    for (const force of [false, true]) {
+      const res = await unregisterApp(name, 'user', force, drivers);
+      expect(res.status).toBe(409);
+      expect((res.body as any).message).toBe(
+        'This is Deck itself: `deck uninstall`'
+      );
+    }
+  }
+  expect(routeHosts()).toEqual([
+    'deck.localhost',
+    'deck.mattstack',
+    'local.localhost',
+  ]);
+});
+
+test('unregister: a route-only row whose process has exited loses that route too', async () => {
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  const exited = Bun.spawnSync(['true']).pid;
+  writeRoutes(['gitq.mattstack', 'gitq.localhost'], {
+    'gitq.localhost': exited,
+  });
+
+  const res = await unregisterApp('gitq', 'user', false, drivers);
+
+  expect(res).toEqual({ status: 200, body: { ok: true } });
+  expect(routeHosts()).toEqual([]);
+});
+
+test('unregister: a route-only row still held by a live process answers ok:false naming its pid', async () => {
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['gitq.mattstack', 'gitq.localhost'], {
+    'gitq.localhost': process.pid,
+  });
+
+  const res = await unregisterApp('gitq', 'user', false, drivers);
+
+  expect(res.status).toBe(200);
+  expect((res.body as any).ok).toBe(false);
+  expect((res.body as any).error).toContain(`pid ${process.pid}`);
+  expect(routeHosts()).toEqual(['gitq.localhost']);
+});
+
+test("unregister: a failed launchd teardown keeps the record's routes and answers only this teardown's issues", async () => {
+  await registerApp(
+    { ...input, managedBy: 'rt', env: { SECRET: 'hunter2' } },
+    drivers
+  );
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['myapp.mattstack']);
+  drivers.manager.failNext = 'com.mattstack.deck.myapp';
+
+  const res = await unregisterApp('myapp', 'user', true, drivers);
+
+  expect(res.status).toBe(200);
+  const body = res.body as any;
+  expect(body.ok).toBe(false);
+  expect(body.record).toBeUndefined();
+  expect(JSON.stringify(body)).not.toContain('hunter2');
+  expect(body.issues).toHaveLength(1);
+  expect(body.issues[0].source).toBe('launchd');
+  expect(routeHosts()).toEqual(['myapp.mattstack']);
+  expect(getRecord('myapp')).toBeDefined();
+});
+
+test('edit rename drops every route under the old name', async () => {
+  await registerApp(input, drivers);
+  updatePlatformSettings({ tlds: ['localhost', 'mattstack'] });
+  writeRoutes(['myapp.localhost', 'myapp.mattstack', 'other.localhost']);
+
+  const res = await editApp(
+    'myapp',
+    { name: 'renamed' },
+    'user',
+    false,
+    drivers
+  );
+
+  expect(res.status).toBe(200);
+  expect(routeHosts()).toEqual(['other.localhost']);
 });
 
 test('edit re-ports: reinstalls the service on the new port and re-aliases', async () => {

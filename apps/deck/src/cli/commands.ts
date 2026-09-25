@@ -189,7 +189,11 @@ export async function runCommand(
         // as "removed" sends someone off believing an app is gone while it
         // is still registered, still routed, and still on the board.
         if (body.ok === false) {
-          const issues = (body.record?.issues ?? []) as Array<{
+          if (body.error) {
+            io.err(`could not remove ${name}: ${body.error}`);
+            return 1;
+          }
+          const issues = (body.issues ?? []) as Array<{
             source: string;
             message: string;
           }>;

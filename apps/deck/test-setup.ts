@@ -22,7 +22,7 @@
  * touches ~/.mattstack/deck even through that gap. A test file that sets its
  * own LOCAL_STATE_DIR still overrides this.
  */
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -36,3 +36,10 @@ guardTestDaemonEnv();
 
 process.env.HOME = mkdtempSync(join(tmpdir(), 'local-test-home-'));
 process.env.LOCAL_STATE_DIR = mkdtempSync(join(tmpdir(), 'local-test-state-'));
+// routesPath() falls back to the real ~/.portless/routes.json, the table the
+// live proxy serves; a suite that never sets its own path must not reach it.
+process.env.LOCAL_APPS_ROUTES_PATH = join(
+  mkdtempSync(join(tmpdir(), 'local-test-routes-')),
+  'routes.json'
+);
+writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, '[]');

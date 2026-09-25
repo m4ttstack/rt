@@ -8,6 +8,7 @@ import {
   readServices,
   type PortlessRoute,
 } from '../../core/discover.ts';
+import { removeRoutes } from '../../core/routes-writer.ts';
 import {
   clearOverride,
   getOverride,
@@ -26,7 +27,10 @@ import {
 } from '../registry/bundle-catalog.ts';
 import { setCatalogReport } from '../registry/catalog-report.ts';
 import { readDeckManifest } from '../registry/deck-manifest.ts';
-import { authorizeStructural } from '../registry/lifecycle.ts';
+import {
+  authorizeStructural,
+  PLATFORM_REFUSAL,
+} from '../registry/lifecycle.ts';
 import { ingestManifest, removeIcon } from '../registry/manifest.ts';
 import {
   addIssue,
@@ -60,6 +64,7 @@ import {
 import {
   isPlatformManagedBy,
   LABEL_PREFIX,
+  LEGACY_PLATFORM_NAME,
   PLATFORM_NAME,
   type ServiceManager,
   type ServiceSpec,
@@ -358,11 +363,25 @@ async function flipRemoteBack(
   return flip.status === 200 ? null : flip;
 }
 
-/** Shared by unregisterApp and removeManagedApps: tears down a record's launchd service and portless alias. */
+/** Every route a name owns. portless's alias removal only matches the TLDs
+    its own proxy runs with, so it can miss the name.mattstack host deck
+    writes itself (reconcileMattstackTld); that one is dropped from the
+    route table directly. */
+function removeNameRoutes(
+  name: string,
+  drivers: Drivers
+): Promise<SyncIssue | null> {
+  return runDriver('portless', async () => {
+    await drivers.edge.removeAlias(name);
+    await removeRoutes(name, getPlatformSettings().tlds);
+  });
+}
+
+/** Shared by unregisterApp and removeManagedApps: tears down a record's launchd service and routes. */
 async function teardownRecord(
   record: AppRecord,
   drivers: Drivers
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; issues: SyncIssue[] }> {
   const issues: SyncIssue[] = [];
   if (record.kind === 'service' && record.label) {
     const issue = await runDriver('launchd', () =>
@@ -370,21 +389,30 @@ async function teardownRecord(
     );
     if (issue) issues.push(issue);
   }
-  const portlessIssue = await runDriver('portless', () =>
-    drivers.edge.removeAlias(record.name)
-  );
-  if (portlessIssue) issues.push(portlessIssue);
+  // The board renders a row only while a route exists, so a service that
+  // failed to uninstall keeps its routes: the kept record and its issue badge
+  // stay on the board instead of vanishing with the evidence of failure.
+  if (issues.length === 0) {
+    const portlessIssue = await removeNameRoutes(record.name, drivers);
+    if (portlessIssue) issues.push(portlessIssue);
+  }
 
   if (issues.length > 0) {
-    // Teardown didn't fully complete: keep the record (and the driver it
-    // still owns, e.g. a launchd service that failed to uninstall) visible
-    // on the board rather than silently deleting the evidence of failure.
     for (const issue of issues) addIssue(record.name, issue);
-    return { ok: false };
+    return { ok: false, issues };
   }
   deleteRecord(record.name);
   removeIcon(record.name);
-  return { ok: true };
+  return { ok: true, issues };
+}
+
+/** Routes a name still holds, named with the live process that owns each. */
+function heldRoutes(name: string): string {
+  const tlds = getPlatformSettings().tlds;
+  return readRoutes()
+    .filter(r => bareName(r.hostname, tlds) === name)
+    .map(r => `${r.hostname} (pid ${r.pid})`)
+    .join(', ');
 }
 
 export async function unregisterApp(
@@ -397,15 +425,32 @@ export async function unregisterApp(
   if (!record) {
     if (!knownRouteApp(name))
       return { status: 404, body: { error: 'unknown app' } };
+    // A helper-only machine has no self record, so deck's own row is
+    // route-only; removing its routes would take the board down with it.
+    if (name === PLATFORM_NAME || name === LEGACY_PLATFORM_NAME)
+      return {
+        status: 409,
+        body: {
+          error: 'managed',
+          managedBy: PLATFORM_NAME,
+          message: PLATFORM_REFUSAL,
+        },
+      };
     // Route-only teardown: no registry record, no launchd service -- the
-    // route IS the row, so removing the alias is the whole job. No
+    // routes ARE the row, so removing them is the whole job. No
     // structural authorization either, matching the publish endpoint's
     // treatment of route-only names.
-    const issue = await runDriver('portless', () =>
-      drivers.edge.removeAlias(name)
-    );
+    const issue = await removeNameRoutes(name, drivers);
     if (issue)
       return { status: 200, body: { ok: false, error: issue.message } };
+    if (knownRouteApp(name))
+      return {
+        status: 200,
+        body: {
+          ok: false,
+          error: `still routed by a running process: ${heldRoutes(name)}`,
+        },
+      };
     return { status: 200, body: { ok: true } };
   }
   const verdict = authorizeStructural(record, caller, force);
@@ -414,11 +459,8 @@ export async function unregisterApp(
   const flipFailure = await flipRemoteBack(record, drivers);
   if (flipFailure) return flipFailure;
 
-  const { ok } = await teardownRecord(record, drivers);
-  return {
-    status: 200,
-    body: ok ? { ok: true } : { ok: false, record: getRecord(name) },
-  };
+  const { ok, issues } = await teardownRecord(record, drivers);
+  return { status: 200, body: ok ? { ok: true } : { ok: false, issues } };
 }
 
 /** Deck's own record keeps the label `deck setup` installed, which a
@@ -904,9 +946,7 @@ export async function editApp(
   }
   const renaming = next.name !== oldName;
   if (renaming) {
-    const issue = await runDriver('portless', () =>
-      drivers.edge.removeAlias(oldName)
-    );
+    const issue = await removeNameRoutes(oldName, drivers);
     if (issue) teardownIssues.push(issue);
   }
 

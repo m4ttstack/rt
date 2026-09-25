@@ -360,7 +360,7 @@ export function buildAppRoot(
         {/* Extra top margin beyond the group gap, per the atlas: destructive
             actions read as a visually separate cluster, not just the next
             group in the list. */}
-        {data.canManage && (
+        {data.canManage && !row.self && (
           <div className="drawer-danger-group">
             <ListGroup>
               <ListGroup.Danger

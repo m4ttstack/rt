@@ -31,12 +31,14 @@ import {
   reconcileRestarting,
   REFRESH_MS,
   registerOutcome,
+  removeFailure,
   sections as sectionsOf,
   subline as sublineOf,
   tunnels as tunnelsOf,
   type CommandPhase,
   type CommandRuns,
   type Notice,
+  type RemoveAnswer,
   type RestartingMap,
   type Row,
   type StatusData,
@@ -587,24 +589,15 @@ export function useBoardState() {
     if (!pendingRemove) return;
     const row = pendingRemove;
     setPendingRemove(null);
-    let res: Response | null = null;
+    let failure: string | null;
     try {
-      res = await apiDelete(`/api/v1/apps/${row.name}`);
+      const res = await apiDelete(`/api/v1/apps/${row.name}`);
+      const body = (await res.json().catch(() => ({}))) as RemoveAnswer;
+      failure = removeFailure(row.name, res.status, body);
     } catch {
-      res = null;
+      failure = `removing ${row.name} failed, the board did not answer.`;
     }
-    if (res && !res.ok) {
-      const body = await res
-        .json()
-        .catch(() => ({}) as { message?: string; error?: string });
-      // Surface the API's message VERBATIM: for managed rows it carries the
-      // escape hatch (`deck remove <name> --force`).
-      notice(
-        'bad',
-        body.message || body.error || `remove failed (${res.status})`,
-        15000
-      );
-    }
+    if (failure) notice('bad', failure, 15000);
     await refresh();
   }, [pendingRemove, refresh, notice]);
 

@@ -15,6 +15,7 @@ import {
   reconcileRestarting,
   REFRESH_MS,
   registerOutcome,
+  removeFailure,
   RESTART_TIMEOUT_MS,
   sections,
   showDevLinkPrompt,
@@ -434,6 +435,54 @@ test('registerOutcome: a conflict names the port or app it is about', () => {
   expect(
     registerOutcome(400, { error: 'directory not found', dir: '/nope' })
   ).toEqual({ kind: 'error', message: 'directory not found: /nope' });
+});
+
+// ---- removeFailure ----
+
+test('removeFailure: an ok answer removed the app, nothing to say', () => {
+  expect(removeFailure('gitq', 200, { ok: true })).toBeNull();
+});
+
+test('removeFailure: a refusal carries the API message verbatim, escape hatch included', () => {
+  expect(
+    removeFailure('board', 409, {
+      error: 'managed',
+      message:
+        'Managed by mattstack: remove it anyway with `deck remove board --force`',
+    })
+  ).toBe(
+    'Managed by mattstack: remove it anyway with `deck remove board --force`'
+  );
+  expect(removeFailure('ghost', 404, { error: 'unknown app' })).toBe(
+    'unknown app'
+  );
+  expect(removeFailure('ghost', 500, {})).toBe('remove failed (500)');
+});
+
+test('removeFailure: a 200 that says ok:false is a failure, named by its error', () => {
+  expect(
+    removeFailure('gitq', 200, {
+      ok: false,
+      error: "Error: EACCES: permission denied, open 'routes.json'",
+    })
+  ).toBe(
+    "removing gitq failed: Error: EACCES: permission denied, open 'routes.json'"
+  );
+});
+
+test("removeFailure: an ok:false record answer names this teardown's issues", () => {
+  expect(
+    removeFailure('myapp', 200, {
+      ok: false,
+      issues: [
+        { message: 'bootout failed' },
+        { message: 'alias removal failed' },
+      ],
+    })
+  ).toBe('removing myapp failed: bootout failed; alias removal failed');
+  expect(removeFailure('myapp', 200, { ok: false })).toBe(
+    'removing myapp failed.'
+  );
 });
 
 test('NAME_PATTERN compiles under the v flag browsers use for pattern', () => {
