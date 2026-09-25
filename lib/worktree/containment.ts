@@ -89,13 +89,14 @@ export async function patchIdenticalToMr(
   mrSha: string,
   defaultRef: string,
   fetch: (sha: string) => Promise<boolean> = (sha) => fetchSha(treePath, sha),
+  tip = "HEAD",
 ): Promise<boolean> {
   if (!(await hasObject(treePath, mrSha)) && !((await fetch(mrSha)) && (await hasObject(treePath, mrSha)))) return false;
-  const localMerges = await runGit(treePath, ["rev-list", "--merges", `${defaultRef}..HEAD`]);
+  const localMerges = await runGit(treePath, ["rev-list", "--merges", `${defaultRef}..${tip}`]);
   if (localMerges.exitCode !== 0 || localMerges.stdout.trim().length > 0) return false;
-  const mrBase = await runGit(treePath, ["merge-base", "HEAD", mrSha]);
+  const mrBase = await runGit(treePath, ["merge-base", tip, mrSha]);
   if (mrBase.exitCode !== 0) return false;
-  const local = await patchIds(treePath, `${defaultRef}..HEAD`);
+  const local = await patchIds(treePath, `${defaultRef}..${tip}`);
   const merged = await patchIds(treePath, `${mrBase.stdout.trim()}..${mrSha}`);
   if (!local || !merged || local.size === 0) return false;
   for (const id of local) if (!merged.has(id)) return false;

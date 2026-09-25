@@ -28,7 +28,7 @@ import {
 } from "../../worktree/git-async.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
 import { branchOf } from "../../state/branch-cache.ts";
-import { classifyDirtyAsync, disposeTree, mergedMrCoversHead } from "../../worktree/dispose.ts";
+import { classifyDirtyAsync, disposeTree, mergedMrCoversTips } from "../../worktree/dispose.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
 import { hasLiveCwdInside, liveProcessCwds } from "./stale-claims.ts";
@@ -143,12 +143,12 @@ function recordHold(deps: ReactorDeps, rec: TreeRecord, reason: string): void {
 
 /**
  * Killing is only worth it when the dispose that follows would pass: the
- * merged MR provably holds this tree's HEAD (not a reused branch's old
+ * merged MR provably holds every tip dispose drops (not a reused branch's old
  * merge) and nothing uncommitted blocks it.
  */
 async function orphanKillAllowed(rec: TreeRecord, mr: ReactorCacheEntry["mr"], killProcesses: boolean): Promise<boolean> {
   if (!killProcesses || !mr) return false;
-  if (!(await mergedMrCoversHead(rec, mr))) return false;
+  if (!(await mergedMrCoversTips(rec, mr))) return false;
   const { blockers } = await classifyDirtyAsync(rec.path);
   return blockers.length === 0;
 }
