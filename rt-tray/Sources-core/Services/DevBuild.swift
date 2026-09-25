@@ -114,7 +114,8 @@ public enum DevBuild {
                                      openPath: String = "/usr/bin/open",
                                      launchctlPath: String = "/bin/launchctl",
                                      deckCLIPath: String? = nil,
-                                     cache: CacheTarget? = nil) -> String {
+                                     cache: CacheTarget? = nil,
+                                     statPath: String = "/usr/bin/stat") -> String {
         let app = shellQuote(appPath)
         let aside = shellQuote(appPath + ".restart-old")
         var lines: [String] = []
@@ -144,7 +145,9 @@ public enum DevBuild {
                 "  elif mv \(app) \(aside); then",
                 "    if mv \(staged) \(app); then swapped=1; echo swapped",
             ]
-            lines += cache.map { parkLines($0, aside: aside) } ?? ["      rm -rf \(aside)"]
+            let appParent = (appPath as NSString).deletingLastPathComponent
+            lines += cache.map { parkLines($0, aside: aside, appParent: appParent, statPath: statPath) }
+                ?? ["      rm -rf \(aside)"]
             lines += [
                 "    else rm -rf \(app); mv \(aside) \(app); echo 'swap failed; previous app restored'; fi",
                 "  fi",
@@ -178,13 +181,18 @@ public enum DevBuild {
         shellQuote("\(cache.buildsDir)/.incoming-") + "$$"
     }
 
-    /// A rename on the same volume, so it is as quick as the delete it
-    /// replaces; the per-handoff incoming dir is never shared.
-    private static func parkLines(_ cache: CacheTarget, aside: String) -> [String] {
+    /// Parking is a rename only on the app's own volume; across volumes mv
+    /// would copy the whole bundle before the app reopens, so the outgoing
+    /// app is deleted instead and that restart caches nothing.
+    private static func parkLines(_ cache: CacheTarget, aside: String, appParent: String, statPath: String) -> [String] {
         let builds = shellQuote(cache.buildsDir)
         let incoming = incomingPath(cache)
+        let stat = shellQuote(statPath)
         return [
-            "      if mkdir -p \(builds) && rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/\(cachedBundleName); then parked=1",
+            "      mkdir -p \(builds) 2>/dev/null",
+            "      va=$(\(stat) -f %d \(shellQuote(appParent)) 2>/dev/null); vb=$(\(stat) -f %d \(builds) 2>/dev/null)",
+            "      if [ -z \"$va\" ] || [ \"$va\" != \"$vb\" ]; then echo 'the build cache is on another volume than the app; not caching the previous build'; rm -rf \(aside)",
+            "      elif rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/\(cachedBundleName); then parked=1",
             "      else echo 'could not cache the previous build; deleting it'; rm -rf \(incoming) \(aside); fi",
         ]
     }

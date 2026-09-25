@@ -377,4 +377,25 @@ let devBuildChecks: [Check] = [
         c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
         c.expectEqual(entries(rig.builds), [".incoming-2", "tree-abc"])
     },
+    Check("with the cache on another volume than the app, the outgoing app is deleted before reopening, not copied across") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let probeLog = rig.dir.appendingPathComponent("probe.log")
+        let fakeStat = rig.dir.appendingPathComponent("fake-stat").path
+        let appParent = rig.dir.path
+        try "#!/bin/sh\nfor last; do :; done\nif [ \"$last\" = '\(appParent)' ]; then echo 1; else echo 2; fi\n"
+            .write(toFile: fakeStat, atomically: true, encoding: .utf8)
+        chmod(fakeStat, 0o755)
+        let script = DevBuild.handoffScript(
+            pid: deadPid(), appPath: rig.app.path, stagedPath: rig.staged.path, deckLabel: nil, uid: 501,
+            logPath: rig.restartLog.path,
+            openPath: existenceProbe(rig.dir, watching: rig.app.path + ".restart-old", log: probeLog),
+            cache: rig.cacheTarget(), statPath: fakeStat)
+        c.expectEqual(runScript(script), 0)
+        c.expectEqual(marker(rig.app), "new")
+        c.expectEqual(read(probeLog), "gone\n")
+        c.expectEqual(entries(rig.builds).filter { !$0.hasPrefix(".") }, [], "nothing is cached across volumes")
+        c.expect(read(rig.restartLog).contains("another volume"), "the handoff says why it did not cache")
+    },
 ]
