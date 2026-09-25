@@ -9,6 +9,8 @@ public struct RebuildSource: Equatable, Sendable {
     public let branch: String?
     public let kind: String
     public let lastActiveAt: String?
+    /// The daemon's last reconciled HEAD; nil until it has seen the tree.
+    public let headSha: String?
 }
 
 /// The daemon's `worktree:list` reply, as far as the rebuild menu needs it.
@@ -21,6 +23,7 @@ public struct WorktreeListPayload: Decodable, Sendable {
         let kind: String?
         let repoName: String?
         let lastActiveAt: String?
+        let lastSeenHeadSha: String?
         let state: String?
         let mr: MR?
     }
@@ -50,7 +53,8 @@ public enum RebuildSources {
         return trees.filter {
             $0.repoName == repoName && $0.state != "disposable" && !finished.contains($0.mr?.state ?? "")
         }.map {
-            RebuildSource(name: $0.name, path: $0.path, branch: $0.branch, kind: $0.kind ?? "", lastActiveAt: $0.lastActiveAt)
+            RebuildSource(name: $0.name, path: $0.path, branch: $0.branch, kind: $0.kind ?? "", lastActiveAt: $0.lastActiveAt,
+                          headSha: $0.lastSeenHeadSha)
         }
     }
 
@@ -63,5 +67,16 @@ public enum RebuildSources {
         return Groups(main: main, recent: recent,
                       moreRt: older.filter { $0.kind == "ephemeral" },
                       moreOther: older.filter { $0.kind != "ephemeral" })
+    }
+
+    /// Only a label hint: the stage step still compares the uncommitted
+    /// state before reusing the build.
+    public static func isCached(_ source: RebuildSource, in cached: [DevBuild.BuildIdentity]) -> Bool {
+        guard let sha = source.headSha, !sha.isEmpty else { return false }
+        return cached.contains { $0.sha == sha && trimmed($0.tree) == trimmed(source.path) }
+    }
+
+    private static func trimmed(_ path: String) -> String {
+        path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 }

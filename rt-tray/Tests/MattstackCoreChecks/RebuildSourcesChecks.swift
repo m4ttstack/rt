@@ -55,4 +55,17 @@ let rebuildSourcesChecks: [Check] = [
         c.expectEqual(groups.recent.map(\.name), ["a"])
         c.expect(groups.moreRt.isEmpty && groups.moreOther.isEmpty)
     },
+    Check("a tree is marked cached when a cached build is of its path at its current head sha") { c in
+        var head = tree("smaug", kind: "ephemeral", active: nil)
+        head["lastSeenHeadSha"] = String(repeating: "a", count: 40)
+        let bare = tree("bare", kind: "ephemeral", active: nil)
+        let sources = RebuildSources.parse(payload([head, bare]), repoName: rtRepo)
+        c.expectEqual(sources.first?.headSha, String(repeating: "a", count: 40))
+        let cached = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "a", count: 40), diffHash: "0f0f"),
+                      DevBuild.BuildIdentity(tree: "/trees/bare", sha: String(repeating: "a", count: 40), diffHash: "clean")]
+        c.expect(RebuildSources.isCached(sources[0], in: cached), "sha match is enough for the label")
+        c.expect(!RebuildSources.isCached(sources[1], in: cached), "a tree with no known head sha is never marked")
+        let moved = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "b", count: 40), diffHash: "clean")]
+        c.expect(!RebuildSources.isCached(sources[0], in: moved), "a build of an older commit is not this tree's head")
+    },
 ]
