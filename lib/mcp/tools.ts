@@ -552,6 +552,40 @@ export function mcpTools(): McpToolDef[] {
       },
     },
     {
+      name: "mr_update",
+      description: `GitLab only. Edit an open MR: title, description, addLabels, removeLabels (add and remove, never the whole set, so labels CI or teammates set survive) and squash (the MR's squash-on-merge flag). Pass at least one. A title change keeps the MR's draft state. Title and description are written first, then labels and squash in one call; a partial failure names what landed, and every field is idempotent, so retry with only the failed fields. Returns iid, url and applied (the fields that landed). ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...MR_TARGET_PROPS,
+          title: { type: "string" },
+          description: { type: "string" },
+          addLabels: { type: "array", items: { type: "string" } },
+          removeLabels: { type: "array", items: { type: "string" } },
+          squash: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkOptional(input, [{ name: "title", type: "string" }, { name: "description", type: "string" }, { name: "squash", type: "boolean" }])
+          ?? checkStringArray(input, "addLabels") ?? checkStringArray(input, "removeLabels");
+        if (bad) return err(bad);
+        const changes = ["title", "description", "addLabels", "removeLabels", "squash"]
+          .filter((f) => input[f] !== undefined && !(Array.isArray(input[f]) && (input[f] as unknown[]).length === 0));
+        if (changes.length === 0) return err('nothing to update; pass at least one of "title", "description", "addLabels", "removeLabels" or "squash"');
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        const payload: Commands["mr:update"]["payload"] = { repoName: target.identity, iid: target.iid };
+        if (input.title !== undefined) payload.title = input.title as string;
+        if (input.description !== undefined) payload.description = input.description as string;
+        if (input.addLabels !== undefined) payload.addLabels = input.addLabels as string[];
+        if (input.removeLabels !== undefined) payload.removeLabels = input.removeLabels as string[];
+        if (input.squash !== undefined) payload.squash = input.squash as boolean;
+        const res = await rtCommand<Commands["mr:update"]["data"]>("mr:update", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+        return withLandingHint(fromResponse(res), "the MR's title, labels and squash setting");
+      },
+    },
+    {
       name: "mr_approve",
       description: `GitLab only. Approve an MR as the token's user, or withdraw that approval with approved: false. Call it only once approving is decided (a review's Approve disposition, after its findings have posted). ${REPO_NAME_RULE}`,
       inputSchema: {

@@ -784,6 +784,18 @@ export interface Commands {
     data: { iid: number; url: string | null; squashApplied?: boolean; squashError?: string };
   };
 
+  /** Edits an open MR. title/description go through glance (a title change
+      keeps draft state); addLabels/removeLabels/squash go in one REST PUT
+      (add and remove, never replace the set; an empty array sends nothing).
+      Glance first, then REST; a partial failure is ok:false naming what
+      landed, and every field is idempotent, so retrying with the failed
+      fields is safe. `applied` lists the fields that landed, in write order.
+      Refused as `nothing to update` when no field would change anything. */
+  "mr:update": {
+    payload: { repoName: string; iid: number; title?: string; description?: string; addLabels?: string[]; removeLabels?: string[]; squash?: boolean };
+    data: { iid: number; url: string; applied: string[] };
+  };
+
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };
   "mr:fetch-job-trace": { payload: { repoName: string; iid: number; jobId: number }; data: string };
 
@@ -1019,6 +1031,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "mr:comment",
   "mr:action",
   "mr:create",
+  "mr:update",
   "mr:fetch-job-detail",
   "mr:fetch-job-trace",
   "endpoint:claim",

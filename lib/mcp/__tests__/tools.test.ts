@@ -8,7 +8,7 @@ import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 import { REPO_INDEX_NS } from "../../repo-index.ts";
 import { closeStateDb, setKvValue } from "../../state/index.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -32,8 +32,8 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
-  test("roster has 23 tools", () => {
-    expect(mcpTools().length).toBe(23);
+  test("roster has 24 tools", () => {
+    expect(mcpTools().length).toBe(24);
   });
 
   test("every tool has a description and a closed object schema", () => {
@@ -299,6 +299,7 @@ describe("mcpTools", () => {
       { name: "mr_comment_inline", field: "repoName" },
       { name: "mr_comment", field: "repoName" },
       { name: "mr_create", field: "repoName" },
+      { name: "mr_update", field: "repoName" },
       { name: "mr_approve", field: "repoName" },
       { name: "mr_resolve_thread", field: "repoName" },
       { name: "mr_ready", field: "repoName" },
@@ -647,7 +648,7 @@ describe("mcpTools", () => {
     });
 
     test("every MR-level write tool offers repoName, iid and mrUrl with none required; mr_create offers repoName and mrUrl", () => {
-      for (const name of ["mr_reply_thread", "mr_comment_inline", "mr_comment", "mr_approve", "mr_resolve_thread", "mr_ready", "mr_retry", "mr_rebase"]) {
+      for (const name of ["mr_reply_thread", "mr_comment_inline", "mr_comment", "mr_update", "mr_approve", "mr_resolve_thread", "mr_ready", "mr_retry", "mr_rebase"]) {
         const schema = mcpTools().find((t) => t.name === name)!.inputSchema as { properties: Record<string, unknown>; required?: string[] };
         expect(Object.keys(schema.properties), name).toEqual(expect.arrayContaining(["repoName", "iid", "mrUrl"]));
         expect(schema.required ?? [], name).not.toContain("repoName");
@@ -657,6 +658,68 @@ describe("mcpTools", () => {
       expect(Object.keys(create.properties)).toEqual(expect.arrayContaining(["repoName", "mrUrl"]));
       expect(create.properties.iid).toBeUndefined();
       expect(create.required).not.toContain("repoName");
+    });
+  });
+
+  describe("mr_update", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    function fakeDaemon(reply: () => unknown = () => ({ ok: true, data: { iid: 7, url: "u", applied: ["title"] } })) {
+      const calls: Array<{ cmd: string; payload: Record<string, unknown>; timeoutMs?: number }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>, opts?: { timeoutMs?: number }) => {
+          calls.push({ cmd, payload, timeoutMs: opts?.timeoutMs });
+          return reply();
+        },
+      }));
+      return calls;
+    }
+
+    const T = { repoName: "remote:x", iid: 7 };
+
+    test("schema offers the target props and the five fields, requires none, forbids extras", () => {
+      const schema = mcpTools().find((t) => t.name === "mr_update")!.inputSchema as { required?: string[]; additionalProperties?: boolean; properties?: Record<string, unknown> };
+      expect(schema.required ?? []).toEqual([]);
+      expect(schema.additionalProperties).toBe(false);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["addLabels", "description", "iid", "mrUrl", "removeLabels", "repoName", "squash", "title"]);
+    });
+
+    test("sends mr:update with only the given fields and the write timeout", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_update")!;
+      const res = await tool.handler({ ...T, title: "T", addLabels: ["a"], squash: false }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { iid: 7, url: "u", applied: ["title"] } });
+      expect(calls).toEqual([{ cmd: "mr:update", payload: { ...T, title: "T", addLabels: ["a"], squash: false }, timeoutMs: 30_000 }]);
+    });
+
+    test("refuses no field, only empty label arrays, a string squash, and non-array labels before calling the daemon", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_update")!;
+      const nothing = 'nothing to update; pass at least one of "title", "description", "addLabels", "removeLabels" or "squash"';
+      expect((await tool.handler({ ...T }, {} as NodeJS.ProcessEnv)).error).toBe(nothing);
+      expect((await tool.handler({ ...T, addLabels: [], removeLabels: [] }, {} as NodeJS.ProcessEnv)).error).toBe(nothing);
+      expect((await tool.handler({ ...T, squash: "true" }, {} as NodeJS.ProcessEnv)).error).toBe('"squash" must be a boolean');
+      expect((await tool.handler({ ...T, addLabels: "a" }, {} as NodeJS.ProcessEnv)).error).toBe('"addLabels" must be an array of strings');
+      expect((await tool.handler({ ...T, removeLabels: [1] }, {} as NodeJS.ProcessEnv)).error).toBe('"removeLabels" must be an array of strings');
+      expect(calls).toEqual([]);
+    });
+
+    test("a timed-out mr_update says the write may still land and what to check", async () => {
+      fakeDaemon(() => ({ ok: false, error: "rt daemon unreachable at /x.sock: The operation timed out." }));
+      const tool = mcpTools().find((t) => t.name === "mr_update")!;
+      const res = await tool.handler({ ...T, title: "T" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toContain("may still land");
+      expect(res.error).toContain("title, labels and squash");
+    });
+
+    test("a partial-failure error from the daemon passes through verbatim", async () => {
+      fakeDaemon(() => ({ ok: false, error: "title landed; squash did not: GitLab returned 403 Forbidden; retrying with only the failed fields is safe" }));
+      const tool = mcpTools().find((t) => t.name === "mr_update")!;
+      const res = await tool.handler({ ...T, title: "T", squash: true }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe("title landed; squash did not: GitLab returned 403 Forbidden; retrying with only the failed fields is safe");
     });
   });
 

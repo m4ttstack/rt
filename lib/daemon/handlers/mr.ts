@@ -6,6 +6,7 @@
  *
  *   mr:action            — merge / rebase / approve / unapprove / etc.
  *   mr:create            - create an MR (draft by default, labels, squash) and write it back
+ *   mr:update            - edit title/description (glance) and labels/squash (REST), glance first
  *   mr:fetch-job-detail  — unified detail fetch (returns trace or bridge)
  *   mr:fetch-job-trace   — raw job trace text
  *
@@ -27,7 +28,7 @@
  */
 
 import { applyMRWriteback, getCurrentUserId, getRepoContext } from "../freshness.ts";
-import type { PullRequest } from "@mattstack/glance";
+import type { PullRequest, UpdatePullRequestInput } from "@mattstack/glance";
 import { ReadBackFailedError } from "@mattstack/glance";
 import type { HandlerContext, HandlerMap, CommandResult } from "./types.ts";
 import { decodeRepo } from "../identity-decoder.ts";
@@ -89,6 +90,7 @@ export function createMRHandlers(
   overrides: MRHandlerOverrides = {},
 ): { "mr:action": (payload: any, signal?: AbortSignal) => Promise<any> }
   & { "mr:create": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:create">> }
+  & { "mr:update": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:update">> }
   & { "mr:fetch-job-detail": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:fetch-job-detail">> }
   & { "mr:fetch-job-trace": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:fetch-job-trace">> }
   & HandlerMap {
@@ -252,6 +254,71 @@ export function createMRHandlers(
         if (set.ok) return { ok: true, data: { iid, url, squashApplied: true } };
         ctx.log.warn({ repo: repoName, iid, error: set.error }, "mr:create landed but its squash write failed");
         return { ok: true, data: { iid, url, squashApplied: false, squashError: set.error } };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+
+    "mr:update": async (payload) => {
+      const p = payload as { iid?: unknown; title?: unknown; description?: unknown; addLabels?: unknown; removeLabels?: unknown; squash?: unknown } | undefined;
+      const iid = p?.iid;
+      if (typeof iid !== "number" || !Number.isInteger(iid) || iid <= 0) return { ok: false, error: "missing repoName/iid" };
+      if (p?.title !== undefined && (typeof p.title !== "string" || !p.title.trim())) return { ok: false, error: "invalid title" };
+      if (p?.description !== undefined && typeof p.description !== "string") return { ok: false, error: "invalid description" };
+      const labelsBad = labelsError(p?.addLabels, "addLabels") ?? labelsError(p?.removeLabels, "removeLabels");
+      if (labelsBad) return { ok: false, error: labelsBad };
+      if (p?.squash !== undefined && typeof p.squash !== "boolean") return { ok: false, error: "invalid squash" };
+
+      const edit: UpdatePullRequestInput = {};
+      if (typeof p?.title === "string") edit.title = p.title.trim();
+      if (typeof p?.description === "string") edit.description = p.description;
+      const put: Record<string, unknown> = {};
+      const putFields: string[] = [];
+      if (p && Array.isArray(p.addLabels) && p.addLabels.length > 0) { put.add_labels = trimmedLabels(p.addLabels).join(","); putFields.push("addLabels"); }
+      if (p && Array.isArray(p.removeLabels) && p.removeLabels.length > 0) { put.remove_labels = trimmedLabels(p.removeLabels).join(","); putFields.push("removeLabels"); }
+      if (p && typeof p.squash === "boolean") { put.squash = p.squash; putFields.push("squash"); }
+      const editFields = Object.keys(edit);
+      if (editFields.length + putFields.length === 0) return { ok: false, error: "nothing to update" };
+      const decoded = decodeIndexedRepo(payload);
+      if (!decoded.ok) return { ok: false, error: decoded.error };
+      const repoName = decoded.repo;
+
+      try {
+        const { provider, projectPath } = await contextFor(repoName);
+        const applied: string[] = [];
+        let returnedPr: PullRequest | null = null;
+        if (editFields.length > 0) {
+          try {
+            returnedPr = await provider.updatePullRequest(projectPath, iid, edit);
+          } catch (err) {
+            if (!(err instanceof ReadBackFailedError && err.writeApplied)) {
+              const rest = putFields.length > 0 ? `; ${putFields.join("/")} not attempted` : "";
+              return { ok: false, error: `${editFields.join("/")} did not land: ${String(err)}${rest}` };
+            }
+            ctx.log.warn({ err, repo: repoName, iid }, "mr:update landed but its read-back failed");
+          }
+          applied.push(...editFields);
+        }
+        if (putFields.length > 0) {
+          const res = await putMergeRequest(provider, projectPath, iid, put, "mr:update");
+          if (!res.ok) {
+            const landed = applied.length > 0 ? `${applied.join("/")} landed; ` : "";
+            return { ok: false, error: `${landed}${putFields.join("/")} did not: ${res.error}; retrying with only the failed fields is safe` };
+          }
+          applied.push(...putFields);
+        }
+        // Same never-fail contract as mr:action's write-back: the edit is on the forge already.
+        try {
+          if (returnedPr) {
+            writeback(repoName, projectPath, returnedPr);
+          } else {
+            const pr = await fetchSingle(provider, projectPath, iid);
+            if (pr) writeback(repoName, projectPath, pr);
+          }
+        } catch (err) {
+          ctx.log.warn({ err, repo: repoName, iid }, "mr:update write-back failed");
+        }
+        return { ok: true, data: { iid, url: `${provider.baseURL}/${projectPath}/-/merge_requests/${iid}`, applied } };
       } catch (err) {
         return { ok: false, error: String(err) };
       }
