@@ -40,6 +40,29 @@ public struct IconTarget: Equatable, Sendable {
     }
 }
 
+public struct IconPlan: Equatable, Sendable {
+    public let fetchNow: [IconTarget]
+    /// Missing icons whose fetch is already running, perhaps against an older
+    /// catalog's URL: fetched once more only if that chain ends without one.
+    public let afterInFlight: [IconTarget]
+    public init(fetchNow: [IconTarget], afterInFlight: [IconTarget]) {
+        self.fetchNow = fetchNow
+        self.afterInFlight = afterInFlight
+    }
+}
+
+public struct CatalogTake: Equatable, Sendable {
+    /// The window shows something other than this list, or only a cache copy.
+    public let apply: Bool
+    /// The deck pid this list is now confirmed for; nil until a second fetch
+    /// from the same deck returns the same apps.
+    public let settledPid: String?
+    public init(apply: Bool, settledPid: String?) {
+        self.apply = apply
+        self.settledPid = settledPid
+    }
+}
+
 public enum CatalogRefresh {
     /// `currentIsFallback` is true when deck was shown only because the
     /// catalog was empty (a clean install before deck answered), not because
@@ -51,9 +74,30 @@ public enum CatalogRefresh {
         return apps.first?.name ?? deckName
     }
 
-    public static func iconTargets(apps: [DiscoveryApp], deck: IconTarget, loaded: Set<String>,
-                                   inFlight: Set<String>) -> [IconTarget] {
+    /// A fresh list holds only for the deck process that served it, and only
+    /// once that process has served it twice: deck can answer /api/apps before
+    /// its boot sweep has written every row, and at launch the other flavor's
+    /// deck may still be the one answering. `currentPid` is what /healthz
+    /// named just now, nil when deck did not answer.
+    public static func needsRefetch(fresh: Bool, apps: [DiscoveryApp], settledPid: String?,
+                                    currentPid: String?) -> Bool {
+        guard fresh else { return true }
+        guard let currentPid else { return false }
+        return apps.isEmpty || settledPid != currentPid
+    }
+
+    public static func take(shown: [DiscoveryApp], shownFresh: Bool, shownPid: String?,
+                            fetched: [DiscoveryApp], fetchedPid: String?) -> CatalogTake {
+        let same = shownFresh && shown == fetched
+        let settles = same && !fetched.isEmpty && fetchedPid != nil && shownPid == fetchedPid
+        return CatalogTake(apply: !same, settledPid: settles ? fetchedPid : nil)
+    }
+
+    public static func iconPlan(apps: [DiscoveryApp], deck: IconTarget, loaded: Set<String>,
+                                inFlight: Set<String>) -> IconPlan {
         let candidates = apps.compactMap { app in app.icon.map { IconTarget(name: app.name, url: $0) } } + [deck]
-        return candidates.filter { !loaded.contains($0.name) && !inFlight.contains($0.name) }
+        let missing = candidates.filter { !loaded.contains($0.name) }
+        return IconPlan(fetchNow: missing.filter { !inFlight.contains($0.name) },
+                        afterInFlight: missing.filter { inFlight.contains($0.name) })
     }
 }

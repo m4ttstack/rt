@@ -58,11 +58,68 @@ let windowRecoveryChecks: [Check] = [
         let apps = [app("board", icon: "https://deck.mattstack/api/apps/board/icon"),
                     app("chat", icon: "https://deck.mattstack/api/apps/chat/icon"),
                     app("console")]
-        let targets = CatalogRefresh.iconTargets(apps: apps, deck: deckIcon, loaded: ["board"], inFlight: [])
-        c.expectEqual(targets.map(\.name), ["chat", "deck"])
+        let plan = CatalogRefresh.iconPlan(apps: apps, deck: deckIcon, loaded: ["board"], inFlight: [])
+        c.expectEqual(plan.fetchNow.map(\.name), ["chat", "deck"])
+        c.expectEqual(plan.afterInFlight, [])
     },
-    Check("window recovery: an icon fetch already in flight is not doubled") { c in
-        let apps = [app("board", icon: "https://deck.mattstack/api/apps/board/icon")]
-        c.expectEqual(CatalogRefresh.iconTargets(apps: apps, deck: deckIcon, loaded: [], inFlight: ["board", "deck"]), [])
+    Check("window recovery: an icon fetch already in flight is not doubled, but is tried again if it fails") { c in
+        let board = app("board", icon: "https://deck.mattstack/api/apps/board/icon")
+        let plan = CatalogRefresh.iconPlan(apps: [board], deck: deckIcon, loaded: [], inFlight: ["board", "deck"])
+        c.expectEqual(plan.fetchNow, [])
+        c.expectEqual(plan.afterInFlight, [IconTarget(name: "board", url: "https://deck.mattstack/api/apps/board/icon"),
+                                           deckIcon])
+    },
+    Check("catalog refresh: a stale catalog is fetched again whatever answers") { c in
+        c.expect(CatalogRefresh.needsRefetch(fresh: false, apps: [app("board")], settledPid: nil, currentPid: nil))
+        c.expect(CatalogRefresh.needsRefetch(fresh: false, apps: [], settledPid: "1", currentPid: "1"))
+    },
+    Check("catalog refresh: a fresh empty catalog is fetched again while deck answers") { c in
+        c.expect(CatalogRefresh.needsRefetch(fresh: true, apps: [], settledPid: "1", currentPid: "1"))
+    },
+    Check("catalog refresh: a new deck pid invalidates a fresh catalog") { c in
+        c.expect(CatalogRefresh.needsRefetch(fresh: true, apps: [app("board")], settledPid: "1", currentPid: "2"))
+    },
+    Check("catalog refresh: a fresh catalog not yet confirmed by its deck is fetched again") { c in
+        c.expect(CatalogRefresh.needsRefetch(fresh: true, apps: [app("board")], settledPid: nil, currentPid: "1"))
+    },
+    Check("catalog refresh: a settled catalog is kept while its deck answers, and while no deck does") { c in
+        c.expect(!CatalogRefresh.needsRefetch(fresh: true, apps: [app("board")], settledPid: "1", currentPid: "1"))
+        c.expect(!CatalogRefresh.needsRefetch(fresh: true, apps: [app("board")], settledPid: "1", currentPid: nil))
+        c.expect(!CatalogRefresh.needsRefetch(fresh: true, apps: [app("board")], settledPid: nil, currentPid: nil))
+    },
+    Check("catalog refresh: the first fresh list replaces the cache copy but is not settled yet") { c in
+        let take = CatalogRefresh.take(shown: [app("board")], shownFresh: false, shownPid: nil,
+                                       fetched: [app("board")], fetchedPid: "1")
+        c.expectEqual(take, CatalogTake(apply: true, settledPid: nil))
+    },
+    Check("catalog refresh: a second identical list from the same deck settles it") { c in
+        let take = CatalogRefresh.take(shown: [app("board"), app("chat")], shownFresh: true, shownPid: "1",
+                                       fetched: [app("board"), app("chat")], fetchedPid: "1")
+        c.expectEqual(take, CatalogTake(apply: false, settledPid: "1"))
+    },
+    Check("catalog refresh: a list that grew under the same deck is applied and not settled") { c in
+        let take = CatalogRefresh.take(shown: [app("board")], shownFresh: true, shownPid: "1",
+                                       fetched: [app("board"), app("chat")], fetchedPid: "1")
+        c.expectEqual(take, CatalogTake(apply: true, settledPid: nil))
+    },
+    Check("catalog refresh: another deck's list replaces the tabs") { c in
+        let take = CatalogRefresh.take(shown: [app("board"), app("gitq")], shownFresh: true, shownPid: "dev",
+                                       fetched: [app("board")], fetchedPid: "prod")
+        c.expectEqual(take, CatalogTake(apply: true, settledPid: nil))
+    },
+    Check("catalog refresh: a changed icon URL is applied") { c in
+        let take = CatalogRefresh.take(shown: [app("board")], shownFresh: true, shownPid: "1",
+                                       fetched: [app("board", icon: "https://deck.mattstack/api/apps/board/icon")],
+                                       fetchedPid: "1")
+        c.expectEqual(take.apply, true)
+    },
+    Check("catalog refresh: an identical list from a deck of unknown pid never settles") { c in
+        let take = CatalogRefresh.take(shown: [app("board")], shownFresh: true, shownPid: nil,
+                                       fetched: [app("board")], fetchedPid: nil)
+        c.expectEqual(take, CatalogTake(apply: false, settledPid: nil))
+    },
+    Check("catalog refresh: an empty list never settles") { c in
+        let take = CatalogRefresh.take(shown: [], shownFresh: true, shownPid: "1", fetched: [], fetchedPid: "1")
+        c.expectEqual(take, CatalogTake(apply: false, settledPid: nil))
     },
 ]

@@ -29,18 +29,22 @@ public enum DeckWaitTuning {
     public static let deadline: TimeInterval = 90
     public static let pollInterval: TimeInterval = 1
     public static let probeTimeout: TimeInterval = 2
+    /// Deck builds /api/apps by health-probing every app, and URLSession's
+    /// default request timeout is 60s; one late poll may add this much.
+    public static let catalogTimeout: TimeInterval = 8
 }
 
 public struct DeckWaitDeps: Sendable {
     public let probe: @Sendable () async -> DeckProbeResult
-    /// True once a fresh catalog is loaded; a cache copy does not count.
-    public let loadCatalog: @Sendable () async -> Bool
+    /// Given the pid of the deck that just answered /healthz, true once a
+    /// fresh catalog from that deck is loaded; a cache copy does not count.
+    public let loadCatalog: @Sendable (String) async -> Bool
     public let diagnoseAgent: @Sendable () async -> String
     public let now: @Sendable () -> TimeInterval
     public let sleep: @Sendable (TimeInterval) async -> Void
 
     public init(probe: @escaping @Sendable () async -> DeckProbeResult,
-                loadCatalog: @escaping @Sendable () async -> Bool,
+                loadCatalog: @escaping @Sendable (String) async -> Bool,
                 diagnoseAgent: @escaping @Sendable () async -> String,
                 now: @escaping @Sendable () -> TimeInterval,
                 sleep: @escaping @Sendable (TimeInterval) async -> Void) {
@@ -62,7 +66,7 @@ public enum DeckWait {
         let start = deps.now()
         while !Task.isCancelled {
             let probe = await deps.probe()
-            if case .healthy = probe, await deps.loadCatalog() { return .ready }
+            if case .healthy(let pid) = probe, await deps.loadCatalog(pid) { return .ready }
             if deps.now() - start >= deadline {
                 let agent = await deps.diagnoseAgent()
                 return .unreachable(reason: reason(agent: agent, lastProbe: probe))
@@ -75,11 +79,11 @@ public enum DeckWait {
     public static func reason(agent: String, lastProbe: DeckProbeResult) -> String {
         switch lastProbe {
         case .healthy(let pid):
-            return "deck is running (pid \(pid)) but its app list (/api/apps) did not load."
+            return "Deck is running (pid \(pid)), but its app list (/api/apps) did not load."
         case .answered(let status):
-            return "\(agent) deck.mattstack answered HTTP \(status) instead of deck."
+            return "\(agent) Requests to deck.mattstack got HTTP \(status) instead of deck."
         case .unreachable(let error):
-            return "\(agent) deck.mattstack did not answer (\(error))."
+            return "\(agent) Requests to deck.mattstack got no answer (\(error))."
         }
     }
 }

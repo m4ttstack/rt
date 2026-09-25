@@ -15,6 +15,13 @@ private final class Tally: @unchecked Sendable {
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
+private final class Seen: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String] = []
+    func add(_ item: String) { lock.lock(); items.append(item); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return items }
+}
+
 private let crashedAgent =
     "The deck agent (com.mattstack.deck) is not running (launchd state: not running; last exit code 78)."
 
@@ -23,7 +30,7 @@ private func scripted(clock: FakeClock, probeCost: TimeInterval = 0, probes: Tal
                       catalog: @escaping @Sendable () -> Bool = { true }) -> DeckWaitDeps {
     DeckWaitDeps(
         probe: { clock.advance(probeCost); return probe(probes.bump()) },
-        loadCatalog: { catalog() },
+        loadCatalog: { _ in catalog() },
         diagnoseAgent: { crashedAgent },
         now: { clock.now() },
         sleep: { clock.advance($0) })
@@ -75,6 +82,40 @@ let deckWaitChecks: [Check] = [
         c.expect(clock.now() >= 90 && clock.now() < 93, "stopped at \(clock.now())")
         c.expectEqual(probes.value, 31)
     },
+    Check("deck wait: a catalog load that takes its whole timeout overshoots the deadline by at most one load") { c in
+        let clock = FakeClock()
+        let deps = DeckWaitDeps(
+            probe: { .healthy(pid: "1") },
+            loadCatalog: { _ in clock.advance(DeckWaitTuning.catalogTimeout); return false },
+            diagnoseAgent: { crashedAgent },
+            now: { clock.now() },
+            sleep: { clock.advance($0) })
+        let phase = await DeckWait.run(deadline: 90, pollInterval: 1, deps: deps)
+        guard case .unreachable = phase else { c.fail("expected unreachable, got \(phase)"); return }
+        c.expect(clock.now() >= 90 && clock.now() <= 90 + DeckWaitTuning.catalogTimeout + 1, "stopped at \(clock.now())")
+        c.expect(DeckWaitTuning.catalogTimeout + DeckWaitTuning.probeTimeout <= 10,
+                 "one late poll may add \(DeckWaitTuning.catalogTimeout + DeckWaitTuning.probeTimeout)s past the deadline")
+    },
+    Check("deck wait: the catalog load is told which deck answered") { c in
+        let clock = FakeClock()
+        let seen = Seen()
+        let deps = DeckWaitDeps(
+            probe: { .healthy(pid: "4242") },
+            loadCatalog: { pid in seen.add(pid); return true },
+            diagnoseAgent: { crashedAgent },
+            now: { clock.now() },
+            sleep: { clock.advance($0) })
+        c.expectEqual(await DeckWait.run(deps: deps), .ready)
+        c.expectEqual(seen.all, ["4242"])
+    },
+    Check("deck wait: each sentence of the reason starts with a capital") { c in
+        for probe: DeckProbeResult in [.answered(status: 502), .unreachable("The request timed out.")] {
+            let reason = DeckWait.reason(agent: crashedAgent, lastProbe: probe)
+            let rest = reason.dropFirst(crashedAgent.count + 1)
+            c.expect(rest.first?.isUppercase == true, reason)
+        }
+        c.expect(DeckWait.reason(agent: crashedAgent, lastProbe: .healthy(pid: "7")).first?.isUppercase == true)
+    },
     Check("deck wait: the unreachable reason carries the agent diagnosis and the last answer") { c in
         let clock = FakeClock()
         let phase = await DeckWait.run(deadline: 3, deps: scripted(clock: clock, probe: { _ in .answered(status: 502) }))
@@ -86,7 +127,7 @@ let deckWaitChecks: [Check] = [
         let probes = Tally()
         let deps = DeckWaitDeps(
             probe: { _ = probes.bump(); return .answered(status: 502) },
-            loadCatalog: { false },
+            loadCatalog: { _ in false },
             diagnoseAgent: { crashedAgent },
             now: { 0 },
             sleep: { _ in withUnsafeCurrentTask { $0?.cancel() } })

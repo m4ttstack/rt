@@ -26,7 +26,7 @@ final class BadgePoller {
         guard !ticking, let model else { return }
         ticking = true
         defer { ticking = false }
-        await model.refreshCatalogIfStale()
+        await model.refreshCatalogFromDeck()
         let targets = model.apps.compactMap { app in
             BadgeParse.endpoint(for: app).map { (app.name, $0) }
         }

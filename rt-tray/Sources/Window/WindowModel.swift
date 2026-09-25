@@ -7,7 +7,12 @@ import WebKit
 
 struct URLSessionAppListFetcher: AppListFetching {
     func fetchAppsJSON() async throws -> Data {
-        try await URLSession.shared.data(from: URL(string: "https://deck.mattstack/api/apps")!).0
+        let request = URLRequest(url: URL(string: "https://deck.mattstack/api/apps")!,
+                                 cachePolicy: .reloadIgnoringLocalCacheData,
+                                 timeoutInterval: DeckWaitTuning.catalogTimeout)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return data
     }
 }
 
@@ -148,9 +153,12 @@ final class WindowModel: ObservableObject {
     private let backends: WindowBackends
     private let catalog: AppCatalog
     private var catalogLoadTask: Task<Void, Never>?
-    private var catalogRefreshTask: Task<Bool, Never>?
+    private var catalogRefreshTask: Task<Void, Never>?
+    private var catalogPid: String?
+    private var catalogSettledPid: String?
     private var navigationDelegates: [String: WindowNavigationDelegate] = [:]
     private var iconFetchesInFlight: Set<String> = []
+    private var iconRetryURLs: [String: String] = [:]
     private var deckWaitTask: Task<Void, Never>?
     private var deckWaitGeneration = 0
     private var activeAppIsFallback = false
@@ -206,25 +214,43 @@ final class WindowModel: ObservableObject {
         await task.value
     }
 
-    /// While the catalog is a cache copy, every call fetches again; the first
-    /// fresh load replaces the tabs and fetches the icons the stale period
-    /// left missing. Concurrent callers share one fetch.
+    func refreshCatalogFromDeck() async {
+        let pid: String?
+        if case .healthy(let healthyPid) = await backends.deckProbe() { pid = healthyPid } else { pid = nil }
+        await refreshCatalog(deckPid: pid)
+    }
+
+    /// `deckPid` is what deck's /healthz named just before this call, nil
+    /// when it did not answer. True once the tabs come from a fresh list
+    /// that deck served. Concurrent callers share one fetch.
     @discardableResult
-    func refreshCatalogIfStale() async -> Bool {
+    func refreshCatalog(deckPid: String?) async -> Bool {
         await ensureCatalogLoaded()
-        if catalogFresh { return true }
-        if let inFlight = catalogRefreshTask { return await inFlight.value }
-        let task = Task { [weak self] () -> Bool in
-            guard let self else { return false }
-            let result = await self.catalog.load()
-            guard result.fresh else { return false }
-            self.applyFreshCatalog(result.apps)
-            return true
+        if CatalogRefresh.needsRefetch(fresh: catalogFresh, apps: apps, settledPid: catalogSettledPid,
+                                       currentPid: deckPid) {
+            if let inFlight = catalogRefreshTask {
+                await inFlight.value
+            } else {
+                let task = Task { [weak self] in
+                    guard let self else { return }
+                    let result = await self.catalog.load()
+                    guard result.fresh else { return }
+                    self.takeFreshCatalog(result.apps, deckPid: deckPid)
+                }
+                catalogRefreshTask = task
+                await task.value
+                if catalogRefreshTask == task { catalogRefreshTask = nil }
+            }
         }
-        catalogRefreshTask = task
-        let fresh = await task.value
-        if catalogRefreshTask == task { catalogRefreshTask = nil }
-        return fresh
+        return catalogFresh && (deckPid == nil || catalogPid == deckPid)
+    }
+
+    private func takeFreshCatalog(_ fetched: [DiscoveryApp], deckPid: String?) {
+        let take = CatalogRefresh.take(shown: apps, shownFresh: catalogFresh, shownPid: catalogPid,
+                                       fetched: fetched, fetchedPid: deckPid)
+        catalogPid = deckPid
+        catalogSettledPid = take.settledPid
+        if take.apply { applyFreshCatalog(fetched) }
     }
 
     private func applyFreshCatalog(_ fresh: [DiscoveryApp]) {
@@ -235,10 +261,10 @@ final class WindowModel: ObservableObject {
         activeAppIsFallback = fresh.isEmpty
         TrayLog.info("window catalog refreshed", ["apps": fresh.map(\.name).joined(separator: ",")])
         let deck = IconTarget(name: Self.deckApp.name, url: backends.deckFaviconURL)
-        for target in CatalogRefresh.iconTargets(apps: fresh, deck: deck, loaded: Set(icons.keys),
-                                                 inFlight: iconFetchesInFlight) {
-            fetchIcon(url: target.url, into: target.name)
-        }
+        let plan = CatalogRefresh.iconPlan(apps: fresh, deck: deck, loaded: Set(icons.keys),
+                                           inFlight: iconFetchesInFlight)
+        for target in plan.fetchNow { fetchIcon(url: target.url, into: target.name) }
+        for target in plan.afterInFlight { iconRetryURLs[target.name] = target.url }
     }
 
     func open(_ request: OpenRequest) async -> Bool {
@@ -271,9 +297,13 @@ final class WindowModel: ObservableObject {
     /// The splash covers the whole window until its own animation has played
     /// and deck is ready (/healthz answered and a fresh catalog loaded), or
     /// until the deck wait gives up and the splash says why. It plays once
-    /// per process; re-shows of the window never replay it.
+    /// per process; re-showing a window whose wait gave up starts the wait
+    /// again instead of replaying it.
     func presentSplashIfNeeded() {
-        guard !Self.hasShownSplash else { return }
+        guard !Self.hasShownSplash else {
+            if case .unreachable = deckWait { retryDeckWait() }
+            return
+        }
         Self.hasShownSplash = true
         splashVisible = true
 
@@ -300,7 +330,7 @@ final class WindowModel: ObservableObject {
         let backends = backends
         let deps = DeckWaitDeps(
             probe: backends.deckProbe,
-            loadCatalog: { [weak self] in await self?.refreshCatalogIfStale() ?? false },
+            loadCatalog: { [weak self] pid in await self?.refreshCatalog(deckPid: pid) ?? false },
             diagnoseAgent: backends.diagnoseDeckAgent,
             now: { ProcessInfo.processInfo.systemUptime },
             sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) })
@@ -404,21 +434,27 @@ final class WindowModel: ObservableObject {
 
     /// A failure is retried, and what came back is logged well enough to
     /// name the culprit: a byte count alone said only that it was not an
-    /// image. A fresh catalog after a stale one asks again for any icon
-    /// still missing, so one name is never fetched twice at once.
+    /// image. A fresh catalog asks again for any icon still missing, so one
+    /// name is never fetched twice at once; a chain that was already running
+    /// and ends empty-handed gets one more go at the fresh catalog's URL.
     private func fetchIcon(url urlString: String?, into name: String) {
         guard icons[name] == nil, !iconFetchesInFlight.contains(name),
               let urlString, let url = URL(string: urlString) else { return }
         iconFetchesInFlight.insert(name)
         Task { [weak self] in
-            defer { self?.iconFetchesInFlight.remove(name) }
+            var image: NSImage?
             for attempt in 1...Self.iconFetchAttempts {
-                if let image = await Self.loadIcon(url: url, app: name, attempt: attempt) {
-                    self?.icons[name] = image
-                    return
-                }
-                guard attempt < Self.iconFetchAttempts else { return }
+                image = await Self.loadIcon(url: url, app: name, attempt: attempt)
+                guard image == nil, attempt < Self.iconFetchAttempts else { break }
                 try? await Task.sleep(nanoseconds: UInt64(Self.iconRetryDelay(attempt) * 1_000_000_000))
+            }
+            guard let self else { return }
+            self.iconFetchesInFlight.remove(name)
+            let retryURL = self.iconRetryURLs.removeValue(forKey: name)
+            if let image {
+                self.icons[name] = image
+            } else if let retryURL {
+                self.fetchIcon(url: retryURL, into: name)
             }
         }
     }
