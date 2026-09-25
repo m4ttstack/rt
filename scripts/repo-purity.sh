@@ -63,12 +63,29 @@ if [ -n "$NAME_HITS" ]; then
 fi
 
 # Commit messages are not tracked files, so the tree grep never sees them; 41
-# leaked before the 2026-09-17 purge. The newest 30 cover any push or PR range
-# without needing CI-event plumbing.
-MSG_HITS=$(cd "$ROOT" && git log -30 --format='%h %s %b' 2>/dev/null | grep -iE "$PATTERN" || true)
+# leaked before the 2026-09-17 purge. Only commits a push would publish are
+# judged (PURITY_BASE..HEAD, default origin/main): a message already public
+# cannot be recalled by failing every later run. A base that does not resolve
+# (no origin/main ref, or CI's push-to-main `before` after a force push)
+# falls back to the newest 30, never less than this gate used to judge.
+BASE="${PURITY_BASE:-origin/main}"
+if (cd "$ROOT" && git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1); then
+  RANGE="$BASE..HEAD"
+else
+  echo "warn repo-purity: base '$BASE' does not resolve; judging the newest 30 commit messages" >&2
+  RANGE="-30"
+fi
+MSG_HITS=$(cd "$ROOT" && git log "$RANGE" --format='%h %s %b' 2>/dev/null | grep -iE "$PATTERN" || true)
 if [ -n "$MSG_HITS" ]; then
   echo "FAIL repo-purity (commit message):"
   printf '%s\n' "$MSG_HITS"
+  exit 1
+fi
+
+# A squash merge can take the PR title as its subject, so CI judges the PR's
+# title and body before they reach main.
+if [ -n "${PURITY_PR_TEXT:-}" ] && printf '%s\n' "$PURITY_PR_TEXT" | grep -qiE "$PATTERN"; then
+  echo "FAIL repo-purity (pull request title or body)"
   exit 1
 fi
 echo "ok   repo-purity"

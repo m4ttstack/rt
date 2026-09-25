@@ -10,6 +10,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   purity:
@@ -17,5 +18,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Without full history neither base below resolves, and the script
+          # falls back to the newest 30 commits instead of the exact range.
+          fetch-depth: 0
       - name: No employer or domain references in the tracked tree
+        env:
+          PURITY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+          PURITY_PR_TEXT: ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}
         run: scripts/repo-purity.sh
