@@ -95,8 +95,8 @@ is visible in the log. No `setup-go`: nothing in the unit suite runs Go.
 
 The directory list comes from `package.json`'s `test` script, which
 today includes `rt-tray/Tests/stub-rt`; `checks.yml` does not run that
-tree at present, so CI gains it, and the first task confirms it passes
-on a runner.
+tree at present, so CI gains it, and the PR's full run is what confirms
+it passes on a runner.
 
 `checks` (ubuntu, `needs: [scope, static, unit]`, `if: always()`): passes
 only when `scope` and `static` succeeded and `unit` either succeeded or

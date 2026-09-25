@@ -289,7 +289,10 @@ export function collectSources(): { sources: Map<string, string>; preloadImports
   return { sources, preloadImports };
 }
 
-const transpiler = new Bun.Transpiler({ loader: "ts" });
+const transpilers = {
+  ts: new Bun.Transpiler({ loader: "ts" }),
+  tsx: new Bun.Transpiler({ loader: "tsx" }),
+};
 
 // Every file the roots reach through relative imports, roots included.
 // Only TypeScript is scanned; a JSON or shell file that a test imports is
@@ -306,6 +309,7 @@ function walk(roots: string[]): Set<string> {
     seen.add(rel);
     if (!/\.tsx?$/.test(rel)) continue;
     const text = readFileSync(abs, "utf8").replace(/^#!.*/, "");
+    const transpiler = rel.endsWith(".tsx") ? transpilers.tsx : transpilers.ts;
     for (const imp of transpiler.scanImports(text)) {
       if (!imp.path.startsWith(".")) continue;
       const target = relative(ROOT, resolve(dirname(abs), imp.path));
@@ -412,7 +416,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 - [ ] **Step 0: Confirm RT-309 is in and rebase**
 
-RT-309 (rt#473, the `process.exitCode` guard) must be merged before this task: without it a shard exits 1 with no failing test. Run `gh pr view 473 -R m4ttstack/rt --json state -q .state`; if it is not `MERGED`, stop and report BLOCKED. Then `git fetch origin && git rebase origin/main && bun install --frozen-lockfile`.
+RT-309 (rt#473, the `process.exitCode` guard) must be merged before this task: without it a shard exits 1 with no failing test. Run `gh pr view 473 -R m4ttstack/rt --json state -q .state`; if it is not `MERGED`, stop and report BLOCKED. Then, as three separate commands: `git fetch origin`, `git rebase origin/main`, `bun install --frozen-lockfile`.
 
 - [ ] **Step 1: Generate the file**
 
@@ -420,14 +424,14 @@ Run `bun run test:timings` in the background with its output redirected to a fil
 
 - [ ] **Step 2: Record the shard balance**
 
-Save as a script in your scratch directory and run it in the background with output to a file:
+Save as a script in your scratch directory and run it from the worktree root in the background with output to a file; `$SCRATCH` is your scratch directory, so the per-shard logs never land in the worktree:
 
 ```bash
 #!/usr/bin/env bash
 for i in 1 2 3; do
   start=$(date +%s)
-  bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers --shard="$i/3" --timings=test-timings.json > "shard$i.log" 2>&1
-  echo "shard $i exit=$? $(( $(date +%s) - start ))s $(grep -E '^Ran ' "shard$i.log")"
+  bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers --shard="$i/3" --timings=test-timings.json > "$SCRATCH/shard$i.log" 2>&1
+  echo "shard $i exit=$? $(( $(date +%s) - start ))s $(grep -E '^Ran ' "$SCRATCH/shard$i.log")"
 done
 ```
 
@@ -679,9 +683,14 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 - [ ] **Step 1: Rebase, full local run, push**
 
+Run these one at a time (a worktree session's shell guard refuses chained commands):
+
 ```bash
-git fetch origin && git rebase origin/main
-bun install --frozen-lockfile && bun install && git diff --exit-code -- bun.lock
+git fetch origin
+git rebase origin/main
+bun install --frozen-lockfile
+bun install
+git diff --exit-code -- bun.lock
 bun test scripts/ci/__tests__/test-scope.test.ts
 git push -u origin rt-305-ci-shards
 ```
