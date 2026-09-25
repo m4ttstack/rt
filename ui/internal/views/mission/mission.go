@@ -690,17 +690,16 @@ func (m *Mission) filterDisplayText() string {
 }
 
 // sidebarFixedTopRows is the constant row count above the (scrollable)
-// Changes list: tabs(3, pad+label+underline) + the tabs-gap blank band
-// row(1) + the filter box(3) + the master row(1) (docs/design/mission/
+// Changes list: tabs(2, label+underline) + the filter box(3) + the master
+// row(1) (docs/design/mission/
 // README.md's Terminal geometry table). Unlike the old content-driven top
 // block, this never varies with the Changes count -- the list itself is now
 // a fixed-height scrolling region, not a block that grows the whole sidebar.
-const sidebarFixedTopRows = 8
+const sidebarFixedTopRows = 6
 
 func (m *Mission) sidebarFixedTop(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, "changes", m.hoverTab, width),
-		blankRows(width, 1),
 		renderFilterRow(m.filterDisplayText(), "Filter changes", m.focus == focusFilter, m.hoverFilterRow, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
 	)
@@ -1066,16 +1065,12 @@ func topbarHit(width, x int) zoneID {
 // list begins, scrolled or not.
 func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
-	// All three tab-strip rows are the tabs button; hover and click must cover
+	// Both tab-strip rows are the tabs button; hover and click must cover
 	// exactly the same rows (renderTabsRow's own invariant comment).
-	if y < row+3 {
+	if y < row+2 {
 		return tabsHit(sidebarWidth, x)
 	}
-	row += 3
-	if y == row {
-		return hit{} // the tabs-gap blank band row: no click target
-	}
-	row++
+	row += 2
 	if y < row+3 {
 		return hit{kind: hitFilterRow}
 	}

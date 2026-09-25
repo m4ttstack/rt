@@ -126,23 +126,23 @@ func TestTabStripMarksHistoryActive(t *testing.T) {
 		t.Fatalf("the v2 marker must be gone:\n%s", plain)
 	}
 	lines := strings.Split(out, "\n")
-	if len(lines) != 3 {
-		t.Fatalf("tab strip should stay 3 rows, got %d", len(lines))
+	if len(lines) != 2 {
+		t.Fatalf("tab strip should stay 2 rows, got %d", len(lines))
 	}
-	if w := lipgloss.Width(lines[2]); w != sidebarWidth {
+	if w := lipgloss.Width(lines[1]); w != sidebarWidth {
 		t.Fatalf("underline should span %d cells, got %d", sidebarWidth, w)
 	}
-	pinkAt := strings.Index(lines[2], fgSGR(theme.Pink))
-	ruleAt := strings.Index(lines[2], fgSGR(theme.Rule))
+	pinkAt := strings.Index(lines[1], fgSGR(theme.Pink))
+	ruleAt := strings.Index(lines[1], fgSGR(theme.Rule))
 	if pinkAt < 0 || ruleAt < 0 || pinkAt < ruleAt {
-		t.Fatalf("with History active the Rule run (Changes half) must precede the Pink run (History half): %q", lines[2])
+		t.Fatalf("with History active the Rule run (Changes half) must precede the Pink run (History half): %q", lines[1])
 	}
-	label := ansi.Strip(lines[1])
+	label := ansi.Strip(lines[0])
 	if idx := strings.Index(label, "History"); lipgloss.Width(label[:idx]) < sidebarWidth/2 {
 		t.Fatalf("History label should sit in the right half: %q", label)
 	}
-	if !strings.Contains(lines[1], "1;"+fgSGR(theme.Text)) && !strings.Contains(lines[1], fgSGR(theme.Text)+";1") {
-		t.Fatalf("the active History label should be bold Text: %q", lines[1])
+	if !strings.Contains(lines[0], "1;"+fgSGR(theme.Text)) && !strings.Contains(lines[0], fgSGR(theme.Text)+";1") {
+		t.Fatalf("the active History label should be bold Text: %q", lines[0])
 	}
 }
 
@@ -150,7 +150,7 @@ func TestTabHoverOnlyOnInactiveHalf(t *testing.T) {
 	half := sidebarWidth / 2
 	hover := bgSGR(theme.HoverBg)
 	lines := strings.Split(renderTabsRow(3, "history", true, sidebarWidth), "\n")
-	cells := cellBackgrounds(lines[1])
+	cells := cellBackgrounds(lines[0])
 	if len(cells) != sidebarWidth {
 		t.Fatalf("label row should be %d cells, got %d", sidebarWidth, len(cells))
 	}
@@ -162,23 +162,21 @@ func TestTabHoverOnlyOnInactiveHalf(t *testing.T) {
 			t.Fatalf("label col %d: the active History half must never hover", x)
 		}
 	}
-	for row, glyph := range map[int]string{0: "▄", 2: "▀"} {
-		plain := []rune(ansi.Strip(lines[row]))
-		if len(plain) != sidebarWidth {
-			t.Fatalf("row %d should be %d cells, got %d", row, sidebarWidth, len(plain))
-		}
-		if string(plain[:half]) != strings.Repeat(glyph, half) {
-			t.Fatalf("row %d: the hovered Changes half should be a %s half-block edge: %q", row, glyph, string(plain))
-		}
-		if strings.Contains(string(plain[half:]), glyph) {
-			t.Fatalf("row %d: the active History half must never hover: %q", row, string(plain))
-		}
-		if !strings.Contains(lines[row], fgSGR(theme.HoverBg)) {
-			t.Fatalf("row %d: the half-block edge should wear HoverBg: %q", row, lines[row])
-		}
+	plain := []rune(ansi.Strip(lines[1]))
+	if len(plain) != sidebarWidth {
+		t.Fatalf("underline row should be %d cells, got %d", sidebarWidth, len(plain))
 	}
-	if !strings.Contains(ansi.Strip(lines[2]), strings.Repeat("─", sidebarWidth-half)) || !strings.Contains(lines[2], fgSGR(theme.Pink)) {
-		t.Fatalf("the active History half keeps its Pink underline: %q", lines[2])
+	if string(plain[:half]) != strings.Repeat("▀", half) {
+		t.Fatalf("the hovered Changes half should be a ▀ half-block edge: %q", string(plain))
+	}
+	if strings.Contains(string(plain[half:]), "▀") {
+		t.Fatalf("the active History half must never hover: %q", string(plain))
+	}
+	if !strings.Contains(lines[1], fgSGR(theme.HoverBg)) {
+		t.Fatalf("the half-block edge should wear HoverBg: %q", lines[1])
+	}
+	if !strings.Contains(ansi.Strip(lines[1]), strings.Repeat("─", sidebarWidth-half)) || !strings.Contains(lines[1], fgSGR(theme.Pink)) {
+		t.Fatalf("the active History half keeps its Pink underline: %q", lines[1])
 	}
 }
 
@@ -681,20 +679,20 @@ func TestHitTestResolvesCommitRowsAndTab(t *testing.T) {
 	if h := m.hitTest(2, y+historyRowHeight); h.kind != hitCommitRow || h.idx != 1 {
 		t.Fatalf("the next commit's summary row should be commit 1, got %+v", h)
 	}
-	if h := m.hitTest(1, l.topH+1); h.kind != hitTab || h.idx != 0 {
+	if h := m.hitTest(1, l.topH); h.kind != hitTab || h.idx != 0 {
 		t.Fatalf("the inactive Changes half should resolve to hitTab idx 0, got %+v", h)
 	}
-	if h := m.hitTest(sidebarWidth-2, l.topH+1); h.kind != hitNone {
+	if h := m.hitTest(sidebarWidth-2, l.topH); h.kind != hitNone {
 		t.Fatalf("the active History half must be inert, got %+v", h)
 	}
-	if h := m.hitTest(2, l.topH+2); h.kind != hitTab || h.idx != 0 {
+	if h := m.hitTest(2, l.topH+1); h.kind != hitTab || h.idx != 0 {
 		t.Fatalf("the inactive half's underline row is part of its button, got %+v", h)
 	}
-	if h := m.hitTest(sidebarWidth-2, l.topH+2); h.kind != hitNone {
+	if h := m.hitTest(sidebarWidth-2, l.topH+1); h.kind != hitNone {
 		t.Fatalf("the active half's underline must stay inert, got %+v", h)
 	}
-	if h := m.hitTest(2, l.topH+3); h.kind != hitNone {
-		t.Fatalf("the tabs-gap row must be inert, got %+v", h)
+	if h := m.hitTest(2, l.topH+historyFilterTopRow); h.kind != hitFilterRow {
+		t.Fatalf("the filter box sits directly under the tabs underline, got %+v", h)
 	}
 }
 
@@ -747,7 +745,7 @@ func TestMouseMotionSetsHoverCommitAndClears(t *testing.T) {
 
 func TestMouseMotionOverInactiveTabSetsHoverTab(t *testing.T) {
 	m := newHistoryTestMission()
-	m.Update(tea.MouseMotionMsg{X: 1, Y: m.layout().topH + 1})
+	m.Update(tea.MouseMotionMsg{X: 1, Y: m.layout().topH})
 	if !m.hoverTab {
 		t.Fatal("motion over the inactive Changes half should set hoverTab")
 	}
@@ -780,7 +778,7 @@ func TestClickCommitRowSelectsAndShiftClickExtends(t *testing.T) {
 // just became inactive.
 func TestTabSwitchClearsStaleTabHover(t *testing.T) {
 	m := newMouseTestMission()
-	y := m.layout().topH + 1
+	y := m.layout().topH
 	m.Update(tea.MouseMotionMsg{X: sidebarWidth - 2, Y: y})
 	if _, cmd := m.Update(tea.MouseClickMsg{X: sidebarWidth - 2, Y: y, Button: tea.MouseLeft}); cmd == nil {
 		t.Fatal("setup: clicking the History half should emit mission:tab")
@@ -789,7 +787,7 @@ func TestTabSwitchClearsStaleTabHover(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(m.View().Content, "\n")
-	for _, row := range []int{y - 1, y} {
+	for _, row := range []int{y, y + 1} {
 		for x, bg := range cellBackgrounds(lines[row])[:sidebarWidth] {
 			if bg == bgSGR(theme.HoverBg) {
 				t.Fatalf("frame row %d col %d: the switch left a stale tab hover on the new inactive half", row, x)
@@ -965,14 +963,14 @@ func TestJustifyWideWidthUnchanged(t *testing.T) {
 
 func TestClickTabEmitsTabSwitch(t *testing.T) {
 	m := newHistoryTestMission()
-	if _, cmd := m.Update(tea.MouseClickMsg{X: 1, Y: m.layout().topH + 1, Button: tea.MouseLeft}); cmd == nil {
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 1, Y: m.layout().topH, Button: tea.MouseLeft}); cmd == nil {
 		t.Fatal("clicking the Changes half on History should emit mission:tab")
 	}
 	c := newMouseTestMission()
-	if _, cmd := c.Update(tea.MouseClickMsg{X: sidebarWidth - 2, Y: c.layout().topH + 1, Button: tea.MouseLeft}); cmd == nil {
+	if _, cmd := c.Update(tea.MouseClickMsg{X: sidebarWidth - 2, Y: c.layout().topH, Button: tea.MouseLeft}); cmd == nil {
 		t.Fatal("clicking the History half on Changes should emit mission:tab")
 	}
-	if _, cmd := c.Update(tea.MouseClickMsg{X: 1, Y: c.layout().topH + 1, Button: tea.MouseLeft}); cmd != nil {
+	if _, cmd := c.Update(tea.MouseClickMsg{X: 1, Y: c.layout().topH, Button: tea.MouseLeft}); cmd != nil {
 		t.Fatal("clicking the already active Changes half must not emit")
 	}
 }
@@ -1074,7 +1072,7 @@ func TestHistoryViewportKeepsTwoWholeCommitsEachSide(t *testing.T) {
 func TestHistoryViewportShrinksMarginsOnAShortList(t *testing.T) {
 	instantSelectTick(t)
 	m := groupedMission(t, 30, false)
-	m.height = 21
+	m.height = 19
 	if h := m.layout().listRegionH; h != 9 {
 		t.Fatalf("setup: the list should be 9 rows, got %d", h)
 	}
@@ -2138,24 +2136,26 @@ func TestHistoryFilterBoxSitsUnderTheTabs(t *testing.T) {
 	m := newHistoryTestMission()
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	top := m.layout().topH
-	if !strings.Contains(sidebarPart(lines[top+5]), "Filter history") {
-		t.Fatalf("the History filter box should read \"Filter history\" under the tabs gap: %q", lines[top+5])
+	boxTop := top + historyFilterTopRow
+	if !strings.Contains(sidebarPart(lines[boxTop+1]), "Filter history") {
+		t.Fatalf("the History filter box should read \"Filter history\" directly under the tabs: %q", lines[boxTop+1])
 	}
-	if h := m.hitTest(5, top+3); h.kind != hitNone {
-		t.Fatalf("the tabs gap stays inert, got %+v", h)
+	if h := m.hitTest(5, boxTop-1); h.kind != hitTab {
+		t.Fatalf("the row above the filter box is the tabs underline, got %+v", h)
 	}
-	for y := top + 4; y <= top+6; y++ {
+	for y := boxTop; y < top+historyFixedTopRows; y++ {
 		if h := m.hitTest(5, y); h.kind != hitFilterRow {
 			t.Fatalf("frame row %d is the filter box and should hit it, got %+v", y, h)
 		}
 	}
-	if !strings.Contains(sidebarPart(lines[top+7]), "Fix pty paint predicate") {
-		t.Fatalf("the commit list should start right under the filter box: %q", lines[top+7])
+	listTop := top + historyFixedTopRows
+	if !strings.Contains(sidebarPart(lines[listTop]), "Fix pty paint predicate") {
+		t.Fatalf("the commit list should start right under the filter box: %q", lines[listTop])
 	}
-	if h := m.hitTest(2, top+7); h.kind != hitCommitRow || h.idx != 0 {
+	if h := m.hitTest(2, listTop); h.kind != hitCommitRow || h.idx != 0 {
 		t.Fatalf("the first list row should be commit 0, got %+v", h)
 	}
-	m.Update(tea.MouseMotionMsg{X: 5, Y: top + 5})
+	m.Update(tea.MouseMotionMsg{X: 5, Y: boxTop + 1})
 	if !m.hoverFilterRow {
 		t.Fatal("motion over the History filter box should hover it")
 	}
@@ -2413,7 +2413,7 @@ func TestHistoryFilterEnterKeepsEscClears(t *testing.T) {
 
 func TestHistoryFilterBoxClickFocuses(t *testing.T) {
 	m := newHistoryTestMission()
-	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: m.layout().topH + 5, Button: tea.MouseLeft}); cmd != nil || m.focus != focusFilter {
+	if _, cmd := m.Update(tea.MouseClickMsg{X: 5, Y: m.layout().topH + historyFilterTopRow + 1, Button: tea.MouseLeft}); cmd != nil || m.focus != focusFilter {
 		t.Fatalf("a click on the History filter box focuses it, focus %v", m.focus)
 	}
 	typeKeys(m, "guard")
