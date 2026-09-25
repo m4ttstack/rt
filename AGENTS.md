@@ -379,10 +379,10 @@ leaves HOME unset, since paths then fall back to bun's `os.homedir()`, which
 is frozen at the HOME the process started with; and a child started by
 `Bun.spawn`/`Bun.spawnSync` without `env`, which gets that startup
 environment, real HOME included (pass `childEnv()` from `lib/subprocess.ts`).
-`setSetting`/`unsetSetting` and `rt team create` refuse a test-run write into
-the account's real `~/.mattstack` settings stores
-(`packages/rt-client/src/test-isolation.ts`); nothing guards the rest of
-`~/.mattstack` (state db, logs, runtime files) the same way.
+`setSetting`/`unsetSetting`, `rt team create`/`join` and the home-repo init
+seam refuse a test-run write into the account's real `~/.mattstack` settings
+stores (`packages/rt-client/src/test-isolation.ts`); nothing guards the rest
+of `~/.mattstack` (state db, logs, runtime files) the same way.
 
 ### Module registry
 

@@ -9,8 +9,8 @@
  * The preload only runs when bun finds bunfig.toml in the cwd, so a test run
  * started anywhere else keeps the real HOME; a test that unsets HOME, or a
  * Bun.spawn child given no env, reaches it even with the preload loaded.
- * assertNotRealStoreInTest is the backstop: every settings-store writer
- * calls it first.
+ * assertNotRealStoreInTest is the backstop: setSetting, unsetSetting, team
+ * create and join, and the home-repo init seam call it before writing.
  */
 import { spawnSync } from "child_process";
 import { homedir, userInfo } from "os";
@@ -45,22 +45,33 @@ export function guardTestDaemonEnv(env: NodeJS.ProcessEnv = process.env): void {
 const TEST_FILE = /[._](test|spec)\.[cm]?[jt]sx?$/;
 
 /**
+ * Which signal marks this process as a test run, or null outside one.
  * `bun test` sets NODE_ENV=test only when NODE_ENV is unset, so its entry
  * module (Bun.main is the running test file) is checked too. NODE_ENV also
  * marks a child a test spawned with the runner's env.
  */
-export function isTestRun(env: NodeJS.ProcessEnv, main: string | undefined): boolean {
-  return env.NODE_ENV === "test" || env.VITEST !== undefined || (main !== undefined && TEST_FILE.test(main));
+export function testRunSignal(env: NodeJS.ProcessEnv, main: string | undefined): string | null {
+  if (env.NODE_ENV === "test") return "NODE_ENV=test";
+  if (env.VITEST !== undefined) return "VITEST set";
+  if (main !== undefined && TEST_FILE.test(main)) return `entry module ${main}`;
+  return null;
+}
+
+export interface StoreWriteCheck {
+  target: string;
+  account: string;
+  home: string | undefined;
+  signal: string;
 }
 
 /** The refusal message when `target` sits in the account's real ~/.mattstack, else null. */
-export function realStoreRefusal(target: string, account: string, home: string | undefined): string | null {
+export function realStoreRefusal({ target, account, home, signal }: StoreWriteCheck): string | null {
   const guarded = resolve(account, ".mattstack");
   const path = resolve(target);
   if (path !== guarded && !path.startsWith(`${guarded}${sep}`)) return null;
   const homeNote = home === undefined ? "HOME is unset" : `HOME is ${home}`;
   return (
-    `rt: refusing to write ${path} during a test run: it is under this account's real ${guarded} (${homeNote}). ` +
+    `rt: refusing to write ${path} during a test run (${signal}): it is under this account's real ${guarded} (${homeNote}). ` +
     "Run bun test from the repo root so the bunfig.toml test preload points HOME at a scratch dir. " +
     "If the preload was loaded, look for a test that unsets HOME or a Bun.spawn with no env."
   );
@@ -100,7 +111,8 @@ function entryModule(): string | undefined {
 
 /** Throws before a test run writes into the account's real settings stores; a no-op outside test runs. */
 export function assertNotRealStoreInTest(target: string): void {
-  if (!isTestRun(process.env, entryModule())) return;
-  const refusal = realStoreRefusal(target, accountHome(), process.env.HOME);
+  const signal = testRunSignal(process.env, entryModule());
+  if (signal === null) return;
+  const refusal = realStoreRefusal({ target, account: accountHome(), home: process.env.HOME, signal });
   if (refusal !== null) throw new Error(refusal);
 }

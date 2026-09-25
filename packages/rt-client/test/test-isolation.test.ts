@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isAbsolute, join } from "path";
-import { accountHome, guardTestDaemonEnv, isTestRun, parsePasswdHome, realStoreRefusal } from "../src/test-isolation.ts";
+import { spawnSync } from "child_process";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { guardTestDaemonEnv, parsePasswdHome, realStoreRefusal, testRunSignal } from "../src/test-isolation.ts";
 
 describe("guardTestDaemonEnv", () => {
   test("scrubs RT_DAEMON_SOCK and RT_APP_SOCKET and forbids both the old sock and HOME's rt.sock", () => {
@@ -57,32 +60,33 @@ describe("guardTestDaemonEnv", () => {
   });
 });
 
-describe("isTestRun", () => {
+describe("testRunSignal", () => {
   test("NODE_ENV=test is a test run, whatever the entry module", () => {
-    expect(isTestRun({ NODE_ENV: "test" }, "/repo/cli.ts")).toBe(true);
-    expect(isTestRun({ NODE_ENV: "test" }, undefined)).toBe(true);
+    expect(testRunSignal({ NODE_ENV: "test" }, "/repo/cli.ts")).toBe("NODE_ENV=test");
+    expect(testRunSignal({ NODE_ENV: "test" }, undefined)).toBe("NODE_ENV=test");
   });
 
   test("a test-file entry module is a test run even when NODE_ENV was preset to something else", () => {
     for (const main of ["/r/lib/a.test.ts", "/r/a_test.tsx", "/r/a.spec.js", "/r/a_spec.mjs", "/r/a.test.cts"]) {
-      expect(isTestRun({ NODE_ENV: "production" }, main)).toBe(true);
+      expect(testRunSignal({ NODE_ENV: "production" }, main)).toBe(`entry module ${main}`);
     }
   });
 
   test("vitest is a test run", () => {
-    expect(isTestRun({ VITEST: "true" }, undefined)).toBe(true);
+    expect(testRunSignal({ VITEST: "true" }, undefined)).toBe("VITEST set");
   });
 
   test("a plain script, the compiled binary and a daemon are not test runs", () => {
-    expect(isTestRun({}, "/repo/cli.ts")).toBe(false);
-    expect(isTestRun({}, "/$bunfs/root/rt")).toBe(false);
-    expect(isTestRun({ NODE_ENV: "production" }, "/repo/lib/testing.ts")).toBe(false);
-    expect(isTestRun({}, undefined)).toBe(false);
+    expect(testRunSignal({}, "/repo/cli.ts")).toBeNull();
+    expect(testRunSignal({}, "/$bunfs/root/rt")).toBeNull();
+    expect(testRunSignal({ NODE_ENV: "production" }, "/repo/lib/testing.ts")).toBeNull();
+    expect(testRunSignal({}, undefined)).toBeNull();
   });
 });
 
 describe("realStoreRefusal", () => {
   const account = "/Users/someone";
+  const signal = "NODE_ENV=test";
 
   test("refuses every store under the account's real ~/.mattstack and names the fix", () => {
     for (const target of [
@@ -90,28 +94,36 @@ describe("realStoreRefusal", () => {
       "/Users/someone/.mattstack/user/local/mac/settings.local.jsonc",
       "/Users/someone/.mattstack/teams/acme/mattstack/settings.team.jsonc",
     ]) {
-      const refusal = realStoreRefusal(target, account, account);
+      const refusal = realStoreRefusal({ target, account, home: account, signal });
       expect(refusal).toContain(target);
       expect(refusal).toMatch(/Run bun test from the repo root/);
     }
   });
 
+  test("names the signal that made this a test run", () => {
+    const target = "/Users/someone/.mattstack/user/settings.user.jsonc";
+    expect(realStoreRefusal({ target, account, home: account, signal: "entry module /r/a.test.ts" })).toContain("(entry module /r/a.test.ts)");
+    expect(realStoreRefusal({ target, account, home: account, signal: "VITEST set" })).toContain("(VITEST set)");
+  });
+
   test("normalizes the paths it compares", () => {
-    expect(realStoreRefusal("/Users/someone/x/../.mattstack/user/settings.user.jsonc", "/Users/someone/", account)).not.toBeNull();
+    const target = "/Users/someone/x/../.mattstack/user/settings.user.jsonc";
+    expect(realStoreRefusal({ target, account: "/Users/someone/", home: account, signal })).not.toBeNull();
   });
 
   test("allows a store under a scratch HOME, including one nested inside the account home", () => {
-    expect(realStoreRefusal("/tmp/rt-tests/1-home-x/.mattstack/user/settings.user.jsonc", account, "/tmp/rt-tests/1-home-x")).toBeNull();
-    expect(realStoreRefusal("/Users/someone/scratch/.mattstack/user/settings.user.jsonc", account, "/Users/someone/scratch")).toBeNull();
+    expect(realStoreRefusal({ target: "/tmp/rt-tests/1-home-x/.mattstack/user/settings.user.jsonc", account, home: "/tmp/rt-tests/1-home-x", signal })).toBeNull();
+    expect(realStoreRefusal({ target: "/Users/someone/scratch/.mattstack/user/settings.user.jsonc", account, home: "/Users/someone/scratch", signal })).toBeNull();
   });
 
   test("a sibling that only shares the prefix is not the real store", () => {
-    expect(realStoreRefusal("/Users/someone/.mattstack-old/user/settings.user.jsonc", account, account)).toBeNull();
+    expect(realStoreRefusal({ target: "/Users/someone/.mattstack-old/user/settings.user.jsonc", account, home: account, signal })).toBeNull();
   });
 
   test("names the HOME the run had, so an unset HOME is visible in the error", () => {
-    expect(realStoreRefusal("/Users/someone/.mattstack/user/settings.user.jsonc", account, undefined)).toContain("HOME is unset");
-    expect(realStoreRefusal("/Users/someone/.mattstack/user/settings.user.jsonc", account, account)).toContain(`HOME is ${account}`);
+    const target = "/Users/someone/.mattstack/user/settings.user.jsonc";
+    expect(realStoreRefusal({ target, account, home: undefined, signal })).toContain("HOME is unset");
+    expect(realStoreRefusal({ target, account, home: account, signal })).toContain(`HOME is ${account}`);
   });
 });
 
@@ -132,15 +144,25 @@ describe("parsePasswdHome", () => {
 });
 
 describe("accountHome", () => {
-  test("is absolute and ignores a HOME repointed at runtime", () => {
-    const saved = process.env.HOME;
-    process.env.HOME = join("/tmp", "not-the-account-home");
+  test("a test child started with a scratch HOME writes its own store: the account home is not read from HOME", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "rt-account-home-")));
     try {
-      const home = accountHome();
-      expect(isAbsolute(home)).toBe(true);
-      expect(home).not.toBe(process.env.HOME);
+      const script = join(home, "write.ts");
+      writeFileSync(
+        script,
+        `import { setSetting } from ${JSON.stringify(join(import.meta.dir, "..", "src", "settings", "write.ts"))};\n` +
+          `setSetting("rt.apiPort", 50489, "user");\n`,
+      );
+      const child = spawnSync(process.execPath, [script], {
+        cwd: home,
+        env: { PATH: process.env.PATH, HOME: home, NODE_ENV: "test" },
+        encoding: "utf8",
+      });
+      expect(child.stderr).not.toMatch(/refusing to write/);
+      expect(child.status).toBe(0);
+      expect(readFileSync(join(home, ".mattstack", "user", "settings.user.jsonc"), "utf8")).toContain("50489");
     } finally {
-      process.env.HOME = saved;
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });
