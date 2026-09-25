@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
@@ -18,6 +18,15 @@ const { buildDiscoveryApps, iconResponse } = await import('./discovery.ts');
 const { putRecord, getRecord, reloadRegistry } =
   await import('../registry/records.ts');
 const { ingestManifest } = await import('../registry/manifest.ts');
+const { setBundledResourcesDir } =
+  await import('../registry/bundled-identity.ts');
+const FIXTURE_RESOURCES = join(
+  import.meta.dir,
+  '..',
+  'registry',
+  '__fixtures__',
+  'bundle-resources'
+);
 
 const SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64"/></svg>';
@@ -37,6 +46,7 @@ function manifestDir(): string {
 }
 
 beforeEach(() => {
+  setBundledResourcesDir(null);
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   process.env.HOME = mkdtempSync(join(tmpdir(), 'local-discovery-home-'));
   reloadRegistry();
@@ -186,6 +196,75 @@ test('iconResponse serves the stored svg, and 404s when there is none', async ()
 
   const missing = iconResponse('nope');
   expect(missing.status).toBe(404);
+});
+
+function boardRow(extra: Record<string, unknown> = {}): void {
+  putRecord({
+    name: 'board',
+    managedBy: 'rt',
+    port: 11006,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+    ...extra,
+  });
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'board.localhost', port: 11006 }])
+  );
+}
+
+test('an unlinked catalog row takes name, description, badge and icon from the bundle', async () => {
+  boardRow();
+  setBundledResourcesDir(FIXTURE_RESOURCES);
+  const board = (await buildDiscoveryApps(statusOpts)).find(
+    a => a.name === 'board'
+  )!;
+  expect(board.displayName).toBe('Board');
+  expect(board.description).toBe('Open MRs ready for review.');
+  expect(board.badge).toBe('/api/badge');
+  expect(board.icon).toBe('board');
+});
+
+test('iconResponse serves the bundled svg for an unlinked catalog row', async () => {
+  boardRow();
+  setBundledResourcesDir(FIXTURE_RESOURCES);
+  const res = iconResponse('board');
+  expect(res.status).toBe(200);
+  expect(res.headers.get('content-type')).toBe('image/svg+xml');
+  expect(await res.text()).toBe(
+    readFileSync(
+      join(FIXTURE_RESOURCES, 'apps', 'board', 'src', 'favicon.svg'),
+      'utf8'
+    )
+  );
+});
+
+test('iconResponse 404s a name inherited from Object.prototype inside a bundle', () => {
+  boardRow();
+  setBundledResourcesDir(FIXTURE_RESOURCES);
+  for (const name of ['__proto__', 'constructor', 'toString'])
+    expect(iconResponse(name).status).toBe(404);
+});
+
+test('a linked row keeps the identity ingested from its checkout', async () => {
+  const src = mkdtempSync(join(tmpdir(), 'discovery-linked-'));
+  writeFileSync(
+    join(src, 'mattstack.deck.json'),
+    JSON.stringify({
+      name: 'board',
+      displayName: 'Board (source)',
+      icon: './icon.svg',
+    })
+  );
+  writeFileSync(join(src, 'icon.svg'), SVG);
+  boardRow({ dev: { workingDirectory: src } });
+  ingestManifest('board');
+  setBundledResourcesDir(FIXTURE_RESOURCES);
+  const board = (await buildDiscoveryApps(statusOpts)).find(
+    a => a.name === 'board'
+  )!;
+  expect(board.displayName).toBe('Board (source)');
+  expect(await iconResponse('board').text()).toBe(SVG);
 });
 
 // ---- GET /api/apps and GET /api/apps/:name/icon over HTTP ----

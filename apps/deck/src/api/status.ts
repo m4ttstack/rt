@@ -19,6 +19,7 @@ import { tunnelRowHealth } from '../edge/edge-health.ts';
 import { edgeDrift } from '../edge/edge-reconcile.ts';
 import { getOAuth, type OAuth } from '../edge/oauth.ts';
 import { allocatePort } from '../registry/allocate.ts';
+import { statusIconUrl } from '../registry/bundled-identity.ts';
 import { withCatalogReport } from '../registry/catalog-report.ts';
 import {
   listRecords,
@@ -85,7 +86,8 @@ export interface StatusRow {
   /**
    * URL of the app's icon (the mattstack mark) for the board to render, or null.
    * The platform's own row resolves to the bundled deck mark at /favicon.svg;
-   * other managed products resolve to their ingested icon; user apps get null.
+   * other managed products resolve to their effective identity's icon (a
+   * linked checkout's ingested icon, else the bundle's); user apps get null.
    */
   icon: string | null;
   issues: SyncIssue[];
@@ -214,13 +216,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         publicFollowsOverride: follows,
         self,
         managedBy: record?.managedBy ?? null,
-        icon: record
-          ? isPlatformManagedBy(record.managedBy)
-            ? '/favicon.svg'
-            : record.icon
-              ? `/api/apps/${a.name}/icon`
-              : null
-          : null,
+        icon: record ? statusIconUrl(record) : null,
         issues: self
           ? withCatalogReport(record?.issues ?? [])
           : (record?.issues ?? []),

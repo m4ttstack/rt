@@ -1,7 +1,7 @@
 {
   "name": "mattstack-console",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "mattstack-console, scaffolded with create-mantine-kit.",
   "license": "MIT",
   "type": "module",

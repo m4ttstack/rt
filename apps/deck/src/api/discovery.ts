@@ -1,7 +1,8 @@
 import { existsSync } from 'fs';
 
+import { effectiveIdentity } from '../registry/bundled-identity.ts';
 import { iconPathFor } from '../registry/manifest.ts';
-import { listRecords } from '../registry/records.ts';
+import { getRecord, listRecords } from '../registry/records.ts';
 import { notServedHere, type ServeShapeDeps } from '../registry/serve-shape.ts';
 import { isPlatformManagedBy } from '../services/manager.ts';
 import { buildStatus, type BuildStatusOpts } from './status.ts';
@@ -11,7 +12,8 @@ export interface DiscoveryApp {
   displayName: string;
   description?: string;
   url: string;
-  /** The app's own name when it has a stored icon, null otherwise. The route
+  /** The app's own name when its effective identity (a linked checkout's
+      ingested icon, else the bundle's) has an icon, null otherwise. The route
       turns this into an absolute /api/apps/<name>/icon URL. */
   icon: string | null;
   badge?: string;
@@ -36,13 +38,14 @@ export async function buildDiscoveryApps(
     if (notServedHere(record, flavor)) continue;
     const url = urlByName.get(record.name);
     if (!url) continue;
+    const identity = effectiveIdentity(record);
     apps.push({
       name: record.name,
-      displayName: record.displayName ?? record.name,
-      description: record.description,
+      displayName: identity.displayName,
+      description: identity.description,
       url,
-      icon: record.icon ? record.name : null,
-      ...(record.badge ? { badge: record.badge } : {}),
+      icon: identity.iconFile ? record.name : null,
+      ...(identity.badge ? { badge: identity.badge } : {}),
     });
   }
   apps.sort(
@@ -52,9 +55,11 @@ export async function buildDiscoveryApps(
   return apps;
 }
 
-/** Serves an app's stored icon svg, 404 when none has been ingested. */
+/** Serves the svg the app's effective identity names, 404 when there is none. */
 export function iconResponse(name: string): Response {
-  const p = iconPathFor(name);
+  const record = getRecord(name);
+  const p =
+    (record ? effectiveIdentity(record).iconFile : null) ?? iconPathFor(name);
   if (!existsSync(p)) return new Response('not found', { status: 404 });
   return new Response(Bun.file(p), {
     headers: {

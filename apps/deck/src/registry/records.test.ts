@@ -48,6 +48,21 @@ test('put/get/delete round-trips and persists to disk', () => {
   expect(deleteRecord('gitq')).toBe(false);
 });
 
+test('a name inherited from Object.prototype is no record', () => {
+  putRecord(rec('a'));
+  for (const name of ['__proto__', 'constructor', 'toString']) {
+    expect(getRecord(name)).toBeUndefined();
+    expect(deleteRecord(name)).toBe(false);
+  }
+  addIssue('__proto__', {
+    source: 'portless',
+    message: 'x',
+    at: '2026-08-10T00:00:00Z',
+  });
+  expect(({} as { issues?: unknown }).issues).toBeUndefined();
+  expect(listRecords().map(r => r.name)).toEqual(['a']);
+});
+
 test('writes are atomic: a .tmp file never survives', () => {
   putRecord(rec('a'));
   expect(existsSync(process.env.LOCAL_REGISTRY_PATH! + '.tmp')).toBe(false);

@@ -52,6 +52,19 @@ function looksLikeSvg(content: string): boolean {
   return SVG_ROOT.test(content);
 }
 
+/** The svg text at `path` when it is svg-rooted and at most 64 KB, else null. */
+export function readSvgIcon(path: string): string | null {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch {
+    return null;
+  }
+  if (bytes.byteLength > MAX_ICON_BYTES) return null;
+  const svg = bytes.toString('utf8');
+  return looksLikeSvg(svg) ? svg : null;
+}
+
 export function iconsDir(): string {
   return join(stateDir(), 'icons');
 }
@@ -111,16 +124,8 @@ export function ingestManifest(name: string): void {
     }
     return;
   }
-  let svg: string;
-  try {
-    const iconPath = resolve(appDir, manifest.icon);
-    const bytes = readFileSync(iconPath);
-    if (bytes.byteLength > MAX_ICON_BYTES) return;
-    svg = bytes.toString('utf8');
-  } catch {
-    return;
-  }
-  if (!looksLikeSvg(svg)) return;
+  const svg = readSvgIcon(resolve(appDir, manifest.icon));
+  if (svg === null) return;
   try {
     mkdirSync(iconsDir(), { recursive: true });
     writeFileSync(iconPathFor(name), svg);

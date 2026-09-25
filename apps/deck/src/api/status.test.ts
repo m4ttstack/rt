@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 
 function linkedDir(manifest: object): string {
   const dir = mkdtempSync(join(tmpdir(), 'status-link-'));
@@ -21,6 +21,25 @@ process.env.HOME = dir;
 const { buildStatus } = await import('./status.ts');
 const { putRecord, reloadRegistry } = await import('../registry/records.ts');
 const { setCatalogReport } = await import('../registry/catalog-report.ts');
+const { setBundledResourcesDir } =
+  await import('../registry/bundled-identity.ts');
+
+function bundleResources(name: string): string {
+  const root = mkdtempSync(join(tmpdir(), 'status-resources-'));
+  const dir = join(root, 'apps', name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'mattstack.deck.json'),
+    JSON.stringify({ name, displayName: 'My App', icon: './icon.svg' })
+  );
+  writeFileSync(
+    join(dir, 'icon.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+  );
+  return root;
+}
+
+afterEach(() => setBundledResourcesDir(undefined));
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
@@ -358,4 +377,20 @@ test('a non-local caller on a local-looking host gets no controls and a redacted
   expect(status.canManage).toBe(false);
   expect(status.canRestart).toBe(false);
   expect(JSON.stringify(status)).not.toContain('/tmp/secret-dir');
+});
+
+test('a managed row with only a bundled identity carries its icon URL', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+  });
+  setBundledResourcesDir(bundleResources('myapp'));
+  const row = (await buildStatus(opts)).apps.find(a => a.name === 'myapp')!;
+  expect(row.icon).toBe('/api/apps/myapp/icon');
+  setBundledResourcesDir(null);
+  const bare = (await buildStatus(opts)).apps.find(a => a.name === 'myapp')!;
+  expect(bare.icon).toBeNull();
 });

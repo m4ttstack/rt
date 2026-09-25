@@ -76,3 +76,13 @@ description/url/icon, for managed products only. It is unversioned, GET-only,
 and CORS-enabled for mattstack-TLD origins, built for an app launcher to
 fetch across origins without touching the versioned `/api/v1` API.
 `GET /api/apps/:name/icon` serves the stored SVG.
+
+Inside the mattstack app, a managed app with no linked checkout takes its
+identity from the bundle instead: repo-tools' app build ships an
+identity-only `mattstack.deck.json` (name, displayName, description, icon,
+badge) and the icon it names at `Contents/Resources/apps/<name>/`, for each
+app the bundle serves. A linked checkout's ingested identity wins over the
+bundle's copy. Deck reads the bundled copy per request and never writes it to
+the registry, so both flavors' decks read one registry unchanged.
+`/api/apps`, the icon route and the board's status rows all read the same
+effective identity.

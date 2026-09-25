@@ -13,6 +13,7 @@ import {
   iconPathFor,
   ingestManifest,
   readManifest,
+  readSvgIcon,
   removeIcon,
 } from './manifest.ts';
 
@@ -347,4 +348,18 @@ test('removeIcon deletes the stored file', async () => {
   expect(existsSync(iconPathFor('c'))).toBe(true);
   removeIcon('c');
   expect(existsSync(iconPathFor('c'))).toBe(false);
+});
+
+test('readSvgIcon returns svg text only for an svg-rooted file of at most 64 KB', () => {
+  const dir = repo({
+    'ok.svg': SVG,
+    'prolog.svg': `<?xml version="1.0"?>\n${SVG}`,
+    'big.svg': `<svg>${' '.repeat(64 * 1024)}</svg>`,
+    'png.svg': 'PNG not an svg',
+  });
+  expect(readSvgIcon(join(dir, 'ok.svg'))).toBe(SVG);
+  expect(readSvgIcon(join(dir, 'prolog.svg'))).toContain('<svg');
+  expect(readSvgIcon(join(dir, 'big.svg'))).toBeNull();
+  expect(readSvgIcon(join(dir, 'png.svg'))).toBeNull();
+  expect(readSvgIcon(join(dir, 'missing.svg'))).toBeNull();
 });

@@ -120,8 +120,12 @@ export function listRecords(): AppRecord[] {
   return Object.values(cache.apps);
 }
 
+function own(name: string): AppRecord | undefined {
+  return Object.hasOwn(cache.apps, name) ? cache.apps[name] : undefined;
+}
+
 export function getRecord(name: string): AppRecord | undefined {
-  return cache.apps[name];
+  return own(name);
 }
 
 // Every mutator is a read-modify-write: re-read from disk immediately before
@@ -138,7 +142,7 @@ export function putRecord(record: AppRecord): void {
 
 export function deleteRecord(name: string): boolean {
   cache = load();
-  if (!cache.apps[name]) return false;
+  if (!own(name)) return false;
   delete cache.apps[name];
   save();
   return true;
@@ -146,7 +150,7 @@ export function deleteRecord(name: string): boolean {
 
 export function addIssue(name: string, issue: SyncIssue): void {
   cache = load();
-  const r = cache.apps[name];
+  const r = own(name);
   if (!r) return;
   r.issues = [
     ...(r.issues ?? []).filter(i => i.source !== issue.source),
@@ -157,7 +161,7 @@ export function addIssue(name: string, issue: SyncIssue): void {
 
 export function clearIssues(name: string, source: SyncIssue['source']): void {
   cache = load();
-  const r = cache.apps[name];
+  const r = own(name);
   if (!r?.issues) return;
   r.issues = r.issues.filter(i => i.source !== source);
   if (r.issues.length === 0) delete r.issues;

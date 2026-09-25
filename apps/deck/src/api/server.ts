@@ -54,6 +54,7 @@ import {
 import { readDeckSecrets, type RtSecretsDeps } from '../edge/rt-secrets.ts';
 import { gitProvenance, untrackedEnvPresent } from '../edge/source.ts';
 import type { TunnelDriver } from '../edge/tunnel.ts';
+import { statusIconUrl } from '../registry/bundled-identity.ts';
 import { convert } from '../registry/convert.ts';
 import { migrate } from '../registry/migrate.ts';
 import {
@@ -67,7 +68,7 @@ import {
   commandRunStatus,
   startCommandRun,
 } from '../services/command-runner.ts';
-import { isPlatformManagedBy, PLATFORM_NAME } from '../services/manager.ts';
+import { PLATFORM_NAME } from '../services/manager.ts';
 import { isDevMode } from './dev-mode.ts';
 import { buildDiscoveryApps, iconResponse } from './discovery.ts';
 import {
@@ -302,11 +303,7 @@ function rowFor(
       publicFollowsOverride: false,
       self: false,
       managedBy: record.managedBy,
-      icon: isPlatformManagedBy(record.managedBy)
-        ? '/favicon.svg'
-        : record.icon
-          ? `/api/apps/${record.name}/icon`
-          : null,
+      icon: statusIconUrl(record),
       issues: record.issues ?? [],
       record: {
         kind: record.kind,

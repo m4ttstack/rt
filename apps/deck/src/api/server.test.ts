@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -30,7 +30,7 @@ const { FakeServiceManager } = await import('../services/fake.ts');
 const { FakeEdgeProxy } = await import('../edge/portless.ts');
 const { FakeTunnelDriver } = await import('../edge/tunnel.ts');
 const { FakeCfDns } = await import('../../test/fixture/remote.ts');
-const { reloadRegistry, getRecord, putRecord } =
+const { reloadRegistry, getRecord, putRecord, deleteRecord } =
   await import('../registry/records.ts');
 const { reloadPlatformSettings } = await import('./platform-settings.ts');
 
@@ -1455,4 +1455,40 @@ describe('command route gating by app class', () => {
     expect(status.status).toBe(200);
     expect(['running', 'exited']).toContain((await status.json()).status);
   });
+});
+
+test('a record with no route yet carries its bundled icon URL', async () => {
+  const { setBundledResourcesDir } =
+    await import('../registry/bundled-identity.ts');
+  const root = mkdtempSync(join(tmpdir(), 'server-resources-'));
+  const dir = join(root, 'apps', 'bundled-only');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'mattstack.deck.json'),
+    JSON.stringify({
+      name: 'bundled-only',
+      displayName: 'Bundled',
+      icon: './icon.svg',
+    })
+  );
+  writeFileSync(
+    join(dir, 'icon.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+  );
+  putRecord({
+    name: 'bundled-only',
+    managedBy: 'rt',
+    port: 11999,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+  });
+  setBundledResourcesDir(root);
+  try {
+    const list: any = await (await api('/api/v1/apps')).json();
+    const row = list.apps.find((a: any) => a.name === 'bundled-only');
+    expect(row.icon).toBe('/api/apps/bundled-only/icon');
+  } finally {
+    setBundledResourcesDir(undefined);
+    deleteRecord('bundled-only');
+  }
 });

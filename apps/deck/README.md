@@ -250,7 +250,9 @@ way. `GET /api/apps` returns the slim list (name, displayName,
 description, url, icon) for managed products only: it's unversioned,
 GET-only, and CORS-enabled for mattstack-TLD origins, built for an app
 launcher to fetch across origins without touching the versioned `/api/v1`
-API. `GET /api/apps/:name/icon` serves the stored icon.
+API. `GET /api/apps/:name/icon` serves the app's effective icon: a linked
+checkout's ingested icon, else the copy the mattstack app bundles for it
+(see "App launcher registry" in [`docs/manifest.md`](docs/manifest.md)).
 
 ## How it works
 
