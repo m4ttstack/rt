@@ -51,10 +51,18 @@ Chat tools require `rt chat sign-in` first. If no signed-in session exists, the 
 | `mr_ready` | Mark a draft MR ready, or back to draft with `ready: false` (GitLab only). |
 | `mr_retry` | Retry one CI job or a whole pipeline (GitLab only). |
 | `mr_rebase` | Request a server-side rebase of the MR's source branch (GitLab only). |
-| `mr_create` | Create an MR from a pushed branch, as a draft by default (GitLab only). |
+| `mr_create` | Create an MR from a pushed branch, as a draft by default, with optional `labels` and `squash` (GitLab only). |
+| `mr_update` | Edit an open MR's `title`, `description`, `addLabels`, `removeLabels` or `squash`; at least one (GitLab only). |
+| `mr_upload` | Upload one local image or video to the project and get back the markdown that embeds it (GitLab only). |
 | `mr_map` | List open MRs joined to the local worktrees holding their branches. |
 
-Every `mr_*` write tool takes the repo's serialized identity as `repoName` (e.g. `remote:gitlab.com%2Facme%2Facme-dev`), not a bare host/path. `mr_map` also accepts the short repo-label alias. There is no merge tool.
+Every `mr_*` write tool names its target with `repoName` (the repo's serialized identity such as `remote:gitlab.com%2Facme%2Facme-dev`, an absolute path to a checkout or worktree, or a repo label that matches exactly one registered repo) or with `mrUrl` (the MR's URL; its project must be registered with rt, and the URL supplies the iid). A URL is matched to a registered repo by identity first, then by the registered checkouts' origin remotes, so a repo pinned to another identity through `rt.repoIdentityOverrides` still resolves; a URL matching two checkouts is refused as ambiguous. Given both, they must agree. `mr_map` takes `repo` (identity or label). There is no merge tool.
+
+`mr_upload` reads only regular files under the target repo's worktrees, your Claude Code temp root (`/private/tmp/claude-<uid>/`, where session scratchpads live), or a directory listed in the machine-scoped `rt.mcp.uploadRoots` setting, and only png, jpg, jpeg, gif, webp, mp4, mov or webm files up to 50 MB whose bytes match their extension. To allow another folder on this machine:
+
+```bash
+rt settings set rt.mcp.uploadRoots '["/Users/you/Screenshots"]' --scope machine
+```
 
 ### Herd
 
