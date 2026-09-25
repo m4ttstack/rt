@@ -106,6 +106,9 @@ done
 before_app=$(pgrep -x mattstack | head -1)
 before_pid=$(daemon_pid)
 before_ver=$(tray_json | tr -d '\n')
+# Sparkle replaces each served app's binary at the same path, so only a pid
+# that moved shows a job left the deleted one.
+[ "$MODE" = --headless ] || record_served_jobs update-before
 ax_log "before: app pid=${before_app:-none} daemon pid=${before_pid:-none} bundle=$(bundle_ver) version=${before_ver:-?}"
 
 # A SecurityAgent prompt left over from an earlier phase would block the main thread, and
@@ -163,7 +166,7 @@ rv=$(rt --version 2>/dev/null | awk '{print $NF}'); rvn=$(printf '%s' "$rv" | se
 if [ "$MODE" = --headless ]; then
   ok "served apps and .mattstack routes not asserted (headless: no proxy, so deck has no routes)"
 else
-  assert_served_apps update-served 180
+  assert_served_apps update-served 180 "$LOGS/update-before/launchd.json"
   assert_mattstack_routes trusted update
 fi
 ax_log "after: app pid=$(pgrep -x mattstack | head -1) daemon pid=${after_pid:-none} bundle=$(bundle_ver)"

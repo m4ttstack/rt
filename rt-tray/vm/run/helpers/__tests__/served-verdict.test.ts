@@ -39,6 +39,7 @@ interface Case {
   status?: unknown;
   launchd?: Record<string, Job>;
   routes?: unknown;
+  before?: unknown;
 }
 
 function verdict(c: Case = {}): { kind: string; msg: string }[] {
@@ -58,6 +59,7 @@ function verdict(c: Case = {}): { kind: string; msg: string }[] {
     "--slurpfile", "status", file("status.json", status),
     "--slurpfile", "launchd", file("launchd.json", launchd),
     "--slurpfile", "routes", file("routes.json", routes),
+    "--slurpfile", "before", file("before.json", c.before ?? null),
     "--arg", "helpers", HELPERS, "--arg", "home", HOME,
     "-f", VERDICT,
   ]);
@@ -109,7 +111,8 @@ describe("served-verdict.jq", () => {
     expect(bads(verdict({ status }))).toEqual(["chat: no icon on its deck status row (bundled identity missing)"]);
   });
 
-  test("the real dev-lived capture reports boxscore serving source and every app without its icon", () => {
+  // The capture was trimmed of `icon`, so every catalog row reads as iconless.
+  test("a dev-lived capture reports boxscore serving source, and its iconless rows each fail", () => {
     const status = JSON.parse(readFileSync(join(FIXTURES, "deck-status-dev-lived.json"), "utf8"));
     expect(bads(verdict({ status }))).toEqual([
       "board: no icon on its deck status row (bundled identity missing)",
@@ -158,6 +161,26 @@ describe("served-verdict.jq", () => {
       gitq: { loaded: true, program: `${HELPERS}/gitq`, argv: [`${HELPERS}/gitq`], cwd: `${HOME}/.mattstack/gitq`, pid: 99, lastExit: "1" },
     };
     expect(bads(verdict({ launchd }))).toEqual(["com.mattstack.deck.gitq is loaded, but deps.lock ships gitq as a tool, never an app"]);
+  });
+
+  test("with no pre-update snapshot, no line compares pids", () => {
+    expect(verdict().filter((l) => l.msg.includes("update"))).toEqual([]);
+  });
+
+  // A Sparkle swap replaces Contents/Helpers/<name> at the same path, so a job
+  // still on the deleted binary passes every other check.
+  test("an app still on its pre-update process fails; one that restarted passes", () => {
+    const before = Object.fromEntries(PROD_APPS.map((a) => [a.name, job(a, { pid: a.name === "board" ? 4242 : 1000 })]));
+    const lines = verdict({ before });
+    expect(bads(lines)).toEqual(["board: still the pre-update process (pid 4242)"]);
+    expect(lines).toContainEqual({ kind: "ok", msg: "chat: restarted since the update (pid 1000, now 4242)" });
+  });
+
+  test("an app with no pre-update pid says so rather than passing silently", () => {
+    const before = Object.fromEntries(PROD_APPS.map((a) => [a.name, a.name === "chat" ? notLoaded : job(a, { pid: 1000 })]));
+    const lines = verdict({ before });
+    expect(bads(lines)).toEqual([]);
+    expect(lines).toContainEqual({ kind: "ok", msg: "chat: had no pre-update pid to compare" });
   });
 
   test("an app without its .mattstack route fails", () => {

@@ -36,11 +36,27 @@ served_snapshot() {  # <dir>: status.json, routes.json and launchd.json for one 
   done | "$SERVED_JQ" -s 'add // {}' > "$dir/launchd.json"
 }
 
-assert_served_apps() {  # <log-name> <timeout-s>
-  local dir="$LOGS/$1" deadline=$((SECONDS + $2)) lock="$SERVED_APP/Contents/Resources/deps.lock" verdict kind msg
+served_catalog() {  # <dir>: catalog.json from the bundle's deps.lock, or one bad line
+  local lock="$SERVED_APP/Contents/Resources/deps.lock"
+  "$SERVED_JQ" -c -f "$SERVED_JQ_DIR/catalog.jq" "$lock" > "$1/catalog.json" 2> "$1/catalog.stderr" && return 0
+  bad "cannot read the served-app catalog from $lock: $(head -c 200 "$1/catalog.stderr")"
+  return 1
+}
+
+record_served_jobs() {  # <log-name>: writes $LOGS/<log-name>/launchd.json for assert_served_apps' third argument
+  local dir="$LOGS/$1"
   mkdir -p "$dir"
-  if ! "$SERVED_JQ" -c -f "$SERVED_JQ_DIR/catalog.jq" "$lock" > "$dir/catalog.json" 2> "$dir/catalog.stderr"; then
-    bad "cannot read the served-app catalog from $lock: $(head -c 200 "$dir/catalog.stderr")"
+  served_catalog "$dir" && served_snapshot "$dir"
+}
+
+assert_served_apps() {  # <log-name> <timeout-s> [<launchd.json from record_served_jobs>]
+  local dir="$LOGS/$1" deadline=$((SECONDS + $2)) before="${3:-}" verdict kind msg
+  mkdir -p "$dir"
+  served_catalog "$dir" || return
+  if [ -z "$before" ]; then
+    before="$dir/before.json"; echo null > "$before"
+  elif [ ! -f "$before" ]; then
+    bad "no pre-update launchd snapshot at $before"
     return
   fi
   while :; do
@@ -48,6 +64,7 @@ assert_served_apps() {  # <log-name> <timeout-s>
     verdict=$("$SERVED_JQ" -r -n \
       --slurpfile catalog "$dir/catalog.json" --slurpfile status "$dir/status.json" \
       --slurpfile launchd "$dir/launchd.json" --slurpfile routes "$dir/routes.json" \
+      --slurpfile before "$before" \
       --arg helpers "$SERVED_APP/Contents/Helpers" --arg home "$HOME" \
       -f "$SERVED_JQ_DIR/served-verdict.jq" 2> "$dir/verdict.stderr") \
       || verdict="bad"$'\t'"served-verdict.jq failed: $(tr "\n" " " < "$dir/verdict.stderr" | head -c 200)"

@@ -1,6 +1,7 @@
 # jq -r -n --slurpfile catalog <catalog.jq output> --slurpfile status <deck
 #   /api/v1/status or null> --slurpfile launchd <{name: launchctl-print.jq}>
 #   --slurpfile routes <~/.portless/routes.json or null>
+#   --slurpfile before <{name: launchctl-print.jq} taken before an update, or null>
 #   --arg helpers <app>/Contents/Helpers --arg home <$HOME>
 # Prints one "ok<TAB>msg" or "bad<TAB>msg" line per assertion.
 def ok($m): "ok\t" + $m;
@@ -10,6 +11,7 @@ def deck_label($n): "com.mattstack.deck." + $n;
 ($catalog[0] // {apps: [], tools: []}) as $cat
 | ($status[0]) as $st
 | ($launchd[0] // {}) as $ld
+| ($before[0]) as $bef
 | ([($routes[0] // [])[]?.hostname]) as $hosts
 | if ($cat.apps | length) == 0 then
     bad("deps.lock names no served apps: no helper row carries serve")
@@ -48,7 +50,13 @@ def deck_label($n): "com.mattstack.deck." + $n;
              (if $job.cwd == "\($home)/.mattstack/\($a.name)" then ok("\($a.name): working directory \($job.cwd)")
               else bad("\($a.name): working directory is \($job.cwd | tojson), wanted \($home)/.mattstack/\($a.name)") end),
              (if $job.pid != null then ok("\($a.name): running (pid \($job.pid))")
-              else bad("\($a.name): loaded but not running (last exit \($job.lastExit // "unknown"))") end)
+              else bad("\($a.name): loaded but not running (last exit \($job.lastExit // "unknown"))") end),
+             (if $bef == null or $job.pid == null then empty
+              else ($bef[$a.name].pid // null) as $was
+                | if $was == null then ok("\($a.name): had no pre-update pid to compare")
+                  elif $was == $job.pid then bad("\($a.name): still the pre-update process (pid \($was))")
+                  else ok("\($a.name): restarted since the update (pid \($was), now \($job.pid))") end
+              end)
            end)
         end ),
     ( [$cat.tools[] | select(($ld[.] // {loaded: false}).loaded == true)] as $served_tools

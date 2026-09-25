@@ -28,7 +28,7 @@ function lockRow(name: string, serve?: { port: number; args: string[] }) {
 
 // A fake bundle, HOME, launchctl and curl: the stubs answer from files under
 // root and append every call to root/calls so a test can see what ran.
-function world(opts: { statusFailures?: number; deadHosts?: string[]; withLock?: boolean } = {}): World {
+function world(opts: { statusFailures?: number; deadHosts?: string[]; withLock?: boolean; restartAfterPrints?: number } = {}): World {
   const root = mkdtempSync(join(tmpdir(), "served-apps-sh-"));
   const home = join(root, "home");
   const app = join(root, "mattstack.app");
@@ -62,11 +62,16 @@ function world(opts: { statusFailures?: number; deadHosts?: string[]; withLock?:
   }
   writeFileSync(join(root, "status-failures"), String(opts.statusFailures ?? 0));
   writeFileSync(join(root, "dead-hosts"), (opts.deadHosts ?? []).join("\n") + "\n");
+  writeFileSync(join(root, "restart-after"), String(opts.restartAfterPrints ?? 1_000_000));
   const launchctl = join(root, "launchctl");
   writeFileSync(launchctl, `#!/bin/bash
 echo "launchctl $*" >> "${calls}"
 label="\${2##*/}"
-if [ -f "${root}/launchd/$label" ]; then cat "${root}/launchd/$label"; exit 0; fi
+if [ -f "${root}/launchd/$label" ]; then
+  n=$(( $(cat "${root}/prints-$label" 2>/dev/null || echo 0) + 1 )); echo "$n" > "${root}/prints-$label"
+  if [ "$n" -gt "$(cat "${root}/restart-after")" ]; then sed 's/pid = 4242$/pid = 5151/' "${root}/launchd/$label"; else cat "${root}/launchd/$label"; fi
+  exit 0
+fi
 echo "Bad request."; echo "Could not find service \\"$label\\" in domain for user gui: 501"; exit 113
 `);
   const curl = join(root, "curl");
@@ -150,6 +155,29 @@ describe("assert_served_apps", () => {
     expect(out).toContain("ASSERT FAIL deck /api/v1/status did not answer with an apps list");
     expect(calls(w).match(/api\/v1\/status/g)!.length).toBeGreaterThanOrEqual(2);
   }, POLL_TEST_MS);
+
+  test("an update leg fails a job still on its pre-update pid", () => {
+    const w = world();
+    const { out, fails } = run(w, 'record_served_jobs update-before\nassert_served_apps served 0 "$LOGS/update-before/launchd.json"');
+    expect(fails).toBe(2);
+    expect(out).toContain("ASSERT FAIL board: still the pre-update process (pid 4242)");
+    expect(out).toContain("ASSERT FAIL chat: still the pre-update process (pid 4242)");
+  });
+
+  test("it polls until every app has moved off its pre-update pid", () => {
+    const w = world({ restartAfterPrints: 2 });
+    const { out, fails } = run(w, 'record_served_jobs update-before\nassert_served_apps served 30 "$LOGS/update-before/launchd.json"');
+    expect(fails).toBe(0);
+    expect(out).toContain("ASSERT ok   board: restarted since the update (pid 4242, now 5151)");
+    expect(calls(w).match(/com\.mattstack\.deck\.board/g)?.length).toBe(3);
+  }, POLL_TEST_MS);
+
+  test("a missing pre-update snapshot fails rather than skipping the comparison", () => {
+    const w = world();
+    const { out, fails } = run(w, 'assert_served_apps served 0 "$LOGS/nope.json"');
+    expect(fails).toBe(1);
+    expect(out).toContain("ASSERT FAIL no pre-update launchd snapshot at");
+  });
 
   test("a loaded gitq label fails even though no script names gitq", () => {
     const w = world();
