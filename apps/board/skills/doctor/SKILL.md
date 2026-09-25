@@ -106,9 +106,10 @@ skip straight to "Resumed gate" below — none of the numbered steps run.
      is enumerable, it reports that decision back to you instead of guessing
      or terminating — see "Escalation gate" below for what to do with it.
    - **If no domain skill resolved:** do a generic best-effort: `glab mr view <mrUrl>` to
-     read conflict/pipeline state, attempt a mechanical rebase, and retry
-     obviously-flaky pipelines. Do **not** guess at semantic conflict
-     resolutions or behavior-changing test fixes; escalate those.
+     read conflict/pipeline state, attempt a mechanical rebase (on GitLab
+     the `mr_rebase` tool), and retry obviously-flaky pipelines (on GitLab
+     `mr_retry` with the job or pipeline id). Do **not** guess at semantic
+     conflict resolutions or behavior-changing test fixes; escalate those.
 3. **Escalate, don't speculate.** A fix that requires product judgment or
    non-obvious semantic resolution splits into two shapes:
    - **Non-enumerable.** No small set of concrete choices exists — the
@@ -260,8 +261,9 @@ describes. When the daemon is down the hook allows the native form
 When `--tier api` is present, the repair is checkout-free by contract:
 
 - Never claim a worktree, never commit, never push. The only mutations
-  allowed are pipeline/job retries, (if `clean-api-rebase` is in
-  `--fix-classes`) a server-side rebase, and held drafts via `--draft-bin`.
+  allowed are pipeline/job retries (on GitLab `mr_retry`), (if
+  `clean-api-rebase` is in `--fix-classes`) a server-side rebase (on
+  GitLab `mr_rebase`), and held drafts via `--draft-bin`.
 - The `rebasing`/`fixing` milestones still apply to their API-shaped
   equivalents (server-side rebase, retry); otherwise go straight from
   `diagnosing` to `watching`. The escalation gate applies unchanged at this
