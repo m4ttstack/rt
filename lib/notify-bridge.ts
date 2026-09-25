@@ -112,10 +112,10 @@ function metaString(payload: Record<string, unknown>, key: string): string | und
 
 /** A gate opener's own notification copy (`meta.headline`/`meta.summary`),
     else the label and first question every gate already carries. */
-const META_FALLBACKS: Record<string, (payload: Record<string, unknown>) => string | undefined> = {
-  headline: (p) => metaString(p, "headline") ?? (typeof p.label === "string" ? p.label : undefined),
-  summary: (p) => metaString(p, "summary") ?? firstQuestionLabel(p),
-};
+const META_FALLBACKS = new Map<string, (payload: Record<string, unknown>) => string>([
+  ["headline", (p) => metaString(p, "headline") ?? (typeof p.label === "string" ? p.label : "")],
+  ["summary", (p) => metaString(p, "summary") ?? firstQuestionLabel(p)],
+]);
 
 /** `{field}` -> String(payload[field]); an unknown field renders as the literal
     `{field}`. `{question}` does not read payload.question but resolves to
@@ -125,7 +125,7 @@ function interpolate(template: string, payload: Record<string, unknown>): string
   return template.replace(TEMPLATE_FIELD_RE, (literal, field: string) => {
     if (field === "question") return firstQuestionLabel(payload);
     if (Object.prototype.hasOwnProperty.call(payload, field)) return String(payload[field]);
-    return META_FALLBACKS[field]?.(payload) ?? literal;
+    return META_FALLBACKS.get(field)?.(payload) ?? literal;
   });
 }
 

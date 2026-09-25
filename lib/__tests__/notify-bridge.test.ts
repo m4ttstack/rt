@@ -235,6 +235,27 @@ describe("startNotifyBridge", () => {
     expect(e.message).toBe("Post which findings?");
   });
 
+  test("a field named after an Object built-in still renders literally", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/*", category: "gate", title: "{constructor} {toString}", message: "{__proto__}" }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+    await bus.emit("event", { id: 12, topic: "gate/opened/g12", payload: { label: "x" }, emittedAt: Date.now() });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.title).toBe("{constructor} {toString}");
+    expect(enqueued[0]!.message).toBe("{__proto__}");
+  });
+
+  test("{headline} renders empty, like {summary}, when nothing supplies it", async () => {
+    const e = await renderHeadlineSummary({ meta: {} });
+    expect(e.title).toBe("");
+    expect(e.message).toBe("");
+  });
+
   test("an unknown template field renders literally, not as undefined", async () => {
     const bus = fakeBus();
     const enqueued: NotificationEvent[] = [];
