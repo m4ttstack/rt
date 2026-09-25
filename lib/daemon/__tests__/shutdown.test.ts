@@ -1,10 +1,16 @@
-import { existsSync, writeFileSync } from "fs";
-import { expect, test } from "bun:test";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { dirname } from "path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import { DAEMON_PID_PATH, DAEMON_SOCK_PATH } from "../../daemon-config.ts";
 import { removeRuntimeFiles, makeGracefulExit } from "../shutdown.ts";
 
 const silentLog = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as unknown as Logger;
+
+function clearRuntimeFiles(): void {
+  rmSync(DAEMON_PID_PATH, { force: true });
+  rmSync(DAEMON_SOCK_PATH, { force: true });
+}
 
 test("gracefulExit exits 0 after the shutdown verb, 1 on a bare signal", async () => {
   const exits: number[] = [];
@@ -79,18 +85,27 @@ test("gracefulExit records the exit kind and code via recordCleanExit", async ()
   expect(recorded).toEqual([{ kind: "signal", code: 1 }, { kind: "shutdown", code: 0 }]);
 });
 
-test("removeRuntimeFiles does not unlink rt.pid/rt.sock when the pid file belongs to another process", () => {
-  writeFileSync(DAEMON_PID_PATH, "999999");
-  writeFileSync(DAEMON_SOCK_PATH, "");
-  removeRuntimeFiles({ pid: process.pid, log: silentLog });
-  expect(existsSync(DAEMON_PID_PATH)).toBe(true);
-  expect(existsSync(DAEMON_SOCK_PATH)).toBe(true);
-});
+describe("removeRuntimeFiles", () => {
+  beforeEach(() => {
+    mkdirSync(dirname(DAEMON_PID_PATH), { recursive: true });
+    clearRuntimeFiles();
+  });
 
-test("removeRuntimeFiles unlinks when the pid file is ours", () => {
-  writeFileSync(DAEMON_PID_PATH, String(process.pid));
-  writeFileSync(DAEMON_SOCK_PATH, "");
-  removeRuntimeFiles({ pid: process.pid, log: silentLog });
-  expect(existsSync(DAEMON_PID_PATH)).toBe(false);
-  expect(existsSync(DAEMON_SOCK_PATH)).toBe(false);
+  afterEach(clearRuntimeFiles);
+
+  test("does not unlink rt.pid/rt.sock when the pid file belongs to another process", () => {
+    writeFileSync(DAEMON_PID_PATH, "999999");
+    writeFileSync(DAEMON_SOCK_PATH, "");
+    removeRuntimeFiles({ pid: process.pid, log: silentLog });
+    expect(existsSync(DAEMON_PID_PATH)).toBe(true);
+    expect(existsSync(DAEMON_SOCK_PATH)).toBe(true);
+  });
+
+  test("unlinks when the pid file is ours", () => {
+    writeFileSync(DAEMON_PID_PATH, String(process.pid));
+    writeFileSync(DAEMON_SOCK_PATH, "");
+    removeRuntimeFiles({ pid: process.pid, log: silentLog });
+    expect(existsSync(DAEMON_PID_PATH)).toBe(false);
+    expect(existsSync(DAEMON_SOCK_PATH)).toBe(false);
+  });
 });
