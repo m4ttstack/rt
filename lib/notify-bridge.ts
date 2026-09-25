@@ -103,13 +103,29 @@ function firstQuestionLabel(payload: Record<string, unknown>): string {
   return typeof label === "string" ? label : "";
 }
 
+function metaString(payload: Record<string, unknown>, key: string): string | undefined {
+  const meta = payload.meta;
+  if (!meta || typeof meta !== "object") return undefined;
+  const value = (meta as Record<string, unknown>)[key];
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** A gate opener's own notification copy (`meta.headline`/`meta.summary`),
+    else the label and first question every gate already carries. */
+const META_FALLBACKS: Record<string, (payload: Record<string, unknown>) => string | undefined> = {
+  headline: (p) => metaString(p, "headline") ?? (typeof p.label === "string" ? p.label : undefined),
+  summary: (p) => metaString(p, "summary") ?? firstQuestionLabel(p),
+};
+
 /** `{field}` -> String(payload[field]); an unknown field renders as the literal
-    `{field}`. `{question}` is the one computed field: it does not read
-    payload.question but resolves to payload.questions[0].label. */
+    `{field}`. `{question}` does not read payload.question but resolves to
+    payload.questions[0].label. `{headline}` and `{summary}` read the payload's
+    own field when it has one, else META_FALLBACKS. */
 function interpolate(template: string, payload: Record<string, unknown>): string {
   return template.replace(TEMPLATE_FIELD_RE, (literal, field: string) => {
     if (field === "question") return firstQuestionLabel(payload);
-    return Object.prototype.hasOwnProperty.call(payload, field) ? String(payload[field]) : literal;
+    if (Object.prototype.hasOwnProperty.call(payload, field)) return String(payload[field]);
+    return META_FALLBACKS[field]?.(payload) ?? literal;
   });
 }
 
