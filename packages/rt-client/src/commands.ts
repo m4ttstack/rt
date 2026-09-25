@@ -761,8 +761,26 @@ export interface Commands {
     data: { discussionId: string; noteId: number; verified: true };
   };
 
+  /** Top-level MR note. `resolvable` (default true) opens a discussion a
+      human can resolve; false posts a plain note and `discussionId` is null.
+      `resolvable` in the reply is what GitLab reports. Posts once, never
+      retries. */
+  "mr:comment": {
+    payload: { repoName: string; iid: number; body: string; resolvable?: boolean };
+    data: { noteId: number; discussionId: string | null; resolvable: boolean; url: string; mrUrl: string };
+  };
+
   /** Wire reply is `{ok:true}` on success (no `data`); a failure is `{ok:false,error}`. */
   "mr:action": { payload: { repoName: string; iid: number; action: MRActionName; args?: unknown[] }; data: Record<string, never> };
+
+  /** Creates an MR (a draft unless `draft: false`) and writes it back so the
+      board sees it before the next sweep. Never retries. `url` is null when
+      GitLab created the MR but reading it back failed. */
+  "mr:create": {
+    payload: { repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean };
+    data: { iid: number; url: string | null };
+  };
+
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };
   "mr:fetch-job-trace": { payload: { repoName: string; iid: number; jobId: number }; data: string };
 
@@ -995,7 +1013,9 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "discussions:reply",
   "discussions:diffs",
   "mr:comment-inline",
+  "mr:comment",
   "mr:action",
+  "mr:create",
   "mr:fetch-job-detail",
   "mr:fetch-job-trace",
   "endpoint:claim",
