@@ -11,8 +11,8 @@ struct URLSessionAppListFetcher: AppListFetching {
     }
 }
 
-/// Reports a webview's provisional-navigation failure back into the model
-/// keyed by app name, and intercepts cross-app links (main-frame navigation
+/// Reports a webview's failed navigation (a transport error or a main-frame
+/// 5xx) back into the model keyed by app name, and intercepts cross-app links (main-frame navigation
 /// or target=_blank) so a click inside one app's webview activates the
 /// shell's own tab for the target app instead of navigating in place.
 /// WKWebView.navigationDelegate/uiDelegate are both weak, so the model
@@ -28,6 +28,7 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        model?.store.noteFailedLoad(appName, url: (error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL)
         model?.loadFailures[appName] = true
         model?.loadingApps.remove(appName)
     }
@@ -41,8 +42,31 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        model?.store.noteLoaded(appName)
         model?.loadFailures[appName] = false
         model?.loadingApps.remove(appName)
+    }
+
+    /// WebKit treats any HTTP answer as a finished navigation, so without
+    /// this a portless 502 page for an app that is not up yet sits in the
+    /// tab with no overlay and no retry.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let http = navigationResponse.response as? HTTPURLResponse
+        guard case .fail(let status) = MainFrameResponse.verdict(isMainFrame: navigationResponse.isForMainFrame,
+                                                                  status: http?.statusCode) else {
+            decisionHandler(.allow)
+            return
+        }
+        TrayLog.warn("window main-frame 5xx", [
+            "app": appName, "status": status,
+            "url": http?.url?.absoluteString ?? "(none)",
+            "server": http?.value(forHTTPHeaderField: "Server") ?? "(none)",
+        ])
+        model?.store.noteFailedLoad(appName, url: http?.url)
+        model?.loadFailures[appName] = true
+        model?.loadingApps.remove(appName)
+        decisionHandler(.cancel)
     }
 
     /// A same-window link to a different mattstack app (e.g. deck's own app
