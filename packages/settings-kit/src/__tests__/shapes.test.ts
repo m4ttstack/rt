@@ -93,6 +93,7 @@ describe("matchesSchema", () => {
     const d = def({ key: "rt.homeSnapshot", type: "object", merge: "deep", schema: { type: "object", properties: { enabled: { type: "boolean" } }, required: ["enabled"] }, layerSchema: { type: "object", properties: { enabled: { type: "boolean" } } } });
     expect(matchesSchema(d, { enabled: true })).toBe(true);
     expect(matchesSchema(d, { enabled: "yes" })).toBe(false);
+    expect(matchesSchema(d, {})).toBe(true);
     expect(matchesSchema(def({ key: "x.none" }), {})).toBe(false);
   });
 });

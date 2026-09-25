@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { allDefs, getDef, isMigrated, validateValue, type SettingDef } from "../registry-machinery.ts";
 import type { JsonSchema } from "../schema.ts";
+import { SCHEMAS } from "../registry-schemas.ts";
 
 describe("settings/registry", () => {
   describe("getDef", () => {
@@ -439,6 +440,13 @@ describe("settings/registry", () => {
         expect(def.schema).toEqual(entry.schema);
         expect(def.storeVersion ?? 1).toBe(entry.storeVersion);
         if (def.merge === "deep" && def.type === "object") expect(def.layerSchema).toBeDefined();
+      }
+    });
+
+    test("every SCHEMAS key and every lock key is a registered object or array def", () => {
+      const lock = JSON.parse(readFileSync(new URL("../schema.lock.json", import.meta.url), "utf8")) as Record<string, unknown>;
+      for (const key of [...Object.keys(SCHEMAS), ...Object.keys(lock)]) {
+        expect(["object", "array"], `${key} is not a registered object or array def`).toContain(getDef(key)?.type as string);
       }
     });
 

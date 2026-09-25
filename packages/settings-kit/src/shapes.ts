@@ -1,9 +1,10 @@
 /**
  * Composite value shapes and the pure helpers every settings UI shares.
- * Headless and import-free at runtime, so a browser bundle and the server's
- * write gate load the same declarations. `recognize` derives the editor kind
- * from a def's JSON Schema; `SHAPES` now only carries the keys an owning
- * app's own editor handles (`external`), never a schema-derivable kind.
+ * Headless, with `@cfworker/json-schema` as its only runtime import, so a
+ * browser bundle and the server's write gate load the same declarations.
+ * `recognize` derives the editor kind from a def's JSON Schema; `SHAPES`
+ * carries only the keys an owning app's own editor handles (`external`),
+ * never a schema-derivable kind.
  */
 import type { SettingDefWire } from "./server.ts";
 import { Validator, type OutputUnit } from "@cfworker/json-schema";
@@ -191,8 +192,8 @@ export function matchesSchema(def: SettingDefWire, value: unknown): boolean {
   return checkValue(schema, value).length === 0;
 }
 
-/** Mirrors NOTIFICATION_TYPES in rt's lib/notifier.ts; a parity test in
-    lib/__tests__ fails when the two drift. */
+/** Mirrors NOTIFICATION_TYPES in rt's lib/notifier.ts; the parity test in
+    lib/__tests__/notification-shape-parity.test.ts fails when the two drift. */
 export const NOTIFICATION_EVENTS = [
   "pipeline_failed", "pipeline_passed", "mr_approved", "mr_merged", "mr_closed", "mr_ready",
   "merge_conflicts", "needs_rebase", "merge_error", "new_comment", "stale_port", "runaway_process",
@@ -205,8 +206,8 @@ export const DEFAULT_SLACK_EMOJI = { looking: "eyes", commented: "speech_balloon
 
 const BOARD_EDITOR = { kind: "external", app: "board" } as const;
 
-/** Every other composite key's editor kind now comes from `recognize(def.schema)`.
-    Only a key whose value board's own UI owns end to end stays here. */
+/** Only a key whose value board's own UI owns end to end belongs here; every
+    other composite key's editor kind comes from `recognize(def.schema)`. */
 export const SHAPES: Record<string, CompositeShape> = {
   "board.tabs": BOARD_EDITOR,
   "board.members": BOARD_EDITOR,
@@ -337,9 +338,9 @@ function count(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-/** The one-line collapsed form of a composite row. An `external` key (no
-    schema-derivable kind of its own) falls through to the same generic count
-    `json` uses below. */
+/** The one-line collapsed form of a composite row, counted by the kind
+    `recognize` derives from the def's schema. That holds for an `external`
+    key too; a schema no editor kind fits gets the generic `json` count. */
 export function summarize(def: SettingDefWire): string {
   const v = def.effective.value;
   const r = recognize(def.schema);
