@@ -17,6 +17,13 @@ private final class EventLog: @unchecked Sendable {
     var events: [LaunchSettleEvent] { lock.lock(); defer { lock.unlock() }; return items }
 }
 
+private final class Steps: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String] = []
+    func add(_ step: String) { lock.lock(); items.append(step); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return items }
+}
+
 /// Time moves only when something sleeps or a probe says it took time, so
 /// a deadline is reached by elapsed seconds alone.
 private final class FakeClock: @unchecked Sendable {
@@ -250,5 +257,36 @@ let launchLifecycleChecks: [Check] = [
         let held = progress(upgrade, failedRegisters: ["a.plist"])
         c.expect(!LaunchRecording.plan(registration: noPending, progress: held, report: bothAnswered).recordVersion)
         c.expect(LaunchRecording.restartsServedApps(progress: held, report: bothAnswered, deckLabel: "deck"))
+    },
+    Check("spawn heal: the daemon heals through its own re-register, as a spawn heal") { c in
+        let steps = Steps()
+        let ok = await SpawnHealRoute.heal(label: "com.mattstack.daemon", daemonLabel: "com.mattstack.daemon",
+                                           reregisterDaemon: { origin in steps.add("daemon \(origin)"); return true },
+                                           runGated: { origin, body in steps.add("gated \(origin)"); return await body() },
+                                           reregisterAgent: { label in steps.add("agent \(label)"); return true })
+        c.expect(ok)
+        c.expectEqual(steps.all, ["daemon \(DaemonOrigin.spawnHeal)"])
+    },
+    Check("spawn heal: any other agent re-registers inside the daemon's gate") { c in
+        let steps = Steps()
+        let gate = DaemonLifecycleGate(observer: { event in
+            if case .entered(let op, let origin) = event { steps.add("entered \(op) \(origin)") }
+        })
+        let ok = await SpawnHealRoute.heal(label: "com.mattstack.deck", daemonLabel: "com.mattstack.daemon",
+                                           reregisterDaemon: { _ in steps.add("daemon"); return true },
+                                           runGated: { origin, body in await gate.run(.restart, origin: origin, body) },
+                                           reregisterAgent: { label in steps.add("agent \(label)"); return true })
+        c.expect(ok)
+        c.expectEqual(steps.all, ["entered restart \(DaemonOrigin.spawnHeal)", "agent com.mattstack.deck"])
+    },
+    Check("spawn heal: a flavor retire that latched the gate skips another agent's heal") { c in
+        let steps = Steps(), gate = DaemonLifecycleGate()
+        _ = await gate.retire(origin: DaemonOrigin.flavorRetire) { true }
+        let ok = await SpawnHealRoute.heal(label: "com.mattstack.deck", daemonLabel: "com.mattstack.daemon",
+                                           reregisterDaemon: { _ in steps.add("daemon"); return true },
+                                           runGated: { origin, body in await gate.run(.restart, origin: origin, body) },
+                                           reregisterAgent: { label in steps.add("agent \(label)"); return true })
+        c.expect(!ok)
+        c.expectEqual(steps.all, [])
     },
 ]

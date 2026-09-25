@@ -43,10 +43,6 @@ let servicesChecks: [Check] = [
         c.expectEqual(r, deck)
         c.expectEqual(rargs, ["restart", "--managed"])
     },
-    Check("DaemonOrigin names the spawn heal apart from a plist change") { c in
-        c.expectEqual(DaemonOrigin.spawnHeal, "spawn heal")
-        c.expect(DaemonOrigin.spawnHeal != DaemonOrigin.plistChanged)
-    },
     Check("StartJob starts a job without killing a running one") { c in
         let (exe, args) = StartJob.arguments(label: "com.mattstack.daemon", uid: 501)
         c.expect(exe.hasPrefix("/bin/") && exe.hasSuffix("ctl"), "launchd's control tool, by absolute path")

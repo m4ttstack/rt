@@ -263,12 +263,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             daemonLabel: lifecycle.label,
             daemonAnswers: { await client.answers(asFlavor: flavor) },
             healAgent: { label in
-                if label == lifecycle.label {
-                    return await lifecycle.reregisterDaemon(origin: DaemonOrigin.spawnHeal)
-                }
-                return await lifecycle.runGated(origin: DaemonOrigin.spawnHeal) {
-                    await registrar.reregisterAgent(label: label)
-                }
+                await SpawnHealRoute.heal(label: label, daemonLabel: lifecycle.label,
+                                          reregisterDaemon: { await lifecycle.reregisterDaemon(origin: $0) },
+                                          runGated: { await lifecycle.runGated(origin: $0, $1) },
+                                          reregisterAgent: { await registrar.reregisterAgent(label: $0) })
             })
         let report = await registrar.settleLaunch(probes, latch: spawnHealLatch)
         registrar.recordAfterSettle(LaunchRecording.plan(registration: registration, progress: progress, report: report),

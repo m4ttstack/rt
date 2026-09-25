@@ -48,3 +48,15 @@ public final class SpawnHealLatch: @unchecked Sendable {
         return claimed.insert(label).inserted
     }
 }
+
+/// The daemon's heal is its own gated re-register. Any other agent's runs
+/// inside the daemon's gate, so a flavor retire that latched it skips it.
+public enum SpawnHealRoute {
+    public static func heal(label: String, daemonLabel: String,
+                            reregisterDaemon: (String) async -> Bool,
+                            runGated: (String, @escaping @Sendable () async -> Bool) async -> Bool,
+                            reregisterAgent: @escaping @Sendable (String) async -> Bool) async -> Bool {
+        if label == daemonLabel { return await reregisterDaemon(DaemonOrigin.spawnHeal) }
+        return await runGated(DaemonOrigin.spawnHeal) { await reregisterAgent(label) }
+    }
+}
