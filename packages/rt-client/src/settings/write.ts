@@ -30,22 +30,20 @@
  * ── Refusals ────────────────────────────────────────────────────────────
  * In order: unregistered key, migrated:false (naming `def.legacyFile`), a
  * scope the def does not list, a
- * repoIdentity supplied for a key that is not `repoScoped`, a value that
- * fails `registry.validateValue` (type check + the path-literal guard), and
- * finally — only for `scope: "team"` — a team store that cannot be resolved
- * (see below). Filesystem-touching checks (team resolution) run last, after
- * every pure/in-memory refusal, so a bad call never creates or touches a
- * file it was going to refuse anyway.
+ * repoIdentity supplied for a key that is not `repoScoped`, `validate-write.ts`'s
+ * `validateWrite` (type check and path-literal guard, then the layer schema,
+ * then the merged result), and finally, only for `scope: "team"`, a team
+ * store that cannot be resolved (see below). Filesystem-touching checks (team
+ * resolution) run last, after every pure/in-memory refusal, so a bad call
+ * never creates or touches a file it was going to refuse anyway.
  *
  * ── The path-literal guard is scope-aware ──────────────────────────────
- * Mirrors `resolve.ts`'s `validateForScope`: `def.pathGuardFields` (wave 1:
- * `rt.roles.hook`) is enforced at `user` and `team` scope, where a path
- * literal would silently stop applying the moment a teammate's checkout (or
- * this developer's own machine) sits at a different path. `machine` scope is
- * exempt — it is the one store where a path literal is the CORRECT way to
- * express something local-only, so writes there skip the guard entirely
- * (implemented by stripping `pathGuardFields` before calling
- * `validateValue`, same trick `resolve.ts` uses on the read side).
+ * `validateWrite` mirrors `resolve.ts`'s `validateForScope`: `def.pathGuardFields`
+ * (wave 1: `rt.roles.hook`) is enforced at `user` and `team` scope, where a
+ * path literal would silently stop applying the moment a teammate's checkout
+ * (or this developer's own machine) sits at a different path. `machine` scope
+ * is exempt: it is the one store where a path literal is the CORRECT way to
+ * express something local-only, so writes there skip the guard entirely.
  *
  * ── Team selection (a design decision this task made, per the brief) ──
  * The base signature (`setSetting(key, value, scope, opts?)`) is extended
@@ -98,9 +96,10 @@ import { applyEdits, modify, parseTree, type JSONPath, type Node, type ParseErro
 import { randomBytes } from "crypto";
 import { dirname } from "path";
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
-import { getDef, isMigrated, isRetiredKey, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
+import { getDef, isMigrated, isRetiredKey, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { listTeams } from "./stores.ts";
 import { isJoinedTeam } from "./team-local-read.ts";
+import { validateWrite } from "./validate-write.ts";
 
 export interface SetSettingOpts {
   /** Normalized repo identity — required to target a repoScoped key's `repos.<identity>` section. */
@@ -141,11 +140,10 @@ export function setSetting(key: string, value: unknown, scope: SettingScope, opt
     refuse(`"${key}" is not repo-scoped — omit the repo identity`);
   }
 
-  // machine scope is exempt from the path-literal guard (see module doc).
-  const guardedDef: SettingDef = scope === "machine" ? { ...def, pathGuardFields: undefined } : def;
-  const check = validateValue(guardedDef, value);
-  if (!check.ok) {
-    refuse(`refusing to set "${key}": ${check.reason} — use \${team:<name>} or \${repoRoot} instead`);
+  const verdict = validateWrite(def, value, { scope, repoIdentity: opts.repoIdentity, team: opts.team });
+  if (!verdict.ok) {
+    const hint = verdict.issues.length === 0 ? "; use ${team:<name>} or ${repoRoot} instead" : "";
+    refuse(`refusing to set "${key}": ${verdict.reason}${hint}`);
   }
 
   const storePath = resolveStorePath(scope, opts);

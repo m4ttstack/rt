@@ -154,7 +154,7 @@ export type { PaneServer, PaneRef } from "./pane-ref.ts";
 
 // ─── Settings (RT-50) ────────────────────────────────────────────────────────
 
-export { getSetting, listSettings, explainSetting, expandVariables, SCOPE_ORDER, setSettingsWarnSink } from "./settings/resolve.ts";
+export { getSetting, listSettings, explainSetting, expandVariables, SCOPE_ORDER, setSettingsWarnSink, mergedValueWith, listStoreRepoIdentities } from "./settings/resolve.ts";
 export type {
   Scope,
   Provenance,
@@ -168,6 +168,8 @@ export type {
 
 export { setSetting, unsetSetting } from "./settings/write.ts";
 export type { SetSettingOpts } from "./settings/write.ts";
+export { validateWrite } from "./settings/validate-write.ts";
+export type { WriteVerdict } from "./settings/validate-write.ts";
 
 export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-machinery.ts";
 export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";

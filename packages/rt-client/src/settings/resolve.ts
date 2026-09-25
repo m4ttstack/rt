@@ -224,6 +224,41 @@ function readStores(): StoreBundle {
   };
 }
 
+/**
+ * The merged value the resolver would produce if `override.scope` (and its
+ * repo section, when given) held `override.value`. The write gate uses it
+ * to refuse a write that breaks the merge; reads never call it.
+ */
+export function mergedValueWith(
+  def: SettingDef,
+  override: { scope: SettingScope; repoIdentity?: string; value: unknown },
+  opts: ResolveOpts = {},
+): unknown {
+  const stores = readStores();
+  const patched: StoreBundle = { user: cloneStore(stores.user), machine: cloneStore(stores.machine), teams: stores.teams.map(cloneStore) };
+  const targets = override.scope === "team" ? patched.teams : [override.scope === "user" ? patched.user : patched.machine];
+  for (const store of targets) {
+    if (override.repoIdentity !== undefined) {
+      store.repos[override.repoIdentity] = { ...(store.repos[override.repoIdentity] ?? {}), [def.key]: override.value };
+    } else {
+      store.global = { ...store.global, [def.key]: override.value };
+    }
+  }
+  return resolveDef(def, patched, opts).value;
+}
+
+function cloneStore(store: StoreFile): StoreFile {
+  return { ...store, global: { ...store.global }, repos: Object.fromEntries(Object.entries(store.repos).map(([k, v]) => [k, { ...v }])) };
+}
+
+/** Every repo identity that has a `repos.<id>` section in any store. */
+export function listStoreRepoIdentities(): string[] {
+  const stores = readStores();
+  const ids = new Set<string>();
+  for (const store of [stores.user, stores.machine, ...stores.teams]) for (const id of Object.keys(store.repos)) ids.add(id);
+  return [...ids].sort();
+}
+
 // ─── Slots: every rung a key could come from, weakest-first ──────────────────
 
 interface Slot {

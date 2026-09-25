@@ -13,6 +13,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { machineSettingsPath, teamLocalPath, teamSettingsPath, teamsDir, userSettingsPath } from "../paths.ts";
 import { setSetting, unsetSetting } from "../write.ts";
+import { withSchema } from "./with-schema.ts";
 
 const IDENTITY = "gitlab.com/acme/acme-dev";
 const TEAM = "acme";
@@ -371,6 +372,16 @@ describe("settings/write", () => {
       const content = readUser();
       expect(content).toContain("// keep this comment");
       expect(content).toContain("// and this one");
+    });
+  });
+
+  // ─── schema gate ────────────────────────────────────────────────────────────
+
+  describe("schema gate", () => {
+    test("a value failing the schema is refused with its path", () => {
+      withSchema("rt.repoRoots", { type: "array", items: { type: "string" } }, () => {
+        expect(() => setSetting("rt.repoRoots", [1], "machine")).toThrow(/\[0\]: expected string/);
+      });
     });
   });
 
