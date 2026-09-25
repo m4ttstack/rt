@@ -1016,13 +1016,14 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   runner: {
-    description: "Board of long-running commands in headless herdr panes (add, tail, restart, stop, focus)",
+    description: "Board of long-running commands in a detached tmux session (add, tail, restart, stop, focus)",
     module: "./commands/runner.ts",
     fn: "runnerCommand",
     context: "worktree",
     requiresTTY: true,
     fullscreen: true,
     args: [
+      { name: "Herdr", flag: "--herdr", type: "boolean", default: false, hint: "Run commands in background herdr panes instead of tmux (needs the rt daemon)" },
       { name: "Seed file", flag: "--seed-file", type: "text", placeholder: "/tmp/seed.json", hint: 'Open the board pre-seeded from this file\'s {"seed":[...]} rows (the envelope `rt run --resolve-only` prints) instead of starting empty' },
     ],
   },
