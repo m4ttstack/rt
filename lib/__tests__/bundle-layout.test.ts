@@ -92,6 +92,61 @@ describe("parseDepsLock", () => {
   });
 });
 
+describe("parseDepsLock serve", () => {
+  const withServe = (serve: unknown, index = 0, extra: object[] = []) =>
+    JSON.stringify({ ...LOCK, tools: [...LOCK.tools.map((t, j) => (j === index ? { ...t, serve } : t)), ...extra] });
+
+  test("keeps a valid serve and leaves rows without one as tools", () => {
+    const lock = parseDepsLock(withServe({ port: 11006, args: ["serve", "--quiet"] }));
+    expect(lock.tools[0]!.serve).toEqual({ port: 11006, args: ["serve", "--quiet"] });
+    expect(lock.tools[1]!.serve).toBeUndefined();
+  });
+  test("rejects a serve that is not an object", () => {
+    for (const bad of [null, [], 11006, "11006"]) {
+      expect(() => parseDepsLock(withServe(bad)), JSON.stringify(bad)).toThrow(/serve must be an object/);
+    }
+  });
+  test("rejects a port that is not an integer from 1024 to 65535", () => {
+    for (const port of [undefined, "11006", 11006.5, 80, 0, 70000]) {
+      expect(() => parseDepsLock(withServe({ port, args: [] })), String(port)).toThrow(/serve\.port must be an integer from 1024 to 65535/);
+    }
+  });
+  test("rejects missing or non-array args", () => {
+    for (const args of [undefined, "serve", {}]) {
+      expect(() => parseDepsLock(withServe({ port: 11006, args })), String(args)).toThrow(/serve\.args must be an array/);
+    }
+  });
+  test("rejects an empty arg or one carrying whitespace", () => {
+    for (const arg of ["", "two words", "tab\there", "line\nbreak", 7]) {
+      expect(() => parseDepsLock(withServe({ port: 11006, args: [arg] })), JSON.stringify(arg)).toThrow(/serve\.args\[0\] must be a non-empty string with no whitespace/);
+    }
+  });
+  test("rejects serve on a buildtool row", () => {
+    expect(() => parseDepsLock(withServe({ port: 11006, args: [] }, 3))).toThrow(/serve is only valid on a helper row/);
+  });
+  test("rejects serve on a row deck cannot run as Contents/Helpers/<name>", () => {
+    expect(() => parseDepsLock(withServe({ port: 11006, args: [] }, 1))).toThrow(/serve needs bundlePath and exec to be exactly Contents\/Helpers\/fast-browser/);
+    const renamed = { ...LOCK, tools: [{ ...LOCK.tools[0], bundlePath: `${HELPERS_DIR}/other`, exec: [`${HELPERS_DIR}/other`], serve: { port: 11006, args: [] } }] };
+    expect(() => parseDepsLock(JSON.stringify(renamed))).toThrow(/serve needs bundlePath and exec to be exactly Contents\/Helpers\/fzf/);
+  });
+  test("rejects two rows serving one port", () => {
+    const text = JSON.stringify({ ...LOCK, tools: [{ ...LOCK.tools[0], serve: { port: 11006, args: [] } }, { ...LOCK.tools[2], serve: { port: 11006, args: [] } }] });
+    expect(() => parseDepsLock(text)).toThrow(/serve\.port 11006 is already served by fzf/);
+  });
+  test("accepts serve on a pending row", () => {
+    const lock = parseDepsLock(withServe({ port: 11005, args: [] }, 2));
+    expect(lock.tools[2]!.serve).toEqual({ port: 11005, args: [] });
+  });
+  test("tolerates unknown keys inside serve", () => {
+    expect(() => parseDepsLock(withServe({ port: 11006, args: [], futureServeField: 1 }))).not.toThrow();
+  });
+  test("freezes serve and its args", () => {
+    const serve = parseDepsLock(withServe({ port: 11006, args: ["serve"] })).tools[0]!.serve!;
+    expect(Object.isFrozen(serve)).toBe(true);
+    expect(Object.isFrozen(serve.args)).toBe(true);
+  });
+});
+
 describe("parseDepsLock path safety", () => {
   test("rejects an absolute bundlePath", () => {
     const bad = { ...LOCK, tools: [{ ...LOCK.tools[0], bundlePath: "/etc/passwd" }] };

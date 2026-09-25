@@ -14,6 +14,11 @@ export type DepsLockEntitlements = "none" | "jit";
 export type DepsLockStatus = "bundled" | "pending";
 export type DepsLockKind = "helper" | "buildtool";
 
+export interface DepsLockServe {
+  port: number;
+  args: string[];
+}
+
 export interface DepsLockTool {
   name: string;
   version: string;
@@ -42,6 +47,11 @@ export interface DepsLockTool {
   repo?: string;
   /** App directory inside a monorepo `repo` (e.g. "apps/chat"); drives the bundle build's recipe path, version path, and app-prefixed release tags. */
   subdir?: string;
+  /**
+   * Marks a bundled app deck serves as `Contents/Helpers/<name>` followed by
+   * args, on port. A row without it is a tool.
+   */
+  serve?: DepsLockServe;
 }
 
 export interface DepsLock {
@@ -57,6 +67,40 @@ export const RT_BUNDLE_PATH = "Contents/MacOS/rt";
 const ARCHIVES = new Set<DepsLockArchive>(["raw", "tar.gz", "tar.xz", "zip", "npm", "go-src", "make-src"]);
 const SHA256 = /^[0-9a-f]{64}$/;
 const REQUIRED_STRING_FIELDS = ["name", "version", "license", "url", "sha256", "extract", "bundlePath"] as const;
+const SERVE_ARG = /^\S+$/;
+const MIN_SERVE_PORT = 1024;
+const MAX_SERVE_PORT = 65535;
+
+// Unknown keys inside serve stay tolerated for the same reason unknown row
+// keys do: an older rt or deck reads a newer bundle's lock.
+function validateServe(t: DepsLockTool, servedPorts: Map<number, string>): void {
+  const name = t.name;
+  const serve = t.serve as unknown;
+  if (typeof serve !== "object" || serve === null || Array.isArray(serve)) {
+    throw new Error(`deps.lock: ${name} serve must be an object`);
+  }
+  const { port, args } = serve as Record<string, unknown>;
+  if (typeof port !== "number" || !Number.isInteger(port) || port < MIN_SERVE_PORT || port > MAX_SERVE_PORT) {
+    throw new Error(`deps.lock: ${name} serve.port must be an integer from ${MIN_SERVE_PORT} to ${MAX_SERVE_PORT}, got ${String(port)}`);
+  }
+  if (!Array.isArray(args)) throw new Error(`deps.lock: ${name} serve.args must be an array`);
+  // Whitespace would split an arg wherever the argv is carried as one string.
+  args.forEach((a, j) => {
+    if (typeof a !== "string" || !SERVE_ARG.test(a)) {
+      throw new Error(`deps.lock: ${name} serve.args[${j}] must be a non-empty string with no whitespace`);
+    }
+  });
+  if (t.kind !== "helper") throw new Error(`deps.lock: ${name} serve is only valid on a helper row`);
+  const binary = `${HELPERS_DIR}/${name}`;
+  if (t.bundlePath !== binary || t.exec.length !== 1 || t.exec[0] !== binary) {
+    throw new Error(`deps.lock: ${name} serve needs bundlePath and exec to be exactly ${binary}`);
+  }
+  const holder = servedPorts.get(port);
+  if (holder !== undefined) throw new Error(`deps.lock: ${name} serve.port ${port} is already served by ${holder}`);
+  servedPorts.set(port, name);
+  Object.freeze(args);
+  Object.freeze(serve);
+}
 
 /** True for an absolute path or one that walks up via a ".." segment — neither is a safe archive-relative path. */
 function isUnsafeRelativePath(p: string): boolean {
@@ -70,6 +114,7 @@ export function parseDepsLock(text: string): DepsLock {
   if (!Array.isArray(raw.tools)) throw new Error("deps.lock: tools must be an array");
 
   const seen = new Set<string>();
+  const servedPorts = new Map<number, string>();
   raw.tools.forEach((t, i) => {
     if (typeof t !== "object" || t === null) throw new Error(`deps.lock: tools[${i}] must be an object`);
     for (const field of REQUIRED_STRING_FIELDS) {
@@ -119,6 +164,7 @@ export function parseDepsLock(text: string): DepsLock {
         throw new Error(`deps.lock: ${name} exec[${j}] must live under ${HELPERS_DIR}/`);
       }
     });
+    if (t.serve !== undefined) validateServe(t, servedPorts);
 
     if (t.status === "bundled") {
       if (!t.url) throw new Error(`deps.lock: bundled tool ${name} needs a url`);
