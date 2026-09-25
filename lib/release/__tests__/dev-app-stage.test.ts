@@ -105,7 +105,6 @@ describe("stageLocalDevApp", () => {
     expect(copy).toContain("/src/tree/ /scratch/");
     expect(copy).toContain("--exclude=.git");
     expect(calls).toContain("cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps");
-    expect(calls.some((c) => c.includes("fetch-deps.sh"))).toBe(false);
     const build = calls.find((c) => c.includes("rt-tray/build.sh dev"))!;
     expect(build.startsWith("env MS_BUILD_STAMP=2026-09-24 09:41:02 abc1234+dirty tree ")).toBe(true);
     expect(build.endsWith(" RT_VERSION=v2.11.0 rt-tray/build.sh dev")).toBe(true);
@@ -162,6 +161,18 @@ describe("stageLocalDevApp", () => {
     expect(stamp).toBe("2026-09-24 09:41:02 abc1234 tree");
   });
 
+  test("a tree with a full deps folder still reconciles it against deps.lock after the copy", async () => {
+    const { seams, calls, cwds } = fakeSeams({ sourceDeps: "full" });
+    await stageLocalDevApp(seams, "/src/tree");
+    const copy = calls.indexOf("cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps");
+    const fetch = calls.indexOf("bash scripts/fetch-deps.sh arm64");
+    const build = calls.findIndex((c) => c.includes("rt-tray/build.sh dev"));
+    expect(copy).toBeGreaterThan(-1);
+    expect(fetch).toBeGreaterThan(copy);
+    expect(cwds[fetch]).toBe("/scratch");
+    expect(build).toBeGreaterThan(fetch);
+  });
+
   test("a tree without deps fetches them with bash in the scratch copy, before the build", async () => {
     const { seams, calls, cwds } = fakeSeams({ sourceDeps: "none" });
     await stageLocalDevApp(seams, "/src/tree");
@@ -199,7 +210,7 @@ describe("stageLocalDevApp", () => {
     const { seams, calls } = fakeSeams({ sourceDeps: "none", failCmd: "bash scripts/fetch-deps.sh" });
     const err = await stageLocalDevApp(seams, "/src/tree").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(UserActionableError);
-    expect((err as Error).message).toContain("scripts/fetch-deps.sh arm64 failed");
+    expect((err as Error).message).toContain("reconciling rt-tray/deps against deps.lock failed");
     expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
   });
 

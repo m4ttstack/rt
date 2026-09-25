@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { symlink, unlink } from "node:fs/promises";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient, AppFileStatusKind } from "../index.ts";
 
@@ -135,6 +136,25 @@ describe("commitDiff()", () => {
       const file = (await client.changedFiles("HEAD")).files[0]!;
       const diff = await client.commitDiff(file, "HEAD");
       expect(diff.hunks.flatMap((h) => h.lines.map((l) => l.text))).toContain("+tail");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("a committed file-to-symlink typechange shows its delete then its add", async () => {
+    const sb = await makeSandbox();
+    try {
+      await commit(sb, "f.txt", "one\n", "add");
+      await unlink(`${sb.dir}/f.txt`);
+      await symlink("elsewhere", `${sb.dir}/f.txt`);
+      await sb.commitAll("typechange");
+      const client = createGitClient(sb.dir);
+      const file = (await client.changedFiles("HEAD")).files[0]!;
+      const diff = await client.commitDiff(file, "HEAD");
+      expect(diff.typechange).toBe(true);
+      expect(diff.hunks.flatMap((h) => h.lines.map((l) => l.text))).toEqual([
+        "@@ -1 +0,0 @@", "-one", "@@ -0,0 +1 @@", "+elsewhere",
+      ]);
     } finally {
       await sb.cleanup();
     }

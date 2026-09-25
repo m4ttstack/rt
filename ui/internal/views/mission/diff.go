@@ -100,18 +100,80 @@ func (m *Mission) clampDiffCursor() {
 	}
 }
 
+// moveDiffCursor takes |delta| steps. A step on a cursor line taller than
+// the pane scrolls it one row until its far end is on screen; only then
+// does the cursor move to the next line, and a line entered from below
+// opens at its bottom so reading upward never jumps.
 func (m *Mission) moveDiffCursor(delta int) {
 	n := len(m.model.Diff.Lines)
 	if n == 0 {
 		return
 	}
-	m.diffCursor += delta
-	if m.diffCursor < 0 {
-		m.diffCursor = 0
+	step := 1
+	if delta < 0 {
+		step = -1
 	}
-	if m.diffCursor >= n {
-		m.diffCursor = n - 1
+	for ; delta != 0; delta -= step {
+		if lo, hi, ok := m.tallCursorSpan(); ok {
+			if next := m.cursorRowOff(hi-lo) + step; next >= 0 && next <= hi-lo {
+				m.setCursorRowOff(next)
+				continue
+			}
+		}
+		next := min(max(m.diffCursor+step, 0), n-1)
+		if next == m.diffCursor {
+			return
+		}
+		m.diffCursor = next
+		m.setCursorRowOff(0)
+		if lo, hi, ok := m.tallCursorSpan(); ok && step < 0 {
+			m.setCursorRowOff(hi - lo)
+		}
 	}
+}
+
+// cursorRowOff is how many rows into a tall cursor line the pane opens,
+// capped at maxOff. The offset belongs to the line it was set on, so a
+// different line landing under the cursor (a discard shifting the diff, a
+// same-path file in another commit) opens at its first row, and a resize
+// keeps the reader's place within the line rather than an absolute row.
+func (m *Mission) cursorRowOff(maxOff int) int {
+	lines := m.model.Diff.Lines
+	c := min(max(m.diffCursor, 0), len(lines)-1)
+	if c < 0 || !sameDiffLine(m.diffRowOffAt, lines[c]) {
+		return 0
+	}
+	return min(max(m.diffRowOff, 0), maxOff)
+}
+
+func (m *Mission) setCursorRowOff(off int) {
+	lines := m.model.Diff.Lines
+	c := min(max(m.diffCursor, 0), len(lines)-1)
+	if c < 0 {
+		return
+	}
+	m.diffRowOff, m.diffRowOffAt = off, lines[c]
+}
+
+// sameDiffLine matches one diff line across model pushes: staging it
+// changes Selected, never its text or position.
+func sameDiffLine(a, b DiffLine) bool {
+	return a.Kind == b.Kind && a.OldNo == b.OldNo && a.NewNo == b.NewNo && a.Text == b.Text
+}
+
+// tallCursorSpan is the diffTop range [lo, hi] that reads the cursor line
+// through the pane when it wraps to more rows than the pane holds, from the
+// row index and height of the last render; ok is false for a line that fits.
+func (m *Mission) tallCursorSpan() (lo, hi int, ok bool) {
+	lines, ix, h := m.model.Diff.Lines, &m.diffRowsCache, m.diffViewH
+	if h <= 0 || len(lines) == 0 || ix.n != len(lines) || ix.key != &lines[0] {
+		return 0, 0, false
+	}
+	c := min(max(m.diffCursor, 0), len(lines)-1)
+	if ix.start[c+1]-ix.start[c] <= h {
+		return 0, 0, false
+	}
+	return ix.start[c], ix.start[c+1] - h, true
 }
 
 type diffStagePayload struct {
@@ -376,11 +438,18 @@ func (m *Mission) renderDiffLines(width, height int) string {
 	}
 	// The viewport sees the cursor line's extra rows collapsed into its
 	// first, over a pane shrunk by the same amount: the whole line then
-	// stays in view with scrolloff around it, and a line taller than the
-	// pane (a one-row virtual pane) keeps its first row on top. Rows above
-	// the cursor line are the same in both spaces, which is all top can be.
-	virtualH := max(height-extra, 1)
-	top, _ := picker.Viewport(cursorRow, m.diffTop, total-extra, virtualH, virtualH, 0)
+	// stays in view with scrolloff around it. Rows above the cursor line
+	// are the same in both spaces, which is all top can be. A line taller
+	// than the pane fills it instead, at whichever of its rows
+	// moveDiffCursor has scrolled to.
+	m.diffViewH = height
+	var top int
+	if lo, hi, ok := m.tallCursorSpan(); ok {
+		top = lo + m.cursorRowOff(hi-lo)
+	} else {
+		virtualH := max(height-extra, 1)
+		top, _ = picker.Viewport(cursorRow, m.diffTop, total-extra, virtualH, virtualH, 0)
+	}
 	m.diffTop = top
 	thumbTop, thumbH := picker.ThumbSpan(top, min(height, total), total)
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)

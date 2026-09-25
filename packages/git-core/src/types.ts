@@ -142,6 +142,8 @@ export interface StagingDiff {
   kind: "text" | "binary" | "submodule";
   untracked: boolean;
   hunks: ReadonlyArray<import("./vendor/ghd/raw-diff.ts").DiffHunk>;
+  /** A file replaced by a symlink or back: the hunks are its delete then its add, so it stages only whole. */
+  typechange?: true;
   sources?: DiffSources;
 }
 

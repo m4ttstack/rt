@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a PR supersedes its older run and frees its macOS slot;
+# main runs are never cancelled, so every commit on main keeps its verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # macos-latest, matching e2e.yml: much of the tree is macOS-specific (launchd
 # labels, TCC, codesign, ~/Library paths) and the bunfig preload that isolates
 # HOME for tests is exercised the same way developers run it locally.

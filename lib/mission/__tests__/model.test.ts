@@ -928,6 +928,19 @@ describe("oversized diff gate", () => {
     expect("newSource" in model.diff).toBe(false);
   });
 
+  test("a typechange diff shows read-only: it stages only whole, from its file row", () => {
+    const model = buildModel(
+      baseInput({
+        state: { selectedPath: "big.txt" },
+        snapshot: { files: [changedFile({ path: "big.txt" })] },
+        stagingDiff: { ...bigStagingDiff(3), typechange: true },
+      }),
+    );
+    expect(model.diff.kind).toBe("text");
+    expect(model.diff.readOnly).toBe(true);
+    expect(model.diff.lines.every((l) => l.selIdx === -1)).toBe(true);
+  });
+
   test("an oversized diff never carries sources", () => {
     const model = buildModel(
       baseInput({

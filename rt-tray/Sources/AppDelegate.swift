@@ -1467,6 +1467,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         w.center()
         w.setFrameAutosaveName("rt-worktree-panel")
         w.isReleasedWhenClosed = false
+        // The panel's hosting view outlives the window, so its onDisappear never fires on close.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+            MainActor.assumeIsolated { WorktreeReviewWindow.shared.close() }
+        }
         worktreeWindow = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

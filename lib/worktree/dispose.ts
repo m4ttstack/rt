@@ -14,7 +14,7 @@
  */
 
 import { existsSync } from "fs";
-import { gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
+import { branchExistsLocalAsync, gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
 import { patchIdenticalToMr } from "./containment.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "./registry.ts";
 import { hasFreshAttendantLease } from "./lease.ts";
@@ -175,13 +175,24 @@ export async function mergedMrCoversHead(rec: TreeRecord, mr: { state?: string |
   return isAncestorAsync(rec.path, "HEAD", mr.sha);
 }
 
-/** Guard 3, non-merged: a branch that has not merged anchors on its remote ref. */
+/**
+ * Guard 3's anchor: every tip dispose drops (HEAD, and the branch it deletes,
+ * which need not be checked out) must be on origin/<branch> or on the default
+ * branch. The default branch alone is enough because origin/<branch> outlives
+ * a forge's delete-on-merge until a prune. Full refs, so a local branch named
+ * `origin/main` can never vouch.
+ */
 async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
-  const anchor =
-    rec.branch && (await remoteRefExists(rec.path, rec.branch))
-      ? `refs/remotes/origin/${rec.branch}`
-      : await remoteDefaultRef(rec.path);
-  return (await isAncestorAsync(rec.path, "HEAD", anchor)) ? null : "unpushed";
+  const anchors = [`refs/remotes/${await remoteDefaultRef(rec.path)}`];
+  if (rec.branch && (await remoteRefExists(rec.path, rec.branch))) anchors.push(`refs/remotes/origin/${rec.branch}`);
+  const tips = ["HEAD"];
+  if (rec.branch && (await branchExistsLocalAsync(rec.path, rec.branch))) tips.push(`refs/heads/${rec.branch}`);
+  for (const tip of tips) {
+    let onRemote = false;
+    for (const anchor of anchors) if (!onRemote) onRemote = await isAncestorAsync(rec.path, tip, anchor);
+    if (!onRemote) return "unpushed";
+  }
+  return null;
 }
 
 /**
