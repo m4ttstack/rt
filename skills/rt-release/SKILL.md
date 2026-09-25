@@ -59,17 +59,21 @@ in the notes.
    held apps, the commands.
 2. Run it. On a terminal it asks y/N on the notes itself. From an agent,
    run `rt release app <name> --json` in the background (it waits on the
-   bundle run and the PR's CI) and read the envelope when it exits: it
-   stops at the notes, with the notes, their `notesHash` and a `resume`
-   command. Show Matt the tag and the notes (step 6). After he approves,
+   bundle run and the PR's CI) and read the envelope when it exits. When
+   the notes are not yet committed on main it stops at them (status
+   `awaiting-approval`), with the notes, their `notesHash` and a `resume`
+   command; when an earlier run already committed them it goes straight on
+   to the tag and verify. Show Matt the tag and the notes (step 6). After he approves,
    run that `resume` command, `rt release app <name> --json --yes-notes
    <notesHash>`, the same way (the flag takes only that hash); it commits, tags and waits on release.yml
    (25-50 minutes).
 3. Read the final envelope's `status`:
    - `released`: go on to step 4.
-   - `pending`: tagged and published, but a check (usually
-     releases/latest) has not caught up. Not a failure: rerun its `resume`,
-     `rt release verify <tag>`, until it is clean.
+   - `pending`: tagged, but not verified yet. Either release.yml is still
+     running past the hour-long watch (the verify step's detail names the
+     run; nothing is published until it finishes), or it finished and a
+     check (usually releases/latest) has not caught up. Not a failure:
+     rerun its `resume`, `rt release verify <tag>`, until it is clean.
    - `failed`: the last step names what failed and `resume` names the next
      command. Rerunning `rt release app <name>` resumes, even after a run
      killed mid-wait, since every step detects its own completion; a
@@ -81,9 +85,10 @@ in the notes.
      envelope and, once he approves, run its new `resume`.
 4. Then finish with steps 11 and 12.
 
-Use the full process below for a deck fix and for a main carrying anything
-outside the pin allowlist (the verb refuses both, naming why), and when
-Matt wants several apps bumped and bundled in one release.
+Use the full process below for a deck fix, for a main carrying anything
+outside the pin allowlist, and for a pin moved below the version the last
+tag shipped (a revert); the verb refuses all three, naming why. Use it too
+when Matt wants several apps bumped and bundled in one release.
 
 ## Process
 
