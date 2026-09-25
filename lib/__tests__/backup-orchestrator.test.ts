@@ -4,14 +4,15 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
 import { spawn } from "bun";
+import { restoreHome } from "./home-env.ts";
 
 describe("backup-orchestrator", () => {
   let home: string;
-  let origHome: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
+    origHome = process.env.HOME;
     home = mkdtempSync(join(tmpdir(), "bo-test-"));
-    origHome = process.env.HOME!;
     process.env.HOME = home;
 
     const ms = join(home, ".mattstack");
@@ -49,7 +50,7 @@ describe("backup-orchestrator", () => {
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreHome(origHome);
     rmSync(home, { recursive: true, force: true });
   });
 

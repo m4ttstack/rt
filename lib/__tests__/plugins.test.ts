@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync,
 import { join } from "path";
 import { tmpdir } from "os";
 import { validateManifest, toCommandNode, ExecFailure, discoverPlugins, loadPluginTree, scaffoldPlugin, deepValidate, migrateLegacyPluginsDir } from "../plugins.ts";
+import { restoreHome } from "./home-env.ts";
 
 const valid = {
   name: "my-plugin",
@@ -106,15 +107,15 @@ describe("toCommandNode", () => {
   let savedHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-plugins-"));
     savedHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), "rt-plugins-"));
     process.env.HOME = home;
     dir = join(home, ".mattstack", "user", "plugins", "test-plugin");
     mkdirSync(dir, { recursive: true });
   });
 
   afterEach(() => {
-    process.env.HOME = savedHome;
+    restoreHome(savedHome);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -219,14 +220,14 @@ describe("discovery + merge", () => {
   const warn = (m: string) => warnings.push(m);
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-merge-"));
     savedHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), "rt-merge-"));
     process.env.HOME = home;
     warnings = [];
   });
 
   afterEach(() => {
-    process.env.HOME = savedHome;
+    restoreHome(savedHome);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -328,13 +329,13 @@ describe("scaffoldPlugin", () => {
   let savedHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-scaffold-"));
     savedHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), "rt-scaffold-"));
     process.env.HOME = home;
   });
 
   afterEach(() => {
-    process.env.HOME = savedHome;
+    restoreHome(savedHome);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -366,13 +367,13 @@ describe("deepValidate", () => {
   let savedHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-deepval-"));
     savedHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), "rt-deepval-"));
     process.env.HOME = home;
   });
 
   afterEach(() => {
-    process.env.HOME = savedHome;
+    restoreHome(savedHome);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -417,13 +418,13 @@ describe("migrateLegacyPluginsDir", () => {
   let savedHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "rt-plugins-migrate-"));
     savedHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), "rt-plugins-migrate-"));
     process.env.HOME = home;
   });
 
   afterEach(() => {
-    process.env.HOME = savedHome;
+    restoreHome(savedHome);
     rmSync(home, { recursive: true, force: true });
   });
 

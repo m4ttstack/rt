@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, statSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { restoreHome } from "./home-env.ts";
 
 let home: string;
 let savedHome: string | undefined;
@@ -12,13 +13,13 @@ function todayLocal(): string {
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "rt-plugin-api-"));
   savedHome = process.env.HOME;
+  home = mkdtempSync(join(tmpdir(), "rt-plugin-api-"));
   process.env.HOME = home;
 });
 
 afterEach(() => {
-  process.env.HOME = savedHome;
+  restoreHome(savedHome);
   rmSync(home, { recursive: true, force: true });
 });
 
