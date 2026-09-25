@@ -259,7 +259,7 @@ function isCommandNotFoundShape(message: string): boolean {
 
 async function renamePane(runner: HerdrRunner, paneId: string, label: string, log: Logger): Promise<void> {
   try {
-    const r = await runner(["pane", "rename", paneId, "--", label]);
+    const r = await runner(["pane", "rename", paneId, label]);
     if (r.exitCode !== 0 || r.stdout.includes('"error"')) log.warn({ paneId, out: r.stdout.slice(0, 400) }, "agent: pane rename failed; pane keeps its terminal title");
   } catch (err) {
     log.warn({ err, paneId }, "agent: pane rename failed; pane keeps its terminal title");

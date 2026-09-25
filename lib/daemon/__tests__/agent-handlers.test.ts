@@ -458,7 +458,8 @@ test("agent:start names a labeled agent's pane after its label", async () => {
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "-review !42" });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
-  expect(calls).toContainEqual(["pane", "rename", res.data.paneId!, "--", "-review !42"]);
+  // herdr joins every trailing arg into the label, a "--" included.
+  expect(calls).toContainEqual(["pane", "rename", res.data.paneId!, "-review !42"]);
 });
 
 test("agent:start still launches when the pane rename fails", async () => {
