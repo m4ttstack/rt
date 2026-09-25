@@ -75,6 +75,13 @@ describe("validateJson", () => {
     expect(extra[0]).toEqual({ path: ["b"], message: 'unexpected property "b"' });
   });
 
+  test("record keys come back verbatim, not in their URI-encoded pointer form", () => {
+    const map = { type: "object", additionalProperties: { type: "string" } };
+    for (const key of ["remote:gitlab.example.com%2Facme%2Fapp", "/Users/dev/My App", "a~b/c", "café"]) {
+      expect(validateJson(map, { [key]: 1 })[0]!.path).toEqual([key]);
+    }
+  });
+
   test("a conforming value with extras passes", () => {
     expect(validateJson(listSchema, [{ pattern: "gate/*", category: "gate", extra: true }])).toEqual([]);
   });

@@ -99,12 +99,14 @@ function toIssues(units: OutputUnit[]): SchemaIssue[] {
   });
 }
 
+// cfworker builds instanceLocation with encodeURI over the escaped pointer, so
+// each segment is URI-decoded before the ~1/~0 unescape.
 function pointerToPath(pointer: string): (string | number)[] {
   return pointer
     .replace(/^#\/?/, "")
     .split("/")
     .filter((s) => s !== "")
-    .map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"))
+    .map((s) => decodeURIComponent(s).replace(/~1/g, "/").replace(/~0/g, "~"))
     .map((s) => (/^\d+$/.test(s) ? Number(s) : s));
 }
 
