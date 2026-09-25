@@ -105,13 +105,27 @@ final class DevBuildWatcher {
         handOff(stagedPath: stagedApp, deckLabel: "com.mattstack.deck.dev", quit: quit)
     }
 
+    private var buildsDir: String { root + "/builds" }
+
+    /// Builds the restart handoff would swap back in without rebuilding, for
+    /// the Rebuild from… labels. At most `DevBuild.cacheKeep` small plist reads.
+    func cachedBuilds() -> [DevBuild.BuildIdentity] {
+        DevBuild.cachedIdentities(buildsDir: buildsDir,
+                                  listDir: { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] },
+                                  readFile: Self.read)
+    }
+
     private func handOff(stagedPath: String?, deckLabel: String?, quit: () -> Void) {
         guard BundleFlavor.isDevBuild else { return }
         let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
+        // Only a bundle that says what it was built from can be found again.
+        let cache = stagedPath == nil ? nil : DevBuild.identity(atBundle: Bundle.main.bundlePath, readFile: Self.read).flatMap {
+            DevBuild.CacheTarget(buildsDir: buildsDir, entryName: DevBuild.cacheEntryName(for: $0))
+        }
         let script = DevBuild.handoffScript(pid: getpid(), appPath: Bundle.main.bundlePath, stagedPath: stagedPath,
                                             deckLabel: deckLabel, uid: getuid(),
-                                            logPath: logs + "/dev-app-restart.log")
+                                            logPath: logs + "/dev-app-restart.log", cache: cache)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
         proc.arguments = ["-c", script]

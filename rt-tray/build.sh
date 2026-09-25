@@ -389,6 +389,14 @@ plist_set MSDevBuild bool "$IS_DEV"
 if [ "$IS_DEV" = true ] && [ -n "${MS_BUILD_STAMP:-}" ]; then
     plutil -replace MSBuildStamp -string "$MS_BUILD_STAMP" "$INFO"
 fi
+# The build's identity, which the dev app's build cache keys on: the restart
+# handoff files the outgoing app by it, and --local reuses a matching bundle.
+if [ "$IS_DEV" = true ] && [ -n "${MS_BUILD_SHA:-}" ]; then
+    plutil -replace MSBuildTree -string "$MS_BUILD_TREE" "$INFO"
+    plutil -replace MSBuildSha -string "$MS_BUILD_SHA" "$INFO"
+    plutil -replace MSBuildDiffHash -string "$MS_BUILD_DIFF_HASH" "$INFO"
+    plutil -replace MSBuildVersion -string "$MS_BUILD_VERSION" "$INFO"
+fi
 plist_set LSMinimumSystemVersion string 14.0
 
 if [ "$RT_VERSION" != "dev" ]; then

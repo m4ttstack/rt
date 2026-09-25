@@ -864,8 +864,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         menu.removeAllItems()
         let watcher = DevBuildWatcher.shared
         let groups = RebuildSources.group(watcher.sources, recentLimit: 5)
+        let cached = watcher.cachedBuilds()
         func item(_ source: RebuildSource) -> NSMenuItem {
-            let label = source.branch.map { $0 == source.name ? source.name : "\(source.name) · \($0)" } ?? source.name
+            let named = source.branch.map { $0 == source.name ? source.name : "\(source.name) · \($0)" } ?? source.name
+            let label = RebuildSources.isCached(source, in: cached) ? "\(named) · cached" : named
             let it = ActionMenuItem(label, state: source.path == last ? .on : .off, axid: AXID.trayDevRebuildSource) {
                 watcher.rebuild(from: source.path)
             }
