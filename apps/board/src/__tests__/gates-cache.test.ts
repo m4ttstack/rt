@@ -359,6 +359,34 @@ describe('GateCache.applyEvent', () => {
     expect(cached?.pane).toBe('pane-1');
   });
 
+  test("the answered frame for a board win the cache already holds keeps it answered and parked, so the frame's resume still fires", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ status: 'parked', parkedAt: 5000 }));
+    cache.applyRow(
+      row({
+        status: 'answered',
+        parkedAt: 5000,
+        answer: { answers: { q1: 'yes' }, by: 'board', answeredAt: 9000 },
+      })
+    );
+
+    cache.applyEvent({
+      topic: 'gate/answered/gate-1',
+      payload: {
+        id: 'gate-1',
+        subject: SUBJECT_A,
+        kind: 'review-post',
+        answers: { q1: 'yes' },
+        by: 'board',
+      },
+    });
+
+    const cached = cache.get(SUBJECT_A, 'review-post');
+    expect(cached?.status).toBe('answered');
+    expect(cached?.parkedAt).toBe(5000);
+    expect(cached?.answer?.answers).toEqual({ q1: 'yes' });
+  });
+
   test('a thin patch finds its row by id even when another kind shares the subject', () => {
     const cache = new GateCache();
     cache.applyRow(

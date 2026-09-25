@@ -15,8 +15,9 @@ export interface AnswerGateIo {
   /** The cached row when another surface already answered it: a late
       answer loses to that row rather than reading as a missing gate. */
   answeredRow?(gateId: string): GateRow | undefined;
-  /** Takes the winning row of a CAS loss the daemon reported, so the cache
-      stops holding the gate open when the board missed that answer. */
+  /** Takes the answered row the daemon settled on, this board's own or a
+      CAS loss's winner, so the cache stops holding the gate open without
+      waiting for the `gate/answered` frame to come back over the relay. */
   recordWinner?(row: GateRow): void;
   gateAnswer(
     payload: Commands['gate:answer']['payload']
@@ -57,9 +58,9 @@ function isUnreachableError(message: string): boolean {
  * cache already holds as answered loses to that answer at once, without a
  * daemon call. A CAS loss is `ok:true` with `conflict:true` and the winning
  * row -- not an error, since the facility already recorded a real answer,
- * just not this caller's -- and that row goes to `recordWinner`. The daemon
- * emits `gate/answered` itself on a genuine write, so there is nothing left
- * for this path to emit.
+ * just not this caller's. Either way the settled row goes to `recordWinner`.
+ * The daemon emits `gate/answered` itself on a genuine write, so there is
+ * nothing left for this path to emit.
  *
  * `gateAnswer` itself never rejects in production (the rt-client transport
  * catches connection failures into `{ok:false}`), but the try/catch here
@@ -93,7 +94,7 @@ export async function answerGate(
     return { kind: 'invalid', reason: message };
   }
 
-  if (!res.data.conflict) return { kind: 'ok' };
   io.recordWinner?.(res.data.row);
+  if (!res.data.conflict) return { kind: 'ok' };
   return { kind: 'conflict', row: res.data.row };
 }

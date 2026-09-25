@@ -949,6 +949,11 @@ export function Board() {
   }, [data]);
   const queue = useDecisionQueue(queueEntries, answeredGateIds);
   const activeGateId = queue.active?.gate.gateId ?? null;
+  const retireActiveGate = () => {
+    if (activeGateId === null) return;
+    queue.noteAnswered(activeGateId);
+    void load();
+  };
 
   // `?gate=<id>` deep link: by the time this runs, the linked row and queue
   // entries have already rendered (gateDeepLink is set in the same batch as
@@ -1496,8 +1501,8 @@ export function Board() {
           canBack={queue.canBack}
           canNext={queue.canNext}
           onFocusPane={handleFocusPane}
-          onAnswered={() => queue.noteAnswered(activeGateId)}
-          onContinue={() => queue.noteAnswered(activeGateId)}
+          onAnswered={retireActiveGate}
+          onContinue={retireActiveGate}
           onLostChange={lost => queue.hold(lost ? activeGateId : null)}
           people={
             new Map(
