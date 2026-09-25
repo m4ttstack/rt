@@ -9,6 +9,10 @@ for f in lib/common.sh golden/*.sh run/*.sh run/guest/*.sh run/host/*.sh ../../s
 done
 t "common.test.sh"               bash lib/__tests__/common.test.sh
 t "appcast-server.test.ts"       bun test run/helpers/__tests__/appcast-server.test.ts
+t "launchctl-print.test.ts"      bun test run/helpers/__tests__/launchctl-print.test.ts
+t "catalog.test.ts"              bun test run/helpers/__tests__/catalog.test.ts
+t "served-verdict.test.ts"       bun test run/helpers/__tests__/served-verdict.test.ts
+t "served-apps-sh.test.ts"       bun test run/helpers/__tests__/served-apps-sh.test.ts
 t "build-golden --dry-run"       bash golden/build-golden.sh 26 --dry-run
 # A pause nobody can answer used to exit mute under set -e, killing the VM
 # through the EXIT trap after 15 minutes of provisioning, with the failure
@@ -196,6 +200,20 @@ t "assert-installed.sh takes --expect-untrusted"  bash -c 'grep -q -- "--expect-
 t "drive-setup.sh answers repos.root before Continue" bash -c 'grep -q "setup repo-root set" run/guest/drive-setup.sh'
 t "drive-setup.sh rechecks after setting the root"    bash -c 'grep -q "setup.checklist.recheck" run/guest/drive-setup.sh'
 t "assert-installed.sh handles repos.root absent"     bash -c 'grep -q "repos.root" run/guest/assert-installed.sh'
+t "assert-installed.sh checks every .mattstack route, not the first" bash -c \
+  '! grep -qE "endswith\(\"\.mattstack\"\)\).*head -1" run/guest/assert-installed.sh \
+   && grep -q "assert_mattstack_routes untrusted proxy" run/guest/assert-installed.sh \
+   && grep -q "assert_mattstack_routes trusted proxy-after-trust" run/guest/assert-installed.sh'
+t "assert-installed.sh asserts the served apps the bundle's deps.lock names" bash -c \
+  'grep -q "assert_served_apps assert-served" run/guest/assert-installed.sh \
+   && grep -q "Contents/Resources/deps.lock" run/guest/served-apps.sh'
+t "assert-installed.sh polls the served set before fetching any route" bash -c '
+  served=$(grep -n "assert_served_apps assert-served" run/guest/assert-installed.sh | head -1 | cut -d: -f1)
+  route=$(grep -n "assert_mattstack_routes" run/guest/assert-installed.sh | head -1 | cut -d: -f1)
+  [ -n "$served" ] && [ -n "$route" ] && [ "$served" -lt "$route" ]'
+# grep exits 2 on a missing file, so only 1 (no match) passes.
+t "no served-app name is written into the guest assert" bash -c \
+  'grep -qwE "board|chat|console|boxscore|gitq" run/guest/served-apps.sh run/guest/jq/catalog.jq run/guest/jq/served-verdict.jq run/guest/jq/launchctl-print.jq; [ $? -eq 1 ]'
 
 
 rm -rf /tmp/vmcheck-tu
@@ -207,6 +225,16 @@ touch /tmp/vmcheck-tu/upd/appcast-server; chmod +x /tmp/vmcheck-tu/upd/appcast-s
 t "trigger-update.sh usage (missing new-version arg)" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
 t "trigger-update.sh usage (malformed new-version)" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 2.9 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
 t "trigger-update.sh ax.sh mount guard actually aborts" bash -c 'out=$(env GUEST_RUN=/tmp/vmcheck-tu-nonexistent bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 1.2.3 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "is not mounted" && ! printf "%s" "$out" | grep -q ASSERT'
+t "trigger-update.sh rejects an unknown third argument" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 1.2.3 --bogus 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
+t "trigger-update.sh asserts served apps and every route after the relaunch" bash -c \
+  'grep -q "assert_served_apps update-served" run/guest/trigger-update.sh && grep -q "assert_mattstack_routes trusted update" run/guest/trigger-update.sh'
+t "trigger-update.sh records the served jobs before the update and compares after" bash -c '
+  rec=$(grep -n "record_served_jobs update-before" run/guest/trigger-update.sh | head -1 | cut -d: -f1)
+  check=$(grep -n "POST http://localhost/update/check" run/guest/trigger-update.sh | head -1 | cut -d: -f1)
+  [ -n "$rec" ] && [ -n "$check" ] && [ "$rec" -lt "$check" ] \
+    && grep -qF "assert_served_apps update-served 180 \"\$LOGS/update-before/launchd.json\"" run/guest/trigger-update.sh'
+t "walkthrough hands --headless to the update leg" bash -c \
+  'grep -q "UPD_HFLAG=--headless" run/walkthrough.sh && [ "$(grep -c UPD_HFLAG run/walkthrough.sh)" -ge 2 ]'
 
 t "e2e-cleanroom usage"          bash -c '! bash ../../scripts/e2e-cleanroom.sh >/dev/null 2>&1'
 t "winid compiles"               swiftc -O -o /tmp/vmcheck-winid run/host/winid.swift

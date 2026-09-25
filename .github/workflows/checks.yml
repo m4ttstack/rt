@@ -37,7 +37,7 @@ jobs:
         run: bunx tsc --noEmit
 
       - name: Unit tests
-        run: bun test lib commands packages scripts
+        run: bun test lib commands packages scripts rt-tray/vm/run/helpers
 
       # release.yml is grandfathered out of the lint: it carries pre-existing
       # shellcheck findings whose quoting is tangled with the release flow.

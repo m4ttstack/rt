@@ -1,12 +1,14 @@
 #!/bin/bash
 # Sparkle vN → vN+1 inside the guest, with the appcast served on loopback.
-# Usage: trigger-update.sh <update-dir> <expect-new-version>
+# Usage: trigger-update.sh <update-dir> <expect-new-version> [--headless]
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; source "$HERE/ax.sh" || exit 1
-UPD="${1:-}"; NEWV="${2:-}"
+source "$HERE/served-apps.sh" || exit 1
+UPD="${1:-}"; NEWV="${2:-}"; MODE="${3:-}"
 [ -d "$UPD" ] && [ -f "$UPD/appcast.xml" ] && [ -x "$UPD/appcast-server" ] && [ -n "$NEWV" ] \
   && echo "$NEWV" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
-  || { echo "usage: trigger-update.sh <update-dir with appcast.xml + zip + appcast-server> <new-version X.Y.Z>"; exit 1; }
+  && case "$MODE" in ""|--headless) true;; *) false;; esac \
+  || { echo "usage: trigger-update.sh <update-dir with appcast.xml + zip + appcast-server> <new-version X.Y.Z> [--headless]"; exit 1; }
 : "${VM_APPCAST_PORT:=8765}"
 LOGS="$GUEST_RUN/logs"; mkdir -p "$LOGS" || { echo "trigger-update.sh: cannot write $LOGS" >&2; exit 2; }
 export PATH="$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -104,6 +106,9 @@ done
 before_app=$(pgrep -x mattstack | head -1)
 before_pid=$(daemon_pid)
 before_ver=$(tray_json | tr -d '\n')
+# Sparkle replaces each served app's binary at the same path, so only a pid
+# that moved shows a job left the deleted one.
+[ "$MODE" = --headless ] || record_served_jobs update-before
 ax_log "before: app pid=${before_app:-none} daemon pid=${before_pid:-none} bundle=$(bundle_ver) version=${before_ver:-?}"
 
 # A SecurityAgent prompt left over from an earlier phase would block the main thread, and
@@ -156,5 +161,13 @@ after_pid=$(wait_daemon "${before_pid:-}" 120)
 # "v2.11.1" on a tag, "v2.11.1-ci111" on a rehearsal. Compare the bare X.Y.Z.
 rv=$(rt --version 2>/dev/null | awk '{print $NF}'); rvn=$(printf '%s' "$rv" | sed -E 's/^v//; s/-ci[0-9]+$//')
 [ "$rvn" = "$NEWV" ] && ok "rt --version == $NEWV ($rv)" || bad "rt --version is '$rv'"
+# The relaunch is a first launch with setup already complete: deck's boot
+# sweep has to bring the bundle's served apps back on its own.
+if [ "$MODE" = --headless ]; then
+  ok "served apps and .mattstack routes not asserted (headless: no proxy, so deck has no routes)"
+else
+  assert_served_apps update-served 180 "$LOGS/update-before/launchd.json"
+  assert_mattstack_routes trusted update
+fi
 ax_log "after: app pid=$(pgrep -x mattstack | head -1) daemon pid=${after_pid:-none} bundle=$(bundle_ver)"
 finish "$([ "$fails" -eq 0 ] && echo 0 || echo 1)"

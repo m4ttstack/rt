@@ -1,0 +1,17 @@
+{
+  "devMode": false,
+  "up": 9,
+  "total": 10,
+  "apps": [
+    {"name":"gitq","displayTld":"localhost","port":11008,"url":"https://gitq.localhost","health":{"ok":false,"status":null,"ms":null},"service":{"label":"com.mattstack.deck.gitq-docs","pid":3238,"lastExitStatus":null},"managedBy":null,"issues":[]},
+    {"name":"mantine-kit","displayTld":"localhost","port":11003,"url":"https://mantine-kit.localhost","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.mantine-kit","pid":4096,"lastExitStatus":null},"managedBy":"user","issues":[]},
+    {"name":"gitq-docs","displayTld":"localhost","port":11009,"url":"https://gitq-docs.localhost","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.gitq-docs","pid":3238,"lastExitStatus":null},"managedBy":"user","issues":[]},
+    {"name":"training","displayTld":"localhost","port":11000,"url":"https://training.localhost","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.training","pid":3228,"lastExitStatus":null},"managedBy":"user","issues":[]},
+    {"name":"mattari","displayTld":"localhost","port":11010,"url":"https://mattari.localhost","health":{"ok":true,"status":200,"ms":2},"service":{"label":"com.mattstack.deck.mattari","pid":3246,"lastExitStatus":null},"managedBy":"user","issues":[]},
+    {"name":"chat","displayTld":"mattstack","port":11002,"url":"https://chat.mattstack","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.chat","pid":17594,"lastExitStatus":null},"managedBy":"rt","issues":[]},
+    {"name":"boxscore","displayTld":"mattstack","port":11005,"url":"https://boxscore.mattstack","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.boxscore","pid":77958,"lastExitStatus":null},"managedBy":"rt","issues":[{"source":"dev-link","message":"bundle for boxscore not installed; serving source","at":"2026-09-25T04:02:14.285Z"}]},
+    {"name":"deck","displayTld":"mattstack","port":7940,"url":"https://deck.mattstack","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.gitq-docs","pid":3238,"lastExitStatus":null},"managedBy":"deck","issues":[]},
+    {"name":"board","displayTld":"mattstack","port":11006,"url":"https://board.mattstack","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.board","pid":77964,"lastExitStatus":null},"managedBy":"rt","issues":[]},
+    {"name":"console","displayTld":"mattstack","port":11001,"url":"https://console.mattstack","health":{"ok":true,"status":200,"ms":1},"service":{"label":"com.mattstack.deck.console","pid":77968,"lastExitStatus":null},"managedBy":"rt","issues":[]}
+  ]
+}
