@@ -5,9 +5,14 @@
  * not isolation. A test preload calls this BEFORE repointing HOME: it strips
  * the live pointers from the env and arms RT_TEST_FORBID_SOCKS, the list of
  * sockets rtCommand refuses to dispatch at (transport.ts).
+ *
+ * The preload only runs when bun finds bunfig.toml in the cwd, so a test run
+ * started anywhere else keeps the real HOME. assertNotRealStoreInTest is the
+ * backstop for that case: every settings-store writer calls it first.
  */
-import { homedir } from "os";
-import { join } from "path";
+import { spawnSync } from "child_process";
+import { homedir, userInfo } from "os";
+import { isAbsolute, join, resolve, sep } from "path";
 
 /**
  * Strict by design: a JSON string is iterable and has .includes(), so an
@@ -33,4 +38,66 @@ export function guardTestDaemonEnv(env: NodeJS.ProcessEnv = process.env): void {
   delete env.RT_DAEMON_SOCK;
   delete env.RT_APP_SOCKET;
   env.RT_TEST_FORBID_SOCKS = JSON.stringify([...forbidden]);
+}
+
+const TEST_FILE = /[._](test|spec)\.[cm]?[jt]sx?$/;
+
+/**
+ * `bun test` sets NODE_ENV=test only when NODE_ENV is unset, so its entry
+ * module (Bun.main is the running test file) is checked too. NODE_ENV also
+ * marks a child a test spawned with the runner's env.
+ */
+export function isTestRun(env: NodeJS.ProcessEnv, main: string | undefined): boolean {
+  return env.NODE_ENV === "test" || env.VITEST !== undefined || (main !== undefined && TEST_FILE.test(main));
+}
+
+/** The refusal message when `target` sits in the account's real ~/.mattstack, else null. */
+export function realStoreRefusal(target: string, account: string, home: string | undefined): string | null {
+  const guarded = resolve(account, ".mattstack");
+  const path = resolve(target);
+  if (path !== guarded && !path.startsWith(`${guarded}${sep}`)) return null;
+  const homeNote = home === undefined ? "HOME is unset" : `HOME is ${home}`;
+  return (
+    `rt: refusing to write ${path} during a test run: it is this account's real settings under ${guarded} (${homeNote}). ` +
+    "run bun test from the repo root so the bunfig.toml test preload points HOME at a scratch dir."
+  );
+}
+
+/** The home directory field of one passwd entry (`id -P` or `getent passwd`), or null. */
+export function parsePasswdHome(line: string): string | null {
+  const fields = line.trim().split(":");
+  const dir = fields.length >= 7 ? fields[fields.length - 2] : undefined;
+  return dir !== undefined && isAbsolute(dir) ? dir : null;
+}
+
+let accountHomeCache: string | undefined;
+
+/**
+ * The account's home from the user database. Under bun, os.userInfo().homedir
+ * and os.homedir() both report the HOME the process started with, so a child
+ * spawned with a scratch HOME would otherwise read that scratch dir as the
+ * real home.
+ */
+export function accountHome(): string {
+  accountHomeCache ??= lookupPasswdHome() ?? userInfo().homedir;
+  return accountHomeCache;
+}
+
+function lookupPasswdHome(): string | null {
+  const uid = process.getuid?.();
+  if (uid === undefined) return null;
+  const [cmd, ...args] = process.platform === "darwin" ? ["/usr/bin/id", "-P"] : ["getent", "passwd", String(uid)];
+  const result = spawnSync(cmd as string, args, { encoding: "utf8", timeout: 5000 });
+  return result.status === 0 ? parsePasswdHome(result.stdout) : null;
+}
+
+function entryModule(): string | undefined {
+  return (globalThis as { Bun?: { main?: string } }).Bun?.main;
+}
+
+/** Throws before a test run writes into the account's real settings stores; a no-op outside test runs. */
+export function assertNotRealStoreInTest(target: string): void {
+  if (!isTestRun(process.env, entryModule())) return;
+  const refusal = realStoreRefusal(target, accountHome(), process.env.HOME);
+  if (refusal !== null) throw new Error(refusal);
 }
