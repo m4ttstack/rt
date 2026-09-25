@@ -12,9 +12,10 @@ struct URLSessionAppListFetcher: AppListFetching {
 }
 
 /// Reports a webview's failed navigation (a transport error or a main-frame
-/// 5xx) back into the model keyed by app name, and intercepts cross-app links (main-frame navigation
-/// or target=_blank) so a click inside one app's webview activates the
-/// shell's own tab for the target app instead of navigating in place.
+/// 5xx) back into the model keyed by app name, and intercepts cross-app
+/// links (main-frame navigation or target=_blank) so a click inside one
+/// app's webview activates the shell's own tab for the target app instead
+/// of navigating in place.
 /// WKWebView.navigationDelegate/uiDelegate are both weak, so the model
 /// retains one of these per app for the life of the window.
 @MainActor
@@ -49,13 +50,14 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     /// WebKit treats any HTTP answer as a finished navigation, so without
     /// this a portless 502 page for an app that is not up yet sits in the
-    /// tab with no overlay and no retry.
+    /// tab with no overlay and no retry. Every other response keeps WebKit's
+    /// own default, which declines a MIME type it cannot show.
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         let http = navigationResponse.response as? HTTPURLResponse
         guard case .fail(let status) = MainFrameResponse.verdict(isMainFrame: navigationResponse.isForMainFrame,
                                                                   status: http?.statusCode) else {
-            decisionHandler(.allow)
+            decisionHandler(navigationResponse.canShowMIMEType ? .allow : .cancel)
             return
         }
         TrayLog.warn("window main-frame 5xx", [
