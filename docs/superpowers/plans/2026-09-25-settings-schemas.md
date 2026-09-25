@@ -325,8 +325,9 @@ function toIssues(units: OutputUnit[]): SchemaIssue[] {
       const m = /type "([^"]+)" is invalid\. Expected "([^"]+)"/.exec(u.error);
       return { path, message: m ? `expected ${m[2]}, got ${m[1]}` : u.error };
     }
-    if (u.keyword === "additionalProperties") {
-      // cfworker reports the extra property at its own location with a boolean-schema message.
+    // An `additionalProperties: false` extra surfaces as a unit whose keyword is the
+    // literal "false" (the boolean subschema), located at the extra property itself.
+    if (u.keyword === "false") {
       return { path, message: `unexpected property "${String(path.at(-1) ?? "")}"` };
     }
     if (u.keyword === "minimum" || u.keyword === "maximum" || u.keyword === "exclusiveMinimum" || u.keyword === "exclusiveMaximum") {
@@ -335,11 +336,15 @@ function toIssues(units: OutputUnit[]): SchemaIssue[] {
       return { path, message: `must be ${op} ${bound}` };
     }
     if (u.keyword === "enum") {
-      const list = /\[(.*)\]/.exec(u.error)?.[1]?.replace(/"/g, "") ?? "";
+      // cfworker: `Instance does not match any of ["a","b"].`
+      const raw = /(\[.*\])/.exec(u.error)?.[1];
+      let list = "";
+      try { list = raw ? (JSON.parse(raw) as unknown[]).map(String).join(", ") : ""; } catch { list = raw ?? ""; }
       return { path, message: `expected one of ${list}` };
     }
     if (u.keyword === "const") {
-      const want = /(?:const|value) (.+?)\.?$/.exec(u.error)?.[1]?.replace(/^"|"$/g, "") ?? "";
+      // cfworker: `Instance does not match "human".`
+      const want = /does not match (.+?)\.?$/.exec(u.error)?.[1]?.replace(/^"|"$/g, "") ?? "";
       return { path, message: `expected "${want}"` };
     }
     return { path, message: u.error };
@@ -372,7 +377,7 @@ export function firstIssueText(issues: SchemaIssue[]): string {
 }
 ```
 
-The regexes over cfworker's wording are the fragile part: read `node_modules/@cfworker/json-schema/dist/validate.js` for the exact strings each keyword emits in 4.1.1 (`required`, `type`, the four bounds, `enum`, `const`, the boolean-schema text for an `additionalProperties: false` extra) and match them; the normalized messages in the tests are the contract. When a bound or const value cannot be parsed from the text, resolve the failing keyword in the schema through the unit's `keywordLocation` and print the value from there.
+The strings these branches match are cfworker 4.1.1's: `Instance does not have required property "x".`, `Instance type "string" is invalid. Expected "boolean".`, `0 is less than 1.` (and the `greater than` / `or equal` forms), `Instance does not match any of ["a","b"].`, `Instance does not match "human".`, and `False boolean schema.` under keyword `false` for an `additionalProperties: false` extra. Confirm each against `node_modules/@cfworker/json-schema/dist/validate.js` before trusting a regex, and run the test file; the normalized messages in the tests are the contract. If a value cannot be parsed from the text, resolve the failing keyword in the schema through the unit's `keywordLocation` and print the value from there.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
@@ -499,7 +504,7 @@ describe("dist/index.js", () => {
 });
 ```
 
-`commands/__tests__/settings-schema.test.ts`: `settingsSchemaLock([])` rewrites `LOCK_PATH` to `JSON.stringify(buildLock(), null, 2) + "\n"` and prints the path (spy `console.log`); run it against a temp copy by passing `["--out", tmpFile]` so the test never touches the committed file.
+`commands/__tests__/settings-schema.test.ts`: `settingsSchemaLock(["--out", tmpFile])` writes `JSON.stringify(buildLock(), null, 2) + "\n"` to the temp file and prints its path (spy `console.log`); the test never touches the committed file. A second test covers the compiled-binary guard: give `settingsSchemaLock` an injectable second argument `{ lockPath }` (defaulting to `LOCK_PATH`), call it with a path under `/$bunfs/nope/schema.lock.json`, and assert the run-from-source message on stderr and `process.exitCode` 1 (make the guard set `process.exitCode = 1` and return, not `process.exit`, so it is testable).
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -596,20 +601,22 @@ Create `schema.lock.json` as `{}` for now, `breaking-schema-changes.json` as `{}
  */
 
 import { existsSync, writeFileSync } from "fs";
-import { dirname } from "path";
-import { buildLock, LOCK_PATH } from "../lib/settings/schema-lock.ts";
+import { buildLock, LOCK_PATH as DEFAULT_LOCK_PATH } from "../lib/settings/schema-lock.ts";
 
 function flagValue(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-export async function settingsSchemaLock(args: string[]): Promise<void> {
+export async function settingsSchemaLock(args: string[], deps: { lockPath?: string } = {}): Promise<void> {
+  const LOCK_PATH = deps.lockPath ?? DEFAULT_LOCK_PATH;
   const out = flagValue(args, "--out") ?? LOCK_PATH;
-  // A compiled rt resolves LOCK_PATH inside its own bundle, where nothing can be written.
-  if (out === LOCK_PATH && !existsSync(dirname(LOCK_PATH))) {
+  // A compiled rt resolves LOCK_PATH inside its own bundle (/$bunfs/...), where the lock
+  // file is absent and nothing can be written; from source the committed file exists.
+  if (out === LOCK_PATH && (LOCK_PATH.startsWith("/$bunfs/") || !existsSync(LOCK_PATH))) {
     console.error("rt settings schema lock: run from source (bun run cli.ts settings schema lock); the compiled binary has no checkout to write into");
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   writeFileSync(out, `${JSON.stringify(buildLock(), null, 2)}\n`);
   console.log(out);
@@ -1679,7 +1686,7 @@ export function recognize(schema: JsonSchema | undefined): Recognized {
 
 zod emits a loose object's `additionalProperties` as `{}` and a record's as the value schema; the `Object.keys(add).length > 0` test is what tells the two apart. Confirm against one converted loose object and one record from the lock (`schema.lock.json`) before relying on it; if 4.6 emits differently, match what the lock holds.
 
-`checkValue`: copy `validateJson`, `toIssues` and `pointerToPath` from rt-client's `schema.ts` (same normalization; a comment on why it is duplicated is warranted: the browser bundle cannot import rt-client). Keep a per-schema `WeakMap` validator cache.
+`checkValue`: copy `validateJson`, `toIssues` (every normalization branch, including the `false` keyword for extras) and `pointerToPath` from rt-client's `schema.ts` as they stand after Task 1 (a comment on why it is duplicated is warranted: the browser bundle cannot import rt-client). Keep a per-schema `WeakMap` validator cache. Add a settings-kit test that feeds the same fixtures as Task 1's `validateJson` tests and expects identical issues, so the two copies cannot drift.
 
 Then: `SHAPES` keeps the three external entries; `rowKind` returns `"external"` for a SHAPES key, `"readonly"` for secret/unwritable, `recognize(def.schema).kind` for composite defs, then `"enum"`/`"scalar"`; `summarize` switches on `recognize(def.schema)` (`objectList` counts items with `nouns(def.key)`, `objectMap` counts entries, `json` uses the array/object count or `"unset"`); add `matchesSchema(def, value)` as `checkValue(def.layerSchema ?? def.schema!, value).length === 0` (false when the def has no schema); `matchesShape` stays exported unchanged for `external` callers.
 
