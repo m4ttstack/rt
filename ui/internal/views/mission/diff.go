@@ -385,69 +385,101 @@ func (m *Mission) renderDiffLines(width, height int) string {
 		line := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
 		if idx < len(lines) {
 			hover := idx == m.hoverDiffLine
-			line = renderDiffLine(m.model.Diff, lines[idx], contentW, hover, hover && m.hoverGutter)
+			line = renderDiffRows(m.model.Diff, lines[idx], lineSpans(m.model.Diff.Lang, lines[idx]), contentW, hover, hover && m.hoverGutter)[0]
 		}
 		rows[i] = line + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}
 	return strings.Join(rows, "\n")
 }
 
-// renderDiffLine paints one line's gutter (stage bar + right-aligned
+// diffMarkWidth is the mark column's fixed cell width: a gap, the +/- mark
+// itself, and a trailing gap before the text.
+const diffMarkWidth = 3
+
+// diffRowBgs picks the gutter and row fills for a line's Kind: a hovered row
+// wins over its own add/del tint for both halves (GHD keeps hover legible
+// rather than layering the two), an add/del line gets its own tint pair, and
+// everything else (context) stays on plain Bg.
+func diffRowBgs(kind string, hover bool) (gutter, row color.Color) {
+	switch {
+	case hover:
+		return theme.HoverBg, theme.HoverBg
+	case kind == "add":
+		return theme.DiffAddGutterBg, theme.DiffAddBg
+	case kind == "del":
+		return theme.DiffDelGutterBg, theme.DiffDelBg
+	}
+	return theme.Bg, theme.Bg
+}
+
+func lineMark(kind string) (string, color.Color, color.Color) {
+	switch kind {
+	case "add":
+		return "+", theme.Mint, theme.Text
+	case "del":
+		return "-", theme.Coral, theme.Text
+	}
+	return " ", theme.TextSoft, theme.TextSoft
+}
+
+// lineSpans tokenizes one diff line's text; a lexer that swallows it
+// entirely (an empty first line back) falls back to one flat span rather
+// than losing the text.
+func lineSpans(lang string, line DiffLine) []span {
+	if lines := tokenizeLines(lang, line.Text+"\n"); len(lines) > 0 && len(lines[0]) > 0 {
+		return lines[0]
+	}
+	return []span{{text: line.Text}}
+}
+
+// renderDiffLine paints one line's gutter, mark and text and joins its rows
+// back into a single string; renderDiffLines calls renderDiffRows directly
+// so it can index a specific wrapped row once wrapping lands.
+func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bool) string {
+	return strings.Join(renderDiffRows(d, line, lineSpans(d.Lang, line), width, hover, gutterHover), "\n")
+}
+
+// renderDiffRows paints one line's gutter (stage bar + right-aligned
 // old/new numbers) and its mark/text, or the full-width hunk bar when Kind
 // is "hunk" -- the "@@ ... @@" text IS the hunk toggle, so it gets no
-// gutter columns of its own. hover paints the row's own HoverBg; gutterHover
-// additionally previews the stage bar in GutterHoverBar on an unselected
-// add/del line -- a selected line keeps its solid Pink bar regardless, since
-// there is nothing left to preview. A read-only line has nothing to stage,
-// so it paints no bar at all. Chroma highlighting is skipped while
-// hovered: highlightLine's per-token spans each carry their own SGR reset,
-// which would cut the wrapping HoverBg out from under every other token.
-func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bool) string {
+// gutter columns of its own. hover paints both gutter and row on HoverBg
+// while keeping spans' own syntax colours (paintSpans repaints each span's
+// background, so HoverBg reaches every token instead of being cut out by a
+// per-token SGR reset). gutterHover additionally previews the stage bar in
+// GutterHoverBar on an unselected add/del line -- a selected line keeps its
+// solid Pink bar regardless, since there is nothing left to preview. A
+// read-only line has nothing to stage, so it paints no bar at all.
+func renderDiffRows(d DiffModel, line DiffLine, spans []span, width int, hover, gutterHover bool) []string {
 	if width < 1 {
-		return ""
-	}
-	rowBg := lipgloss.NewStyle().Background(theme.Bg)
-	if hover {
-		rowBg = rowBg.Background(theme.HoverBg)
+		return []string{""}
 	}
 	if line.Kind == "hunk" {
 		bg := theme.Surface
 		if hover {
 			bg = theme.HoverBg
 		}
-		// Width() pads but never truncates, and lipgloss wraps rather than
-		// clipping non-inline content, so an unclipped header (a long
-		// function-context suffix) can wrap onto a second row and desync
-		// diffHit's row-to-Diff.Lines mapping. Clipped to one row first.
-		return lipgloss.NewStyle().Width(width).Background(bg).Foreground(theme.Lav).Render(clip(" "+line.Text, width))
+		// Clipped to one row: a wrapped header would desync diffHit.
+		return []string{lipgloss.NewStyle().Width(width).Background(bg).Foreground(theme.Lav).Render(clip(" "+line.Text, width))}
 	}
+	gutterBg, rowBg := diffRowBgs(line.Kind, hover)
+	gOn := lipgloss.NewStyle().Background(gutterBg)
+	on := lipgloss.NewStyle().Background(rowBg)
 
-	bar := " "
-	barStyle := rowBg
+	bar, barStyle := " ", gOn
 	switch {
 	case d.ReadOnly:
 	case line.Selected:
-		bar = theme.GlyphBar
-		barStyle = barStyle.Foreground(theme.Pink)
+		bar, barStyle = theme.GlyphBar, barStyle.Foreground(theme.Pink)
 	case gutterHover:
-		bar = theme.GlyphBar
-		barStyle = barStyle.Foreground(theme.GutterHoverBar)
+		bar, barStyle = theme.GlyphBar, barStyle.Foreground(theme.GutterHoverBar)
 	}
-	gutter := barStyle.Render(bar) + numCell(rowBg, line.OldNo) + numCell(rowBg, line.NewNo)
+	gutter := barStyle.Render(bar) + numCell(gOn, line.OldNo) + numCell(gOn, line.NewNo)
 
-	mark, base := lineMarkAndColor(line.Kind)
-	textW := width - lipgloss.Width(gutter) - lipgloss.Width(mark)
-	if textW < 0 {
-		textW = 0
-	}
-	text := clip(line.Text, textW)
-
-	rendered := rowBg.Foreground(base).Render(text)
-	if line.Kind != "del" && d.Lang != "" && !hover {
-		rendered = highlightLine(d.Lang, text, base, theme.Bg)
-	}
-	// A pane narrower than the gutter would otherwise wrap the row.
-	return rowBg.Width(width).Render(clipOn(gutter+rowBg.Foreground(base).Render(mark)+rendered, width, rowBg))
+	mark, markCol, base := lineMark(line.Kind)
+	markCell := on.Render(" ") + on.Foreground(markCol).Render(mark) + on.Render(" ")
+	textW := max(width-diffGutterWidth-diffMarkWidth, 0)
+	text := clipOn(paintSpans(spans, base, rowBg), textW, on)
+	return []string{on.Width(width).Render(clipOn(gutter+markCell+text, width, on))}
 }
 
 func numCell(bg lipgloss.Style, n int) string {
@@ -456,15 +488,4 @@ func numCell(bg lipgloss.Style, n int) string {
 		s = fmt.Sprintf("%d", n)
 	}
 	return bg.Foreground(theme.Faint).Width(diffNumWidth).Align(lipgloss.Right).Render(s)
-}
-
-func lineMarkAndColor(kind string) (string, color.Color) {
-	switch kind {
-	case "add":
-		return "+", theme.Mint
-	case "del":
-		return "-", theme.Coral
-	default:
-		return " ", theme.TextSoft
-	}
 }

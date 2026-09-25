@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/alecthomas/chroma/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"rt-ui/internal/session"
@@ -3545,4 +3546,56 @@ func TestFullFrameEmptyStateEveryRowFullyPaintsBackground(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertFullyBgFilled(t, "empty-state", m.View().Content, m.width)
+}
+
+func TestDiffAddRowPaintsTintAndGutterTint(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", NewNo: 7, Text: "x"}, 40, false, false)
+	for _, want := range []string{bgSGR(theme.DiffAddBg), bgSGR(theme.DiffAddGutterBg)} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("add row missing %s:\n%q", want, out)
+		}
+	}
+	if strings.Contains(out, bgSGR(theme.Bg)) {
+		t.Fatalf("add row leaks plain Bg:\n%q", out)
+	}
+}
+
+func TestDiffDelRowPaintsDelTint(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "del", OldNo: 3, Text: "y"}, 40, false, false)
+	if !strings.Contains(out, bgSGR(theme.DiffDelBg)) || !strings.Contains(out, bgSGR(theme.DiffDelGutterBg)) {
+		t.Fatalf("del row missing its tints:\n%q", out)
+	}
+}
+
+func TestDiffContextRowStaysOnBg(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "context", OldNo: 1, NewNo: 1, Text: "z"}, 40, false, false)
+	if strings.Contains(out, bgSGR(theme.DiffAddBg)) || strings.Contains(out, bgSGR(theme.DiffDelBg)) {
+		t.Fatalf("context row tinted:\n%q", out)
+	}
+}
+
+func TestDiffMarkSitsInItsOwnColumn(t *testing.T) {
+	out := ansi.Strip(renderDiffLine(DiffModel{}, DiffLine{Kind: "add", NewNo: 12, Text: "body"}, 40, false, false))
+	if !strings.Contains(out, "12 + body") {
+		t.Fatalf("want number, gap, mark, gap, text; got %q", out)
+	}
+}
+
+func TestDiffHoverKeepsHighlighting(t *testing.T) {
+	d := DiffModel{Lang: "go"}
+	out := renderDiffLine(d, DiffLine{Kind: "add", NewNo: 1, Text: `s := "hi"`}, 60, true, false)
+	if !strings.Contains(out, fgSGR(chromaStyleTable[chroma.LiteralString].fg)) {
+		t.Fatalf("hovered row lost syntax colour:\n%q", out)
+	}
+	if !strings.Contains(out, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered row not on HoverBg:\n%q", out)
+	}
+}
+
+func TestDiffDelLineIsHighlighted(t *testing.T) {
+	d := DiffModel{Lang: "go"}
+	out := renderDiffLine(d, DiffLine{Kind: "del", OldNo: 1, Text: `s := "hi"`}, 60, false, false)
+	if !strings.Contains(out, fgSGR(chromaStyleTable[chroma.LiteralString].fg)) {
+		t.Fatalf("del row not highlighted:\n%q", out)
+	}
 }
