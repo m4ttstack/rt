@@ -201,6 +201,10 @@ public enum DevBuild {
             "  if [ $cached = 0 ]; then echo 'could not cache the previous build; deleting it'; rm -rf \(incoming); fi",
             "fi",
             "if [ $swapped = 1 ]; then",
+            // A handoff killed mid-filing leaves its incoming dir; ten
+            // minutes is far past any live handoff's filing step.
+            "  find \(builds) -mindepth 1 -maxdepth 1 -type d -name '.incoming-*' ! -name \".incoming-$$\" -mmin +10 | "
+                + "while read -r d; do case \"$d\" in \(builds)/.incoming-?*) rm -rf \"$d\"; echo \"swept $d\" ;; esac; done",
             "  for d in \(builds)/*; do [ -d \"$d\" ] || continue; t=$(cat \"$d/cached-at\" 2>/dev/null); "
                 + "case $t in ''|*[!0-9]*) t=0 ;; esac; echo \"$t $d\"; done | sort -rn | tail -n +\(cacheKeep + 1) | "
                 + "while read -r t d; do case \"$d\" in \(inside)) rm -rf \"$d\"; echo \"evicted $d\" ;; esac; done",

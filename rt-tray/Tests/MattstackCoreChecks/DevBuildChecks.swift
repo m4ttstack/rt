@@ -358,4 +358,16 @@ let devBuildChecks: [Check] = [
             if cached { c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "old") }
         }
     },
+    Check("a crashed handoff's leftover incoming dir is swept once it is old, and a fresh one is left alone") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let stale = rig.builds.appendingPathComponent(".incoming-1")
+        let fresh = rig.builds.appendingPathComponent(".incoming-2")
+        makeBundle(stale.appendingPathComponent("bundle"), marker: "x")
+        makeBundle(fresh.appendingPathComponent("bundle"), marker: "x")
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: stale.path)
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
+        c.expectEqual(entries(rig.builds), [".incoming-2", "tree-abc"])
+    },
 ]
