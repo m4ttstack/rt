@@ -119,8 +119,7 @@ final class DevBuildWatcher {
         guard BundleFlavor.isDevBuild else { return }
         let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
-        // Only a bundle that says what it was built from can be found again;
-        // an unstamped one is deleted after the swap as before.
+        // Only a bundle that says what it was built from can be found again.
         let cache = stagedPath == nil ? nil : DevBuild.identity(atBundle: Bundle.main.bundlePath, readFile: Self.read).flatMap {
             DevBuild.CacheTarget(buildsDir: buildsDir, entryName: DevBuild.cacheEntryName(for: $0))
         }

@@ -42,7 +42,9 @@ swapped out (the last four, under `~/.mattstack/rt/dev-app/builds/`), and a
 that bundle in seconds instead of building (its `✓ staged` line says it came
 from the cache). When the running app already is that build, the last line is
 `✓ already running this build` and nothing is staged, so there is nothing for
-Matt to click. **Rebuild from ▸** marks such trees `· cached`.
+Matt to click. **Rebuild from ▸** marks a tree `· cached` when a kept build
+matches its HEAD commit; uncommitted changes can still differ, and the build
+step checks those before reusing it.
 
 Matt can do the same himself from the tray: **Rebuild (tree)** repeats the
 last `--local` tree, **Rebuild from ▸** picks any live repo-tools worktree.
