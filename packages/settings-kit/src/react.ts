@@ -32,6 +32,10 @@ export interface SettingsScopeState {
   unset: (key: string, scope: string) => Promise<string | null>;
   /** Move one key's authored value from one scope's store to another. */
   move: (key: string, from: string, to: string) => Promise<string | null>;
+  /** Remove one older store name of a key (spec 3's Remove the older name),
+      then refetch so its issue clears. Resolves null on success, else the
+      server's refusal message verbatim. */
+  prune: (key: string, scope: string, storeName: string, opts?: { force?: boolean; repo?: string; team?: string }) => Promise<string | null>;
 }
 
 export interface SettingKeyState {
@@ -138,6 +142,28 @@ export function useSettingsScope(prefix: string, opts: SettingsKitOptions = {}):
     [base],
   );
 
+  const prune = useCallback(
+    async (key: string, scope: string, storeName: string, opts: { force?: boolean; repo?: string; team?: string } = {}): Promise<string | null> => {
+      setSaving(key);
+      try {
+        const res = await fetch(`${base}/prune`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key, scope, storeName, force: opts.force === true, ...(opts.repo ? { repo: opts.repo } : {}), ...(opts.team ? { team: opts.team } : {}) }),
+        });
+        const body = (await res.json().catch(() => null)) as { effective?: EffectiveWire; error?: string } | null;
+        if (!res.ok || !body?.effective) return body?.error ?? `remove failed: ${res.status}`;
+        refresh();
+        return null;
+      } catch (err) {
+        return (err as Error).message;
+      } finally {
+        setSaving(null);
+      }
+    },
+    [base, refresh],
+  );
+
   const move = useCallback(
     async (key: string, from: string, to: string): Promise<string | null> => {
       let explained: { def: SettingDefWire; rows: ExplainRowWire[] };
@@ -168,8 +194,8 @@ export function useSettingsScope(prefix: string, opts: SettingsKitOptions = {}):
   );
 
   return useMemo(
-    () => ({ defs, loading, error, refresh, set, saving, unset, move }),
-    [defs, loading, error, refresh, set, saving, unset, move],
+    () => ({ defs, loading, error, refresh, set, saving, unset, move, prune }),
+    [defs, loading, error, refresh, set, saving, unset, move, prune],
   );
 }
 

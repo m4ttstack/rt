@@ -21,6 +21,7 @@ import {
   isMigrated,
   listStoreRepoIdentities,
   listUnregisteredSettings,
+  pruneStoreName,
   repoSectionsFor,
   setSetting,
   unsetSetting,
@@ -72,10 +73,13 @@ export type WireIssue = {
   [extra: string]: unknown;
 };
 
+/** One older store name beside the current one; values omitted for a secret def. */
+export type OlderNameWire = { storeName: string; storedVersion: number; label: string; value?: unknown; authored?: unknown };
+
 export type ExplainRowWire = Pick<
   ExplainRow,
-  "scope" | "file" | "present" | "shadowed" | "invalid" | "nonconforming"
-> & { value?: unknown };
+  "scope" | "file" | "present" | "shadowed" | "invalid" | "nonconforming" | "storeName" | "storedVersion" | "olderLabel"
+> & { value?: unknown; authored?: unknown; olderNames?: OlderNameWire[] };
 
 /** The winning layer, precomputed server-side so a list view renders and
     patches rows without a per-key explain round trip. `scope` is the winning
@@ -110,6 +114,7 @@ export interface RtSettingsApi {
   validateWrite: typeof validateWrite;
   setSetting: typeof setSetting;
   unsetSetting: typeof unsetSetting;
+  pruneStoreName: typeof pruneStoreName;
   listUnregisteredSettings: typeof listUnregisteredSettings;
   repoSectionsFor: typeof repoSectionsFor;
   listStoreRepoIdentities: typeof listStoreRepoIdentities;
@@ -212,6 +217,17 @@ export function sanitizeRows(def: SettingDef, rows: ExplainRow[]): ExplainRowWir
         : row.nonconforming;
     }
     if (def.secret !== true && "value" in row) wire.value = row.value;
+    if (row.storeName !== undefined) wire.storeName = row.storeName;
+    if (row.storedVersion !== undefined) wire.storedVersion = row.storedVersion;
+    if (row.olderLabel) wire.olderLabel = row.olderLabel;
+    if (row.olderNames) {
+      wire.olderNames = row.olderNames.map((o) =>
+        def.secret === true
+          ? { storeName: o.storeName, storedVersion: o.storedVersion, label: o.label }
+          : { storeName: o.storeName, storedVersion: o.storedVersion, label: o.label, value: o.value, authored: o.authored },
+      );
+    }
+    if (def.secret !== true && "authored" in row) wire.authored = row.authored;
     return wire;
   });
 }
@@ -236,6 +252,23 @@ function issuesFromRows(def: SettingDef, rows: ExplainRow[], repo?: string): Wir
         if (rowRepo) issue.repo = rowRepo;
         out.push(issue);
       }
+    }
+    for (const o of row.olderNames ?? []) {
+      if (o.label !== "diverged") continue;
+      const issue: WireIssue = {
+        scope: row.scope,
+        file: row.file,
+        kind: "diverged",
+        path: [],
+        message: `older store name "${o.storeName}" changed after "${row.storeName ?? def.key}" was written`,
+        storeName: o.storeName,
+      };
+      if (def.secret !== true) {
+        issue.olderValue = o.value;
+        issue.currentValue = row.value;
+      }
+      if (rowRepo) issue.repo = rowRepo;
+      out.push(issue);
     }
   }
   return out;
@@ -302,6 +335,7 @@ function json(body: unknown, status = 200): Response {
  *   GET  {base}/repos                                        → { repos: { identity, label }[] }
  *   POST {base}/set                                          → { rows, effective } | { error, issues? }
  *   POST {base}/unset                                        → { rows, effective } | { error }
+ *   POST {base}/prune                                        → { rows, effective } | { error }
  * Returns null for anything else so the host's routing continues.
  */
 export async function settingsHandler(
@@ -318,6 +352,7 @@ export async function settingsHandler(
     validateWrite,
     setSetting,
     unsetSetting,
+    pruneStoreName,
     listUnregisteredSettings,
     repoSectionsFor,
     listStoreRepoIdentities,
@@ -335,6 +370,7 @@ export async function settingsHandler(
     !path.startsWith(`${base}/explain/`) &&
     path !== `${base}/set` &&
     path !== `${base}/unset` &&
+    path !== `${base}/prune` &&
     path !== `${base}/repos`
   ) {
     return null;
@@ -474,6 +510,41 @@ export async function settingsHandler(
     if (repo) unsetOpts.repoIdentity = repo;
     try {
       rt.unsetSetting(key, scope, unsetOpts);
+    } catch (err) {
+      return json({ error: (err as Error).message }, 400);
+    }
+    const after = rt.explainSetting(key, { repoIdentity: repo ?? null });
+    return json({ rows: sanitizeRows(def, after), effective: effectiveFromRows(def, after) });
+  }
+
+  if (path === `${base}/prune` && req.method === "POST") {
+    const allow = opts.allowWrite ?? defaultAllowWrite;
+    if (!allow(req)) return json({ error: "settings writes are local-only" }, 403);
+    if (!isJsonBody(req)) return json({ error: "expected application/json" }, 415);
+
+    let body: Record<string, unknown>;
+    try {
+      body = (await req.json()) as Record<string, unknown>;
+    } catch {
+      return json({ error: "body must be JSON" }, 400);
+    }
+    const key = typeof body?.key === "string" ? body.key : "";
+    const scope = (typeof body?.scope === "string" ? body.scope : "") as SettingScope;
+    const team = typeof body?.team === "string" ? body.team : undefined;
+    const repo = normalizeRepo(typeof body?.repo === "string" ? body.repo : undefined);
+    const storeName = typeof body?.storeName === "string" ? body.storeName : "";
+
+    const def = rt.getDef(key);
+    if (!def) return json({ error: `unknown setting "${key}"` }, 404);
+    if (def.secret === true) return json({ error: "secret keys are not writable here" }, 400);
+    if (!storeName) return json({ error: "storeName is required" }, 400);
+
+    const pruneOpts: { team?: string; repoIdentity?: string; force: boolean } = { force: body?.force === true };
+    if (team) pruneOpts.team = team;
+    if (repo) pruneOpts.repoIdentity = repo;
+    try {
+      const { removed } = rt.pruneStoreName(key, storeName, scope, pruneOpts);
+      if (!removed) return json({ error: `"${storeName}" is not in the ${scope} store` }, 400);
     } catch (err) {
       return json({ error: (err as Error).message }, 400);
     }

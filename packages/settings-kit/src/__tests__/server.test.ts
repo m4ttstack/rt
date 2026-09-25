@@ -474,3 +474,103 @@ describe("schema on the wire", () => {
     expect(roles.repos).toEqual([{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }]);
   });
 });
+
+describe("versioned store names on the wire", () => {
+  const FILE = "/home/user/settings.user.jsonc";
+  const MIG_DEFS: Record<string, FakeDef> = {
+    "t.rules": { key: "t.rules", type: "array", scopes: ["user"], merge: "replace", description: "Rules", repoScoped: true, schema: { type: "array" } },
+    "t.staleRules": { key: "t.staleRules", type: "array", scopes: ["user"], merge: "replace", description: "Rules", schema: { type: "array" } },
+    "t.secretRules": { key: "t.secretRules", type: "array", scopes: ["user"], merge: "replace", description: "Rules", secret: true },
+  };
+  const rowsFor = (key: string, label: "diverged" | "stale") => [
+    { scope: "default", file: null, present: false },
+    {
+      scope: "user",
+      file: FILE,
+      present: true,
+      value: [{ match: "herd/*" }],
+      storeName: `${key}@2`,
+      storedVersion: 2,
+      authored: [{ match: "herd/*" }],
+      olderLabel: label,
+      olderNames: [{ storeName: key, storedVersion: 1, label, value: [{ match: "gate/*" }], authored: [{ pattern: "gate/*" }] }],
+    },
+  ];
+  const pruneCalls: unknown[][] = [];
+  const MIG_RT = {
+    ...(RT as unknown as Record<string, unknown>),
+    allDefs: () => Object.values(MIG_DEFS),
+    getDef: (key: string) => MIG_DEFS[key],
+    isMigrated: () => true,
+    explainSetting: (key: string) => rowsFor(key, key === "t.staleRules" ? "stale" : "diverged"),
+    repoSectionsFor: () => [],
+    pruneStoreName: (...args: unknown[]) => {
+      pruneCalls.push(args);
+      if (args[1] === "t.rules@2") throw new Error('rt: "t.rules@2" is not an older store name of "t.rules"');
+      return args[1] === "t.gone" ? { removed: false } : { removed: true, authored: [{ pattern: "gate/*" }] };
+    },
+  } as unknown as RtSettingsApi;
+  const call = (req: Request) => settingsHandler(req, { rt: MIG_RT });
+
+  beforeEach(() => {
+    pruneCalls.length = 0;
+  });
+
+  test("/defs carries a diverged issue with storeName, olderValue and currentValue; stale is not an issue", async () => {
+    const body = (await (await call(get("/api/settings/defs")))!.json()) as { defs: { key: string; issues: Record<string, unknown>[] }[] };
+    const rules = body.defs.find((d) => d.key === "t.rules")!;
+    expect(rules.issues).toEqual([
+      expect.objectContaining({ scope: "user", file: FILE, kind: "diverged", path: [], storeName: "t.rules", olderValue: [{ match: "gate/*" }], currentValue: [{ match: "herd/*" }] }),
+    ]);
+    expect(typeof rules.issues[0]!.message).toBe("string");
+    expect(body.defs.find((d) => d.key === "t.staleRules")!.issues).toEqual([]);
+  });
+
+  test("/explain rows carry storeName, storedVersion, authored and labeled older names", async () => {
+    const body = (await (await call(get("/api/settings/explain/t.rules")))!.json()) as { rows: Record<string, unknown>[] };
+    expect(body.rows[1]).toMatchObject({
+      storeName: "t.rules@2",
+      storedVersion: 2,
+      authored: [{ match: "herd/*" }],
+      olderLabel: "diverged",
+      olderNames: [{ storeName: "t.rules", storedVersion: 1, label: "diverged", value: [{ match: "gate/*" }], authored: [{ pattern: "gate/*" }] }],
+    });
+    expect("storeName" in body.rows[0]!).toBe(false);
+  });
+
+  test("a secret def sends neither value on a diverged issue nor on its rows", async () => {
+    const defs = (await (await call(get("/api/settings/defs")))!.json()) as { defs: { key: string; issues: Record<string, unknown>[] }[] };
+    const issue = defs.defs.find((d) => d.key === "t.secretRules")!.issues[0]!;
+    expect(issue).toMatchObject({ kind: "diverged", storeName: "t.secretRules" });
+    expect("olderValue" in issue || "currentValue" in issue).toBe(false);
+    const explain = (await (await call(get("/api/settings/explain/t.secretRules")))!.json()) as { rows: Record<string, unknown>[] };
+    expect("authored" in explain.rows[1]!).toBe(false);
+    expect(explain.rows[1]!.olderNames).toEqual([{ storeName: "t.secretRules", storedVersion: 1, label: "diverged" }]);
+  });
+
+  test("/prune calls pruneStoreName with the body and answers rows and effective", async () => {
+    const res = (await call(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.rules", force: true, repo: "gitlab.example.com/acme/app" })))!;
+    expect(res.status).toBe(200);
+    expect(pruneCalls).toEqual([["t.rules", "t.rules", "user", { repoIdentity: "gitlab.example.com/acme/app", force: true }]]);
+    const body = (await res.json()) as { rows: unknown[]; effective: unknown };
+    expect(body.rows).toHaveLength(2);
+    expect(body.effective).toBeDefined();
+  });
+
+  test("/prune answers 400 with rt's refusal, a missing storeName, or a name not in the store", async () => {
+    const refused = (await call(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.rules@2" })))!;
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toContain("is not an older store name");
+    expect((await call(post("/api/settings/prune", { key: "t.rules", scope: "user" })))!.status).toBe(400);
+    expect((await call(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.gone" })))!.status).toBe(400);
+  });
+
+  test("/prune is local-only, needs JSON, and refuses unknown and secret keys", async () => {
+    expect((await call(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.rules" }, "settings.example.com")))!.status).toBe(403);
+    const notJson = new Request("http://console.mattstack/api/settings/prune", { method: "POST", body: "x" });
+    expect((await call(notJson))!.status).toBe(415);
+    expect((await call(post("/api/settings/prune", { key: "t.nope", scope: "user", storeName: "t.nope" })))!.status).toBe(404);
+    expect((await call(post("/api/settings/prune", { key: "t.secretRules", scope: "user", storeName: "t.secretRules" })))!.status).toBe(400);
+    expect(pruneCalls).toEqual([]);
+  });
+});
