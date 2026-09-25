@@ -16,6 +16,7 @@ export interface DepsRow {
   name: string;
   version: string;
   url: string;
+  sha256?: string;
   repo?: string;
   subdir?: string;
   status?: string;
