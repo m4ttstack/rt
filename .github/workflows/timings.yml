@@ -27,6 +27,7 @@ jobs:
       - name: Time the unit suite
         run: bun run test:timings
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: test-timings
           path: test-timings.json

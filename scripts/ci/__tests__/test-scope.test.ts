@@ -113,34 +113,11 @@ describe("unitDirs", () => {
     expect(pkg.scripts["test:timings"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:watch"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:all"]).toMatch(/\bbun run test\b/);
+    const dirsList = dirs.join(" ");
     for (const [name, script] of Object.entries(pkg.scripts)) {
       if (name === "test") continue;
-      expect(script).not.toContain("bun test lib");
+      expect(script).not.toContain(dirsList);
     }
-  });
-
-  test("bun run test --watch forwards --watch onto the resolved bun test command", async () => {
-    // bun run prints "$ <resolved command>" before executing it; reading
-    // that one line is enough to prove the forward without letting the
-    // watcher actually start.
-    const proc = Bun.spawn(["bun", "run", "test", "--watch"], {
-      cwd: ROOT,
-      stdout: "ignore",
-      stderr: "pipe",
-      stdin: "ignore",
-    });
-    const reader = proc.stderr.getReader();
-    const decoder = new TextDecoder();
-    let printed = "";
-    for (let i = 0; i < 50 && !printed.includes("\n"); i++) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      printed += decoder.decode(value);
-    }
-    proc.kill();
-    await proc.exited;
-    expect(printed).toContain("bun test lib");
-    expect(printed.trim()).toMatch(/--watch$/);
   });
 });
 

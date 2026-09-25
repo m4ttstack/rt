@@ -1,7 +1,7 @@
 /**
- * Source-guard tests split out of rt-paths.test.ts: everything here reads
- * source as text, so --changed cannot select it, and it needs a no-* name
- * for the always-run glob to find it.
+ * Source-guard tests: everything here reads source as text, so --changed
+ * cannot select it, and the no-* prefix is what puts it in the always-run
+ * set.
  */
 
 import { test, expect } from "bun:test";
@@ -59,8 +59,8 @@ test("no code in lib/ reconstructs <rtDir>/<repoName> by hand", () => {
   expect(offenders, `Per-repo paths must use repoDataDir() from rt-paths.ts:\n${offenders.join("\n")}`).toEqual([]);
 });
 
-test("no source builds a legacy .rt path outside rt-paths.ts (RT-46)", () => {
-  // The ~/.rt → ~/.mattstack/rt move (RT-33/RT-46) is complete: nothing may
+test("no source builds a legacy .rt path outside rt-paths.ts", () => {
+  // The ~/.rt to ~/.mattstack/rt move is complete: nothing may
   // reference the legacy tree except rt-paths.ts itself (which owns the
   // migration + canary). Catches both quoted literals (".rt") and path-like
   // occurrences in strings/comments (~/.rt/..., $HOME/.rt/...).
