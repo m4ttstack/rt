@@ -11,25 +11,39 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# macos-latest, matching e2e.yml: much of the tree is macOS-specific (launchd
-# labels, TCC, codesign, ~/Library paths) and the bunfig preload that isolates
-# HOME for tests is exercised the same way developers run it locally.
 jobs:
-  checks:
-    runs-on: macos-latest
+  # What this event's unit shards run: full, changed (--changed=HEAD^1) or
+  # skip. On a pull request every job checks out refs/pull/N/merge, whose
+  # first parent is the base tip, so HEAD^1..HEAD is exactly the PR's diff.
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      dirs: ${{ steps.scope.outputs.dirs }}
+      always: ${{ steps.scope.outputs.always }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bun scripts/ci/test-scope.ts
+
+  # Everything that does not need a Mac. A step that turns out to need one
+  # moves to a static-macos job that runs on every PR, never into unit.
+  static:
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: ui/go.mod
-          cache-dependency-path: ui/go.sum
-
-      - name: Install backup dependencies
-        run: brew install age zstd git-lfs
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -41,9 +55,6 @@ jobs:
 
       - name: Typecheck
         run: bunx tsc --noEmit
-
-      - name: Unit tests
-        run: bun test lib commands packages scripts rt-tray/vm/run/helpers
 
       # A schema change that would invalidate stored settings must bump
       # storeVersion and be acknowledged; the committed lock is the record.
@@ -62,14 +73,8 @@ jobs:
       # Lint it the day it is next edited, not from this gate.
       - name: Workflow lint
         run: |
-          brew install actionlint
-          actionlint .github/workflows/bundle-apps.yml .github/workflows/checks.yml .github/workflows/e2e.yml .github/workflows/purity.yml .github/workflows/renovate.yml
-
-      # The Go helper's own vet + tests, plus the shared protocol fixtures
-      # both languages golden-test (lib/ui/__tests__/protocol.test.ts runs
-      # in the unit-test step above).
-      - name: rt-ui vet and tests
-        run: bun run ui:test
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" .github/workflows/bundle-apps.yml .github/workflows/checks.yml .github/workflows/e2e.yml .github/workflows/purity.yml .github/workflows/renovate.yml .github/workflows/timings.yml
 
       # Drift here is invisible until someone runs it by hand, which is how
       # two commands reached main with no reference page.
@@ -81,3 +86,100 @@ jobs:
       # command that just errors on a missing arg fails here, not in review.
       - name: Picker convention is enforced
         run: bun run picker:check
+
+  # The Go helper's own vet + tests, plus the shared protocol fixtures both
+  # languages golden-test (lib/ui/__tests__/protocol.test.ts runs in the unit
+  # shards). Its own job: it is a minute of build time nothing else waits on.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ui/go.mod
+          cache-dependency-path: ui/go.sum
+      - name: rt-ui vet and tests
+        run: bun run ui:test
+
+  # macos-latest, matching e2e.yml: much of the tree is macOS-specific (launchd
+  # labels, TCC, codesign, ~/Library paths) and the bunfig preload that isolates
+  # HOME for tests is exercised the same way developers run it locally.
+  unit:
+    needs: scope
+    if: needs.scope.outputs.mode != 'skip'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install backup dependencies
+        run: brew install age zstd git-lfs
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The always-run guards read source as text, so --changed never selects
+      # them; path arguments intersect with --changed, so they need their own
+      # call, and one shard is enough.
+      - name: Unit tests, shard ${{ matrix.shard }} of 3
+        env:
+          MODE: ${{ needs.scope.outputs.mode }}
+          DIRS: ${{ needs.scope.outputs.dirs }}
+          ALWAYS: ${{ needs.scope.outputs.always }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          # An empty list would make bun test run every file in the repo,
+          # e2e included; fail loudly instead.
+          [ -n "$DIRS" ] || { echo "scope produced no unit directories"; exit 1; }
+          start=$(date +%s)
+          changed=""
+          if [ "$MODE" = changed ]; then changed="--changed=HEAD^1"; fi
+          # shellcheck disable=SC2086
+          bun test $DIRS --shard="$SHARD/3" --timings=test-timings.json $changed
+          if [ "$MODE" = changed ] && [ "$SHARD" = 1 ]; then
+            [ -n "$ALWAYS" ] || { echo "scope produced no always-run guards"; exit 1; }
+            # shellcheck disable=SC2086
+            bun test $ALWAYS
+          fi
+          echo "shard $SHARD: $(( $(date +%s) - start ))s ($MODE)"
+
+  # The job branch protection requires. Without always(), a failed scope
+  # would skip unit and this job too, and a skipped required check reads as
+  # passing on GitHub.
+  checks:
+    needs: [scope, static, go, unit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every gate passed
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          STATIC: ${{ needs.static.result }}
+          GO: ${{ needs.go.result }}
+          UNIT: ${{ needs.unit.result }}
+          MODE: ${{ needs.scope.outputs.mode }}
+        run: |
+          echo "scope=$SCOPE static=$STATIC go=$GO unit=$UNIT mode=$MODE"
+          [ "$SCOPE" = success ] || { echo "scope did not succeed"; exit 1; }
+          [ "$STATIC" = success ] || { echo "static did not succeed"; exit 1; }
+          [ "$GO" = success ] || { echo "go did not succeed"; exit 1; }
+          [ "$UNIT" = success ] && exit 0
+          [ "$UNIT" = skipped ] && [ "$MODE" = skip ] && exit 0
+          echo "unit was $UNIT with mode $MODE"
+          exit 1

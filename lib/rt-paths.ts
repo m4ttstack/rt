@@ -7,8 +7,8 @@
  * Keeping the construction here means there is exactly one place that knows
  * the layout, so a future move is a one-line change and stray `join(RT_DIR,
  * repoName, ...)` callsites can't drift. The source-guard tests
- * (lib/__tests__/rt-paths.test.ts) fail the build if that pattern — or any
- * legacy `.rt` literal — reappears outside this module.
+ * (lib/__tests__/no-hand-built-repo-paths.test.ts) fail the build if that
+ * pattern, or any legacy `.rt` literal, reappears outside this module.
  *
  * HOME is resolved at CALL time via `process.env.HOME ?? homedir()` so tests can
  * point the whole tree at a temp dir by setting process.env.HOME before calling.

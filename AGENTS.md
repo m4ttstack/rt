@@ -367,13 +367,32 @@ The dev app (`/Applications/mattstack-dev.app`) takes code from three places.
 
 ## Footguns
 
-### `bun run test` is one of three suites, and CI runs all three
+### `bun run test` is one of three suites, and CI runs all three on main
 
-`test` is `bun test lib commands packages scripts`. CI also runs `test:e2e`
+The `test` script in `package.json` is the one source of truth for which
+directories this suite covers. CI also runs `test:e2e`
 (`e2e/tests/`, needs `--preload ./e2e/setup.ts`) and `test:pty` (`e2e/pty/`,
 the termwright gate that drives the compiled binary in a real pty, 120s
 timeout). `test:all` runs all three. A green local `bun run test` says nothing
 about either of the others, and the difference is invisible in the output.
+
+CI runs the unit suite as three macOS shards (`bun test --shard=i/3
+--timings=test-timings.json`, balanced by the committed timings file,
+which the Timings workflow regenerates) and runs the non-Mac gates on
+ubuntu. `scripts/ci/test-scope.ts` decides a PR's scope from its diff: only
+docs or Swift files that no unit test reads skips the shards; a
+TypeScript-only diff runs `--changed=HEAD^1` plus every `no-*.test.ts`
+guard in the unit directories; any other change runs the full suite (a
+non-TypeScript file outside that skip set, a fixture, the preload or its
+imports, anything under `scripts/ci/`). Any other test that spawns
+`cli.ts` or reads source as text is not selected by `--changed`, so it
+must be named `no-*` to run on a PR at all; an un-prefixed one only runs
+on main, so a TypeScript-only PR can go green and break main there. When
+the shards' printed wall times drift more than a minute apart, refresh
+the timings file by running the Timings workflow
+(`gh workflow run timings.yml`) and committing its artifact;
+`bun run test:timings` on a laptop produces a laptop-balanced file,
+which is not the same thing.
 
 It matters most for anything asserted verbatim end to end (the chat delivery
 frame, a CLI's `--json` envelope, a usage string) and for anything glitter or

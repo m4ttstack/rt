@@ -10,10 +10,11 @@
   },
   "scripts": {
     "test": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
-    "test:watch": "bun test --watch lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
+    "test:watch": "bun run test --watch",
+    "test:timings": "rm -f test-timings.json && bun run test --timings=test-timings.json --update-timings",
     "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/",
     "test:pty": "bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
-    "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/ && bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
+    "test:all": "bun run test && bun run test:e2e && bun run test:pty",
     "docs:gen": "bun scripts/gen-docs.ts",
     "docs:check": "bun scripts/check-docs.ts",
     "picker:check": "bun scripts/lib/picker-conformance.ts",
