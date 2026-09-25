@@ -142,20 +142,20 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     }
   }
 
-  // rt-tray/deps is gitignored, so the copy skips it; reuse the tree's own when
-  // it has one, and fetch whatever build.sh needs that it lacks.
+  // rt-tray/deps is gitignored, so the copy skips it. The tree's own folder
+  // seeds the scratch copy, but it can predate the tree's deps.lock (a copy of
+  // another checkout's), so fetch-deps always reconciles it: a helper whose
+  // stamp matches the lock is skipped, so a current folder costs one quick pass.
   const deps = `${source}/rt-tray/deps`;
   if (seams.pathExists(deps)) {
     const cp = await seams.exec(["cp", "-R", deps, `${scratch}/rt-tray/deps`]);
     if (cp.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `copying ${deps} failed: ${tail(cp)}`);
   }
-  if (!seams.pathExists(`${scratch}/rt-tray/deps/arm64`) || !seams.pathExists(`${scratch}/rt-tray/deps/tools`)) {
-    // fetch-deps.sh is bash-only, and fills deps/tools (Sparkle) as well as deps/arm64.
-    const fetchStep: [string, ...string[]] = ["bash", "scripts/fetch-deps.sh", "arm64"];
-    const fetched = await seams.exec(fetchStep, { cwd: scratch, timeoutMs: 1_800_000 });
-    if (fetched.exitCode !== 0) {
-      throw new UserActionableError("dev-app-deps-failed", `${fetchStep.join(" ")} failed: ${tail(fetched)}`);
-    }
+  // fetch-deps.sh is bash-only, and fills deps/tools (Sparkle) as well as deps/arm64.
+  const fetchStep: [string, ...string[]] = ["bash", "scripts/fetch-deps.sh", "arm64"];
+  const fetched = await seams.exec(fetchStep, { cwd: scratch, timeoutMs: 1_800_000 });
+  if (fetched.exitCode !== 0) {
+    throw new UserActionableError("dev-app-deps-failed", `${fetchStep.join(" ")} failed: ${tail(fetched)}`);
   }
 
   const identityEnv = buildIdentity
