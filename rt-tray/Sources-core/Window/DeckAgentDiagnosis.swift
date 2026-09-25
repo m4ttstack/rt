@@ -1,8 +1,8 @@
 import Foundation
 
 public enum DeckAgentDiagnosis {
-    /// Mirrors build.sh's `${DAEMON_LABEL/daemon/deck}`, which names the deck
-    /// agent's label and its plist file after the daemon's.
+    /// Mirrors scripts/render-launchagents.sh, whose DECK_LABEL is the
+    /// daemon's label with `daemon` swapped for `deck` in both flavors.
     public static func label(forDaemonLabel daemonLabel: String) -> String {
         guard let range = daemonLabel.range(of: "daemon") else { return daemonLabel }
         return daemonLabel.replacingCharacters(in: range, with: "deck")
@@ -25,7 +25,9 @@ public enum DeckAgentDiagnosis {
         case .unknown(let reason):
             return "\(agent) is registered; launchd print failed (\(reason))."
         case .loaded(let job):
-            if job.state == "running", let pid = job.pid { return "\(agent) is running (pid \(pid))." }
+            if job.state == "running" {
+                return job.pid.map { "\(agent) is running (pid \($0))." } ?? "\(agent) is running."
+            }
             var detail = "launchd state: \(job.state ?? "unknown")"
             if let exit = job.lastExitCode { detail += "; last exit code \(exit)" }
             return "\(agent) is not running (\(detail))."

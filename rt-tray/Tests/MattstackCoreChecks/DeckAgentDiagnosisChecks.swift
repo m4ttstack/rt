@@ -67,7 +67,7 @@ private let crashed =
     "The deck agent (com.mattstack.deck) is not running (launchd state: not running; last exit code 78)."
 
 let deckAgentDiagnosisChecks: [Check] = [
-    Check("deck agent: label follows build.sh's daemon-to-deck rename") { c in
+    Check("deck agent: label follows render-launchagents.sh's daemon-to-deck rename") { c in
         c.expectEqual(DeckAgentDiagnosis.label(forDaemonLabel: "com.mattstack.daemon"), "com.mattstack.deck")
         c.expectEqual(DeckAgentDiagnosis.label(forDaemonLabel: "com.mattstack.daemon.dev"), "com.mattstack.deck.dev")
     },
@@ -80,6 +80,10 @@ let deckAgentDiagnosisChecks: [Check] = [
     Check("deck agent: a running job names its pid") { c in
         c.expectEqual(describe(.enabled, parsedPrint(runningPrint)),
                       "The deck agent (com.mattstack.deck) is running (pid 28479).")
+    },
+    Check("deck agent: a running job that printed no pid is still running") { c in
+        let print = "gui/501/com.mattstack.deck = {\n\tstate = running\n}\n"
+        c.expectEqual(describe(.enabled, parsedPrint(print)), "The deck agent (com.mattstack.deck) is running.")
     },
     Check("deck agent: registration problems are named without asking launchd") { c in
         c.expectEqual(describe(.notRegistered, nil), "The deck agent (com.mattstack.deck) is not registered.")
