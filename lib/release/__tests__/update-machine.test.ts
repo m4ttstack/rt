@@ -168,7 +168,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       if (argv[0] === "deck") return fail("deck: resolved on PATH to a hand-installed copy");
       if (argv[0] === DEV_DECK || argv[0] === PROD_DECK) {
         const sub = argv.slice(1).join(" ");
-        // The dev-bundle leg's own deck calls come before the served-suite leg's pull.
+        // runDevAppRebuild's readiness and restart calls come before any served-suite pull.
         const served = calls.includes("git pull");
         if (sub === "restart --managed") {
           if (served && opts.deckRestartManagedExit) return fail("deck restart --managed failed", opts.deckRestartManagedExit);
@@ -703,6 +703,14 @@ describe("rt release update-machine", () => {
       expect(leg.detail).toContain("deck list");
     });
 
+    test("served suite: a deck list with no managed apps fails the leg instead of cycling nothing", async () => {
+      const { seams } = fakeSeams({ managed: [] });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "served-suite")!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("no managed apps");
+    });
+
     test("served suite: unparseable deck list output fails the leg", async () => {
       const { seams } = fakeSeams({ deckListGarbage: true });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -730,6 +738,23 @@ describe("rt release update-machine", () => {
       expect(calls.some((c) => c.startsWith("deck "))).toBe(false);
       expect(calls).toContain(`${DEV_DECK} restart --managed`);
       expect(calls).toContain(`${DEV_DECK} --version`);
+    });
+
+    test("--verify-only on a Mac the dev app is not serving reads mattstack.app's deck and skips the dev checks", async () => {
+      const { seams, calls } = fakeSeams({ devPidsBefore: [], daemonSourceRev: null });
+      const report = await runUpdateMachine(seams, { verifyOnly: true });
+      expect(report.legs[0]!.status).toBe("ok");
+      expect(report.legs[0]!.detail).toContain("dev app was not running");
+      expect(calls).toContain(`${PROD_DECK} --version`);
+      expect(calls.some((c) => c.startsWith(DEV_DECK))).toBe(false);
+    });
+
+    test("a declined dev-bundle leg on a Mac the dev app is not serving still uses mattstack.app's deck", async () => {
+      const { seams, calls } = fakeSeams({ devPidsBefore: [], daemonSourceRev: null });
+      seams.confirm = async (message) => !message.toLowerCase().includes("dev bundle");
+      await runUpdateMachine(seams, {});
+      expect(calls).toContain(`${PROD_DECK} restart --managed`);
+      expect(calls.some((c) => c.startsWith(DEV_DECK))).toBe(false);
     });
 
     test("with the dev app not running, the served suite and verify use mattstack.app's deck", async () => {

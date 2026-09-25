@@ -281,7 +281,7 @@ async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPat
  *  optional ` !source` issue and ` [public:...]` suffixes after the owner. */
 const DECK_LIST_ROW = /^(\S+)\s+(?:\d+|-)\s+(?:up|DOWN|-)\s+(\S+)(?:\s.*)?$/;
 
-/** The same set `deck restart --managed` kicks: owned by neither the user nor the platform. */
+/** The owner filter `deck restart --managed` applies; deck list does not print kind, so a non-service rt row would still count. */
 const UNMANAGED_DECK_OWNERS = new Set(["user", "deck", "local", "unregistered"]);
 
 export function parseManagedDeckApps(raw: string): { apps: string[] } | { error: string } {
@@ -298,7 +298,11 @@ export function parseManagedDeckApps(raw: string): { apps: string[] } | { error:
 async function managedAppNames(seams: UpdateMachineSeams, deck: string): Promise<{ apps: string[] } | { error: string }> {
   const r = await seams.exec([deck, "list"]);
   if (r.exitCode !== 0) return { error: `deck list failed: ${execTail(r)}` };
-  return parseManagedDeckApps(r.stdout);
+  // deck prints nothing and exits 0 when its API answers an error, and every
+  // machine this runs on serves rt's apps, so an empty set is a failure.
+  const parsed = parseManagedDeckApps(r.stdout);
+  if ("apps" in parsed && parsed.apps.length === 0) return { error: "deck list reported no managed apps" };
+  return parsed;
 }
 
 async function managedAppPid(seams: UpdateMachineSeams, app: string): Promise<number | null> {
@@ -670,7 +674,8 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
 
   if (options.verifyOnly) {
     const sha = await resolveCommit(seams, tag);
-    const result = await runVerifyLeg(seams, { tag, ver, sha }, null);
+    const devNotRunning = (await pgrepPids(seams, DEV_APP_ANCHOR)).length === 0;
+    const result = await runVerifyLeg(seams, { tag, ver, sha }, null, devNotRunning);
     return { tag, legs: [result], haltedAfter: null, ok: result.status === "ok" };
   }
 
@@ -711,7 +716,8 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   }
 
   await runGatedLeg("prod-app", PROD_APP_LABEL, () => runProdAppLeg(seams, ctx));
-  let devNotRunning = false;
+  // Read here, not in the dev-bundle leg: a declined or failed one never reaches its own pgrep.
+  let devNotRunning = (await pgrepPids(seams, DEV_APP_ANCHOR)).length === 0;
   await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx, () => { devNotRunning = true; }));
   if (devNotRunning) {
     legs.push(skippedLeg("daemon", DAEMON_LABEL,
