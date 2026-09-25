@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { appAssetUrl, BUNDLE_PR_AUTHOR, runReleaseApp, type ReleaseAppOptions, type ReleaseAppSeams } from "../release-app.ts";
+import { appAssetUrl, BUNDLE_PR_AUTHOR, notesHash, renderNotes, runReleaseApp, type ReleaseAppOptions, type ReleaseAppSeams } from "../release-app.ts";
 import type { RunResult } from "../../subprocess.ts";
 
 const LAST = "v2.13.1";
@@ -26,13 +26,14 @@ function lockText(versions: Record<string, string>, shas: Record<string, string>
 
 const BASE_VERSIONS = { deck: "1.1.1", board: "0.1.7", chat: "0.1.3" };
 
+const ROOT_PACKAGE = (react: string) => JSON.stringify({ name: "apps", workspaces: { packages: ["packages/*", "apps/*"], catalog: { react } } });
 const APPS_FILES: Record<string, string> = {
-  "package.json": JSON.stringify({ name: "apps", workspaces: { packages: ["packages/*", "apps/*"] } }),
+  "package.json": ROOT_PACKAGE("^19.2.7"),
   "apps/board/package.json": JSON.stringify({ name: "board", dependencies: { "@mattstack/tui-kit": "workspace:*", react: "catalog:" } }),
   "apps/board/src/index.ts": "",
   "apps/chat/package.json": JSON.stringify({ name: "chat" }),
   "apps/deck/package.json": JSON.stringify({ name: "deck", dependencies: { "@mattstack/tui-kit": "workspace:*" } }),
-  "packages/tui-kit/package.json": JSON.stringify({ name: "@mattstack/tui-kit", dependencies: { "@mattstack/app-kit": "workspace:*" } }),
+  "packages/tui-kit/package.json": JSON.stringify({ name: "@mattstack/tui-kit", dependencies: { "@mattstack/app-kit": "^0.1.0" } }),
   "packages/app-kit/package.json": JSON.stringify({ name: "@mattstack/app-kit" }),
 };
 
@@ -54,6 +55,11 @@ class World {
   localTags = new Map<string, string>();
   remoteTags = new Map<string, string>();
   appsVersion = "0.1.7";
+  appsHead = "ah0";
+  appsLockVersions: Record<string, string> = { board: "0.1.7", chat: "0.1.3", deck: "1.1.1" };
+  appsMovesDuringBump = false;
+  /** Root package.json at apps tags, where it differs from main's. */
+  appsRootAt: Record<string, string> = {};
   appsTags = new Set(["board-v0.1.6", "board-v0.1.7", "chat-v0.1.3", "deck-v1.1.1"]);
   /** Directories with commits on apps main after each tag. */
   appsMoved: Record<string, string[]> = { "board-v0.1.7": ["apps/board"] };
@@ -127,6 +133,12 @@ class World {
     const out: Commit[] = [];
     for (let c = this.resolve(b); c && c.sha !== stop; c = c.parent ? this.commits.get(c.parent) : undefined) out.push(c);
     return out;
+  }
+
+  bunLockText(): string {
+    const entries = Object.entries(this.appsLockVersions)
+      .map(([app, v]) => `    "apps/${app}": {\n      "name": "${app}",\n      "version": "${v}",\n    },`).join("\n");
+    return `{\n  "lockfileVersion": 1,\n  "workspaces": {\n    "": {\n      "name": "apps",\n    },\n${entries}\n  },\n}\n`;
   }
 
   private pkgText(): string {
@@ -219,8 +231,10 @@ class World {
     if (cmd.startsWith("git clone --bare --filter=blob:none --quiet https://github.com/m4ttstack/apps.git ")) return ok();
     if (/^git --git-dir \S+ fetch --quiet origin /.test(cmd)) return ok();
     if (/^git --git-dir \S+ ls-tree -r --name-only main$/.test(cmd)) return ok(Object.keys(APPS_FILES).join("\n") + "\n");
-    if ((m = cmd.match(/^git --git-dir \S+ show main:(\S+)$/))) {
-      return m[1]! in APPS_FILES ? ok(APPS_FILES[m[1]!]!) : err(`fatal: path '${m[1]}' does not exist in 'main'`, 128);
+    if ((m = cmd.match(/^git --git-dir \S+ show (\S+):(\S+)$/))) {
+      const [, ref, path] = m;
+      if (ref !== "main" && path === "package.json" && this.appsRootAt[ref!]) return ok(this.appsRootAt[ref!]!);
+      return path! in APPS_FILES ? ok(APPS_FILES[path!]!) : err(`fatal: path '${path}' does not exist in '${ref}'`, 128);
     }
     if ((m = cmd.match(/^git --git-dir \S+ rev-list --count (\S+)\.\.main -- (.+)$/))) {
       const paths = m[2]!.split(" ");
@@ -235,16 +249,40 @@ class World {
       return ok([...subjects, `${app} ${version}: version bump for the rt release`].join("\n") + "\n");
     }
 
-    if (cmd === "gh api repos/m4ttstack/apps/contents/apps/board/package.json?ref=main") {
-      return ok(JSON.stringify({ content: Buffer.from(this.pkgText()).toString("base64"), sha: `pkg-${this.appsVersion}` }));
+    if (cmd === "gh api repos/m4ttstack/apps/git/ref/heads/main --jq .object.sha") return ok(`${this.appsHead}\n`);
+    if ((m = cmd.match(/^gh api -H Accept: application\/vnd\.github\.raw\+json repos\/m4ttstack\/apps\/contents\/(\S+)\?ref=(\S+)$/))) {
+      if (m[1] === "apps/board/package.json") return ok(this.pkgText());
+      if (m[1] === "bun.lock") return ok(this.bunLockText());
+      return err("gh: Not Found (HTTP 404)");
+    }
+    if ((m = cmd.match(/^gh api repos\/m4ttstack\/apps\/git\/commits\/(\S+) --jq \.tree\.sha$/))) return ok(`atree-${m[1]}\n`);
+    if ((m = cmd.match(/^gh api repos\/m4ttstack\/apps\/git\/trees --input (\S+) --jq \.sha$/))) {
+      this.written.set("apps-tree-new", this.written.get(m[1]!)!);
+      return ok("apps-tree-new\n");
+    }
+    if ((m = cmd.match(/^gh api repos\/m4ttstack\/apps\/git\/commits --input (\S+) --jq \.sha$/))) {
+      const body = JSON.parse(this.written.get(m[1]!)!) as { message: string; parents: string[] };
+      const sha = `ac${this.seq++}`;
+      this.written.set(`apps-commit-${sha}`, JSON.stringify({ ...body, tree: JSON.parse(this.written.get("apps-tree-new")!) }));
+      return ok(`${sha}\n`);
+    }
+    if ((m = cmd.match(/^gh api -X PATCH repos\/m4ttstack\/apps\/git\/refs\/heads\/main --input (\S+)$/))) {
+      const ref = JSON.parse(this.written.get(m[1]!)!) as { sha: string; force: boolean };
+      const commit = JSON.parse(this.written.get(`apps-commit-${ref.sha}`)!) as { parents: string[]; tree: { tree: { path: string; content: string }[] } };
+      if (this.appsMovesDuringBump) {
+        this.appsHead = "ah-someone-else";
+        return err("gh: Update is not a fast forward (HTTP 422)");
+      }
+      if (commit.parents[0] !== this.appsHead || ref.force !== false) return err("gh: Update is not a fast forward (HTTP 422)");
+      for (const entry of commit.tree.tree) {
+        if (entry.path === "apps/board/package.json") this.appsVersion = (JSON.parse(entry.content) as { version: string }).version;
+        if (entry.path === "bun.lock") this.appsLockVersions.board = entry.content.match(/"apps\/board": \{\n\s+"name": "board",\n\s+"version": "([^"]+)"/)![1]!;
+      }
+      this.appsHead = ref.sha;
+      return ok("{}");
     }
     if ((m = cmd.match(/^gh api repos\/m4ttstack\/apps\/git\/ref\/tags\/(\S+)$/))) {
       return this.appsTags.has(m[1]!) ? ok("{}") : err("gh: Not Found (HTTP 404)");
-    }
-    if (cmd.startsWith("gh api -X PUT repos/m4ttstack/apps/contents/apps/board/package.json ")) {
-      const content = argv.find((a) => a.startsWith("content="))!.slice("content=".length);
-      this.appsVersion = (JSON.parse(Buffer.from(content, "base64").toString("utf8")) as { version: string }).version;
-      return ok("bumpcommit\n");
     }
     if (cmd === "gh api repos/m4ttstack/rt/actions/workflows/bundle-apps.yml/runs?event=workflow_dispatch&per_page=20") {
       const hide = this.hideRunsOnFirstListing && this.runListings++ === 0;
@@ -263,8 +301,8 @@ class World {
     if ((m = cmd.match(new RegExp(`^gh pr list --repo m4ttstack/rt --head (\\S+) --state all --json ${prFields}$`)))) {
       return ok(JSON.stringify(this.prs.filter((p) => p.headRefName === m![1])));
     }
-    if (cmd === `gh pr list --repo m4ttstack/rt --state open --json ${prFields} --limit 50`) {
-      return ok(JSON.stringify(this.prs.filter((p) => p.state === "OPEN")));
+    if (cmd === `gh pr list --repo m4ttstack/rt --state all --json ${prFields} --limit 50`) {
+      return ok(JSON.stringify([...this.prs].reverse()));
     }
     if ((m = cmd.match(/^gh pr view (\d+) --repo m4ttstack\/rt --json files --jq \[\.files\[\]\.path\]$/))) {
       return ok(JSON.stringify(this.prs.find((p) => p.number === Number(m![1]))!.files));
@@ -360,9 +398,17 @@ class World {
   }
 }
 
-const opts = (o: Partial<ReleaseAppOptions> = {}): ReleaseAppOptions => ({ name: "board", dryRun: false, json: false, yesNotes: "v2.13.2", ...o });
+const BOARD_SECTION = { app: "board", version: "0.1.8", subjects: ["board: serve a setup page (#156)", "board: tidy the header"] };
+/** The hash of the notes a default world generates, the only approval --yes-notes accepts. */
+const hashFor = (sections = [BOARD_SECTION], held: { app: string; version: string; pinTag: string }[] = []) =>
+  notesHash(renderNotes({ sections, held, lastTag: LAST, nextTag: "v2.13.2" }));
+const DEFAULT_HASH = hashFor();
+const CHAT_SECTION = { app: "chat", version: "0.1.4", subjects: ["chat: a fix (#9)"] };
 
-const MUTATING = [/^gh api -X PUT /, /^gh workflow run /, /^gh pr merge /, /^gh api -X PATCH /, /git\/trees/, /git\/commits/, /^git tag -a /, /^git push /];
+const opts = (o: Partial<ReleaseAppOptions> = {}): ReleaseAppOptions => ({ name: "board", dryRun: false, json: false, yesNotes: DEFAULT_HASH, ...o });
+
+const MUTATING = [/^gh workflow run /, /^gh pr merge /, /^gh api -X PATCH /, /git\/trees --input/, /git\/commits --input/, /^git tag -a /, /^git push /];
+const APPS_BUMPS = (calls: string[]) => calls.filter((c) => c.startsWith("gh api -X PATCH repos/m4ttstack/apps/"));
 const mutations = (calls: string[]) => calls.filter((c) => MUTATING.some((re) => re.test(c)));
 const lastStep = (r: { steps: { id: string; status: string; detail: string }[] }) => r.steps.at(-1)!;
 
@@ -397,7 +443,7 @@ describe("runReleaseApp: a fresh release", () => {
   test("the notes commit is a fast-forward of the verified main, never forced", async () => {
     const w = new World();
     await runReleaseApp(w.seams(), opts());
-    const patch = [...w.written.entries()].find(([, v]) => v.includes('"force"'));
+    const patch = [...w.written.entries()].find(([k]) => k.endsWith("notes-ref.json"));
     expect(JSON.parse(patch![1])).toEqual({ sha: w.main, force: false });
   });
 
@@ -429,6 +475,55 @@ describe("runReleaseApp: a fresh release", () => {
     expect(r.status).toBe("released");
     expect(w.calls.some((c) => c.includes("rev-list --count board-v0.1.7..main -- apps/board packages/tui-kit packages/app-kit"))).toBe(true);
     expect(w.calls.some((c) => c.includes("log --no-merges --format=%s board-v0.1.7..board-v0.1.8 -- apps/board packages/tui-kit packages/app-kit"))).toBe(true);
+  });
+});
+
+describe("runReleaseApp: the version bump", () => {
+  test("bumps package.json and the app's bun.lock workspace version in one fast-forward commit", async () => {
+    const w = new World();
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(r.status).toBe("released");
+    expect(APPS_BUMPS(w.calls).length).toBe(1);
+    const commit = [...w.written.entries()].find(([k]) => k.startsWith("apps-commit-"))![1];
+    const body = JSON.parse(commit) as { message: string; parents: string[]; tree: { base_tree: string; tree: { path: string; content: string }[] } };
+    expect(body.parents).toEqual(["ah0"]);
+    expect(body.tree.base_tree).toBe("atree-ah0");
+    expect(body.tree.tree.map((e) => e.path)).toEqual(["apps/board/package.json", "bun.lock"]);
+    expect(body.message).toBe("board 0.1.8: version bump for the rt release");
+    expect(w.appsVersion).toBe("0.1.8");
+    expect(w.appsLockVersions).toEqual({ board: "0.1.8", chat: "0.1.3", deck: "1.1.1" });
+    const patch = [...w.written.entries()].find(([k, v]) => k.endsWith("apps-ref.json") && v.includes('"force"'))!;
+    expect(JSON.parse(patch[1]).force).toBe(false);
+  });
+
+  test("a bun.lock that does not record the current pin refuses before anything changes", async () => {
+    const w = new World();
+    w.appsLockVersions.board = "0.1.6";
+    const r = await runReleaseApp(w.seams(), opts({ dryRun: true }));
+    expect(lastStep(r)).toMatchObject({ id: "qualify", status: "failed" });
+    expect(lastStep(r).detail).toContain("bun.lock records apps/board at 0.1.6, not the pin 0.1.7");
+    expect(mutations(w.calls)).toEqual([]);
+  });
+
+  test("apps main moving under the bump fails the step and says so", async () => {
+    const w = new World();
+    w.appsMovesDuringBump = true;
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "bump", status: "failed" });
+    expect(lastStep(r).detail).toContain("apps main moved from ah0");
+    expect(r.resume).toBe("rt release app board");
+    expect(w.calls.some((c) => c.startsWith("gh workflow run"))).toBe(false);
+  });
+
+  test("a changed catalog entry the app uses is a change to release, and the notes name it", async () => {
+    const w = new World();
+    w.appsMoved = {};
+    w.appsRootAt["board-v0.1.7"] = ROOT_PACKAGE("^19.2.0");
+    const plan = await runReleaseApp(w.seams(), opts({ dryRun: true }));
+    expect(plan.status).toBe("planned");
+    expect(plan.appVersion).toBe("0.1.8");
+    const r = await runReleaseApp(w.seams(), opts({ json: true, yesNotes: null }));
+    expect(r.notes).toContain("- react ^19.2.0 → ^19.2.7 (workspace catalog)");
   });
 });
 
@@ -466,7 +561,7 @@ describe("runReleaseApp: --dry-run", () => {
     const plan = await runReleaseApp(w.seams(), opts({ dryRun: true }));
     expect(plan.heldApps).toEqual([{ app: "chat", version: "0.1.3", pinTag: "chat-v0.1.3" }]);
     expect(plan.steps[0]!.detail).toContain("held at their pins: chat 0.1.3");
-    const r = await runReleaseApp(w.seams(), opts());
+    const r = await runReleaseApp(w.seams(), opts({ yesNotes: hashFor([BOARD_SECTION], [{ app: "chat", version: "0.1.3", pinTag: "chat-v0.1.3" }]) }));
     expect(r.notes).toContain("### Held pins\n\n- chat stays at 0.1.3");
   });
 });
@@ -494,7 +589,7 @@ describe("runReleaseApp: qualification", () => {
     const w = new World();
     w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, chat: "0.1.4" }) });
     w.appsTags.add("chat-v0.1.4");
-    const r = await runReleaseApp(w.seams(), opts());
+    const r = await runReleaseApp(w.seams(), opts({ yesNotes: hashFor([BOARD_SECTION, CHAT_SECTION]) }));
     expect(r.status).toBe("released");
     expect(r.notes).toContain("A patch release that ships board 0.1.8 and chat 0.1.4.");
   });
@@ -558,11 +653,11 @@ describe("runReleaseApp: resume", () => {
   test("a version a human already bumped past the pin is built as is, with no bump", async () => {
     const w = new World();
     w.appsVersion = "0.1.9";
-    const r = await runReleaseApp(w.seams(), opts());
+    const r = await runReleaseApp(w.seams(), opts({ yesNotes: hashFor([{ ...BOARD_SECTION, version: "0.1.9" }]) }));
     expect(r.status).toBe("released");
     expect(r.steps.find((s) => s.id === "bump")!.status).toBe("done");
     expect(r.appVersion).toBe("0.1.9");
-    expect(w.calls.some((c) => c.startsWith("gh api -X PUT"))).toBe(false);
+    expect(APPS_BUMPS(w.calls)).toEqual([]);
   });
 
   function inFlightRun(w: World, title = "Bundle apps: board"): void {
@@ -639,7 +734,7 @@ describe("runReleaseApp: resume", () => {
     expect(second.steps.find((s) => s.id === "bump")!.status).toBe("done");
     expect(second.steps.find((s) => s.id === "bundle")!.status).toBe("done");
     expect(w.calls.filter((c) => c.startsWith("gh workflow run")).length).toBe(1);
-    expect(w.calls.filter((c) => c.startsWith("gh api -X PUT")).length).toBe(1);
+    expect(APPS_BUMPS(w.calls).length).toBe(1);
   });
 
   test("after declined notes a rerun resumes at the notes with the pin already merged", async () => {
@@ -668,7 +763,7 @@ describe("runReleaseApp: resume", () => {
     expect(second.status).toBe("released");
     expect(second.steps.find((s) => s.id === "notes")!.status).toBe("done");
     expect(w.remoteTags.get("v2.13.2")).toBe(notesSha);
-    expect(w.calls.filter((c) => c.includes("git/commits")).length).toBe(1);
+    expect(w.calls.filter((c) => c.includes("repos/m4ttstack/rt/git/commits")).length).toBe(1);
   });
 
   test("a RELEASE_NOTES.md commit with another subject is never reused as the notes commit", async () => {
@@ -686,7 +781,7 @@ describe("runReleaseApp: resume", () => {
     w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, chat: "0.1.4" }) });
     w.appsTags.add("chat-v0.1.4");
     w.land(["RELEASE_NOTES.md"], { notes: "chat only\n", subject: "chore(release): notes for v2.13.2 (chat 0.1.4)" });
-    const r = await runReleaseApp(w.seams(), opts());
+    const r = await runReleaseApp(w.seams(), opts({ yesNotes: hashFor([BOARD_SECTION, CHAT_SECTION]) }));
     expect(r.status).toBe("released");
     expect(r.steps.find((s) => s.id === "notes")!.status).toBe("ok");
     expect(w.commits.get(w.remoteTags.get("v2.13.2")!)!.notes).toContain("### Board 0.1.8");
@@ -714,7 +809,7 @@ describe("runReleaseApp: resume", () => {
     await runReleaseApp(w.seams(), opts());
     w.appsMoved = { ...w.appsMoved, "board-v0.1.8": ["apps/board"] };
     const before = mutations(w.calls).length;
-    const r = await runReleaseApp(w.seams(), opts({ yesNotes: "v2.13.3" }));
+    const r = await runReleaseApp(w.seams(), opts());
     expect(r.tag).toBe("v2.13.2");
     expect(lastStep(r)).toMatchObject({ id: "verify", status: "failed" });
     expect(mutations(w.calls).length).toBe(before);
@@ -775,6 +870,17 @@ describe("runReleaseApp: the bot PR is verified before it merges", () => {
     }
   });
 
+  test("a closed bot PR found by the scan, with no run to follow, gets the reopen message", async () => {
+    const w = new World();
+    w.appsVersion = "0.1.8";
+    w.appsTags.add("board-v0.1.8");
+    w.addBotPr(55, "0.1.8", { state: "CLOSED" });
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "pr", status: "failed" });
+    expect(lastStep(r).detail).toContain("closed without merging");
+    expect(r.resume).toContain("gh pr reopen 1055");
+  });
+
   test("a closed bot PR is refused with a clear message", async () => {
     const w = new World();
     w.prMutate = (pr) => { pr.state = "CLOSED"; };
@@ -810,7 +916,7 @@ describe("runReleaseApp: notes approval", () => {
     expect(lastStep(r)).toMatchObject({ id: "notes", status: "stopped" });
     expect(r.notes).toContain("### Board 0.1.8");
     expect(r.resume).toBe(`rt release app board --json --yes-notes ${r.notesHash}`);
-    expect(w.calls.some((c) => c.includes("git/commits"))).toBe(false);
+    expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
     expect(w.confirmPrompts).toEqual([]);
   });
 
@@ -822,15 +928,15 @@ describe("runReleaseApp: notes approval", () => {
     expect(second.notes).toBe(first.notes);
   });
 
-  test("an approval for another tag or other notes refuses and commits nothing", async () => {
-    for (const token of ["v2.13.9", "0123456789ab"]) {
+  test("only the hash of these exact notes approves them: the tag form and a stale hash are refused", async () => {
+    for (const token of ["v2.13.2", "v2.13.9", "0123456789ab", hashFor([{ ...BOARD_SECTION, subjects: ["board: an older line"] }])]) {
       const w = new World();
       const r = await runReleaseApp(w.seams(), opts({ json: true, yesNotes: token }));
       expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
       expect(lastStep(r).detail).toContain(`--yes-notes ${token} does not match`);
       expect(r.notes).toContain("### Board 0.1.8");
       expect(r.resume).toContain(`--yes-notes ${r.notesHash}`);
-      expect(w.calls.some((c) => c.includes("git/commits"))).toBe(false);
+      expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
     }
   });
 
@@ -859,7 +965,7 @@ describe("runReleaseApp: main moving or refusing mid-run", () => {
     const r = await runReleaseApp(w.seams(), opts());
     expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
     expect(lastStep(r).detail).toContain("lib/team/invite.ts");
-    expect(w.calls.some((c) => c.includes("git/commits"))).toBe(false);
+    expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
   });
 
   test("the commit being tagged is gated too", async () => {

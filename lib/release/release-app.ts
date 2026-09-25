@@ -263,16 +263,74 @@ export function globMatches(glob: string, dir: string): boolean {
   return dir.startsWith(prefix) && !dir.slice(prefix.length).includes("/");
 }
 
-export function workspaceDeps(pkg: Record<string, unknown>): string[] {
-  const out = new Set<string>();
+/** Every dependency and its specifier; a name that is also a workspace package links to it whatever the specifier says. */
+export function dependencyNames(pkg: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const deps = pkg[section];
     if (!deps || typeof deps !== "object") continue;
     for (const [name, spec] of Object.entries(deps as Record<string, unknown>)) {
-      if (typeof spec === "string" && spec.startsWith("workspace:")) out.add(name);
+      if (typeof spec === "string") out[name] = spec;
     }
   }
-  return [...out];
+  return out;
+}
+
+export interface CatalogUse {
+  dep: string;
+  spec: string;
+}
+
+function catalogVersion(root: Record<string, unknown>, use: CatalogUse): string | undefined {
+  const ws = (root.workspaces && typeof root.workspaces === "object" && !Array.isArray(root.workspaces) ? root.workspaces : {}) as Record<string, unknown>;
+  const named = use.spec.slice("catalog:".length);
+  const catalog = !named || named === "default"
+    ? (ws.catalog ?? root.catalog)
+    : ((ws.catalogs ?? root.catalogs) as Record<string, unknown> | undefined)?.[named];
+  const value = (catalog as Record<string, unknown> | undefined)?.[use.dep];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** A `catalog:` dependency moves when the root catalog moves, with no commit under the app itself. */
+export function changedCatalogEntries(fromRoot: Record<string, unknown>, toRoot: Record<string, unknown>, uses: CatalogUse[]): { dep: string; from: string; to: string }[] {
+  return uses
+    .filter((u) => u.spec.startsWith("catalog:"))
+    .map((u) => ({ dep: u.dep, from: catalogVersion(fromRoot, u) ?? "(none)", to: catalogVersion(toRoot, u) ?? "(none)" }))
+    .filter((c) => c.from !== c.to);
+}
+
+/** The span of the object opened at `open`, skipping braces inside strings. */
+function objectEnd(text: string, open: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) escaped = false;
+    else if (ch === "\\") escaped = true;
+    else if (ch === '"') inString = !inString;
+    else if (!inString && ch === "{") depth++;
+    else if (!inString && ch === "}" && --depth === 0) return i + 1;
+  }
+  throw new Error("bun.lock has an unterminated workspace entry");
+}
+
+/**
+ * bun.lock records each workspace's own version; a bump that leaves it behind
+ * fails the next frozen-lockfile install. Only the app's own entry moves.
+ */
+export function setBunLockWorkspaceVersion(text: string, name: string, from: string, to: string): string {
+  const key = `"apps/${name}": {`;
+  const at = text.indexOf(key);
+  if (at < 0) throw new Error(`bun.lock has no apps/${name} workspace entry`);
+  const open = at + key.length - 1;
+  const end = objectEnd(text, open);
+  const block = text.slice(open, end);
+  const m = block.match(/^\{\s*"name":\s*"[^"]*",\s*"version":\s*"([^"]*)"/);
+  if (!m) throw new Error(`bun.lock's apps/${name} entry has no version right after its name`);
+  if (m[1] !== from) throw new Error(`bun.lock records apps/${name} at ${m[1]}, not the pin ${from}; fix the lockfile on apps main (bun install), then rerun`);
+  const rewritten = block.replace(/("version":\s*")[^"]*(")/, (_all, a: string, b: string) => `${a}${to}${b}`);
+  return text.slice(0, open) + rewritten + text.slice(end);
 }
 
 const DASHES = new RegExp(`\\s*[${String.fromCharCode(0x2013, 0x2014)}]\\s*`, "g");
@@ -351,7 +409,7 @@ export interface ReleaseAppOptions {
   name: string;
   dryRun: boolean;
   json: boolean;
-  /** The approved notes' hash (or the tag they were shown for); null asks, or stops off a TTY. */
+  /** The hash a stopped run printed for the notes it showed; null asks, or stops off a TTY. */
   yesNotes: string | null;
 }
 
@@ -428,7 +486,12 @@ const rawLock = (seams: ReleaseAppSeams, ref: string): Promise<string> =>
 
 interface WorkspacePackage {
   dir: string;
-  deps: string[];
+  deps: Record<string, string>;
+}
+
+interface AppFootprint {
+  dirs: string[];
+  catalogUses: CatalogUse[];
 }
 
 /**
@@ -438,7 +501,7 @@ interface WorkspacePackage {
 class AppsHistory {
   private dir: string | null = null;
   private packages: Map<string, WorkspacePackage> | null = null;
-  private readonly pathCache = new Map<string, string[]>();
+  private readonly footprints = new Map<string, AppFootprint>();
 
   constructor(private readonly seams: ReleaseAppSeams) {}
 
@@ -456,9 +519,9 @@ class AppsHistory {
     await run(this.seams, ["git", "--git-dir", this.dir, "fetch", "--quiet", "origin", "+refs/heads/main:refs/heads/main", "+refs/tags/*:refs/tags/*"], { timeoutMs: 300_000 });
   }
 
-  private async show(path: string): Promise<Record<string, unknown>> {
+  private async show(ref: string, path: string): Promise<Record<string, unknown>> {
     const dir = await this.gitDir();
-    return JSON.parse(await run(this.seams, ["git", "--git-dir", dir, "show", `main:${path}`])) as Record<string, unknown>;
+    return JSON.parse(await run(this.seams, ["git", "--git-dir", dir, "show", `${ref}:${path}`])) as Record<string, unknown>;
   }
 
   private async workspace(): Promise<Map<string, WorkspacePackage>> {
@@ -467,48 +530,62 @@ class AppsHistory {
     const files = (await run(this.seams, ["git", "--git-dir", dir, "ls-tree", "-r", "--name-only", "main"])).split("\n").map((f) => f.trim()).filter(Boolean);
     const packages = new Map<string, WorkspacePackage>();
     if (files.includes("package.json")) {
-      const globs = workspaceGlobs(await this.show("package.json"));
+      const globs = workspaceGlobs(await this.show("main", "package.json"));
       for (const file of files) {
         if (!file.endsWith("/package.json")) continue;
         const pkgDir = file.slice(0, -"/package.json".length);
         if (!globs.some((g) => globMatches(g, pkgDir))) continue;
-        const pkg = await this.show(file);
-        if (typeof pkg.name === "string") packages.set(pkg.name, { dir: pkgDir, deps: workspaceDeps(pkg) });
+        const pkg = await this.show("main", file);
+        if (typeof pkg.name === "string") packages.set(pkg.name, { dir: pkgDir, deps: dependencyNames(pkg) });
       }
     }
     this.packages = packages;
     return packages;
   }
 
-  /** apps/<name> plus every workspace package it depends on, transitively. */
-  async paths(name: string): Promise<string[]> {
-    const cached = this.pathCache.get(name);
+  /** apps/<name> plus every workspace package it depends on, transitively, and the catalog entries any of them use. */
+  private async footprint(name: string): Promise<AppFootprint> {
+    const cached = this.footprints.get(name);
     if (cached) return cached;
     const packages = await this.workspace();
     const appDir = `apps/${name}`;
-    const seen = [appDir];
-    const queue = [...([...packages.values()].find((p) => p.dir === appDir)?.deps ?? [])];
-    while (queue.length) {
-      const dep = packages.get(queue.shift()!);
-      if (!dep || seen.includes(dep.dir)) continue;
-      seen.push(dep.dir);
-      queue.push(...dep.deps);
-    }
-    this.pathCache.set(name, seen);
-    return seen;
+    const dirs = [appDir];
+    const catalogUses: CatalogUse[] = [];
+    const visit = (deps: Record<string, string>) => {
+      for (const [dep, spec] of Object.entries(deps)) {
+        if (spec.startsWith("catalog:") && !catalogUses.some((u) => u.dep === dep && u.spec === spec)) catalogUses.push({ dep, spec });
+        const linked = packages.get(dep);
+        if (linked && !dirs.includes(linked.dir)) {
+          dirs.push(linked.dir);
+          visit(linked.deps);
+        }
+      }
+    };
+    visit([...packages.values()].find((p) => p.dir === appDir)?.deps ?? {});
+    const footprint = { dirs, catalogUses };
+    this.footprints.set(name, footprint);
+    return footprint;
+  }
+
+  private async catalogChanges(from: string, to: string, name: string): Promise<{ dep: string; from: string; to: string }[]> {
+    const { catalogUses } = await this.footprint(name);
+    if (!catalogUses.length) return [];
+    return changedCatalogEntries(await this.show(from, "package.json"), await this.show(to, "package.json"), catalogUses);
   }
 
   async movedSince(tag: string, name: string): Promise<boolean> {
     const dir = await this.gitDir();
-    const paths = await this.paths(name);
-    return Number((await run(this.seams, ["git", "--git-dir", dir, "rev-list", "--count", `${tag}..main`, "--", ...paths])).trim()) > 0;
+    const { dirs } = await this.footprint(name);
+    const commits = Number((await run(this.seams, ["git", "--git-dir", dir, "rev-list", "--count", `${tag}..main`, "--", ...dirs])).trim());
+    return commits > 0 || (await this.catalogChanges(tag, "main", name)).length > 0;
   }
 
   async subjects(from: string, to: string, name: string): Promise<string[]> {
     const dir = await this.gitDir();
-    const paths = await this.paths(name);
-    const out = await run(this.seams, ["git", "--git-dir", dir, "log", "--no-merges", "--format=%s", `${from}..${to}`, "--", ...paths]);
-    return out.split("\n").map((l) => l.trim()).filter(Boolean);
+    const { dirs } = await this.footprint(name);
+    const out = await run(this.seams, ["git", "--git-dir", dir, "log", "--no-merges", "--format=%s", `${from}..${to}`, "--", ...dirs]);
+    const catalog = (await this.catalogChanges(from, to, name)).map((c) => `${c.dep} ${c.from} → ${c.to} (workspace catalog)`);
+    return [...out.split("\n").map((l) => l.trim()).filter(Boolean), ...catalog];
   }
 }
 
@@ -524,7 +601,10 @@ interface Ctx {
   lastRows: DepsRow[];
   pinned: string;
   appsMain: string;
-  pkg: { text: string; sha: string };
+  /** apps main's head when qualify read it; the bump commit is built on exactly this. */
+  appsHead: string;
+  /** package.json and bun.lock as the bump will write them, checked in qualify so a dry run sees a stale lockfile too. */
+  bump: { pkg: string; lock: string } | null;
   phase: Phase;
   /** Why a run resumed at verification rather than a new release. */
   resumeReason: string | null;
@@ -587,12 +667,17 @@ async function assertFastPath(seams: ReleaseAppSeams, ctx: Pick<Ctx, "lastTag" |
   if (problems.length) throw refuse(problems.join("; "));
 }
 
-async function appsPackage(seams: ReleaseAppSeams, name: string): Promise<{ text: string; sha: string; version: string }> {
-  const raw = JSON.parse(await gh(seams, ["api", `repos/${APPS_REPO}/contents/apps/${name}/package.json?ref=main`])) as { content: string; sha: string };
-  const text = Buffer.from(raw.content, "base64").toString("utf8");
+const appsHeadSha = async (seams: ReleaseAppSeams): Promise<string> =>
+  (await gh(seams, ["api", `repos/${APPS_REPO}/git/ref/heads/main`, "--jq", ".object.sha"])).trim();
+
+const appsFile = (seams: ReleaseAppSeams, path: string, ref: string): Promise<string> =>
+  gh(seams, ["api", "-H", "Accept: application/vnd.github.raw+json", `repos/${APPS_REPO}/contents/${path}?ref=${ref}`]);
+
+async function appsPackage(seams: ReleaseAppSeams, name: string, ref: string): Promise<{ text: string; version: string }> {
+  const text = await appsFile(seams, `apps/${name}/package.json`, ref);
   const version = (JSON.parse(text) as { version?: unknown }).version;
   if (typeof version !== "string") throw new Error(`apps/${name}/package.json on apps main has no version`);
-  return { text, sha: raw.sha, version };
+  return { text, version };
 }
 
 async function appTagExists(seams: ReleaseAppSeams, tag: string): Promise<boolean> {
@@ -643,7 +728,8 @@ async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
   const shippedBefore = previousRows?.find((r) => r.name === name)?.version ?? null;
   await assertFastPath(seams, { lastTag: newest.name, lastCommit: newestCommit }, "origin/main", "qualify");
 
-  const pkg = await appsPackage(seams, name);
+  const appsHead = await appsHeadSha(seams);
+  const pkg = await appsPackage(seams, name, appsHead);
   const pinTag = pinnedTagFromUrl(row.url) ?? appTagFor(name, row.version);
   const apps = new AppsHistory(seams);
   let decision = await resolvePhase({
@@ -664,8 +750,19 @@ async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
   }
 
   const appTag = appTagFor(name, decision.target);
-  if (decision.phase === "bump" && (await appTagExists(seams, appTag))) {
-    throw refuse(`tag ${appTag} already exists on ${APPS_REPO} while apps main still says ${row.version}; bump apps/${name}/package.json past it by hand, then rerun`);
+  let bump: Ctx["bump"] = null;
+  if (decision.phase === "bump") {
+    if (await appTagExists(seams, appTag)) {
+      throw refuse(`tag ${appTag} already exists on ${APPS_REPO} while apps main still says ${row.version}; bump apps/${name}/package.json past it by hand, then rerun`);
+    }
+    try {
+      bump = {
+        pkg: setPackageVersion(pkg.text, row.version, decision.target),
+        lock: setBunLockWorkspaceVersion(await appsFile(seams, "bun.lock", appsHead), name, row.version, decision.target),
+      };
+    } catch (err) {
+      throw refuse(errMessage(err));
+    }
   }
   const released = decision.phase === "released";
   return {
@@ -679,7 +776,8 @@ async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
     lastRows: released ? previousRows! : newestRows,
     pinned: row.version,
     appsMain: pkg.version,
-    pkg: { text: pkg.text, sha: pkg.sha },
+    appsHead,
+    bump,
     phase: decision.phase,
     resumeReason,
     target: decision.target,
@@ -710,18 +808,69 @@ function doneDetail(ctx: Ctx): string {
 
 const pinMerged = (ctx: Ctx) => ctx.phase === "notes" || ctx.phase === "released";
 
+function writePayload(seams: ReleaseAppSeams, file: string, body: unknown): string {
+  const path = join(seams.workDir(), file);
+  seams.writeFile(path, JSON.stringify(body));
+  return path;
+}
+
+/**
+ * One commit of whole files on top of `parent`, then a fast-forward-only ref
+ * update: a branch that moved underneath fails instead of being overwritten.
+ */
+async function commitFiles(seams: ReleaseAppSeams, o: {
+  repo: string;
+  label: string;
+  step: StepId;
+  parent: string;
+  baseTree: string;
+  files: { path: string; content: string }[];
+  message: string;
+  prefix: string;
+  currentHead: () => Promise<string>;
+  resume: string;
+}): Promise<string> {
+  const tree = (await gh(seams, ["api", `repos/${o.repo}/git/trees`, "--input",
+    writePayload(seams, `${o.prefix}-tree.json`, { base_tree: o.baseTree, tree: o.files.map((f) => ({ path: f.path, mode: "100644", type: "blob", content: f.content })) }),
+    "--jq", ".sha"])).trim();
+  const commit = (await gh(seams, ["api", `repos/${o.repo}/git/commits`, "--input",
+    writePayload(seams, `${o.prefix}-commit.json`, { message: o.message, tree, parents: [o.parent] }),
+    "--jq", ".sha"])).trim();
+  const update = await seams.exec(["gh", "api", "-X", "PATCH", `repos/${o.repo}/git/refs/heads/main`, "--input", writePayload(seams, `${o.prefix}-ref.json`, { sha: commit, force: false })], { timeoutMs: 60_000 });
+  if (update.exitCode === 0) return commit;
+  const reason = (update.stderr || update.stdout).trim();
+  const head = o.parent.slice(0, 9);
+  let now = "";
+  try {
+    now = await o.currentHead();
+  } catch {
+    now = "";
+  }
+  if (now && now !== o.parent) {
+    throw new StepFailure(o.step, `${o.label} moved from ${head} to ${now.slice(0, 9)} before the commit landed; nothing changed`, o.resume);
+  }
+  if (/HTTP 40[13]|protected branch|not accessible|permission/i.test(reason)) {
+    throw new StepFailure(o.step, `not allowed to update ${o.label} (${reason}); check the gh token's scopes and the branch protection. Nothing changed`, null);
+  }
+  throw new StepFailure(o.step, `could not update ${o.label} (${reason}); it is still at ${head}, so a rerun retries. Nothing changed`, o.resume);
+}
+
 async function bumpStep(seams: ReleaseAppSeams, ctx: Ctx, rec: Recorder): Promise<void> {
-  if (ctx.phase !== "bump") return rec("bump", "done", doneDetail(ctx));
-  const text = setPackageVersion(ctx.pkg.text, ctx.pinned, ctx.target);
-  const sha = (await gh(seams, [
-    "api", "-X", "PUT", `repos/${APPS_REPO}/contents/apps/${ctx.name}/package.json`,
-    "-f", `message=${bumpSubject(ctx.name, ctx.target)}`,
-    "-f", `content=${Buffer.from(text).toString("base64")}`,
-    "-f", `sha=${ctx.pkg.sha}`,
-    "-f", "branch=main",
-    "--jq", ".commit.sha",
-  ])).trim();
-  rec("bump", "ok", `apps/${ctx.name}/package.json ${ctx.pinned} → ${ctx.target} on apps main (${sha.slice(0, 9)})`);
+  if (ctx.phase !== "bump" || !ctx.bump) return rec("bump", "done", doneDetail(ctx));
+  const baseTree = (await gh(seams, ["api", `repos/${APPS_REPO}/git/commits/${ctx.appsHead}`, "--jq", ".tree.sha"])).trim();
+  const sha = await commitFiles(seams, {
+    repo: APPS_REPO,
+    label: "apps main",
+    step: "bump",
+    parent: ctx.appsHead,
+    baseTree,
+    files: [{ path: `apps/${ctx.name}/package.json`, content: ctx.bump.pkg }, { path: "bun.lock", content: ctx.bump.lock }],
+    message: bumpSubject(ctx.name, ctx.target),
+    prefix: "apps",
+    currentHead: () => appsHeadSha(seams),
+    resume: `rt release app ${ctx.name}`,
+  });
+  rec("bump", "ok", `apps/${ctx.name}/package.json and bun.lock ${ctx.pinned} → ${ctx.target} on apps main (${sha.slice(0, 9)})`);
 }
 
 interface FoundRun {
@@ -802,12 +951,14 @@ async function findBotPr(seams: ReleaseAppSeams, ctx: Ctx): Promise<BotPr | null
     }
     return pr ?? null;
   }
-  const open = (JSON.parse(await gh(seams, ["pr", "list", "--repo", RT_REPO, "--state", "open", "--json", PR_FIELDS, "--limit", "50"])) as BotPr[])
+  // Every state, so a bot PR someone closed is reported as closed rather than missing.
+  const candidates = (JSON.parse(await gh(seams, ["pr", "list", "--repo", RT_REPO, "--state", "all", "--json", PR_FIELDS, "--limit", "50"])) as BotPr[])
     .filter(fromBundleWorkflow);
-  for (const pr of open) {
-    if (parseLock(await rawLock(seams, pr.headRefOid)).find((r) => r.name === ctx.name)?.version === ctx.target) return pr;
+  const matching: BotPr[] = [];
+  for (const pr of candidates) {
+    if (parseLock(await rawLock(seams, pr.headRefOid)).find((r) => r.name === ctx.name)?.version === ctx.target) matching.push(pr);
   }
-  return null;
+  return matching.find((p) => p.state === "OPEN") ?? matching[0] ?? null;
 }
 
 /** Never executes the binary: codesign reads the signature off disk. */
@@ -953,36 +1104,20 @@ async function noteSections(ctx: Ctx): Promise<NotesSection[]> {
   return sections;
 }
 
-/** Built with the git data API so the ref update is fast-forward only: main moving underneath fails instead of tagging unverified code. */
 async function commitNotes(seams: ReleaseAppSeams, ctx: Ctx, notes: string, sections: NotesSection[]): Promise<string> {
-  const payload = (file: string, body: unknown): string => {
-    const path = join(seams.workDir(), file);
-    seams.writeFile(path, JSON.stringify(body));
-    return path;
-  };
-  const rerun = `rt release app ${ctx.name}`;
-  const baseTree = (await git(seams, ["rev-parse", `${ctx.headSha}^{tree}`])).trim();
-  const tree = (await gh(seams, ["api", `repos/${RT_REPO}/git/trees`, "--input",
-    payload("notes-tree.json", { base_tree: baseTree, tree: [{ path: "RELEASE_NOTES.md", mode: "100644", type: "blob", content: notes }] }),
-    "--jq", ".sha"])).trim();
   const summary = sections.map((s) => `${s.app} ${s.version}`).join(", ");
-  const commit = (await gh(seams, ["api", `repos/${RT_REPO}/git/commits`, "--input",
-    payload("notes-commit.json", { message: `chore(release): notes for ${ctx.tag} (${summary})`, tree, parents: [ctx.headSha] }),
-    "--jq", ".sha"])).trim();
-  const update = await seams.exec(["gh", "api", "-X", "PATCH", `repos/${RT_REPO}/git/refs/heads/main`, "--input", payload("notes-ref.json", { sha: commit, force: false })], { timeoutMs: 60_000 });
-  if (update.exitCode !== 0) {
-    const reason = (update.stderr || update.stdout).trim();
-    const head = ctx.headSha.slice(0, 9);
-    const now = await seams.exec(["git", "ls-remote", "origin", "refs/heads/main"], { cwd: seams.repoRoot, timeoutMs: 30_000 });
-    const remoteMain = now.exitCode === 0 ? now.stdout.split(/\s+/)[0] ?? "" : "";
-    if (remoteMain && remoteMain !== ctx.headSha) {
-      throw new StepFailure("notes", `main moved from ${head} to ${remoteMain.slice(0, 9)} before the notes commit landed; nothing was tagged`, rerun);
-    }
-    if (/HTTP 40[13]|protected branch|not accessible|permission/i.test(reason)) {
-      throw new StepFailure("notes", `not allowed to update main (${reason}); check the gh token's scopes and main's branch protection. Nothing was tagged`, null);
-    }
-    throw new StepFailure("notes", `could not update main (${reason}); it is still at ${head}, so a rerun retries the notes commit. Nothing was tagged`, rerun);
-  }
+  const commit = await commitFiles(seams, {
+    repo: RT_REPO,
+    label: "main",
+    step: "notes",
+    parent: ctx.headSha,
+    baseTree: (await git(seams, ["rev-parse", `${ctx.headSha}^{tree}`])).trim(),
+    files: [{ path: "RELEASE_NOTES.md", content: notes }],
+    message: `chore(release): notes for ${ctx.tag} (${summary})`,
+    prefix: "notes",
+    currentHead: async () => (await git(seams, ["ls-remote", "origin", "refs/heads/main"], 30_000)).split(/\s+/)[0] ?? "",
+    resume: `rt release app ${ctx.name}`,
+  });
   Object.assign(ctx, await refreshMain(seams));
   return commit;
 }
@@ -1014,9 +1149,9 @@ async function notesStep(seams: ReleaseAppSeams, ctx: Ctx, opts: ReleaseAppOptio
   ctx.notesHash = hash;
   const approve = `rt release app ${ctx.name}${opts.json ? " --json" : ""} --yes-notes ${hash}`;
   if (opts.yesNotes !== null) {
-    if (opts.yesNotes !== hash && opts.yesNotes !== ctx.tag) {
+    if (opts.yesNotes !== hash) {
       throw new StepFailure("notes",
-        `--yes-notes ${opts.yesNotes} does not match these notes (tag ${ctx.tag}, hash ${hash}): the tag or the notes changed since they were approved, so nothing was committed`,
+        `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.tag}): only the hash a stopped run printed approves its notes, and these changed or were never shown. Nothing was committed`,
         `review the new notes, then ${approve}`);
     }
   } else {

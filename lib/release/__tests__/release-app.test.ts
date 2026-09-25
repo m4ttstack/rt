@@ -8,7 +8,9 @@ import {
   notesHash,
   pinOnlyLockProblems,
   teamFromProjectYml,
-  workspaceDeps,
+  changedCatalogEntries,
+  dependencyNames,
+  setBunLockWorkspaceVersion,
   workspaceGlobs,
   bumpPatch,
   nextPatchTag,
@@ -387,10 +389,59 @@ describe("workspace dependencies", () => {
     expect(globMatches("packages/tui-kit/workshop", "packages/tui-kit/workshop")).toBe(true);
   });
 
-  test("workspaceDeps is every workspace: dependency, dev ones included", () => {
-    expect(workspaceDeps({
+  test("dependencyNames is every dependency whatever its specifier, dev ones included", () => {
+    expect(Object.keys(dependencyNames({
       dependencies: { "@mattstack/tui-kit": "workspace:*", react: "catalog:" },
-      devDependencies: { "@mattstack/app-server": "workspace:^", typescript: "~6" },
-    }).sort()).toEqual(["@mattstack/app-server", "@mattstack/tui-kit"]);
+      devDependencies: { "@mattstack/app-server": "^0.1.0", typescript: "~6" },
+    })).sort()).toEqual(["@mattstack/app-server", "@mattstack/tui-kit", "react", "typescript"]);
+  });
+
+  test("changedCatalogEntries reports only the catalog entries the app uses that moved", () => {
+    const from = { workspaces: { catalog: { react: "^19.2.0", zod: "^4.0.0" }, catalogs: { ui: { hono: "^4.1.0" } } } };
+    const to = { workspaces: { catalog: { react: "^19.2.7", zod: "^4.4.3" }, catalogs: { ui: { hono: "^4.1.0" } } } };
+    const uses = [{ dep: "react", spec: "catalog:" }, { dep: "hono", spec: "catalog:ui" }, { dep: "left-pad", spec: "^1.0.0" }];
+    expect(changedCatalogEntries(from, to, uses)).toEqual([{ dep: "react", from: "^19.2.0", to: "^19.2.7" }]);
+    expect(changedCatalogEntries({ catalog: { react: "1" } }, { catalog: { react: "2" } }, [{ dep: "react", spec: "catalog:default" }]))
+      .toEqual([{ dep: "react", from: "1", to: "2" }]);
+  });
+});
+
+describe("the bun.lock workspace version", () => {
+  const LOCK = [
+    "{",
+    '  "lockfileVersion": 1,',
+    '  "workspaces": {',
+    '    "": {',
+    '      "name": "apps",',
+    "    },",
+    '    "apps/board": {',
+    '      "name": "board",',
+    '      "version": "0.1.7",',
+    '      "dependencies": {',
+    '        "left-pad": "0.1.7",',
+    "      },",
+    "    },",
+    '    "apps/chat": {',
+    '      "name": "chat",',
+    '      "version": "0.1.7",',
+    "    },",
+    "  },",
+    "}",
+    "",
+  ].join("\n");
+
+  test("rewrites only the app's own workspace version", () => {
+    const out = setBunLockWorkspaceVersion(LOCK, "board", "0.1.7", "0.1.8");
+    expect(out).toBe(LOCK.replace('"name": "board",\n      "version": "0.1.7"', '"name": "board",\n      "version": "0.1.8"'));
+    expect(out).toContain('"left-pad": "0.1.7"');
+    expect(out).toContain('"name": "chat",\n      "version": "0.1.7"');
+  });
+
+  test("refuses when the lockfile does not record the pin", () => {
+    expect(() => setBunLockWorkspaceVersion(LOCK, "board", "0.1.6", "0.1.7")).toThrow("bun.lock records apps/board at 0.1.7, not the pin 0.1.6");
+  });
+
+  test("refuses when the app has no workspace entry", () => {
+    expect(() => setBunLockWorkspaceVersion(LOCK, "console", "0.1.3", "0.1.4")).toThrow("no apps/console workspace");
   });
 });
