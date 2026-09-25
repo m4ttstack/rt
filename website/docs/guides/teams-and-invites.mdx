@@ -9,36 +9,35 @@ A team is a shared configuration zone: settings, secrets, skill packs, and forge
 
 ## Creating a team
 
-```bash
-rt team create my-team --remote git@github.com:org/mattstack-team-my-team.git
-```
+In setup's **Your team** step, choose **Create a team**, give it a name, and leave **Others will join later** on if teammates will follow. For the team's repo, paste the URL of an empty repo on GitHub, GitLab, or anything git can push to. When the `gh` CLI is signed in, you can instead let mattstack create a private GitHub repo under an owner you pick. Setup scaffolds the team zone under `~/.mattstack/teams/<name>/`, and its Install step pushes it.
 
-This scaffolds a team zone under `~/.mattstack/teams/my-team/` and points it at the given remote. If you do not have a repo ready, `--create-repo <owner>` has `gh` create one for you. `--others` marks the team as having members beyond yourself.
-
-Setup's Install step pushes the new zone. To push it yourself:
+From a terminal:
 
 ```bash
-rt team publish
+rt team create my-team --remote git@github.com:org/mattstack-team-my-team.git   # or --create-repo <owner>
+rt team publish                                                                  # push the zone
 ```
+
+`--others` is the terminal form of **Others will join later**.
 
 ## Inviting a member
 
-```bash
-rt team invite --handle alice
-```
+Open **Settings → Team** (or **Invite teammates…** on setup's last screen), type the teammate's GitHub or GitLab handle, and click **Invite…**. You get an invite link to copy or share, plus a paste block for chat clients that mangle links, with the invite's expiry and the forge access it grants. When rt can't grant forge access itself, the steps to do it by hand appear underneath.
 
-This mints an opaque invite code and prints a link: `https://mattstack.dev/join#<code>`. The code lives in the URL fragment, so it never reaches the join page's server.
+The link looks like `https://mattstack.dev/join#<code>`. The code lives in the URL fragment, so it never reaches the join page's server.
 
-The bare 77-character code is also printed as a fallback for chat clients that mangle links. Either form works.
+From a terminal: `rt team invite --handle alice`.
+
+The same pane shows the team's name, remote, last push, and the members who have access.
 
 ## What a joiner sees
 
-The joiner opens the invite link (or pastes the code into Setup's "Join a team" field). The setup checklist runs a forge-auth preflight against the team repo:
+The joiner opens the invite link, or pastes the code into **Join a team** in setup's **Your team** step. An already set-up Mac joins through **Settings → Team → Join another team…**. The checklist then runs a forge-auth preflight against the team repo:
 
-- If the joiner's forge account (GitHub or GitLab) cannot see the repo, a warning appears naming the problem and suggesting they ask the owner or org admin for access. The warning does not block proceeding, but the `access.team-repo` checklist row will block the Install step until access is resolved.
+- If the joiner's forge account (GitHub or GitLab) cannot see the repo, a warning names the problem and suggests asking the owner or org admin for access. The `access.team-repo` checklist row holds Install until access is resolved.
 - If access is confirmed, setup continues normally.
 
-When the team declares a switchboard, `rt team join` confirms its URL for the joiner, so the `account.switchboard` row reads ready and Install is reachable without a terminal. If this Mac already confirmed a different switchboard URL, join leaves it alone and warns; the row then offers **Confirm** with the team's URL prefilled.
+When the team declares a switchboard, joining confirms its URL for the joiner, so the `account.switchboard` row reads ready. If this Mac already confirmed a different switchboard URL, join leaves it alone and warns; the row then offers **Confirm** with the team's URL prefilled.
 
 ## When an invitee replies
 
@@ -61,13 +60,13 @@ rt team manage-membership off   # disable
 
 Grant level is read-only: GitHub `pull`, GitLab Reporter. For repos that rt did not create (pasted `--remote` URLs), rt grants nothing and prints the forge's member page URL so you can add access manually.
 
-A TTY prompt at invite time also offers to toggle membership management.
+Running `rt team invite` in a terminal also offers to toggle membership management.
 
 ## Team packs
 
 Team skill packs are installed during setup but are **not enabled** by default. The daemon's snapshot engine converges the pack cache on every pull that moves HEAD: for a pack that is already installed it runs `claude plugin update` (preserving the disabled state), never `install` (which would re-enable). A pack added to the team after a member joined is installed and immediately disabled on the next converging pull.
 
-`rt setup status` shows a row per team-served pack with its installed version, served version, and the command to enable it.
+The checklist (**Setup status…**, or `rt setup status`) shows a row per team-served pack with its installed version, served version, and the command to enable it.
 
 ## Pulling now
 

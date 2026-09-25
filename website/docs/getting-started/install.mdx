@@ -11,151 +11,118 @@ rt ships inside **mattstack.app**, the mattstack menu bar app. Installing the ap
 
 - An Apple silicon Mac. rt ships an arm64 build only.
 - macOS 14 or newer.
-- Xcode Command Line Tools. The setup checklist flags them when they are missing and offers to install them.
+- Xcode Command Line Tools. The setup checklist offers to install them.
 
 ## Install the app
 
 1. Download `mattstack-<version>.dmg` from [GitHub Releases](https://github.com/m4ttstack/rt/releases).
 2. Drag **mattstack.app** to `/Applications` and open it.
-3. Follow the setup window. On first launch it walks you through:
-   - **Team**: create a team, join one with an invite code, or restore this Mac from your home repo. See [Teams and invites](/guides/teams-and-invites).
-   - **Checklist**: every readiness check (accounts, tools, permissions), with a button on each row that needs you.
-   - **Install**: links the mattstack CLI tools into `~/.local/bin`, adds one PATH line to your shell rc, starts the rt daemon and the bundled apps, installs the mattstack Claude Code plugins and the editor extension, and asks for Full Disk Access and background-item approval.
-   - **Done**: the last two choices, covered under [Finishing setup](#finishing-setup).
+3. The setup window opens and walks you through five steps.
 
-Everything Setup installs is reversible from the app's Settings → Uninstall, or with [`rt uninstall`](/reference/uninstall).
+### Welcome
 
-### From a terminal
+A summary of what setup does. Everything it installs is reversible from Settings → Uninstall.
 
-To run the same install headless, on a fresh machine, a VM, or CI:
+### Your team
 
-```bash
-/Applications/mattstack.app/Contents/MacOS/rt --post-install
-rt verify
-```
+Pick one:
 
-Run it from `/Applications`, not from the mounted DMG. rt refuses to install itself from a disk image or a Gatekeeper-translocated copy.
+- **Create a team**: name it, then paste the URL of an empty repo for it, or let mattstack create a private GitHub repo when the `gh` CLI is signed in.
+- **Join a team**: paste the invite code a teammate sent you.
+- **Restore**: bring back your own setup on a new Mac from your home repo and its age key.
 
-Until setup has run, other `rt` commands print a one-line hint pointing you at mattstack.app or `rt setup`.
+See [Teams and invites](/guides/teams-and-invites) for how teams, invites, and team packs work.
 
-## Check the install
+### Before we begin
 
-```bash
-rt setup status    # the readiness checklist, with anything that still needs you
-rt verify          # read-only health report for every piece of the install
-```
+The checklist of everything setup needs, grouped into Your Mac, Accounts, Access, and Tools. A row that needs you carries its own button: grant a permission, choose a folder, connect an account, or show the steps to take. **Re-check** refreshes every row. **Install** unlocks once every required row is ready, and **Continue in limited mode** goes ahead while optional rows are still outstanding.
 
-[`rt setup status`](/reference/setup/status) and [`rt verify`](/reference/verify) both health-check the app, daemon, editor extension, and shell integration. [`rt setup plan`](/reference/setup/plan) shows the checklist before Install has run.
+**Your Mac** covers macOS, the Command Line Tools, PATH precedence, and three permissions: Full Disk Access, Login Items, and Notifications. Each permission row asks for it or opens the matching pane in System Settings.
 
-## Connect your accounts
-
-The checklist's account rows open a Connect sheet. From a terminal:
-
-```bash
-rt setup gitlab connect    # GitLab personal access token (MR data)
-rt setup github connect    # GitHub token
-rt setup linear connect    # Linear API key (ticket lookup)
-rt settings linear team    # default Linear team
-```
-
-When you connect GitHub or GitLab, the Connect sheet links to the forge's new-token page with the scopes rt needs already checked and the token named `mattstack`:
+**Accounts** has one row for each integration your team or its packs use: the team's GitHub or GitLab, plus Linear, Slack, StrongDM, and others when the team declares them. **Connect** opens a sheet with a **Create a token on GitLab…** (or GitHub) link to the forge's new-token page, with the scopes your role needs already checked and the token named `mattstack`:
 
 | Forge | Joining a team | Owning a team |
 |---|---|---|
 | GitLab | `read_api`, `read_user` | `api` |
 | GitHub (classic token) | `repo`, `read:org` | `repo`, `read:org` |
 
-A token the forge accepts but that is missing a scope shows as invalid, naming the missing scope, and `rt setup <forge> connect` refuses it before storing it. The link targets GitLab 16 or newer; older self-hosted instances use a different token page.
+Paste the token and Connect. A token missing a scope shows as invalid, naming the scope it lacks. The GitHub row is ready without a token when the `gh` CLI is already signed in. The GitLab link targets GitLab 16 or newer.
 
-`rt setup status` also warns when an integration token is approaching expiry, so you can rotate it before it breaks.
+**Repo folder** asks where rt clones your team's repos; **Choose folder…** opens a folder picker.
 
-## Repo folder
+### Installing
 
-The setup checklist asks where rt should clone your team's repos instead of assuming a default location. You can also set this from the CLI for scripted installs:
+Install runs each step and streams its progress:
+
+- links `rt`, `fast-browser`, `gitq`, and `deck` into `~/.local/bin`, puts that folder first on your PATH, and adds the `rtcd` alias to your shell
+- registers the rt daemon and deck (which serves the bundled apps) as background services and starts them
+- installs the mattstack Claude Code plugins and seeds Claude Code's permissions (see [Claude Code setup](#claude-code-setup))
+- installs the `rt-context` editor extension into every editor it finds
+
+### Installed
+
+The last screen confirms the checklist again and shows where things live: the **m** icon in the menu bar, `rt` in a new terminal window, and the board at `board.mattstack`.
+
+**Before you finish** holds the two rows that gate **Finish**:
+
+- **Writing style**: the voice agents use for the reviews, replies, and PR descriptions they post under your name. **Choose style…** offers the mattstack presets or any skill of your own.
+- **Fast Browser extension**: Fast Browser drives your real Chrome session through a Chrome extension that you load yourself. **Show steps…** walks through it: open `chrome://extensions`, turn on Developer mode, **Load unpacked** from `~/.fast-browser/extension/current/unpacked`, then pair it and confirm with `fast-browser doctor`. **Skip for now** skips it on this Mac; Settings → Fast Browser shows **Un-skip** to bring it back. Without Chrome installed, this row is skipped.
+
+**Still to do** lists any optional rows left open. Owners also get **Invite teammates…**.
+
+## After setup
+
+**Setup status…**, in the gear menu of the menu bar app's Processes panel, reopens the checklist at any time. Use it to connect an account, rotate a token, or fix a row that slipped. It also warns when a token is close to expiring.
+
+**Settings…** covers the rest: your writing style, startup and updates, team invites and **Join another team…**, permissions, Fast Browser, and Uninstall. See [The menu bar app](/guides/tray).
+
+**Home repo backup**: your home repo (`~/.mattstack/user`) keeps your settings versioned on this Mac. Its checklist row offers **Add remote…**: paste the URL of an empty private repo you own, or pick **Create a private repo for me**.
+
+## From a terminal
+
+To set up without the setup window (a VM, CI, or a scripted install), run the same steps from the CLI. mattstack.app still registers the background services and the proxy, so keep it running:
 
 ```bash
-rt setup repo-root set ~/code     # set the repo folder
+# run from /Applications, not the DMG
+/Applications/mattstack.app/Contents/MacOS/rt --post-install
+rt setup status    # the checklist, as text
+rt verify          # read-only health report
 ```
 
-Before Install (when the home repo doesn't exist yet), the answer is staged. After Install, it writes directly to the settings store. The app shows an OS folder picker for this step.
-
-## Agent permissions
-
-Install seeds a baseline `permissions.allow` list into Claude Code's settings so agents don't stall on per-tool prompts for calls rt already trusts. The seeded entries cover `glab` commands, `claude plugin update`, the Fast Browser plugin, `EnterWorktree`, the mattstack MCP server, `rt skills sync`, `rt runs`, and `rt gate`. Existing entries are preserved; only missing ones are appended.
-
-When a Claude config dir sets no `permissions.defaultMode`, Install seeds `auto`. Claude Code starts in auto mode by itself only on some plans; Enterprise and Console-key sessions otherwise start in manual mode and prompt for routine git. A mode you already chose is left alone.
-
-## Plugins
-
-Install adds the mattstack Claude Code plugins (`mattstack`, `fast-browser`, and `chat` from the mattstack marketplace) and `superpowers` from `claude-plugins-official`, which the mattstack skills and every team pack call. An existing install from `superpowers-marketplace` counts; rt does not add a second copy.
-
-## Home repo backup
-
-Your home repo (`~/.mattstack/user`) starts local-only. To back it up, point it at an empty repo you own, or let rt create a private one with `gh`:
+Each checklist button has a CLI equivalent:
 
 ```bash
-rt home remote set https://github.com/you/mattstack-home.git
-rt home remote set --create        # creates a private mattstack-home repo first
+rt setup gitlab connect            # or github, linear, slack, sdm
+rt setup repo-root set ~/code
+rt home remote set <url>           # or --create
+rt skills writing-style use <id>   # omit the id to pick
+rt setup waive tool.fast-browser-extension
 ```
+
+Until setup has run, other `rt` commands print a one-line hint pointing at mattstack.app or `rt setup`.
+
+## Claude Code setup
+
+Install seeds a baseline `permissions.allow` list into every Claude Code config dir so agents don't stall on per-tool prompts for calls rt already trusts: `glab` commands, `claude plugin update`, the Fast Browser plugin, `EnterWorktree`, the mattstack MCP server, `rt skills sync`, `rt runs`, and `rt gate`. Existing entries stay; only missing ones are added. A config dir with no `permissions.defaultMode` gets `auto`, and a mode you already chose stays.
+
+It installs the `mattstack`, `fast-browser`, and `chat` plugins from the mattstack marketplace, and `superpowers` from `claude-plugins-official`, which the mattstack skills and every team pack call. An existing `superpowers-marketplace` install counts.
 
 ## What gets installed
 
 | Component | Description |
 |---|---|
-| `mattstack.app` | Menu bar app: setup, daemon health, notifications, auto-updates. See [Menu bar app](/guides/tray) |
-| `rt` binary | Ships inside the app (`Contents/MacOS/rt`), linked at `~/.local/bin/rt` |
-| Background daemon | Caches branch and MR data, scans ports, guards git hooks, snapshots the home repo. See [Daemon](/guides/daemon) |
+| `mattstack.app` | Menu bar app: setup, daemon health, notifications, updates. See [The menu bar app](/guides/tray) |
+| `rt` | Ships inside the app (`Contents/MacOS/rt`), linked at `~/.local/bin/rt` |
+| Background daemon | Caches branch and MR data, scans ports, guards git hooks, snapshots the home repo. See [The daemon](/guides/daemon) |
 | Bundled apps | board, console, chat, and boxscore, served locally through deck |
 | `rt-context` extension | VS Code / Cursor: worktree, branch, and linked ticket in the status bar. See [Editor extension](/guides/context-extension) |
-| Shell integration | `~/.local/bin` on PATH plus the `rtcd` alias, for zsh, bash, and fish |
+| Shell integration | `~/.local/bin` first on PATH, plus the `rtcd` alias, for zsh, bash, and fish |
 | Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `sops`, `age`, `zstd`, `git-lfs`, `cloudflared`, `fast-browser`, `gitq`, and `deck`, among others, pinned and shipped inside the app |
 
-Most helpers stay inside the app bundle and are resolved by absolute path. Only the ones meant to be typed (`rt`, `fast-browser`, `gitq`, `deck`) are linked into `~/.local/bin`.
+Helpers resolve by absolute path inside the app bundle. The ones meant to be typed (`rt`, `fast-browser`, `gitq`, `deck`) are linked into `~/.local/bin`.
 
-## PATH
+The checklist's **PATH precedence** row confirms `~/.local/bin` comes first on your PATH through rt's own line in `~/.zshenv`, so your shell finds rt's shims and team intercepts before any conflicting binary. When something else claims first place, the row says so and offers to add rt's line.
 
-`rt setup status` checks that `~/.local/bin` comes first on your PATH, through rt's own entry in `~/.zshenv`, so your shell finds rt's shims and team intercepts before any conflicting binary. The row reads:
+## Updates
 
-- **ready**: `~/.local/bin` is first on PATH via rt's entry.
-- **needs you, not first**: rt's entry is there but something earlier on PATH wins, so team intercept shims may not fire.
-- **needs you, not rt's entry**: `~/.local/bin` is first, but not because of rt's entry. The row offers to add it.
-- **missing**: Install adds the entry.
-
-## Finishing setup
-
-The setup window gates its Finish step on two things: a writing style, and the Fast Browser Chrome extension.
-
-### Writing style
-
-Every review or reply an agent drafts is written in one writing style. The Done screen asks you to pick one of the mattstack plugin's presets or name your own skill, and this row cannot be skipped. From a terminal:
-
-```bash
-rt skills writing-style list                       # the three presets, then styles you can type
-rt skills writing-style use <skill-id>             # choose one (omit the id to pick)
-rt skills writing-style new my-voice --from sparse # start your own style from a preset
-```
-
-### Fast Browser
-
-Fast Browser drives your real Chrome session through a Chrome extension. Without it, agents cannot capture screenshots or annotate evidence from your browser.
-
-Install cannot load the extension for you. The row's **Show steps…** walks you through it: open `chrome://extensions`, turn on Developer mode, **Load unpacked** from `~/.fast-browser/extension/current/unpacked`, then pair it and confirm with `fast-browser doctor`.
-
-If Chrome is not installed, the gate is skipped automatically. Otherwise, the Done screen shows "One step left before you finish" with Finish disabled until the extension is detected.
-
-You can skip the gate from the setup window ("Skip for now") or from the CLI:
-
-```bash
-rt setup waive tool.fast-browser-extension     # skip on this Mac
-rt setup unwaive tool.fast-browser-extension   # re-arm later
-```
-
-In the app's Settings, the Fast Browser pane shows "Skipped on this Mac" with an **Un-skip** button when waived.
-
-## Upgrade
-
-```bash
-rt update
-```
-
-[`rt update`](/reference/update) asks mattstack.app to check for an update. The app owns the whole upgrade lifecycle through Sparkle (signature verification, staged install, restart). If the app isn't running, `rt update` points you at the latest release.
+mattstack.app updates itself through Sparkle. **Check for Updates…** in the menu bar menu, or [`rt update`](/reference/update) from a terminal, checks on demand.

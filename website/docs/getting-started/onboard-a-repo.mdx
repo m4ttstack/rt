@@ -39,16 +39,15 @@ An untracked repo fetches its data on demand. Once a repo is tracked, merge-requ
 | [`rt repos register --track`](/reference/repos/register) | You want the daemon refreshing this repo in the background |
 | [`rt hooks`](/reference/hooks) | The repo uses husky and you want a quick on/off toggle |
 
-## Global settings that affect every repo
+## Accounts and preferences
 
-Set these once; they apply to all repos and are stored under `~/.mattstack/`, not in any repo. The setup window's checklist covers the tokens; from a terminal:
+The accounts rt uses (your team's GitHub or GitLab, Linear, and whatever else the team declares) are connected in the setup checklist and apply to every repo. Reopen the checklist with **Setup status…** in the menu bar app to connect or rotate one. See [Install](/getting-started/install#before-we-begin).
+
+Two per-user preferences live in the CLI, stored under `~/.mattstack/`:
 
 ```bash
-rt setup gitlab connect        # GitLab token, for MR data and notifications
-rt setup linear connect        # Linear API key, for ticket lookup
-rt settings linear team        # default Linear team
-rt settings notifications      # pick which events fire native macOS notifications
-rt settings extension          # install the rt-context status-bar extension into local editors
+rt settings linear team        # default Linear team for ticket lists
+rt settings notifications      # which events fire native macOS notifications
 ```
 
-See [rt setup gitlab connect](/reference/setup/gitlab/connect), [rt setup linear connect](/reference/setup/linear/connect), [rt settings linear team](/reference/settings/linear/team), [rt settings notifications](/reference/settings/notifications), and [rt settings extension](/reference/settings/extension) for details.
+See [rt settings linear team](/reference/settings/linear/team) and [rt settings notifications](/reference/settings/notifications).

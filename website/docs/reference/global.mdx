@@ -31,7 +31,7 @@ Unlike the other flags on this page, `--help` is handled by the command-tree dis
 rt --grant-fda
 ```
 
-Opens System Settings to the Privacy & Security → Full Disk Access pane and prints instructions for adding `mattstack.app`. The daemon inherits this grant from the app bundle, so the grant target is `mattstack.app`, not `rt` itself. Restart the daemon (`rt daemon restart`) after granting. Re-signing the bundle (which any rebuild does) invalidates the grant, and it must be given again. Updating the app costs the grant too, so expect to re-grant after an update.
+Opens System Settings to the Privacy & Security → Full Disk Access pane and prints instructions for adding `mattstack.app`. The daemon inherits this grant from the app bundle, so the grant target is `mattstack.app`, not `rt` itself. Restart the daemon (`rt daemon restart`) after granting. In the app, the checklist's Full Disk Access row and Settings → Permissions open the same pane. Re-signing the bundle (which any rebuild does) invalidates the grant, and it must be given again. Updating the app costs the grant too, so expect to re-grant after an update.
 
 ## Internal entry points
 
