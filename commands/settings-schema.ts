@@ -58,7 +58,14 @@ function lockAtPath(path: string): Lock | Error {
   return {};
 }
 
-export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string; git?: Git } = {}): Promise<void> {
+/** The highest v* tag by version sort, or null when the checkout has none. */
+function latestReleaseTag(repoRoot: string, git: Git): string | null {
+  const tags = git(["tag", "--list", "v*", "--sort=-v:refname"], repoRoot);
+  if (tags.status !== 0) return null;
+  return tags.stdout.split("\n").map((t) => t.trim()).find((t) => t !== "") ?? null;
+}
+
+export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string; git?: Git; shippedLock?: Lock | null } = {}): Promise<void> {
   const repoRoot = deps.repoRoot ?? REPO_ROOT;
   const fail = (message: string) => {
     console.error(`rt settings schema diff: ${message}`);
@@ -75,9 +82,17 @@ export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: stri
 
   const next = buildLock();
   const changes = classifyLockDiff(prev, next);
-  const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges());
+  const shippedRef = flagValue(args, "--shipped-ref") ?? latestReleaseTag(repoRoot, deps.git ?? realGit);
+  let shipped: Lock | null = null;
+  if (deps.shippedLock !== undefined) shipped = deps.shippedLock;
+  else if (shippedRef !== null) {
+    const atRef = lockAtRef(shippedRef, repoRoot, deps.git ?? realGit);
+    if (atRef instanceof Error) return fail(atRef.message);
+    shipped = atRef;
+  }
+  const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges(), { shipped, mode: "ci" });
   if (json) {
-    console.log(JSON.stringify({ ok, changes, problems }, null, 2));
+    console.log(JSON.stringify({ ok, shipped: shippedRef, changes, problems }, null, 2));
   } else if (changes.length === 0) {
     console.log("no schema changes");
   } else {

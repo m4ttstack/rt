@@ -215,9 +215,13 @@ export async function checkSchemaLock(seams: PreflightSeams, tag: string | null)
     } catch (err) {
       throw new Error(`${SCHEMA_LOCK} at ${tag} is not valid JSON: ${(err as Error).message}`);
     }
-    const { ok, problems } = checkLockAgainst(prev, committed, acknowledged);
+    const { ok, problems } = checkLockAgainst(prev, committed, acknowledged, { shipped: prev, mode: "release" });
+    const bumps = Object.entries(committed)
+      .filter(([k, e]) => prev[k] !== undefined && e.storeVersion > prev[k]!.storeVersion)
+      .map(([k, e]) => `${k} ${prev[k]!.storeVersion} -> ${e.storeVersion}`);
+    const notes = bumps.length > 0 ? `; storeVersion bumps for the release notes: ${bumps.join(", ")}` : "";
     return ok
-      ? { id, label, status: "ok", detail: `no unacknowledged breaking change since ${tag}` }
+      ? { id, label, status: "ok", detail: `no unmigrated breaking change since ${tag}${notes}` }
       : { id, label, status: "stale", detail: problems.join("; ") };
   } catch (err) {
     return { id, label, status: "error", detail: String((err as Error).message ?? err) };

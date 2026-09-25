@@ -8,7 +8,14 @@
 import BREAKING from "./breaking-schema-changes.json" with { type: "json" };
 import type { JsonSchema } from "./schema.ts";
 
-export type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>;
+export type LockEntry = {
+  storeVersion: number;
+  schema: JsonSchema;
+  /** Source schema of each migration step, keyed by the version it reads. */
+  migrateFrom?: Record<string, JsonSchema>;
+  renamedFrom?: string[];
+};
+export type Lock = Record<string, LockEntry>;
 export interface Change { key: string; kind: "safe" | "breaking"; detail: string }
 type NodeChange = Omit<Change, "key">;
 
@@ -34,16 +41,71 @@ export function classifyLockDiff(prev: Lock, next: Lock): Change[] {
   return changes;
 }
 
-export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<string, string>): { ok: boolean; problems: string[] } {
+/** No classifier-visible difference either way: annotations ignored, const x the same as enum [x]. */
+export function equivalentSchemas(a: JsonSchema, b: JsonSchema): boolean {
+  return diffNode(a, b, "").length === 0 && diffNode(b, a, "").length === 0;
+}
+
+function firstDifference(a: JsonSchema, b: JsonSchema): string {
+  return [...diffNode(a, b, ""), ...diffNode(b, a, "")][0]?.detail ?? "no difference";
+}
+
+export interface AcceptanceOpts {
+  /** The lock at the latest release tag: a key absent from it has never shipped. Null or absent: every key has. */
+  shipped?: Lock | null;
+  /** "ci" diffs against main and allows one storeVersion step per key; "release" diffs against the tag, so the chain must span every version since. */
+  mode?: "ci" | "release";
+}
+
+/**
+ * A breaking change passes only with storeVersion bumped and a migrateFrom
+ * entry for the previous version whose schema matches the previous lock's.
+ * The breaking-schema-changes.json acknowledgement stands in for that only
+ * for a key the shipped lock does not have, and only in CI; it also retires
+ * a removed key that no key was renamed from.
+ */
+export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<string, string>, opts: AcceptanceOpts = {}): { ok: boolean; problems: string[] } {
+  const mode = opts.mode ?? "ci";
+  const against = mode === "ci" ? "the lock on main" : "the lock at the tag";
+  const shipped = opts.shipped ?? null;
+  const breaking = new Map<string, string>();
+  for (const c of classifyLockDiff(prev, next)) if (c.kind === "breaking" && !breaking.has(c.key)) breaking.set(c.key, c.detail);
   const problems: string[] = [];
-  for (const c of classifyLockDiff(prev, next)) {
-    if (c.kind !== "breaking" || !(c.key in prev)) continue;
-    // A removed key has no storeVersion left to bump; the acknowledgement is its only record.
-    const bumped = !(c.key in next) || next[c.key]!.storeVersion > prev[c.key]!.storeVersion;
-    if (!bumped) problems.push(`${c.key}: breaking (${c.detail}) without a storeVersion bump`);
-    else if (!acknowledged[c.key]) problems.push(`${c.key}: breaking (${c.detail}) not acknowledged in breaking-schema-changes.json`);
+  for (const [key, was] of Object.entries(prev)) {
+    const now = next[key];
+    if (now === undefined) {
+      const heir = Object.entries(next).find(([, e]) => e.renamedFrom?.includes(key));
+      if (heir) problems.push(...chainProblems(`${heir[0]} (renamed from ${key})`, was, heir[1], mode, against));
+      else if (!acknowledged[key]) problems.push(`${key}: removed with no key renamed from it and no entry in breaking-schema-changes.json`);
+      continue;
+    }
+    if (now.storeVersion === was.storeVersion) {
+      const detail = breaking.get(key);
+      if (detail === undefined) continue;
+      if (mode === "ci" && shipped !== null && !(key in shipped) && acknowledged[key]) continue;
+      problems.push(`${key}: breaking (${detail}) needs storeVersion ${was.storeVersion + 1} and a migrateFrom entry for version ${was.storeVersion}`);
+      continue;
+    }
+    problems.push(...chainProblems(key, was, now, mode, against));
   }
   return { ok: problems.length === 0, problems };
+}
+
+function chainProblems(label: string, was: LockEntry, now: LockEntry, mode: "ci" | "release", against: string): string[] {
+  if (now.storeVersion === was.storeVersion) {
+    return equivalentSchemas(was.schema, now.schema) ? [] : [`${label}: schema differs from ${against} (${firstDifference(was.schema, now.schema)}) with no storeVersion bump`];
+  }
+  if (now.storeVersion < was.storeVersion) return [`${label}: storeVersion went down (${was.storeVersion} -> ${now.storeVersion})`];
+  if (mode === "ci" && now.storeVersion !== was.storeVersion + 1) return [`${label}: storeVersion ${was.storeVersion} -> ${now.storeVersion}; bump by one per change`];
+  const out: string[] = [];
+  for (let v = was.storeVersion; v < now.storeVersion; v++) {
+    if (!now.migrateFrom?.[String(v)]) out.push(`${label}: no migrateFrom entry for version ${v}`);
+  }
+  const entry = now.migrateFrom?.[String(was.storeVersion)];
+  if (entry && !equivalentSchemas(entry, was.schema)) {
+    out.push(`${label}: the migrateFrom entry for version ${was.storeVersion} differs from ${against} (${firstDifference(was.schema, entry)})`);
+  }
+  return out;
 }
 
 const isObject = (v: unknown): v is JsonSchema => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -51,10 +113,11 @@ const openExtras = (v: unknown): boolean => v === undefined || v === true || (is
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const safeOnly = (a: JsonSchema, b: JsonSchema): boolean => diffNode(a, b, "").every((c) => c.kind === "safe");
 
-/** const x and enum [x] accept the same values; comparing them as enums lets a const widen into an enum. */
+/** const x and enum [x] accept the same values; required order never counts as a change. */
 function norm(s: JsonSchema): JsonSchema {
   const out = { ...s };
   if ("const" in out && !("enum" in out)) { out.enum = [out.const]; delete out.const; }
+  if (Array.isArray(out.required)) out.required = [...(out.required as string[])].sort();
   return out;
 }
 

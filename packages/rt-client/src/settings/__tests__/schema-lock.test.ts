@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { z } from "zod";
 import { buildLock, checkLockAgainst, classifyLockDiff, LOCK_PATH, readBreakingChanges, toJsonSchema } from "../schema-lock.ts";
+import { MIGRATION_STEPS, RENAMES } from "../migrations/index.ts";
+import { MIGRATION_SCHEMAS } from "../migrations/schemas.ts";
 
 describe("toJsonSchema", () => {
   test("uses input mode: a defaulted property is optional and loose objects allow extras", () => {
@@ -129,18 +131,81 @@ describe("classifyLockDiff", () => {
 });
 
 describe("checkLockAgainst", () => {
-  test("a breaking change needs a storeVersion bump and an acknowledgement; an absent previous lock is all safe", () => {
-    const prev = lock({ type: "string" });
-    expect(checkLockAgainst(prev, lock({ type: "number" }), {}).ok).toBe(false);
-    expect(checkLockAgainst(prev, lock({ type: "number" }, 2), {}).ok).toBe(false);
-    expect(checkLockAgainst(prev, lock({ type: "number" }, 2), { "t.k": "renamed the value" }).ok).toBe(true);
-    expect(checkLockAgainst({}, lock({ type: "number" }), {}).ok).toBe(true);
+  const entry = (schema: Record<string, unknown>, storeVersion = 1, migrateFrom?: Record<string, Record<string, unknown>>) => ({ storeVersion, schema, ...(migrateFrom ? { migrateFrom } : {}) });
+  const V1 = { type: "string" };
+  const V2 = { type: "number" };
+
+  test("a breaking change with no migrateFrom entry fails, bumped or not, acknowledged or not", () => {
+    expect(checkLockAgainst({ "t.k": entry(V1) }, { "t.k": entry(V2) }, {}).ok).toBe(false);
+    expect(checkLockAgainst({ "t.k": entry(V1) }, { "t.k": entry(V2, 2) }, { "t.k": "why" }).problems).toEqual(["t.k: no migrateFrom entry for version 1"]);
   });
 
-  test("a removed key has no storeVersion to bump, so an acknowledgement alone clears it", () => {
-    const prev = lock({ type: "string" });
-    expect(checkLockAgainst(prev, {}, {})).toMatchObject({ ok: false, problems: [expect.stringContaining("t.k")] });
-    expect(checkLockAgainst(prev, {}, { "t.k": "folded into t.j" }).ok).toBe(true);
+  test("a bump by one with an entry matching the previous lock passes", () => {
+    expect(checkLockAgainst({ "t.k": entry(V1) }, { "t.k": entry(V2, 2, { "1": V1 }) }, {})).toEqual({ ok: true, problems: [] });
+  });
+
+  test("an entry that differs classifier-visibly from the previous lock fails", () => {
+    const r = checkLockAgainst({ "t.k": entry(V1) }, { "t.k": entry(V2, 2, { "1": { type: "boolean" } }) }, {});
+    expect(r.ok).toBe(false);
+    expect(r.problems[0]).toContain("differs from the lock on main");
+  });
+
+  test("an enum/const round trip, annotations and required order are not differences", () => {
+    const prev = { "t.k": entry({ type: "object", properties: { who: { type: "string", const: "human", description: "who" }, n: { type: "number" } }, required: ["who", "n"] }) };
+    const was = { type: "object", properties: { who: { type: "string", enum: ["human"] }, n: { type: "number" } }, required: ["n", "who"] };
+    expect(checkLockAgainst(prev, { "t.k": entry(V2, 2, { "1": was }) }, {}).ok).toBe(true);
+  });
+
+  test("CI allows one step per change; release accepts a chain spanning two bumps since the tag", () => {
+    const tag = { "t.k": entry(V1) };
+    const next = { "t.k": entry({ type: "boolean" }, 3, { "1": V1, "2": V2 }) };
+    expect(checkLockAgainst(tag, next, {}, { mode: "ci" }).ok).toBe(false);
+    expect(checkLockAgainst(tag, next, {}, { mode: "release" })).toEqual({ ok: true, problems: [] });
+    expect(checkLockAgainst(tag, { "t.k": entry({ type: "boolean" }, 3, { "2": V2 }) }, {}, { mode: "release" }).problems).toEqual(["t.k: no migrateFrom entry for version 1"]);
+  });
+
+  test("the acknowledgement hatch covers only a key absent from the shipped lock, and never at release", () => {
+    const prev = { "t.k": entry(V1) };
+    const next = { "t.k": entry(V2) };
+    expect(checkLockAgainst(prev, next, { "t.k": "never released" }, { shipped: {} }).ok).toBe(true);
+    expect(checkLockAgainst(prev, next, { "t.k": "never released" }, { shipped: prev }).ok).toBe(false);
+    expect(checkLockAgainst(prev, next, { "t.k": "never released" }, { shipped: null }).ok).toBe(false);
+    expect(checkLockAgainst(prev, next, { "t.k": "never released" }, { shipped: {}, mode: "release" }).ok).toBe(false);
+  });
+
+  test("a removed key passes when a key renamed from it keeps an equal schema, or when acknowledged", () => {
+    const prev = { "t.old": entry(V1) };
+    expect(checkLockAgainst(prev, {}, {}).ok).toBe(false);
+    expect(checkLockAgainst(prev, {}, { "t.old": "retired" }).ok).toBe(true);
+    expect(checkLockAgainst(prev, { "t.new": { ...entry(V1), renamedFrom: ["t.old"] } }, {}).ok).toBe(true);
+    expect(checkLockAgainst(prev, { "t.new": { ...entry(V2), renamedFrom: ["t.old"] } }, {}).ok).toBe(false);
+  });
+
+  test("a storeVersion that goes down fails; an absent previous lock is all additions", () => {
+    expect(checkLockAgainst({ "t.k": entry(V1, 2) }, { "t.k": entry(V1, 1) }, {}).ok).toBe(false);
+    expect(checkLockAgainst({}, { "t.k": entry(V2) }, {}).ok).toBe(true);
+  });
+});
+
+describe("migration schemas in the lock", () => {
+  test("every runtime step has exactly one schema entry, and every schema entry a step", () => {
+    const steps = MIGRATION_STEPS.map((s) => `${s.key}#${s.version}`).sort();
+    const schemas = MIGRATION_SCHEMAS.map((m) => `${m.key}#${m.version}`).sort();
+    expect(schemas).toEqual(steps);
+    expect(new Set(schemas).size).toBe(schemas.length);
+  });
+
+  test("buildLock writes each step's source schema into its key's migrateFrom, and renames into renamedFrom", () => {
+    MIGRATION_SCHEMAS.push({ key: "rt.eventRules", version: 1, schema: z.array(z.string()), examples: [] });
+    RENAMES["rt.notify.eventBridges"] = ["rt.eventRules"];
+    try {
+      const built = buildLock()["rt.notify.eventBridges"]!;
+      expect(built.migrateFrom?.["1"]).toMatchObject({ type: "array", items: { type: "string" } });
+      expect(built.renamedFrom).toEqual(["rt.eventRules"]);
+    } finally {
+      MIGRATION_SCHEMAS.pop();
+      delete RENAMES["rt.notify.eventBridges"];
+    }
   });
 });
 

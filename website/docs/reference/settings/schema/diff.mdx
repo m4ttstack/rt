@@ -21,6 +21,7 @@ rt settings schema diff [flags]
 | --- | --- | --- | --- |
 | `--against` | text |  | Diff against a lock file; a missing file counts as no lock |
 | `--against-ref` | text |  | Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock |
+| `--shipped-ref` | text |  | The release whose lock says which keys have shipped (default: the highest v* tag); only a key absent there may take a breaking change on an acknowledgement |
 | [`--json`](/guides/common-flags) | boolean | `false` | Machine-readable output |
 
 _See code: [commands/settings-schema.ts › settingsSchemaDiff](https://github.com/m4ttstack/rt/blob/main/commands/settings-schema.ts)_

@@ -169,6 +169,17 @@ describe("settingsSchemaDiff", () => {
     expect(errors.some((e) => e.includes("bad object"))).toBe(true);
   });
 
+  test("--json reports the shipped ref whose lock the acknowledgement hatch reads", async () => {
+    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "HEAD", "--json"]);
+    expect(JSON.parse(logs.join("\n")).shipped).toBe("HEAD");
+  });
+
+  test("an unknown --shipped-ref is an error, not an empty lock", async () => {
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "refs/tags/no-such-tag-for-schema-diff", "--json"]));
+    expect(process.exitCode).toBe(1);
+    expect(errors.some((e) => e.includes("no-such-tag-for-schema-diff"))).toBe(true);
+  });
+
   test("a malformed lock at the ref or in --against is an error naming its source", async () => {
     const atRef = await captureErrors(() => settingsSchemaDiff(["--json"], { git: fakeGit({ status: 0, stdout: "{ not json" }) }));
     expect(process.exitCode).toBe(1);

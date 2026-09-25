@@ -13,7 +13,7 @@ const COMMITTED_LOCK = readFileSync(join(import.meta.dir, "..", "..", LOCK_REL),
  * A seam set whose only fault is a stale rt-client (npm behind source).
  * `prevLock` is what `git show <tag>:<lock>` answers; null makes git exit non-zero.
  */
-function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_LOCK): PreflightSeams {
+function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_LOCK, committedLock: string = COMMITTED_LOCK): PreflightSeams {
   return {
     repoRoot: "/repo",
     exec: (argv) => {
@@ -43,7 +43,7 @@ function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_L
       if (p.endsWith("deps.lock")) return JSON.stringify({ schema: 1, arch: "arm64", tools: [] });
       if (p.endsWith("marketplace.json")) return JSON.stringify({ name: "m", plugins: [] });
       if (p.endsWith("packages/rt-client/package.json")) return JSON.stringify({ version: rtClientSource });
-      if (p === join("/repo", LOCK_REL)) return COMMITTED_LOCK;
+      if (p === join("/repo", LOCK_REL)) return committedLock;
       if (p === join("/repo", "packages/rt-client/src/settings/breaking-schema-changes.json")) return "{}";
       return null;
     },
@@ -126,5 +126,23 @@ describe("rt release preflight schema-lock row", () => {
 
   test("no lock at the tag is ok and says so", async () => {
     expect(await schemaRow(fakeSeams("0.20.0", null))).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
+  });
+
+  test("a bump since the tag with a matching migrateFrom entry is ok and lists the bump for the release notes", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const key = Object.keys(tagLock)[0]!;
+    const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" }, migrateFrom: { "1": tagLock[key]!.schema } } };
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toContain(`storeVersion bumps for the release notes: ${key} 1 -> 2`);
+  });
+
+  test("a bump since the tag with no migrateFrom entry is stale", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const key = Object.keys(tagLock)[0]!;
+    const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" } } };
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toContain(`${key}: no migrateFrom entry for version 1`);
   });
 });
