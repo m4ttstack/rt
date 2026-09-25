@@ -12,10 +12,12 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint --no-error-on-unmatched-pattern src",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write . --cache",
     "format:check": "prettier --check . --cache",
-    "build:binary": "vite build && mattstack-embed-assets && bun build --compile --outfile dist-bin/chat src/server/index.ts"
+    "build:binary": "vite build && mattstack-embed-assets && bun build --compile --outfile dist-bin/chat src/server/index.ts",
+    "serve-check": "bash scripts/serve-check.sh"
   },
   "dependencies": {
     "@mantine/code-highlight": "catalog:",

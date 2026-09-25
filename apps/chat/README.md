@@ -115,17 +115,17 @@ viewer.
 
 ## Development
 
-| Script                  | What it does                                                             |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `bun run dev`           | Vite dev server, client only.                                            |
-| `bun run build`         | Typechecks (`tsc`), then a production build (`vite build`) into `dist/`. |
-| `bun run serve`         | Same as `bun src/server/index.ts`: serves the API, relay, and `dist/`.   |
-| `bun run preview`       | Preview the production build locally.                                    |
-| `bun run typecheck`     | `tsc`, no emit.                                                          |
-| `bun run lint`          | ESLint over `src`.                                                       |
-| `bun run format`        | Prettier, writes changes; `format:check` is what CI runs.                |
-| `bun run test -- --run` | Vitest, single run (drop `-- --run` to watch).                           |
-| `bun run build:binary`  | Builds a standalone server binary (used by `deck`'s bundle step).        |
+| Script                 | What it does                                                             |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `bun run dev`          | Vite dev server, client only.                                            |
+| `bun run build`        | Typechecks (`tsc`), then a production build (`vite build`) into `dist/`. |
+| `bun run serve`        | Same as `bun src/server/index.ts`: serves the API, relay, and `dist/`.   |
+| `bun run preview`      | Preview the production build locally.                                    |
+| `bun run typecheck`    | `tsc`, no emit.                                                          |
+| `bun run lint`         | ESLint over `src`.                                                       |
+| `bun run format`       | Prettier, writes changes; `format:check` is what CI runs.                |
+| `bun run test`         | Vitest, single run, then exits. `bun run test:watch` reruns on change.   |
+| `bun run build:binary` | Builds a standalone server binary (used by `deck`'s bundle step).        |
 
 UI changes are checked against a design contract: `design/CONFORMANCE.md`
 and `design/ANATOMY.md` describe it, and `design/audit.mjs` diffs the
@@ -133,9 +133,10 @@ running page against reference artboards under `design/artboards`. Run the
 audit against a server started in fixture mode so there's real data to
 measure against.
 
-CI (`.github/workflows/ci.yml`) runs the checks above plus a build and a
-smoke test that the built client is served correctly and that `/api`
-returns JSON (never the SPA shell) on an unmatched route.
+CI (`.github/workflows/ci.yml`) runs the checks above plus a build and the
+`serve-check` task, `apps/chat/scripts/serve-check.sh`, which smoke-tests
+that the built client is served correctly and that `/api` returns JSON
+(never the SPA shell) on an unmatched route.
 
 Read `AGENTS.md` and `ARCHITECTURE.md` before making structural changes;
 together they cover the request path, the API surface, how `chat` consumes

@@ -68,12 +68,32 @@ produce its own lock.
 
 ### CI shape
 
-Two GitHub Actions jobs (`.github/workflows/ci.yml`): the `checks` job
-(ubuntu) runs kit/gate checks plus the chat, console, boxscore, and board
-suites (typecheck/lint/test/build), the served-client and served-binary
-gates, and the whole-repo `scripts/repo-purity.sh` gate; `deck-macos`
-(macos-latest, its own bun install) runs deck's suite because deck shells
-to `plutil`/`launchd`, both macOS-only.
+Every gate runs through Turborepo (`turbo.json`, entry point
+`scripts/turbo.sh`). `bun run check` is exactly what CI runs:
+`.github/workflows/ci.yml`'s `checks` job (ubuntu) calls
+`scripts/turbo.sh check --affected` on PRs and `check` on main; `deck-macos`
+runs `test --filter=deck` because deck shells to `plutil`/`launchd`, both
+macOS-only, and `scripts/turbo.sh` drops deck off macOS.
+
+`check` is three turbo invocations in order: the two codegen gates
+(`@mattstack/tui-kit#gates`, `//#tokens:fresh`) alone and serially, since
+they rewrite files the package tests read; the package gates (`typecheck`,
+`lint`, `test`, `serve-check`); then the root gates (`lint:root`,
+`format:check`, `build-storybook`, `treeshake`, `purity`, `scripts:test`)
+plus `@mattstack/tokens#test`. The first and last groups run on every PR
+whatever changed, because `--affected` walks the package graph and those
+tasks read trees the graph does not connect them to; their declared
+`inputs` decide the cache hit. The tui-kit visual and parity oracles are
+not in `check`; `bun run tui-kit:oracles` runs them locally.
+
+The cache is `<common git dir>/turbo-cache`, shared by every worktree of
+the checkout; CI restores the same path from the Actions cache. `--force`
+bypasses it. Nothing prunes it locally; delete the directory to reclaim
+space. A test that reads files outside its own package must declare
+them as `$TURBO_ROOT$` inputs on its package's `test` task
+(`scripts/__tests__/turbo-inputs.test.ts` fails otherwise), and every
+`$TURBO_ROOT$` glob carries the `node_modules`/`.turbo`/`dist`/`dist-bin`
+negations because those globs ignore `.gitignore`.
 
 `setup-bun` is pinned to `1.4.2` in both jobs. The pin exists because
 CI byte-compares generated/committed artifacts (deck's
@@ -82,17 +102,18 @@ rebuild, and bun's bundler/minifier output is not stable across bun
 versions. Bump the pin only together with the local bun upgrade that
 regenerates those committed files -- never on its own.
 
-`packages/tui-kit` exports `dist/`, not source, so `bun run tui-kit:build`
-must run before any board or deck typecheck/test/build, locally and in
-CI. Both CI jobs run it first for exactly this reason.
+`packages/tui-kit` exports `dist/`, not source. Its `build` runs before any
+board or deck task through turbo's `^build` dependency, so nothing has to
+be built by hand first.
 
 ### Per-app root scripts
 
 Each app gets `<app>:typecheck`, `<app>:test`, `<app>:lint`, and
 `<app>:build` root scripts in `package.json` where that gate applies to
-the app (e.g. board has no `:lint` script, deck has none of the four --
-see its own test scripts instead). Run an app's own gates with these
-rather than `cd`-ing into `apps/<name>` by hand; they match what CI runs.
+the app (e.g. board has no `:lint` script). Each is
+`scripts/turbo.sh <task> --filter=<package>`, so it builds what the app
+depends on and caches the result. Run an app's own gates with these rather
+than `cd`-ing into `apps/<name>` by hand; they match what CI runs.
 
 ### Deck serving note
 

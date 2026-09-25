@@ -27,3 +27,5 @@ packages/tokyo/src/ramps.ts
 # Runtime state dirs (gitignored as directories; a symlinked state/ is not matched by that pattern)
 apps/*/state
 apps/*/state.*
+# `build:binary` regenerates these from dist/ (double-quoted) and check builds before it formats
+apps/*/src/server/embedded/manifest.ts

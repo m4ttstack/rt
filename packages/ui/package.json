@@ -45,7 +45,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "peerDependencies": {
     "@mantine/code-highlight": "catalog:",
@@ -85,5 +86,8 @@
     "lucide-react": "^1.25.0",
     "mantine-form-zod-resolver": "1.3.0",
     "react-interval-hook": "^1.1.5"
+  },
+  "devDependencies": {
+    "@mattstack/mantine-tokyo": "workspace:*"
   }
 }

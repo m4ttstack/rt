@@ -9,7 +9,7 @@ set -euo pipefail
 
 app_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 bin=${BINARY:-$app_dir/dist-bin/boxscore}
-port=${GATE_PORT:-11097}
+port=${GATE_PORT:-$(bun -e 'const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } }); console.log(s.port); s.stop();')}
 base="http://127.0.0.1:$port"
 hidden="$app_dir/dist-bin/dist-hidden"
 
@@ -18,7 +18,7 @@ say() { echo "binary-gate: $*" >&2; }
 [ -x "$bin" ] || { say "$bin is missing; run bun run build:binary first"; exit 1; }
 [ ! -e "$hidden" ] || { say "$hidden is left from an interrupted run; move it back to $app_dir/dist"; exit 1; }
 if curl -s -m 1 -o /dev/null "$base/"; then
-  say "port $port already answers; set GATE_PORT to a free port"
+  say "GATE_PORT=$port already answers; choose a free port"
   exit 1
 fi
 expected=$(bun -p "require('$app_dir/package.json').version")

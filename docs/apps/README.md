@@ -80,9 +80,9 @@ folding into this repo as workspace members (see
 lands under `apps/<name>`, it depends on `packages/ui`, `packages/server`,
 `packages/tokyo`, and `packages/tui-kit` with `workspace:*`. `packages/ui`,
 `packages/server`, and `packages/tokyo` are consumed straight from source,
-no install step required; `@mattstack/tui-kit` builds to `dist/`, so
-workspace consumers run `bun run tui-kit:build` before any board or deck
-work. General consumption of these packages from outside this workspace
+no install step required; `@mattstack/tui-kit` builds to `dist/`, which
+turbo builds before any board or deck task (`^build`). General consumption
+of these packages from outside this workspace
 is unsupported, except for the packed-tarball path below, which is the
 sanctioned bundle-transition mechanism for apps that have not folded in
 yet.
@@ -147,16 +147,15 @@ snippets, including the vite and eslint presets.
 $ git clone https://github.com/m4ttstack/apps.git
 $ cd apps
 $ bun install                 # workspace install: packages/*, apps/*
-$ bun run test                # vitest across packages/ui + packages/server
+$ bun run check               # every gate CI runs, cached and parallel
 $ bun run storybook           # dev server at :6006 (packages/ui's stories)
 $ bun run chat:typecheck      # typechecks apps/chat against the workspace packages
 $ bun run chat:build          # builds apps/chat against the workspace packages
 ```
 
-`bun run typecheck`, `bun run lint`, `bun run format:check`,
-`bun run build-storybook`, and `bun run treeshake` are the other gates CI
-runs; `bun run chat:lint` and `bun run chat:test` exercise chat's own
-suite.
+`bun run test`, `bun run typecheck` and `bun run lint` run those tasks
+across every package through turbo; `bun run chat:test` and friends scope
+one app.
 
 ## Contributing
 
@@ -164,12 +163,8 @@ suite.
   it covers the import-wall rules, icon and theme extension points, the
   boot family contract, and the real failure modes a migrating consumer
   hits.
-- `bun run typecheck`, `bun run lint`, `bun run format:check`,
-  `bun run test -- --run`, `bun run build-storybook`, `bun run treeshake`,
-  `bun run chat:typecheck`, `bun run chat:lint`, `bun run chat:test`, and
-  `bun run chat:build` are exactly what CI runs
-  (`.github/workflows/ci.yml`); run them locally before opening a pull
-  request.
+- `bun run check` is exactly what CI runs (`.github/workflows/ci.yml`);
+  run it before opening a pull request.
 - `bun run format` (prettier --write) fixes most lint and format failures
   automatically.
 

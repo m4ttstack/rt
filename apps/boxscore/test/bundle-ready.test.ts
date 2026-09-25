@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, normalize } from 'node:path';
+import { isAbsolute, join, normalize } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +17,10 @@ interface PackageJson {
   version: string;
   license?: string;
   scripts: Record<string, string | undefined>;
+}
+
+interface TurboJson {
+  tasks: Record<string, { dependsOn?: string[] } | undefined>;
 }
 
 const readJson = <T>(path: string): T =>
@@ -110,15 +114,13 @@ describe('compiled binary hardening', () => {
 });
 
 describe('CI binary gate', () => {
-  it('builds the binary and then runs the gate in the checks job', () => {
-    const ci = readFileSync('../../.github/workflows/ci.yml', 'utf8');
-    const build =
-      /^\s*- run: cd apps\/boxscore && bun run build:binary$/m.exec(ci)
-        ?.index ?? -1;
-    const gate =
-      /^\s*run: bash apps\/boxscore\/scripts\/binary-gate\.sh$/m.exec(ci)
-        ?.index ?? -1;
-    expect(build).toBeGreaterThan(-1);
-    expect(gate).toBeGreaterThan(build);
+  it('the gate runs after the binary build through turbo', () => {
+    expect(pkg.scripts['serve-check']).toBe('bash scripts/binary-gate.sh');
+    const turbo = readJson<TurboJson>(
+      join(import.meta.dirname, '..', '..', '..', 'turbo.json')
+    );
+    expect(turbo.tasks['boxscore#serve-check']?.dependsOn).toContain(
+      'build:binary'
+    );
   });
 });

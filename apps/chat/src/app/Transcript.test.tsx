@@ -478,17 +478,18 @@ test(
       renderWithProviders(
         <Transcript room="build" messages={page(PAGE_SIZE, 400)} anchor="m-1" />
       );
-      // Ten pages is 330 rendered messages, which CI's runner takes a few
-      // seconds over; the default one-second wait gave up after seven.
+      // Ten pages is 330 rendered messages. CI runs this suite four-way
+      // parallel on a 4 vCPU runner, where it took over fifteen seconds and
+      // the wait gave up after nine pages.
       await waitFor(() => expect(olderRequests()).toHaveLength(10), {
-        timeout: 15_000,
+        timeout: 45_000,
       });
       await act(async () => {});
       expect(olderRequests()).toHaveLength(10);
       expect(scrolled).toEqual([]);
       expect(screen.queryByTestId('message-1')).toBeNull();
     }),
-  20_000
+  60_000
 );
 
 test('a link into the loaded range that names a missing message never pages', () =>

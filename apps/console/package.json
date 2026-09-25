@@ -14,9 +14,11 @@
     "build:binary": "vite build && mattstack-embed-assets && bun build --compile --outfile dist-bin/console src/server/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write . --cache",
-    "format:check": "prettier --check . --cache"
+    "format:check": "prettier --check . --cache",
+    "serve-check": "bash scripts/serve-check.sh"
   },
   "dependencies": {
     "@mantine/code-highlight": "catalog:",

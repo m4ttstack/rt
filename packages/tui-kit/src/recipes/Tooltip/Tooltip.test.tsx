@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { Tooltip, TOOLTIP_PARTS } from "./Tooltip.tsx";
+import { TOOLTIP_SHOW_DELAY_MS } from "./TooltipCard.tsx";
 
 /**
  * Browser tier for the Tooltip recipe.
@@ -94,14 +95,15 @@ describe("Tooltip (browser)", () => {
     );
 
     // A real pointer hover (vitest-browser's Locator, backed by a real
-    // Playwright pointer move), not a synthetic dispatchEvent.
+    // Playwright pointer move), not a synthetic dispatchEvent. The hover's
+    // round trip can outlast the show delay on a loaded CI runner, so the
+    // delay is proven as a lower bound on when the card appears, not by
+    // looking for it to be absent right after the hover lands.
+    const hoveredAt = performance.now();
     await screen.getByTestId("tip").hover();
 
-    // Still gone right after the hover lands — proves the show delay is real,
-    // not a same-tick reveal.
-    expect(cardInBody()).toBeNull();
-
     await expect.poll(() => cardInBody()?.textContent, { timeout: 1000 }).toBe("hover me");
+    expect(performance.now() - hoveredAt).toBeGreaterThanOrEqual(TOOLTIP_SHOW_DELAY_MS - 20);
     const card = cardInBody();
     expect(card).not.toBeNull();
     expect(card?.getAttribute("aria-hidden")).toBe("true");

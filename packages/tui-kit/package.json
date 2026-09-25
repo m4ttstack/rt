@@ -45,7 +45,9 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/copy-recipe-css.ts && bun scripts/fix-dts-extensions.ts dist",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --project node && vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'",
+    "test:oracles": "vitest run --project browser .visual.test.tsx .parity.test.tsx",
+    "browsers": "bunx playwright install chromium",
     "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts test/copy-recipe-css.test.ts test/bun-build-keyframes.test.ts test/fix-dts-extensions.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
     "dev:workshop": "cd workshop && bunx vite"
   },

@@ -17,7 +17,8 @@
     "validate": "bun src/server/cli.ts --format validate",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint --no-error-on-unmatched-pattern src",
-    "test": "bun --bun vitest run"
+    "test": "bun --bun vitest run",
+    "serve-check": "bash scripts/binary-gate.sh"
   },
   "dependencies": {
     "@mattstack/app-kit": "workspace:*",

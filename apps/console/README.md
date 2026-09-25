@@ -86,19 +86,19 @@ reads. Browse and edit those values from the in-app settings pages rather than h
 
 ## Development
 
-| Script                 | What it does                                                             |
-| ---------------------- | ------------------------------------------------------------------------ |
-| `bun run dev`          | Start the Vite dev server.                                               |
-| `bun run dev:server`   | Start the Bun/Hono API server with hot reload.                           |
-| `bun run build`        | Typecheck (`tsc -p tsconfig.json`) then production build (`vite build`). |
-| `bun run build:binary` | Build a self-contained binary embedding its own assets -> `dist-bin/`.   |
-| `bun run serve`        | Run the production server (`src/server/index.ts`) against `dist/`.       |
-| `bun run test`         | Run the test suite (Vitest). Add `-- --run` for a single non-watch run.  |
-| `bun run lint`         | ESLint over `src`.                                                       |
-| `bun run typecheck`    | `tsc -p tsconfig.json`, no emit.                                         |
-| `bun run format`       | Format the repo with Prettier (`--write`).                               |
-| `bun run format:check` | Check formatting without writing (what CI runs).                         |
-| `bun run preview`      | Preview the production Vite build locally (SPA only, no `/api`).         |
+| Script                 | What it does                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| `bun run dev`          | Start the Vite dev server.                                                        |
+| `bun run dev:server`   | Start the Bun/Hono API server with hot reload.                                    |
+| `bun run build`        | Typecheck (`tsc -p tsconfig.json`) then production build (`vite build`).          |
+| `bun run build:binary` | Build a self-contained binary embedding its own assets -> `dist-bin/`.            |
+| `bun run serve`        | Run the production server (`src/server/index.ts`) against `dist/`.                |
+| `bun run test`         | Run the test suite once and exit (Vitest). `bun run test:watch` reruns on change. |
+| `bun run lint`         | ESLint over `src`.                                                                |
+| `bun run typecheck`    | `tsc -p tsconfig.json`, no emit.                                                  |
+| `bun run format`       | Format the repo with Prettier (`--write`).                                        |
+| `bun run format:check` | Check formatting without writing (what CI runs).                                  |
+| `bun run preview`      | Preview the production Vite build locally (SPA only, no `/api`).                  |
 
 Console is built on `@mattstack/app-kit` (Mantine 9, React 19, Vite, and Bun, with the shell,
 theme, and Mantine facades layered on top) and `@mattstack/app-server`. Both, along with
@@ -118,7 +118,7 @@ checks below on every push:
 bun run format:check
 bun run lint
 bun run typecheck
-bun run test -- --run
+bun run test
 bun run build
 bun run build:binary
 ```

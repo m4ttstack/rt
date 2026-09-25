@@ -68,7 +68,8 @@ is what confirms the compiled factory behaves identically to the source one.
 | --- | --- |
 | `bun install` | install, and the whole setup |
 | `bun run dev:workshop` | the live component workshop, see below |
-| `bun run test` | both test tiers |
+| `bun run test` | the node and browser projects, excluding the visual and parity oracles |
+| `bun run test:oracles` | the visual and parity oracles |
 | `bun run gates` | the mechanical gates plus the codegen drift check |
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run codegen` | regenerate `src/generated/theme.css` from `src/theme.ts` |
@@ -84,14 +85,20 @@ appended by the second half. Keeping it inside one command is what lets
 
 ## Testing
 
-Two tiers, both run by `bun run test`:
+Two tiers. `bun run test` runs the node project and the browser project,
+excluding the visual and parity oracles (`*.visual.test.tsx`,
+`*.parity.test.tsx`):
 
 - **node**: pure logic. The theme and census suite, the mechanical CSS gates,
   and any `*.test.ts` colocated with a component or hook. No DOM, no browser,
   fast.
-- **browser**: every `*.test.tsx` and `*.visual.test.tsx`, rendered in a real
-  headless Chromium through Playwright. This is the tier that can observe
-  `light-dark()` resolving, computed styles, and screenshots. jsdom cannot.
+- **browser**: every other `*.test.tsx`, rendered in a real headless Chromium
+  through Playwright. This is the tier that can observe `light-dark()`
+  resolving, computed styles, and screenshots. jsdom cannot.
+
+`bun run tui-kit:oracles` (from the root) or `bun run test:oracles` (in this
+package) runs the visual and parity oracles. They stay local until CI-recorded
+baselines exist.
 
 The two projects partition every test file between them: the browser tier takes
 every `*.test.tsx` under `src/` and `test/`, the node tier takes every

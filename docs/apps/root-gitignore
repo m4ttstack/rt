@@ -41,3 +41,4 @@ probe/dist-bin
 probe/vendor
 probe/bun.lock
 docs/design/gate-triage-modal/gate-triage-modal.html
+.turbo

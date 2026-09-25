@@ -8,6 +8,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -17,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # --affected diffs the PR head against its base sha.
+          fetch-depth: 0
       # Pinned: deck's core/generated-fresh.test.ts and tui-kit's codegen gate
       # byte-compare committed artifacts against a live rebuild, and bun's
       # bundler/minifier output is not stable across bun versions. Bump this
@@ -29,114 +34,24 @@ jobs:
       # --frozen-lockfile passes a stale workspace package version, which every
       # worktree's ready-step install then rewrites and leaves as dirt.
       - run: bun install && git diff --exit-code -- bun.lock
-      # Regenerating must reproduce what's checked in byte-for-byte: a diff
-      # here means the emitter drifted, a generated file was hand-edited, or
-      # the committed font copy diverged from the canonical source.
-      - run: bun run tokens:radix && bun run tokens:codegen && bun run tokens:ramps && git diff --exit-code packages/tokens/src/radix.ts packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
-      - run: bun run typecheck
-      - run: bun run lint
-      - run: bun run format:check
-      - run: bun run test -- --run
-      - run: bun run tokens:test
-      - run: bun run gate-kit:test
-      - run: bun run tui-kit:build
-      - run: bun run build-storybook
-      - run: bun run treeshake
-      - run: bun run tui-kit:gates
-      # `tui-kit:test` (all projects) stays the local/full command; CI splits
-      # the browser project in two runs below because it mixes plain behavior
-      # tests with two recorded-oracle suites (`*.visual.test.tsx` screenshot
-      # baselines, `*.parity.test.tsx` computed-style oracles) captured
-      # against one local Chrome. Oracle-recorded suites stay local until
-      # CI-recorded baselines exist; everything else in the project runs here.
-      - run: cd packages/tui-kit && bunx vitest run --project node
-      - run: cd packages/tui-kit && bunx playwright install chromium
-      - run: cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'
-      - run: bun run chat:typecheck
-      - run: bun run chat:lint
-      - run: bun run chat:test
-      - run: bun run chat:build
-      # chat ships no binary (deck supervises the process); this is its
-      # equivalent to console's served-binary gate: the built client is
-      # served and /api is not swallowed by the SPA fallback, because an
-      # unmatched /api route must stay a JSON 404 (an RPC client checks
-      # res.ok and would otherwise throw parsing HTML).
-      - name: chat serves the built client, and /api is not the SPA
-        run: |
-          set -euo pipefail
-          cd apps/chat
-          PORT=11123 bun src/server/index.ts &
-          server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 30); do
-            curl -fsS -m 1 localhost:11123/api/health >/dev/null 2>&1 && break
-            sleep 1
-          done
-          curl -fsS -m 5 localhost:11123/api/health >/dev/null
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11123/)" = 200
-          test "$(curl -s -o /dev/null -w '%{content_type}' localhost:11123/)" = "text/html; charset=utf-8"
-          asset=$(curl -s localhost:11123/ | grep -oE '/assets/[^"]+\.js' | head -1)
-          test -n "$asset"
-          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11123$asset")" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11123/api/does-not-exist)" = 404
-          test "$(curl -s -o /dev/null -w '%{content_type}' localhost:11123/api/does-not-exist)" = "application/json"
-      - run: bun run console:typecheck
-      - run: bun run console:lint
-      - run: bun run console:test
-      - run: bun run console:build
-      - run: cd apps/console && bun run build:binary
-      # console ships a self-contained binary; the only honest test is to run
-      # it where dist/ is not: a binary built without the codegen step falls
-      # back to disk mode and 404s every page, which passes silently anywhere
-      # the source tree happens to be sitting next to it.
-      - name: console's binary serves its own assets with no source tree
-        run: |
-          set -euo pipefail
-          cp apps/console/dist-bin/console "$RUNNER_TEMP/console"
-          mv apps/console/dist apps/console/dist-hidden
-          cd "$RUNNER_TEMP"
-          PORT=11099 ./console &
-          server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 30); do
-            curl -fsS -m 1 localhost:11099/api/health >/dev/null 2>&1 && break
-            sleep 1
-          done
-          curl -fsS -m 5 localhost:11099/api/health >/dev/null
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/)" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/search)" = 200
-          asset=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.js' | head -1)
-          test -n "$asset"
-          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$asset")" = 200
-          # The font ships inside @mattstack/mantine-tokyo, so Vite emits it as a
-          # content-hashed /assets/ URL rather than the literal /fonts/ path it
-          # had while it lived in public/. Discover it from the stylesheet that
-          # actually references it, the same way the js asset above is found.
-          #
-          # Assert the CONTENT TYPE, not just the status. A status-only
-          # assertion on a path a catch-all can answer proves nothing.
-          css=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.css' | head -1)
-          test -n "$css"
-          font=$(curl -s "localhost:11099$css" | grep -oE '/assets/[^)"]+\.woff2' | head -1)
-          test -n "$font"
-          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$font")" = 200
-          test "$(curl -s -o /dev/null -w '%{content_type}' "localhost:11099$font")" = "font/woff2"
-      - run: bun run boxscore:typecheck
-      - run: bun run boxscore:lint
-      - run: bun run boxscore:test
-      - run: cd apps/boxscore && bun run build:binary
-      # --version exits before any boxscore code loads, and that is all the
-      # bundle pipeline runs; this is the one check that the compiled binary
-      # serves its embedded assets and opens its SQLite store.
-      - name: boxscore's binary serves its own assets and opens its store
-        run: bash apps/boxscore/scripts/binary-gate.sh
-      - run: bun run board:typecheck
-      - run: bun run board:test
-      - name: repo has no employer or domain references anywhere in its tracked tree
-        run: scripts/repo-purity.sh
-      # deck:test runs in the deck-macos job below: deck supervises launchd
-      # and shells to plutil, both macOS-only, so its suite cannot run here.
+      # A PR restores main's newest cache; main restores its own previous one
+      # (a PR's cache is never visible to main). Every run saves, so entries
+      # older than a week are dropped first or compiled binaries pile up.
+      - uses: actions/cache@v4
+        with:
+          path: .git/turbo-cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: find .git/turbo-cache -type f -mtime +7 -delete 2>/dev/null || true
+      - if: github.event_name == 'pull_request'
+        run: scripts/turbo.sh check --affected --concurrency=4 --output-logs=errors-only
+        env:
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+      - if: github.event_name != 'pull_request'
+        run: scripts/turbo.sh check --concurrency=4 --output-logs=errors-only
 
+  # deck supervises launchd and shells to plutil, both macOS-only, so its
+  # suite runs here and nowhere else (scripts/turbo.sh drops it off macOS).
   deck-macos:
     runs-on: macos-latest
     permissions:
@@ -145,14 +60,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      # Same bun pin as the checks job above (generated-artifact byte-compare
-      # gates), kept in sync with it.
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - run: bun run tui-kit:build
-      - run: bun run deck:test
-      # deck:test-dom is not run here: 11 of its 83 tests pre-exist as
-      # failures in the standalone repo at the imported SHA (unrelated
-      # Playwright/DOM assertions), so it is not a clean CI gate yet.
+      - uses: actions/cache@v4
+        with:
+          path: .git/turbo-cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: find .git/turbo-cache -type f -mtime +7 -delete 2>/dev/null || true
+      - if: github.event_name == 'pull_request'
+        run: scripts/turbo.sh test --filter=deck --affected --output-logs=errors-only
+        env:
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+      - if: github.event_name != 'pull_request'
+        run: scripts/turbo.sh test --filter=deck --output-logs=errors-only
