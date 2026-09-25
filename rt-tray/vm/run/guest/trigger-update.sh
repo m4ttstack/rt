@@ -152,7 +152,9 @@ ax_shot 06-update-done
 after_pid=$(wait_daemon "${before_pid:-}" 120)
 [ -n "$after_pid" ] && [ "$after_pid" != "${before_pid:-}" ] && ok "daemon restarted (pid $before_pid → $after_pid)" \
   || bad "daemon did not restart within 120s (pid ${before_pid:-none} → ${after_pid:-none}; launchd: $(launchctl list 2>/dev/null | grep com.mattstack.daemon | tr '\t' ' '))"
-# rt --version prints "rt <version>" (cli.ts) ... compare the trailing token, not the whole line.
-rv=$(rt --version 2>/dev/null | awk '{print $NF}'); [ "$rv" = "$NEWV" ] && ok "rt --version == $NEWV" || bad "rt --version is '$rv'"
+# rt --version prints "rt <version>" (cli.ts), and release.yml compiles the tag in as the version:
+# "v2.11.1" on a tag, "v2.11.1-ci111" on a rehearsal. Compare the bare X.Y.Z.
+rv=$(rt --version 2>/dev/null | awk '{print $NF}'); rvn=$(printf '%s' "$rv" | sed -E 's/^v//; s/-ci[0-9]+$//')
+[ "$rvn" = "$NEWV" ] && ok "rt --version == $NEWV ($rv)" || bad "rt --version is '$rv'"
 ax_log "after: app pid=$(pgrep -x mattstack | head -1) daemon pid=${after_pid:-none} bundle=$(bundle_ver)"
 finish "$([ "$fails" -eq 0 ] && echo 0 || echo 1)"
