@@ -8,10 +8,9 @@
 
 import { expect, test } from "bun:test";
 
-import { cacheRefreshSpawnOptions } from "../enrich.ts";
+import { CACHE_REFRESH_SPAWN_FLAGS } from "../enrich.ts";
 
 test("the background cache refresh starts in a session of its own", () => {
-  const options = cacheRefreshSpawnOptions();
-  expect(options.detached).toBe(true);
-  expect(options.stdio).toEqual(["ignore", "ignore", "ignore"]);
+  expect(CACHE_REFRESH_SPAWN_FLAGS.detached).toBe(true);
+  expect(CACHE_REFRESH_SPAWN_FLAGS.stdio).toEqual(["ignore", "ignore", "ignore"]);
 });
