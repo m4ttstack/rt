@@ -49,7 +49,7 @@ struct MattstackWindowView: View {
             // removed (model flips splashVisible) once it's actually done,
             // so the fade is deterministic instead of racing a removal.
             if model.splashVisible {
-                SplashView()
+                SplashView(content: model.splashContent, retry: { model.retryDeckWait() })
                     .opacity(model.splashOpacity)
                     .allowsHitTesting(model.splashOpacity > 0)
             }

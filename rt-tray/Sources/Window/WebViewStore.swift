@@ -15,6 +15,8 @@ final class WebViewStore {
 
     private var views: [String: WKWebView] = [:]
     private var containers: [String: FindBarContainer] = [:]
+    private var homeURLs: [String: URL] = [:]
+    private var failedURLs: [String: URL] = [:]
 
     /// What the window actually mounts: the webview wrapped in its own find
     /// bar container, so every tab carries its own ⌘F state for the window's
@@ -40,12 +42,30 @@ final class WebViewStore {
         // scroller gutter of any page that reserves one, and macOS draws a
         // light page's thumb as translucent black -- invisible against it.
         // LoadingOverlay is what covers a tab's first paint.
-        if let url = URL(string: app.url) { view.load(URLRequest(url: url)) }
+        if let url = URL(string: app.url) {
+            homeURLs[app.name] = url
+            view.load(URLRequest(url: url))
+        }
         views[app.name] = view
         return view
     }
 
     func existingView(for name: String) -> WKWebView? { views[name] }
 
-    func reload(_ name: String) { views[name]?.reload() }
+    func noteFailedLoad(_ name: String, url: URL?) {
+        if let url { failedURLs[name] = url }
+    }
+
+    func noteLoaded(_ name: String) { failedURLs[name] = nil }
+
+    func reload(_ name: String) {
+        guard let view = views[name] else { return }
+        switch WindowReload.action(failedURL: failedURLs.removeValue(forKey: name),
+                                   hasCommittedPage: view.backForwardList.currentItem != nil,
+                                   home: homeURLs[name]) {
+        case .reload: view.reload()
+        case .load(let url): view.load(URLRequest(url: url))
+        case .nothing: break
+        }
+    }
 }
