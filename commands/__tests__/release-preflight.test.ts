@@ -13,11 +13,17 @@ const COMMITTED_LOCK = readFileSync(join(import.meta.dir, "..", "..", LOCK_REL),
  * A seam set whose only fault is a stale rt-client (npm behind source).
  * `prevLock` is what `git show <tag>:<lock>` answers; null makes git exit non-zero.
  */
-function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_LOCK, committedLock: string = COMMITTED_LOCK): PreflightSeams {
+function fakeSeams(
+  rtClientSource: string,
+  prevLock: string | null = COMMITTED_LOCK,
+  committedLock: string = COMMITTED_LOCK,
+  settingsCheck: string = '{"ok":true,"findings":[]}',
+): PreflightSeams {
   return {
     repoRoot: "/repo",
     exec: (argv) => {
       const cmd = argv.join(" ");
+      if (cmd === "bun run cli.ts settings check --json") return ok(`${settingsCheck}\n`);
       if (cmd === `git show v2.10.2:${LOCK_REL}`) {
         return prevLock === null
           ? Promise.resolve({ stdout: "", stderr: `fatal: path '${LOCK_REL}' does not exist in 'v2.10.2'`, exitCode: 128 })
@@ -144,5 +150,34 @@ describe("rt release preflight schema-lock row", () => {
     const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
     expect(row?.status).toBe("stale");
     expect(row?.detail).toContain(`${key}: no migrateFrom entry for version 1`);
+  });
+});
+
+describe("rt release preflight settings-stores row", () => {
+  const storesRow = async (seams: PreflightSeams) => {
+    const { logs } = await run(["--json"], seams);
+    return (JSON.parse(logs[0]!).rows as { id: string; label: string; status: string; detail?: string }[]).find((r) => r.id === "settings-stores");
+  };
+
+  test("a clean check of the real stores is ok", async () => {
+    expect(await storesRow(fakeSeams("0.20.0"))).toMatchObject({ label: "settings stores", status: "ok" });
+  });
+
+  test("a value the migrations cannot carry, or a diverged name, is stale and named", async () => {
+    const report = JSON.stringify({
+      ok: false,
+      findings: [
+        { key: "rt.notify.eventBridges", scope: "user", kind: "nonconforming", issues: [{ path: [], message: "migration 1 -> 2 threw: boom" }] },
+        { key: "rt.roles", scope: "team", repo: "gitlab.example.com/acme/app", kind: "diverged", storeName: "rt.roles", issues: [] },
+        { key: "rt.worktrees", scope: "user", kind: "stale", storeName: "rt.worktrees", issues: [] },
+      ],
+    });
+    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toBe("rt.notify.eventBridges nonconforming in user; rt.roles diverged (rt.roles) in team/gitlab.example.com/acme/app");
+  });
+
+  test("no JSON from the check is an error", async () => {
+    expect((await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, "boom")))?.status).toBe("error");
   });
 });
