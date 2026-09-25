@@ -23,6 +23,9 @@
 - rt code style: double quotes, semicolons, 2-space indent, `.ts` extensions in relative imports (see `scripts/check-docs.ts`). No em or en dashes anywhere. Comments state only what the code cannot show; no ticket ids or process history in code.
 - Commit messages: `RT-305: <lowercase imperative subject>`, ending with `Co-Authored-By: Claude <noreply@anthropic.com>`.
 - Never start a daemon, never run a built `rt` binary, never touch the real `~/.mattstack`; `bun test` from the repo root is isolated by the preload.
+- RT-309 (rt#473) must be merged before Task 2; Task 2 checks and stops otherwise.
+- The static steps are proven on ubuntu by the PR's first run (Task 5, Step 3), not by a separate probe; a step that fails for a platform reason moves to a `static-macos` job that runs on every PR.
+- Long commands (the serial suite, three sequential shards) run in the background with output redirected to a file; multi-line shell goes in a script under the scratch directory and runs as `bash <path>`.
 
 ## Review Focus
 
@@ -160,12 +163,13 @@ describe("alwaysRun", () => {
 });
 
 describe("collectSources", () => {
-  test("reaches the preload's imports and the tray parity reads", () => {
+  test("reaches the preload's imports and the tray parity reads, and leaves itself out", () => {
     const { sources, preloadImports } = collectSources();
     expect(preloadImports.has("packages/rt-client/src/test-isolation.ts")).toBe(true);
     expect(preloadImports.has("lib/__tests__/home-env.ts")).toBe(true);
-    expect(sources.has("lib/__tests__/dev-mode.test.ts")).toBe(true);
-    expect(decide({ event: "pull_request", changed: ["rt-tray/Sources-core/Flavor/FlavorLaunch.swift"], sources, preloadImports }).mode).toBe("full");
+    expect(sources.get("lib/__tests__/dev-mode.test.ts")).toContain("FlavorLaunch.swift");
+    expect(sources.has("scripts/ci/__tests__/test-scope.test.ts")).toBe(false);
+    expect(sources.has("commands/worktree.ts")).toBe(true);
   });
 });
 ```
@@ -203,9 +207,9 @@ const PRELOAD = "test-setup.ts";
 
 export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage()): string[] {
   const script = pkg.scripts.test ?? "";
-  const m = /^bun test ((?:[\w./-]+\s*)+)$/.exec(script);
-  if (!m) throw new Error(`package.json test script is not a bare bun test run over directories: ${script}`);
-  return m[1].trim().split(/\s+/);
+  const dirs = /^bun test ((?:[\w./-]+\s*)+)$/.exec(script)?.[1]?.trim();
+  if (!dirs) throw new Error(`package.json test script is not a bare bun test run over directories: ${script}`);
+  return dirs.split(/\s+/);
 }
 
 export function alwaysRun(): string[] {
@@ -272,33 +276,44 @@ export function decide(input: ScopeInput): Decision {
 
 // The unit test sources: every test file under the unit directories plus
 // the preload, and the relative imports both reach. String presence in
-// this text is what "a test reads this file" means.
+// this text is what "a test reads this file" means. scripts/ci is left
+// out so this script's own test, which names files on purpose, never
+// widens the read set.
 export function collectSources(): { sources: Map<string, string>; preloadImports: Set<string> } {
+  const preloadImports = walk([PRELOAD]);
+  preloadImports.delete(PRELOAD);
+  const roots = [PRELOAD];
+  for (const dir of unitDirs()) roots.push(...testFiles(join(ROOT, dir)));
   const sources = new Map<string, string>();
-  const seen = new Set<string>();
-  const queue: string[] = [PRELOAD];
-  for (const dir of unitDirs()) queue.push(...testFiles(join(ROOT, dir)));
+  for (const rel of walk(roots)) sources.set(rel, readFileSync(join(ROOT, rel), "utf8"));
+  return { sources, preloadImports };
+}
 
-  const preloadImports = new Set<string>();
-  const transpiler = new Bun.Transpiler({ loader: "ts" });
+const transpiler = new Bun.Transpiler({ loader: "ts" });
+
+// Every file the roots reach through relative imports, roots included.
+// Only TypeScript is scanned; a JSON or shell file that a test imports is
+// kept as text but has no imports of its own. The shebang some command
+// modules start with is not syntax the transpiler accepts.
+function walk(roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...roots];
   while (queue.length) {
     const rel = queue.shift()!;
     if (seen.has(rel)) continue;
-    seen.add(rel);
     const abs = join(ROOT, rel);
     if (!existsSync(abs)) continue;
-    const text = readFileSync(abs, "utf8");
-    sources.set(rel, text);
+    seen.add(rel);
+    if (!/\.tsx?$/.test(rel)) continue;
+    const text = readFileSync(abs, "utf8").replace(/^#!.*/, "");
     for (const imp of transpiler.scanImports(text)) {
       if (!imp.path.startsWith(".")) continue;
       const target = relative(ROOT, resolve(dirname(abs), imp.path));
-      const file = existsSync(join(ROOT, target)) ? target : `${target}.ts`;
-      if (!existsSync(join(ROOT, file))) continue;
-      queue.push(file);
-      if (rel === PRELOAD || preloadImports.has(rel)) preloadImports.add(file);
+      const file = existsSync(join(ROOT, target)) && statSync(join(ROOT, target)).isFile() ? target : `${target}.ts`;
+      if (existsSync(join(ROOT, file))) queue.push(file);
     }
   }
-  return { sources, preloadImports };
+  return seen;
 }
 
 function testFiles(dir: string): string[] {
@@ -306,6 +321,7 @@ function testFiles(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     if (entry === "node_modules") continue;
     const abs = join(dir, entry);
+    if (relative(ROOT, abs) === "scripts/ci") continue;
     if (statSync(abs).isDirectory()) out.push(...testFiles(abs));
     else if (/\.test\.tsx?$/.test(entry)) out.push(relative(ROOT, abs));
   }
@@ -344,7 +360,7 @@ In root `package.json` scripts, after `test:watch`, add (the directory list is t
 - [ ] **Step 5: Run the tests to see them pass**
 
 Run: `bun test scripts/ci/__tests__/test-scope.test.ts`
-Expected: PASS, 20 tests. If `collectSources` takes more than a few seconds, say so in the report; it walks about 665 files once.
+Expected: PASS, 19 tests. `collectSources` walks about 1,200 files in well under a second; say so in the report if it takes longer.
 
 - [ ] **Step 6: Run the script against a real diff and prove `--changed` and `--shard` combine**
 
@@ -352,19 +368,30 @@ Expected: PASS, 20 tests. If `collectSources` takes more than a few seconds, say
 EVENT_NAME=pull_request bun scripts/ci/test-scope.ts --explain
 ```
 
-Expected: on this branch's tip the diff `HEAD^1..HEAD` is the last commit; the printed mode matches the rules for those files (a `scripts/ci/**` change is `full`).
+Expected: `mode=skip (only docs or swift, none of it read by a unit test)`, because `HEAD^1..HEAD` is still the plan's docs commit at this point, followed by the `dirs=` and `always=` lines.
 
-Then the combination check the spec asks for, from a throwaway clone so the worktree stays clean:
+Then the combination check the spec asks for. Save this as a script in your scratch directory and run it with `bash <path>` (a worktree session's shell guard refuses compound commands typed inline), from the worktree root:
 
 ```bash
-tmp=$(mktemp -d) && git clone -q --shared . "$tmp/rt" && cd "$tmp/rt" && ln -s "$OLDPWD/node_modules" node_modules
-printf '\n' >> lib/worktree/hydrate.ts && git commit -qam probe
-for i in 1 2 3; do bun test lib commands packages scripts --changed=HEAD^1 --shard=$i/3 2>&1 | grep -E '^--changed|^Ran '; done
-bun test lib commands packages scripts --changed=HEAD^1 2>&1 | grep -E '^--changed|^Ran '
-cd - && rm -rf "$tmp"
+#!/usr/bin/env bash
+set -u
+repo=$(pwd)
+tmp=$(mktemp -d)
+git clone -q --shared "$repo" "$tmp/rt"
+cd "$tmp/rt" || exit 1
+ln -s "$repo/node_modules" node_modules
+printf '\n' >> lib/worktree/hydrate.ts
+git -c user.name=probe -c user.email=probe@example.invalid commit -qam probe
+for i in 1 2 3; do
+  bun test lib commands packages scripts --changed=HEAD^1 --shard="$i/3" > "$tmp/shard$i.log" 2>&1
+  echo "shard $i exit=$? $(grep -E '^Ran ' "$tmp/shard$i.log")"
+done
+bun test lib commands packages scripts --changed=HEAD^1 > "$tmp/all.log" 2>&1
+echo "unsharded exit=$? $(grep -E '^Ran ' "$tmp/all.log")"
+cd "$repo" && rm -rf "$tmp"
 ```
 
-Expected: the three sharded runs' file counts sum to the unsharded run's, and every run exits 0. Paste the four `Ran` lines into the report.
+Expected: the three sharded runs' file counts sum to the unsharded run's, and every `exit=` is 0. Paste the four lines into the report. If the harness refuses the commit inside the clone, report NEEDS_CONTEXT with the refusal text.
 
 - [ ] **Step 7: Typecheck and commit**
 
@@ -383,18 +410,28 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 **Files:**
 - Create: `test-timings.json` (generated)
 
+- [ ] **Step 0: Confirm RT-309 is in and rebase**
+
+RT-309 (rt#473, the `process.exitCode` guard) must be merged before this task: without it a shard exits 1 with no failing test. Run `gh pr view 473 -R m4ttstack/rt --json state -q .state`; if it is not `MERGED`, stop and report BLOCKED. Then `git fetch origin && git rebase origin/main && bun install --frozen-lockfile`.
+
 - [ ] **Step 1: Generate the file**
 
-Run: `bun run test:timings`
-Expected: the serial suite runs once (about 9 min on a busy Mac; RT-302, RT-303 and RT-309 are merged, so it should be green; a failure in a file unrelated to this branch is a pre-existing bug to report, not to fix here). `test-timings.json` appears with `"version": 1` and one entry per test file.
+Run `bun run test:timings` in the background with its output redirected to a file in your scratch directory (the serial suite takes about 9 min, past the shell tool's limit), and read the file when it finishes. Expected: exit 0 (RT-302, RT-303 and RT-309 are merged, so the suite should be green; a failure in a file unrelated to this branch is a pre-existing bug to report, not to fix here). `test-timings.json` appears with `"version": 1` and one entry per test file.
 
 - [ ] **Step 2: Record the shard balance**
 
+Save as a script in your scratch directory and run it in the background with output to a file:
+
 ```bash
-for i in 1 2 3; do /usr/bin/time -p bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers --shard=$i/3 --timings=test-timings.json 2>&1 | grep -E '^Ran |^real'; done
+#!/usr/bin/env bash
+for i in 1 2 3; do
+  start=$(date +%s)
+  bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers --shard="$i/3" --timings=test-timings.json > "shard$i.log" 2>&1
+  echo "shard $i exit=$? $(( $(date +%s) - start ))s $(grep -E '^Ran ' "shard$i.log")"
+done
 ```
 
-Expected: three `real` times within about a minute of each other. Paste them into the report; they are the baseline the spec's "refresh when they drift more than a minute apart" rule compares against.
+Expected: three times within about a minute of each other, every exit 0. Paste the three lines into the report; they are the baseline the spec's "refresh when they drift more than a minute apart" rule compares against.
 
 - [ ] **Step 3: Commit**
 
@@ -532,12 +569,16 @@ jobs:
           ALWAYS: ${{ needs.scope.outputs.always }}
           SHARD: ${{ matrix.shard }}
         run: |
+          # An empty list would make bun test run every file in the repo,
+          # e2e included; fail loudly instead.
+          [ -n "$DIRS" ] || { echo "scope produced no unit directories"; exit 1; }
           start=$(date +%s)
           changed=""
           if [ "$MODE" = changed ]; then changed="--changed=HEAD^1"; fi
           # shellcheck disable=SC2086
           bun test $DIRS --shard="$SHARD/3" --timings=test-timings.json $changed
           if [ "$MODE" = changed ] && [ "$SHARD" = 1 ]; then
+            [ -n "$ALWAYS" ] || { echo "scope produced no always-run guards"; exit 1; }
             # shellcheck disable=SC2086
             bun test $ALWAYS
           fi
@@ -659,11 +700,13 @@ From `gh run view <id> --json jobs`, record `checks`' wall time from the earlies
 
 - [ ] **Step 5: Record a TypeScript-only PR**
 
-Open a throwaway PR from a branch with one trailing-newline change in `lib/worktree/hydrate.ts`, wait for `checks`, record its wall time and shard 1's second `bun test` line (the guards), then close it. Expected: under 2 min; `scope` prints `mode=changed`.
+Both throwaway PRs branch from `rt-305-ci-shards` and target it (`gh pr create --base rt-305-ci-shards`): a PR against `main` would run the old workflow, and one carrying the feature diff would always be `full`. `on: pull_request` has no branch filter, so the new workflow runs on them.
+
+Open a throwaway PR with one trailing-newline change in `lib/worktree/hydrate.ts`, wait for `checks`, record its wall time and shard 1's second `bun test` line (the guards), then close it and delete the branch. Expected: under 2 min; `scope` prints `mode=changed`.
 
 - [ ] **Step 6: Record a tray-only PR**
 
-Open a throwaway PR with one comment change in a Swift file no test reads (pick one `scope --explain` reports as `skip` locally), wait for `checks`, confirm `unit` shows as skipped and `checks` passed, then close it.
+Open a throwaway PR, base `rt-305-ci-shards`, with one comment change in a Swift file no test reads (pick one `EVENT_NAME=pull_request bun scripts/ci/test-scope.ts --explain` reports as `skip` after committing the change locally), wait for `checks`, confirm `unit` shows as skipped and `checks` passed, then close it and delete the branch.
 
 - [ ] **Step 7: Merge and close the ticket**
 
