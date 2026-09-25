@@ -110,6 +110,18 @@ describe("rt setup verbs (e2e, no live app/daemon)", () => {
     expect(out.actions[0].id).toBe("services.unregister");
   }, 15_000);
 
+  // --dry-run on purpose: if the rejection ever regresses, the compiled binary
+  // only lists actions instead of uninstalling the app installed on this Mac.
+  test("uninstall with an app name exits 2 unexpected-args before anything runs", async () => {
+    const res = await run(["uninstall", "gitq", "--dry-run", "--json"]);
+    expect(res.exitCode).toBe(2);
+
+    const out = JSON.parse(res.stdout.trim());
+    expect(out.contract).toBe(1);
+    expect(out.error.code).toBe("unexpected-args");
+    expect(out.error.args).toEqual(["gitq"]);
+  }, 15_000);
+
   test("update --json exits 2 app-not-running", async () => {
     const res = await run(["update", "--json"]);
     expect(res.exitCode).toBe(2);

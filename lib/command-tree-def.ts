@@ -2530,7 +2530,7 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   uninstall: {
-    description: "Uninstall mattstack: reverses setup — services, links, plugins, optionally ~/.mattstack",
+    description: "Uninstall all of mattstack (takes no app name): services, links, plugins, optionally ~/.mattstack",
     module: "./commands/uninstall.ts",
     fn: "runUninstallCommand",
     args: [
