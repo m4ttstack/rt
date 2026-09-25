@@ -70,10 +70,17 @@ type Mission struct {
 	// a line index. diffPath is the Diff.Path last seen, so a model swap
 	// that keeps the same file (a stage refreshing the hunk) preserves the
 	// cursor while one that shows a different file resets it (diff.go's
-	// clampDiffCursor).
+	// clampDiffCursor). diffViewH is the pane height of the last render,
+	// which a key or wheel step needs to know whether the cursor line is
+	// taller than the pane (tallCursorSpan); diffRowOff is how far into
+	// such a line the pane reads, owned by the line diffRowOffAt
+	// (cursorRowOff).
 	diffCursor    int
 	diffTop       int
 	diffPath      string
+	diffViewH     int
+	diffRowOff    int
+	diffRowOffAt  DiffLine
 	diffHL        diffHighlighter
 	diffRowsCache diffRowIndex
 

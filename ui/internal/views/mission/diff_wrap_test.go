@@ -152,20 +152,133 @@ func TestCursorLineIsKeptWholeInView(t *testing.T) {
 	}
 }
 
-func TestCursorLineTallerThanThePaneKeepsItsFirstRowOnTop(t *testing.T) {
-	m := wrapFixture()
-	m.model.Diff.Lines[1].Text = strings.Repeat("word ", 400)
+// tallFixture puts the cursor on a line wrapping to far more rows than a
+// 3-row pane, rendered once so the row index and pane height are known.
+func tallFixture(t *testing.T) (m *Mission, lo, hi int) {
+	t.Helper()
+	m = wrapFixture()
+	m.model.Diff.Lines[1].Text = strings.Repeat("word ", 60)
 	m.diffCursor = 1
-	rows := strings.Split(ansi.Strip(m.renderDiffLines(30, 3)), "\n")
-	if !strings.Contains(rows[0], " 1 + word") {
+	m.renderDiffLines(tallW, tallH)
+	ix := m.diffRows(tallW - 1 - diffGutterWidth - diffMarkWidth)
+	lo, hi = ix.start[1], ix.start[2]-tallH
+	if hi-lo < 3 {
+		t.Fatalf("fixture line is not tall enough: rows [%d,%d)", ix.start[1], ix.start[2])
+	}
+	return m, lo, hi
+}
+
+const tallW, tallH = 30, 3
+
+func TestCursorLineTallerThanThePaneKeepsItsFirstRowOnTop(t *testing.T) {
+	m, lo, _ := tallFixture(t)
+	rows := strings.Split(ansi.Strip(m.renderDiffLines(tallW, tallH)), "\n")
+	if m.diffTop != lo || !strings.Contains(rows[0], " 1 + word") {
 		t.Fatalf("first row of the cursor line is not on top:\n%s", strings.Join(rows, "\n"))
 	}
+}
+
+func TestScrollingDownReadsATallLineRowByRowThenMovesOn(t *testing.T) {
+	m, lo, hi := tallFixture(t)
+	for want := lo + 1; want <= hi; want++ {
+		m.moveDiffCursor(1)
+		m.renderDiffLines(tallW, tallH)
+		if m.diffCursor != 1 || m.diffTop != want {
+			t.Fatalf("step to row %d: cursor %d top %d", want, m.diffCursor, m.diffTop)
+		}
+	}
 	m.moveDiffCursor(1)
-	rows = strings.Split(ansi.Strip(m.renderDiffLines(30, 3)), "\n")
-	// tail is the last line, so the window clamps at the end of the diff
-	// with tail on its bottom row rather than its top.
-	if len(rows) != 3 || !strings.Contains(rows[2], " 2 + tail") || strings.Contains(rows[0], " 1 + word") {
-		t.Fatalf("the window did not follow the cursor off the tall line:\n%s", strings.Join(rows, "\n"))
+	rows := strings.Split(ansi.Strip(m.renderDiffLines(tallW, tallH)), "\n")
+	if m.diffCursor != 2 || !strings.Contains(rows[len(rows)-1], " 2 + tail") {
+		t.Fatalf("past the tall line's last row the cursor should reach tail, got cursor %d:\n%s", m.diffCursor, strings.Join(rows, "\n"))
+	}
+}
+
+func TestScrollingUpIntoATallLineStartsAtItsBottom(t *testing.T) {
+	m, lo, hi := tallFixture(t)
+	m.diffCursor = 2
+	m.renderDiffLines(tallW, tallH)
+	m.moveDiffCursor(-1)
+	m.renderDiffLines(tallW, tallH)
+	if m.diffCursor != 1 || m.diffTop != hi {
+		t.Fatalf("entering from below: cursor %d top %d, want 1 and %d", m.diffCursor, m.diffTop, hi)
+	}
+	for want := hi - 1; want >= lo; want-- {
+		m.moveDiffCursor(-1)
+		m.renderDiffLines(tallW, tallH)
+		if m.diffCursor != 1 || m.diffTop != want {
+			t.Fatalf("step up to row %d: cursor %d top %d", want, m.diffCursor, m.diffTop)
+		}
+	}
+	m.moveDiffCursor(-1)
+	if m.diffCursor != 0 {
+		t.Fatalf("above the tall line's first row the cursor should reach the hunk, got %d", m.diffCursor)
+	}
+}
+
+func TestAWheelTickSpillsPastTheTallLineOntoTheNext(t *testing.T) {
+	m, lo, hi := tallFixture(t)
+	m.setCursorRowOff(hi - 2 - lo)
+	m.moveDiffCursor(2)
+	m.renderDiffLines(tallW, tallH)
+	if m.diffCursor != 1 || m.diffTop != hi {
+		t.Fatalf("two steps two rows from the end should land on the last row, got cursor %d top %d", m.diffCursor, m.diffTop)
+	}
+	m.setCursorRowOff(hi - 1 - lo)
+	m.moveDiffCursor(2)
+	if m.diffCursor != 2 {
+		t.Fatalf("one step to the last row and one onto tail, got cursor %d top %d", m.diffCursor, m.diffTop)
+	}
+}
+
+// pushLines stands in for a model push: a fresh Lines backing array, as
+// every decode makes, with the cursor line's stage state flipped.
+func pushLines(m *Mission, edit func([]DiffLine)) {
+	lines := append([]DiffLine(nil), m.model.Diff.Lines...)
+	lines[1].Selected = !lines[1].Selected
+	if edit != nil {
+		edit(lines)
+	}
+	m.model.Diff.Lines = lines
+}
+
+func TestStagingATallLineKeepsTheRowsBeingRead(t *testing.T) {
+	m, lo, _ := tallFixture(t)
+	m.moveDiffCursor(2)
+	pushLines(m, nil)
+	m.renderDiffLines(tallW, tallH)
+	if m.diffTop != lo+2 {
+		t.Fatalf("top %d after the push, want %d", m.diffTop, lo+2)
+	}
+}
+
+func TestADifferentTallLineUnderTheCursorOpensAtItsTop(t *testing.T) {
+	m, lo, _ := tallFixture(t)
+	m.moveDiffCursor(2)
+	pushLines(m, func(lines []DiffLine) { lines[1].Text = strings.Repeat("other ", 50) })
+	m.renderDiffLines(tallW, tallH)
+	if m.diffTop != lo {
+		t.Fatalf("a new line under the cursor opened at top %d, want its first row %d", m.diffTop, lo)
+	}
+}
+
+// The line above the tall one wraps too, so a resize moves where the tall
+// line starts.
+func TestAResizeKeepsThePlaceWithinATallLine(t *testing.T) {
+	m := wrapFixture()
+	m.model.Diff.Lines = []DiffLine{
+		{Kind: "context", OldNo: 1, NewNo: 1, SelIdx: -1, Text: strings.Repeat("ctx ", 20)},
+		{Kind: "add", NewNo: 2, Text: strings.Repeat("word ", 60)},
+		{Kind: "add", NewNo: 3, Text: "tail"},
+	}
+	m.diffCursor = 1
+	m.renderDiffLines(tallW, tallH)
+	m.moveDiffCursor(2)
+	const wider = tallW + 10
+	m.renderDiffLines(wider, tallH)
+	ix := m.diffRows(wider - 1 - diffGutterWidth - diffMarkWidth)
+	if got := m.diffTop - ix.start[1]; got != 2 {
+		t.Fatalf("offset into the line after widening is %d rows, want 2", got)
 	}
 }
 
