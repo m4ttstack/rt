@@ -11,12 +11,15 @@ public enum QuitReason {
     /// window-close interception. A quit arriving with no window on screen
     /// has nothing to close, and it is the only path a script, the Dock, or
     /// Activity Monitor can take once the window is closed, so it stands as
-    /// a real quit.
+    /// a real quit. Sparkle's installer quits the app with the same plain
+    /// event as Cmd-Q, so while an update is installing the quit must go
+    /// through or the install never happens.
     public static func shouldTerminate(quitConfirmed: Bool,
                                        sessionEnding: Bool,
+                                       updateInstalling: Bool,
                                        reasonCode: UInt32?,
                                        windowOnScreen: Bool) -> Bool {
-        if quitConfirmed || sessionEnding { return true }
+        if quitConfirmed || sessionEnding || updateInstalling { return true }
         if isSystemInitiated(reasonCode: reasonCode) { return true }
         return !windowOnScreen
     }
