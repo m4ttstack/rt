@@ -1,0 +1,33 @@
+name: Timings
+
+# Regenerates test-timings.json on the same runner the shards use; a file
+# measured on a laptop balances the shards for the laptop, not for CI.
+# Download the artifact, commit it at the repo root.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/timings.yml
+
+jobs:
+  timings:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install backup dependencies
+        run: brew install age zstd git-lfs
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Time the unit suite
+        run: bun run test:timings
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-timings
+          path: test-timings.json
+          if-no-files-found: error

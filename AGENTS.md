@@ -386,8 +386,10 @@ other change runs the full suite (a non-TypeScript file outside that skip
 set, a fixture, the preload or its imports, anything under `scripts/ci/`).
 Any other test that spawns `cli.ts` or reads source as text is not selected
 by `--changed`; it runs on main, so a TypeScript-only PR can go green and
-break main there. Refresh the timings file with `bun run test:timings` when
-the shards' printed wall times drift more than a minute apart.
+break main there. Refresh the timings file when the shards' printed wall
+times drift more than a minute apart by running the Timings workflow
+(`gh workflow run timings.yml`) and committing its artifact; `bun run
+test:timings` produces a laptop-balanced file, which is not the same thing.
 
 It matters most for anything asserted verbatim end to end (the chat delivery
 frame, a CLI's `--json` envelope, a usage string) and for anything glitter or
