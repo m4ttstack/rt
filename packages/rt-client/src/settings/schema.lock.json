@@ -1046,6 +1046,16 @@
       }
     }
   },
+  "rt.mcp.uploadRoots": {
+    "storeVersion": 1,
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
   "rt.notifications": {
     "storeVersion": 1,
     "schema": {
