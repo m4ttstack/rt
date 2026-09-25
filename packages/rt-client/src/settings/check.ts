@@ -7,10 +7,11 @@
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
 import { allDefs, getDef, validateValue, type SettingScope } from "./registry-machinery.ts";
 import { checkSchema, hasSchema, type SchemaIssue } from "./schema.ts";
-import { getSetting, listStoreRepoIdentities, listUnregisteredSettings } from "./resolve.ts";
+import { currentMergedValue, listStoreRepoIdentities, listUnregisteredSettings } from "./resolve.ts";
 import { listTeams, readStore, type StoreFile } from "./stores.ts";
 
-export interface CheckFinding { key: string; scope: SettingScope; file: string; repo?: string; kind: "invalid" | "nonconforming" | "merged" | "unregistered"; issues: SchemaIssue[] }
+/** A `merged` finding belongs to no one store, so it carries no `scope` or `file`. */
+export interface CheckFinding { key: string; scope?: SettingScope; file?: string; repo?: string; kind: "invalid" | "nonconforming" | "merged" | "unregistered"; issues: SchemaIssue[] }
 export interface CheckReport { findings: CheckFinding[]; failing: number }
 
 export function checkStores(): CheckReport {
@@ -28,11 +29,10 @@ export function checkStores(): CheckReport {
   for (const def of allDefs()) {
     if (!hasSchema(def)) continue;
     for (const repo of [null, ...(def.repoScoped ? listStoreRepoIdentities() : [])]) {
-      let value: unknown;
-      try { value = getSetting(def.key, { repoIdentity: repo, expand: false }).value; } catch { continue; }
+      const value = currentMergedValue(def, { repoIdentity: repo, expand: false });
       if (value === undefined) continue;
       const issues = checkSchema(def, value, { layer: false });
-      if (issues.length > 0) findings.push({ key: def.key, scope: "user", file: "(merged)", ...(repo ? { repo } : {}), kind: "merged", issues });
+      if (issues.length > 0) findings.push({ key: def.key, ...(repo ? { repo } : {}), kind: "merged", issues });
     }
   }
   for (const u of listUnregisteredSettings()) findings.push({ key: u.key, scope: u.scope.replace(".repo", "") as SettingScope, file: u.file, kind: "unregistered", issues: [] });

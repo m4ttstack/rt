@@ -13,6 +13,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "../paths.ts";
 import { checkStores } from "../check.ts";
+import { setSettingsWarnSink } from "../resolve.ts";
 import { withSchema } from "./with-schema.ts";
 
 const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
@@ -55,6 +56,29 @@ describe("settings/check", () => {
       expect(kinds).toContain("board.rtRepos:unregistered");
       expect(report.failing).toBe(3);
     });
+  });
+
+  test("a merged finding carries no scope or file", () => {
+    withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+      writeMachine({ "rt.homeSnapshot": { enabled: "yes" } });
+      const merged = checkStores().findings.find((f) => f.key === "rt.homeSnapshot" && f.kind === "merged")!;
+      expect(merged).toBeDefined();
+      expect("scope" in merged).toBe(false);
+      expect("file" in merged).toBe(false);
+    });
+  });
+
+  test("the merged pass emits no resolver warnings for a type-invalid layer", () => {
+    const warnings: string[] = [];
+    setSettingsWarnSink((msg) => warnings.push(msg));
+    try {
+      writeMachine({ "rt.repoRoots": "nope" });
+      const kinds = checkStores().findings.map((f) => `${f.key}:${f.kind}`);
+      expect(kinds).toContain("rt.repoRoots:invalid");
+      expect(warnings).toEqual([]);
+    } finally {
+      setSettingsWarnSink(null);
+    }
   });
 
   test("walks repo sections and reports the repo", () => {

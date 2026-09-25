@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { teamSettingsPath, userSettingsPath } from "../paths.ts";
+import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "../paths.ts";
 import { getDef } from "../registry-machinery.ts";
+import { setSettingsWarnSink } from "../resolve.ts";
 import { validateWrite } from "../validate-write.ts";
 import { withSchema } from "./with-schema.ts";
 
@@ -22,6 +23,7 @@ const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, d
 const ROLES = { type: "object", properties: { a: { type: "string" }, b: { type: "number" } }, required: ["a"] };
 const GIT_STATUS = { type: "object", properties: { sweep: { type: "boolean" }, sweepIntervalSec: { type: "number", minimum: 1 }, fetchIntervalSec: { type: "number" } }, required: ["sweep", "sweepIntervalSec", "fetchIntervalSec"] };
 const WORKTREES = { type: "object", properties: { onDeck: { type: "number", minimum: 0 }, name: { type: "string" } }, required: ["onDeck"] };
+const NAMED_WORKTREES = { type: "object", properties: { onDeck: { type: "number" }, name: { type: "string" } }, dependentSchemas: { name: { properties: { onDeck: { maximum: 1 } } } } };
 
 describe("settings/validate-write", () => {
   const origHome = process.env.HOME;
@@ -106,6 +108,33 @@ describe("settings/validate-write", () => {
       // The repo section already fails; an unrelated global edit still lands.
       expect(validateWrite(def, { name: "y" }, { scope: "user" })).toEqual({ ok: true });
     });
+  });
+
+  test("a global write that newly breaks one repo section's merge is refused for that repo", () => {
+    withSchema("rt.worktrees", NAMED_WORKTREES, () => {
+      const def = getDef("rt.worktrees")!;
+      writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 2 } } } });
+      // The global merge alone passes; only IDENTITY's section, whose onDeck the
+      // new name caps at 1, starts failing.
+      const r = validateWrite(def, { name: "x" }, { scope: "user" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe(`merged value for ${IDENTITY} would fail: onDeck: must be <= 1`);
+    });
+  });
+
+  test("the merged check emits no resolver warnings for a type-invalid layer elsewhere", () => {
+    const warnings: string[] = [];
+    setSettingsWarnSink((msg) => warnings.push(msg));
+    try {
+      withSchema("rt.roles", ROLES, () => {
+        write(machineSettingsPath(), { "rt.roles": "nope" });
+        const r = validateWrite(getDef("rt.roles")!, { b: 1 }, { scope: "user" });
+        expect(r.ok).toBe(false);
+        expect(warnings).toEqual([]);
+      });
+    } finally {
+      setSettingsWarnSink(null);
+    }
   });
 
   test("a repo section write checks that repo's merge", () => {

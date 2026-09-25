@@ -7,7 +7,7 @@
 
 import { checkSchema, firstIssueText, hasSchema, type SchemaIssue } from "./schema.ts";
 import { validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
-import { getSetting, listStoreRepoIdentities, mergedValueWith } from "./resolve.ts";
+import { currentMergedValue, listStoreRepoIdentities, mergedValueWith } from "./resolve.ts";
 
 export type WriteVerdict = { ok: true } | { ok: false; reason: string; issues: SchemaIssue[] };
 
@@ -24,23 +24,16 @@ export function validateWrite(def: SettingDef, value: unknown, opts: { scope: Se
     opts.repoIdentity !== undefined ? [opts.repoIdentity] : def.repoScoped ? [null, ...listStoreRepoIdentities()] : [null];
   for (const repoIdentity of contexts) {
     const after = mergedValueWith(def, { scope: opts.scope, repoIdentity: opts.repoIdentity, team: opts.team, value }, { repoIdentity, expand: false });
-    // A team write with no local team store merges into nothing; setSetting refuses it afterwards.
+    // A team write with no local team store patches nothing, so `after` is the current merge,
+    // undefined only when nothing is set anywhere; setSetting refuses that write afterwards.
     if (after === undefined) continue;
     const afterIssues = checkSchema(def, after, { layer: false });
     if (afterIssues.length === 0) continue;
-    const before = mergedNow(def, repoIdentity);
+    const before = currentMergedValue(def, { repoIdentity, expand: false });
     if (before === undefined || checkSchema(def, before, { layer: false }).length === 0) {
       const where = repoIdentity ? ` for ${repoIdentity}` : "";
       return { ok: false, reason: `merged value${where} would fail: ${firstIssueText(afterIssues)}`, issues: afterIssues };
     }
   }
   return { ok: true };
-}
-
-function mergedNow(def: SettingDef, repoIdentity: string | null): unknown {
-  try {
-    return getSetting(def.key, { repoIdentity, expand: false }).value;
-  } catch {
-    return undefined;
-  }
 }

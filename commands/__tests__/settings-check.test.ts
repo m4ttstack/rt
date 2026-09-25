@@ -34,6 +34,8 @@ describe("rt settings check", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
+  const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
+
   function write(file: string, obj: unknown): void {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(obj, null, 2));
@@ -48,6 +50,25 @@ describe("rt settings check", () => {
     const parsed = JSON.parse(printed as string);
     expect(parsed.ok).toBe(false);
     expect(parsed.findings.length).toBeGreaterThan(0);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("human output prints each finding's file and every issue; a merged finding prints no scope or file", async () => {
+    write(machineSettingsPath(), { "rt.homeSnapshot": { enabled: "yes", debounceSec: "soon" } });
+
+    await settingsCheck([]);
+
+    const lines = logSpy.mock.calls.map((c) => stripAnsi(String(c[0]))).join("\n").split("\n");
+    const layer = lines.findIndex((l) => l.includes("rt.homeSnapshot") && l.includes("nonconforming"));
+    expect(lines[layer]).toContain("machine");
+    expect(lines[layer]).toContain(machineSettingsPath());
+    expect(lines[layer + 1]).toBe("      enabled: expected boolean, got string");
+    expect(lines[layer + 2]).toBe("      debounceSec: expected number, got string");
+
+    const merged = lines.findIndex((l) => l.includes("rt.homeSnapshot") && l.includes("merged"));
+    expect(lines[merged]).toBe("  rt.homeSnapshot  merged");
+    expect(lines[merged + 1]).toBe("      enabled: expected boolean, got string");
+    expect(lines[merged + 2]).toBe("      debounceSec: expected number, got string");
     expect(process.exitCode).toBe(1);
   });
 

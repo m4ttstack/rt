@@ -40,7 +40,7 @@ import {
 } from "../lib/settings/resolve.ts";
 import { setSetting, unsetSetting } from "../lib/settings/write.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
-import { firstIssueText } from "../lib/settings/schema.ts";
+import { firstIssueText, formatIssuePath } from "../lib/settings/schema.ts";
 import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
@@ -503,12 +503,14 @@ export function renderExplainRow(row: ExplainRow): string {
 
 // ─── check ──────────────────────────────────────────────────────────────────
 
-/** One line per finding: `merged` findings have no real scope, so they print without one. */
+/** A header line per finding, then one line per issue. A `merged` finding
+    carries no scope or file, so its header names only the repo, if any. */
 export function renderCheckFinding(f: CheckFinding): string {
-  const where = f.kind === "merged" ? (f.repo ? `/${f.repo}` : "") : `${f.scope}${f.repo ? `/${f.repo}` : ""}`;
+  const where = [f.scope, f.repo].filter(Boolean).join("/");
   const label = where ? `${where}  ` : "";
-  const detail = f.issues.length > 0 ? `: ${firstIssueText(f.issues)}` : "";
-  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${detail}`;
+  const file = f.file ? `  ${dim}${f.file}${reset}` : "";
+  const issues = f.issues.map((i) => `\n      ${formatIssuePath(i.path)}: ${i.message}`).join("");
+  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${file}${issues}`;
 }
 
 export async function settingsCheck(args: string[]): Promise<void> {

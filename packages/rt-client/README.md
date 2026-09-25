@@ -138,9 +138,10 @@ const { findings, failing } = checkStores();                            // what 
 | `checkSchema(def, value, { layer })` | every issue against the layer schema (`layer: true`) or the full schema; `[]` for a key with no schema |
 | `validateJson(schema, value)` | the same check against a bare JSON Schema |
 | `validateWrite(def, value, { scope, repoIdentity?, team? })` | the write gate `setSetting` runs: type and path guard, the layer, then the merged result, refused only when the write makes a passing merge fail |
-| `checkStores()` | every stored value, every merged value and every unregistered key; `failing` excludes unregistered keys |
+| `checkStores()` | every stored value, every merged value and every unregistered key; `failing` excludes unregistered keys; a `merged` finding has no `scope` or `file` |
 | `listUnregisteredSettings()` / `repoSectionsFor(key)` / `listStoreRepoIdentities()` | unregistered keys in stores, which repos set a key in which stores, every identity with a `repos.<id>` section |
 | `mergedValueWith(def, { scope, value, repoIdentity?, team? }, opts)` | the value the resolver would merge with that one layer replaced |
+| `currentMergedValue(def, opts)` | the value `getSetting` would return, without its warnings for skipped layers |
 
 Reads never skip a value that fails only its schema: `explainSetting` rows
 carry `nonconforming` issues and `listSettings` carries `nonconforming` and

@@ -267,6 +267,12 @@ export function mergedValueWith(
   return resolveDef(def, patched, opts).value;
 }
 
+/** The merged value `getSetting` would return, without its warnings for
+    skipped layers; the write gate and the check audit read it silently. */
+export function currentMergedValue(def: SettingDef, opts: ResolveOpts = {}): unknown {
+  return resolveDef(def, readStores(), opts).value;
+}
+
 function cloneStore(store: StoreFile): StoreFile {
   return { ...store, global: { ...store.global }, repos: Object.fromEntries(Object.entries(store.repos).map(([k, v]) => [k, { ...v }])) };
 }
