@@ -33,6 +33,7 @@ import { realWaiverStore, unwaiveRow, waiveRow, type WaiverChange, type WaiverSt
 import { isValidHostname, isValidHttpsUrl } from "../lib/setup/host-validate.ts";
 import { integrationDef, type ValidateCtx } from "../lib/setup/integrations.ts";
 import { clearIntent, readIntent, teamRefFromIntent, writeIntent } from "../lib/setup/intent.ts";
+import { missingScopes, type ForgeRole } from "../lib/setup/token-create.ts";
 import { NO_MANIFEST_DETAIL, setupPackFlow } from "../lib/setup/pack.ts";
 import { composePlan, enrichSnapshotForge, realSecretPresence } from "../lib/setup/plan.ts";
 import { createRealProbes, type Probes } from "../lib/setup/probes.ts";
@@ -1186,6 +1187,15 @@ async function connectCredential(id: Integration, args: string[], deps: ConnectD
     return;
   }
   if (result.status === "error") throw new UserActionableError("unreachable", result.detail);
+  // A token the forge accepts can still lack what git needs later (the private clone, the owner's push), so the shortfall is named here, at the paste, not at the clone.
+  if (id === "github" || id === "gitlab") {
+    const role: ForgeRole = readIntent(deps.probes)?.mode === "create" ? "owner" : "member";
+    const missing = missingScopes(id, role, result.scopesSeen);
+    if (missing.length > 0) {
+      printIntegrationResult(deps, args.includes("--json"), { integration: id, status: "invalid", detail: `token is missing: ${missing.join(", ")}`, scopesSeen: result.scopesSeen });
+      return;
+    }
+  }
 
   // Only reached once the host just validated a real credential against a
   // real service — never persisted on the strength of the flag alone.
