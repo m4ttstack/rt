@@ -175,6 +175,13 @@ class DaemonLifecycle: @unchecked Sendable {
         await gate.run(.restart, origin: origin) { await self.reregisterDaemonUngated(origin: origin) }
     }
 
+    /// Agent work that must not outlive a flavor retire: once teardown
+    /// latches the gate, a parked or later body is skipped.
+    @discardableResult
+    func runGated(origin: String, _ body: @escaping @Sendable () async -> Bool) async -> Bool {
+        await gate.run(.restart, origin: origin, body)
+    }
+
     private func reregisterDaemonUngated(origin: String) async -> Bool {
         guard let services else {
             TrayLog.error("reregisterDaemon with no services registrar wired", ["label": label, "origin": origin])

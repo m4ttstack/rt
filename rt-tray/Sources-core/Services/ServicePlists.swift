@@ -84,3 +84,8 @@ public enum StartJob {
 public enum DeckRestart {
     public static func arguments(deckPath: String) -> (String, [String]) { (deckPath, ["restart", "--managed"]) }
 }
+
+/// Exits 0 only once deck answers on its API port.
+public enum DeckProbe {
+    public static func arguments(deckPath: String) -> (String, [String]) { (deckPath, ["list"]) }
+}

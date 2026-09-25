@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private let daemonClient = DaemonClient()
     private let notificationManager = NotificationManager()
     private let daemonLifecycle = DaemonLifecycle()
+    private let spawnHealLatch = SpawnHealLatch()
 
     // ── Polling timers ──────────────────────────────────────────────────────
     private var statusTimer: Timer?
@@ -206,33 +207,67 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         Task { @MainActor in
             setHealth(.starting)
+            var launch: (registration: LaunchRegistration, progress: VersionChangeProgress, version: String)?
             if BundleFlavor.isStubActive {
                 TrayLog.info("stub mode: skipping real service registration and version-change restart")
             } else {
                 let lifecycle = daemonLifecycle
-                await servicesRegistrar.registerAllAtLaunch(store: UserDefaults.standard, daemonLabel: lifecycle.label) {
+                let registration = await servicesRegistrar.registerAllAtLaunch(store: UserDefaults.standard,
+                                                                               daemonLabel: lifecycle.label) {
                     await lifecycle.reregisterDaemon(origin: DaemonOrigin.plistChanged)
                 }
                 let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-                let change = await servicesRegistrar.handleVersionChange(current: version, store: UserDefaults.standard)
-                TrayLog.info("version change evaluated", ["change": String(describing: change)])
+                let progress = await servicesRegistrar.handleVersionChange(
+                    current: version, store: UserDefaults.standard,
+                    registeredThisLaunch: registration.registeredThisLaunch)
+                TrayLog.info("version change evaluated", ["change": String(describing: progress.change)])
+                launch = (registration, progress, version)
             }
             await recordAppPath()
 
-            // First-run Setup has no daemon dependency — show it now rather
-            // than after the wait loop below, or a genuine first run (daemon
-            // not installed yet) sits at a blank menu bar for the full 4s.
+            // First-run Setup has no daemon dependency, so it shows before the
+            // agent wait below; a genuine first run (daemon not installed yet)
+            // would otherwise sit at a blank menu bar for the whole wait.
             if let coordinator, !coordinator.setupIsComplete {
                 coordinator.showSetup(step: SetupResume.step(from: CommandLine.arguments))
             }
 
-            // Wait for launchd to bring the daemon up
-            for _ in 0..<8 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if await daemonClient.isReachable() { break }
+            if let launch {
+                await settleAgentsAfterLaunch(launch.registration, launch.progress, version: launch.version)
+            } else {
+                for _ in 0..<8 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if await daemonClient.isReachable() { break }
+                }
             }
             await refreshStatus()
             await drainPendingNotifications()
+        }
+    }
+
+    @MainActor
+    private func settleAgentsAfterLaunch(_ registration: LaunchRegistration, _ progress: VersionChangeProgress,
+                                         version: String) async {
+        guard let registrar = servicesRegistrar else { return }
+        let lifecycle = daemonLifecycle
+        let client = daemonClient
+        let probes = registrar.launchProbes(
+            daemonLabel: lifecycle.label,
+            daemonAnswers: { await client.isReachable() },
+            healAgent: { label in
+                if label == lifecycle.label {
+                    return await lifecycle.reregisterDaemon(origin: DaemonOrigin.spawnHeal)
+                }
+                return await lifecycle.runGated(origin: DaemonOrigin.spawnHeal) {
+                    await registrar.reregisterAgent(label: label)
+                }
+            })
+        let report = await registrar.settleLaunch(probes, latch: spawnHealLatch)
+        registrar.recordAfterSettle(LaunchRecording.plan(registration: registration, progress: progress, report: report),
+                                    progress: progress, current: version, store: UserDefaults.standard)
+        if LaunchRecording.restartsServedApps(progress: progress, report: report,
+                                              deckLabel: registrar.deckLabel(daemonLabel: lifecycle.label)) {
+            await registrar.restartServedApps()
         }
     }
 
