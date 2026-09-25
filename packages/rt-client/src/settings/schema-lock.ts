@@ -12,7 +12,7 @@ import { SCHEMAS } from "./registry-schemas.ts";
 import type { Lock } from "./schema-diff.ts";
 import type { JsonSchema } from "./schema.ts";
 
-export { checkLockAgainst, classifyLockDiff, readBreakingChanges, type Change, type Lock } from "./schema-diff.ts";
+export { checkLockAgainst, classifyLockDiff, isMissingPathAtRef, readBreakingChanges, type Change, type Lock } from "./schema-diff.ts";
 
 export const LOCK_PATH = fileURLToPath(new URL("./schema.lock.json", import.meta.url));
 

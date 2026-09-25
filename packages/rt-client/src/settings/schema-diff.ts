@@ -15,6 +15,11 @@ type NodeChange = Omit<Change, "key">;
 const ANNOTATIONS = new Set(["title", "description", "default", "$schema", "$id", "examples", "labels", "placeholder", "deprecated", "readOnly", "writeOnly"]);
 const KNOWN = new Set(["type", "properties", "required", "additionalProperties", "propertyNames", "items", "prefixItems", "enum", "const", "anyOf", "oneOf", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "format"]);
 
+/** True only for git show's own "that path is not in this tree" failure; any other failure is a real error. */
+export function isMissingPathAtRef(stderr: string): boolean {
+  return /does not exist in '|exists on disk, but not in '/.test(stderr);
+}
+
 export function readBreakingChanges(): Record<string, string> {
   return BREAKING as Record<string, string>;
 }

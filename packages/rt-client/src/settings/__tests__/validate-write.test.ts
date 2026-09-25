@@ -53,6 +53,15 @@ describe("settings/validate-write", () => {
     if (!r.ok) expect(r.reason).toContain("expected object");
   });
 
+  test("a refusal names its kind: type, pathGuard or schema", () => {
+    const kindOf = (r: ReturnType<typeof validateWrite>) => (r.ok ? "ok" : r.kind);
+    expect(kindOf(validateWrite(getDef("rt.homeSnapshot")!, "nope", { scope: "machine" }))).toBe("type");
+    expect(kindOf(validateWrite(getDef("rt.roles")!, { backend: { hook: "/Users/x/bin/dev.sh" } }, { scope: "user", repoIdentity: IDENTITY }))).toBe("pathGuard");
+    withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+      expect(kindOf(validateWrite(getDef("rt.homeSnapshot")!, { enabled: "yes" }, { scope: "machine" }))).toBe("schema");
+    });
+  });
+
   test("a partial deep layer at machine scope is allowed", () => {
     withSchema("rt.homeSnapshot", SNAPSHOT, () => {
       expect(validateWrite(getDef("rt.homeSnapshot")!, { enabled: false }, { scope: "machine" })).toEqual({ ok: true });

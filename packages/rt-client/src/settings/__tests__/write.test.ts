@@ -168,6 +168,20 @@ describe("settings/write", () => {
       ).toThrow(/path literal|\$\{team|\$\{repoRoot/i);
     });
 
+    test("only a path-guard refusal suggests ${team:<name>} or ${repoRoot}", () => {
+      expect(() =>
+        setSetting("rt.roles", { backend: { hook: "/Users/matt/bin/dev.sh" } }, "user", { repoIdentity: IDENTITY }),
+      ).toThrow("use ${team:<name>} or ${repoRoot} instead");
+      let typeMessage = "";
+      try {
+        setSetting("rt.homeSnapshot", "nope", "machine");
+      } catch (err) {
+        typeMessage = (err as Error).message;
+      }
+      expect(typeMessage).toContain("expected object, got string");
+      expect(typeMessage).not.toContain("${team");
+    });
+
     test("refuses a home-relative path literal in a pathGuardFields field", () => {
       expect(() =>
         setSetting("rt.roles", { backend: { hook: "~/bin/dev.sh" } }, "user", { repoIdentity: IDENTITY }),

@@ -13,6 +13,7 @@ import {
   checkCatalog,
   checkExtension,
   checkRtClient,
+  checkSchemaLock,
   runPreflight,
   type PreflightSeams,
   type DepsRow,
@@ -585,5 +586,33 @@ describe("runPreflight", () => {
     expect(report.errorCount).toBe(0);
     expect(report.staleCount).toBe(0);
     expect(report.clean).toBe(true);
+  });
+});
+
+describe("checkSchemaLock", () => {
+  const LOCK = "packages/rt-client/src/settings/schema.lock.json";
+  const committed = JSON.stringify({ "t.k": { storeVersion: 1, schema: { type: "string" } } });
+  const lockSeams = (show: { exitCode: number; stdout?: string; stderr?: string }) =>
+    seams({
+      exec: (argv) =>
+        argv.join(" ") === `git show v2.10.2:${LOCK}` ? Promise.resolve({ stdout: "", stderr: "", ...show }) : failExec(),
+      readFile: (p) => (p.endsWith(LOCK) ? committed : p.endsWith("breaking-schema-changes.json") ? "{}" : null),
+    });
+
+  test("a lock path missing at the tag is ok with no lock at <tag>", async () => {
+    const row = await checkSchemaLock(lockSeams({ exitCode: 128, stderr: `fatal: path '${LOCK}' does not exist in 'v2.10.2'` }), "v2.10.2");
+    expect(row).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
+  });
+
+  test("any other git show failure is an error row", async () => {
+    const row = await checkSchemaLock(lockSeams({ exitCode: 128, stderr: "fatal: bad object v2.10.2" }), "v2.10.2");
+    expect(row.status).toBe("error");
+    expect(row.detail).toContain("bad object");
+  });
+
+  test("a malformed lock at the tag is an error row", async () => {
+    const row = await checkSchemaLock(lockSeams({ exitCode: 0, stdout: "{ not json" }), "v2.10.2");
+    expect(row.status).toBe("error");
+    expect(row.detail).toContain("v2.10.2");
   });
 });

@@ -7,7 +7,7 @@
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
-import { buildLock, checkLockAgainst, classifyLockDiff, LOCK_PATH as DEFAULT_LOCK_PATH, readBreakingChanges, type Lock } from "../lib/settings/schema-lock.ts";
+import { buildLock, checkLockAgainst, classifyLockDiff, isMissingPathAtRef, LOCK_PATH as DEFAULT_LOCK_PATH, readBreakingChanges, type Lock } from "../lib/settings/schema-lock.ts";
 
 const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -31,21 +31,34 @@ export async function settingsSchemaLock(args: string[], deps: { lockPath?: stri
   console.log(out);
 }
 
-/** A ref with no lock file is `{}`; a ref git cannot resolve is an error, never a silent pass. */
-function lockAtRef(ref: string, repoRoot: string): Lock | Error {
-  const verify = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: repoRoot, encoding: "utf8" });
-  if (verify.status !== 0) return new Error(`unknown git ref ${ref} (run git fetch origin?)`);
-  const show = spawnSync("git", ["show", `${ref}:${LOCK_REL}`], { cwd: repoRoot, encoding: "utf8" });
-  return show.status === 0 ? (JSON.parse(show.stdout) as Lock) : {};
+type Git = (args: string[], cwd: string) => { status: number | null; stdout: string; stderr: string };
+// isMissingPathAtRef matches git's English wording.
+const realGit: Git = (args, cwd) => spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+
+function parseLock(raw: string, source: string): Lock | Error {
+  try {
+    return JSON.parse(raw) as Lock;
+  } catch (err) {
+    return new Error(`${source} is not valid JSON: ${(err as Error).message}`);
+  }
 }
 
-function lockAtPath(path: string): Lock {
-  if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as Lock;
+/** Only a path git confirms is absent from the ref's tree reads as `{}`; every other failure is an error. */
+function lockAtRef(ref: string, repoRoot: string, git: Git): Lock | Error {
+  if (git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repoRoot).status !== 0) return new Error(`unknown git ref ${ref} (run git fetch origin?)`);
+  const show = git(["show", `${ref}:${LOCK_REL}`], repoRoot);
+  if (show.status === 0) return parseLock(show.stdout, `${ref}:${LOCK_REL}`);
+  if (isMissingPathAtRef(show.stderr)) return {};
+  return new Error(`git show ${ref}:${LOCK_REL} failed: ${show.stderr.trim() || `exit ${show.status}`}`);
+}
+
+function lockAtPath(path: string): Lock | Error {
+  if (existsSync(path)) return parseLock(readFileSync(path, "utf8"), path);
   console.error(`rt settings schema diff: ${path} does not exist; diffing against an empty lock`);
   return {};
 }
 
-export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string } = {}): Promise<void> {
+export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string; git?: Git } = {}): Promise<void> {
   const repoRoot = deps.repoRoot ?? REPO_ROOT;
   const fail = (message: string) => {
     console.error(`rt settings schema diff: ${message}`);
@@ -57,7 +70,7 @@ export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: stri
   const against = flagValue(args, "--against");
   const againstRef = flagValue(args, "--against-ref");
   if (against !== undefined && againstRef !== undefined) return fail("pass --against <file> or --against-ref <ref>, not both");
-  const prev = against !== undefined ? lockAtPath(against) : lockAtRef(againstRef ?? "origin/main", repoRoot);
+  const prev = against !== undefined ? lockAtPath(against) : lockAtRef(againstRef ?? "origin/main", repoRoot, deps.git ?? realGit);
   if (prev instanceof Error) return fail(prev.message);
 
   const next = buildLock();

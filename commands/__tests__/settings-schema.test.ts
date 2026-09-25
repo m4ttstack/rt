@@ -145,4 +145,41 @@ describe("settingsSchemaDiff", () => {
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-branch-for-schema-diff"))).toBe(true);
   });
+
+  const fakeGit = (show: { status: number; stdout?: string; stderr?: string }) => (args: string[]) =>
+    args[0] === "rev-parse" ? { status: 0, stdout: "abc\n", stderr: "" } : { stdout: "", stderr: "", ...show };
+
+  test("a ref whose tree has no lock reads as an empty lock", async () => {
+    for (const stderr of [
+      "fatal: path 'packages/rt-client/src/settings/schema.lock.json' does not exist in 'origin/main'",
+      "fatal: path 'packages/rt-client/src/settings/schema.lock.json' exists on disk, but not in 'origin/main'",
+    ]) {
+      logs = [];
+      await settingsSchemaDiff(["--json"], { git: fakeGit({ status: 128, stderr }) });
+      expect(JSON.parse(logs.join("\n")).ok).toBe(true);
+      expect(process.exitCode).toBe(0);
+    }
+  });
+
+  test("any other git show failure is an error, never an empty lock", async () => {
+    const errors = await captureErrors(() => settingsSchemaDiff(["--json"], { git: fakeGit({ status: 128, stderr: "fatal: bad object 1234abcd" }) }));
+
+    expect(process.exitCode).toBe(1);
+    expect(logs).toEqual([]);
+    expect(errors.some((e) => e.includes("bad object"))).toBe(true);
+  });
+
+  test("a malformed lock at the ref or in --against is an error naming its source", async () => {
+    const atRef = await captureErrors(() => settingsSchemaDiff(["--json"], { git: fakeGit({ status: 0, stdout: "{ not json" }) }));
+    expect(process.exitCode).toBe(1);
+    expect(atRef.some((e) => e.includes("origin/main"))).toBe(true);
+
+    process.exitCode = 0;
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "{ not json");
+    const atPath = await captureErrors(() => settingsSchemaDiff(["--against", bad, "--json"]));
+    expect(process.exitCode).toBe(1);
+    expect(atPath.some((e) => e.includes(bad))).toBe(true);
+    expect(logs).toEqual([]);
+  });
 });

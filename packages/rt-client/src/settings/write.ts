@@ -145,7 +145,7 @@ export function setSetting(key: string, value: unknown, scope: SettingScope, opt
 
   const verdict = validateWrite(def, value, { scope, repoIdentity: opts.repoIdentity, team: opts.team });
   if (!verdict.ok) {
-    const hint = verdict.issues.length === 0 ? "; use ${team:<name>} or ${repoRoot} instead" : "";
+    const hint = verdict.kind === "pathGuard" ? "; use ${team:<name>} or ${repoRoot} instead" : "";
     refuse(`refusing to set "${key}": ${verdict.reason}${hint}`);
   }
 

@@ -169,7 +169,7 @@ export type {
 export { setSetting, unsetSetting } from "./settings/write.ts";
 export type { SetSettingOpts } from "./settings/write.ts";
 export { validateWrite } from "./settings/validate-write.ts";
-export type { WriteVerdict } from "./settings/validate-write.ts";
+export type { WriteRefusalKind, WriteVerdict } from "./settings/validate-write.ts";
 
 export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-machinery.ts";
 export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";

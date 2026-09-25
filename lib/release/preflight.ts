@@ -10,7 +10,7 @@
  * marketplace.json in place (its --dry-run flag gates only the publish path).
  */
 import { join } from "path";
-import { checkLockAgainst, type Lock } from "../settings/schema-diff.ts";
+import { checkLockAgainst, isMissingPathAtRef, type Lock } from "../settings/schema-diff.ts";
 import type { RunResult } from "../subprocess.ts";
 
 export interface DepsRow {
@@ -205,8 +205,17 @@ export async function checkSchemaLock(seams: PreflightSeams, tag: string | null)
     const committed = JSON.parse(raw) as Lock;
     const acknowledged = JSON.parse(seams.readFile(join(seams.repoRoot, BREAKING_CHANGES)) ?? "{}") as Record<string, string>;
     const shown = await seams.exec(["git", "show", `${tag}:${SCHEMA_LOCK}`], { cwd: seams.repoRoot });
-    if (shown.exitCode !== 0) return { id, label, status: "ok", detail: `no lock at ${tag}` };
-    const { ok, problems } = checkLockAgainst(JSON.parse(shown.stdout) as Lock, committed, acknowledged);
+    if (shown.exitCode !== 0) {
+      if (isMissingPathAtRef(shown.stderr)) return { id, label, status: "ok", detail: `no lock at ${tag}` };
+      throw new Error(`git show ${tag}:${SCHEMA_LOCK} failed: ${(shown.stderr || shown.stdout).trim() || `exit ${shown.exitCode}`}`);
+    }
+    let prev: Lock;
+    try {
+      prev = JSON.parse(shown.stdout) as Lock;
+    } catch (err) {
+      throw new Error(`${SCHEMA_LOCK} at ${tag} is not valid JSON: ${(err as Error).message}`);
+    }
+    const { ok, problems } = checkLockAgainst(prev, committed, acknowledged);
     return ok
       ? { id, label, status: "ok", detail: `no unacknowledged breaking change since ${tag}` }
       : { id, label, status: "stale", detail: problems.join("; ") };

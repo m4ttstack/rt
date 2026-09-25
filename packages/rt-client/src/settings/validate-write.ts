@@ -9,16 +9,21 @@ import { checkSchema, firstIssueText, hasSchema, type SchemaIssue } from "./sche
 import { validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { currentMergedValue, listStoreRepoIdentities, mergedValueWith } from "./resolve.ts";
 
-export type WriteVerdict = { ok: true } | { ok: false; reason: string; issues: SchemaIssue[] };
+export type WriteRefusalKind = "type" | "pathGuard" | "schema";
+export type WriteVerdict = { ok: true } | { ok: false; kind: WriteRefusalKind; reason: string; issues: SchemaIssue[] };
 
 export function validateWrite(def: SettingDef, value: unknown, opts: { scope: SettingScope; repoIdentity?: string; team?: string }): WriteVerdict {
-  const guarded: SettingDef = opts.scope === "machine" ? { ...def, pathGuardFields: undefined } : def;
-  const typed = validateValue(guarded, value);
-  if (!typed.ok) return { ok: false, reason: typed.reason, issues: [] };
+  const unguarded: SettingDef = { ...def, pathGuardFields: undefined };
+  const typed = validateValue(unguarded, value);
+  if (!typed.ok) return { ok: false, kind: "type", reason: typed.reason, issues: [] };
+  if (opts.scope !== "machine") {
+    const guarded = validateValue(def, value);
+    if (!guarded.ok) return { ok: false, kind: "pathGuard", reason: guarded.reason, issues: [] };
+  }
   if (!hasSchema(def)) return { ok: true };
 
   const layerIssues = checkSchema(def, value, { layer: true });
-  if (layerIssues.length > 0) return { ok: false, reason: firstIssueText(layerIssues), issues: layerIssues };
+  if (layerIssues.length > 0) return { ok: false, kind: "schema", reason: firstIssueText(layerIssues), issues: layerIssues };
 
   const contexts: (string | null)[] =
     opts.repoIdentity !== undefined ? [opts.repoIdentity] : def.repoScoped ? [null, ...listStoreRepoIdentities()] : [null];
@@ -32,7 +37,7 @@ export function validateWrite(def: SettingDef, value: unknown, opts: { scope: Se
     const before = currentMergedValue(def, { repoIdentity, expand: false });
     if (before === undefined || checkSchema(def, before, { layer: false }).length === 0) {
       const where = repoIdentity ? ` for ${repoIdentity}` : "";
-      return { ok: false, reason: `merged value${where} would fail: ${firstIssueText(afterIssues)}`, issues: afterIssues };
+      return { ok: false, kind: "schema", reason: `merged value${where} would fail: ${firstIssueText(afterIssues)}`, issues: afterIssues };
     }
   }
   return { ok: true };
