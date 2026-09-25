@@ -8,7 +8,7 @@ import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 import { REPO_INDEX_NS } from "../../repo-index.ts";
 import { closeStateDb, setKvValue } from "../../state/index.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_upload","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -32,8 +32,8 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
-  test("roster has 24 tools", () => {
-    expect(mcpTools().length).toBe(24);
+  test("roster has 25 tools", () => {
+    expect(mcpTools().length).toBe(25);
   });
 
   test("every tool has a description and a closed object schema", () => {
@@ -300,6 +300,7 @@ describe("mcpTools", () => {
       { name: "mr_comment", field: "repoName" },
       { name: "mr_create", field: "repoName" },
       { name: "mr_update", field: "repoName" },
+      { name: "mr_upload", field: "repoName" },
       { name: "mr_approve", field: "repoName" },
       { name: "mr_resolve_thread", field: "repoName" },
       { name: "mr_ready", field: "repoName" },
@@ -720,6 +721,71 @@ describe("mcpTools", () => {
       const tool = mcpTools().find((t) => t.name === "mr_update")!;
       const res = await tool.handler({ ...T, title: "T", squash: true }, {} as NodeJS.ProcessEnv);
       expect(res.error).toBe("title landed; squash did not: GitLab returned 403 Forbidden; retrying with only the failed fields is safe");
+    });
+  });
+
+  describe("mr_upload", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    function fakeDaemon(reply: () => unknown = () => ({ ok: true, data: { url: "https://gitlab.example.com/-/project/9/uploads/a/x.png", markdown: "![x](/uploads/a/x.png)" } })) {
+      const calls: Array<{ cmd: string; payload: Record<string, unknown>; timeoutMs?: number }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>, opts?: { timeoutMs?: number }) => {
+          calls.push({ cmd, payload, timeoutMs: opts?.timeoutMs });
+          return reply();
+        },
+      }));
+      return calls;
+    }
+
+    test("schema requires path, offers repoName and mrUrl, has no iid, forbids extras", () => {
+      const schema = mcpTools().find((t) => t.name === "mr_upload")!.inputSchema as { required?: string[]; additionalProperties?: boolean; properties?: Record<string, unknown> };
+      expect(schema.required).toEqual(["path"]);
+      expect(schema.additionalProperties).toBe(false);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["mrUrl", "path", "repoName"]);
+    });
+
+    test("sends mr:upload with the resolved repo, the path and the 120s timeout, and returns url and markdown", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      const res = await tool.handler({ repoName: "remote:x", path: "/tmp/shot.png" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { url: "https://gitlab.example.com/-/project/9/uploads/a/x.png", markdown: "![x](/uploads/a/x.png)" } });
+      expect(calls).toEqual([{ cmd: "mr:upload", payload: { repoName: "remote:x", path: "/tmp/shot.png" }, timeoutMs: 120_000 }]);
+    });
+
+    test("refuses a missing path and a missing target before calling the daemon", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      expect((await tool.handler({ repoName: "remote:x" }, {} as NodeJS.ProcessEnv)).error).toBe('"path" is required');
+      expect((await tool.handler({ path: "/tmp/shot.png" }, {} as NodeJS.ProcessEnv)).error).toBe('pass "repoName" or "mrUrl"');
+      expect(calls).toEqual([]);
+    });
+
+    test("a daemon refusal passes through verbatim", async () => {
+      fakeDaemon(() => ({ ok: false, error: "file bytes do not match a .png signature" }));
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      const res = await tool.handler({ repoName: "remote:x", path: "/tmp/shot.png" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe("file bytes do not match a .png signature");
+    });
+
+    test("a timed-out upload says retrying is safe, not that it may double-post", async () => {
+      fakeDaemon(() => ({ ok: false, error: "rt daemon unreachable at /x.sock: The operation timed out." }));
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      const res = await tool.handler({ repoName: "remote:x", path: "/tmp/shot.png" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("retrying is safe");
+      expect(res.error).not.toContain("before retrying");
+    });
+
+    test("description says GitLab only and names the allowed roots and types", () => {
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      expect(tool.description.startsWith("GitLab only.")).toBe(true);
+      expect(tool.description).toContain("rt.mcp.uploadRoots");
+      expect(tool.description).toContain("png");
+      expect(tool.description).toContain("50 MB");
     });
   });
 

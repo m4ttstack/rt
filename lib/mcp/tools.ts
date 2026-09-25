@@ -108,6 +108,9 @@ const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside 
     Shared by every mr write tool for that reason. */
 const MR_WRITE_TIMEOUT_MS = 30_000;
 
+/** A 50 MB multipart POST over a slow link outlives the 30s write timeout. */
+const MR_UPLOAD_TIMEOUT_MS = 120_000;
+
 const REPO_NAME_RULE = "Name the target with repoName (the repo's serialized identity, e.g. remote:gitlab.com%2Facme%2Facme-dev, an absolute path to a local checkout or worktree, or a repo label that matches exactly one registered repo) or with mrUrl (the MR's https URL, which also supplies iid; its project must be registered with rt). Given both, they must agree.";
 
 const MR_TARGET_PROPS = {
@@ -583,6 +586,26 @@ export function mcpTools(): McpToolDef[] {
         if (input.squash !== undefined) payload.squash = input.squash as boolean;
         const res = await rtCommand<Commands["mr:update"]["data"]>("mr:update", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return withLandingHint(fromResponse(res), "the MR's title, labels and squash setting");
+      },
+    },
+    {
+      name: "mr_upload",
+      description: `GitLab only. Upload one local image or video (png, jpg, jpeg, gif, webp, mp4, mov, webm; at most 50 MB) to the target project and get back url and markdown; paste the markdown into an MR description or note (mr_create, mr_update, mr_comment). Works before an MR exists. path must be absolute and under an allowed root: a worktree of the target repo, this user's Claude Code temp root (the session scratchpad lives there), or a directory in the rt.mcp.uploadRoots setting; anything else, a directory, or a file whose bytes do not match its extension is refused. Uploads once; a timed-out upload may have landed, but an unused upload is harmless, so retrying is safe. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { ...REPO_TARGET_PROPS, path: { type: "string", description: "Absolute path of the file to upload." } },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [{ name: "path", type: "string" }]);
+        if (bad) return err(bad);
+        const target = await resolveRepoTarget(input);
+        if (!target.ok) return err(target.error);
+        const res = await rtCommand<Commands["mr:upload"]["data"]>("mr:upload", { repoName: target.identity, path: input.path as string }, { timeoutMs: MR_UPLOAD_TIMEOUT_MS });
+        const out = fromResponse(res);
+        if (out.ok || !/timed ?out|timeout/i.test(out.error ?? "")) return out;
+        return err(`${out.error}; the upload may have landed anyway, and an unused upload is harmless, so retrying is safe`);
       },
     },
     {
