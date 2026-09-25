@@ -220,6 +220,11 @@ touch /tmp/vmcheck-tu/upd/appcast-server; chmod +x /tmp/vmcheck-tu/upd/appcast-s
 t "trigger-update.sh usage (missing new-version arg)" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
 t "trigger-update.sh usage (malformed new-version)" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 2.9 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
 t "trigger-update.sh ax.sh mount guard actually aborts" bash -c 'out=$(env GUEST_RUN=/tmp/vmcheck-tu-nonexistent bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 1.2.3 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "is not mounted" && ! printf "%s" "$out" | grep -q ASSERT'
+t "trigger-update.sh rejects an unknown third argument" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 1.2.3 --bogus 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
+t "trigger-update.sh asserts served apps and every route after the relaunch" bash -c \
+  'grep -q "assert_served_apps update-served" run/guest/trigger-update.sh && grep -q "assert_mattstack_routes trusted update" run/guest/trigger-update.sh'
+t "walkthrough hands --headless to the update leg" bash -c \
+  'grep -q "UPD_HFLAG=--headless" run/walkthrough.sh && [ "$(grep -c UPD_HFLAG run/walkthrough.sh)" -ge 2 ]'
 
 t "e2e-cleanroom usage"          bash -c '! bash ../../scripts/e2e-cleanroom.sh >/dev/null 2>&1'
 t "winid compiles"               swiftc -O -o /tmp/vmcheck-winid run/host/winid.swift
