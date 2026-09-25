@@ -15,7 +15,7 @@ rt team create my-team --remote git@github.com:org/mattstack-team-my-team.git
 
 This scaffolds a team zone under `~/.mattstack/teams/my-team/` and points it at the given remote. If you do not have a repo ready, `--create-repo <owner>` has `gh` create one for you. `--others` marks the team as having members beyond yourself.
 
-`rt team create` never pushes. Setup's Install step pushes the zone, or you can push it yourself:
+Setup's Install step pushes the new zone. To push it yourself:
 
 ```bash
 rt team publish
@@ -77,7 +77,7 @@ rt team pull
 
 Asks the daemon to pull the team clone immediately instead of waiting for its periodic pull. When the pull moves HEAD, the pack cache converges exactly as above.
 
-`rt skills sync` is a different tool, for a pack's author: it pulls the pack and engine checkouts, recompiles and pushes a new version when the compiled skills have drifted, and updates the installed plugins.
+`rt skills sync` is for a pack's author: it pulls the pack and engine checkouts, recompiles and pushes a new version when the compiled skills have drifted, and updates the installed plugins.
 
 ## Quick reference
 

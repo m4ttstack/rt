@@ -5,7 +5,7 @@ title: Install
 
 # Install
 
-rt ships inside **mattstack.app**, the mattstack menu bar app. There is no separate rt download, Homebrew formula, or package: installing the app installs rt, the daemon, and everything else in the suite.
+rt ships inside **mattstack.app**, the mattstack menu bar app. Installing the app installs rt, the daemon, and everything else in the suite.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ rt verify
 
 Run it from `/Applications`, not from the mounted DMG. rt refuses to install itself from a disk image or a Gatekeeper-translocated copy.
 
-Setup never runs by itself. Until it has, other `rt` commands print a one-line hint pointing you at mattstack.app or `rt setup`, then carry on.
+Until setup has run, other `rt` commands print a one-line hint pointing you at mattstack.app or `rt setup`.
 
 ## Check the install
 
@@ -108,7 +108,7 @@ rt home remote set --create        # creates a private mattstack-home repo first
 | Bundled apps | board, console, chat, and boxscore, served locally through deck |
 | `rt-context` extension | VS Code / Cursor: worktree, branch, and linked ticket in the status bar. See [Editor extension](/guides/context-extension) |
 | Shell integration | `~/.local/bin` on PATH plus the `rtcd` alias, for zsh, bash, and fish |
-| Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `sops`, `age`, `zstd`, `git-lfs`, `cloudflared`, `fast-browser`, `gitq`, and `deck`, among others, pinned and shipped inside the app rather than installed onto your system |
+| Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `sops`, `age`, `zstd`, `git-lfs`, `cloudflared`, `fast-browser`, `gitq`, and `deck`, among others, pinned and shipped inside the app |
 
 Most helpers stay inside the app bundle and are resolved by absolute path. Only the ones meant to be typed (`rt`, `fast-browser`, `gitq`, `deck`) are linked into `~/.local/bin`.
 
@@ -158,4 +158,4 @@ In the app's Settings, the Fast Browser pane shows "Skipped on this Mac" with an
 rt update
 ```
 
-[`rt update`](/reference/update) asks mattstack.app (Sparkle) to check for an update; the app owns the whole upgrade lifecycle (signature verification, staged install, restart), and `rt` never downloads or installs its own updates. If the app isn't running, `rt update` points you at the latest release instead.
+[`rt update`](/reference/update) asks mattstack.app to check for an update. The app owns the whole upgrade lifecycle through Sparkle (signature verification, staged install, restart). If the app isn't running, `rt update` points you at the latest release.

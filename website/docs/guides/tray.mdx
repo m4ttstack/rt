@@ -56,8 +56,8 @@ Settings opens as a native tabbed window (General, Permissions, Fast Browser, Te
 
 ## Updates
 
-mattstack.app updates itself through Sparkle, which verifies the release signature, stages the install, and relaunches the app. It checks every 6 hours and downloads a new release on its own. Instead of a window stealing focus, the menu item changes to **Update Available: &lt;version&gt;**; the update installs right away when none of the app's windows are open and setup isn't running, and otherwise when you quit the app.
+mattstack.app updates itself through Sparkle, which verifies the release signature, stages the install, and relaunches the app. It checks every 6 hours and downloads a new release on its own. When a release is ready, the menu item changes to **Update Available: &lt;version&gt;**; the update installs right away when none of the app's windows are open and setup isn't running, and otherwise when you quit the app.
 
-**Check for Updates…** checks on demand, and `rt update` asks the running app to do the same; the CLI never downloads or installs anything itself, and points you at the latest release on GitHub if the app isn't running. The dev build (mattstack-dev.app) runs from source and never updates through Sparkle.
+**Check for Updates…** checks on demand, and `rt update` asks the running app to do the same, or points you at the latest release on GitHub when the app isn't running. The dev build (mattstack-dev.app) runs from source and never updates through Sparkle.
 
 See also: the [daemon guide](/guides/daemon) for what the daemon itself does, and [`rt daemon`](/reference/daemon) / [`rt update`](/reference/update) in the command reference.

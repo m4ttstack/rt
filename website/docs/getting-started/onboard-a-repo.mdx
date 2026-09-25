@@ -22,7 +22,7 @@ All of this lives under `~/.mattstack/`, never inside the repo itself. Onboardin
 
 ## Background tracking
 
-Indexing a repo is not the same as tracking it. The daemon only refreshes data in the background for repos you have explicitly granted:
+The daemon refreshes data in the background for the repos you grant tracking:
 
 ```bash
 rt repos register . --track live    # index this repo and grant background tracking
@@ -30,7 +30,7 @@ rt daemon track                     # list tracking, or change a repo's level: l
 rt repos prune                      # drop index rows whose repos no longer exist on disk
 ```
 
-An untracked repo still works everywhere; its data is fetched on demand instead of kept warm. Once a repo is tracked, merge-request data refreshes every 5 minutes. See [Daemon](/guides/daemon) for what each tracking level does.
+An untracked repo fetches its data on demand. Once a repo is tracked, merge-request data refreshes every 5 minutes. See [Daemon](/guides/daemon) for what each tracking level does.
 
 ## Optional per-repo config
 

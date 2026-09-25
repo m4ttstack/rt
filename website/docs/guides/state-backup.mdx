@@ -88,7 +88,7 @@ rt state restore --from-backup --dry-run        # preview without writing
 ### When something goes wrong
 
 - **Integrity check failure**: that source is not overwritten; it is reported as an error and the command exits 1. Pick an older backup with `--at`.
-- **A source failed during backup**: the daemon logs a `backup errors` warning, keeps that source's previous backup in the manifest, and retries on the next sweep. The failure is in the daemon log (`rt daemon logs`); `rt state backup status` only lists the backups that exist.
+- **A source failed during backup**: the daemon logs a `backup errors` warning, keeps that source's previous backup in the manifest, and retries on the next sweep. The failure shows up in the daemon log (`rt daemon logs`).
 - **Backup not set up (no `recipients.txt`)**: the sweep takes a local-only `VACUUM INTO` copy of `rt/state.db` under `~/.mattstack/rt/backups/` instead (unencrypted, not pushed). It does the same when every source fails in a cycle.
 
 ## The age key
@@ -97,4 +97,4 @@ The private key lives in the macOS Keychain, never on the filesystem. `recipient
 
 ## Dependencies
 
-`age`, `zstd`, and `git-lfs` ship inside mattstack.app (`Contents/Helpers/`), so nothing needs installing. rt uses the bundled copy first and falls back to PATH only when there is none (for example, rt running from source). The daemon's sweep resolves them the same way, so launchd's minimal PATH does not matter. Because the home repo's LFS filters name an absolute `git-lfs` path, every init, sweep, and restore rewrites them from the current resolution, which keeps them working after the app moves.
+`age`, `zstd`, and `git-lfs` ship inside mattstack.app (`Contents/Helpers/`). rt uses the bundled copy first and falls back to PATH when there is none (for example, rt running from source). The daemon's sweep resolves them the same way. Because the home repo's LFS filters name an absolute `git-lfs` path, every init, sweep, and restore rewrites them from the current resolution, which keeps them working after the app moves.
