@@ -50,8 +50,10 @@ accent into `Bg`:
 `renderDiffLine` paints add and del rows edge to edge on these: the gutter
 cells on the gutter token, the mark and text on the row token. Context rows
 stay on `Bg`. Hover still replaces the row background with `HoverBg`; the
-selected stage bar stays solid `Pink`. A one-cell gap separates the new line
-number from the mark. Exact blend values are set on the `DiffStates` board
+selected stage bar stays solid `Pink`. The mark gets its own three-cell
+column (gap, `+`/`-`, gap) so it no longer touches the numbers or the text.
+Plain text on add and del rows paints in `Text`; the tint, not a mint or
+coral foreground, carries the kind. Exact blend values are set on the `DiffStates` board
 first and read off it.
 
 Highlighting keeps running while hovered: every token already carries the
@@ -111,9 +113,13 @@ them.
 
 ### 3. Soft wrap (rt-ui)
 
-A line's text wraps at word boundaries to the pane's text width with
-`ansi.Wrap` from `charmbracelet/x/ansi` (already a dependency), applied after
-highlighting so a token that crosses the wrap point keeps its colour.
+A line's text wraps at word boundaries to the pane's text width. `ansi.Wrap`
+from `charmbracelet/x/ansi` (already a dependency) finds the break points on
+the plain text; the highlighted spans are then sliced at those points, so a
+token that crosses a break keeps its colour on both rows. (`ansi.Wrap` on a
+styled string does not reopen styles on the next row, and it drops the
+whitespace at each break, so it cannot be applied to the painted text
+directly.)
 Continuation rows paint the row's tint with an empty gutter and no mark.
 Hunk headers stay clipped to one row.
 
