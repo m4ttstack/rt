@@ -757,12 +757,22 @@ function spawnCacheRefresh(
       branches: branches.map(b => ({ path: b.path, branch: b.branch })),
       remoteUrl,
     });
-    const child = Bun.spawn(["bun", "run", scriptPath, payload], {
-      env: childEnv(),
-      stdio: ["ignore", "ignore", "ignore"],
-    });
+    const child = Bun.spawn(["bun", "run", scriptPath, payload], cacheRefreshSpawnOptions());
     child.unref();
   } catch { /* best-effort */ }
+}
+
+/**
+ * `detached` because `rt cd` runs inside the shell's `$(...)`, which shares the
+ * shell's process group: a child left there counts as the terminal's
+ * foreground job for its whole network round trip.
+ */
+export function cacheRefreshSpawnOptions() {
+  return {
+    env: childEnv(),
+    stdio: ["ignore", "ignore", "ignore"] as ["ignore", "ignore", "ignore"],
+    detached: true,
+  };
 }
 
 // ─── Standalone entry (called by detached subprocess) ────────────────────────
