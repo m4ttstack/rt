@@ -358,41 +358,55 @@ func renderOversizedBody(width, height int) string {
 	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
-// renderDiffLines paints the visible line window -- a stage-bar/number
-// gutter and chroma-highlighted (or flat) text per line -- plus a 1-cell
-// Panel scroll thumb along the right edge.
+// renderDiffLines paints the visible screen-row window of the wrapped diff
+// (diffRows) -- a stage-bar/number gutter and chroma-highlighted (or flat)
+// text per line -- plus a 1-cell Panel scroll thumb along the right edge.
+// diffTop is a screen-row offset, so the window can open partway into a
+// wrapped line.
 func (m *Mission) renderDiffLines(width, height int) string {
 	lines := m.model.Diff.Lines
-	// picker.Viewport is the one scroll-offset primitive shared by every
-	// scrolling region in the TUI (the picker's own list, this pane, the
-	// mission foldouts): cap_=height and chromeRows=0 reproduce the diff
-	// pane's own "no cap, fill the pane" contract while gaining picker's
-	// vim-style scrolloff margin for free.
-	top, h := picker.Viewport(m.diffCursor, m.diffTop, len(lines), height, height, 0)
-	m.diffTop = top
-
-	contentW := width - 1 // 1 cell reserved for the scroll thumb
-	if contentW < 0 {
-		contentW = 0
+	contentW := max(width-1, 0) // 1 cell reserved for the scroll thumb
+	ix := m.diffRows(max(contentW-diffGutterWidth-diffMarkWidth, 0))
+	total := ix.total()
+	cursorRow, extra := 0, 0
+	if len(lines) > 0 {
+		c := min(max(m.diffCursor, 0), len(lines)-1)
+		cursorRow = ix.start[c]
+		extra = ix.start[c+1] - cursorRow - 1
 	}
-	thumbTop, thumbH := picker.ThumbSpan(top, h, len(lines))
+	// The viewport sees the cursor line's extra rows collapsed into its
+	// first, over a pane shrunk by the same amount: the whole line then
+	// stays in view with scrolloff around it, and a line taller than the
+	// pane (a one-row virtual pane) keeps its first row on top. Rows above
+	// the cursor line are the same in both spaces, which is all top can be.
+	virtualH := max(height-extra, 1)
+	top, _ := picker.Viewport(cursorRow, m.diffTop, total-extra, virtualH, virtualH, 0)
+	m.diffTop = top
+	thumbTop, thumbH := picker.ThumbSpan(top, min(height, total), total)
 	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
 	restOn := lipgloss.NewStyle().Background(theme.Bg)
-
 	hl := m.diffHL.forDiff(m.model.Diff)
-	rows := make([]string, height)
-	for i := 0; i < height; i++ {
-		idx := top + i
-		line := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
-		if idx < len(lines) {
-			hover := idx == m.hoverDiffLine
-			spans := lineSpans(m.model.Diff.Lang, lines[idx])
-			if hl != nil && hl[idx] != nil {
-				spans = hl[idx]
-			}
-			line = renderDiffRows(m.model.Diff, lines[idx], spans, contentW, hover, hover && m.hoverGutter)[0]
+
+	rows := make([]string, 0, height)
+	first := ix.lineAt(top)
+	for li := first; li < len(lines) && len(rows) < height; li++ {
+		spans := lineSpans(m.model.Diff.Lang, lines[li])
+		if hl != nil && hl[li] != nil {
+			spans = hl[li]
 		}
-		rows[i] = line + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
+		hover := li == m.hoverDiffLine
+		painted := renderDiffRows(m.model.Diff, lines[li], spans, contentW, hover, hover && m.hoverGutter)
+		if li == first {
+			painted = painted[min(top-ix.start[li], len(painted)):]
+		}
+		rows = append(rows, painted[:min(len(painted), height-len(rows))]...)
+	}
+	blank := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
+	for len(rows) < height {
+		rows = append(rows, blank)
+	}
+	for i := range rows {
+		rows[i] += picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}
 	return strings.Join(rows, "\n")
 }
@@ -439,7 +453,7 @@ func lineSpans(lang string, line DiffLine) []span {
 
 // renderDiffLine paints one line's gutter, mark and text and joins its rows
 // back into a single string; renderDiffLines calls renderDiffRows directly
-// so it can index a specific wrapped row once wrapping lands.
+// so it can start partway into a wrapped line.
 func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bool) string {
 	return strings.Join(renderDiffRows(d, line, lineSpans(d.Lang, line), width, hover, gutterHover), "\n")
 }
@@ -453,7 +467,9 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 // per-token SGR reset). gutterHover additionally previews the stage bar in
 // GutterHoverBar on an unselected add/del line -- a selected line keeps its
 // solid Pink bar regardless, since there is nothing left to preview. A
-// read-only line has nothing to stage, so it paints no bar at all.
+// read-only line has nothing to stage, so it paints no bar at all. A long
+// line wraps onto continuation rows (wrapSpans) whose count must match
+// diffRows' index for the same line, or diffHit maps clicks off by rows.
 func renderDiffRows(d DiffModel, line DiffLine, spans []span, width int, hover, gutterHover bool) []string {
 	if width < 1 {
 		return []string{""}
@@ -483,8 +499,20 @@ func renderDiffRows(d DiffModel, line DiffLine, spans []span, width int, hover, 
 	mark, markCol, base := lineMark(line.Kind)
 	markCell := on.Render(" ") + on.Foreground(markCol).Render(mark) + on.Render(" ")
 	textW := max(width-diffGutterWidth-diffMarkWidth, 0)
-	text := clipOn(paintSpans(spans, base, rowBg), textW, on)
-	return []string{on.Width(width).Render(clipOn(gutter+markCell+text, width, on))}
+	wrapped := wrapSpans(spans, textW)
+	// A selected wrapped line keeps its pink bar down every row.
+	blankGutter := barStyle.Render(bar) + gOn.Render(strings.Repeat(" ", diffNumWidth*2))
+	blankMark := on.Render(strings.Repeat(" ", diffMarkWidth))
+	out := make([]string, len(wrapped))
+	for r, row := range wrapped {
+		g, mk := gutter, markCell
+		if r > 0 {
+			g, mk = blankGutter, blankMark
+		}
+		text := clipOn(paintSpans(row, base, rowBg), textW, on)
+		out[r] = on.Width(width).Render(clipOn(g+mk+text, width, on))
+	}
+	return out
 }
 
 func numCell(bg lipgloss.Style, n int) string {

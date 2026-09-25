@@ -66,14 +66,16 @@ type Mission struct {
 	descriptionInput textinput.Model
 
 	// diffCursor is the line cursor into model.Diff.Lines; diffTop is the
-	// scroll window's top line. diffPath is the Diff.Path last seen, so a
-	// model swap that keeps the same file (a stage refreshing the hunk)
-	// preserves the cursor while one that shows a different file resets it
-	// (diff.go's clampDiffCursor).
-	diffCursor int
-	diffTop    int
-	diffPath   string
-	diffHL     diffHighlighter
+	// scroll window's top screen row in the wrapped layout (diffRows), not
+	// a line index. diffPath is the Diff.Path last seen, so a model swap
+	// that keeps the same file (a stage refreshing the hunk) preserves the
+	// cursor while one that shows a different file resets it (diff.go's
+	// clampDiffCursor).
+	diffCursor    int
+	diffTop       int
+	diffPath      string
+	diffHL        diffHighlighter
+	diffRowsCache diffRowIndex
 
 	// modal is the open repo/branch/worktree foldout, nil when none is open.
 	modal *modalState
@@ -1144,25 +1146,28 @@ func fileRowHit(c ChangeRow, idx, x int) hit {
 // diffHit mirrors renderDiffLines' own header-then-lines layout (diff.go):
 // diffX is relative to the diff pane's own left edge, paneW is the width the
 // pane was rendered at, y=0 is the header (no click target yet), and every
-// line after it maps through the same diffTop/window math the last render
-// left on m.diffTop. A hunk line has no separate gutter -- its whole width
-// IS the toggle, per diff.go's own renderDiffLine comment -- so it resolves
-// to hitDiffGutter across the full content width instead of just
-// diffGutterWidth. A read-only diff toggles nothing, so every line is a
+// row after it is a screen row offset from m.diffTop, mapped to its line
+// through the same diffRows index the renderer wrapped with, so a click on
+// a continuation row hits the line it belongs to. A hunk line has no
+// separate gutter -- its whole width IS the toggle, per diff.go's own
+// renderDiffLine comment -- so it resolves to hitDiffGutter across the
+// full content width instead of just diffGutterWidth. A read-only diff toggles nothing, so every line is a
 // plain hitDiffLine.
 func (m *Mission) diffHit(diffX, y, paneW int) hit {
 	if y == 0 {
 		return hit{}
 	}
 	lines := m.model.Diff.Lines
-	idx := m.diffTop + (y - 1)
-	if idx < 0 || idx >= len(lines) {
-		return hit{}
-	}
 	contentW := paneW - 1 // the scroll thumb's own reserved column
-	if diffX < 0 || diffX >= contentW {
+	if diffX < 0 || diffX >= contentW || len(lines) == 0 {
 		return hit{}
 	}
+	ix := m.diffRows(max(contentW-diffGutterWidth-diffMarkWidth, 0))
+	row := m.diffTop + (y - 1)
+	if row < 0 || row >= ix.total() {
+		return hit{}
+	}
+	idx := ix.lineAt(row)
 	if m.model.Diff.ReadOnly {
 		return hit{kind: hitDiffLine, idx: idx}
 	}
