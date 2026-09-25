@@ -529,9 +529,11 @@ describe("runPreflight", () => {
   });
 
   test("clean report exits clean", async () => {
+    const schemaLock = JSON.stringify({ "t.k": { storeVersion: 1, schema: { type: "string" } } });
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
+        if (cmd === "git show v2.10.2:packages/rt-client/src/settings/schema.lock.json") return ok(schemaLock);
         if (cmd.includes("--show-current")) return ok("main\n");
         if (cmd.includes("status")) return ok("");
         if (cmd.includes("describe")) return ok("v2.10.2\n");
@@ -547,6 +549,8 @@ describe("runPreflight", () => {
         if (p.endsWith("deps.lock")) return JSON.stringify({ schema: 1, arch: "arm64", tools: [] });
         if (p.endsWith("marketplace.json")) return JSON.stringify({ name: "m", plugins: [] });
         if (p.endsWith("packages/rt-client/package.json")) return JSON.stringify({ version: "0.20.0" });
+        if (p.endsWith("packages/rt-client/src/settings/schema.lock.json")) return schemaLock;
+        if (p.endsWith("packages/rt-client/src/settings/breaking-schema-changes.json")) return "{}";
         return null;
       },
       fetchJson: (url) =>
