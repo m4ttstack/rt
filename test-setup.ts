@@ -9,7 +9,7 @@
  * own explicit HOME when spawning the binary, so this never reaches them.
  */
 import { afterAll } from "bun:test";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -48,7 +48,7 @@ if (!rootStat.isDirectory() || rootStat.uid !== process.getuid?.()) {
 for (const name of readdirSync(testRoot)) {
   const pid = Number(name.split("-")[0]);
   if (Number.isInteger(pid) && pid > 0 && pidIsAlive(pid)) continue;
-  rmSync(join(testRoot, name), { recursive: true, force: true });
+  removeTree(join(testRoot, name));
 }
 const runTmp = mkdtempSync(join(testRoot, `${process.pid}-run-`));
 const home = mkdtempSync(join(testRoot, `${process.pid}-home-`));
@@ -57,10 +57,29 @@ process.env.TMPDIR = runTmp;
 process.env.HOME = home;
 process.env.RT_TEST_SOCKET_DIR = socketDir;
 // A whole run's tree takes longer to delete than bun's 5s hook timeout, so
-// a detached rm does it after the process exits.
+// a detached rm does it after the process exits. Go writes its module cache
+// read-only, so a go build under this HOME needs the chmod first.
 afterAll(() => {
-  spawn("rm", ["-rf", runTmp, home, socketDir], { detached: true, stdio: "ignore" }).unref();
+  spawn("sh", ["-c", 'chmod -R u+w "$@" 2>/dev/null; exec rm -rf "$@"', "sh", runTmp, home, socketDir], {
+    detached: true,
+    stdio: "ignore",
+  }).unref();
 });
+
+function removeTree(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    makeDirsWritable(path);
+    rmSync(path, { recursive: true, force: true });
+  }
+}
+
+function makeDirsWritable(path: string): void {
+  if (!lstatSync(path).isDirectory()) return;
+  chmodSync(path, 0o700);
+  for (const name of readdirSync(path)) makeDirsWritable(join(path, name));
+}
 
 function pidIsAlive(pid: number): boolean {
   try {
