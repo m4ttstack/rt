@@ -105,6 +105,7 @@ describe("compile-native end to end", () => {
     const stagePlan = parsed.verbs.find((v: { name: string }) => v.name === "stage-plan");
     expect(stagePlan.status).toBe("stale");
     expect(stagePlan.staleBecause).toEqual(["include"]);
+    expect(process.exitCode).toBe(1);
   });
 
   test("check --json: dropping a fill's {{include}} line reports staleBecause structure", async () => {
@@ -126,6 +127,7 @@ describe("compile-native end to end", () => {
     const stagePlan = parsed.verbs.find((v: { name: string }) => v.name === "stage-plan");
     expect(stagePlan.status).toBe("stale");
     expect(stagePlan.staleBecause).toEqual(["structure"]);
+    expect(process.exitCode).toBe(1);
   });
 
   test("a broken chain refuses to compile", async () => {

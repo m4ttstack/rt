@@ -294,9 +294,11 @@ describe("worktree CLI identity plumbing", () => {
 
     try {
       await worktreeDispose(["tree-a"], {});
+      expect(process.exitCode).toBe(1);
     } finally {
       console.log = originalLog;
-      process.exitCode = originalExitCode;
+      // Bun's process.exitCode setter ignores undefined; only 0 clears it.
+      process.exitCode = originalExitCode ?? 0;
     }
 
     expect(logs.some((l) =>
