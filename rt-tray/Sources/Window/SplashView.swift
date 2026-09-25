@@ -1,3 +1,4 @@
+import MattstackCore
 import SwiftUI
 
 /// Every animation knob in one place: a follow-up tweak-by-eye pass is a
@@ -53,6 +54,9 @@ private let markFontSize: CGFloat = 56
 private let glyphSide: CGFloat = 42
 private let markGap: CGFloat = 8
 private let glyphStrokeWidth: CGFloat = glyphSide * 2 / 24
+private let spinnerLead: CGFloat = 30
+private let unreachableGap: CGFloat = 28
+private let unreachableWidth: CGFloat = 420
 
 /// The Lucide "layers" glyph make-icon.swift strokes beside the "m": a
 /// closed diamond (the top layer) over two open chevrons (the layers
@@ -82,6 +86,8 @@ private struct GlyphPolyline: Shape {
 }
 
 struct SplashView: View {
+    let content: SplashContent
+    let retry: () -> Void
     @State private var play = false
 
     private var markColor: Color { BundleFlavor.isDevBuild ? devMarkColor : prodMarkColor }
@@ -90,17 +96,40 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             splashBackground.ignoresSafeArea()
-            // Just the mark (m + layers glyph), centered -- no wordmark.
-            HStack(spacing: markGap) {
-                // make-icon.swift draws "m" in a monospace font (SF
-                // Mono / Menlo fallback), not the system UI font.
-                Text("m")
-                    .font(.system(size: markFontSize, weight: .regular, design: .monospaced))
-                    .foregroundColor(markColor)
-                layersGlyph
+            VStack(spacing: unreachableGap) {
+                mark
+                if case .unreachable(let reason) = content {
+                    UnreachablePanel(reason: reason, retry: retry)
+                        .frame(width: unreachableWidth)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: content)
+        }
+        // The background is the same dark in both appearances, so the
+        // spinner and the Retry button need their dark variants.
+        .environment(\.colorScheme, .dark)
+        .onAppear { play = true }
+    }
+
+    /// The spinner rides in an overlay so its arrival never moves the mark.
+    private var mark: some View {
+        HStack(spacing: markGap) {
+            // make-icon.swift draws "m" in a monospace font (SF
+            // Mono / Menlo fallback), not the system UI font.
+            Text("m")
+                .font(.system(size: markFontSize, weight: .regular, design: .monospaced))
+                .foregroundColor(markColor)
+            layersGlyph
+        }
+        .overlay(alignment: .trailing) {
+            if content == .markWithSpinner {
+                ProgressView()
+                    .controlSize(.small)
+                    .offset(x: spinnerLead)
+                    .transition(.opacity)
             }
         }
-        .onAppear { play = true }
     }
 
     /// The glyph's own "m"-then-stack order and right-of-m placement mirror
@@ -126,5 +155,27 @@ struct SplashView: View {
             .opacity(play ? 1 : 0)
             .animation(.spring(response: SplashTuning.springResponse, dampingFraction: SplashTuning.springDamping)
                 .delay(delay), value: play)
+    }
+}
+
+private struct UnreachablePanel: View {
+    let reason: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Can't reach deck")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+            Text(reason)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Button("Retry", action: retry)
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, 4)
+        }
     }
 }
