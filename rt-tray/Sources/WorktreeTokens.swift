@@ -17,7 +17,8 @@ enum WT {
 
     static let windowNS = ns(0xf6f6f4, 0x1c1c1e)
     static let window = Color(nsColor: windowNS)
-    static let card = c(0xffffff, 0x252528)
+    static let cardNS = ns(0xffffff, 0x252528)
+    static let card = Color(nsColor: cardNS)
     static let cardHover = c(0xf7f7f5, 0x2c2c30)
     static let border = c(0xe2e2de, 0x34343a)
     static let borderStrong = c(0xcfcfca, 0x45454c)

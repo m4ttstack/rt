@@ -61,6 +61,8 @@ final class WorktreePanelController: ObservableObject {
     private var statusGeneration = 0
     private var hasLoaded = false
     private var queryGate = TriageQueryGate()
+    /// A finished action keeps its row busy until a query started after it lands.
+    private var settling = TriageSettleLedger<() -> Void>()
     private let fixture: TriageData?
 
     init(fixture: TriageData? = nil) {
@@ -83,12 +85,16 @@ final class WorktreePanelController: ObservableObject {
     /// A failed background poll keeps the last rows and says nothing, so it
     /// never overwrites the footer an action just set. `force` starts a query
     /// even while a poll is in flight, so a finished action's rows are never
-    /// left to a poll that began before it.
-    func refresh(userInitiated: Bool = false, force: Bool = false) {
-        guard fixture == nil, let ticket = queryGate.begin(force: userInitiated || force) else { return }
+    /// left to a poll that began before it. `settled` runs in the same update
+    /// that applies this query's rows (or a newer query's), or once it fails.
+    func refresh(userInitiated: Bool = false, force: Bool = false, settled: (() -> Void)? = nil) {
+        guard fixture == nil, let ticket = queryGate.begin(force: userInitiated || force || settled != nil) else { settled?(); return }
+        if let settled { settling.wait(ticket, settled) }
         Task {
             let p = await client.queryTriage()
-            guard queryGate.finish(ticket, succeeded: p?.data != nil) else { return }
+            let current = queryGate.finish(ticket, succeeded: p?.data != nil)
+            defer { settling.settle(ticket, applied: current && p?.data != nil).forEach { $0() } }
+            guard current else { return }
             isLoading = false
             guard let data = p?.data else {
                 if userInitiated || !hasLoaded {
@@ -125,10 +131,14 @@ final class WorktreePanelController: ObservableObject {
         busy.insert(row.id)
         Task {
             let (outcome, trashPath) = await performReply(verb, row, payload)
-            busy.remove(row.id)
             let line = TriageStatusLine.action(tree: row.tree, outcome: outcome, done: done(trashPath))
             setStatus(line.text, isError: line.isError)
-            refresh(force: true)
+            if outcome == .done {
+                refresh(force: true) { [weak self] in self?.busy.remove(row.id) }
+            } else {
+                busy.remove(row.id)
+                refresh(force: true)
+            }
         }
     }
 
@@ -154,22 +164,29 @@ final class WorktreePanelController: ObservableObject {
     /// One at a time, so the footer and the button can report "1 of 2" and a
     /// refusal on one row doesn't hide behind the others.
     func cleanUpSafe() {
-        let safe = rows.filter { $0.group == "safe" }
+        let safe = rows.filter { $0.group == "safe" && !busy.contains($0.id) }
         guard !safe.isEmpty, bulkProgress == nil else { return }
         bulkProgress = (0, safe.count)
         Task {
             var failures: [(tree: String, outcome: TriageActionOutcome)] = []
+            var disposed: [String] = []
             for (i, row) in safe.enumerated() {
                 busy.insert(row.id)
                 bulkProgress = (i, safe.count)
                 let outcome = await perform("worktree:triage-dispose", row, ["fingerprint": row.fingerprint.jsonObject, "discard": "classified"])
-                busy.remove(row.id)
-                if outcome != .done { failures.append((tree: row.tree, outcome: outcome)) }
+                if outcome == .done {
+                    disposed.append(row.id)
+                } else {
+                    busy.remove(row.id)
+                    failures.append((tree: row.tree, outcome: outcome))
+                }
             }
-            bulkProgress = nil
             let line = TriageStatusLine.bulk(total: safe.count, failures: failures)
             setStatus(line.text, isError: line.isError)
-            refresh(force: true)
+            refresh(force: true) { [weak self] in
+                self?.busy.subtract(disposed)
+                self?.bulkProgress = nil
+            }
         }
     }
 

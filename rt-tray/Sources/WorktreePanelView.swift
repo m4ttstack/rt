@@ -120,7 +120,6 @@ enum TriageLabels {
 
 struct WorktreePanelView: View {
     @StateObject private var controller: WorktreePanelController
-    @State private var reviewing: TriageRow?
     @State private var confirmingDisposeAnyway: TriageRow?
     @State private var keptOpen: Bool
     /// The verb each busy row is running, so its button can say what it is doing.
@@ -148,9 +147,6 @@ struct WorktreePanelView: View {
         .environment(\.triageSnapshot, isSnapshot)
         .onAppear { controller.startPolling() }
         .onDisappear { controller.stopPolling() }
-        .sheet(item: $reviewing) { row in
-            WorktreeReviewSheet(row: row, controller: controller) { inFlight[row.id] = $0 }
-        }
         .alert(confirmingDisposeAnyway.map(TriageConfirm.disposeAnywayTitle) ?? "",
                isPresented: Binding(get: { confirmingDisposeAnyway != nil },
                                     set: { if !$0 { confirmingDisposeAnyway = nil } }),
@@ -203,7 +199,9 @@ struct WorktreePanelView: View {
             TriageBulkButton(safe: progress.1, progress: progress) {}
         } else if let safe = controller.counts?.safe, safe > 0 {
             TriageBulkButton(safe: safe, progress: nil) {
-                for row in controller.rows where row.group == "safe" { inFlight[row.id] = "dispose" }
+                for row in controller.rows where row.group == "safe" && !controller.busy.contains(row.id) {
+                    inFlight[row.id] = "dispose"
+                }
                 controller.cleanUpSafe()
             }
         }
@@ -285,7 +283,7 @@ struct WorktreePanelView: View {
         switch action {
         case "dispose": inFlight[r.id] = "dispose"; controller.dispose(r)
         case "dispose-anyway": confirmingDisposeAnyway = r
-        case "review": reviewing = r
+        case "review": WorktreeReviewWindow.shared.show(r, controller: controller) { inFlight[r.id] = $0 }
         case "push-branch": inFlight[r.id] = "push-branch"; controller.pushBranch(r)
         case "keep": inFlight[r.id] = "keep"; controller.keep(r)
         case "unkeep": inFlight[r.id] = "unkeep"; controller.unkeep(r)

@@ -2,10 +2,28 @@
   {
     "path": "apps/backend/src/platform/auth/__tests__/Auth0User.evidence.test.ts",
     "status": "untracked",
-    "diff": "import { execute, parse } from 'graphql16';\nimport { graphqlSchema } from '~/src/graphql-schema/schema';\nimport { getUser } from '~/src/platform/auth/auth0';\n\njest.mock('~/src/platform/auth/auth0', () => ({\n  getUser: jest.fn(),\n}));\n\ndescribe('Auth0User per-field lookups', () => {\n  it('shares one lookup across parity cases', async () => {\n    …",
+    "diff": "import { execute, parse } from 'graphql16';\nimport { graphqlSchema } from '~/src/graphql-schema/schema';\nimport { getUser } from '~/src/platform/auth/auth0';\n\njest.mock('~/src/platform/auth/auth0', () => ({\n  getUser: jest.fn(),\n}));\n\ndescribe('Auth0User per-field lookups', () => {\n  it('shares one lookup across parity cases', async () => {\n    \u2026",
     "truncated": true,
     "added": 97,
     "removed": 0,
     "totalLines": 97
+  },
+  {
+    "path": "apps/backend/src/platform/auth/auth0.ts",
+    "status": "modified",
+    "diff": "diff --git a/apps/backend/src/platform/auth/auth0.ts b/apps/backend/src/platform/auth/auth0.ts\nindex 3f2a1b7..9c4d2e0 100644\n--- a/apps/backend/src/platform/auth/auth0.ts\n+++ b/apps/backend/src/platform/auth/auth0.ts\n@@ -41,7 +41,9 @@ export async function getUser(id: string) {\n   const client = managementClient();\n-  const user = await client.users.get({ id });\n+  const user = await client.users.get({ id }).catch((err) => {\n+    throw new UserLookupError(id, err);\n+  });\n   if (!user) {\n     return null;\n   }\n",
+    "truncated": false,
+    "added": 3,
+    "removed": 1,
+    "totalLines": null
+  },
+  {
+    "path": ".scratch/notes.md",
+    "status": "untracked",
+    "diff": "Auth0 per-field lookups\n\n- one getUser call per request\n- fields resolve from the cached user\n",
+    "truncated": false,
+    "added": 4,
+    "removed": 0,
+    "totalLines": 4
   }
 ]

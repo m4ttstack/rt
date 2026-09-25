@@ -5,16 +5,19 @@ struct WorktreeReviewSheet: View {
     let row: TriageRow
     @ObservedObject var controller: WorktreePanelController
     let onStart: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
     @Environment(\.triageSnapshot) private var isSnapshot
     @State private var load: DiffLoadState
+    @State private var expanded: Set<String>
 
     init(row: TriageRow, controller: WorktreePanelController, initialLoad: TriageDiffLoad? = nil,
-         onStart: @escaping (String) -> Void = { _ in }) {
+         expanded: Set<String> = [], onStart: @escaping (String) -> Void = { _ in }, onClose: @escaping () -> Void = {}) {
         self.row = row
         self.controller = controller
         self.onStart = onStart
+        self.onClose = onClose
         _load = State(initialValue: initialLoad.map(DiffLoadState.init) ?? .loading)
+        _expanded = State(initialValue: expanded)
     }
 
     private var subtitle: String {
@@ -33,6 +36,7 @@ struct WorktreeReviewSheet: View {
 
 
     private var loaded: Bool { if case .loaded = load { return true } else { return false } }
+    private var rowBusy: Bool { controller.busy.contains(row.id) || controller.bulkProgress != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -43,25 +47,26 @@ struct WorktreeReviewSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 14)
             SheetRule()
-            content
+            content.frame(maxHeight: .infinity, alignment: .top)
             SheetRule()
             HStack(spacing: 8) {
                 Text("Discarded files stay in the trash for 14 days.")
                     .font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
                     .lineLimit(1).layoutPriority(-1)
                 Spacer(minLength: 8)
-                Button("Keep") { onStart("keep"); controller.keep(row); dismiss() }
+                Button("Keep") { onStart("keep"); controller.keep(row); onClose() }
                     .buttonStyle(TriageButtonStyle())
-                Button("Commit and push") { onStart("push-branch"); controller.pushBranch(row, commitDirty: true); dismiss() }
+                    .disabled(rowBusy)
+                Button("Commit and push") { onStart("push-branch"); controller.pushBranch(row, commitDirty: true); onClose() }
                     .buttonStyle(TriageButtonStyle())
-                    .disabled(!loaded)
-                Button("Discard and dispose") { onStart("dispose"); controller.dispose(row, discard: "all"); dismiss() }
+                    .disabled(!loaded || rowBusy)
+                Button("Discard and dispose") { onStart("dispose"); controller.dispose(row, discard: "all"); onClose() }
                     .buttonStyle(TriageButtonStyle(primary: true))
-                    .disabled(!loaded)
+                    .disabled(!loaded || rowBusy)
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
-        .frame(width: 680)
+        .frame(minWidth: 560, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity, alignment: .top)
         .background(WT.card)
         .task {
             if case .loading = load { await reload() }
@@ -74,7 +79,7 @@ struct WorktreeReviewSheet: View {
             Text("Loading changes…")
                 .font(.system(size: 13)).foregroundStyle(WT.textTertiary)
                 .padding(20)
-                .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         case .failed:
             HStack(spacing: 12) {
                 Text("Couldn't load the changes.").font(.system(size: 13)).foregroundStyle(WT.textSecondary)
@@ -82,7 +87,7 @@ struct WorktreeReviewSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-            .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         case .loaded(let files, _) where files.isEmpty:
             Text("No uncommitted changes left to show.")
                 .font(.system(size: 13)).foregroundStyle(WT.textSecondary)
@@ -93,7 +98,6 @@ struct WorktreeReviewSheet: View {
                 fileList(files, truncatedFiles: truncatedFiles, lazy: false)
             } else {
                 ScrollView { fileList(files, truncatedFiles: truncatedFiles, lazy: true) }
-                    .frame(minHeight: 280, maxHeight: 520)
             }
         }
     }
@@ -107,32 +111,41 @@ struct WorktreeReviewSheet: View {
     private func fileList(_ files: [ParsedDiffFile], truncatedFiles: Bool, lazy: Bool) -> some View {
         DiffStack(lazy: lazy) {
             ForEach(files) { f in
-                HStack(spacing: 8) {
-                    Image(systemName: f.file.status == "untracked" ? "doc.badge.plus" : "doc.text")
-                        .foregroundStyle(WT.textSecondary)
-                    Text(Self.shortPath(f.file.path)).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(WT.text)
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 12)
-                    Text(Self.stat(f.file)).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
+                let open = expanded.contains(f.id)
+                DiffFileHeader(file: f.file, open: open) { toggle(f.id, in: files) }
+                if open {
+                    SheetRule()
+                    WT.neutralFill.frame(height: 12)
+                    ForEach(f.lines) { DiffLineRow(line: $0) }
+                    if let more = f.moreLines {
+                        Text(more).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
+                            .padding(.horizontal, 20).padding(.top, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(WT.neutralFill)
+                    }
+                    WT.neutralFill.frame(height: 12)
                 }
-                .padding(.horizontal, 20).padding(.vertical, 9)
                 SheetRule()
-                Color.clear.frame(height: 12)
-                ForEach(f.lines) { DiffLineRow(line: $0) }
-                if let more = f.moreLines {
-                    Text(more).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
-                        .padding(.horizontal, 20).padding(.top, 6)
-                }
-                Color.clear.frame(height: 12)
             }
             if truncatedFiles {
-                SheetRule()
                 Text("More files not shown.").font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
                     .padding(.horizontal, 20).padding(.vertical, 10)
             }
         }
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WT.neutralFill)
+    }
+
+    /// Option-click opens or closes every file, as a Finder disclosure does.
+    private func toggle(_ id: String, in files: [ParsedDiffFile]) {
+        let opening = !expanded.contains(id)
+        if NSEvent.modifierFlags.contains(.option) {
+            expanded = opening ? Set(files.map(\.id)) : []
+        } else if opening {
+            expanded.insert(id)
+        } else {
+            expanded.remove(id)
+        }
     }
 
     static func shortPath(_ path: String) -> String {
@@ -242,6 +255,38 @@ struct DiffLine: Identifiable {
     }
 }
 
+private struct DiffFileHeader: View {
+    let file: TriageDiffFile
+    let open: Bool
+    let toggle: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .animation(.easeOut(duration: 0.15), value: open)
+                    .foregroundStyle(WT.textTertiary)
+                    .frame(width: 12)
+                Image(systemName: file.status == "untracked" ? "doc.badge.plus" : "doc.text")
+                    .foregroundStyle(WT.textSecondary)
+                Text(WorktreeReviewSheet.shortPath(file.path)).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(WT.text)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 12)
+                Text(WorktreeReviewSheet.stat(file)).font(.system(size: 12.5)).foregroundStyle(WT.textTertiary)
+            }
+            .padding(.leading, 14).padding(.trailing, 20).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(hovered ? WT.cardHover : WT.card)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
 private struct DiffLineRow: View {
     let line: DiffLine
     var body: some View {
@@ -249,6 +294,8 @@ private struct DiffLineRow: View {
             Text(line.text)
                 .font(.system(size: 12, design: .monospaced)).foregroundStyle(WT.textTertiary)
                 .padding(.leading, 20).padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(WT.neutralFill)
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(line.number.map(String.init) ?? "")
@@ -263,7 +310,8 @@ private struct DiffLineRow: View {
             }
             .font(.system(size: 12.5, design: .monospaced))
             .padding(.leading, 18).padding(.trailing, 20)
-            .frame(height: 18)
+            .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+            .background(WT.neutralFill)
         }
     }
 }

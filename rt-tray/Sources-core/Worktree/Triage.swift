@@ -236,6 +236,24 @@ public struct TriageQueryGate: Sendable {
     }
 }
 
+/// Work held until a query started after it lands. Applied rows answer every
+/// earlier waiter too, since they are at least as new; a failed query answers
+/// only its own, so nothing waits on a reply that will never come.
+public struct TriageSettleLedger<Value> {
+    private var waiting: [(ticket: Int, value: Value)] = []
+
+    public init() {}
+
+    public mutating func wait(_ ticket: Int, _ value: Value) { waiting.append((ticket, value)) }
+
+    public mutating func settle(_ ticket: Int, applied: Bool) -> [Value] {
+        let due = { (w: (ticket: Int, value: Value)) in applied ? w.ticket <= ticket : w.ticket == ticket }
+        let out = waiting.filter(due).map(\.value)
+        waiting.removeAll(where: due)
+        return out
+    }
+}
+
 /// Daemon refusal codes as the tail of a "<tree>: ..." status line. Codes
 /// may carry a ":<detail>" suffix; anything unrecognised is shown verbatim.
 public enum TriageRefusal {

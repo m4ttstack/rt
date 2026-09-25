@@ -96,6 +96,16 @@ let triageChecks: [Check] = [
         c.expectEqual(gate.finish(3, succeeded: false), true)
         c.expectEqual(gate.begin(force: false), 4)
     },
+    Check("a finished action stays busy until a later query lands; applied rows release earlier waiters, a failure only its own") { c in
+        var ledger = TriageSettleLedger<String>()
+        ledger.wait(2, "neville")
+        ledger.wait(3, "olive")
+        ledger.wait(4, "smaug")
+        c.expectEqual(ledger.settle(1, applied: true), [])
+        c.expectEqual(ledger.settle(4, applied: false), ["smaug"])
+        c.expectEqual(ledger.settle(3, applied: true), ["neville", "olive"])
+        c.expectEqual(ledger.settle(2, applied: false), [])
+    },
     Check("dispose anyway asks first, naming the tree and its unpushed commits") { c in
         let rows = try JSONDecoder().decode(TriagePayload.self, from: Data(json.utf8)).data!.rows
         let neville = rows[0]
