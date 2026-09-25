@@ -149,6 +149,22 @@ carry `nonconforming` issues and `listSettings` carries `nonconforming` and
 (`buildLock`, `classifyLockDiff`) is not on this entry point; rt's
 `rt settings schema lock` and `rt settings schema diff` use it from source.
 
+`listUnregisteredSettings()`'s entries can carry `newer: true`: the store
+name is above every version this rt-client knows (a newer rt already wrote
+it), so it is reported, never resolved from and never flagged as a stray
+key.
+
+### Store versions and migrations
+
+A key whose schema changes in a breaking way gets a new store name,
+`key@<storeVersion>`. `getSetting`, `explainSetting` and `listSettings`
+read it, else migrate the highest older name in memory (`readSection`);
+explain rows carry `storeName`, `storedVersion`, `authored` and, beside a
+current name, `olderNames` labeled `leftover`, `stale` or `diverged`.
+`setSetting` writes the current name and records `$migrated` baselines;
+`pruneStoreName(key, storeName, scope, { force? })` deletes one older name;
+`planStoreMigrations()` is the data behind `rt settings migrate`.
+
 ## Runs
 
 `RunStageRow.status` is one of `running | done | failed | redirected`; `rt runs stage-redirect` writes the fourth when the work engine leaves a stage for another one, so a reader that maps statuses to icons or filters must handle all four.

@@ -1878,7 +1878,7 @@ export const TREE: Record<string, CommandNode> = {
             args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
           },
           diff: {
-            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 on an unbumped or unacknowledged breaking change",
+            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 unless a breaking change has a storeVersion bump and a matching migrateFrom entry (a never-shipped key may instead be acknowledged)",
             module: "./commands/settings-schema.ts",
             fn: "settingsSchemaDiff",
             args: [

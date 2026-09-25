@@ -81,9 +81,23 @@ Each `/defs` entry also carries:
   key in which stores.
 
 The `/defs` response also lists `unregistered: { key, scope, file }[]`, the
-keys found in stores that no registry def declares. Explain rows carry
-`nonconforming` issues on a layer that fails only its schema; its value
-stays in effect.
+keys found in stores that no registry def declares; an entry can carry
+`newer: true` when its store name is above every version this server
+knows (a newer rt already wrote it), and is then reported, never resolved
+from. Explain rows carry `nonconforming` issues on a layer that fails only
+its schema; its value stays in effect.
+
+### Store versions
+
+Explain rows carry `storeName`, `storedVersion`, `value` (migrated to the
+current shape) and `authored` (as stored); beside a current name,
+`olderNames` lists each older store name with its label. A `diverged`
+older name is an `issues[]` entry `{ kind: "diverged", storeName,
+olderValue, currentValue }` (no values for a secret key). `POST
+{base}/prune` with `{ key, scope, repo?, storeName, force?, team? }`
+removes one older name and answers `{ rows, effective }`; it refuses a
+diverged name unless `force`. `useSettingsScope(...).prune(key, scope,
+storeName, { force?, repo?, team? })` calls it.
 
 `/defs` and `/explain/{key}` take `?repo=<identity>` (the raw `host/path`
 form, e.g. `gitlab.example.com/acme/app`): repo-scoped keys then resolve for

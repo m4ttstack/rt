@@ -104,15 +104,20 @@ when Matt wants several apps bumped and bundled in one release.
    vs current; an unverifiable row (`!`) is not a pass — rerun or check
    that layer by hand before proceeding. Abort on a stale `git state`
    row (off main, dirty tree). A stale `schema lock` row names a key
-   whose committed schema can reject a value the lock at the last tag
-   accepted, with no `storeVersion` bump or no entry in
-   `packages/rt-client/src/settings/breaking-schema-changes.json`; land
-   the bump and the one-line reason (or revert the tightening) on main
-   before tagging. `bun run cli.ts settings check` (source, so it checks
-   this release's registry) must also exit 0 against the real stores; a
-   finding is fixed in the schema, never in the store. Every other stale
-   row is handled by the policy in steps 2b-2c: cut the layer's release,
-   or the user ratifies holding the pin and the release notes record it.
+   whose schema changed in a breaking way since the last tag without a
+   `storeVersion` bump and a `migrateFrom` chain covering every version
+   since that tag (a key never released may instead carry a one-line
+   reason in `packages/rt-client/src/settings/breaking-schema-changes.json`);
+   land the migration (`rt settings schema diff --draft` drafts it) or
+   revert the change on main before tagging. A stale `settings stores` row
+   is the candidate's own `rt settings check` failing against the real
+   stores: a value its migrations cannot carry, or an older store name
+   edited after its current one (`diverged`). Fix the schema or the
+   migration, never the store; a diverged name is resolved with Matt
+   (console's Needs fixing, or `rt settings migrate --prune --force <key>`
+   once he has chosen the value to keep). Every other stale row is
+   handled by the policy in steps 2b-2c: cut the layer's release, or the
+   user ratifies holding the pin and the release notes record it.
 
 2. **Determine version bump.** From `git log --pretty=%s <last-tag>..HEAD`:
    any `feat(` or a new module/file is a minor bump; only `fix(` / `chore(` /
@@ -251,6 +256,13 @@ when Matt wants several apps bumped and bundled in one release.
    to the new tag at the bottom. Every line traces to a real commit in
    `git log <last-tag>..HEAD`; never invent or embellish. Calibrate tone against
    a prior release with `gh release view <last-tag>`.
+
+   When the `schema lock` row lists `storeVersion bumps for the release
+   notes`, add a "Settings store versions" section naming each key and its
+   new store name (`rt.roles@2`), and say that the apps repo's rt-client
+   bump follows in this release train. Do not run `rt settings migrate
+   --write` on any machine before the apps have moved: writing `key@N` is
+   what starts divergence for writers still on the old name.
 
 6. **Show the user and get approval.** Print the proposed tag, the full
    `RELEASE_NOTES.md` body, and the docs diff (`git diff --staged --stat` for

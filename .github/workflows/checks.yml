@@ -56,8 +56,9 @@ jobs:
       - name: Typecheck
         run: bunx tsc --noEmit
 
-      # A schema change that would invalidate stored settings must bump
-      # storeVersion and be acknowledged; the committed lock is the record.
+      # A schema change that would invalidate stored settings needs a
+      # storeVersion bump and a matching migrateFrom entry (a never-shipped
+      # key may instead be acknowledged); the committed lock is the record.
       - name: Settings schema lock is in sync
         run: bun run cli.ts settings schema lock && git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json
 

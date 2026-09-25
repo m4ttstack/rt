@@ -62,7 +62,10 @@ export interface SettingDefWire {
 
 /** A schema or path-guard problem on one store rung, flattened for a client
     that never sees `ExplainRow`. `message` is already secret-safe (see
-    `issuesFromRows`); never derive a second copy from the raw row. */
+    `issuesFromRows`); never derive a second copy from the raw row. A
+    `kind: "diverged"` issue is an older store name edited after the current
+    one was written; it carries `storeName` (the older name), and, unless
+    the def is secret, `olderValue` and `currentValue`. */
 export type WireIssue = {
   scope: string;
   file: string | null;
@@ -79,7 +82,12 @@ export type OlderNameWire = { storeName: string; storedVersion: number; label: s
 export type ExplainRowWire = Pick<
   ExplainRow,
   "scope" | "file" | "present" | "shadowed" | "invalid" | "nonconforming" | "storeName" | "storedVersion" | "olderLabel"
-> & { value?: unknown; authored?: unknown; olderNames?: OlderNameWire[] };
+> & {
+  value?: unknown;
+  /** As stored on this rung, before migration; never confuse with `EffectiveWire.authored`, the winning deep-merge overlay. */
+  authored?: unknown;
+  olderNames?: OlderNameWire[];
+};
 
 /** The winning layer, precomputed server-side so a list view renders and
     patches rows without a per-key explain round trip. `scope` is the winning

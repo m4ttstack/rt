@@ -34,8 +34,10 @@
  *  2. **A value found in a store the def does not allow is skipped**, labeled
  *     like any other invalid value (`rt.repoIdentityOverrides` is machine-only;
  *     honouring a team-store copy of it would defeat the schema).
- *  3. **`explain` shows values AS AUTHORED** (never expanded) because its job
- *     is to say what is in which file, and **`list` degrades** an unexpandable
+ *  3. **`explain` shows `value` migrated to the current shape** (never
+ *     variable-expanded) and `authored` as stored, because its job is to say
+ *     what is in which file at both the shape a reader sees and the shape a
+ *     writer left, and **`list` degrades** an unexpandable
  *     value to its raw form with an `expandError` label rather than throwing —
  *     one bad value must not brick a survey of every key. `get` is the loud
  *     one: an unsatisfiable closed-set variable throws.
@@ -135,7 +137,7 @@ export interface ExplainRow {
   scope: Scope;
   file: string | null;
   present: boolean;
-  /** The value AS AUTHORED — never variable-expanded. */
+  /** The value migrated to the current shape; never variable-expanded. */
   value?: unknown;
   /** Set when the value was ignored because the key is teamLocked. */
   shadowed?: "teamLocked";
@@ -773,9 +775,10 @@ function listUnregistered(stores: StoreBundle, opts: ResolveOpts): ListedSetting
 }
 
 /**
- * One row per reachable rung, weakest-first, with values AS AUTHORED. Repo
- * rungs are omitted entirely when the key is not repoScoped or no identity was
- * supplied — showing rungs that could never apply would be noise, not honesty.
+ * One row per reachable rung, weakest-first, with `value` migrated to the
+ * current shape and `authored` as stored. Repo rungs are omitted entirely
+ * when the key is not repoScoped or no identity was supplied... showing rungs
+ * that could never apply would be noise, not honesty.
  */
 export function explainSetting(key: string, opts: ResolveOpts = {}): ExplainRow[] {
   const def = getDef(key);
