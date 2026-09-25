@@ -105,6 +105,24 @@ final class DevBuildWatcher {
         handOff(stagedPath: stagedApp, deckLabel: "com.mattstack.deck.dev", quit: quit)
     }
 
+    func discardStaged() {
+        let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
+        try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
+        let cache = DevBuild.identity(atBundle: stagedApp, readFile: Self.read).flatMap {
+            DevBuild.CacheTarget(buildsDir: buildsDir, entryName: DevBuild.cacheEntryName(for: $0))
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", DevBuild.discardScript(stagedPath: stagedApp, logPath: logs + "/dev-app-restart.log",
+                                                       cache: cache)]
+        proc.terminationHandler = { _ in Task { @MainActor in DevBuildWatcher.shared.check() } }
+        do {
+            try proc.run()
+        } catch {
+            TrayLog.error("dev discard failed to start", ["err": String(describing: error)])
+        }
+    }
+
     private var buildsDir: String { root + "/builds" }
 
     /// Builds the restart handoff would swap back in without rebuilding, for

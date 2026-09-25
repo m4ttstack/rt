@@ -173,9 +173,44 @@ public enum DevBuild {
         // Runs last so filing and trimming the cache never delays the
         // relaunch, and nothing it does can undo the swap.
         if let cache, stagedPath != nil {
-            lines += fileLines(cache, plutilPath: plutilPath)
+            lines += fileLines(cache, what: "the previous build")
+            lines.append("if [ $swapped = 1 ]; then")
+            lines += tidyLines(cache, plutilPath: plutilPath)
+            lines.append("fi")
         }
         lines.append("exit 0")
+        return lines.joined(separator: "\n")
+    }
+
+    /// A /bin/sh script that files a staged build the user will not restart
+    /// into in the build cache, so a later rebuild of the same tree state is
+    /// a copy rather than a build, then removes it from the staging dir. With
+    /// no cache target (an unkeyed build) it is only removed.
+    public static func discardScript(stagedPath: String, logPath: String? = nil, cache: CacheTarget? = nil,
+                                     plutilPath: String = "/usr/bin/plutil") -> String {
+        let staged = shellQuote(stagedPath)
+        var lines: [String] = []
+        if let logPath {
+            let log = shellQuote(logPath)
+            lines.append("if ( : >> \(log) ) 2>/dev/null; then exec >> \(log) 2>&1; fi")
+        }
+        lines += [
+            "echo \"discard $(date '+%F %T')\"",
+            "if [ ! -d \(staged) ]; then echo 'no staged build'; exit 0; fi",
+        ]
+        if let cache {
+            let builds = shellQuote(cache.buildsDir)
+            let incoming = incomingPath(cache)
+            lines += [
+                "parked=0",
+                "mkdir -p \(builds) 2>/dev/null",
+                "if rm -rf \(incoming) && mkdir \(incoming) && mv \(staged) \(incoming)/\(cachedBundleName); then parked=1",
+                "else echo 'could not cache the staged build; deleting it'; rm -rf \(incoming); fi",
+            ]
+            lines += fileLines(cache, what: "the staged build")
+            lines += tidyLines(cache, plutilPath: plutilPath)
+        }
+        lines += ["rm -rf \(staged)", "exit 0"]
         return lines.joined(separator: "\n")
     }
 
@@ -201,21 +236,28 @@ public enum DevBuild {
 
     /// Every recursive delete is re-checked against the builds dir in the
     /// shell as well, so a mangled path can only ever miss, never escape it.
-    private static func fileLines(_ cache: CacheTarget, plutilPath: String) -> [String] {
+    private static func fileLines(_ cache: CacheTarget, what: String) -> [String] {
         let builds = shellQuote(cache.buildsDir)
         let entry = shellQuote("\(cache.buildsDir)/\(cache.entryName)")
         let incoming = incomingPath(cache)
         let inside = "\(builds)/?*"
-        let plutil = shellQuote(plutilPath)
         return [
             "if [ $parked = 1 ]; then",
             "  cached=0",
             "  date +%s > \(incoming)/cached-at",
             "  case \(entry) in \(inside)) rm -rf \(entry) ;; esac",
-            "  if [ ! -e \(entry) ] && mv \(incoming) \(entry); then cached=1; echo \"cached the previous build at \"\(entry); fi",
-            "  if [ $cached = 0 ]; then echo 'could not cache the previous build; deleting it'; rm -rf \(incoming); fi",
+            "  if [ ! -e \(entry) ] && mv \(incoming) \(entry); then cached=1; echo \"cached \(what) at \"\(entry); fi",
+            "  if [ $cached = 0 ]; then echo 'could not cache \(what); deleting it'; rm -rf \(incoming); fi",
             "fi",
-            "if [ $swapped = 1 ]; then",
+        ]
+    }
+
+    private static func tidyLines(_ cache: CacheTarget, plutilPath: String) -> [String] {
+        let builds = shellQuote(cache.buildsDir)
+        let entry = shellQuote("\(cache.buildsDir)/\(cache.entryName)")
+        let inside = "\(builds)/?*"
+        let plutil = shellQuote(plutilPath)
+        return [
             // A handoff killed mid-filing leaves its incoming dir; ten
             // minutes is far past any live handoff's filing step.
             "  find \(builds) -mindepth 1 -maxdepth 1 -type d -name '.incoming-*' ! -name \".incoming-$$\" -mmin +10 | "
@@ -231,7 +273,6 @@ public enum DevBuild {
             "  for d in \(builds)/*; do [ -d \"$d\" ] || continue; t=$(cat \"$d/cached-at\" 2>/dev/null); "
                 + "case $t in ''|*[!0-9]*) t=0 ;; esac; echo \"$t $d\"; done | sort -rn | tail -n +\(cacheKeep + 1) | "
                 + "while read -r t d; do case \"$d\" in \(inside)) rm -rf \"$d\"; echo \"evicted $d\" ;; esac; done",
-            "fi",
         ]
     }
 

@@ -892,6 +892,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             menu.addItem(ActionMenuItem("New build · Restart (\(stamp))", axid: AXID.trayDevRestart) { [weak self] in
                 self?.restartIntoStagedBuild()
             })
+            menu.addItem(ActionMenuItem("Discard New Build", axid: AXID.trayDevDiscard) { watcher.discardStaged() })
             return
         }
         let last = watcher.lastSource
