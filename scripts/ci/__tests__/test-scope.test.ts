@@ -24,6 +24,12 @@ describe("decide", () => {
     expect(decide({ ...pr(["docs/a.md"]), event: "push" }).mode).toBe("full");
   });
 
+  test("an empty diff skips with its own reason", () => {
+    const decision = decide(pr([]));
+    expect(decision.mode).toBe("skip");
+    expect(decision.reason).toBe("no changed files");
+  });
+
   test("docs nothing reads skip", () => {
     expect(decide(pr(["docs/architecture.md", "AGENTS.md"])).mode).toBe("skip");
   });
@@ -54,6 +60,10 @@ describe("decide", () => {
 
   test("the stub-rt tree is typescript, not swift", () => {
     expect(decide(pr(["rt-tray/Tests/stub-rt/stub.ts"])).mode).toBe("changed");
+  });
+
+  test("the vm helpers tree is typescript, not tray", () => {
+    expect(decide(pr(["rt-tray/vm/run/helpers/x.ts"])).mode).toBe("changed");
   });
 
   test("a preload import is full", () => {
@@ -88,14 +98,15 @@ describe("unitDirs", () => {
 
   test("refuses a test script that is not a bare bun test run", () => {
     expect(() => unitDirs({ scripts: { test: "vitest run" } })).toThrow(/bare bun test/);
+    expect(() => unitDirs({ scripts: { test: "bun test --timeout 20000 lib" } })).toThrow(/bare bun test/);
   });
 
-  test("the real script parses and test:timings names the same directories", () => {
+  test("the real script parses and test:timings delegates to it", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     const dirs = unitDirs(pkg);
     expect(dirs).toContain("lib");
     expect(dirs).toContain("commands");
-    for (const dir of dirs) expect(pkg.scripts["test:timings"]).toContain(` ${dir}`);
+    expect(pkg.scripts["test:timings"]).toMatch(/\bbun run test\b/);
   });
 });
 
