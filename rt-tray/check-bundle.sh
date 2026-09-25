@@ -410,6 +410,14 @@ check_helpers() { # app
         esac
     done < <(find "$app/Contents/Helpers" -mindepth 1 -maxdepth 1 -print0)
     [ "$stowaways" -eq 0 ] && pass "$exe Helpers holds only deps.lock-declared and first-party entries"
+    # Every served deps.lock row ships its identity at Resources/apps/<name>,
+    # and nothing else sits there. Judged against the bundle's own deps.lock.
+    local idout
+    if idout="$(bun "$SCRIPT_DIR/../scripts/lib/app-identity.ts" check --resources "$app/Contents/Resources" --lock "$app/Contents/Resources/deps.lock" 2>&1)"; then
+        pass "$exe Resources/apps: $idout"
+    else
+        fail "$exe Resources/apps: $idout"
+    fi
     [ -x "$app/Contents/Helpers/node/bin/node" ] && "$app/Contents/Helpers/node/bin/node" -e 'process.exit(0)' >/dev/null 2>&1 && pass "$exe Helpers/node runs" || fail "$exe Helpers/node does not run under its entitlements"
     # Actually RUN it, like every other helper above. Asserting the entry file
     # merely exists is what let a bundled fast-browser that crashes at module

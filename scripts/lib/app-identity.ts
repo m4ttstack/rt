@@ -3,8 +3,9 @@
 // bundle-apps, materialized by fetch-deps, landed by build.sh, asserted by
 // check-bundle.sh. Imported by the bundle-apps build job, which never installs
 // this repo's dependencies, so every runtime import stays in node builtins.
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join } from "path";
+import type { DepsLockTool } from "../../lib/bundle-layout.ts";
 
 export const IDENTITY_MANIFEST = "mattstack.deck.json";
 
@@ -108,4 +109,106 @@ export function stageIdentity(appDir: string, outDir: string, expectedName?: str
   }
   writeIdentity(id, join(appDir, ...iconSegments(id.icon)), outDir);
   return id;
+}
+
+/** A dir that holds `name`'s identity in exactly the form stageIdentity writes. */
+export function readStagedIdentity(dir: string, name: string): AppIdentity {
+  const id = readDeclaredIdentity(dir);
+  if (!id) throw new Error(`${dir}: ${IDENTITY_MANIFEST} declares no displayName and icon`);
+  if (id.name !== name) throw new Error(`${dir}: identity names ${id.name}, not ${name}`);
+  if (readFileSync(join(dir, IDENTITY_MANIFEST), "utf8") !== serializeIdentity(id)) {
+    throw new Error(`${dir}: ${IDENTITY_MANIFEST} is not in the staged identity form`);
+  }
+  return id;
+}
+
+// Same rule as servedAppCatalog in lib/bundle-layout.ts, which this module
+// cannot import at runtime.
+function servedNames(tools: readonly DepsLockTool[]): string[] {
+  return tools
+    .filter((t) => t.kind === "helper" && t.status === "bundled" && t.serve !== undefined)
+    .map((t) => t.name);
+}
+
+export function landIdentities(
+  tools: readonly DepsLockTool[],
+  depsDir: string,
+  resourcesDir: string,
+): { landed: string[]; missing: string[] } {
+  const appsDir = join(resourcesDir, "apps");
+  rmSync(appsDir, { recursive: true, force: true });
+  const landed: string[] = [];
+  const missing: string[] = [];
+  for (const name of servedNames(tools)) {
+    const src = join(depsDir, `${name}-identity`);
+    if (!existsSync(src)) {
+      missing.push(name);
+      continue;
+    }
+    const id = readStagedIdentity(src, name);
+    writeIdentity(id, join(src, ...iconSegments(id.icon)), join(appsDir, name));
+    landed.push(name);
+  }
+  return { landed, missing };
+}
+
+export function checkIdentities(
+  tools: readonly DepsLockTool[],
+  resourcesDir: string,
+): { served: string[]; problems: string[] } {
+  const served = servedNames(tools);
+  const appsDir = join(resourcesDir, "apps");
+  const problems: string[] = [];
+  for (const entry of existsSync(appsDir) ? readdirSync(appsDir) : []) {
+    if (!served.includes(entry)) problems.push(`Resources/apps/${entry} is not a served app in deps.lock`);
+  }
+  for (const name of served) {
+    if (!existsSync(join(appsDir, name))) {
+      problems.push(`${name}: served but ships no identity; re-run bundle-apps for ${name} so its archive carries identity/`);
+      continue;
+    }
+    try {
+      readStagedIdentity(join(appsDir, name), name);
+    } catch (err) {
+      problems.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { served, problems };
+}
+
+if (import.meta.main) {
+  const { parseDepsLock } = await import("../../lib/bundle-layout.ts");
+  const args = process.argv.slice(2);
+  const usage = "usage: app-identity.ts land --deps <dir> --resources <dir> [--lock <path>] | check --resources <dir> [--lock <path>]";
+  const opt = (flag: string): string | undefined => {
+    const i = args.indexOf(flag);
+    if (i < 0) return undefined;
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith("--")) {
+      console.error(`${flag} needs a value\n${usage}`);
+      process.exit(2);
+    }
+    return value;
+  };
+  const mode = args[0];
+  const resources = opt("--resources");
+  const deps = opt("--deps");
+  const lockPath = opt("--lock") ?? join(import.meta.dir, "..", "..", "rt-tray", "deps.lock");
+  if ((mode !== "land" && mode !== "check") || !resources || (mode === "land" && !deps)) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const lockTools = parseDepsLock(readFileSync(lockPath, "utf8")).tools;
+  if (mode === "land") {
+    const { landed, missing } = landIdentities(lockTools, deps!, resources);
+    for (const name of landed) console.log(`  ✓ Resources/apps/${name}`);
+    for (const name of missing) console.log(`  ⚠ ${name}: served, but its archive carries no identity (check-bundle will fail)`);
+  } else {
+    const { served, problems } = checkIdentities(lockTools, resources);
+    if (problems.length > 0) {
+      console.log(problems.join("\n"));
+      process.exit(1);
+    }
+    console.log(served.length > 0 ? `identity for ${served.join(", ")}` : "no served apps");
+  }
 }
