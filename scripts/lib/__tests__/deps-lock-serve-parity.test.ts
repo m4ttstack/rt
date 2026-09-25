@@ -1,0 +1,30 @@
+import { describe, expect, test } from "bun:test";
+import { createHash } from "crypto";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { parseDepsLock, servedAppCatalog } from "../../../lib/bundle-layout.ts";
+
+// Parity anchor: byte-identical twin at mattstack-apps
+// apps/deck/src/registry/__fixtures__/deps-lock-serve.fixture.json, read by
+// deck's readBundleCatalog test. Change both files together and move this
+// digest in both tests, or the two parsers drift apart silently.
+const FIXTURE_SHA256 = "95256df5809898010329ed5c0c331c806a4ba8ad9e860768c1b130a604b14230";
+
+interface Fixture {
+  lock: unknown;
+  expectedCatalog: { name: string; port: number; args: string[] }[];
+}
+
+const bytes = readFileSync(join(import.meta.dir, "fixtures", "deps-lock-serve.fixture.json"));
+const fixture = JSON.parse(bytes.toString("utf8")) as Fixture;
+
+describe("deps-lock-serve parity fixture", () => {
+  test("bytes match the digest its twin pins", () => {
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(FIXTURE_SHA256);
+  });
+
+  test("servedAppCatalog yields the expected catalog in lock order", () => {
+    const catalog = servedAppCatalog(parseDepsLock(JSON.stringify(fixture.lock)));
+    expect([...catalog].map(([name, serve]) => ({ name, ...serve }))).toEqual(fixture.expectedCatalog);
+  });
+});

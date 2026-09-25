@@ -35,3 +35,12 @@ test("default path still reads the repo lock", async () => {
   expect(await proc.exited).toBe(0);
   expect(out.trim()).toBe("arm64");
 });
+
+test("every helper row of the repo lock emits exactly 11 fields", async () => {
+  const proc = Bun.spawn(["bun", CLI, "--kind", "helper"], { stdout: "pipe" });
+  const out = await new Response(proc.stdout).text();
+  expect(await proc.exited).toBe(0);
+  const rows = out.trim().split("\n");
+  expect(rows.length).toBeGreaterThan(0);
+  for (const r of rows) expect(r.split("\t"), r.split("\t")[0]).toHaveLength(11);
+});

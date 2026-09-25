@@ -13,10 +13,25 @@ function rowSpan(lockText: string, name: string): { start: number; end: number }
   const marker = `"name": "${name}"`;
   const idx = lockText.indexOf(marker);
   if (idx < 0) throw new Error(`deps.lock has no row named ${name}`);
-  const start = lockText.lastIndexOf("{", idx);
-  let depth = 0;
+  // The row is the innermost object still open at the name key, found by a
+  // forward scan: a nested object before the key (a serve block) opens and
+  // closes before it, so the nearest preceding "{" is not always the row.
+  const open: number[] = [];
   let inString = false;
   let escaped = false;
+  for (let i = 0; i < idx; i++) {
+    const ch = lockText[i];
+    if (escaped) escaped = false;
+    else if (ch === "\\") escaped = true;
+    else if (ch === '"') inString = !inString;
+    else if (!inString && ch === "{") open.push(i);
+    else if (!inString && ch === "}") open.pop();
+  }
+  const start = open.at(-1);
+  if (start === undefined) throw new Error(`row ${name} is not inside an object`);
+  let depth = 0;
+  inString = false;
+  escaped = false;
   // Braces inside a quoted value (a url or license may carry one) must not
   // move the depth, or the row span silently truncates or overruns.
   for (let i = start; i < lockText.length; i++) {

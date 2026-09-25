@@ -62,4 +62,12 @@ describe("deps-lock.ts TSV emitter", () => {
   test("throws rather than emit a field containing a carriage return", () => {
     expect(() => toTsvRow(tool({ extract: "a\rb" }))).toThrow(/tab or newline/);
   });
+  test("a served app row still emits 11 fields and serve never reaches the TSV", () => {
+    const cols = toTsvRow(tool({
+      name: "board", bundlePath: "Contents/Helpers/board", exec: ["Contents/Helpers/board"],
+      serve: { port: 11006, args: ["serve"] },
+    })).split("\t");
+    expect(cols).toHaveLength(11);
+    expect(cols).not.toContain("11006");
+  });
 });

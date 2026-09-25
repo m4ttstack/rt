@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { parseDepsLock } from "../bundle-layout.ts";
+import { parseDepsLock, servedAppCatalog } from "../bundle-layout.ts";
 
 const LOCK_PATH = join(import.meta.dir, "..", "..", "rt-tray", "deps.lock");
 
@@ -53,6 +53,32 @@ describe("rt-tray/deps.lock", () => {
     const exposed = lock.tools.filter((t) => t.exposeByDefault).map((t) => t.name).sort();
     expect(exposed).toEqual(["deck", "fast-browser", "gitq"]);
   });
+  // An unknown row key is tolerated, so a misspelled serve would quietly turn
+  // an app into a tool; only an exact list catches that. It names serve rows
+  // whatever their status, so bundle-apps flipping a pending row to bundled
+  // needs no edit here.
+  const SERVE_ROWS: Record<string, { port: number; args: string[] }> = {
+    board: { port: 11006, args: [] },
+    console: { port: 11001, args: [] },
+    chat: { port: 11002, args: [] },
+    boxscore: { port: 11005, args: [] },
+  };
+
+  test("the rows carrying serve are exactly board, console, chat and boxscore; gitq and deck stay tools", () => {
+    const withServe = lock.tools.filter((t) => t.serve !== undefined);
+    expect(Object.fromEntries(withServe.map((t) => [t.name, t.serve]))).toEqual(SERVE_ROWS);
+    const by = Object.fromEntries(lock.tools.map((t) => [t.name, t]));
+    expect(by["gitq"]?.serve).toBeUndefined();
+    expect(by["deck"]?.serve).toBeUndefined();
+  });
+
+  test("the served catalog is the serve rows whose status is bundled", () => {
+    const bundled = new Set(lock.tools.filter((t) => t.status === "bundled").map((t) => t.name));
+    const expected = Object.fromEntries(Object.entries(SERVE_ROWS).filter(([name]) => bundled.has(name)));
+    expect(Object.keys(expected)).toEqual(expect.arrayContaining(["board", "console", "chat"]));
+    expect(Object.fromEntries(servedAppCatalog(lock))).toEqual(expected);
+  });
+
   test("bun-based helpers declare jit entitlements; Go/C helpers declare none", () => {
     const by = Object.fromEntries(lock.tools.map((t) => [t.name, t]));
     expect(by["bun"]?.entitlements).toBe("jit");

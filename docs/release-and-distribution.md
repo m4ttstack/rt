@@ -256,6 +256,20 @@ Two declarations drive it, each owned by the party that knows it:
 - `repo` on the deps.lock row (`"m4ttstack/<repo>"`) marks the app
   buildable. Rows without it (jq, node, cloudflared...) are third-party
   pins the pipeline never touches.
+- `serve: { port, args }` on a helper row marks it a bundled app: prod
+  deck serves `Contents/Helpers/<name>` followed by `args` on `port`, and
+  a row without it is a tool (the gitq CLI). `parseDepsLock` requires
+  the row's bundlePath and exec to be exactly `Contents/Helpers/<name>`,
+  a port from 1024 to 65535 used by no other row, and args with no
+  whitespace. A pending row may carry it; only bundled rows are served.
+  The bundle ships the lock at `Contents/Resources/deps.lock`, where deck
+  reads it, and `update-lock.ts` never touches `serve`, so a new app's
+  `serve` is added by hand on its pending stub row, before its first
+  bundle-apps run. Relax a `serve` rule only after a release whose
+  parser already accepts the relaxed form has shipped: after a Sparkle
+  update a still-running daemon re-reads the replaced bundle's lock with
+  its old parser, and a lock it rejects sends every bundled tool lookup
+  back to PATH until the daemon restarts.
 - `bundle: { build, artifact }` in the app's `mattstack.deck.json` is the
   compile recipe, run verbatim at the app's root: the repo root for
   single-repo rows, `subdir` for monorepo rows. A dispatched app whose
@@ -286,6 +300,11 @@ blocks the others
    carries `dist-bin` and the manifest path.
 3. **Declare the pair**: `bundle: { build, artifact }` in the app's
    `mattstack.deck.json`, and the `repo` field on its deps.lock row.
+   A served app also gets `serve` on the row, with the manifest's `port`
+   and `args` only when the binary's default argv is not its server. A
+   new app lands its row by hand first, as a `pending` stub carrying
+   `repo`, `subdir` and `serve`, so the dispatch can plan it and the bot
+   has a row to flip; no release can be cut while it is pending.
 4. **Dry-run dispatch first** (`dry_run: true`), then the real one. The
    real run publishes an immutable release and opens a deps.lock PR; two
    real runs back-to-back conflict on the PR — merge the first, then apply

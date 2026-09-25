@@ -74,3 +74,22 @@ test("an escaped quote already in a field value does not truncate the rewrite", 
   const out = applyBuildResults(escaped, [RESULT]);
   expect(parseDepsLock(out).tools.find((t) => t.name === "deck")!.version).toBe("0.5.0");
 });
+
+test("a pin bump keeps the row's serve object byte for byte", () => {
+  const served = LOCK.replace(
+    `"status": "pending", "kind": "helper" },`,
+    `"status": "pending", "kind": "helper",\n      "serve": { "port": 11020, "args": ["serve"] } },`,
+  );
+  const out = applyBuildResults(served, [RESULT]);
+  expect(out).toContain(`"serve": { "port": 11020, "args": ["serve"] } },`);
+  expect(parseDepsLock(out).tools.find((t) => t.name === "deck")!.serve).toEqual({ port: 11020, args: ["serve"] });
+});
+
+test("a serve object placed before name is not mistaken for the row", () => {
+  const leading = LOCK.replace(`{ "name": "deck",`, `{ "serve": { "port": 11020, "args": [] }, "name": "deck",`);
+  const out = applyBuildResults(leading, [RESULT]);
+  const deck = parseDepsLock(out).tools.find((t) => t.name === "deck")!;
+  expect(deck.version).toBe("0.5.0");
+  expect(deck.status).toBe("bundled");
+  expect(deck.serve).toEqual({ port: 11020, args: [] });
+});
