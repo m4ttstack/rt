@@ -106,7 +106,7 @@ const (
 	GlyphWorktree = ""
 	GlyphBranch   = ""
 	GlyphStash    = "" // nf-oct-stack: the Stashed Changes strip
-	GlyphPadlock  = "" // nf-oct-lock: the guarded branch group header
+	GlyphPadlock  = "" // nf-oct-lock: the guarded branch group header
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}
