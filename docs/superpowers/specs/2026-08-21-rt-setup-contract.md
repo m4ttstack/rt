@@ -186,12 +186,14 @@ verifies the clone and the Keychain key.
 
 ## `rt uninstall --json [--keep-data|--delete-data] [--yes] [--dry-run]`
 
-→ dry-run: `{ "contract":1, "actions": [ { "id":"services.unregister", "title":"Stop and remove the rt daemon and deck services" }, ... ] }`; real run: NDJSON like `apply`.
+→ dry-run: `{ "contract":1, "actions": [ { "id":"deck.managed-remove", "title":"Remove mattstack's apps from deck" }, { "id":"services.unregister", "title":"Stop and remove the rt daemon and deck services" }, ... ] }`; real run: NDJSON like `apply`.
 
 Action ids (v1, in order): `deck.managed-remove` · `services.unregister` ·
 `proxy.remove` · `path.unlink` · `shell.remove` · `extension.uninstall` ·
 `plugins.uninstall` · `data` (only with `--delete-data`) · `app.trash`.
 `deck.managed-remove` comes first because `services.unregister` stops deck.
+It skips, and lists deck's apps in `stayed`, while the other flavor's app is
+installed: both flavors' decks share one registry.
 `--delete-data` requires `--yes` (non-TTY without it → exit 2
 `confirm-required`; the app's confirmation sheet is the consent, so the app
 always passes `--yes`). `--keep-data` needs no `--yes`.
