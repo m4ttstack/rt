@@ -126,6 +126,7 @@ enum WindowPreview {
             try? process.run()
             process.waitUntilExit()
             print("captured \(path) exit \(process.terminationStatus)")
+            if process.terminationStatus != 0 { renderInProcess(to: path.replacingOccurrences(of: ".png", with: "-inprocess.png")) }
             fflush(stdout)
         }
         switch options.scenario {
@@ -140,9 +141,36 @@ enum WindowPreview {
         default:
             await waitFor { model.deckWait == .ready }
             await pause(3)
-            shoot(options.scenario == "tab-5xx" ? "failure" : "loaded")
+            let state = options.scenario == "tab-5xx" ? "failure" : "loaded"
+            shoot(state)
+            await snapshotActiveTab(to: "\(dir)/\(options.scenario)-\(state)-\(options.appearance)-page.png")
         }
         return true
+    }
+
+    /// screencapture needs Screen Recording for whoever launched the preview;
+    /// drawing the window's own views needs nothing, but WebKit paints out of
+    /// process, so page content is missing from these.
+    private static func renderInProcess(to path: String) {
+        guard let view = window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let written = (try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))) != nil
+        print("rendered \(path) in process: \(written ? "ok" : "failed")")
+    }
+
+    /// The page WebKit drew in the active tab, which the in-process render
+    /// cannot show.
+    private static func snapshotActiveTab(to path: String) async {
+        guard let web = model.store.existingView(for: model.activeApp) else {
+            print("no webview for \(model.activeApp)")
+            return
+        }
+        let image = try? await web.takeSnapshot(configuration: nil)
+        let png = image?.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) }?
+            .representation(using: .png, properties: [:])
+        let written = (try? png?.write(to: URL(fileURLWithPath: path))) != nil
+        print("page \(path) (\(web.url?.absoluteString ?? "no url")): \(written ? "ok" : "failed")")
     }
 
     private static func pause(_ seconds: TimeInterval) async {
