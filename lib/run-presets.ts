@@ -17,21 +17,11 @@
 
 import { getSetting } from "./settings/resolve.ts";
 import { setSetting } from "./settings/write.ts";
+import type { Value } from "./settings/registry-schemas.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export interface PresetEntry {
-  /** Repo-relative path to the package (stable across worktrees). */
-  packageRelPath: string;
-  /** User-facing package label shown in pickers. */
-  packageLabel: string;
-  /** Script name within the package's package.json. */
-  script: string;
-  /** Name of the selected variation, if any. */
-  variationName?: string;
-  /** Full shell command string, if a variation/override was selected. */
-  command?: string;
-}
+export type PresetEntry = Value<"rt.presets">[string]["entries"][number];
 
 export interface Preset {
   name: string;

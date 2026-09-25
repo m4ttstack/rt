@@ -17,17 +17,9 @@
  */
 import { matchTopic } from "./daemon/events-bus.ts";
 import type { NotificationEvent } from "./state/notifier-store.ts";
+import type { Value } from "./settings/registry-schemas.ts";
 
-export interface EventBridgeRule {
-  pattern: string;
-  category: string;
-  title: string;
-  message: string;
-  subjectPrefix?: string;
-  url?: string;
-  owner?: "human";
-  surface?: string;
-}
+export type EventBridgeRule = Value<"rt.notify.eventBridges">[number];
 
 /** Parses the rt.notify.eventBridges setting value into rules, shared by the
     daemon's live setting read and by tests. Non-array input yields `[]`

@@ -382,12 +382,13 @@ export async function rebaseOnto(opts: RebaseOptions): Promise<RebaseResult> {
     // die mid-rebase with the repo left in a conflicted state.
     try {
       for (const { file, rule } of matched) {
-        const flag = rule.strategy === "theirs" ? "--theirs" : "--ours";
+        const strategy = rule.strategy ?? "ours";
+        const flag = strategy === "theirs" ? "--theirs" : "--ours";
         git(`checkout ${flag} -- "${file}"`, cwd);
         git(`add "${file}"`, cwd);
         allResolvedFiles.push(file);
         triggeredRules.add(rule);
-        log(`    ${green}✓${reset} ${dim}auto-resolved${reset} ${file} ${dim}(${rule.strategy})${reset}\n`, quiet);
+        log(`    ${green}✓${reset} ${dim}auto-resolved${reset} ${file} ${dim}(${strategy})${reset}\n`, quiet);
       }
     } catch (err) {
       git("rebase --abort", cwd);
