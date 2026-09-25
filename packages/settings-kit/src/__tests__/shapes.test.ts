@@ -10,7 +10,7 @@ function def(over: Partial<SettingDefWire> & { key: string }): SettingDefWire {
   return {
     type: "string", scopes: ["user"], merge: "replace", secret: false, teamLocked: false,
     repoScoped: false, writable: true, description: "", hasDefault: false, defaultValue: null,
-    effective: { scope: null, file: null }, ...over,
+    effective: { scope: null, file: null }, storeVersion: 1, ...over,
   };
 }
 
