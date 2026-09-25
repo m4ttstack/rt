@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { alwaysRun, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
+import { alwaysRun, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
 
 // Synthetic unit test sources: one parity test that reads a Swift file and a
 // tray shell script by path, and one plain test.
@@ -44,6 +44,10 @@ describe("decide", () => {
 
   test("a tray file a test reads by basename is full", () => {
     expect(decide(pr(["rt-tray/build.sh"])).mode).toBe("full");
+  });
+
+  test("a tray plist nothing names is full", () => {
+    expect(decide(pr(["rt-tray/LaunchAgent.plist"])).mode).toBe("full");
   });
 
   test("a markdown fixture is full even when nothing names it", () => {
@@ -117,6 +121,20 @@ describe("alwaysRun", () => {
       expect(files).toContain(`lib/__tests__/${name}.test.ts`);
     }
     for (const f of files) expect(existsSync(join(ROOT, f))).toBe(true);
+  });
+
+  test("includes the explicit scanner guards the no-* glob misses", () => {
+    const files = alwaysRun();
+    expect(files).toContain("lib/__tests__/spawn-env.test.ts");
+    expect(files).toContain("lib/state/__tests__/source-guards.test.ts");
+    expect(files).toContain("lib/__tests__/rt-paths.test.ts");
+    expect(files).toContain("packages/rt-client/test/command-call-sites.test.ts");
+  });
+});
+
+describe("CHANGED_ARGS", () => {
+  test("the diff lists both paths of a rename", () => {
+    expect(CHANGED_ARGS).toContain("--no-renames");
   });
 });
 

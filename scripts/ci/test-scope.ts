@@ -28,12 +28,21 @@ export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage(
   return dirs.split(/\s+/);
 }
 
+// These read source as text, so --changed never selects them, and they are
+// not named no-*, so the glob below does not find them.
+const SCANNER_GUARDS = [
+  "lib/__tests__/spawn-env.test.ts",
+  "lib/state/__tests__/source-guards.test.ts",
+  "lib/__tests__/rt-paths.test.ts",
+  "packages/rt-client/test/command-call-sites.test.ts",
+];
+
 export function alwaysRun(): string[] {
   const dir = join(ROOT, "lib", "__tests__");
-  return readdirSync(dir)
+  const globbed = readdirSync(dir)
     .filter((f) => /^no-.*\.test\.ts$/.test(f))
-    .map((f) => `lib/__tests__/${f}`)
-    .sort();
+    .map((f) => `lib/__tests__/${f}`);
+  return [...new Set([...globbed, ...SCANNER_GUARDS])].sort();
 }
 
 function readPackage() {
@@ -44,8 +53,9 @@ function isDocs(f: string): boolean {
   return f.startsWith("docs/") || (f.endsWith(".md") && !f.startsWith("skills/"));
 }
 
-function isTray(f: string): boolean {
+function isSwift(f: string): boolean {
   return (
+    extname(f) === ".swift" &&
     f.startsWith("rt-tray/") &&
     !f.startsWith("rt-tray/Tests/stub-rt/") &&
     !f.startsWith("rt-tray/vm/run/helpers/")
@@ -77,10 +87,10 @@ export function decide(input: ScopeInput): Decision {
   if (input.event !== "pull_request") return { mode: "full", reason: `${input.event} is not a pull request` };
   if (input.changed.length === 0) return { mode: "skip", reason: "no changed files" };
 
-  const skippable = input.changed.every((f) => (isDocs(f) || isTray(f)) && !isFixture(f));
+  const skippable = input.changed.every((f) => (isDocs(f) || isSwift(f)) && !isFixture(f));
   if (skippable) {
     const read = input.changed.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
-    if (!read) return { mode: "skip", reason: "only docs or tray files, none of them read by a unit test" };
+    if (!read) return { mode: "skip", reason: "only docs or swift, none of it read by a unit test" };
     return { mode: "full", reason: `${read[0]} is read by ${read[1]}` };
   }
 
@@ -149,8 +159,10 @@ function testFiles(dir: string): string[] {
   return out;
 }
 
+export const CHANGED_ARGS = ["diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"];
+
 function changedFiles(): string[] {
-  const diff = spawnSync("git", ["diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"], { cwd: ROOT, encoding: "utf8" });
+  const diff = spawnSync("git", CHANGED_ARGS, { cwd: ROOT, encoding: "utf8" });
   if (diff.status !== 0) throw new Error(`git diff failed: ${diff.stderr}`);
   return diff.stdout.split("\n").filter(Boolean);
 }
