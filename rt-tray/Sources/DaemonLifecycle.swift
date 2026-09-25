@@ -81,6 +81,7 @@ class DaemonLifecycle: @unchecked Sendable {
             TrayLog.error("startDaemon with no services registrar wired", ["label": label, "origin": origin])
             return false
         }
+        let before = ServicesRegistrar.registration(service.status)
         let results = await services.register(plists: [plistName])
         var anyFailed = false
         for r in results where !r.ok {
@@ -96,11 +97,14 @@ class DaemonLifecycle: @unchecked Sendable {
         // that previously exited 0 (shutdown, an external SIGTERM) stays
         // registered but dead and KeepAlive never relaunches it (S028).
         // Kickstart forces launchd to actually invoke the job either way.
-        if await services.restart(label: label) {
-            TrayLog.info("daemon kickstarted on start", ["label": label, "origin": origin])
+        let killsFirst = StartAfterRegister.killsFirst(registeredBefore: before)
+        let started = killsFirst ? await services.restart(label: label) : await services.start(label: label)
+        let fields = ["label": label, "origin": origin, "killedFirst": String(killsFirst)]
+        if started {
+            TrayLog.info("daemon kickstarted on start", fields)
             return true
         }
-        TrayLog.warn("kickstart on start failed", ["label": label, "origin": origin])
+        TrayLog.warn("kickstart on start failed", fields)
         return false
     }
 
@@ -159,9 +163,7 @@ class DaemonLifecycle: @unchecked Sendable {
         // unregister and the register below found no service to kickstart, and
         // left the job unregistered (2026-09-09).
         TrayLog.warn("kickstart failed; falling back to re-register", ["label": label, "origin": origin])
-        _ = unregisterSynchronously()
-        try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds)
-        return await startDaemonUngated(origin: origin)
+        return await reregisterDaemonUngated(origin: origin)
     }
 
     // MARK: - Re-register
@@ -191,6 +193,7 @@ class DaemonLifecycle: @unchecked Sendable {
         let label = self.label
         let outcome = await AgentReregister.run(
             unregister: { self.unregisterSynchronously() },
+            drain: { _ = await services.waitForJobToLeave(label: label) },
             settle: { try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds) },
             register: { await services.register(plists: [plist]).allSatisfy(\.ok) },
             beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) },
@@ -208,6 +211,7 @@ class DaemonLifecycle: @unchecked Sendable {
     /// Not async on purpose: in an async context Swift picks SMAppService's
     /// async `unregister()`, and the sequence that recovered a job launchd
     /// would not spawn used this synchronous form, as `stopDaemonUngated` does.
+    /// It returns before launchd reaps the old process, hence the drain.
     private func unregisterSynchronously() -> Bool {
         do {
             try service.unregister()

@@ -22,4 +22,5 @@ public protocol ServicesProviding: Sendable {
     func unregister(plists: [String]) async -> [ServiceRegisterResult]
     func restart(label: String) async -> Bool
     func start(label: String) async -> Bool
+    func waitForJobToLeave(label: String) async -> AgentDrainOutcome
 }

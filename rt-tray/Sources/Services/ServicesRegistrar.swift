@@ -92,6 +92,7 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
         let svc = service(agent)
         let outcome = await AgentReregister.run(
             unregister: { await self.unregister(plists: [agent.fileName]).allSatisfy(\.ok) },
+            drain: { _ = await self.waitForJobToLeave(label: agent.label) },
             settle: { try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds) },
             register: { await self.register(plists: [agent.fileName]).allSatisfy(\.ok) },
             beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) },
@@ -225,6 +226,21 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
             TrayLog.warn("start after register failed", ["label": label, "exit": Int(out.exitCode), "stderr": out.stderr])
         }
         return out.ok
+    }
+
+    func waitForJobToLeave(label: String) async -> AgentDrainOutcome {
+        let started = ProcessInfo.processInfo.systemUptime
+        let outcome = await AgentDrain.wait(lookup: { await self.launchdLookup(label: label) },
+                                            now: { ProcessInfo.processInfo.systemUptime },
+                                            sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) })
+        let fields: [String: Any] = ["label": label, "outcome": String(describing: outcome),
+                                     "seconds": Int(ProcessInfo.processInfo.systemUptime - started)]
+        if outcome == .drained {
+            TrayLog.info("launchd dropped the unregistered job", fields)
+        } else {
+            TrayLog.warn("unregistered job did not leave launchd; registering anyway", fields)
+        }
+        return outcome
     }
 
     /// On a version change, an agent launchd did not bootstrap this launch

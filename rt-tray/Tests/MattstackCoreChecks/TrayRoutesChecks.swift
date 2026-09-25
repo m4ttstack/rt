@@ -26,6 +26,7 @@ final class FakeServices: ServicesProviding, @unchecked Sendable {
     }
     func restart(label: String) async -> Bool { restarted.append(label); return true }
     func start(label: String) async -> Bool { started.append(label); return true }
+    func waitForJobToLeave(label: String) async -> AgentDrainOutcome { .drained }
 }
 final class FakePrivileged: PrivilegedInstalling, @unchecked Sendable {
     var calls = 0
