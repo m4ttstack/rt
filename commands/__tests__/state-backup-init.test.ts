@@ -4,21 +4,22 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { __test__ as bundleLayoutTest } from "../../lib/bundle-layout.ts";
 import { setSetting } from "../../lib/settings/write.ts";
+import { restoreHome } from "../../lib/__tests__/home-env.ts";
 
 describe("state backup init", () => {
   let home: string;
-  let origHome: string;
+  let origHome: string | undefined;
 
   beforeEach(() => {
+    origHome = process.env.HOME;
     bundleLayoutTest.resetBundleLayoutMemo();
     home = mkdtempSync(join(tmpdir(), "si-test-"));
-    origHome = process.env.HOME!;
     process.env.HOME = home;
     mkdirSync(join(home, ".mattstack", "user", "state-backups"), { recursive: true });
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreHome(origHome);
     rmSync(home, { recursive: true, force: true });
     bundleLayoutTest.resetBundleLayoutMemo();
   });

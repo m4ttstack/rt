@@ -393,7 +393,7 @@ test("agent:resume honors workspace and tab overrides", async () => {
 // A launch never emits two --settings flags (controller ruling, fix round
 // 1): the reserved-handle inline crossSessionInbound JSON and the gate-fork
 // hook block must live in the SAME per-agent file behind one flag.
-test("agent:start herdr reserves a handle not held by live presence, passes it as --name, and merges crossSessionInbound with the gate-fork hook into one --settings file", async () => {
+test("agent:start herdr reserves a handle not held by live presence, never passes it as --name, and merges crossSessionInbound with the gate-fork hook into one --settings file", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const held = AGENT_NAMES[0]!;
@@ -410,7 +410,7 @@ test("agent:start herdr reserves a handle not held by live presence, passes it a
   expect(res.data.handle).not.toBe(held);
 
   const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
-  expect(cmd).toContain(`'--name' '${res.data.handle}'`);
+  expect(cmd).not.toContain("'--name'");
   expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
   expect(cmd.match(/--settings'/g)).toHaveLength(1);
   const settingsMatch = cmd.match(/--settings' '([^']+)'/);
@@ -439,7 +439,7 @@ test("agent:start headless never reserves a handle or passes --name/inline --set
   expect(argv).not.toContain('{"crossSessionInbound":"accept"}');
 });
 
-test("agent:resume threads the reserved handle back into --name", async () => {
+test("agent:resume keeps inbound accept for a record holding a reserved handle, still without --name", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const started = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
@@ -447,8 +447,55 @@ test("agent:resume threads the reserved handle back into --name", async () => {
   calls.length = 0;
   const resumed = await h["agent:resume"]({ id: started.data.id });
   expect(resumed.ok).toBe(true);
-  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain(`'--name' '${started.data.handle}'`);
+  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(paneRun).toContain('{"crossSessionInbound":"accept"}');
+  expect(paneRun).not.toContain("'--name'");
+});
+
+test("agent:start names a labeled agent's pane after its label", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "-review !42" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  // herdr joins every trailing arg into the label, a "--" included.
+  expect(calls).toContainEqual(["pane", "rename", res.data.paneId!, "-review !42"]);
+});
+
+test("agent:start still launches when the pane rename fails", async () => {
+  const calls: string[][] = [];
+  const base = okRunner(calls);
+  const failingRename: HerdrRunner = async (args) => {
+    if (args[0] === "pane" && args[1] === "rename") {
+      calls.push(args);
+      return { stdout: JSON.stringify({ error: { code: "pane_not_found", message: "gone" } }), exitCode: 0 };
+    }
+    return base(args);
+  };
+  const h = fresh({ runner: failingRename });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "L" });
+  expect(res.ok).toBe(true);
+  expect(calls.some((c) => c[0] === "pane" && c[1] === "run")).toBe(true);
+});
+
+test("agent:start still launches when the pane rename throws", async () => {
+  const calls: string[][] = [];
+  const base = okRunner(calls);
+  const throwingRename: HerdrRunner = async (args) => {
+    if (args[0] === "pane" && args[1] === "rename") throw new Error("socket gone");
+    return base(args);
+  };
+  const h = fresh({ runner: throwingRename });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "L" });
+  expect(res.ok).toBe(true);
+});
+
+test("agent:start leaves an unlabeled agent's pane unnamed so Claude's own title shows", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  expect(calls.some((c) => c[0] === "pane" && c[1] === "rename")).toBe(false);
 });
 
 // The gate env vars ride alongside a caller's own env, not in place of it --
@@ -678,14 +725,15 @@ test("agent:resume of a herd-spawned (no --bg flag) bg record follows it to the 
   expect(resumed.data.paneId).toBe("bg:w1:p2");
 });
 
-test("agent:start with handle uses it as --name and reserves no pool handle", async () => {
+test("agent:start with handle records it, reserves no pool handle, and keeps inbound accept without --name", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", handle: "job-a" });
   if (!res.ok) throw new Error(res.error);
   expect(res.data.handle).toBe("job-a");
-  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain("'--name' 'job-a'");
+  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(paneRun).toContain('{"crossSessionInbound":"accept"}');
+  expect(paneRun).not.toContain("'--name'");
 });
 
 // The session-id poll must ride the SAME socket-scoped runner the launch did.

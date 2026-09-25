@@ -21,6 +21,7 @@ import { gitUsable } from "../setup/home-git.ts";
 import type { ExecResult, Probes } from "../setup/probes.ts";
 import { forgeFromRemote, parseOriginUrl, stripUserinfo } from "../setup/team-settings.ts";
 import { withoutUrls } from "./redact.ts";
+import { assertNotRealStoreInTest } from "../../packages/rt-client/src/test-isolation.ts";
 import { slugify } from "./slug.ts";
 
 export interface CreateTeamOpts {
@@ -155,6 +156,7 @@ async function resolveRemote(p: Probes, slug: string, opts: CreateTeamOpts): Pro
 export async function createTeam(p: Probes, opts: CreateTeamOpts, ageKeySeam: AgeKeySeam = createRealAgeKeySeam()): Promise<CreateTeamResult> {
   const slug = slugify(opts.name);
   const dir = join(p.home, ".mattstack", "teams", slug);
+  assertNotRealStoreInTest(join(dir, "mattstack", "settings.team.jsonc"));
 
   const originConfigured = p.exists(dir) ? readExistingOrigin(p, dir) : null;
   if (originConfigured !== null && opts.remote !== null && opts.remote !== originConfigured) {

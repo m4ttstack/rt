@@ -28,7 +28,7 @@ export function shellSingleQuote(s: string): string {
 
 export type ClaudeInvocation = AgentInvocation;
 
-/** The inline `--settings` JSON a reserved chat handle triggers on its own (no settingsPath). Exported so a settingsPath caller can merge it into the SAME file instead of the flag being emitted twice. */
+/** The inline `--settings` JSON `inboundAccept` triggers on its own (no settingsPath). Exported so a settingsPath caller can merge it into the SAME file instead of the flag being emitted twice. */
 export const CROSS_SESSION_INBOUND_SETTINGS = { crossSessionInbound: "accept" } as const;
 
 export function resolveClaudeBin(): string {
@@ -51,13 +51,13 @@ function claudeArgs(inv: AgentInvocation): string[] {
   if (inv.yolo) args.push("--dangerously-skip-permissions");
   if (inv.model) args.push("--model", inv.model);
   if (inv.effort) args.push("--effort", inv.effort);
-  // Headless (-p) never signs into chat, so a reserved handle is not passed
-  // there even when one is set on the invocation.
-  if (!inv.headless && inv.name) {
-    args.push("--name", inv.name);
-    // Never both: a settingsPath caller has already folded this same object
-    // into the file it points at (see CROSS_SESSION_INBOUND_SETTINGS above).
-    if (!inv.settingsPath) args.push("--settings", JSON.stringify(CROSS_SESSION_INBOUND_SETTINGS));
+  // Never `--name`: Claude Code paints a session name as the terminal title
+  // for the pane's whole life; sign-in reads the reserved handle
+  // off the agent record instead. Headless (-p) never signs into chat.
+  // Never both --settings: a settingsPath caller has already folded this same
+  // object into the file it points at (see CROSS_SESSION_INBOUND_SETTINGS).
+  if (!inv.headless && inv.inboundAccept && !inv.settingsPath) {
+    args.push("--settings", JSON.stringify(CROSS_SESSION_INBOUND_SETTINGS));
   }
   if (inv.settingsPath) args.push("--settings", inv.settingsPath);
   if (inv.session.kind === "start") args.push("--session-id", inv.session.sessionId);

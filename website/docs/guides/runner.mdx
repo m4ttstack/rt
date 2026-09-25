@@ -5,7 +5,7 @@ title: Runner
 
 # Runner
 
-`rt runner` opens a fullscreen board for managing long-running commands (dev servers, watchers, compilers) as headless processes. Each command runs in its own detached process; the board lists them with a status glyph, name, the command string, and uptime.
+`rt runner` opens a fullscreen board for managing long-running commands (dev servers, watchers, compilers) that run off screen. Each command runs in its own window of a detached tmux session (or its own background herdr pane with `--herdr`); the board lists them with a status glyph, name, the command string, package and repo, the local URL once one is detected, and uptime.
 
 ## Ephemeral and pane-owned
 
@@ -13,15 +13,15 @@ The board exists only while it is on screen. Quitting tears down every process i
 
 ## Backends
 
-**tmux (default):** commands run in a detached tmux session created for this runner instance. Teardown kills the session. No herdr dependency.
+**tmux (default):** each runner starts its own detached tmux server (on a private socket), with one window per command. Teardown kills that server. tmux must be on `PATH`; herdr is needed only for focus (`f`).
 
-**`--herdr`:** commands run as background herdr panes via the daemon-owned bg server, addressed with `bg:` pane IDs.
+**`--herdr`:** commands run as background herdr panes via the daemon-owned bg server, addressed with `bg:` pane IDs. This mode needs the rt daemon running.
 
 The board itself always renders via rt-ui in the current terminal.
 
 ## Adding entries
 
-Press `a` to add a command. The board drops to the normal screen and shows the picker chain (repo, worktree, package, script). After selecting, the board reappears with the new row in "starting" state. Pressing Escape cancels and returns to the board unchanged.
+Press `a` to add a command. The board drops to the normal screen and shows the `rt run` picker chain (repo, worktree, package, script), starting at the package picker for the board's own worktree. After selecting, the board reappears with the new row in "starting" state. Pressing Escape cancels and returns to the board unchanged.
 
 If the picked entry is a preset (a group of commands) or a queue built from multiple picks ("Launch all"), all its rows land on the board at once.
 
@@ -38,12 +38,14 @@ If the picked entry is a preset (a group of commands) or a queue built from mult
 | `s` | Restart selected (sends Ctrl-C, waits for exit, re-runs in the same slot) |
 | `x` | Stop selected |
 | `f` | Focus: jump to the command's live terminal output |
-| `t` | Toggle tail peek (last ~8 lines of output inline on the board) |
+| `e` | Edit the selected command (`enter` saves and restarts it, `esc` cancels) |
+| `t` | Toggle tail peek (last 20 lines of output inline on the board) |
+| `o` | Open the selected command's detected URL in the browser |
 | `q` / Ctrl-C | Quit (confirms if anything is running) |
 
 ## Focus
 
-`f` switches to the command's terminal output so you can see its full scrollback. On the tmux backend this opens an attached tab; on the herdr backend the daemon's focus verb opens the pane in the board's workspace.
+`f` switches to the command's terminal output so you can see its full scrollback. On the tmux backend the board must itself be running in a herdr pane: if nothing is attached to the runner's tmux session yet, focus splits a herdr pane that attaches it, then selects the command's window. On the herdr backend the daemon's focus verb opens the pane in the board's workspace.
 
 ## Status glyphs
 

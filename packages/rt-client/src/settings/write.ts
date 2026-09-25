@@ -35,7 +35,9 @@
  * then the merged result), and finally, only for `scope: "team"`, a team
  * store that cannot be resolved (see below). Filesystem-touching checks (team
  * resolution) run last, after every pure/in-memory refusal, so a bad call
- * never creates or touches a file it was going to refuse anyway.
+ * never creates or touches a file it was going to refuse anyway. Last of all,
+ * at the store seam itself (so `unsetSetting` is covered too), a test run may
+ * not touch a store under the account's real ~/.mattstack (test-isolation.ts).
  *
  * ── The path-literal guard is scope-aware ──────────────────────────────
  * `validateWrite` mirrors `resolve.ts`'s `validateForScope`: `def.pathGuardFields`
@@ -95,6 +97,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { applyEdits, modify, parseTree, type JSONPath, type Node, type ParseError } from "jsonc-parser";
 import { randomBytes } from "crypto";
 import { dirname } from "path";
+import { assertNotRealStoreInTest } from "../test-isolation.ts";
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
 import { getDef, isMigrated, isRetiredKey, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { listTeams } from "./stores.ts";
@@ -345,6 +348,7 @@ function findDuplicateKey(node: Node): string | undefined {
 }
 
 function writeIntoStore(storePath: string, jsonPath: JSONPath, value: unknown, createIfMissing: boolean): void {
+  assertNotRealStoreInTest(storePath);
   let content: string;
   if (existsSync(storePath)) {
     content = readFileSync(storePath, "utf8");
@@ -385,6 +389,7 @@ function writeIntoStore(storePath: string, jsonPath: JSONPath, value: unknown, c
  * removal as it is for writes.
  */
 function removeFromStore(storePath: string, jsonPath: JSONPath): boolean {
+  assertNotRealStoreInTest(storePath);
   const content = readFileSync(storePath, "utf8");
   if (content.trim() === "") return false;
   assertEditableJsonc(storePath, content);

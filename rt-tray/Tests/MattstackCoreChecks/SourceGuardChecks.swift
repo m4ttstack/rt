@@ -16,4 +16,27 @@ let sourceGuardChecks: [Check] = [
         }
         c.expect(files.count >= 5)
     },
+    Check("BadgePoller never fetches over URLSession.shared") { c in
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Sources").standardized
+        let text = try String(contentsOf: sources.appendingPathComponent("Window/BadgePoller.swift"), encoding: .utf8)
+        c.expect(!text.contains("URLSession.shared"), "BadgePoller.swift uses URLSession.shared")
+    },
+    /// Each allowed file fetches only deck.mattstack or the daemon on
+    /// 127.0.0.1; a fetch to an app host needs its own session.
+    Check("only deck and daemon callers use URLSession.shared") { c in
+        let allowed: Set = ["WindowBackends.swift", "WindowModel.swift", "ServicesRegistrar.swift", "DaemonClient.swift"]
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Sources").standardized
+        let files = try c.requireSome(FileManager.default.enumerator(atPath: sources.path))
+            .compactMap { $0 as? String }.filter { $0.hasSuffix(".swift") }
+        try c.require(files.count >= 20, "scanned only \(files.count) files under \(sources.path)")
+        for f in files {
+            let text = try String(contentsOf: sources.appendingPathComponent(f), encoding: .utf8)
+            let name = (f as NSString).lastPathComponent
+            if text.contains("URLSession.shared") && !allowed.contains(name) {
+                c.fail("\(f) uses URLSession.shared")
+            }
+        }
+    },
 ]

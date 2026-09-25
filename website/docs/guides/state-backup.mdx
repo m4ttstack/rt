@@ -26,9 +26,9 @@ Everything else (the events bus, background claims, herd state) is small and re-
 rt state backup init
 ```
 
-Init checks that `age`, `zstd`, and `git-lfs` are installed (all three come from Homebrew today; bundling is in progress), then:
+Init finds `age`, `zstd`, and `git-lfs` (see [Dependencies](#dependencies)) and stops if any is missing. The home repo must already exist, so run `rt home init` first if you have not. Then init:
 
-1. Installs Git LFS in the home repo (`~/.mattstack/user/`) and adds a `.gitattributes` rule so `.age` files are tracked by LFS.
+1. Installs Git LFS in the home repo (`~/.mattstack/user/`), points its LFS filters at the resolved `git-lfs`, and adds a `.gitattributes` rule so `.age` files are tracked by LFS.
 2. Creates `recipients.txt` with this machine's age public key, read from the macOS Keychain. The private key stays in the Keychain and is never written to disk.
 3. Runs the first full backup immediately.
 4. Verifies the backup can be decrypted (a round-trip sanity check).
@@ -42,7 +42,7 @@ Every 4 hours (with a 60-second delay after daemon start), the daemon:
 1. Snapshots each source (`VACUUM INTO` for SQLite databases, `tar -c` for gitq stacks) into a temp directory.
 2. Compresses with `zstd -19`.
 3. Encrypts with `age -R recipients.txt`.
-4. Moves the final `.age` blob into `~/.mattstack/user/state-backups/<app>/`.
+4. Writes the final `.age` blob into `~/.mattstack/user/state-backups/<app>/`, plus a `manifest-<timestamp>.json` beside the app folders.
 5. Prunes old backups (7-day retention, keeping the newest file per source prefix so a stable source always has at least one copy).
 
 The home repo's snapshot engine auto-commits and pushes within about 80 seconds, so the encrypted blobs land on the remote shortly after each cycle.
@@ -53,8 +53,8 @@ You can also trigger a backup manually:
 
 ```bash
 rt state backup            # run the full pipeline now
-rt state backup --local    # local-only VACUUM INTO, no encryption or push
-rt state backup status     # show the last cycle's outcome per source
+rt state backup --local    # local-only VACUUM INTO of rt/state.db, no encryption or push
+rt state backup status     # per-app latest backup, count and size, plus push and LFS state
 ```
 
 ## Restoring
@@ -65,7 +65,7 @@ rt state backup status     # show the last cycle's outcome per source
 rt state restore --from-backup
 ```
 
-This pulls the home repo (fetching LFS blobs), finds the most recent backup for each source, decrypts with the Keychain key, decompresses, integrity-checks the content hash against the manifest, and places the files. The daemon must be stopped first (the command refuses otherwise, unless you pass `--force`).
+This pulls the home repo (fetching LFS blobs), finds the most recent backup for each source, decrypts with the Keychain key, decompresses, runs SQLite's `quick_check` on each restored database, and places the files. The daemon must be stopped first (the command refuses while it is running or its socket exists, unless you pass `--force`).
 
 ### New machine
 
@@ -80,21 +80,21 @@ With `--identity`, that file is the key. Without it, the command reads your pers
 ### Selective restore
 
 ```bash
-rt state restore --from-backup --only rt       # just rt/state.db
+rt state restore --from-backup --only rt       # rt/state.db and rt/gates.db
 rt state restore --from-backup --at 2026-09-10  # point-in-time
 rt state restore --from-backup --dry-run        # preview without writing
 ```
 
 ### When something goes wrong
 
-- **Integrity check failure**: the command refuses to overwrite and suggests an older backup via `--at`.
-- **A source failed during backup**: the daemon logs a warning and skips that source for the cycle. It retries on the next sweep. `rt state backup status` shows the failure.
-- **Missing age or recipients.txt**: the sweep falls back to a local-only `VACUUM INTO` snapshot (unencrypted, not pushed).
+- **Integrity check failure**: that source is not overwritten; it is reported as an error and the command exits 1. Pick an older backup with `--at`.
+- **A source failed during backup**: the daemon logs a `backup errors` warning, keeps that source's previous backup in the manifest, and retries on the next sweep. The failure shows up in the daemon log (`rt daemon logs`).
+- **Backup not set up (no `recipients.txt`)**: the sweep takes a local-only `VACUUM INTO` copy of `rt/state.db` under `~/.mattstack/rt/backups/` instead (unencrypted, not pushed). It does the same when every source fails in a cycle.
 
 ## The age key
 
-The private key lives in the macOS Keychain, never on the filesystem. `recipients.txt` holds public keys only (the personal key, plus an optional team key if one is added). Either key can decrypt independently, giving two recovery paths: the Keychain on the original machine, or the team identity file on a new one.
+The private key lives in the macOS Keychain, never on the filesystem. `recipients.txt` holds public keys only. `rt state backup init` writes just this machine's personal key; a team public key, for the second recovery path, has to be added to the file by hand. With both present, either key can decrypt independently: the Keychain on the original machine, or the team identity file on a new one.
 
 ## Dependencies
 
-`age`, `zstd`, and `git-lfs` must be on PATH. Today they come from Homebrew (`brew install age zstd git-lfs`). Bundling all three into the mattstack.app bundle is in progress but has not shipped yet.
+`age`, `zstd`, and `git-lfs` ship inside mattstack.app (`Contents/Helpers/`). rt uses the bundled copy first and falls back to PATH when there is none (for example, rt running from source). The daemon's sweep resolves them the same way. Because the home repo's LFS filters name an absolute `git-lfs` path, every init, sweep, and restore rewrites them from the current resolution, which keeps them working after the app moves.

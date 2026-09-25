@@ -4,7 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 
 const config: Config = {
   title: "rt",
-  tagline: "Personal developer CLI for branch management, worktrees, and git workflows",
+  tagline: "The mattstack command line: worktrees, git workflows, and the daemon behind the apps",
   favicon: "img/favicon.svg",
   url: "https://rt.cool",
   baseUrl: "/",
@@ -37,6 +37,11 @@ const config: Config = {
       title: "rt",
       items: [
         {
+          href: "https://github.com/m4ttstack/rt/releases/latest",
+          label: "Download",
+          position: "right",
+        },
+        {
           href: "https://github.com/m4ttstack/rt",
           label: "GitHub",
           position: "right",
@@ -46,7 +51,7 @@ const config: Config = {
     footer: {
       style: "dark",
       links: [],
-      copyright: "rt ... repo tools",
+      copyright: "rt, the mattstack command line",
     },
     prism: {
       theme: prismThemes.github,

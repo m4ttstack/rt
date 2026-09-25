@@ -4,14 +4,15 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
 import { spawn } from "bun";
+import { restoreHome } from "../../lib/__tests__/home-env.ts";
 
 describe("state restore --from-backup", () => {
   let home: string;
-  let origHome: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
+    origHome = process.env.HOME;
     home = realpathSync(mkdtempSync(join(tmpdir(), "sr-test-")));
-    origHome = process.env.HOME!;
     process.env.HOME = home;
 
     const ms = join(home, ".mattstack");
@@ -51,7 +52,7 @@ describe("state restore --from-backup", () => {
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreHome(origHome);
     rmSync(home, { recursive: true, force: true });
   });
 

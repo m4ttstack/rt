@@ -181,7 +181,7 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  *
  * A launch never emits two --settings flags (repeated-flag semantics are
  * unverified against the real CLI): when this launch would otherwise get
- * the --name-triggered inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
+ * the inbound-accept inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
  * reserved handle, non-headless -- claudeArgs' own condition), that object
  * is folded into this SAME file via mergeGateForkHookSettings instead of
  * being emitted as a second flag. lib/agent-argv/claude.ts's claudeArgs skips its
@@ -257,6 +257,15 @@ function isCommandNotFoundShape(message: string): boolean {
   return /\(127\)/.test(message) || /not found at/i.test(message);
 }
 
+async function renamePane(runner: HerdrRunner, paneId: string, label: string, log: Logger): Promise<void> {
+  try {
+    const r = await runner(["pane", "rename", paneId, label]);
+    if (r.exitCode !== 0 || r.stdout.includes('"error"')) log.warn({ paneId, out: r.stdout.slice(0, 400) }, "agent: pane rename failed; pane keeps its terminal title");
+  } catch (err) {
+    log.warn({ err, paneId }, "agent: pane rename failed; pane keeps its terminal title");
+  }
+}
+
 /** Paint budget for the folder-trust check on a freshly launched pane. */
 const TRUST_PAINT_MS = 3_000;
 
@@ -323,7 +332,7 @@ export function createAgentHandlers(opts: {
       ...(rec.account !== undefined && { account: rec.account }),
       ...(rec.model !== undefined && { model: rec.model }),
       ...(rec.effort !== undefined && { effort: rec.effort }),
-      ...(rec.handle !== undefined && { name: rec.handle }),
+      ...(rec.handle !== undefined && { inboundAccept: true }),
       ...(rec.extraArgs !== undefined && { extraArgs: rec.extraArgs }),
       ...(rec.yolo !== undefined && { yolo: rec.yolo }),
       ...(prompt !== undefined && { prompt }),
@@ -353,6 +362,11 @@ export function createAgentHandlers(opts: {
       rec.paneId = out.paneId;
       rec.tabId = out.tabId;
       rec.workspaceId = out.workspaceId;
+      // herdr and Flock show a pane's own name over its terminal title. Best
+      // effort: the pane is already running, and a thrown rename would roll
+      // back the record while leaving its labeled tab behind to dedup every
+      // retry. herdr reports a failed rename in its JSON, exit code 0.
+      if (rec.label) await renamePane(runner, out.paneId, rec.label, log);
       // Every claude pane the daemon opens gets the folder-trust check, not
       // just the ones herd:spawn opens: a plain `rt agent start` into a fresh
       // directory sat on the dialog until a human cleared it (RT-156). The
@@ -528,7 +542,7 @@ export function createAgentHandlers(opts: {
       } else if (provider === "claude") {
         // Headless never signs into chat (see claudeArgs), so reserving a
         // handle for it would only burn an LRU pool slot no one adopts. Nor
-        // does codex at any surface: its builders have no --name / chat-handle
+        // does codex at any surface: its builders have no chat-handle
         // mechanism (a spec Non-goal), so a reserved handle would be a pool
         // slot spent on a record signed into nothing.
         rec.handle = reserveAgentHandle(db);

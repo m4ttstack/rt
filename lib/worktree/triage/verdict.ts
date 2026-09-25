@@ -35,8 +35,7 @@ const TAIL: TriageAction[] = ["open-finder", "open-terminal", "copy-path"];
 function pushOf(f: TriageFacts): TriageRow["push"] {
   if (f.containment === "in-default") return { kind: "in-main" };
   if (f.containment === "on-remote") return { kind: "pushed" };
-  if (f.containment === "patch-identical" && !f.remoteBranchExists) return { kind: "remote-deleted" };
-  if (f.containment === "patch-identical") return { kind: "pushed" };
+  if (f.containment === "patch-identical" || f.containment === "in-merged-mr") return { kind: f.remoteBranchExists ? "pushed" : "remote-deleted" };
   return { kind: "unpushed", ahead: f.ahead };
 }
 
@@ -53,6 +52,7 @@ function safeVerdict(f: TriageFacts): string {
   const noun = changeNoun(f.repo);
   const where = f.containment === "in-default" ? "Every commit is in main."
     : f.containment === "patch-identical" ? `Rebased before merge, and all ${f.ahead} commits match the merged ${noun}.`
+    : f.containment === "in-merged-mr" ? `Every commit is in the merged ${noun}.`
     : f.mr?.state === "closed" ? `The ${noun} was closed, but the remote branch has every commit.`
     : "Every commit is on the remote.";
   if (f.dirt.kind === "junk") return `${where} Only generated files are left.`;

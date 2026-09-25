@@ -157,11 +157,51 @@ describe("checkRun", () => {
     expect(row.detail).toContain("gh run rerun");
   });
 
-  test("error when no push run matches the tag", async () => {
-    const s = seams({ exec: (argv) => (argv.join(" ").includes("actions/workflows") ? ok(NO_RUNS) : fail("unexpected")) });
+  test("error when no push run matches the tag, after waiting a few minutes for one", async () => {
+    const sleeps: number[] = [];
+    let lookups = 0;
+    const s = seams({
+      sleep: async (ms) => { sleeps.push(ms); },
+      exec: (argv) => {
+        if (!argv.join(" ").includes("actions/workflows")) return fail("unexpected");
+        lookups++;
+        return ok(NO_RUNS);
+      },
+    });
     const row = await checkRun(s, "v9.9.9", false);
     expect(row.status).toBe("error");
     expect(row.detail).toContain("v9.9.9");
+    expect(lookups).toBe(12);
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(150_000);
+  });
+
+  test("a tag-push run that shows up a little late is still found", async () => {
+    let lookups = 0;
+    const s = seams({
+      sleep: async () => {},
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        if (cmd.includes("actions/workflows")) return ok(++lookups < 3 ? NO_RUNS : FOUND);
+        if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "success" }));
+        return fail("unexpected");
+      },
+    });
+    const row = await checkRun(s, "v2.10.2", false);
+    expect(row.status).toBe("ok");
+    expect(lookups).toBe(3);
+  });
+
+  test("--no-wait looks for the run once", async () => {
+    let lookups = 0;
+    const sleeps: number[] = [];
+    const s = seams({
+      sleep: async (ms) => { sleeps.push(ms); },
+      exec: (argv) => { lookups++; return argv.join(" ").includes("actions/workflows") ? ok(NO_RUNS) : fail("unexpected"); },
+    });
+    const row = await checkRun(s, "v9.9.9", true);
+    expect(row.status).toBe("error");
+    expect(lookups).toBe(1);
+    expect(sleeps).toEqual([]);
   });
 
   test("error when the run lookup itself fails", async () => {
@@ -390,6 +430,15 @@ describe("runVerify", () => {
     expect(report.errorCount).toBe(0);
     expect(report.staleCount).toBe(0);
     expect(report.pendingCount).toBe(0);
+  });
+
+  test("skipLatest leaves the public releases/latest endpoint out entirely", async () => {
+    let fetched = 0;
+    const s = { ...happyPathSeams(), fetchJson: () => { fetched++; return Promise.reject(new Error("no network")); } };
+    const report = await runVerify(s, { tag: "v2.10.2", skipLatest: true });
+    expect(fetched).toBe(0);
+    expect(report.rows.find((r) => r.id === "latest")).toBeUndefined();
+    expect(report.clean).toBe(true);
   });
 
   test("does not add a tag-resolution row when the tag is given explicitly", async () => {

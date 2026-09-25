@@ -382,6 +382,19 @@ describe("held trees say why (RT-267)", () => {
     expect(stopped).toEqual([]);
   });
 
+  test("stale orphans are left running when the tree's branch holds a commit the merged MR lacks", async () => {
+    writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: true });
+    const rec = ephemeralTree(repo, repoName, "yankee", "feat-yankee");
+    const mergedSha = headOf(rec.path);
+    writeFileSync(join(rec.path, "later.txt"), "never merged\n");
+    sh(`git add -A && git ${GIT_ID} commit -q -m later && git checkout -q --detach ${mergedSha}`, rec.path);
+    const stopped: number[][] = [];
+    await detect({ "feat-yankee": { repoName, mr: { iid: 93, state: "merged", sha: mergedSha } } }, {
+      liveCwds: async () => new Set([rec.path]), treeHolders: staleOrphan, stopProcesses: (pids) => stopped.push(pids),
+    });
+    expect(stopped).toEqual([]);
+  });
+
   test("stale orphans are left running in a dirty tree dispose would refuse anyway", async () => {
     writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: true });
     const rec = ephemeralTree(repo, repoName, "uniform", "feat-uniform");

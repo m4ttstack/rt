@@ -3,9 +3,13 @@ import Foundation
 public struct BadgeReading: Equatable, Sendable {
     public let count: Int
     public let path: String?
-    public init(count: Int, path: String?) {
+    /// The gates behind `count`, when the app reports them: two apps can
+    /// badge the same gate (board and console both count a run's gate).
+    public let ids: [String]
+    public init(count: Int, path: String?, ids: [String] = []) {
         self.count = count
         self.path = path
+        self.ids = ids
     }
 }
 
@@ -24,6 +28,7 @@ public enum BadgeParse {
     private struct Payload: Decodable {
         let count: Int
         let path: String?
+        let ids: [String]?
     }
 
     /// `JSONDecoder` rejects a fractional, boolean, or missing count.
@@ -31,7 +36,8 @@ public enum BadgeParse {
         guard let payload = try? JSONDecoder().decode(Payload.self, from: data),
               payload.count >= 0 else { return nil }
         return BadgeReading(count: payload.count,
-                            path: payload.path.flatMap { isInAppPath($0) ? $0 : nil })
+                            path: payload.path.flatMap { isInAppPath($0) ? $0 : nil },
+                            ids: payload.ids ?? [])
     }
 }
 
@@ -61,7 +67,15 @@ public struct BadgeBook: Sendable {
         failures = failures.filter { apps.contains($0.key) }
     }
 
-    public var total: Int { readings.values.reduce(0) { $0 + $1.count } }
+    /// Each gate once across apps; a reading without ids adds its count.
+    public var total: Int {
+        var gates = Set<String>()
+        var unkeyed = 0
+        for reading in readings.values {
+            if reading.ids.isEmpty { unkeyed += reading.count } else { gates.formUnion(reading.ids) }
+        }
+        return gates.count + unkeyed
+    }
 
     public static func label(_ count: Int) -> String? {
         if count <= 0 { return nil }

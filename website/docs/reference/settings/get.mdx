@@ -20,7 +20,7 @@ rt settings get <key> [flags]
 | Flag / Arg | Type | Default | Description |
 | --- | --- | --- | --- |
 | `<key>` | text |  | Namespaced settings key (see rt settings list) |
-| [`--repo`](/guides/common-flags) | text |  | Repo name from ~/.mattstack/rt/repos.json — enables repo-scoped rungs and $&#123;repoRoot&#125; |
+| [`--repo`](/guides/common-flags) | text |  | Registered repo (name, path, or identity); enables repo-scoped rungs and $&#123;repoRoot&#125; |
 | [`--json`](/guides/common-flags) | boolean | `false` | Machine-readable output |
 
 _See code: [commands/settings-keys.ts › settingsGet](https://github.com/m4ttstack/rt/blob/main/commands/settings-keys.ts)_

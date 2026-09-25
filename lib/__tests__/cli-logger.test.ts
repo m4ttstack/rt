@@ -98,9 +98,11 @@ describe("logCommand: an rt team join invite code never reaches disk, even thoug
 
 describe("R052: installCliLogging routes lib/state/busy.ts's warnings onto the cli surface", () => {
   test("a busy write inside this process lands in cli.<date>.log, not the daemon surface", () => {
-    installCliLogging(["rt", "some-command"]);
+    const processEvents = ["exit", "uncaughtException", "unhandledRejection"] as const;
+    const listenersBefore = new Map(processEvents.map((e) => [e, process.rawListeners(e)]));
 
     try {
+      installCliLogging(["rt", "some-command"]);
       persistOrWarn("mymodule", () => {
         const e = new Error("database is locked");
         (e as { code?: string }).code = "SQLITE_BUSY";
@@ -115,6 +117,13 @@ describe("R052: installCliLogging routes lib/state/busy.ts's warnings onto the c
       expect(parsed.canary).toBe("cli-busy-sink-canary");
     } finally {
       setBusyLogSink(null); // don't leak this sink into later test files in the same process, even on assertion failure
+      // installCliLogging's crash handlers call process.exit(1), which would
+      // end whatever file runs next the moment it has an unhandled rejection.
+      for (const e of processEvents) {
+        for (const listener of process.rawListeners(e)) {
+          if (!listenersBefore.get(e)!.includes(listener)) process.off(e, listener as (...args: any[]) => void);
+        }
+      }
     }
   });
 });

@@ -14,19 +14,19 @@ Logging in `rt` is structural, not per-feature: outcomes are logged at a small n
 - **CLI commands.** `dispatch()` (in `lib/command-tree.ts`) logs every command's outcome, and CLI-wide crash/error capture covers every `process.exit()` path and persists crash stacks. A new command gets usage, error, and crash logging for free, with no logging code of its own.
 - **Daemon commands.** Every IPC/REST command funnels through a single `handleCommand` dispatcher in `lib/daemon.ts`, which logs ok/rejected/threw with duration for each call. A new handler inherits this automatically.
 - **Daemon crashes.** Dedicated crash handlers capture uncaught exceptions, unhandled rejections, JS-side stderr, and native Bun panics.
-- **Tray.** The tray app's own logging API is the only way it logs (never a bare system log call), and it logs every non-2xx reply it sends.
+- **Menu bar app.** mattstack.app's own logging API is the only way it logs (never a bare system log call), and it logs every non-2xx reply it sends.
 
 Because outcomes are already logged at these seams, feature code almost never needs to add logging itself. What feature code *should* log is domain events: things invisible at the seams, like a sync fast-forwarding or a watcher being rewired. Those go through a per-module logger, generally at `debug` level (noisy/periodic events) since the default log level is `info`.
 
 ## The file convention
 
-Every surface (daemon, CLI, tray, and any future surface that follows the same convention) appends JSON lines to:
+Every surface (daemon, CLI, the menu bar app's `tray` surface, and any future surface that follows the same convention) appends JSON lines to:
 
 ```
 ~/.mattstack/rt/logs/<surface>.YYYY-MM-DD[.N].log
 ```
 
-For example, `daemon.2026-07-17.log` or `cli.2026-07-17.1.log` (the `.N` suffix appears when a surface rotates more than once in a day).
+For example, `cli.2026-07-17.log`, `tray.2026-07-17.log`, or `daemon.2026-07-17.1.log` (the daemon's rotating writer always numbers its files, and starts a new one when a file passes 50 MB).
 
 `rt daemon logs` auto-discovers surfaces by matching this filename pattern in `~/.mattstack/rt/logs/` and following the newest file per surface. That means a new surface which adopts the convention shows up in the log viewer automatically, with nothing to register.
 

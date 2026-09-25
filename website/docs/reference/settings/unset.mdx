@@ -21,7 +21,7 @@ rt settings unset <key> [flags]
 | --- | --- | --- | --- |
 | `<key>` | text |  | Namespaced settings key to remove |
 | `--scope` | select |  | Which store to remove it from |
-| [`--repo`](/guides/common-flags) | text |  | Repo name from ~/.mattstack/rt/repos.json — required for repo-scoped keys |
+| [`--repo`](/guides/common-flags) | text |  | Registered repo (name, path, or identity); required for repo-scoped keys |
 | `--team` | text |  | Which team's local store to edit, for --scope team (only needed when several are cloned) |
 
 _See code: [commands/settings-keys.ts › settingsUnset](https://github.com/m4ttstack/rt/blob/main/commands/settings-keys.ts)_

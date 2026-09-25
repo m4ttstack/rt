@@ -182,6 +182,14 @@ calling agent does not already own (its own run, its own gates, a read); the
 tool is the long-term replacement for Bash allow rules, so a careless flag
 here is a permission grant on every estate machine.
 
+The `mr_*` tools in the same file are the rest of that grant.
+`mcp__plugin_mattstack_mattstack` is in `BASE_PERMISSIONS`, so every tool on
+the server runs on every estate machine with no permission check, and a new
+`mr_*` tool is a forge write any agent can make unasked. They cover what
+board panes and pipeline verbs write (notes, approvals, resolves, draft
+state, retries, rebase, create). Merge, and anything equally irreversible,
+stays off the server so the classifier or a human stays in front of it.
+
 Decision gates (`rt gate ask`, `rt gate wait`, the board's stage sheet) are
 the only way an unattended pane asks a human anything. The
 `AskUserQuestion` hook in `.claude/` panes defers to `rt gate fork-check`
@@ -368,6 +376,21 @@ the diff touches a path in `.github/workflows/e2e.yml`'s filter; a change to
 socket setup, `test-setup.ts` or `e2e/socket-path.ts` must be in that filter or
 the gate never runs (macOS caps a unix socket path at 104 bytes, and the gate
 is what catches a path that grew past it).
+
+### Run `bun test` from the repo root
+
+bun reads `bunfig.toml` only from the cwd, never a parent, so a run started
+anywhere else (a subdirectory, `packages/rt-client`, an absolute test path
+from another directory) skips `test-setup.ts` and keeps the real HOME. Two
+more ways a run reaches the real home with the preload loaded: a test that
+leaves HOME unset, since paths then fall back to bun's `os.homedir()`, which
+is frozen at the HOME the process started with; and a child started by
+`Bun.spawn`/`Bun.spawnSync` without `env`, which gets that startup
+environment, real HOME included (pass `childEnv()` from `lib/subprocess.ts`).
+`setSetting`/`unsetSetting`, `rt team create`/`join` and the home-repo init
+seam refuse a test-run write into the account's real `~/.mattstack` settings
+stores (`packages/rt-client/src/test-isolation.ts`); nothing guards the rest
+of `~/.mattstack` (state db, logs, runtime files) the same way.
 
 ### Module registry
 

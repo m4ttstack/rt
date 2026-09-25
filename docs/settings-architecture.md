@@ -189,7 +189,10 @@ on every install (stated at the `board.*` block in registry-defs).
 - Bun freezes `os.homedir()` and the spawn-PATH at process start. Resolve HOME
   at call time (`process.env.HOME ?? homedir()`) everywhere; tests repoint
   `process.env.HOME` at a temp dir via a bunfig preload — never remove those
-  preloads, and never let a test touch the real `~/.mattstack`.
+  preloads, and never let a test touch the real `~/.mattstack`. bun reads
+  `bunfig.toml` only from the cwd, so run tests from the repo root; a
+  test-run write into the account's real stores throws instead of landing
+  (`packages/rt-client/src/test-isolation.ts`).
 - `file:` dependencies are COPIES (see step 3 above). Stale copies fail
   silently — old paths resolve nothing and every key reads as unset.
 - sops resolves `.sops.yaml` and its `path_regex` relative to the spawn cwd;

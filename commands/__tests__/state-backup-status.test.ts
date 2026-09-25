@@ -3,22 +3,23 @@ import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { restoreHome } from "../../lib/__tests__/home-env.ts";
 
 describe("state backup status", () => {
   let home: string;
-  let origHome: string;
+  let origHome: string | undefined;
   let logSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
+    origHome = process.env.HOME;
     home = realpathSync(mkdtempSync(join(tmpdir(), "ss-test-")));
-    origHome = process.env.HOME!;
     process.env.HOME = home;
     mkdirSync(join(home, ".mattstack", "user", "state-backups"), { recursive: true });
     logSpy = spyOn(console, "log");
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreHome(origHome);
     rmSync(home, { recursive: true, force: true });
     logSpy.mockRestore();
   });

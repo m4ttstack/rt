@@ -7,7 +7,7 @@ title: RT Context extension
 
 The `rt-context` VS Code/Cursor extension shows your current worktree, branch, and linked Linear ticket in the status bar, so you always know which context you're in without running a command.
 
-It's installed automatically by Homebrew, so most people never need to think about it.
+Setup installs it into every editor it detects (whether you install through mattstack.app's setup wizard or `rt --post-install`), so most people never need to think about it.
 
 ## Status bar
 
@@ -15,7 +15,7 @@ It's installed automatically by Homebrew, so most people never need to think abo
 📁 main-worktree  │  🔖 ACME-1287: Add damage photo uploads
 ```
 
-Clicking the item opens the linked Linear ticket directly.
+Clicking the item offers a short menu: open the linked Linear ticket, open the merge request, or reveal the worktree in Finder. Two more items sit beside it: **Worktrees** lists every worktree of the repo, and the branch item switches branches.
 
 ## Reinstalling or adding editors
 
@@ -23,6 +23,6 @@ Clicking the item opens the linked Linear ticket directly.
 rt settings extension
 ```
 
-This opens a fuzzy picker to select which editors (Cursor, VS Code, Antigravity, and the like) to install into. Use it to reinstall after an editor update, or to add the extension to an editor Homebrew didn't originally target.
+This opens a fuzzy picker to select which editors (Cursor, VS Code, Antigravity, and the like) to install into. Use it to reinstall after an editor update, or to add the extension to an editor you installed after setup.
 
 See the full command reference: [`rt settings extension`](/reference/settings/extension).

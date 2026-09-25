@@ -36,6 +36,7 @@ import { gitWithToken } from "./git-credential.ts";
 import { decodeCode, open, sealReply } from "./invite-crypto.ts";
 import { AUTH_FAILURE_PATTERN } from "./publish.ts";
 import { withoutUrls } from "./redact.ts";
+import { assertNotRealStoreInTest } from "../../packages/rt-client/src/test-isolation.ts";
 import type { RelayClient } from "./relay-client.ts";
 import { storedForgeToken } from "./stored-forge-token.ts";
 import { forgeLabel, probeTeamRepoAccess, type RepoAccessVerdict } from "./repo-access.ts";
@@ -400,6 +401,7 @@ export async function joinRedeem(
   const resolved = await resolveSource(p, relay, opts.code);
   if (!isJoinSource(resolved)) return resolved;
   const { idHex, key, pointer } = resolved;
+  assertNotRealStoreInTest(join(p.home, ".mattstack", "teams", pointer.team, "mattstack", "settings.team.jsonc"));
 
   // Checkpointed BEFORE any clone/redeem attempt (not just on the dry-run
   // path) so a mid-flow failure below — relay unreachable, reply failed, the

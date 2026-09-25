@@ -5,6 +5,7 @@
  * and ephemeral repos alike.
  *
  *   mr:action            — merge / rebase / approve / unapprove / etc.
+ *   mr:create            - create an MR (draft by default) and write it back
  *   mr:fetch-job-detail  — unified detail fetch (returns trace or bridge)
  *   mr:fetch-job-trace   — raw job trace text
  *
@@ -58,6 +59,7 @@ export function createMRHandlers(
   broadcast: (type: string, data: any) => void,
   overrides: MRHandlerOverrides = {},
 ): { "mr:action": (payload: any, signal?: AbortSignal) => Promise<any> }
+  & { "mr:create": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:create">> }
   & { "mr:fetch-job-detail": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:fetch-job-detail">> }
   & { "mr:fetch-job-trace": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:fetch-job-trace">> }
   & HandlerMap {
@@ -162,6 +164,49 @@ export function createMRHandlers(
         }
         return { ok: true };
       } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+
+    "mr:create": async (payload) => {
+      const p = payload as { sourceBranch?: unknown; targetBranch?: unknown; title?: unknown; description?: unknown; draft?: unknown } | undefined;
+      const nonBlank = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+      const sourceBranchInput = p?.sourceBranch, targetBranchInput = p?.targetBranch, titleInput = p?.title;
+      if (!nonBlank(sourceBranchInput) || !nonBlank(targetBranchInput) || !nonBlank(titleInput)) {
+        return { ok: false, error: "missing repoName/sourceBranch/targetBranch/title" };
+      }
+      // Trimmed once here so the same-branch guard and the provider call see identical values;
+      // untrimmed " main" vs "main" would pass the guard and reach GitLab as a bad branch name.
+      const sourceBranch = sourceBranchInput.trim();
+      const targetBranch = targetBranchInput.trim();
+      const title = titleInput.trim();
+      if (p?.description !== undefined && typeof p.description !== "string") return { ok: false, error: "invalid description" };
+      if (p?.draft !== undefined && typeof p.draft !== "boolean") return { ok: false, error: "invalid draft" };
+      if (sourceBranch === targetBranch) return { ok: false, error: "sourceBranch and targetBranch are the same" };
+      const decoded = decodeIndexedRepo(payload);
+      if (!decoded.ok) return { ok: false, error: decoded.error };
+      const repoName = decoded.repo;
+
+      try {
+        const { provider, projectPath } = await contextFor(repoName);
+        const pr: PullRequest = await provider.createPullRequest({
+          projectPath, title, sourceBranch, targetBranch,
+          draft: p?.draft !== false,
+          ...(typeof p?.description === "string" && { description: p.description }),
+        });
+        try {
+          writeback(repoName, projectPath, pr);
+        } catch (err) {
+          ctx.log.warn({ err, repo: repoName, iid: pr.iid }, "mr:create write-back failed");
+        }
+        return { ok: true, data: { iid: pr.iid, url: pr.webUrl } };
+      } catch (err) {
+        // The MR exists once glance reports writeApplied; ok:false here would
+        // invite a second create.
+        if (err instanceof ReadBackFailedError && err.writeApplied) {
+          ctx.log.warn({ err, repo: repoName, iid: err.iid }, "mr:create landed but its read-back failed");
+          return { ok: true, data: { iid: err.iid, url: null } };
+        }
         return { ok: false, error: String(err) };
       }
     },

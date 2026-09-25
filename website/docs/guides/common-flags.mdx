@@ -22,7 +22,7 @@ On a branch command this prints the subcommand listing with descriptions. On a l
 Two boundaries to know:
 
 - `--help` is only recognized as the *first* token after the command path. A later `--help` reaches the command untouched, so it can never be mistaken for a flag's value.
-- Plugin commands that wrap an external binary (`exec` plugins) forward `--help` to that binary instead, which owns its own help. Commands that route verbs internally rather than through the command tree (for example `rt chat join`) answer a verb-level `--help` with that verb's own usage line.
+- Plugin commands that wrap an external binary (`exec` plugins) forward `--help` to that binary instead, which owns its own help. Commands that route verbs internally rather than through the command tree (`rt chat` and `rt agent`) answer a verb-level `--help` (for example `rt chat join --help`) with the command's own usage line, which lists its verbs.
 
 ## `--json`
 
@@ -50,4 +50,4 @@ Note that `rt cd --repo` is a different, unrelated flag: `rt cd` isn't a worktre
 
 ## Which commands honor these
 
-Not every command accepts every flag above; each command's own reference page lists the flags it actually parses. `--dry-run`, `--json`, `--agent`, and `--no-agent` are used by `rt sync` and `rt git rebase` (the two commands that run rebases and can hit conflicts). `--repo <name>` is used by worktree-context commands, such as `rt commit`. (`rt cd --repo` is the unrelated, cd-specific boolean flag described above, not this one.)
+Not every command accepts every flag above; each command's own reference page lists the flags it declares, and the row there says what the flag does for that command. `--json` and `--dry-run` appear on many commands. The conflict behavior and the `--agent` / `--no-agent` pair belong to `rt sync` and `rt git rebase` (including `rt git rebase onto`), the commands that run rebases and can hit conflicts; `rt gate open --agent` is unrelated and takes an agent id. The dispatcher's `--repo <name>` works on every worktree-context command, such as `rt commit`, without appearing on its reference page. A `--repo` that a reference page does list (`rt cd`, the `rt worktree` verbs, `rt settings`, `rt runs`, and others) is that command's own flag, with the meaning its row gives.

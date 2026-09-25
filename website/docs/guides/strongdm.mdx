@@ -9,6 +9,7 @@ title: StrongDM
 
 ```bash
 rt sdm connect             # pick a datasource and connect (auto-logs-in if your session expired)
+rt sdm connections --json  # list connection keys, for scripts and agents
 rt sdm status              # StrongDM auth health + connected tunnels
 rt sdm login               # log in (browser popup, terminal fallback)
 rt sdm set-email <email>   # set the email rt logs in with
@@ -16,11 +17,11 @@ rt sdm refresh             # re-scan the catalog
 rt sdm enrichment [init]   # show or scaffold the enrichment map
 ```
 
-See the full command reference: [`rt sdm`](/reference/sdm), [`rt sdm connect`](/reference/sdm/connect), [`rt sdm status`](/reference/sdm/status), [`rt sdm login`](/reference/sdm/login), [`rt sdm refresh`](/reference/sdm/refresh), [`rt sdm enrichment`](/reference/sdm/enrichment), [`rt sdm set-email`](/reference/sdm/set-email).
+See the full command reference: [`rt sdm`](/reference/sdm), [`rt sdm connect`](/reference/sdm/connect), [`rt sdm connections`](/reference/sdm/connections), [`rt sdm status`](/reference/sdm/status), [`rt sdm login`](/reference/sdm/login), [`rt sdm refresh`](/reference/sdm/refresh), [`rt sdm enrichment`](/reference/sdm/enrichment), [`rt sdm set-email`](/reference/sdm/set-email).
 
 ## rt reads live, it does not maintain a list
 
-rt reads your resources straight from the StrongDM CLI: `sdm access catalog` for the datasources you can reach, and `sdm status` for what is currently connected. There is nothing to configure and no list to maintain in rt itself. Every real datasource you can reach shows up in the picker, and nothing else does; rt never invents or guesses a resource name.
+rt reads your resources straight from the StrongDM CLI: `sdm access catalog` for the datasources you can reach, and `sdm status` for what is currently connected. There is nothing to configure and no list to maintain in rt itself. Every Postgres-family datasource you can reach shows up in the picker (connect and verify are Postgres-oriented, so other resource types are left out), alongside your recent connections; rt never invents or guesses a resource name. The scan is cached for 10 minutes; `rt sdm refresh` re-scans now.
 
 If `rt sdm connect` only shows recents, your session expired. It logs you back in automatically before listing, so you rarely need to run `rt sdm login` by hand.
 
@@ -51,4 +52,6 @@ rt sdm enrichment         # show the file path + how many resources are enriched
 | `reasonSuggestion` | prefill for the access-request reason prompt |
 | `db` | `{ database, schema, user }` hints used to verify the tunnel after connecting |
 
-A resource missing from the file just shows its raw name and connects with Postgres defaults. Keep the file in your own repo and copy or symlink it to `~/.mattstack/rt/sdm/enrichment.jsonc` to share it with your team.
+A resource missing from the file just shows its raw name and connects with Postgres defaults.
+
+To share enrichment with your team, put the same map in the team settings store under `rt.sdmEnrichment` (`rt settings set rt.sdmEnrichment '<json>' --scope team`). Once the team store holds that key it replaces the local file wholesale, and `rt sdm enrichment init` declines to write one.

@@ -70,6 +70,13 @@ describe("collectFacts", () => {
     expect([f.containment, f.remoteBranchExists, f.ahead]).toEqual(["none", false, 1]);
   });
 
+  test("ahead counts against the remote default branch, never a local branch named origin/main", async () => {
+    const rec = tree("delta", { push: false });
+    sh("git branch origin/main feat-delta", repo);
+    const f = await collectFacts(repoName, repo, rec, deps());
+    expect([f.containment, f.ahead]).toEqual(["none", 1]);
+  });
+
   test("a tree whose directory vanished is broken", async () => {
     const rec = tree("charlie");
     rmSync(rec.path, { recursive: true, force: true });

@@ -22,6 +22,10 @@ describe("triageRow", () => {
     const r = row({ containment: "patch-identical", remoteBranchExists: false, ahead: 8 });
     expect([r.group, r.push.kind]).toEqual(["safe", "remote-deleted"]);
   });
+  test("a squash-merged branch with the remote deleted is safe and says its commits are in the merged PR", () => {
+    const r = row({ containment: "in-merged-mr", remoteBranchExists: false, ahead: 3 });
+    expect([r.group, r.push.kind, r.verdict]).toEqual(["safe", "remote-deleted", "Every commit is in the merged PR."]);
+  });
   test("a closed MR whose remote has every commit is safe", () => {
     expect(row({ mr: { iid: 2, state: "closed", title: "x", at: null, url: null } }).group).toBe("safe");
   });

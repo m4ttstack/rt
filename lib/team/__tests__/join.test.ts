@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
 import { join as pathJoin } from "path";
 import { fakeProbes, type ExecScript } from "../../setup/__tests__/fakes.ts";
 import { UserActionableError } from "../../setup/errors.ts";
@@ -13,6 +13,7 @@ import type { SecretsSeams } from "../../secrets/store.ts";
 import type { AgeExecResult, AgeKeySeam } from "../../home/age-key.ts";
 import type { ExecResult } from "../../setup/probes.ts";
 import { readTeamLocal, updateTeamLocal } from "../team-local.ts";
+import * as isolation from "../../../packages/rt-client/src/test-isolation.ts";
 
 const HOME = "/home";
 const ID_HEX = "0102030405060708090a0b0c0d0e0f10";
@@ -644,6 +645,21 @@ describe("joinRedeem", () => {
     expect(clone.opts?.env?.RT_GIT_TOKEN).toBe("ghp-secret");
     expect(seamCalls.forgeLogin[0]?.[2]).toBe("gitlab.evil.example");
     expect(seamCalls.forgeLogin[0]?.[3]).toBeNull();
+  });
+
+  test("in a test run whose home is the account's, refuses before the intent, the clone, or the redeem", async () => {
+    const spy = spyOn(isolation, "accountHome").mockReturnValue(HOME);
+    try {
+      const p = redeemProbes();
+      const relay = fakeRelay();
+      const { seams } = baseJoinRedeemSeams();
+      await expect(joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams)).rejects.toThrow(/Run bun test from the repo root/);
+      expect(p.calls.exec).toEqual([]);
+      expect(p.calls.writes[intentPath(HOME)]).toBeUndefined();
+      expect(relay.redeemCalls).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("checkpoints the resumable intent as soon as the pointer resolves, before cloning", async () => {
