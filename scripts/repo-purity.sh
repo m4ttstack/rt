@@ -63,9 +63,17 @@ if [ -n "$NAME_HITS" ]; then
 fi
 
 # Commit messages are not tracked files, so the tree grep never sees them; 41
-# leaked before the 2026-09-17 purge. The newest 30 cover any push or PR range
-# without needing CI-event plumbing.
-MSG_HITS=$(cd "$ROOT" && git log -30 --format='%h %s %b' 2>/dev/null | grep -iE "$PATTERN" || true)
+# leaked before the 2026-09-17 purge. Only commits a push would publish are
+# judged (PURITY_BASE..HEAD, default origin/main): a message already public
+# cannot be recalled by failing every later run. With no usable base (a
+# shallow clone), HEAD's own message is the one judged.
+BASE="${PURITY_BASE:-origin/main}"
+if (cd "$ROOT" && git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1); then
+  RANGE="$BASE..HEAD"
+else
+  RANGE="-1"
+fi
+MSG_HITS=$(cd "$ROOT" && git log "$RANGE" --format='%h %s %b' 2>/dev/null | grep -iE "$PATTERN" || true)
 if [ -n "$MSG_HITS" ]; then
   echo "FAIL repo-purity (commit message):"
   printf '%s\n' "$MSG_HITS"

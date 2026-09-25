@@ -17,5 +17,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: No employer or domain references in the tracked tree
+        # A PR is judged on every commit it adds to its base; a push to main
+        # on every commit since the previous tip.
+        env:
+          PURITY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: scripts/repo-purity.sh
