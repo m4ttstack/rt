@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -18,6 +18,12 @@ async function build() {
 }
 
 describe("compile-native end to end", () => {
+  // A stale-check finding sets process.exitCode = 1 directly (no process.exit,
+  // so --json can still print); only 0 clears it in Bun.
+  afterEach(() => {
+    process.exitCode = 0;
+  });
+
   test("work and every compiled stage compile with zero resolver references and zero placeholders", async () => {
     const { pack } = await build();
     const work = readFileSync(join(pack, "skills", "work", "SKILL.md"), "utf8");

@@ -41,19 +41,20 @@ async function run(args: string[], seams: PreflightSeams): Promise<{ logs: strin
   const logSpy = spyOn(console, "log").mockImplementation((...a: unknown[]) => {
     logs.push(a.map(String).join(" "));
   });
+  // Bun's process.exitCode setter ignores undefined once the value is truthy; 0 is the only value that clears it.
   const before = process.exitCode;
-  process.exitCode = undefined;
+  process.exitCode = 0;
   try {
     await releasePreflight(args, {}, seams);
     return { logs, exitCode: process.exitCode };
   } finally {
-    process.exitCode = before;
+    process.exitCode = before ?? 0;
     logSpy.mockRestore();
   }
 }
 
 afterEach(() => {
-  process.exitCode = undefined;
+  process.exitCode = 0;
 });
 
 describe("rt release preflight", () => {
