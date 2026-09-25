@@ -17,8 +17,24 @@ private final class EventLog: @unchecked Sendable {
     var events: [LaunchSettleEvent] { lock.lock(); defer { lock.unlock() }; return items }
 }
 
-private let quick = AnswerBudget(attempts: 3, intervalNanoseconds: 1)
-private let noSleep: @Sendable (UInt64) async -> Void = { _ in }
+/// Time moves only when something sleeps or a probe says it took time, so
+/// a deadline is reached by elapsed seconds alone.
+private final class FakeClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seconds: TimeInterval = 0
+    var now: TimeInterval { lock.lock(); defer { lock.unlock() }; return seconds }
+    func advance(_ by: TimeInterval) { lock.lock(); seconds += by; lock.unlock() }
+}
+
+/// Three probes for an agent that never answers: at 0s, 1s and 2s.
+private let quick = AnswerBudget(deadline: 2, interval: 1)
+
+private func settle(_ probes: [LaunchAgentProbe], latch: SpawnHealLatch = SpawnHealLatch(),
+                    _ log: EventLog) async -> LaunchSettleReport {
+    let clock = FakeClock()
+    return await LaunchSettle.run(probes, latch: latch, now: { clock.now }, sleep: { clock.advance($0) },
+                                  observer: { log.add($0) })
+}
 
 private func probe(_ label: String, _ tally: Tally, answersOnCall: Int? = nil, answersAfterHeal: Bool = false,
                    registration: AgentRegistration = .enabled, lookup: LaunchdJobLookup = .notLoaded,
@@ -60,33 +76,48 @@ private let upgrade = VersionChange.changed(from: "2.12.0", to: "2.13.0")
 
 let launchLifecycleChecks: [Check] = [
     Check("answer wait: probes before sleeping and stops at the first answer") { c in
-        let tally = Tally()
-        let answered = await AgentAnswerWait.wait(AnswerBudget(attempts: 4, intervalNanoseconds: 1),
-                                                  sleep: { _ in _ = await tally.bump("sleep") },
+        let tally = Tally(), clock = FakeClock()
+        let answered = await AgentAnswerWait.wait(AnswerBudget(deadline: 10, interval: 1), now: { clock.now },
+                                                  sleep: { clock.advance($0); _ = await tally.bump("sleep") },
                                                   probe: { await tally.bump("probe") >= 3 })
         c.expect(answered)
         c.expectEqual(await tally.count("probe"), 3)
         c.expectEqual(await tally.count("sleep"), 2)
     },
-    Check("answer wait: gives up at the budget with no trailing sleep") { c in
-        let tally = Tally()
-        let answered = await AgentAnswerWait.wait(AnswerBudget(attempts: 4, intervalNanoseconds: 1),
-                                                  sleep: { _ in _ = await tally.bump("sleep") },
+    Check("answer wait: gives up at the deadline with no trailing sleep") { c in
+        let tally = Tally(), clock = FakeClock()
+        let answered = await AgentAnswerWait.wait(AnswerBudget(deadline: 3, interval: 1), now: { clock.now },
+                                                  sleep: { clock.advance($0); _ = await tally.bump("sleep") },
                                                   probe: { _ = await tally.bump("probe"); return false })
         c.expect(!answered)
         c.expectEqual(await tally.count("probe"), 4)
         c.expectEqual(await tally.count("sleep"), 3)
     },
-    Check("answer wait: the launch budgets are bounded") { c in
-        for budget in [AnswerBudget.daemon, .deck] {
-            let seconds = Double(budget.attempts) * Double(budget.intervalNanoseconds) / 1_000_000_000
-            c.expect(seconds > 0 && seconds <= 30, "\(budget) waits \(seconds)s")
+    Check("answer wait: a slow probe spends the deadline, not a count of polls") { c in
+        let tally = Tally(), clock = FakeClock()
+        let answered = await AgentAnswerWait.wait(AnswerBudget(deadline: 10, interval: 1), now: { clock.now },
+                                                  sleep: { clock.advance($0) },
+                                                  probe: { clock.advance(5); _ = await tally.bump("probe"); return false })
+        c.expect(!answered)
+        c.expectEqual(await tally.count("probe"), 2)
+        c.expect(clock.now < 10 + 5 + 1, "overran by more than one probe: \(clock.now)s")
+    },
+    Check("answer wait: the last sleep stops at the deadline") { c in
+        let clock = FakeClock()
+        _ = await AgentAnswerWait.wait(AnswerBudget(deadline: 2.5, interval: 1), now: { clock.now },
+                                       sleep: { clock.advance($0) }, probe: { false })
+        c.expectEqual(clock.now, 2.5)
+    },
+    Check("answer wait: the launch deadlines are bounded") { c in
+        for budget in [AnswerBudget.daemon, .deck, .deckSweep] {
+            c.expect(budget.deadline > 0 && budget.deadline <= 60, "\(budget) waits \(budget.deadline)s")
+            c.expect(budget.interval > 0 && budget.interval < budget.deadline, "\(budget)")
         }
+        c.expect(AnswerBudget.daemon.deadline <= 15 && AnswerBudget.deck.deadline <= 30)
     },
     Check("launch settle: an agent that answers is never inspected or healed") { c in
         let tally = Tally(), log = EventLog()
-        let report = await LaunchSettle.run([probe("d", tally, answersOnCall: 2)], latch: SpawnHealLatch(),
-                                            sleep: noSleep, observer: { log.add($0) })
+        let report = await settle([probe("d", tally, answersOnCall: 2)], log)
         c.expectEqual(report, LaunchSettleReport(answered: ["d": true]))
         c.expectEqual(await tally.count("d.lookup"), 0)
         c.expectEqual(await tally.count("d.heal"), 0)
@@ -95,8 +126,7 @@ let launchLifecycleChecks: [Check] = [
     Check("launch settle: a refused spawn is healed once and waited on again") { c in
         let tally = Tally(), log = EventLog()
         let refused = printed(LaunchdPrintFixtures.refusedSpawn)
-        let report = await LaunchSettle.run([probe("d", tally, answersAfterHeal: true, lookup: refused)],
-                                            latch: SpawnHealLatch(), sleep: noSleep, observer: { log.add($0) })
+        let report = await settle([probe("d", tally, answersAfterHeal: true, lookup: refused)], log)
         c.expectEqual(report, LaunchSettleReport(answered: ["d": true], healed: ["d"]))
         c.expectEqual(await tally.count("d.heal"), 1)
         c.expectEqual(await tally.count("d.answers"), 4)
@@ -104,8 +134,7 @@ let launchLifecycleChecks: [Check] = [
     },
     Check("launch settle: a heal that does not bring the agent back leaves it unanswered") { c in
         let tally = Tally(), log = EventLog()
-        let report = await LaunchSettle.run([probe("d", tally)], latch: SpawnHealLatch(),
-                                            sleep: noSleep, observer: { log.add($0) })
+        let report = await settle([probe("d", tally)], log)
         c.expectEqual(report, LaunchSettleReport(answered: ["d": false], healed: ["d"]))
         c.expectEqual(await tally.count("d.heal"), 1)
         c.expectEqual(await tally.count("d.answers"), 6)
@@ -114,8 +143,7 @@ let launchLifecycleChecks: [Check] = [
     },
     Check("launch settle: a heal that fails to re-register is not waited on") { c in
         let tally = Tally(), log = EventLog()
-        let report = await LaunchSettle.run([probe("d", tally, healOk: false)], latch: SpawnHealLatch(),
-                                            sleep: noSleep, observer: { log.add($0) })
+        let report = await settle([probe("d", tally, healOk: false)], log)
         c.expectEqual(report, LaunchSettleReport(answered: ["d": false]))
         c.expectEqual(await tally.count("d.answers"), 3)
         c.expectEqual(log.events, [.healed(label: "d", reason: "enabled but launchd holds no job",
@@ -123,8 +151,8 @@ let launchLifecycleChecks: [Check] = [
     },
     Check("launch settle: one heal per label per launch, however often it runs") { c in
         let tally = Tally(), log = EventLog(), latch = SpawnHealLatch()
-        _ = await LaunchSettle.run([probe("d", tally)], latch: latch, sleep: noSleep, observer: { log.add($0) })
-        let second = await LaunchSettle.run([probe("d", tally)], latch: latch, sleep: noSleep, observer: { log.add($0) })
+        _ = await settle([probe("d", tally)], latch: latch, log)
+        let second = await settle([probe("d", tally)], latch: latch, log)
         c.expectEqual(second, LaunchSettleReport(answered: ["d": false]))
         c.expectEqual(await tally.count("d.heal"), 1)
         c.expectEqual(log.events.last, .left(label: "d", reason: "already healed this launch"))
@@ -132,9 +160,8 @@ let launchLifecycleChecks: [Check] = [
     Check("launch settle: a running or unapproved agent is left alone, and every probe is reported") { c in
         let tally = Tally(), log = EventLog()
         let running = printed(LaunchdPrintFixtures.healthy)
-        let report = await LaunchSettle.run([probe("slow", tally, lookup: running),
-                                             probe("gated", tally, registration: .requiresApproval)],
-                                            latch: SpawnHealLatch(), sleep: noSleep, observer: { log.add($0) })
+        let report = await settle([probe("slow", tally, lookup: running),
+                                   probe("gated", tally, registration: .requiresApproval)], log)
         c.expectEqual(report, LaunchSettleReport(answered: ["slow": false, "gated": false]))
         c.expectEqual(await tally.count("slow.heal") + tally.count("gated.heal"), 0)
         c.expect(log.events.contains(.left(label: "slow", reason: "job is running")))

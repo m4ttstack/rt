@@ -1,27 +1,33 @@
 import Foundation
 
 public struct AnswerBudget: Equatable, Sendable {
-    public let attempts: Int
-    public let intervalNanoseconds: UInt64
+    public let deadline: TimeInterval
+    public let interval: TimeInterval
 
-    public init(attempts: Int, intervalNanoseconds: UInt64) {
-        self.attempts = attempts; self.intervalNanoseconds = intervalNanoseconds
+    public init(deadline: TimeInterval, interval: TimeInterval) {
+        self.deadline = deadline; self.interval = interval
     }
 
-    public static let daemon = AnswerBudget(attempts: 30, intervalNanoseconds: 500_000_000)
+    public static let daemon = AnswerBudget(deadline: 15, interval: 0.5)
     /// Each deck probe spawns its CLI, so it polls half as often.
-    public static let deck = AnswerBudget(attempts: 30, intervalNanoseconds: 1_000_000_000)
+    public static let deck = AnswerBudget(deadline: 30, interval: 1)
+    /// deck holds /api/apps up to 10s for its boot sweep before a 503.
+    public static let deckSweep = AnswerBudget(deadline: 60, interval: 1)
 }
 
 public enum AgentAnswerWait {
-    public static func wait(_ budget: AnswerBudget, sleep: (UInt64) async -> Void,
+    /// The deadline is read from the clock after every probe, never counted
+    /// in polls: a probe can take its whole timeout, so the last one may
+    /// overrun the deadline by that much.
+    public static func wait(_ budget: AnswerBudget, now: () -> TimeInterval, sleep: (TimeInterval) async -> Void,
                             probe: () async -> Bool) async -> Bool {
-        let attempts = max(budget.attempts, 1)
-        for attempt in 1...attempts {
+        let start = now()
+        while true {
             if await probe() { return true }
-            if attempt < attempts { await sleep(budget.intervalNanoseconds) }
+            let elapsed = now() - start
+            if elapsed >= budget.deadline { return false }
+            await sleep(min(budget.interval, budget.deadline - elapsed))
         }
-        return false
     }
 }
 
@@ -69,11 +75,12 @@ public enum LaunchSettle {
     }
 
     public static func run(_ probes: [LaunchAgentProbe], latch: SpawnHealLatch,
-                           sleep: @escaping @Sendable (UInt64) async -> Void,
+                           now: @escaping @Sendable () -> TimeInterval,
+                           sleep: @escaping @Sendable (TimeInterval) async -> Void,
                            observer: (@Sendable (LaunchSettleEvent) -> Void)? = nil) async -> LaunchSettleReport {
         await withTaskGroup(of: Outcome.self) { group in
             for probe in probes {
-                group.addTask { await settle(probe, latch: latch, sleep: sleep, observer: observer) }
+                group.addTask { await settle(probe, latch: latch, now: now, sleep: sleep, observer: observer) }
             }
             var report = LaunchSettleReport()
             for await outcome in group {
@@ -85,9 +92,10 @@ public enum LaunchSettle {
     }
 
     private static func settle(_ probe: LaunchAgentProbe, latch: SpawnHealLatch,
-                               sleep: @escaping @Sendable (UInt64) async -> Void,
+                               now: @escaping @Sendable () -> TimeInterval,
+                               sleep: @escaping @Sendable (TimeInterval) async -> Void,
                                observer: (@Sendable (LaunchSettleEvent) -> Void)?) async -> Outcome {
-        if await AgentAnswerWait.wait(probe.budget, sleep: sleep, probe: probe.answers) {
+        if await AgentAnswerWait.wait(probe.budget, now: now, sleep: sleep, probe: probe.answers) {
             observer?(.answered(label: probe.label))
             return Outcome(label: probe.label, answered: true, healed: false)
         }
@@ -104,7 +112,7 @@ public enum LaunchSettle {
         let reregistered = await probe.heal()
         var answered = false
         if reregistered {
-            answered = await AgentAnswerWait.wait(probe.budget, sleep: sleep, probe: probe.answers)
+            answered = await AgentAnswerWait.wait(probe.budget, now: now, sleep: sleep, probe: probe.answers)
         }
         observer?(.healed(label: probe.label, reason: reason, reregistered: reregistered, answered: answered))
         return Outcome(label: probe.label, answered: answered, healed: reregistered)

@@ -327,7 +327,8 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     }
 
     func settleLaunch(_ probes: [LaunchAgentProbe], latch: SpawnHealLatch) async -> LaunchSettleReport {
-        await LaunchSettle.run(probes, latch: latch, sleep: { try? await Task.sleep(nanoseconds: $0) }) { event in
+        await LaunchSettle.run(probes, latch: latch, now: { ProcessInfo.processInfo.systemUptime },
+                               sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) { event in
             switch event {
             case .answered(let label):
                 TrayLog.info("agent answered after launch", ["label": label])
