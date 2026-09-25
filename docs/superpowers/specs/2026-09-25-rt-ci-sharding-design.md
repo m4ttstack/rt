@@ -34,7 +34,7 @@ root-package test run, which no task graph can split.
 - PR scope comes from one script, `scripts/ci/test-scope.ts`: the full
   suite on main and on any PR that changes something `--changed` cannot
   see; `--changed` on TypeScript-only PRs; no unit job on a PR that
-  touches nothing the unit suite reads.
+  touches only docs or Swift the unit suite does not read.
 - Three shards plus `e2e` plus `glitter-pty` is exactly the org's five
   concurrent macOS jobs on the free plan, so the shard count is three.
   The ceiling holds per run; overlapping runs (a main push during a PR
@@ -144,11 +144,12 @@ Rules, in order; the first that matches wins:
 2. No changed file is in the read set or under a `fixtures/` or
    `__fixtures__/` directory (fixtures are consumed by walking the
    directory, so a new file there is read without being named), and every
-   changed file is docs (`docs/**`, `*.md`) or Swift (under `rt-tray/`,
-   outside `rt-tray/Tests/stub-rt/**` and `rt-tray/vm/run/helpers/**`,
-   which are TypeScript test trees the unit suite runs): `skip`.
-   `skills/**` is not docs: the skills tests name every file in it, so a
-   skills-only PR is always `full`.
+   changed file is docs (`docs/**`, or `*.md` outside `skills/`) or Swift
+   (under `rt-tray/`, outside `rt-tray/Tests/stub-rt/**` and
+   `rt-tray/vm/run/helpers/**`, which are TypeScript test trees the unit
+   suite runs): `skip`. `skills/**` is never docs here: the skills tests
+   consume that tree, so a skills-only PR is always `full`, and the
+   script's test pins a `skills/x/notes.md` change as `full`.
 3. Any changed file is in the invisible set: `full`.
 4. Otherwise (TypeScript the import graph can see): `changed`.
 
