@@ -44,6 +44,13 @@ func TestWrapSpansEmptyLineIsOneRow(t *testing.T) {
 	}
 }
 
+func TestWrapSpansShortLineNeverPaintsARawCarriageReturn(t *testing.T) {
+	rows := wrapSpans([]span{{text: "a\rb"}}, 40)
+	if len(rows) != 1 || spansText(rows[0]) != "a b" {
+		t.Fatalf("a lone \\r should paint as one space cell: %+v", rows)
+	}
+}
+
 func TestWrapSpansIndentWiderThanTheRowPaintsNoBlankRow(t *testing.T) {
 	rows := wrapSpans([]span{{text: "\t\t\treturn nil"}}, 8)
 	if len(rows) == 0 || spansText(rows[0]) != "return" {
@@ -61,13 +68,14 @@ func dropSpace(s string) string {
 }
 
 // ansi.Wrap measures in cells and breaks at any Unicode space while the
-// spans are sliced by byte, so a tab (painted as spaces), wide runes and an
-// ideographic space at a break are where the two could drift apart.
+// spans are sliced by byte, so a tab (painted as spaces), a lone \r or \v
+// (painted raw, zero cells, but moving the terminal's cursor), wide runes
+// and an ideographic space at a break are where the two could drift apart.
 func TestWrapSpansTabsWideRunesAndUnicodeSpacesStayAligned(t *testing.T) {
 	kw := tokStyle{fg: theme.Lav}
 	in := []span{
 		{text: "\tif", style: kw},
-		{text: " x := \"漢字かな漢字かな漢字　カタカナ\tabc 한국어 텍스트\" // 注释 done"},
+		{text: " x := \"漢字かな漢字かな漢字　カタカナ\tabc 한국어\r텍스트\" //\v注释 done"},
 	}
 	want := dropSpace(spansText(in))
 	for width := 3; width <= 40; width++ {
@@ -75,8 +83,8 @@ func TestWrapSpansTabsWideRunesAndUnicodeSpacesStayAligned(t *testing.T) {
 		var joined strings.Builder
 		for r, row := range rows {
 			text := spansText(row)
-			if strings.Contains(text, "\t") {
-				t.Fatalf("width %d row %d kept a tab the painter would widen: %q", width, r, text)
+			if strings.ContainsAny(text, "\t\r\v\f") {
+				t.Fatalf("width %d row %d kept a control space the painter mismeasures: %q", width, r, text)
 			}
 			if w := ansi.StringWidth(text); w > width {
 				t.Fatalf("width %d row %d is %d cells, so the clip would drop text: %q", width, r, w, text)
@@ -197,6 +205,8 @@ func TestDiffRowIndexMatchesThePaintedRows(t *testing.T) {
 		{Kind: "del", OldNo: 2, SelIdx: 0, Text: "\treturn fmt.Errorf(\"wrapping %w with a longer message\", err)\r"},
 		{Kind: "add", NewNo: 2, SelIdx: 1, Text: "\treturn fmt.Errorf(\"wrapping　%w　with a longer message\", err)"},
 		{Kind: "add", NewNo: 3, SelIdx: 2, Text: ""},
+		{Kind: "add", NewNo: 4, SelIdx: 3, Text: "x := 1\r" + strings.Repeat("yy ", 40)},
+		{Kind: "add", NewNo: 5, SelIdx: 4, Text: "y := 2"},
 	}}
 	for _, width := range []int{20, 31, 44, 60} {
 		contentW := width - 1
@@ -204,10 +214,7 @@ func TestDiffRowIndexMatchesThePaintedRows(t *testing.T) {
 		hl := m.diffHL.forDiff(m.model.Diff)
 		var want []string
 		for i, l := range m.model.Diff.Lines {
-			spans := lineSpans(m.model.Diff.Lang, l)
-			if hl != nil && hl[i] != nil {
-				spans = hl[i]
-			}
+			spans := diffLineSpans(m.model.Diff.Lang, hl, i, l)
 			rows := renderDiffRows(m.model.Diff, l, spans, contentW, false, false)
 			if n := ix.start[i+1] - ix.start[i]; len(rows) != n {
 				t.Fatalf("width %d line %d paints %d rows, the index says %d", width, i, len(rows), n)
@@ -223,5 +230,59 @@ func TestDiffRowIndexMatchesThePaintedRows(t *testing.T) {
 				t.Fatalf("width %d row %d painted %q, want %q", width, row, got, want[row])
 			}
 		}
+	}
+}
+
+// chroma's EnsureLF turns a lone \r into a line break, so the highlighted
+// spans of such a line stop at the \r while the index counts the whole line.
+func TestLoneCarriageReturnLineHitsWhatIsPaintedUnderIt(t *testing.T) {
+	m := newTestMission()
+	m.model.Diff = DiffModel{Kind: "text", Path: "a.go", Lang: "go", Lines: []DiffLine{
+		{Kind: "add", NewNo: 1, SelIdx: 0, Text: "x := 1\r" + strings.Repeat("yy ", 40)},
+		{Kind: "add", NewNo: 2, SelIdx: 1, Text: "tail"},
+	}}
+	out := m.renderDiffLines(50, 10)
+	if strings.Contains(out, "\r") {
+		t.Fatalf("a raw \\r reached the terminal:\n%q", out)
+	}
+	rows := strings.Split(ansi.Strip(out), "\n")
+	if !strings.Contains(rows[0], "x := 1 yy") {
+		t.Fatalf("the text after the \\r was dropped:\n%s", strings.Join(rows, "\n"))
+	}
+	for y, r := range rows {
+		if strings.Contains(r, "tail") {
+			if h := m.diffHit(20, y+1, 50); h.idx != 1 {
+				t.Fatalf("a click on the painted tail row hit idx %d", h.idx)
+			}
+			return
+		}
+	}
+	t.Fatalf("tail never painted:\n%s", strings.Join(rows, "\n"))
+}
+
+// With no sources every line goes through the hunk-block tokenizer, which
+// joins a hunk's lines with \n: a lone \r must not split one of them into
+// two and hand every later line its neighbour's spans.
+func TestHunkBlockLoneCarriageReturnKeepsLaterLinesOnTheirOwnSpans(t *testing.T) {
+	d := DiffModel{Kind: "text", Path: "a.go", Lang: "go", Lines: []DiffLine{
+		{Kind: "hunk", Text: "@@ -1,2 +1,2 @@"},
+		{Kind: "add", NewNo: 1, SelIdx: 0, Text: "a := 1\rb := 2"},
+		{Kind: "add", NewNo: 2, SelIdx: 1, Text: `c := "three"`},
+	}}
+	var h diffHighlighter
+	hl := h.forDiff(d)
+	for i, l := range d.Lines[1:] {
+		if got := spansText(diffLineSpans(d.Lang, hl, i+1, l)); got != strings.TrimSuffix(l.Text, "\r") {
+			t.Fatalf("line %d paints %q, want its own text %q", i+1, got, l.Text)
+		}
+	}
+	last := hl[2]
+	if len(last) == 0 || spansText(last) != `c := "three"` || !sameColor(last[len(last)-1].style.fg, theme.Mint) {
+		t.Fatalf("the line after the \\r lost its own highlighting: %+v", last)
+	}
+	m := newTestMission()
+	m.model.Diff = d
+	if out := ansi.Strip(m.renderDiffLines(60, 5)); !strings.Contains(out, `c := "three"`) {
+		t.Fatalf("the line after the \\r does not paint its own text:\n%s", out)
 	}
 }

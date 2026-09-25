@@ -9,18 +9,20 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// diffTabWidth is lipgloss's default tab width, the number of spaces
-// paintSpans' Render turns each tab into. ansi.Wrap counts a tab as one
-// cell, so tabs are expanded before wrapping or a row would paint wider
-// than it measured and lose its tail to the clip.
-const diffTabWidth = 4
+// controlSpaces rewrites the whitespace ansi.Wrap and lipgloss measure
+// differently. ansi.Wrap counts each of these as one cell, but lipgloss
+// paints a tab as four spaces (its default tab width), so a tabbed row
+// painted wider than it measured and lost its tail to the clip; and it
+// passes \r, \v and \f through raw at zero width, where the terminal moves
+// its cursor instead (a \r would repaint the row over its own gutter).
+var controlSpaces = strings.NewReplacer("\t", "    ", "\r", " ", "\v", " ", "\f", " ")
 
 // wrapSpans breaks a line at ansi.Wrap's word boundaries, computed on the
 // plain text: ansi.Wrap on painted text neither reopens a style on the next
 // row nor keeps the whitespace it breaks at, so the spans are sliced at the
 // break points instead.
 func wrapSpans(spans []span, width int) [][]span {
-	spans = expandTabs(spans)
+	spans = normalizeSpaces(spans)
 	plain := spansText(spans)
 	if width < 1 || ansi.StringWidth(plain) <= width {
 		return [][]span{spans}
@@ -53,13 +55,13 @@ func wrapSpans(spans []span, width int) [][]span {
 	return out
 }
 
-func expandTabs(spans []span) []span {
-	if !strings.Contains(spansText(spans), "\t") {
+func normalizeSpaces(spans []span) []span {
+	if !strings.ContainsAny(spansText(spans), "\t\r\v\f") {
 		return spans
 	}
 	out := make([]span, len(spans))
 	for i, s := range spans {
-		out[i] = span{text: strings.ReplaceAll(s.text, "\t", strings.Repeat(" ", diffTabWidth)), style: s.style}
+		out[i] = span{text: controlSpaces.Replace(s.text), style: s.style}
 	}
 	return out
 }
@@ -87,9 +89,10 @@ type diffRowIndex struct {
 
 // diffRows is the screen-row layout of the current diff at textW, shared by
 // the renderer, the viewport and diffHit so a click always maps to what was
-// painted. It counts from DiffLine.Text, which is the same text every span
-// list the renderer wraps for that line carries. Like forDiff it keys on
-// the decoded Lines backing array, which each model push replaces.
+// painted. It counts from DiffLine.Text less a CRLF ending, the exact text
+// diffLineSpans guarantees every painted span list carries. Like forDiff
+// it keys on the decoded Lines backing array, which each model push
+// replaces.
 func (m *Mission) diffRows(textW int) *diffRowIndex {
 	lines := m.model.Diff.Lines
 	ix := &m.diffRowsCache
@@ -100,7 +103,7 @@ func (m *Mission) diffRows(textW int) *diffRowIndex {
 	for i, l := range lines {
 		rows := 1
 		if l.Kind != "hunk" {
-			rows = len(wrapSpans([]span{{text: l.Text}}, textW))
+			rows = len(wrapSpans([]span{{text: strings.TrimSuffix(l.Text, "\r")}}, textW))
 		}
 		ix.start[i+1] = ix.start[i] + rows
 	}

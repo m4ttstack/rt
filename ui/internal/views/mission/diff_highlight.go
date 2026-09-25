@@ -94,6 +94,12 @@ func (h *diffHighlighter) fillHunkBlocks(d DiffModel, out [][]span) {
 		if len(idx) == 0 {
 			return
 		}
+		// chroma reads a lone \r as a line break, which would split one
+		// line in two and hand every later line in the block its
+		// neighbour's spans; as a space it stays inside its own line.
+		for j, t := range texts {
+			texts[j] = strings.ReplaceAll(strings.TrimSuffix(t, "\r"), "\r", " ")
+		}
 		lines := h.tokenize(d.Lang, strings.Join(texts, "\n")+"\n")
 		for j, i := range idx {
 			if out[i] == nil && j < len(lines) {

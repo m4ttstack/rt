@@ -390,10 +390,7 @@ func (m *Mission) renderDiffLines(width, height int) string {
 	rows := make([]string, 0, height)
 	first := ix.lineAt(top)
 	for li := first; li < len(lines) && len(rows) < height; li++ {
-		spans := lineSpans(m.model.Diff.Lang, lines[li])
-		if hl != nil && hl[li] != nil {
-			spans = hl[li]
-		}
+		spans := diffLineSpans(m.model.Diff.Lang, hl, li, lines[li])
 		hover := li == m.hoverDiffLine
 		painted := renderDiffRows(m.model.Diff, lines[li], spans, contentW, hover, hover && m.hoverGutter)
 		if li == first {
@@ -445,10 +442,33 @@ func lineMark(kind string) (string, color.Color, color.Color) {
 // entirely (an empty first line back) falls back to one flat span rather
 // than losing the text.
 func lineSpans(lang string, line DiffLine) []span {
-	if lines := tokenizeLines(lang, line.Text+"\n"); len(lines) > 0 && len(lines[0]) > 0 {
-		return lines[0]
+	var spans []span
+	if lines := tokenizeLines(lang, line.Text+"\n"); len(lines) > 0 {
+		spans = lines[0]
 	}
-	return []span{{text: line.Text}}
+	return spansOrFlat(spans, line)
+}
+
+// diffLineSpans is the one place the renderer picks a line's spans: the
+// whole-file highlight when there is one, else the line tokenized alone.
+func diffLineSpans(lang string, hl [][]span, i int, line DiffLine) []span {
+	if hl != nil && hl[i] != nil {
+		return spansOrFlat(hl[i], line)
+	}
+	return lineSpans(lang, line)
+}
+
+// spansOrFlat keeps highlighted spans only when they carry exactly the
+// line's text (a CRLF ending aside). chroma turns a lone \r into a line
+// break, so a line holding one tokenizes to less than its text, and
+// diffRows, which counts rows from that text, would disagree with the
+// rows painted.
+func spansOrFlat(spans []span, line DiffLine) []span {
+	text := strings.TrimSuffix(line.Text, "\r")
+	if spansText(spans) != text {
+		return []span{{text: text}}
+	}
+	return spans
 }
 
 // renderDiffLine paints one line's gutter, mark and text and joins its rows
