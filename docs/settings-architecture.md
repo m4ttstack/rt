@@ -147,7 +147,7 @@ path formatted `[0].pattern` or `emoji.looking`.
   `--against-ref <ref>` or `--against <file>` (one or the other), `--json`
   for the envelope; it runs from source only. A change is breaking when it
   can reject a value the previous schema accepted: a key removed; a property
-  made required; a `type` narrowed, changed or added; an `enum`/`const` value
+  made required; a `type` narrowed or replaced, or added where there was none; an `enum`/`const` value
   removed, or one added where none was; an `anyOf` branch removed or
   tightened, or `anyOf` added; a `oneOf` branch added or removed, or `oneOf`
   added (dropping `oneOf` entirely is safe); a limit added or tightened;
@@ -157,7 +157,8 @@ path formatted `[0].pattern` or `emoji.looking`.
   extras were checked by a schema; a property removed where the new extras
   are not open; and any change to a keyword outside the known set.
   Annotations (`title`, `description`, `default`, `labels`, `placeholder`
-  and the like) never count.
+  and the like) never count, except inside a `oneOf` branch, which is
+  compared as a whole.
   A breaking change passes only when the key's `storeVersion` went up and
   `breaking-schema-changes.json` (next to the registry) gives the key a
   one-line reason; a removed key needs only the reason. CI runs the diff
