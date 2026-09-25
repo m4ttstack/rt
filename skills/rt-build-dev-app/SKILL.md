@@ -40,7 +40,8 @@ Rebuilding an unchanged tree is cheap: each restart keeps the build it
 swapped out (the last four, under `~/.mattstack/rt/dev-app/builds/`), and a
 `--local` run whose HEAD and uncommitted changes match one of them stages
 that bundle in seconds instead of building (its `✓ staged` line says it came
-from the cache). When the running app already is that build, the last line is
+from the cache). A kept build whose worktree has since been deleted is
+dropped at the next restart. When the running app already is that build, the last line is
 `✓ already running this build` and nothing is staged, so there is nothing for
 Matt to click. **Rebuild from ▸** marks a tree `· cached` when a kept build
 matches its HEAD commit; uncommitted changes can still differ, and the build
