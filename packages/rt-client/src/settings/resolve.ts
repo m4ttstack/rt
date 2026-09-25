@@ -57,6 +57,7 @@ import {
   userSettingsPath,
 } from "./paths.ts";
 import { allDefs, getDef, isMigrated, isRetiredKey, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
+import { checkSchema, type SchemaIssue } from "./schema.ts";
 import { listTeams, readStore, type StoreFile } from "./stores.ts";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -119,6 +120,10 @@ export interface ListedSetting {
   invalid?: InvalidScope[];
   /** Set when the value could not be expanded here; `value` is then raw. */
   expandError?: string;
+  /** Per-scope schema issues for layers that applied despite failing their schema. */
+  nonconforming?: { scope: Scope; file: string | null; issues: SchemaIssue[] }[];
+  /** Schema issues on the fully merged value, across every layer that applied. */
+  mergedIssues?: SchemaIssue[];
 }
 
 export interface ExplainRow {
@@ -131,6 +136,8 @@ export interface ExplainRow {
   shadowed?: "teamLocked";
   /** Set when the value was refused; the reason it was refused. */
   invalid?: string;
+  /** Set when the value applied despite failing its schema; never means skipped. */
+  nonconforming?: SchemaIssue[];
 }
 
 export interface ExpandCtx {
@@ -272,6 +279,47 @@ export function listStoreRepoIdentities(): string[] {
   return [...ids].sort();
 }
 
+/**
+ * Every key found in a store file that the registry has never heard of —
+ * global sections AND every repo section, so a stale repo-scoped key surfaces
+ * with no `repoIdentity` needed to see it. `scope` is the rung the key sat in
+ * (`machine.repo`, not `machine`, for a key found inside `repos.<id>`).
+ */
+export function listUnregisteredSettings(): { key: string; scope: Scope; file: string }[] {
+  const stores = readStores();
+  const out: { key: string; scope: Scope; file: string }[] = [];
+  const scan = (scope: Scope, file: string, section: Record<string, unknown> | undefined) => {
+    for (const key of Object.keys(section ?? {})) if (!getDef(key) && !isRetiredKey(key)) out.push({ key, scope, file });
+  };
+  for (const store of stores.teams) {
+    scan("team", store.file, store.global);
+    for (const s of Object.values(store.repos)) scan("team.repo", store.file, s);
+  }
+  scan("user", stores.user.file, stores.user.global);
+  for (const s of Object.values(stores.user.repos)) scan("user.repo", stores.user.file, s);
+  scan("machine", stores.machine.file, stores.machine.global);
+  for (const s of Object.values(stores.machine.repos)) scan("machine.repo", stores.machine.file, s);
+  return out.sort((a, b) => a.key.localeCompare(b.key) || a.scope.localeCompare(b.scope));
+}
+
+/** Which stores set `key` for each repo identity, weakest-to-strongest order per identity. */
+export function repoSectionsFor(key: string): { identity: string; scopes: SettingScope[] }[] {
+  const stores = readStores();
+  const byId = new Map<string, SettingScope[]>();
+  const note = (scope: SettingScope, store: StoreFile) => {
+    for (const [id, section] of Object.entries(store.repos)) {
+      if (section[key] === undefined) continue;
+      const list = byId.get(id) ?? [];
+      if (!list.includes(scope)) list.push(scope);
+      byId.set(id, list);
+    }
+  };
+  for (const store of stores.teams) note("team", store);
+  note("user", stores.user);
+  note("machine", stores.machine);
+  return [...byId.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([identity, scopes]) => ({ identity, scopes }));
+}
+
 // ─── Slots: every rung a key could come from, weakest-first ──────────────────
 
 interface Slot {
@@ -336,6 +384,7 @@ interface Resolution {
   provenance: Provenance[];
   invalid: InvalidScope[];
   rows: ExplainRow[];
+  mergedIssues: SchemaIssue[];
 }
 
 const TEAM_LOCKED_SCOPES: Scope[] = ["default", "team", "team.repo"];
@@ -404,12 +453,18 @@ function resolveDef(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): Re
       }
     }
 
+    if (slot.scope !== "default") {
+      const issues = checkSchema(def, slot.value, { layer: true });
+      if (issues.length > 0) row.nonconforming = issues;
+    }
+
     rows.push(row);
     applied.push({ scope: slot.scope, file: slot.file, value: slot.value });
   }
 
   const merged = mergeApplied(def, applied);
-  return { value: merged.value, provenance: merged.provenance, invalid, rows };
+  const mergedIssues = merged.value === undefined ? [] : checkSchema(def, merged.value, { layer: false });
+  return { value: merged.value, provenance: merged.provenance, invalid, rows, mergedIssues };
 }
 
 function mergeApplied(
@@ -606,6 +661,10 @@ export function listSettings(opts: ResolveOpts = {}): ListedSetting[] {
       migrated: isMigrated(def),
     };
     if (resolution.invalid.length > 0) listed.invalid = resolution.invalid;
+
+    const nonconforming = resolution.rows.filter((r) => r.nonconforming).map((r) => ({ scope: r.scope, file: r.file, issues: r.nonconforming! }));
+    if (nonconforming.length > 0) listed.nonconforming = nonconforming;
+    if (resolution.mergedIssues.length > 0) listed.mergedIssues = resolution.mergedIssues;
 
     if (shouldExpand && resolution.value !== undefined) {
       try {

@@ -40,6 +40,7 @@ import {
 } from "../lib/settings/resolve.ts";
 import { setSetting, unsetSetting } from "../lib/settings/write.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
+import { firstIssueText } from "../lib/settings/schema.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
 // ─── arg parsing (commands/events.ts conventions) ────────────────────────────
@@ -442,6 +443,8 @@ export function renderListRow(s: ListedSetting): string {
   }
   if (s.expandError) labels.push(`expandError: ${s.expandError}`);
   for (const inv of s.invalid ?? []) labels.push(`invalid[${inv.scope}]: ${inv.reason}`);
+  for (const nc of s.nonconforming ?? []) labels.push(`nonconforming[${nc.scope}]: ${firstIssueText(nc.issues)}`);
+  if (s.mergedIssues && s.mergedIssues.length > 0) labels.push(`merged: ${firstIssueText(s.mergedIssues)}`);
 
   const labelStr = labels.length > 0 ? `  ${yellow}(${labels.join("; ")})${reset}` : "";
   return `  ${bold}${s.key}${reset} = ${formatValueInline(s.value)}${labelStr}`;
@@ -490,6 +493,9 @@ export function renderExplainRow(row: ExplainRow): string {
   }
   if (row.invalid) {
     return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${red}[invalid: ${row.invalid}]${reset}`;
+  }
+  if (row.nonconforming) {
+    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}`;
   }
   return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}`;
 }
