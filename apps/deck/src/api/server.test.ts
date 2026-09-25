@@ -951,6 +951,117 @@ test('POST /apps/register creates a record from a manifest dir', async () => {
   expect(get.status).toBe(200);
 });
 
+test("POST /apps/register on a dir without a manifest answers the 400 the board's Add app reads as no manifest", async () => {
+  const { registerOutcome } = await import('../../core/board/logic.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'reg-none-'));
+  const res = await post('/api/v1/apps/register', { dir });
+  expect(res.status).toBe(400);
+  expect(registerOutcome(res.status, await res.json())).toEqual({
+    kind: 'no-manifest',
+  });
+});
+
+describe('POST /apps/register with create: true (the board Add app)', () => {
+  function manifestDir(name: string): string {
+    const d = mkdtempSync(join(tmpdir(), `reg-create-${name}-`));
+    writeFileSync(
+      join(d, 'mattstack.deck.json'),
+      JSON.stringify({ name, port: 4330, commands: { start: 'bun run serve' } })
+    );
+    return d;
+  }
+
+  test('registers a manifest whose name has no record yet', async () => {
+    const d = manifestDir('fresh-create');
+    const res = await post('/api/v1/apps/register', { dir: d, create: true });
+    expect(res.status).toBe(200);
+    expect(getRecord('fresh-create')?.workingDirectory).toBe(d);
+  });
+
+  test('refuses an existing user app with 409 and leaves it untouched; without create it still re-syncs', async () => {
+    const d = manifestDir('user-create');
+    expect((await post('/api/v1/apps/register', { dir: d })).status).toBe(200);
+    const before = getRecord('user-create');
+
+    const res = await post('/api/v1/apps/register', { dir: d, create: true });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'already registered',
+      name: 'user-create',
+      dir: d,
+    });
+    expect(getRecord('user-create')).toEqual(before);
+
+    expect((await post('/api/v1/apps/register', { dir: d })).status).toBe(200);
+  });
+
+  test.each([
+    ['managed-create', 'rt'],
+    ['deck', 'deck'],
+  ] as const)(
+    'refuses an existing %s record (managedBy %s) with 409 and leaves it untouched',
+    async (name, managedBy) => {
+      putRecord({
+        name,
+        managedBy,
+        port: 12140,
+        kind: 'external',
+        createdAt: '2026-09-25T00:00:00Z',
+      });
+      const before = getRecord(name);
+      const d = mkdtempSync(join(tmpdir(), `reg-create-${name}-`));
+      writeFileSync(join(d, 'mattstack.deck.json'), JSON.stringify({ name }));
+
+      const res = await post('/api/v1/apps/register', {
+        dir: d,
+        create: true,
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'already registered',
+        name,
+        dir: d,
+      });
+      expect(getRecord(name)).toEqual(before);
+    }
+  );
+});
+
+describe('POST /apps/register checks the directory before reading a manifest', () => {
+  test('a relative dir is a 400', async () => {
+    const res = await post('/api/v1/apps/register', { dir: 'rel/app' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'dir must be an absolute path',
+      dir: 'rel/app',
+    });
+  });
+
+  test('a missing dir is a 400 directory not found', async () => {
+    const d = join(tmpdir(), 'reg-missing-does-not-exist');
+    const res = await post('/api/v1/apps/register', { dir: d });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'directory not found', dir: d });
+  });
+
+  test('a file that is not a directory is a 400 directory not found', async () => {
+    const f = join(mkdtempSync(join(tmpdir(), 'reg-file-')), 'plain.txt');
+    writeFileSync(f, 'x');
+    const res = await post('/api/v1/apps/register', { dir: f });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'directory not found', dir: f });
+  });
+
+  test('an unreadable manifest is a 400 naming the read error, not a missing manifest', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'reg-unreadable-'));
+    mkdirSync(join(d, 'mattstack.deck.json'));
+    const res = await post('/api/v1/apps/register', { dir: d });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toStartWith('cannot read mattstack.deck.json');
+  });
+});
+
 test('POST /apps/:name/alt activates and clears an overlay', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'alt-'));
   writeFileSync(

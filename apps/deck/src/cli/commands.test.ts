@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 
 import { configInit } from './config-init.ts';
@@ -447,6 +447,25 @@ test('register from a manifest dir, then config init refuses overwrite', async (
 
   const c = io();
   expect(configInit(appDir, c)).toBe(1);
+});
+
+test('register sends a relative --dir as an absolute path', async () => {
+  const appDir = mkdtempSync(join(tmpdir(), 'regrel-'));
+  writeFileSync(
+    join(appDir, 'mattstack.deck.json'),
+    JSON.stringify({
+      name: 'regrel',
+      port: 4323,
+      commands: { start: 'bun run serve' },
+    })
+  );
+  const a = io();
+  const code = await runCommand(
+    ['register', '--dir', relative(process.cwd(), appDir)],
+    a
+  );
+  expect(a.lines).toEqual(['registered regrel on port 4323']);
+  expect(code).toBe(0);
 });
 
 test('deck alt on/off round-trip', async () => {

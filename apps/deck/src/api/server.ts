@@ -519,8 +519,14 @@ export function startApi(deps: ApiDeps) {
         // named "register" or "managed" can never shadow these routes.
         if (pathname === '/api/v1/apps/register' && req.method === 'POST') {
           const b = await body(req);
-          const { applyManifest } = await import('./register-manifest.ts');
-          const r = await applyManifest(String(b.dir ?? ''), undefined, deps);
+          const { applyManifest, checkRegisterDir } =
+            await import('./register-manifest.ts');
+          const dir = String(b.dir ?? '');
+          const bad = checkRegisterDir(dir);
+          if (bad) return json(bad.body, bad.status);
+          const r = await applyManifest(dir, undefined, deps, {
+            create: b.create === true,
+          });
           return json(r.body, r.status);
         }
         if (

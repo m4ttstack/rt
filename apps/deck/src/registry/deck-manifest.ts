@@ -35,8 +35,10 @@ export function readDeckManifest(dir: string): ParseResult {
   let raw: string;
   try {
     raw = readFileSync(join(dir, 'mattstack.deck.json'), 'utf8');
-  } catch {
-    return null; // absent is not an error: callers fall back to mattstack.json for identity
+  } catch (e) {
+    // absent is not an error: callers fall back to mattstack.json for identity
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    return err(`cannot read mattstack.deck.json: ${(e as Error).message}`);
   }
   let parsed: unknown;
   try {

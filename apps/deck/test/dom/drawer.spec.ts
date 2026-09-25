@@ -695,6 +695,22 @@ test('edit app: a user service row shows name, base port, command and directory,
   });
 });
 
+test('edit app: the name field flags names the API would reject', async () => {
+  await withBoard(async page => {
+    await openEdit(page, 'orbit');
+    const name = page
+      .locator('[data-part="sidedrawer"]')
+      .getByRole('textbox', { name: 'name' });
+    await name.fill('My App');
+    expect(
+      await name.evaluate(
+        el => (el as HTMLInputElement).validity.patternMismatch
+      )
+    ).toBe(true);
+    expect(consoleErrors(page)).toEqual([]);
+  });
+});
+
 test('edit app: a managed row offers no edit nav — the resolver owns its shape; source replaces it', async () => {
   await withBoard(async page => {
     await openDrawer(page, 'atlas');

@@ -1,17 +1,23 @@
-// Add-app modal, ported field-for-field from board.html's <dialog> and
-// board.js's switch-before-name-field ordering. Edit now lives in the drawer
-// (EditScreen.tsx); remove is triggered from the drawer's danger row
-// (RootScreen.tsx) but the confirmation itself stays a board-level
-// ConfirmDialog here, per drawer-states-atlas.html's blast-radius copy.
+// Add-app modal: the app's directory first, registered from its
+// mattstack.deck.json the way `deck register --dir` does; only a directory
+// without one gets the hand-filled service form (name, command, directory).
+// Edit now lives in the drawer (EditScreen.tsx); remove is triggered from the
+// drawer's danger row (RootScreen.tsx) but the confirmation itself stays a
+// board-level ConfirmDialog here, per drawer-states-atlas.html's blast-radius
+// copy.
 import {
   Alert,
   Button,
   ConfirmDialog,
   Modal,
-  Switch,
   TextField,
 } from '@mattstack/tui-kit';
+import { NAME_PATTERN } from './logic.ts';
 import type { BoardState } from './useBoardState.ts';
+
+// Stable identity: an inline callback ref re-runs on every render, pulling
+// focus back to this field on each keystroke typed into another one.
+const focusOnMount = (el: HTMLInputElement | null) => el?.focus();
 
 export function AddAppModal({ board }: { board: BoardState }) {
   const { data, addModal, closeAdd, updateAddModal, submitAdd } = board;
@@ -25,40 +31,48 @@ export function AddAppModal({ board }: { board: BoardState }) {
         }}
       >
         <p>
-          Registers a local service: a named https domain, and (unless it runs
-          itself) a supervised process that starts on login.
+          Registers a local service: a named https domain and a supervised
+          process that starts on login.
         </p>
         <div className="modal-form">
-          {/* Switch first: see board.html's own note on why the Name label
-              must not precede it. */}
-          <Switch
-            checked={addModal.external}
-            onChange={ev => updateAddModal({ external: ev.target.checked })}
-            label="I run this myself — just route a port"
-            aria-label={
-              addModal.external
-                ? 'stop routing only, let Local run this app'
-                : 'route only — this app runs itself'
-            }
-            title={
-              addModal.external
-                ? 'runs itself — Local only routes a port to it'
-                : 'Local runs it via launchd'
-            }
-          />
-          <TextField
-            label="Name"
-            name="app-name"
-            value={addModal.name}
-            onChange={ev => updateAddModal({ name: ev.target.value })}
-            placeholder="myapp"
-            required
-            pattern="[a-z0-9][a-z0-9.-]*"
-            title="lowercase letters, digits, dots, dashes"
-            inputRef={el => el?.focus()}
-          />
-          {!addModal.external && (
+          {addModal.step === 'dir' && (
             <>
+              <TextField
+                label="App directory"
+                name="app-dir"
+                value={addModal.dir}
+                onChange={ev => updateAddModal({ dir: ev.target.value })}
+                placeholder="/Users/you/code/myapp"
+                required
+                pattern="/.*"
+                title="an absolute path, starting with /"
+                inputRef={focusOnMount}
+              />
+              <p className="muted">
+                Deck sets the app up from its mattstack.deck.json. A directory
+                without one asks for the details by hand.
+              </p>
+            </>
+          )}
+          {addModal.step === 'manual' && (
+            <>
+              {addModal.dir && (
+                <p className="muted">
+                  No mattstack.deck.json in {addModal.dir}, so fill in the
+                  details by hand.
+                </p>
+              )}
+              <TextField
+                label="Name"
+                name="app-name"
+                value={addModal.name}
+                onChange={ev => updateAddModal({ name: ev.target.value })}
+                placeholder="myapp"
+                required
+                pattern={NAME_PATTERN}
+                title="lowercase letters, digits, dots, dashes"
+                inputRef={focusOnMount}
+              />
               <TextField
                 label="Command"
                 value={addModal.command}
@@ -82,23 +96,15 @@ export function AddAppModal({ board }: { board: BoardState }) {
               )}
             </>
           )}
-          {addModal.external && (
-            <TextField
-              label="Port it listens on"
-              value={addModal.staticPort}
-              onChange={ev => updateAddModal({ staticPort: ev.target.value })}
-              inputMode="numeric"
-              placeholder="4200"
-              required
-            />
-          )}
           {addModal.error && <Alert intent="bad">{addModal.error}</Alert>}
         </div>
         <footer className="modal-footer">
           <Button type="button" onClick={closeAdd}>
             Cancel
           </Button>
-          <Button type="submit">Add app</Button>
+          <Button type="submit" busy={addModal.submitting}>
+            Add app
+          </Button>
         </footer>
       </form>
     </Modal>

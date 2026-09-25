@@ -23,6 +23,14 @@ test('absent manifest is null (not an error)', () => {
   expect(readDeckManifest(repo({}))).toBeNull();
 });
 
+test('a manifest that exists but cannot be read is an error, not absent', () => {
+  const dir = repo({});
+  mkdirSync(join(dir, 'mattstack.deck.json'));
+  const r = readDeckManifest(dir);
+  expect(r?.ok).toBe(false);
+  expect(r && !r.ok && r.error).toStartWith('cannot read mattstack.deck.json');
+});
+
 test('reads name, port, start and action commands', () => {
   const dir = repo({
     'mattstack.deck.json': JSON.stringify({

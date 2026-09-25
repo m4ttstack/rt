@@ -4,16 +4,17 @@
 // services; external apps show name and base port, same split the add-app
 // modal makes on entry.
 import { ListGroup } from '@mattstack/tui-kit';
+import { NAME_PATTERN } from '../logic.ts';
 import type { EditModalState } from '../useBoardState.ts';
 import type { ScreenBuilder } from './RootScreen.tsx';
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
+const NAME_RE = new RegExp(`^(?:${NAME_PATTERN})$`, 'u');
 
 const FIELD_FOOTER =
   'command and directory only exist for supervised services — external apps show name and port only';
 
 function isSaveable(m: EditModalState): boolean {
-  if (!NAME_PATTERN.test(m.name.trim())) return false;
+  if (!NAME_RE.test(m.name.trim())) return false;
   if (m.port.trim() === '') return false;
   if (
     m.kind === 'service' &&
@@ -53,7 +54,7 @@ export const buildEditScreen: ScreenBuilder = (row, nav, board) => {
             value={m.name}
             onChange={ev => board.updateEditModal({ name: ev.target.value })}
             error={m.error}
-            pattern="[a-z0-9][a-z0-9.-]*"
+            pattern={NAME_PATTERN}
             required
             onKeyDown={ev => {
               if (ev.key === 'Enter' && saveable) save();

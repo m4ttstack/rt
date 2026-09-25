@@ -1,4 +1,6 @@
 // src/cli/commands.ts
+import { resolve } from 'path';
+
 import pkg from '../../package.json';
 import { apiJson, deckNotRunning } from './client.ts';
 import { configInit } from './config-init.ts';
@@ -428,7 +430,7 @@ export async function runCommand(
         return configInit(process.cwd(), io);
       }
       case 'register': {
-        const dir = flag(rest, '--dir') ?? process.cwd();
+        const dir = resolve(flag(rest, '--dir') ?? process.cwd());
         const { status, body } = await apiJson('/api/v1/apps/register', {
           method: 'POST',
           body: JSON.stringify({ dir }),

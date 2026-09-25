@@ -226,10 +226,19 @@ await scenario(
   await openModal(page, () =>
     page.locator('button', { hasText: 'add app' }).click()
   );
+  await shoot(page, 'modal-add-dir');
+  const dir = '/Users/you/code/myapp';
+  await page.route('**/api/v1/apps/register', route =>
+    route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: `no mattstack.deck.json in ${dir}` }),
+    })
+  );
+  await addModal.locator('[name="app-dir"]').fill(dir);
+  await addModal.locator('button[type="submit"]').click();
+  await addModal.locator('[name="app-name"]').waitFor({ state: 'visible' });
   await shoot(page, 'modal-add-service');
-  await addModal.locator('[data-part="switch-control"]').click();
-  await addModal.getByPlaceholder('4200').waitFor({ state: 'visible' });
-  await shoot(page, 'modal-add-external');
   await page.close();
 }
 

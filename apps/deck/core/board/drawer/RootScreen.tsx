@@ -409,10 +409,7 @@ export function buildServiceRoot(
           />
           <ListGroup.Action
             label="+ give it a route…"
-            onClick={() => {
-              board.openAdd();
-              board.updateAddModal({ name: row.name });
-            }}
+            onClick={() => board.openManualAdd(row.name)}
           />
         </ListGroup>
       </div>

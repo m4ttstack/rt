@@ -235,22 +235,51 @@ export function autoBanner(data: StatusData, now: number): Notice | null {
   return null;
 }
 
+// Browsers compile `pattern` with the v flag, where an unescaped - in a class
+// is a syntax error that silently switches the check off.
+export const NAME_PATTERN = '[a-z0-9][a-z0-9.\\-]*';
+
 export function addPayload(m: {
   name: string;
-  external: boolean;
   command: string;
   workingDirectory: string;
-  staticPort: string;
 }): unknown {
-  return m.external
-    ? { name: m.name.trim(), staticPort: Number(m.staticPort) }
-    : {
-        name: m.name.trim(),
-        // Whitespace split is the honest 90% case; commands needing shell
-        // quoting belong in a wrapper script, same rule the skill used.
-        command: m.command.trim().split(/\s+/),
-        workingDirectory: m.workingDirectory.trim(),
-      };
+  return {
+    name: m.name.trim(),
+    // Whitespace split is the honest 90% case; commands needing shell
+    // quoting belong in a wrapper script, same rule the skill used.
+    command: m.command.trim().split(/\s+/),
+    workingDirectory: m.workingDirectory.trim(),
+  };
+}
+
+export type RegisterOutcome =
+  | { kind: 'registered' }
+  | { kind: 'no-manifest' }
+  | { kind: 'error'; message: string };
+
+// Must track applyManifest's missing-manifest error in
+// src/api/register-manifest.ts; server.test.ts pins the pair together.
+const NO_MANIFEST_PREFIX = 'no mattstack.deck.json in ';
+
+/** Reads a POST /api/v1/apps/register answer, the route `deck register --dir`
+    uses, into what the Add app modal does next. */
+export function registerOutcome(
+  status: number,
+  body: unknown
+): RegisterOutcome {
+  if (status >= 200 && status < 300) return { kind: 'registered' };
+  const fields = (body ?? {}) as Record<string, unknown>;
+  const error = typeof fields.error === 'string' ? fields.error : '';
+  if (status === 400 && error.startsWith(NO_MANIFEST_PREFIX))
+    return { kind: 'no-manifest' };
+  if (status === 409 && error === 'already registered')
+    return { kind: 'error', message: `${fields.name} is already registered` };
+  const subject = fields.name ?? fields.port ?? fields.dir;
+  if (error && subject != null)
+    return { kind: 'error', message: `${error}: ${subject}` };
+  const message = typeof fields.message === 'string' ? fields.message : '';
+  return { kind: 'error', message: error || message || `failed (${status})` };
 }
 
 export function editPatch(m: {

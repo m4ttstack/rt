@@ -1,3 +1,6 @@
+import { statSync } from 'fs';
+import { isAbsolute } from 'path';
+
 import {
   readDeckManifest,
   resolveServeShape,
@@ -58,6 +61,27 @@ function attachSource(
   return { status: 200, body: { record: getRecord(existing.name) } };
 }
 
+/** The register route's guard, ahead of any manifest read: `dir` is resolved
+    by the server, so a relative one would silently mean deck's own cwd. */
+export function checkRegisterDir(dir: string): FlowResult | null {
+  if (!isAbsolute(dir)) {
+    return {
+      status: 400,
+      body: { error: 'dir must be an absolute path', dir },
+    };
+  }
+  let isDir = false;
+  try {
+    isDir = statSync(dir).isDirectory();
+  } catch {
+    // missing or unreadable reads the same as not a directory
+  }
+  if (!isDir) {
+    return { status: 400, body: { error: 'directory not found', dir } };
+  }
+  return null;
+}
+
 /**
  * Mirror a record to its manifest. The single flow behind both `deck register`
  * (activeAlt undefined = base serve shape) and `deck alt` (activeAlt = an
@@ -68,7 +92,8 @@ function attachSource(
 export async function applyManifest(
   dir: string,
   activeAlt: string | undefined,
-  drivers: Drivers
+  drivers: Drivers,
+  opts: { create?: boolean } = {}
 ): Promise<FlowResult> {
   const parsed = readDeckManifest(dir);
   if (parsed === null)
@@ -85,6 +110,15 @@ export async function applyManifest(
 
   const { start: _start, ...actionCommands } = manifest.commands;
   const existing = getRecord(manifest.name);
+
+  // create is the board's Add app: it only ever adds, so an existing record of
+  // any class is refused rather than re-synced (`deck register` re-syncs).
+  if (opts.create && existing) {
+    return {
+      status: 409,
+      body: { error: 'already registered', name: manifest.name, dir },
+    };
+  }
 
   // The create path below would register a user app named deck running from a
   // checkout; the platform registers itself in `deck setup`.
