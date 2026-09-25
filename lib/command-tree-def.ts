@@ -1885,6 +1885,7 @@ export const TREE: Record<string, CommandNode> = {
               { name: "Against", flag: "--against", type: "text", placeholder: "path/to/lock.json", hint: "Diff against a lock file; a missing file counts as no lock" },
               { name: "Against ref", flag: "--against-ref", type: "text", placeholder: "origin/main", hint: "Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock" },
               { name: "Shipped ref", flag: "--shipped-ref", type: "text", placeholder: "v2.14.0", hint: "The release whose lock says which keys have shipped (default: the highest v* tag); only a key absent there may take a breaking change on an acknowledgement" },
+              { name: "Draft", flag: "--draft", type: "boolean", default: false, hint: "Write a migrateFrom entry (or a rename) for each breaking change into the migration files, for review" },
               { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
             ],
           },

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { buildLock } from "../../lib/settings/schema-lock.ts";
+import { MIGRATIONS_INDEX_PATH, MIGRATION_SCHEMAS_PATH } from "../../lib/settings/schema-draft.ts";
 import { settingsSchemaDiff, settingsSchemaLock } from "../settings-schema.ts";
 
 describe("settingsSchemaLock", () => {
@@ -200,6 +201,24 @@ describe("settingsSchemaDiff", () => {
 
     expect(JSON.parse(logs.join("\n")).shipped).toBe("v9.9.9");
     expect(shows).toEqual([`v9.9.9:${LOCK_REL}`]);
+  });
+
+  test("--draft writes a step for a breaking change into copies of the two migration files", async () => {
+    const built = buildLock();
+    const key = Object.keys(built)[0]!;
+    const prev = { ...built, [key]: { ...built[key]!, schema: { type: "boolean" } } };
+    const indexPath = join(dir, "index.ts");
+    const schemasPath = join(dir, "schemas.ts");
+    copyFileSync(MIGRATIONS_INDEX_PATH, indexPath);
+    copyFileSync(MIGRATION_SCHEMAS_PATH, schemasPath);
+
+    await settingsSchemaDiff(["--against", writeLock(prev), "--draft", "--json"], { migrationsIndexPath: indexPath, migrationSchemasPath: schemasPath });
+
+    const body = JSON.parse(logs.join("\n")) as { drafts: { kind: string; key: string }[] };
+    expect(body.drafts).toContainEqual(expect.objectContaining({ kind: "step", key }));
+    expect(readFileSync(indexPath, "utf8")).toContain(`key: ${JSON.stringify(key)}`);
+    expect(readFileSync(schemasPath, "utf8")).toContain("schema: z.boolean()");
+    expect(process.exitCode).toBe(1);
   });
 
   test("a malformed lock at the ref or in --against is an error naming its source", async () => {
