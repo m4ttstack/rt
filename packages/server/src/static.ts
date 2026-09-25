@@ -6,6 +6,7 @@ import {
   type ResolvedAsset,
 } from './embedded/serve';
 import type { EmbeddedManifest } from './embedded/types';
+import { ICON_FILES } from './icon-files';
 
 export type ServeStaticFn = (options: {
   root?: string;
@@ -20,13 +21,6 @@ export interface MountStaticOptions {
   /** Test seam for embedded mode; defaults to the Bun.file-backed response. */
   toResponse?: (asset: ResolvedAsset) => Response;
 }
-
-const ICON_FILES = [
-  'favicon-16.png',
-  'favicon-32.png',
-  'apple-touch-icon.png',
-  'icon-512.png',
-];
 
 /**
  * `serveStatic` is injected (hono/bun's in production) so this module and
@@ -53,7 +47,6 @@ export function mountStatic(
   } else {
     app.use('/assets/*', serveStatic({ root: distRoot }));
     app.use('/fonts/*', serveStatic({ root: distRoot }));
-    app.get('/favicon.svg', serveStatic({ path: `${distRoot}/favicon.svg` }));
     for (const icon of ICON_FILES) {
       app.get(`/${icon}`, serveStatic({ path: `${distRoot}/${icon}` }));
     }

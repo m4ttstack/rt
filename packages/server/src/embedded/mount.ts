@@ -1,5 +1,6 @@
 import type { Context, Hono, Next } from 'hono';
 
+import { ICON_FILES } from '../icon-files';
 import {
   resolveEmbeddedAsset,
   resolveEmbeddedIndexHtml,
@@ -9,7 +10,7 @@ import {
 import type { EmbeddedManifest } from './types';
 
 /**
- * Mounts `/assets/*`, `/fonts/*`, and `/favicon.svg` against files embedded
+ * Mounts `/assets/*`, `/fonts/*`, and the root icons against files embedded
  * in the compiled binary, and returns the SPA-fallback handler for the
  * caller's catch-all route. `static.ts`'s `mountStatic` calls this (or the
  * disk-mode branch) so the routes themselves never need to know which mode
@@ -31,7 +32,7 @@ export function mountEmbeddedStatic(
 
   app.use('/assets/*', serveOrNext);
   app.use('/fonts/*', serveOrNext);
-  app.use('/favicon.svg', serveOrNext);
+  for (const icon of ICON_FILES) app.use(`/${icon}`, serveOrNext);
 
   return async () => toResponseFn(resolveEmbeddedIndexHtml(manifest));
 }

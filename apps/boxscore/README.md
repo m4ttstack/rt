@@ -144,17 +144,21 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
 
 ## Development
 
-| Script               | What it does                                                        |
-| -------------------- | ------------------------------------------------------------------- |
-| `bun run dev`        | Start the Vite dev server (`src/app`).                              |
-| `bun run dev:server` | Start the Bun/Hono API server (`src/server`) with hot reload.       |
-| `bun run build`      | Typecheck then production build (`vite build`) into `dist/`.        |
-| `bun run serve`      | Run the production server against the built `dist/`.                |
-| `bun run report`     | Ranked standings table from the terminal (see below).               |
-| `bun run validate`   | Run the evaluator; exits non-zero on any ranking-integrity error.   |
-| `bun run test`       | Vitest: server tests (`test/`) plus component tests (`src/app/**`). |
-| `bun run typecheck`  | `tsc --noEmit` over the whole tree (server, app, shared).           |
-| `bun run lint`       | ESLint over `src`.                                                  |
+| Script                 | What it does                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`          | Start the Vite dev server (`src/app`).                                                                                                             |
+| `bun run dev:server`   | Start the Bun/Hono API server (`src/server`) with hot reload.                                                                                      |
+| `bun run build`        | Typecheck then production build (`vite build`) into `dist/`.                                                                                       |
+| `bun run build:binary` | Compile a self-contained binary to `dist-bin/boxscore` with the built client embedded; `bash scripts/binary-gate.sh` serves it under a fresh HOME. |
+| `bun run serve`        | Run the production server against the built `dist/`.                                                                                               |
+| `bun run report`       | Ranked standings table from the terminal (see below).                                                                                              |
+| `bun run validate`     | Run the evaluator; exits non-zero on any ranking-integrity error.                                                                                  |
+| `bun run test`         | Vitest: server tests (`test/`) plus component tests (`src/app/**`).                                                                                |
+| `bun run typecheck`    | `tsc --noEmit` over the whole tree (server, app, shared).                                                                                          |
+| `bun run lint`         | ESLint over `src`.                                                                                                                                 |
+
+`scripts/binary-gate.sh` moves `dist/` aside while it runs, so run it from a
+worktree, never from a checkout deck serves boxscore from.
 
 The metric layer (`src/server/metrics/`) is pure functions over a normalized model
 (`src/server/store/model.ts`), so all the math is tested offline without a live GitLab.

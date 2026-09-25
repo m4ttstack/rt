@@ -43,9 +43,12 @@ schedule rather than blocking on it.
 deck) stay unarchived until a SHIPPED `mattstack.app` release carries a
 `deps.lock` that has repointed to `apps` release tarballs. Archiving
 early would brick rebuilds of older tags whose deps.lock still points
-at the old repo. Boxscore is exempt from this gate: it has no
-deps.lock row (it does not ship in the bundle) and can archive as soon
-as its fold-in merges.
+at the old repo. Boxscore is exempt from this gate: its deps.lock row
+points at `m4ttstack/apps` from the start, so no older tag references
+its old repo, and it can archive as soon as its fold-in merges. It is
+bundle-ready (`includeInBundle` and a `bundle` recipe in
+`apps/boxscore/mattstack.deck.json`) and ships once `bundle-apps`
+publishes `boxscore-v0.1.0`.
 
 **f. NPM_READ_TOKEN.** The four platform packages (`@mattstack/app-kit`,
 `@mattstack/app-server`, `@mattstack/mantine-tokyo`, `@mattstack/tui-kit`)

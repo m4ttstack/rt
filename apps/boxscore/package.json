@@ -2,6 +2,7 @@
   "name": "boxscore",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "bun": ">=1.1"
@@ -10,6 +11,7 @@
     "dev": "vite",
     "dev:server": "bun --watch src/server/index.ts",
     "build": "bun run typecheck && vite build",
+    "build:binary": "vite build && mattstack-embed-assets && bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile dist-bin/boxscore src/server/index.ts",
     "serve": "bun src/server/index.ts",
     "report": "bun src/server/cli.ts",
     "validate": "bun src/server/cli.ts --format validate",

@@ -116,6 +116,12 @@ jobs:
       - run: bun run boxscore:typecheck
       - run: bun run boxscore:lint
       - run: bun run boxscore:test
+      - run: cd apps/boxscore && bun run build:binary
+      # --version exits before any boxscore code loads, and that is all the
+      # bundle pipeline runs; this is the one check that the compiled binary
+      # serves its embedded assets and opens its SQLite store.
+      - name: boxscore's binary serves its own assets and opens its store
+        run: bash apps/boxscore/scripts/binary-gate.sh
       - run: bun run board:typecheck
       - run: bun run board:test
       - name: repo has no employer or domain references anywhere in its tracked tree

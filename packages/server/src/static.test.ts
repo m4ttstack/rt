@@ -43,7 +43,11 @@ test('assets, fonts, favicon and the raster icons come from dist', async () => {
   expect(await (await app.request('/favicon.svg')).text()).toBe(
     'STATIC:./dist/favicon.svg'
   );
-  for (const icon of ['favicon-32.png', 'apple-touch-icon.png']) {
+  for (const icon of [
+    'favicon-32.png',
+    'apple-touch-icon.png',
+    'favicon.ico',
+  ]) {
     expect(await (await app.request(`/${icon}`)).text()).toBe(
       `STATIC:./dist/${icon}`
     );
@@ -67,4 +71,31 @@ test('embedded mode serves from the manifest and falls back to its index', async
     'EMBEDDED:/$bunfs/root/index.html'
   );
   expect((await app.request('/api/nope')).status).toBe(404);
+});
+
+test('embedded mode serves the same icons as disk mode, falling back to its index on a miss', async () => {
+  const app = new Hono();
+  mountStatic(app, fakeServeStatic, {
+    embedded: {
+      indexHtmlPath: '/$bunfs/root/index.html',
+      files: {
+        '/favicon.ico': '/$bunfs/root/favicon.ico',
+        '/favicon-32.png': '/$bunfs/root/favicon-32.png',
+        '/apple-touch-icon.png': '/$bunfs/root/apple-touch-icon.png',
+      },
+    },
+    toResponse: asset => new Response(`EMBEDDED:${asset.path}`),
+  });
+  for (const icon of [
+    'favicon.ico',
+    'favicon-32.png',
+    'apple-touch-icon.png',
+  ]) {
+    expect(await (await app.request(`/${icon}`)).text()).toBe(
+      `EMBEDDED:/$bunfs/root/${icon}`
+    );
+  }
+  expect(await (await app.request('/icon-512.png')).text()).toBe(
+    'EMBEDDED:/$bunfs/root/index.html'
+  );
 });
