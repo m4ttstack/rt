@@ -225,8 +225,8 @@ export class HistoryStore {
     if (this.selection.length === 0 || (this.selection.length > 1 && !this.isContiguous())) return;
     const diff =
       this.selection.length > 1
-        ? await client.commitRangeDiff(file, this.orderedSelection())
-        : await client.commitDiff(file, this.selection[0]!);
+        ? await client.commitRangeDiff(file, this.orderedSelection(), { withSources: true })
+        : await client.commitDiff(file, this.selection[0]!, { withSources: true });
     if (this.selection.join(",") !== key || this.selectedFile?.path !== path) return;
     this.diff = diff;
   }
