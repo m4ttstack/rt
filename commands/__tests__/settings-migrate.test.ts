@@ -145,10 +145,6 @@ describe("rt settings migrate", () => {
     });
   });
 
-  // Controller ruling: a forced prune prints the AUTHORED (as-stored) older
-  // value, not the migrated one, because that is what the user needs to
-  // recover. EB_V1's authored shape ("pattern") differs from its migrated
-  // shape ("match"), which is what pins this down.
   test("--prune refuses a diverged name without --force <key>, and prints its authored value before deleting it with one", async () => {
     await withMigrationAsync(EB, EB_BUMP, async () => {
       write(userSettingsPath(), { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
@@ -172,8 +168,6 @@ describe("rt settings migrate", () => {
     });
   });
 
-  // Controller ruling: a secret def's value never appears, in text or --json,
-  // across the dry run, --write and a forced --prune.
   test("never shows a secret def's value, in text or --json", async () => {
     await withMigrationAsync(EB, EB_BUMP, async () => {
       const def = getDef(EB)!;
@@ -186,9 +180,10 @@ describe("rt settings migrate", () => {
         expect(printed()).toContain(`would write ${EB}@2 from ${EB}: (secret)`);
 
         await settingsMigrate(["--json"], noPrompt);
-        const dryBody = allJsonBodies().at(-1) as { writes: { value: unknown }[] };
-        expect(dryBody.writes[0]!.value).toBe("(secret)");
+        const dryBody = allJsonBodies().at(-1) as { writes: Record<string, unknown>[] };
+        expect(dryBody.writes[0]).not.toHaveProperty("value");
         expect(JSON.stringify(dryBody)).not.toContain(JSON.stringify(EB_V2).slice(1, -1));
+        expect(JSON.stringify(dryBody)).not.toContain("(secret)");
 
         await settingsMigrate(["--write"], noPrompt);
         expect(read(userSettingsPath())[`${EB}@2`]).toEqual(EB_V2);
@@ -197,15 +192,19 @@ describe("rt settings migrate", () => {
         await settingsMigrate(["--prune", "--yes", "--force", EB], noPrompt);
         expect(printed()).toContain(`deleting diverged ${EB}; its value was: (secret)`);
         expect(printed()).not.toContain(JSON.stringify(EB_V1));
+
+        write(userSettingsPath(), { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
+        await settingsMigrate(["--prune", "--yes", "--force", EB, "--json"], noPrompt);
+        const pruneBody = allJsonBodies().at(-1) as { pruned: Record<string, unknown>[] };
+        expect(pruneBody.pruned[0]).not.toHaveProperty("authored");
+        expect(pruneBody.pruned[0]).not.toHaveProperty("olderValue");
+        expect(pruneBody.pruned[0]).not.toHaveProperty("currentValue");
       } finally {
         def.secret = savedSecret;
       }
     });
   });
 
-  // Review Focus (Tasks 3, 5, 6): a diverged older name inside a repo
-  // section (repos.<identity>) is refused by prune, and cleared by force,
-  // exactly as in the global section.
   test("--prune refuses a diverged older name inside a repo section exactly as the global section, and --force clears it there too", async () => {
     await withMigrationAsync("rt.roles", ROLES_BUMP, async () => {
       write(teamSettingsPath(TEAM), {

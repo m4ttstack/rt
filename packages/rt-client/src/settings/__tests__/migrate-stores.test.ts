@@ -90,6 +90,7 @@ describe("planStoreMigrations", () => {
         label: "leftover",
         olderValue: { web: { devHook: "./dev.sh" } },
         currentValue: { web: { devHook: "./dev.sh" } },
+        authored: { web: { hook: "./dev.sh" } },
       }]);
     });
   });

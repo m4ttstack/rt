@@ -562,9 +562,14 @@ export interface MigrateDeps {
 const whereOf = (x: { scope: string; repo?: string; file: string }) => `${[x.scope, x.repo].filter(Boolean).join("/")}  ${dim}${x.file}${reset}`;
 const isSecret = (key: string) => getDef(key)?.secret === true;
 const shown = (key: string, value: unknown) => (isSecret(key) ? "(secret)" : formatValueInline(value));
-/** A secret def's value never rides in --json either... `shown` only covers its own text rendering. */
-const redacted = (key: string, value: unknown) => (isSecret(key) ? "(secret)" : value);
-const redactOlder = <T extends OlderName>(o: T): T => ({ ...o, olderValue: redacted(o.key, o.olderValue), currentValue: redacted(o.key, o.currentValue) });
+/** `undefined` rather than a placeholder string: JSON.stringify drops the property entirely, matching check.ts's own secret handling. */
+const redacted = (key: string, value: unknown): unknown => (isSecret(key) ? undefined : value);
+const redactOlder = <T extends OlderName>(o: T): T => ({
+  ...o,
+  olderValue: redacted(o.key, o.olderValue),
+  currentValue: redacted(o.key, o.currentValue),
+  authored: redacted(o.key, o.authored),
+});
 
 function renderOlder(o: OlderName): string {
   const color = o.label === "diverged" ? red : dim;
@@ -666,12 +671,9 @@ async function migratePrune(
       continue;
     }
     for (const n of names) {
+      if (n.label === "diverged" && !o.json) console.log(`  deleting diverged ${n.storeName}; its value was: ${shown(n.key, n.authored)}`);
       try {
-        // The authored value comes back only from pruneStoreName itself
-        // (readSection's migrated `value` is not what a diverged edit needs
-        // to be recovered from), so the deletion runs before this prints.
-        const result = pruneStoreName(n.key, n.storeName, n.scope, { ...(n.repo ? { repoIdentity: n.repo } : {}), ...(n.team ? { team: n.team } : {}), force: n.label === "diverged" });
-        if (n.label === "diverged" && !o.json) console.log(`  deleting diverged ${n.storeName}; its value was: ${shown(n.key, result.authored)}`);
+        pruneStoreName(n.key, n.storeName, n.scope, { ...(n.repo ? { repoIdentity: n.repo } : {}), ...(n.team ? { team: n.team } : {}), force: n.label === "diverged" });
         pruned.push(n);
       } catch (err) {
         refused.push({ ...n, reason: (err as Error).message });

@@ -69,6 +69,8 @@ export interface OlderName {
   label: OlderLabel;
   olderValue: unknown;
   currentValue: unknown;
+  /** The value as stored under `storeName`, before migration: what a forced prune must show to be recoverable. */
+  authored: unknown;
 }
 
 export interface MigrationPlan {
@@ -93,7 +95,7 @@ export function planStoreMigrations(): MigrationPlan {
         continue;
       }
       for (const o of read.older) {
-        plan.older.push({ key: def.key, ...where, storeName: o.storeName, storedVersion: o.storedVersion, storeVersion: def.storeVersion ?? 1, label: o.label, olderValue: o.value, currentValue: read.value });
+        plan.older.push({ key: def.key, ...where, storeName: o.storeName, storedVersion: o.storedVersion, storeVersion: def.storeVersion ?? 1, label: o.label, olderValue: o.value, currentValue: read.value, authored: o.authored });
       }
     }
   }
