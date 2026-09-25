@@ -8,7 +8,7 @@ import { allDefs, getDef } from "../registry-machinery.ts";
 import { checkSchema } from "../schema.ts";
 import { EXAMPLES } from "./schema-examples.ts";
 
-export const COVERED_PREFIXES = ["rt."];
+export const COVERED_PREFIXES = ["rt.", "mattstack.", "setup.", "claude.", "deck."];
 
 describe("schema examples", () => {
   for (const [key, ex] of Object.entries(EXAMPLES)) {

@@ -176,4 +176,68 @@ export const EXAMPLES: Record<string, Example> = {
     bad: [{ value: { forgeHost: 443 }, path: ["forgeHost"] }],
     layer: [{ switchboardUrl: "https://switchboard.example.com" }],
   },
+  "mattstack.integrations": {
+    good: [
+      {},
+      { forge: null },
+      {
+        forge: { host: "gitlab.example.com", provider: "gitlab" },
+        linear: { teamKey: "ACME" },
+        slack: { appId: "A0123", clientId: "123.456", channel: "#acme-dev", callbackPort: 53682 },
+        switchboard: { url: "https://switchboard.example.com" },
+      },
+      { linear: {} },
+    ],
+    bad: [
+      { value: { forge: { host: "gitlab.example.com", provider: "bitbucket" } }, path: ["forge", "provider"] },
+      { value: { slack: { callbackPort: "53682" } }, path: ["slack", "callbackPort"] },
+    ],
+    layer: [{ forge: { host: "gitlab.example.com" } }, { slack: { channel: "#acme-dev" } }],
+  },
+  "mattstack.tracking": {
+    good: [{}, { repos: {} }, { repos: { "gitlab.example.com/acme/app": { caches: ["branches", "project-mrs"] }, "gitlab.example.com/acme/docs": {} } }],
+    bad: [
+      { value: { repos: ["gitlab.example.com/acme/app"] }, path: ["repos"] },
+      { value: { repos: { "gitlab.example.com/acme/app": { caches: "branches" } } }, path: ["repos", "gitlab.example.com/acme/app", "caches"] },
+    ],
+    layer: [{ repos: { "gitlab.example.com/acme/app": { caches: ["discussions"] } } }],
+  },
+  "setup.waived": { good: [[], ["tool.fast-browser-extension"]], bad: [{ value: [true], path: [0] }] },
+  "mattstack.roster": {
+    good: [[], [{ username: "dev1" }, { username: "dev2", name: "Dev Two", agePublicKey: "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" }]],
+    bad: [
+      { value: [{ name: "Dev One" }], path: [0, "username"] },
+      { value: ["dev1"], path: [0] },
+    ],
+  },
+  "claude.marketplaces": { good: [[], ["acme/claude-plugins", "https://gitlab.example.com/acme/marketplace.git"]], bad: [{ value: [{ source: "acme/claude-plugins" }], path: [0] }] },
+  "claude.plugins": { good: [[], ["review@acme", "deploy@acme"]], bad: [{ value: ["review@acme", 2], path: [1] }] },
+  "deck.apps": {
+    good: [{}, { app: { published: true, publicFollowsOverride: false } }, { docs: { published: false, passwordVersion: 2, override: { devPort: 5174, basePort: 4100 } } }],
+    bad: [
+      { value: { app: { published: "yes" } }, path: ["app", "published"] },
+      { value: { app: { override: { devPort: 5174 } } }, path: ["app", "override", "basePort"] },
+    ],
+    layer: [{ app: { published: false } }, { app: { override: { devPort: 5175 } } }],
+  },
+  "deck.access": {
+    good: [{}, { app: { mode: "off" }, docs: { mode: "emails", emails: ["dev@example.com"] }, admin: { mode: "domains", domains: ["example.com"] } }],
+    bad: [
+      { value: { app: "off" }, path: ["app"] },
+      { value: { app: { mode: "sso" } }, path: ["app", "mode"] },
+    ],
+    layer: [{ docs: { emails: ["dev@example.com", "ops@example.com"] } }],
+  },
+  "deck.platform": {
+    good: [
+      {},
+      { publicDomain: null, legacyPrefixes: [], railway: null, tunnel: null },
+      { publicDomain: "apps.example.com", legacyPrefixes: ["old"], tunnel: { name: "deck", uuid: "00000000-0000-4000-8000-000000000000" }, railway: { projectId: "p1", environmentId: "e1" } },
+    ],
+    bad: [
+      { value: { publicDomain: 7 }, path: ["publicDomain"] },
+      { value: { tunnel: { name: "deck" } }, path: ["tunnel", "uuid"] },
+    ],
+    layer: [{ publicDomain: "apps.example.com" }, { tunnel: { uuid: "00000000-0000-4000-8000-000000000000" } }],
+  },
 };

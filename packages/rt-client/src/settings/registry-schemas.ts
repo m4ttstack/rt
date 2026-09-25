@@ -55,6 +55,12 @@ const presetEntry = z.looseObject({
   command: z.string().optional(),
 });
 
+const oauthRule = z.union([
+  z.looseObject({ mode: z.literal("off") }),
+  z.looseObject({ mode: z.literal("emails"), emails: z.array(z.string()).min(1) }),
+  z.looseObject({ mode: z.literal("domains"), domains: z.array(z.string()).min(1) }),
+]);
+
 export const SCHEMAS = {
   "rt.roles": z.record(z.string(), role),
   "rt.intercepts": z.array(z.looseObject({ command: z.string().min(1), matches: z.array(interceptMatch) })),
@@ -122,6 +128,36 @@ export const SCHEMAS = {
   "rt.hooks": z.looseObject({ enabled: z.boolean().optional(), hooks: z.record(z.string(), z.boolean()).optional() }),
   "rt.trustedBrowserOrigins": z.array(z.string()),
   "rt.integrations": z.looseObject({ forgeHost: z.string().optional(), switchboardUrl: z.string().optional() }),
+  "mattstack.integrations": z.looseObject({
+    // A team scaffolded from a remote rt does not recognize as a forge stores forge: null.
+    forge: z.looseObject({ host: z.string(), provider: z.enum(["github", "gitlab"]) }).nullable().optional(),
+    linear: z.looseObject({ teamKey: z.string().optional() }).optional(),
+    slack: z.looseObject({ clientId: z.string().optional(), appId: z.string().optional(), channel: z.string().optional(), callbackPort: z.number().optional() }).optional(),
+    switchboard: z.looseObject({ url: z.string().optional() }).optional(),
+  }),
+  "mattstack.tracking": z.looseObject({ repos: z.record(z.string(), z.looseObject({ caches: z.array(z.string()).optional() })).optional() }),
+  "setup.waived": z.array(z.string()),
+  "mattstack.roster": z.array(z.looseObject({ username: z.string(), name: z.string().optional(), agePublicKey: z.string().optional() })),
+  "claude.marketplaces": z.array(z.string()),
+  "claude.plugins": z.array(z.string()),
+  "deck.apps": z.record(
+    z.string(),
+    z.looseObject({
+      published: z.boolean().optional(),
+      publicFollowsOverride: z.boolean().optional(),
+      passwordHash: z.string().optional(),
+      passwordVersion: z.number().optional(),
+      override: z.looseObject({ devPort: z.number(), basePort: z.number() }).optional(),
+    }),
+  ),
+  "deck.access": z.record(z.string(), oauthRule),
+  // deck writes null for a cleared field and reads null as "none".
+  "deck.platform": z.looseObject({
+    publicDomain: z.string().nullable().optional(),
+    legacyPrefixes: z.array(z.string()).optional(),
+    tunnel: z.looseObject({ name: z.string(), uuid: z.string() }).nullable().optional(),
+    railway: z.looseObject({ projectId: z.string(), environmentId: z.string() }).nullable().optional(),
+  }),
 } satisfies Record<string, z.ZodType>;
 
 export type Value<K extends keyof typeof SCHEMAS> = z.infer<(typeof SCHEMAS)[K]>;
