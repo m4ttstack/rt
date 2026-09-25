@@ -60,6 +60,15 @@ rt home remote set --create        # creates a private mattstack-home repo first
 
 `rt setup status` warns when an integration token is approaching expiry, so you can rotate it before it breaks.
 
+When you connect GitHub or GitLab, the Connect sheet links to the forge's new-token page with the scopes rt needs already checked and the token named `mattstack`:
+
+| Forge | Joining a team | Owning a team |
+|---|---|---|
+| GitLab | `read_api`, `read_user` | `api` |
+| GitHub (classic token) | `repo`, `read:org` | `repo`, `read:org` |
+
+A token the forge accepts but that is missing a scope shows as invalid, naming the missing scope, and `rt setup <forge> connect` refuses it before storing it. The link targets GitLab 16 or newer; older self-hosted instances use a different token page.
+
 ## What Gets Installed
 
 | Component | Description |

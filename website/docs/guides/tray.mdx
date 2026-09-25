@@ -24,6 +24,15 @@ From the tray menu you can:
 - stop the daemon
 - toggle launch-at-login
 - check for updates
+- open **Worktrees…**
+
+## Worktrees panel
+
+**Worktrees…** lists the worktrees that were not cleaned up after their merge request merged. The menu item shows how many there are, and a summary notification once a day (at 09:00 local) opens the panel when clicked.
+
+Each row says why the tree is stuck and whether its work is safe somewhere else: already in the default branch, pushed to the remote, or patch-identical to what merged. It offers one guarded action: dispose, keep, push the branch, review the diff, stop the processes holding the tree, or remove it. Every action re-checks the tree before it runs. A removed tree goes to rt's 14-day trash rather than being deleted, and a tree holding the only copy of its work can only be forced after you confirm.
+
+`rt worktree triage` prints the same rows in the terminal (`--json` for scripts). Files that match the `rt.worktrees.junk` globs, and `bun.lock` changes that only bump versions, do not count as dirty.
 
 ## Pane focus
 
