@@ -24,8 +24,8 @@ export function runGateMarker(
   return waiting.length > 0 ? 'shepherd' : null;
 }
 
-/** The board never counts a `run:` subject, so a run's own pane-attention
-    gate is the console's to count. The age gate keeps a self-clearing
+/** The board also counts a `run:` gate shown on one of its MR rows; the
+    tray counts a gate once in the dock by its id. The age gate keeps a self-clearing
     wedge (most clear within 1 to 4 minutes on their own) from blinking
     the badge. */
 export const ATTENTION_MIN_AGE_MS = 120_000;

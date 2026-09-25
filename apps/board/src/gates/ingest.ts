@@ -162,7 +162,10 @@ export class GateResync {
     private readonly list: (
       payload: GateListPayload
     ) => Promise<GateListResult>,
-    private readonly cache: GateReconcileTarget & { readonly revision: number },
+    private readonly cache: GateReconcileTarget & {
+      readonly revision: number;
+      get(subject: string, kind: string): FacilityGateRow | undefined;
+    },
     private readonly onError: (message: string) => void
   ) {}
 
@@ -173,6 +176,7 @@ export class GateResync {
       try {
         await reconcileGatesOnBoot(this.list, this.cache);
         await reconcileAttentionGatesOnBoot(this.list, this.cache);
+        await resyncRunGates(this.list, this.cache);
       } catch (err) {
         this.onError(
           `gate resync failed: ${err instanceof Error ? err.message : err}`
@@ -205,19 +209,46 @@ export async function reconcileRunGatesOnBoot(
   cache.reconcile(newestLiveRows(rows));
 }
 
-/** Each subject+kind's newest row, kept only while it is open or parked. A
-    newer settled row must still shadow an older parked one: opening a gate
-    supersedes only an `open` row of its kind, never a `parked` one. */
-function newestLiveRows(rows: FacilityGateRow[]): FacilityGateRow[] {
+/** A run gate settled during a relay gap must reach a cache that still
+    holds it as open, or it stays counted; a settled row the cache never held
+    is not added, the same as the boot warm. */
+async function resyncRunGates(
+  list: (payload: GateListPayload) => Promise<GateListResult>,
+  cache: GateReconcileTarget & {
+    get(subject: string, kind: string): FacilityGateRow | undefined;
+  }
+): Promise<void> {
+  const rows = await pageGateList(
+    list,
+    { subjectPrefix: 'run:' },
+    'gate resync (runs)'
+  );
+  cache.reconcile(
+    newestRows(rows).filter(
+      row => isLive(row) || cache.get(row.subject, row.kind) !== undefined
+    )
+  );
+}
+
+function isLive(row: FacilityGateRow): boolean {
+  return row.status === 'open' || row.status === 'parked';
+}
+
+/** Each subject+kind's newest row. A newer settled row must still shadow an
+    older parked one: opening a gate supersedes only an `open` row of its
+    kind, never a `parked` one. */
+function newestRows(rows: FacilityGateRow[]): FacilityGateRow[] {
   const newest = new Map<string, FacilityGateRow>();
   for (const row of rows) {
     const key = `${row.subject}::${row.kind}`;
     const seen = newest.get(key);
     if (!seen || row.openedAt >= seen.openedAt) newest.set(key, row);
   }
-  return [...newest.values()].filter(
-    row => row.status === 'open' || row.status === 'parked'
-  );
+  return [...newest.values()];
+}
+
+function newestLiveRows(rows: FacilityGateRow[]): FacilityGateRow[] {
+  return newestRows(rows).filter(isLive);
 }
 
 /**

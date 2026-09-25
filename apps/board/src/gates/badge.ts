@@ -1,4 +1,3 @@
-import { runIdOf } from './run-mr.ts';
 import type { GateRow } from './store.ts';
 
 /** Most pane-attention gates clear on their own within 1 to 4 minutes;
@@ -6,9 +5,6 @@ import type { GateRow } from './store.ts';
 export const ATTENTION_MIN_AGE_MS = 120_000;
 
 export function countsForBadge(gate: GateRow, now: number): boolean {
-  // The console tab counts every run: gate; counting it here too would
-  // double count the dock.
-  if (runIdOf(gate.subject) !== null) return false;
   if (gate.status !== 'open' && gate.status !== 'parked') return false;
   if (gate.owner !== undefined && gate.owner !== 'human') return false;
   if (
@@ -22,16 +18,22 @@ export function countsForBadge(gate: GateRow, now: number): boolean {
 export interface BoardBadge {
   count: number;
   path?: string;
+  ids?: string[];
 }
 
+/** `ids` lets the tray count a gate once in the dock when another app's
+    badge (console, for run: gates) counts it too. */
 export function boardBadge(gates: GateRow[], now: number): BoardBadge {
+  const seen = new Set<string>();
   const counted = gates
     .filter(g => countsForBadge(g, now))
+    .filter(g => !seen.has(g.gateId) && seen.add(g.gateId))
     .sort((a, b) => a.openedAt - b.openedAt);
   const oldest = counted[0];
   if (!oldest) return { count: 0 };
   return {
     count: counted.length,
     path: `/?gate=${encodeURIComponent(oldest.gateId)}`,
+    ids: counted.map(g => g.gateId),
   };
 }

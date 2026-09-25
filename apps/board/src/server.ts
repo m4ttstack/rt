@@ -968,7 +968,8 @@ const httpServer = Bun.serve({
         const mrs = cache.peek()?.mrs ?? [];
         const mrGates = attachGates(
           visibleMrsFor(mrs, visible),
-          gateCache
+          gateCache,
+          runMrs.links(gateCache.rows())
         ).flatMap(mr => mr.gates);
         return Response.json(
           boardBadge(

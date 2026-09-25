@@ -104,7 +104,11 @@ export const gates = new Hono()
     if (!oldest) return c.json({ count: 0 }, 200);
     const runId = oldest.subject.slice('run:'.length);
     return c.json(
-      { count: counted.length, path: `/runs/${repoByRun.get(runId)}/${runId}` },
+      {
+        count: counted.length,
+        path: `/runs/${repoByRun.get(runId)}/${runId}`,
+        ids: counted.map(g => g.id),
+      },
       200
     );
   })

@@ -77,14 +77,24 @@ describe('countsForBadge', () => {
     ).toBe(true);
   });
 
-  test('an open, human-owned run: gate is not counted (the console tab owns it)', () => {
+  test('an open, human-owned run: gate counts; the tray dedupes it against console by id', () => {
     expect(
       countsForBadge(gate({ subject: 'run:r1', owner: 'human' }), NOW)
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
 describe('boardBadge', () => {
+  test('reports the ids it counted, once each, oldest first', () => {
+    const a = gate({ gateId: 'g-a', openedAt: NOW - 5000 });
+    const b = gate({ gateId: 'g-b', openedAt: NOW - 9000, subject: 'run:r1' });
+    expect(boardBadge([a, b, a], NOW)).toEqual({
+      count: 2,
+      path: '/?gate=g-b',
+      ids: ['g-b', 'g-a'],
+    });
+  });
+
   test('an escalated herd-owned attention gate admitted to queueExtras is not counted', () => {
     const cache = new GateCache();
     cache.applyRow({
@@ -130,6 +140,10 @@ describe('boardBadge', () => {
       ],
       NOW
     );
-    expect(badge).toEqual({ count: 2, path: '/?gate=older%20id' });
+    expect(badge).toEqual({
+      count: 2,
+      path: '/?gate=older%20id',
+      ids: ['older id', 'newer'],
+    });
   });
 });

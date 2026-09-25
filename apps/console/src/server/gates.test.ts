@@ -554,6 +554,7 @@ describe('GET /api/badge', () => {
     await expect(res.json()).resolves.toEqual({
       count: 3,
       path: '/runs/acme/r2',
+      ids: ['mine-old', 'mine-new', 'att-old'],
     });
   });
 
