@@ -18,13 +18,13 @@ describe("settingsSchemaLock", () => {
     errors = [];
     console.log = (...args: unknown[]) => { logs.push(args.map(String).join(" ")); };
     console.error = (...args: unknown[]) => { errors.push(args.map(String).join(" ")); };
-    process.exitCode = undefined;
+    process.exitCode = 0;
   });
 
   afterEach(() => {
     console.log = origLog;
     console.error = origError;
-    process.exitCode = undefined;
+    process.exitCode = 0;
     rmSync(dir, { recursive: true, force: true });
   });
 
