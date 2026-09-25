@@ -143,11 +143,11 @@ jobs:
         run: bun scripts/bench-startup.ts
         continue-on-error: true
 
-      # An upstream outage (gitlab.com 503s on glab) failed a v2.11.0 tag run
-      # before the build, so downloads are cached across runs. fetch-deps
-      # re-hashes every cached file against deps.lock, so a bad entry fails
-      # the run rather than shipping. A tag run restores what the rehearsal
-      # dispatch on main saved.
+      # fetch-deps re-hashes every cached file against deps.lock, so a bad
+      # entry fails the run rather than shipping; it also fails every later
+      # run on the same key, so clear it with
+      # `gh cache delete mattstack-deps-macOS-<hash>`. A tag run can only
+      # restore what the rehearsal dispatch on main saved.
       - name: Restore dependency downloads
         id: deps-cache
         uses: actions/cache/restore@v4
