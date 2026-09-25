@@ -210,7 +210,7 @@ describe("stageLocalDevApp", () => {
     const { seams, calls } = fakeSeams({ sourceDeps: "none", failCmd: "bash scripts/fetch-deps.sh" });
     const err = await stageLocalDevApp(seams, "/src/tree").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(UserActionableError);
-    expect((err as Error).message).toContain("scripts/fetch-deps.sh arm64 failed");
+    expect((err as Error).message).toContain("reconciling rt-tray/deps against deps.lock failed");
     expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
   });
 

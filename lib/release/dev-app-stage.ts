@@ -151,11 +151,15 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     const cp = await seams.exec(["cp", "-R", deps, `${scratch}/rt-tray/deps`]);
     if (cp.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `copying ${deps} failed: ${tail(cp)}`);
   }
-  // fetch-deps.sh is bash-only, and fills deps/tools (Sparkle) as well as deps/arm64.
+  // fetch-deps.sh is bash-only.
   const fetchStep: [string, ...string[]] = ["bash", "scripts/fetch-deps.sh", "arm64"];
   const fetched = await seams.exec(fetchStep, { cwd: scratch, timeoutMs: 1_800_000 });
   if (fetched.exitCode !== 0) {
-    throw new UserActionableError("dev-app-deps-failed", `${fetchStep.join(" ")} failed: ${tail(fetched)}`);
+    const detail = tail(fetched);
+    throw new UserActionableError(
+      "dev-app-deps-failed",
+      `reconciling rt-tray/deps against deps.lock failed (${fetchStep.join(" ")} downloads any helper the lock moved past; see its output above)${detail ? `: ${detail}` : ""}`,
+    );
   }
 
   const identityEnv = buildIdentity
