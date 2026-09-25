@@ -1,27 +1,34 @@
-The worktree triage and updater release. A new tray panel handles the worktrees left behind after a merge, connecting a forge links you straight to a token with the right scopes, and the app's updater moves to Sparkle 2.10.0.
+The prod-readiness release. Opening mattstack.app on a Mac that had been running mattstack-dev now serves every bundled app on the first launch, boxscore ships in the bundle, the window waits for deck instead of showing a 502, and setup stops registering apps one by one.
 
-### Tray and setup
+### Bundled apps
 
-- **Worktrees…** panel: every worktree left behind after its merge request merged, why it is stuck, whether its work is safe elsewhere, and one guarded action per row (dispose, keep, push the branch, review the diff, stop holders, or remove to the 14-day trash); the menu item carries a count and a daily summary notification opens the panel (#429)
-- `rt worktree triage [--repo] [--json]` prints the same rows in the terminal (#429)
-- dispose now accepts a branch that was rebased into its merged MR (RT-271, #429)
-- the Connect sheet links to the forge's new-token page with rt's scopes pre-checked; GitLab owners are now asked for `api`, and a stored token missing a scope reads invalid and names it (RT-276, #433)
+- deck 1.1.0 serves exactly the apps the bundle ships: on every start its sweep creates, adopts or fixes the rows for board, chat, console and boxscore, creates each app's data directory, and stops serving (without deleting) anything else, so switching between mattstack and mattstack-dev never destroys the other flavor's registrations (RT-280, RT-281, RT-284, #448)
+- the gitq CLI still ships and stays on your PATH; the gitq web app is no longer served by mattstack.app (RT-281, #448)
+- boxscore 0.1.0 is bundled for the first time (RT-282, #448)
+- board 0.1.6, chat 0.1.3 and console 0.1.3 carry their name and icon inside the bundle, so tabs are labelled on a clean install (#445, #448)
+- `rt-tray/deps.lock` rows can declare `serve: { port, args }`; a row with it is a bundled app, a row without it is a tool (#442)
 
-### Updates
+### Tray
 
-- Sparkle 2.10.0: fixes temp-file leaks when a delta update fails and re-applies filesystem compression after delta updates on macOS 27; tested both ways in the VM, from 2.11.0's Sparkle 2.9.6 and from the new updater itself (#434)
+- the window holds its splash until deck answers and the app list has loaded, up to 90 seconds, then shows "Can't reach deck" with the reason and a Retry button (RT-283, #446)
+- a tab whose app answers a server error shows the failure overlay with a working Retry instead of a blank 502 page (RT-283, #446)
+
+### Setup and uninstall
+
+- `rt setup` no longer registers board, chat, console or gitq itself; deck's sweep does it on both flavors (RT-281, RT-284, #444)
+- `rt uninstall` rejects arguments it does not recognise instead of running a full uninstall, and removes mattstack's apps from deck in one call (#444)
+
+### Known issue, fixed in 2.13.1
+
+- on a Mac that had been running mattstack-dev, a mattstack.app replaced in place can find launchd refusing to start its daemon ("alive but not serving", exit 78). The automatic heal is in 2.13.1; until then, `rt daemon uninstall && rt daemon install` clears it (RT-279)
 
 ### Developer tooling
 
-- the dev app caches builds per worktree, so switching back to a tree you already built is instant (#435)
-- `rt cd`'s background branch-cache refresh runs in its own session, so a pane reads idle 10 to 15 seconds sooner after `rt cd` (#436)
-- `rt release update-machine` reads `deck list`'s real table through the serving bundle's own deck, and fails closed when deck lists no managed apps (RT-274, #430)
-- the release workflow caches its dependency downloads, so an upstream outage no longer fails a release that has built before (#432)
-- the VM walkthrough dismisses Setup Assistant after boot, and its update leg accepts the `v`-prefixed version CI stamps into rt (#428, #434)
+- the clean-room VM check now fails unless deck serves exactly the bundle's apps, each healthy with its icon, and checks every `.mattstack` route (RT-284, #447)
+- the dev app's build cache drops builds whose worktree is gone (#437)
+- `rt release update-machine` accepts a daemon running a later main that contains the release (#438)
+- the repo purity gate judges only commit messages a push would publish, with tests for the new range (#439, #441)
+- `@mattstack/glance` 0.27.0 (#440)
+- glitter's guarded branch header reads "checked out in another worktree" with a padlock glyph
 
-### Documentation
-
-- a Glitter guide on rt.cool covering the board, the checkbox staging model, stash, history, menus, and every key (#431)
-- the tray guide covers the Worktrees panel, and the install page lists the token scopes each forge and role needs
-
-**Full Changelog**: https://github.com/m4ttstack/rt/compare/v2.11.0...v2.12.0
+**Full Changelog**: https://github.com/m4ttstack/rt/compare/v2.12.0...v2.13.0

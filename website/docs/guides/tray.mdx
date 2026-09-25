@@ -42,7 +42,7 @@ When `rt pane focus` targets a pane, the tray activates the terminal window host
 
 The app stays a regular Dock app for its entire run, so the Dock icon keeps its running indicator. Cmd-W closes the window (and cmd-M minimizes it). Quitting the app when no window is on screen is a real quit, whether from the Dock, Activity Monitor, or a script.
 
-The app catalog is fetched at launch rather than on first window open. This means the first handoff or browser click opens the window without a catalog-fetch delay. Startup shows a fixed-life splash with a loading indicator while the window settles.
+The app catalog is fetched at launch rather than on first window open. This means the first handoff or browser click opens the window without a catalog-fetch delay. The window holds its splash until deck answers and the app list has loaded, up to 90 seconds; a spinner appears beside the logo if that takes longer than the animation. If deck still has not answered, the splash shows "Can't reach deck" with the reason and a Retry button. A tab whose app answers with a server error shows the same kind of failure overlay, with Retry.
 
 Cmd-F opens find in page inside the mattstack window.
 
