@@ -170,6 +170,23 @@ function revMatches(sourceRev: string, target: string): boolean {
   return sourceRev.startsWith(target) || target.startsWith(sourceRev);
 }
 
+/** The dev daemon runs whatever the shared checkout holds, and main keeps
+ *  moving during a release, so a later main that contains the released
+ *  commit is as current as the tag itself. */
+async function daemonRevCheck(
+  seams: UpdateMachineSeams,
+  sourceRev: string,
+  sha: string,
+): Promise<{ ok: true; exact: boolean } | { ok: false; reason: string }> {
+  if (revMatches(sourceRev, sha)) return { ok: true, exact: true };
+  if (!/^[0-9a-f]{4,40}$/.test(sourceRev)) return { ok: false, reason: `daemon reports source rev "${sourceRev}", which is not a commit sha` };
+  const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/compare/${sha}...${sourceRev}`, "--jq", ".status"]);
+  if (r.exitCode !== 0) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with ${sha.slice(0, 12)}: ${execTail(r)}` };
+  const status = r.stdout.trim();
+  if (status === "ahead" || status === "identical") return { ok: true, exact: false };
+  return { ok: false, reason: `daemon reports source rev ${sourceRev}, which does not contain ${sha.slice(0, 12)} (${status || "no status"})` };
+}
+
 function deckPinFromDepsLock(raw: string | null): string | null {
   if (!raw) return null;
   try {
@@ -527,10 +544,13 @@ async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pro
   const status = await seams.exec(["rt", "daemon", "status", "--json"]);
   const sourceRev = parseDaemonSourceRev(status.stdout);
   if (!sourceRev) return errorLeg("daemon", DAEMON_LABEL, "daemon reports no source rev (prod daemon?)");
-  if (!revMatches(sourceRev, ctx.sha)) {
-    return errorLeg("daemon", DAEMON_LABEL, `daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
-  }
-  return okLeg("daemon", DAEMON_LABEL, `daemon restarted and reports ${ctx.tag} (${sourceRev})`);
+  const rev = await daemonRevCheck(seams, sourceRev, ctx.sha);
+  if (!rev.ok) return errorLeg("daemon", DAEMON_LABEL, rev.reason);
+  return okLeg(
+    "daemon",
+    DAEMON_LABEL,
+    rev.exact ? `daemon restarted and reports ${ctx.tag} (${sourceRev})` : `daemon restarted on ${sourceRev}, which contains ${ctx.tag}`,
+  );
 }
 
 async function runServedSuiteLeg(seams: UpdateMachineSeams, deck: string): Promise<{ result: LegResult; witness: RestartWitness | null }> {
@@ -605,7 +625,10 @@ async function runVerifyLeg(
     const daemonStatus = await seams.exec(["rt", "daemon", "status", "--json"]);
     sourceRev = parseDaemonSourceRev(daemonStatus.stdout);
     if (!sourceRev) problems.push("daemon reports no source rev (prod daemon?)");
-    else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
+    else {
+      const rev = await daemonRevCheck(seams, sourceRev, ctx.sha);
+      if (!rev.ok) problems.push(rev.reason);
+    }
   }
 
   const deck = bundleDeck(devNotRunning);
