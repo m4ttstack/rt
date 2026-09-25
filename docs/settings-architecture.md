@@ -146,12 +146,18 @@ path formatted `[0].pattern` or `emoji.looking`.
   registry's schemas against a lock: `origin/main` by default,
   `--against-ref <ref>` or `--against <file>` (one or the other), `--json`
   for the envelope; it runs from source only. A change is breaking when it
-  can reject a value the previous schema accepted: a key removed, a property
-  made required, a type narrowed, an enum value or `anyOf` branch removed, a
-  limit added or tightened, `pattern`/`format` added or changed,
-  `additionalProperties` tightened, any `oneOf` or `prefixItems` change, a
-  property added where extras were checked by a schema, a property removed
-  where extras are closed, and any change to a keyword outside the known set.
+  can reject a value the previous schema accepted: a key removed; a property
+  made required; a `type` narrowed, changed or added; an `enum`/`const` value
+  removed, or one added where none was; an `anyOf` branch removed or
+  tightened, or `anyOf` added; a `oneOf` branch added or removed, or `oneOf`
+  added (dropping `oneOf` entirely is safe); a limit added or tightened;
+  `pattern`/`format` added or changed; `items` or `propertyNames` added or
+  tightened; `additionalProperties` tightened; `prefixItems` added or
+  changed, or dropped while `items` stays restrictive; a property added where
+  extras were checked by a schema; a property removed where the new extras
+  are not open; and any change to a keyword outside the known set.
+  Annotations (`title`, `description`, `default`, `labels`, `placeholder`
+  and the like) never count.
   A breaking change passes only when the key's `storeVersion` went up and
   `breaking-schema-changes.json` (next to the registry) gives the key a
   one-line reason; a removed key needs only the reason. CI runs the diff
