@@ -21,3 +21,7 @@ test("starts after the afterAll", () => {});
 test("starts after the repair", () => {
   expect(process.env.HOME).toStartWith("/");
 });
+
+afterAll(() => {
+  delete process.env.HOME;
+});

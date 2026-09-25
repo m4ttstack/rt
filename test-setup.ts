@@ -71,16 +71,29 @@ afterAll(() => {
 // path into the cwd (the repo checkout) or, via os.homedir(), the real home.
 // This afterEach runs after the test's own afterEach hooks, so it fails the
 // test that broke HOME. bun skips the remaining afterEach hooks once one
-// throws, and an afterAll can break HOME too, so the beforeEach twin catches
-// what slips past. Both repair HOME before throwing.
-function guardHome(when: string): void {
+// throws, and an afterAll can break HOME too, so the beforeEach twin repairs
+// what slipped past before the test runs. It must not throw: bun would then
+// skip the file's beforeEach but still run its afterEach, which restores a
+// HOME it never saved and fails every later test in the describe. It leaves
+// the problem for this afterEach to report instead.
+let brokenBeforeTest: string | null = null;
+function repairHome(): string | null {
   const problem = homeProblem(process.env.HOME);
-  if (!problem) return;
-  process.env.HOME = home;
-  throw new Error(`${when}: ${problem}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
+  if (problem) process.env.HOME = home;
+  return problem;
 }
-afterEach(() => guardHome("After this test"));
-beforeEach(() => guardHome("Before this test started"));
+beforeEach(() => {
+  brokenBeforeTest = repairHome();
+});
+afterEach(() => {
+  const inherited = brokenBeforeTest;
+  brokenBeforeTest = null;
+  const problem = repairHome();
+  if (problem) throw new Error(`After this test: ${problem}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
+  if (inherited) {
+    throw new Error(`HOME was already broken when this test started (an afterAll, or an afterEach that threw, earlier): ${inherited}`);
+  }
+});
 
 function removeTree(path: string): void {
   try {
