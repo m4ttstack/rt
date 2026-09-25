@@ -105,30 +105,37 @@ describe("unitDirs", () => {
     expect(() => unitDirs({ scripts: { test: "bun test --timeout 20000 lib" } })).toThrow(/bare bun test/);
   });
 
-  test("the real script parses and test:timings delegates to it", () => {
+  test("the real script parses and test:timings, test:watch and test:all delegate to it", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     const dirs = unitDirs(pkg);
     expect(dirs).toContain("lib");
     expect(dirs).toContain("commands");
     expect(pkg.scripts["test:timings"]).toMatch(/\bbun run test\b/);
+    expect(pkg.scripts["test:watch"]).toMatch(/\bbun run test\b/);
+    expect(pkg.scripts["test:all"]).toMatch(/\bbun run test\b/);
+    const dirsList = dirs.join(" ");
+    for (const [name, script] of Object.entries(pkg.scripts)) {
+      if (name === "test") continue;
+      expect(script).not.toContain(dirsList);
+    }
   });
 });
 
 describe("alwaysRun", () => {
-  test("resolves the scanner guards and every file exists", () => {
+  test("resolves every no-* guard across the unit directories and every file exists", () => {
     const files = alwaysRun();
     for (const name of ["no-ui-in-cli", "no-eager-tui", "no-url-pathname", "no-top-level-await", "no-daemon-sync-exec"]) {
       expect(files).toContain(`lib/__tests__/${name}.test.ts`);
     }
+    for (const f of [
+      "lib/__tests__/no-spawn-without-env.test.ts",
+      "lib/__tests__/no-hand-built-repo-paths.test.ts",
+      "lib/state/__tests__/no-legacy-state-sources.test.ts",
+      "packages/rt-client/test/no-unlisted-command-call-sites.test.ts",
+    ]) {
+      expect(files).toContain(f);
+    }
     for (const f of files) expect(existsSync(join(ROOT, f))).toBe(true);
-  });
-
-  test("includes the explicit scanner guards the no-* glob misses", () => {
-    const files = alwaysRun();
-    expect(files).toContain("lib/__tests__/spawn-env.test.ts");
-    expect(files).toContain("lib/state/__tests__/source-guards.test.ts");
-    expect(files).toContain("lib/__tests__/rt-paths.test.ts");
-    expect(files).toContain("packages/rt-client/test/command-call-sites.test.ts");
   });
 });
 

@@ -44,10 +44,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: ui/go.mod
-          cache-dependency-path: ui/go.sum
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -76,13 +72,7 @@ jobs:
       - name: Workflow lint
         run: |
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP"
-          "$RUNNER_TEMP/actionlint" .github/workflows/bundle-apps.yml .github/workflows/checks.yml .github/workflows/e2e.yml .github/workflows/purity.yml .github/workflows/renovate.yml
-
-      # The Go helper's own vet + tests, plus the shared protocol fixtures
-      # both languages golden-test (lib/ui/__tests__/protocol.test.ts runs
-      # in the unit shards).
-      - name: rt-ui vet and tests
-        run: bun run ui:test
+          "$RUNNER_TEMP/actionlint" .github/workflows/bundle-apps.yml .github/workflows/checks.yml .github/workflows/e2e.yml .github/workflows/purity.yml .github/workflows/renovate.yml .github/workflows/timings.yml
 
       # Drift here is invisible until someone runs it by hand, which is how
       # two commands reached main with no reference page.
@@ -94,6 +84,24 @@ jobs:
       # command that just errors on a missing arg fails here, not in review.
       - name: Picker convention is enforced
         run: bun run picker:check
+
+  # The Go helper's own vet + tests, plus the shared protocol fixtures both
+  # languages golden-test (lib/ui/__tests__/protocol.test.ts runs in the unit
+  # shards). Its own job: it is a minute of build time nothing else waits on.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ui/go.mod
+          cache-dependency-path: ui/go.sum
+      - name: rt-ui vet and tests
+        run: bun run ui:test
 
   # macos-latest, matching e2e.yml: much of the tree is macOS-specific (launchd
   # labels, TCC, codesign, ~/Library paths) and the bunfig preload that isolates
@@ -152,7 +160,7 @@ jobs:
   # would skip unit and this job too, and a skipped required check reads as
   # passing on GitHub.
   checks:
-    needs: [scope, static, unit]
+    needs: [scope, static, go, unit]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -161,12 +169,14 @@ jobs:
         env:
           SCOPE: ${{ needs.scope.result }}
           STATIC: ${{ needs.static.result }}
+          GO: ${{ needs.go.result }}
           UNIT: ${{ needs.unit.result }}
           MODE: ${{ needs.scope.outputs.mode }}
         run: |
-          echo "scope=$SCOPE static=$STATIC unit=$UNIT mode=$MODE"
+          echo "scope=$SCOPE static=$STATIC go=$GO unit=$UNIT mode=$MODE"
           [ "$SCOPE" = success ] || { echo "scope did not succeed"; exit 1; }
           [ "$STATIC" = success ] || { echo "static did not succeed"; exit 1; }
+          [ "$GO" = success ] || { echo "go did not succeed"; exit 1; }
           [ "$UNIT" = success ] && exit 0
           [ "$UNIT" = skipped ] && [ "$MODE" = skip ] && exit 0
           echo "unit was $UNIT with mode $MODE"
