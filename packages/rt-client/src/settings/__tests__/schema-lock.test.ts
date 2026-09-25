@@ -173,6 +173,13 @@ describe("checkLockAgainst", () => {
     expect(checkLockAgainst(prev, next, { "t.k": "never released" }, { shipped: {}, mode: "release" }).ok).toBe(false);
   });
 
+  test("the never-shipped hatch also checks the names a key was renamed from, on either side of the diff", () => {
+    const shipped = { "t.old": entry(V1) };
+    const prev = { "t.new": { ...entry(V1), renamedFrom: ["t.old"] } };
+    const next = { "t.new": { ...entry(V2), renamedFrom: ["t.old"] } };
+    expect(checkLockAgainst(prev, next, { "t.new": "why" }, { shipped, mode: "ci" }).ok).toBe(false);
+  });
+
   test("a removed key passes when a key renamed from it keeps an equal schema, or when acknowledged", () => {
     const prev = { "t.old": entry(V1) };
     expect(checkLockAgainst(prev, {}, {}).ok).toBe(false);

@@ -82,13 +82,21 @@ export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: stri
 
   const next = buildLock();
   const changes = classifyLockDiff(prev, next);
-  const shippedRef = flagValue(args, "--shipped-ref") ?? latestReleaseTag(repoRoot, deps.git ?? realGit);
-  let shipped: Lock | null = null;
-  if (deps.shippedLock !== undefined) shipped = deps.shippedLock;
-  else if (shippedRef !== null) {
-    const atRef = lockAtRef(shippedRef, repoRoot, deps.git ?? realGit);
-    if (atRef instanceof Error) return fail(atRef.message);
-    shipped = atRef;
+  // deps.shippedLock, given, skips resolving a ref entirely: a test supplying it needs no
+  // git tag/show call at all, real or faked.
+  let shipped: Lock | null;
+  let shippedRef: string | null;
+  if (deps.shippedLock !== undefined) {
+    shipped = deps.shippedLock;
+    shippedRef = flagValue(args, "--shipped-ref") ?? null;
+  } else {
+    shippedRef = flagValue(args, "--shipped-ref") ?? latestReleaseTag(repoRoot, deps.git ?? realGit);
+    shipped = null;
+    if (shippedRef !== null) {
+      const atRef = lockAtRef(shippedRef, repoRoot, deps.git ?? realGit);
+      if (atRef instanceof Error) return fail(atRef.message);
+      shipped = atRef;
+    }
   }
   const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges(), { shipped, mode: "ci" });
   if (json) {

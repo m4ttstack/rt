@@ -82,13 +82,19 @@ export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<st
     if (now.storeVersion === was.storeVersion) {
       const detail = breaking.get(key);
       if (detail === undefined) continue;
-      if (mode === "ci" && shipped !== null && !(key in shipped) && acknowledged[key]) continue;
+      if (mode === "ci" && shipped !== null && !everShipped(key, was, now, shipped) && acknowledged[key]) continue;
       problems.push(`${key}: breaking (${detail}) needs storeVersion ${was.storeVersion + 1} and a migrateFrom entry for version ${was.storeVersion}`);
       continue;
     }
     problems.push(...chainProblems(key, was, now, mode, against));
   }
   return { ok: problems.length === 0, problems };
+}
+
+/** A key has shipped under its current name, or under any name it was renamed from on either side of this diff. */
+function everShipped(key: string, was: LockEntry, now: LockEntry, shipped: Lock): boolean {
+  if (key in shipped) return true;
+  return [...(was.renamedFrom ?? []), ...(now.renamedFrom ?? [])].some((name) => name in shipped);
 }
 
 function chainProblems(label: string, was: LockEntry, now: LockEntry, mode: "ci" | "release", against: string): string[] {

@@ -48,6 +48,7 @@ describe("settingsSchemaLock", () => {
 });
 
 describe("settingsSchemaDiff", () => {
+  const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
   let dir: string;
   let logs: string[];
   const origLog = console.log;
@@ -88,7 +89,7 @@ describe("settingsSchemaDiff", () => {
     const key = Object.keys(built)[0]!;
     const prev = { ...built, [key]: { ...built[key]!, schema: { ...built[key]!.schema, type: "boolean" } } };
 
-    await settingsSchemaDiff(["--against", writeLock(prev), "--json"]);
+    await settingsSchemaDiff(["--against", writeLock(prev), "--json"], { shippedLock: null });
 
     const body = JSON.parse(logs.join("\n"));
     expect(body.ok).toBe(false);
@@ -98,7 +99,7 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("an empty previous lock is all additions and passes", async () => {
-    await settingsSchemaDiff(["--against", writeLock({}), "--json"]);
+    await settingsSchemaDiff(["--against", writeLock({}), "--json"], { shippedLock: null });
 
     const body = JSON.parse(logs.join("\n"));
     expect(body.ok).toBe(true);
@@ -109,7 +110,7 @@ describe("settingsSchemaDiff", () => {
 
   test("a missing --against file reads as an empty lock and warns naming the path", async () => {
     const absent = join(dir, "absent.json");
-    const errors = await captureErrors(() => settingsSchemaDiff(["--against", absent, "--json"]));
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", absent, "--json"], { shippedLock: null }));
 
     expect(JSON.parse(logs.join("\n")).ok).toBe(true);
     expect(process.exitCode).toBe(0);
@@ -133,7 +134,7 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("the committed lock diffed against itself prints no changes", async () => {
-    await settingsSchemaDiff(["--against", writeLock(buildLock())]);
+    await settingsSchemaDiff(["--against", writeLock(buildLock())], { shippedLock: null });
 
     expect(logs).toEqual(["no schema changes"]);
     expect(process.exitCode).toBe(0);
@@ -146,8 +147,14 @@ describe("settingsSchemaDiff", () => {
     expect(errors.some((e) => e.includes("no-such-branch-for-schema-diff"))).toBe(true);
   });
 
-  const fakeGit = (show: { status: number; stdout?: string; stderr?: string }) => (args: string[]) =>
-    args[0] === "rev-parse" ? { status: 0, stdout: "abc\n", stderr: "" } : { stdout: "", stderr: "", ...show };
+  // "tag" is answered separately from "show" so a fake built for the against-ref path never
+  // doubles as a (wrong) tag list: an unanswered tag --list must read as "no tags", not as
+  // whatever the show fixture happens to return.
+  const fakeGit = (show: { status: number; stdout?: string; stderr?: string }, tag: { status?: number; stdout?: string } = { status: 0, stdout: "" }) => (args: string[]) => {
+    if (args[0] === "rev-parse") return { status: 0, stdout: "abc\n", stderr: "" };
+    if (args[0] === "tag") return { status: tag.status ?? 0, stdout: tag.stdout ?? "", stderr: "" };
+    return { stdout: "", stderr: "", ...show };
+  };
 
   test("a ref whose tree has no lock reads as an empty lock", async () => {
     for (const stderr of [
@@ -178,6 +185,21 @@ describe("settingsSchemaDiff", () => {
     const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "refs/tags/no-such-tag-for-schema-diff", "--json"]));
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-tag-for-schema-diff"))).toBe(true);
+  });
+
+  test("no --shipped-ref resolves the highest v* tag from git tag --list, and reads that tag's lock", async () => {
+    const shows: string[] = [];
+    const git = (args: string[]) => {
+      if (args[0] === "tag") return { status: 0, stdout: "v9.9.9\nv1.0.0\n", stderr: "" };
+      if (args[0] === "rev-parse") return { status: 0, stdout: "abc\n", stderr: "" };
+      shows.push(args[1] ?? "");
+      return { status: 0, stdout: "{}", stderr: "" };
+    };
+
+    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--json"], { git });
+
+    expect(JSON.parse(logs.join("\n")).shipped).toBe("v9.9.9");
+    expect(shows).toEqual([`v9.9.9:${LOCK_REL}`]);
   });
 
   test("a malformed lock at the ref or in --against is an error naming its source", async () => {
