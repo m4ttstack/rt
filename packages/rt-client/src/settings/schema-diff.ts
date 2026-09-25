@@ -6,7 +6,7 @@
  */
 
 import BREAKING from "./breaking-schema-changes.json" with { type: "json" };
-import type { JsonSchema } from "./schema.ts";
+import { isSchema, type JsonSchema } from "./schema.ts";
 
 export type LockEntry = {
   storeVersion: number;
@@ -114,8 +114,7 @@ function chainProblems(label: string, was: LockEntry, now: LockEntry, mode: "ci"
   return out;
 }
 
-const isObject = (v: unknown): v is JsonSchema => typeof v === "object" && v !== null && !Array.isArray(v);
-const openExtras = (v: unknown): boolean => v === undefined || v === true || (isObject(v) && Object.keys(v).length === 0);
+const openExtras = (v: unknown): boolean => v === undefined || v === true || (isSchema(v) && Object.keys(v).length === 0);
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const safeOnly = (a: JsonSchema, b: JsonSchema): boolean => diffNode(a, b, "").every((c) => c.kind === "safe");
 
@@ -148,7 +147,7 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
       case "additionalProperties":
         if (openExtras(bv)) verdict(true, "additionalProperties loosened");
         else if (av === false) verdict(true, "additionalProperties loosened");
-        else if (bv === false || !isObject(av)) verdict(false, "additionalProperties tightened");
+        else if (bv === false || !isSchema(av)) verdict(false, "additionalProperties tightened");
         else out.push(...diffNode(av, bv as JsonSchema, `${at}[*]`));
         break;
       case "properties": {
@@ -156,7 +155,7 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
         // A removed property's values fall through to the new additionalProperties, and an added
         // property's values used to be checked by the old one, so either side's extras schema can reject.
         const closed = !openExtras(b.additionalProperties);
-        const prevExtrasSchema = isObject(a.additionalProperties) && !openExtras(a.additionalProperties);
+        const prevExtrasSchema = isSchema(a.additionalProperties) && !openExtras(a.additionalProperties);
         for (const p of new Set([...Object.keys(ap), ...Object.keys(bp)])) {
           const path = at ? `${at}.${p}` : p;
           if (!(p in ap)) out.push({ kind: prevExtrasSchema ? "breaking" : "safe", detail: `${path}: property added` });
@@ -167,13 +166,13 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
       }
       case "items": case "propertyNames":
         if (bv === undefined) verdict(true, `${k} removed`);
-        else if (isObject(av) && isObject(bv)) out.push(...diffNode(av, bv, `${at}[]`));
+        else if (isSchema(av) && isSchema(bv)) out.push(...diffNode(av, bv, `${at}[]`));
         else verdict(false, `${k} changed`);
         break;
       // Without prefixItems, items applies to the formerly prefixed elements too.
       case "prefixItems": verdict(bv === undefined && openExtras(b.items), `prefixItems ${bv === undefined ? "removed" : "changed"}`); break;
       case "anyOf":
-        verdict(bv === undefined || (Array.isArray(av) && Array.isArray(bv) && av.every((x) => bv.some((y) => isObject(x) && isObject(y) && safeOnly(x, y)))), "anyOf changed");
+        verdict(bv === undefined || (Array.isArray(av) && Array.isArray(bv) && av.every((x) => bv.some((y) => isSchema(x) && isSchema(y) && safeOnly(x, y)))), "anyOf changed");
         break;
       // An added branch can make a value match twice, which oneOf rejects.
       case "oneOf": verdict(bv === undefined, "oneOf changed"); break;

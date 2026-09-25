@@ -37,7 +37,7 @@ export function proveMigration(def: SettingDef & { schema: JsonSchema }, version
     ...examples.map((value) => ({ value, layer: deep })),
     ...(deep ? sampleValues(layerJsonSchema(fromSchema)).map((value) => ({ value, layer: true })) : []),
   ];
-  const layerSchema = deep ? layerJsonSchema(def.schema) : def.schema;
+  const layerSchema = deep ? (def.layerSchema ?? layerJsonSchema(def.schema)) : def.schema;
   const failures: ProofFailure[] = [];
   for (const run of runs) {
     const out = runChain(def, run.value, version);

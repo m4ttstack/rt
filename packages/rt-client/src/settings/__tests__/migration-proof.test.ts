@@ -1,8 +1,8 @@
 /**
  * proveMigration: samples of a step's source schema, run up the chain, must
  * land in the current schema (layer schema for layer samples). A wrong or
- * throwing migration fails; so does every registered step that does not
- * carry its samples.
+ * throwing migration fails, naming the step. Every entry registered in
+ * migrations/schemas.ts must prove clean over its own samples and examples.
  */
 
 import { describe, expect, test } from "bun:test";

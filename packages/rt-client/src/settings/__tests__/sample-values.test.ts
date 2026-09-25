@@ -53,4 +53,47 @@ describe("sampleValues", () => {
       .map((d) => d.key);
     expect(empty).toEqual([]);
   });
+
+  test("a property anyOf [wide object, null] yields a null variant", () => {
+    const fields = ["a", "b", "c", "d", "e", "f", "g"];
+    const wide = { type: "object", properties: Object.fromEntries(fields.map((k) => [k, { type: "string" }])), required: fields, additionalProperties: {} };
+    const schema = { type: "object", properties: { x: { anyOf: [wide, { type: "null" }] } }, required: ["x"] };
+    const samples = sampleValues(schema) as Record<string, unknown>[];
+    expect(samples.some((s) => s.x === null)).toBe(true);
+  });
+
+  test("an 8-value property enum yields all 8", () => {
+    const values = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"];
+    const schema = { type: "object", properties: { kind: { type: "string", enum: values } }, required: ["kind"] };
+    const samples = sampleValues(schema) as Record<string, unknown>[];
+    for (const v of values) expect(samples.some((s) => s.kind === v)).toBe(true);
+  });
+
+  test("a union nested under additionalProperties yields each branch", () => {
+    const schema = {
+      type: "object",
+      additionalProperties: {
+        anyOf: [{ type: "string" }, { type: "boolean" }, { type: "object", properties: { z: { type: "string" } }, required: ["z"], additionalProperties: {} }],
+      },
+    };
+    const values = (sampleValues(schema) as Record<string, unknown>[]).flatMap((s) => Object.values(s));
+    expect(values.some((v) => typeof v === "string")).toBe(true);
+    expect(values.some((v) => typeof v === "boolean")).toBe(true);
+    expect(values.some((v) => typeof v === "object" && v !== null && "z" in (v as object))).toBe(true);
+  });
+
+  test("two constrained required properties next to an enum: every enum value appears", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        port: { type: "integer", exclusiveMinimum: 0 },
+        name: { type: "string", minLength: 1 },
+        mode: { type: "string", enum: ["a", "b", "c"] },
+      },
+      required: ["port", "name", "mode"],
+    };
+    const samples = sampleValues(schema) as Record<string, unknown>[];
+    expect(samples.length).toBeGreaterThan(0);
+    for (const v of ["a", "b", "c"]) expect(samples.some((s) => s.mode === v)).toBe(true);
+  });
 });

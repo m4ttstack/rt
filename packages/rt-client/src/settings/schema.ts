@@ -11,6 +11,9 @@ import type { SettingDef } from "./registry-machinery.ts";
 
 export type JsonSchema = Record<string, unknown>;
 
+/** A JSON Schema node is a plain object; excludes arrays and the `true`/`false` boolean subschemas. */
+export const isSchema = (v: unknown): v is JsonSchema => v !== null && typeof v === "object" && !Array.isArray(v);
+
 export interface SchemaIssue {
   path: (string | number)[];
   message: string;
