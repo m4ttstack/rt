@@ -171,6 +171,7 @@ export const EXAMPLES: Record<string, Example> = {
     layer: [{ hooks: { "pre-push": false } }],
   },
   "rt.trustedBrowserOrigins": { good: [[], ["http://localhost:5173"]], bad: [{ value: [5173], path: [0] }] },
+  "rt.mcp.uploadRoots": { good: [[], ["/Users/me/Screenshots"]], bad: [{ value: ["/a", 7], path: [1] }] },
   "rt.integrations": {
     good: [{}, { forgeHost: "gitlab.example.com", switchboardUrl: "https://switchboard.example.com" }],
     bad: [{ value: { forgeHost: 443 }, path: ["forgeHost"] }],
