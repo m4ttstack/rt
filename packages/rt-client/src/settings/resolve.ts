@@ -56,7 +56,8 @@ import {
   teamsDir,
   userSettingsPath,
 } from "./paths.ts";
-import { allDefs, getDef, isMigrated, isRetiredKey, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
+import { currentStoreName, readSection, storeNameStatus, worstLabel, type OlderLabel, type OlderNameRead, type SectionRead } from "./migrate.ts";
+import { allDefs, getDef, isMigrated, validateValue, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { checkSchema, type SchemaIssue } from "./schema.ts";
 import { listTeams, readStore, type StoreFile } from "./stores.ts";
 
@@ -124,6 +125,10 @@ export interface ListedSetting {
   nonconforming?: { scope: Scope; file: string | null; issues: SchemaIssue[] }[];
   /** Schema issues on the fully merged value, across every layer that applied. */
   mergedIssues?: SchemaIssue[];
+  /** Layers where an older store name was changed after the current one was written. */
+  diverged?: { scope: Scope; file: string | null; storeNames: string[] }[];
+  /** An unregistered row whose name a newer rt writes (`key@N` above this rt's version). */
+  newer?: true;
 }
 
 export interface ExplainRow {
@@ -138,6 +143,15 @@ export interface ExplainRow {
   invalid?: string;
   /** Set when the value applied despite failing its schema; never means skipped. */
   nonconforming?: SchemaIssue[];
+  /** The property the value was read from (`key` or `key@N`); present store rows only. */
+  storeName?: string;
+  storedVersion?: number;
+  /** The value as stored; `value` is it migrated to the current shape. */
+  authored?: unknown;
+  /** Older names beside the current one in the same section, each labeled. */
+  olderNames?: OlderNameRead[];
+  /** The worst of `olderNames`' labels. */
+  olderLabel?: OlderLabel;
 }
 
 export interface ExpandCtx {
@@ -259,9 +273,9 @@ export function mergedValueWith(
         : patched.teams.filter((store) => store.file === teamSettingsPath(override.team as string));
   for (const store of targets) {
     if (override.repoIdentity !== undefined) {
-      store.repos[override.repoIdentity] = { ...(store.repos[override.repoIdentity] ?? {}), [def.key]: override.value };
+      store.repos[override.repoIdentity] = { ...(store.repos[override.repoIdentity] ?? {}), [currentStoreName(def)]: override.value };
     } else {
-      store.global = { ...store.global, [def.key]: override.value };
+      store.global = { ...store.global, [currentStoreName(def)]: override.value };
     }
   }
   return resolveDef(def, patched, opts).value;
@@ -291,11 +305,15 @@ export function listStoreRepoIdentities(): string[] {
  * with no `repoIdentity` needed to see it. `scope` is the rung the key sat in
  * (`machine.repo`, not `machine`, for a key found inside `repos.<id>`).
  */
-export function listUnregisteredSettings(): { key: string; scope: Scope; file: string }[] {
+export function listUnregisteredSettings(): { key: string; scope: Scope; file: string; newer?: true }[] {
   const stores = readStores();
-  const out: { key: string; scope: Scope; file: string }[] = [];
+  const out: { key: string; scope: Scope; file: string; newer?: true }[] = [];
   const scan = (scope: Scope, file: string, section: Record<string, unknown> | undefined) => {
-    for (const key of Object.keys(section ?? {})) if (!getDef(key) && !isRetiredKey(key)) out.push({ key, scope, file });
+    for (const key of Object.keys(section ?? {})) {
+      const status = storeNameStatus(key);
+      if (status === "unknown") out.push({ key, scope, file });
+      else if (status === "newer") out.push({ key, scope, file, newer: true });
+    }
   };
   for (const store of stores.teams) {
     scan("team", store.file, store.global);
@@ -310,11 +328,13 @@ export function listUnregisteredSettings(): { key: string; scope: Scope; file: s
 
 /** Which stores set `key` for each repo identity, weakest-to-strongest order per identity. */
 export function repoSectionsFor(key: string): { identity: string; scopes: SettingScope[] }[] {
+  const def = getDef(key);
   const stores = readStores();
   const byId = new Map<string, SettingScope[]>();
   const note = (scope: SettingScope, store: StoreFile) => {
     for (const [id, section] of Object.entries(store.repos)) {
-      if (section[key] === undefined) continue;
+      const present = def ? readSection(def, section, { layer: true }).present : section[key] !== undefined;
+      if (!present) continue;
       const list = byId.get(id) ?? [];
       if (!list.includes(scope)) list.push(scope);
       byId.set(id, list);
@@ -333,6 +353,7 @@ interface Slot {
   file: string | null;
   present: boolean;
   value?: unknown;
+  read?: SectionRead;
 }
 
 function collectSlots(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): Slot[] {
@@ -343,9 +364,9 @@ function collectSlots(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): 
     useRepo ? store.repos[identity as string] : undefined;
 
   const push = (scope: Scope, file: string | null, section: Record<string, unknown> | undefined) => {
-    const value = section?.[def.key];
-    if (value === undefined) slots.push({ scope, file, present: false });
-    else slots.push({ scope, file, present: true, value });
+    const read = readSection(def, section, { layer: true });
+    if (!read.present) slots.push({ scope, file, present: false });
+    else slots.push({ scope, file, present: true, value: read.value, read });
   };
 
   /**
@@ -429,6 +450,15 @@ function resolveDef(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): Re
       continue;
     }
     row.value = slot.value;
+    if (slot.read) {
+      row.storeName = slot.read.storeName;
+      row.storedVersion = slot.read.storedVersion;
+      row.authored = slot.read.authored;
+      if (slot.read.older.length > 0) {
+        row.olderNames = slot.read.older;
+        row.olderLabel = worstLabel(slot.read.older);
+      }
+    }
 
     // teamLocked: team.repo > team > default and nothing else. Other scopes'
     // values are reported, never applied.
@@ -460,7 +490,8 @@ function resolveDef(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): Re
     }
 
     if (slot.scope !== "default") {
-      const issues = checkSchema(def, slot.value, { layer: true });
+      const failed = slot.read?.migrationError;
+      const issues = [...(failed ? [{ path: [], message: failed }] : []), ...checkSchema(def, slot.value, { layer: true })];
       if (issues.length > 0) row.nonconforming = issues;
     }
 
@@ -672,6 +703,11 @@ export function listSettings(opts: ResolveOpts = {}): ListedSetting[] {
     if (nonconforming.length > 0) listed.nonconforming = nonconforming;
     if (resolution.mergedIssues.length > 0) listed.mergedIssues = resolution.mergedIssues;
 
+    const diverged = resolution.rows
+      .filter((r) => r.olderLabel === "diverged")
+      .map((r) => ({ scope: r.scope, file: r.file, storeNames: r.olderNames!.filter((o) => o.label === "diverged").map((o) => o.storeName) }));
+    if (diverged.length > 0) listed.diverged = diverged;
+
     if (shouldExpand && resolution.value !== undefined) {
       try {
         listed.value = expandVariables(resolution.value, ctx);
@@ -696,12 +732,13 @@ export function listSettings(opts: ResolveOpts = {}): ListedSetting[] {
  */
 function listUnregistered(stores: StoreBundle, opts: ResolveOpts): ListedSetting[] {
   const identity = opts.repoIdentity ?? null;
-  const found = new Map<string, Provenance & { value: unknown }>();
+  const found = new Map<string, Provenance & { value: unknown; newer: boolean }>();
 
   const scan = (scope: Scope, file: string, section: Record<string, unknown> | undefined) => {
     for (const [key, value] of Object.entries(section ?? {})) {
-      if (getDef(key) || isRetiredKey(key)) continue;
-      found.set(key, { scope, file, value }); // later (stronger) scans win
+      const status = storeNameStatus(key);
+      if (status !== "unknown" && status !== "newer") continue;
+      found.set(key, { scope, file, value, newer: status === "newer" }); // later (stronger) scans win
     }
   };
   const repoSection = (store: StoreFile) =>
@@ -717,15 +754,20 @@ function listUnregistered(stores: StoreBundle, opts: ResolveOpts): ListedSetting
   return [...found.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, hit]) => {
-      emitSettingsWarning(
-        `rt: unregistered setting "${key}" in ${hit.file} — ignoring it (this rt may be older than the store)`,
-      );
+      if (hit.newer) {
+        emitSettingsWarning(`rt: "${key}" in ${hit.file} was written by a newer rt; ignoring it (this rt may be older than the store)`);
+      } else {
+        emitSettingsWarning(
+          `rt: unregistered setting "${key}" in ${hit.file} — ignoring it (this rt may be older than the store)`,
+        );
+      }
       return {
         key,
         value: hit.value,
         provenance: [{ scope: hit.scope, file: hit.file }],
         migrated: false,
         unregistered: true as const,
+        ...(hit.newer ? { newer: true as const } : {}),
       };
     });
 }

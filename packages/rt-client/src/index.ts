@@ -171,8 +171,11 @@ export type { SetSettingOpts } from "./settings/write.ts";
 export { validateWrite } from "./settings/validate-write.ts";
 export type { WriteRefusalKind, WriteVerdict } from "./settings/validate-write.ts";
 
+export { readSection, currentStoreName, olderStoreNames, storeNameStatus, worstLabel, valueHash, MIGRATED_PROP } from "./settings/migrate.ts";
+export type { SectionRead, OlderNameRead, OlderLabel, StoreNameStatus } from "./settings/migrate.ts";
+
 export { getDef, allDefs, validateValue, isMigrated } from "./settings/registry-machinery.ts";
-export type { SettingDef, SettingScope } from "./settings/registry-machinery.ts";
+export type { SettingDef, SettingScope, MigrationStep } from "./settings/registry-machinery.ts";
 export { checkSchema, validateJson, layerJsonSchema, formatIssuePath, firstIssueText, hasSchema } from "./settings/schema.ts";
 export type { SchemaIssue, JsonSchema } from "./settings/schema.ts";
 export { checkStores } from "./settings/check.ts";
