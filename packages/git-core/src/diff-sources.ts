@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ClientContext } from "./client.ts";
 import { rawGit } from "./exec.ts";
@@ -31,7 +31,9 @@ export async function readRevisionFile(ctx: ClientContext, rev: string, path: st
 export async function readWorkingFile(ctx: ClientContext, path: string): Promise<string | undefined> {
   const full = join(ctx.dir, path);
   try {
-    const info = await stat(full);
+    // lstat, not stat: git diffs a symlink as its link text, so following it here
+    // would read whatever file the link points at, possibly outside the repo.
+    const info = await lstat(full);
     if (!info.isFile() || info.size > DIFF_SOURCE_MAX_BYTES) return undefined;
     return textOnly(await readFile(full, "utf8"));
   } catch {

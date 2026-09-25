@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { rename, unlink } from "node:fs/promises";
+import { mkdtemp, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
 import { DIFF_SOURCE_MAX_BYTES } from "../diff-sources.ts";
@@ -195,6 +197,24 @@ describe("diff sources", () => {
       expect(diff.sources).toBeUndefined();
     } finally {
       await sb.cleanup();
+    }
+  });
+
+  it("working-tree symlink pointing outside the repo: new side is never the link target's contents", async () => {
+    const sb = await makeSandbox();
+    const outsideDir = await mkdtemp(join(tmpdir(), "git-core-outside-"));
+    try {
+      const secret = join(outsideDir, "secret.txt");
+      await writeFile(secret, "outside-sandbox-secret\n");
+      await sb.write("seed.txt", "s\n");
+      await sb.commitAll("base");
+      await symlink(secret, `${sb.dir}/n.ts`);
+      const diff = await createGitClient(sb.dir).stagingDiff("n.ts", { withSources: true });
+      expect(diff.kind).toBe("text");
+      expect(diff.sources?.new).toBeUndefined();
+    } finally {
+      await sb.cleanup();
+      await rm(outsideDir, { recursive: true, force: true });
     }
   });
 });
