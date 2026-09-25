@@ -1,4 +1,5 @@
 import { isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
+import { childEnv } from "../subprocess.ts";
 
 export type Containment = "in-default" | "on-remote" | "patch-identical" | "none";
 
@@ -16,7 +17,8 @@ async function hasObject(treePath: string, sha: string): Promise<boolean> {
 }
 
 async function runPatchId(treePath: string, input: string): Promise<string | null> {
-  const spawn = () => Bun.spawn(["git", "patch-id", "--stable"], { cwd: treePath, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+  const spawn = () =>
+    Bun.spawn(["git", "patch-id", "--stable"], { cwd: treePath, env: childEnv(), stdin: "pipe", stdout: "pipe", stderr: "ignore" });
   let proc: ReturnType<typeof spawn>;
   try {
     proc = spawn();

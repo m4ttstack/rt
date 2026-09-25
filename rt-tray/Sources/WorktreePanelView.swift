@@ -73,7 +73,7 @@ enum TriageLabels {
         }
     }
 
-    static func progressive(_ action: String) -> String {
+    static func inFlightLabel(_ action: String) -> String {
         switch action {
         case "dispose": return "Disposing…"
         case "push-branch": return "Pushing…"
@@ -453,7 +453,7 @@ struct TriageRowView: View {
         HStack(spacing: 8) {
             if busy {
                 Button(TriageLabels.button(primary ?? "dispose")) {}
-                    .buttonStyle(TriageButtonStyle(busyLabel: TriageLabels.progressive(busyAction ?? primary ?? "dispose")))
+                    .buttonStyle(TriageButtonStyle(busyLabel: TriageLabels.inFlightLabel(busyAction ?? primary ?? "dispose")))
                     .disabled(true)
             } else if let primary {
                 Button(TriageLabels.button(primary)) { onAction(primary) }
