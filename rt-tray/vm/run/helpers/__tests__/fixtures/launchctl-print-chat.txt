@@ -1,0 +1,76 @@
+gui/501/com.mattstack.deck.chat = {
+	active count = 1
+	path = /Users/tester/Library/LaunchAgents/com.mattstack.deck.chat.plist
+	type = LaunchAgent
+	state = running
+
+	program = /Applications/mattstack.app/Contents/Helpers/chat
+	arguments = {
+		/Applications/mattstack.app/Contents/Helpers/chat
+	}
+
+	working directory = /Users/tester/.mattstack/chat
+
+	stdout path = /Users/tester/.mattstack/deck/logs/chat.out.log
+	stderr path = /Users/tester/.mattstack/deck/logs/chat.err.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.TzpwIuqAEF/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		PORT => 11002
+		PATH => /Applications/mattstack.app/Contents/Helpers:/Users/tester/.local/bin:/Users/tester/.bun/bin:/Users/tester/.cargo/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+		MATTSTACK_CANONICAL_HOST => chat.mattstack
+		XPC_SERVICE_NAME => com.mattstack.deck.chat
+	}
+
+	domain = gui/501 [100057]
+	asid = 100057
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 103
+	pid = 17594
+	immediate reason = inefficient
+	forks = 0
+	execs = 1
+	initialized = 1
+	trampolined = 1
+	started suspended = 0
+	proxy started suspended = 0
+	checked allocations = 0 (queried = 1)
+	checked allocations reason = no host
+	checked allocations flags = 0x0
+	last terminating signal = Terminated: 15
+
+	resource coalition = {
+		ID = 9196
+		type = resource
+		state = active
+		active count = 1
+		name = com.mattstack.deck.chat
+	}
+
+	jetsam coalition = {
+		ID = 9197
+		type = jetsam
+		state = active
+		active count = 1
+		name = com.mattstack.deck.chat
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	submitted job. ignore execute allowed
+	jetsam thread limit = 32
+	cpumon = default
+
+	properties = keepalive | runatload | inferred program
+}
