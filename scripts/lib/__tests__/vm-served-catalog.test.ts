@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { parseDepsLock } from "../../../lib/bundle-layout.ts";
+import { JQ_DIR, runJq } from "../../../rt-tray/vm/run/helpers/__tests__/jq.ts";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
-const CATALOG_JQ = join(ROOT, "rt-tray", "vm", "run", "guest", "jq", "catalog.jq");
+const CATALOG_JQ = join(JQ_DIR, "catalog.jq");
 const FIXTURE = join(import.meta.dir, "fixtures", "deps-lock-serve.fixture.json");
 const SHIPPED_LOCK = join(ROOT, "rt-tray", "deps.lock");
 
@@ -15,11 +16,7 @@ interface Catalog { apps: CatalogApp[]; tools: string[] }
 const byCodepoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 function viaJq(text: string): Catalog {
-  const jq = Bun.which("jq");
-  if (!jq) throw new Error("jq is not on PATH: the guest reads deps.lock with jq, so this parity check needs one (macOS ships /usr/bin/jq)");
-  const r = Bun.spawnSync([jq, "-c", "-f", CATALOG_JQ], { stdin: Buffer.from(text) });
-  if (r.exitCode !== 0) throw new Error(`catalog.jq exited ${r.exitCode}: ${r.stderr.toString()}`);
-  return JSON.parse(r.stdout.toString());
+  return JSON.parse(runJq(["-c", "-f", CATALOG_JQ], text));
 }
 
 function viaParser(text: string): Catalog {

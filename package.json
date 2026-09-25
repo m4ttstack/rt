@@ -9,11 +9,11 @@
     "rt": "./cli.ts"
   },
   "scripts": {
-    "test": "bun test lib commands packages scripts rt-tray/Tests/stub-rt",
-    "test:watch": "bun test --watch lib commands packages scripts rt-tray/Tests/stub-rt",
+    "test": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
+    "test:watch": "bun test --watch lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
     "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/",
     "test:pty": "bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
-    "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/ && bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
+    "test:all": "bun test lib commands packages scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/ && bun test --preload ./e2e/setup.ts --timeout 120000 e2e/pty/",
     "docs:gen": "bun scripts/gen-docs.ts",
     "docs:check": "bun scripts/check-docs.ts",
     "picker:check": "bun scripts/lib/picker-conformance.ts",
