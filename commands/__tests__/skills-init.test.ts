@@ -78,7 +78,8 @@ function stubDeps(overrides: Partial<InitDeps> = {}): InitDeps {
 
 describe("skillsInit", () => {
   afterEach(() => {
-    process.exitCode = undefined;
+    // Bun's process.exitCode setter ignores undefined; only 0 clears it.
+    process.exitCode = 0;
   });
 
   test("a plain refusal (no-remote) prints the human message and exits 2", async () => {

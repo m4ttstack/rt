@@ -69,30 +69,63 @@ afterAll(() => {
 
 // A HOME left unset, "undefined" or relative sends every later HOME-derived
 // path into the cwd (the repo checkout) or, via os.homedir(), the real home.
-// This afterEach runs after the test's own afterEach hooks, so it fails the
-// test that broke HOME. bun skips the remaining afterEach hooks once one
-// throws, and an afterAll can break HOME too, so the beforeEach twin repairs
-// what slipped past before the test runs. It must not throw: bun would then
-// skip the file's beforeEach but still run its afterEach, which restores a
-// HOME it never saved and fails every later test in the describe. It leaves
-// the problem for this afterEach to report instead.
+// A process.exitCode a test sets (to assert a CLI exit path) and never
+// restores leaks into every test that runs after it in the same process;
+// serially that is usually masked by some later test resetting it, but
+// under `--shard` a shard can end on the leak with no failing test to
+// explain why. Both guards below run after the test's own afterEach hooks,
+// so they fail the test that broke the state, and both repair what they
+// find so the leak cannot cascade into the rest of the shard.
+//
+// They share one afterEach, not two: bun runs a setup file's afterEach
+// hooks in registration order and stops at the first throw, so two separate
+// afterEach hooks would only ever report whichever one is registered first,
+// leaving the other guard's problem unreported and its state unrepaired for
+// a test that broke both.
+//
+// Neither beforeEach may throw: bun would then skip the file's beforeEach
+// but still run its afterEach, which restores state it never saved and
+// fails every later test in the describe. Each leaves what it finds for
+// this afterEach to report instead.
 let brokenBeforeTest: string | null = null;
 function repairHome(): string | null {
   const problem = homeProblem(process.env.HOME);
   if (problem) process.env.HOME = home;
   return problem;
 }
+let exitCodeBrokenBeforeTest: number | string | null = null;
+function repairExitCode(): number | string | null {
+  const problem = process.exitCode;
+  // Bun's process.exitCode setter ignores undefined (the value sticks), so
+  // 0 is the only assignment that actually clears a prior non-zero code.
+  if (problem) process.exitCode = 0;
+  return problem ?? null;
+}
 beforeEach(() => {
   brokenBeforeTest = repairHome();
+  exitCodeBrokenBeforeTest = repairExitCode();
 });
 afterEach(() => {
-  const inherited = brokenBeforeTest;
+  const inheritedHome = brokenBeforeTest;
   brokenBeforeTest = null;
-  const problem = repairHome();
-  if (problem) throw new Error(`After this test: ${problem}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
-  if (inherited) {
-    throw new Error(`HOME was already broken when this test started (an afterAll, or an afterEach that threw, earlier): ${inherited}`);
+  const inheritedExitCode = exitCodeBrokenBeforeTest;
+  exitCodeBrokenBeforeTest = null;
+
+  const homeProblemNow = repairHome();
+  const exitCodeProblemNow = repairExitCode();
+
+  const problems: string[] = [];
+  if (homeProblemNow) {
+    problems.push(`After this test: ${homeProblemNow}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
+  } else if (inheritedHome) {
+    problems.push(`HOME was already broken when this test started (an afterAll, or an afterEach that threw, earlier): ${inheritedHome}`);
   }
+  if (exitCodeProblemNow) {
+    problems.push(`After this test: process.exitCode was left at ${JSON.stringify(exitCodeProblemNow)}. Restore it (capture before the call, restore in this test's own afterEach or a finally).`);
+  } else if (inheritedExitCode) {
+    problems.push(`process.exitCode was already ${JSON.stringify(inheritedExitCode)} when this test started (an afterAll, or an afterEach that threw, earlier).`);
+  }
+  if (problems.length > 0) throw new Error(problems.join(" | "));
 });
 
 function removeTree(path: string): void {
