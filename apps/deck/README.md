@@ -138,7 +138,7 @@ usage:
   deck alt <app> <name|off>                activate a declared serve overlay, or return to base
   deck cmd <app> <name>                    run a declared action command (dev mode only)
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
-  deck remove --managed                    unregister every app deck manages (installer's uninstall step)
+  deck remove --managed [name]             unregister one managed app, or every one (installer's uninstall step)
   deck restart <name>                      kickstart its service
   deck restart --managed                   kickstart every app deck manages (installer's version-change step)
   deck logs <name> [--lines N]             tail stderr

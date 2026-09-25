@@ -5,6 +5,11 @@ import { join } from 'path';
 import { isDevMode } from '../api/dev-mode.ts';
 import { bundleHelpersDir } from '../services/bundle-layout.ts';
 import {
+  bundleCatalog,
+  MATTSTACK_REGISTRAR,
+  type BundleCatalog,
+} from './bundle-catalog.ts';
+import {
   readDeckManifest,
   startArgv,
   type DeckManifest,
@@ -72,6 +77,40 @@ export interface ServeShapeDeps {
   devMode?: () => boolean;
   /** Test seam for bundleBinaryPath's helpers dir; default derives from the running bundle. */
   helpersDir?: string | null;
+  /** Test seam for the served-app catalog; default reads the running bundle's deps.lock. */
+  catalog?: BundleCatalog | null;
+}
+
+export interface Flavor {
+  dev: boolean;
+  helpersDir: string | null;
+  catalog: BundleCatalog | null;
+}
+
+export function resolveFlavor(deps: ServeShapeDeps = {}): Flavor {
+  return {
+    dev: (deps.devMode ?? isDevMode)(),
+    helpersDir:
+      deps.helpersDir !== undefined ? deps.helpersDir : bundleHelpersDir(),
+    catalog: deps.catalog !== undefined ? deps.catalog : bundleCatalog(),
+  };
+}
+
+/** Prod serves exactly the bundle's catalog: an rt row outside it keeps its
+    record and dev link for the other flavor but runs nowhere here. */
+export function notServedHere(
+  record: AppRecord,
+  deps: ServeShapeDeps = {}
+): boolean {
+  if (record.managedBy !== MATTSTACK_REGISTRAR) return false;
+  const { dev, catalog } = resolveFlavor(deps);
+  return !dev && catalog !== null && !catalog.has(record.name);
+}
+
+/** rt setup stores the absolute helper path of whichever flavor ran it, so any
+    bundle's Helpers/<name> counts, not only the running one's. */
+function isBundledHelperPath(argv0: string | undefined, name: string): boolean {
+  return !!argv0 && argv0.endsWith(`.app/Contents/Helpers/${name}`);
 }
 
 export function sourceShape(record: AppRecord): ResolvedShape | null {
@@ -101,11 +140,22 @@ function storedBundleCommand(
 
 export function bundleShape(
   record: AppRecord,
-  helpersDir?: string | null
+  helpersDir?: string | null,
+  catalog?: BundleCatalog | null
 ): ResolvedShape | null {
   const dir = helpersDir !== undefined ? helpersDir : bundleHelpersDir();
+  const served = catalog !== undefined ? catalog : bundleCatalog();
+  const entry = served?.get(record.name);
+  if (entry) {
+    const bin = bundleBinaryPath(record.name, dir);
+    return bin
+      ? { command: [bin, ...entry.args], cwd: dataDir(record.name) }
+      : null;
+  }
   const stored = storedBundleCommand(record, dir);
   if (stored) return stored;
+  // With a catalog, a helper outside it is a tool (the gitq CLI), never an app.
+  if (served) return null;
   const bin = bundleBinaryPath(record.name, dir);
   return bin ? { command: [bin], cwd: dataDir(record.name) } : null;
 }
@@ -123,18 +173,20 @@ export function serveShape(
     return { command: record.command!, cwd: record.workingDirectory! };
   }
 
-  const helpersDir =
-    deps.helpersDir !== undefined ? deps.helpersDir : bundleHelpersDir();
+  const { dev, helpersDir, catalog } = resolveFlavor(deps);
   const source = sourceShape(record);
-  const bundle = bundleShape(record, helpersDir);
+  const bundle = bundleShape(record, helpersDir, catalog);
   const linkBroken = readLinkedManifest(record).state === 'broken';
-  const dev = (deps.devMode ?? isDevMode)();
   const chosen = dev ? (source ?? bundle) : (bundle ?? source);
   // A stored command that is not the bundled binary is a pre-manifest row —
   // it never serves, and staying quiet about it would hide real drift.
   const legacyIgnored =
     !!record.command?.length &&
-    storedBundleCommand(record, helpersDir) === null;
+    storedBundleCommand(record, helpersDir) === null &&
+    !(
+      catalog?.has(record.name) &&
+      isBundledHelperPath(record.command[0], record.name)
+    );
 
   if (!chosen) {
     const legacyHint = legacyIgnored

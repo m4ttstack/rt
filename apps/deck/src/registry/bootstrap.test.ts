@@ -218,7 +218,7 @@ test("setup re-renders supervised apps' plists so a moved interpreter self-heals
     kind: 'service',
     label: 'com.mattstack.deck.stale',
     command: ['bun', 'src/server.ts'],
-    workingDirectory: '/tmp/stale',
+    workingDirectory: mkdtempSync(join(tmpdir(), 'stale-')),
     createdAt: new Date().toISOString(),
   });
 

@@ -73,13 +73,29 @@ against a manifest `dev` node, and do not read its lack of one as drift.
 `deck status` prints this class in its third column, so check there before
 concluding anything about an app's shape.
 
-One asymmetry worth knowing when an app is down for no visible reason: dev
-commands are read live from the manifest, but the SERVE unit is rendered from
-the stored `record.command` (`src/registry/convert.ts`) and is only compared
-against what launchd has when `register` runs (`src/api/register.ts`). So a
-linked app that moves its entry point keeps a stale unit, with a correct
-manifest, until something re-registers it. `deck register --dir <path>`
-rewrites the unit from the manifest and is the fix.
+Serve units are rendered by `buildSpec` in `src/api/register.ts` from the
+shape `serveShape` resolves (`src/registry/serve-shape.ts`); `convert.ts` only
+relabels legacy agents. The boot sweep (`reresolveManagedApps`) re-resolves
+every managed row on each bundled deck start and diffs the result against the
+installed plist, so a linked app that moves its entry point is picked up on
+the next deck restart. The sweep reads the bundle's catalog (the `deps.lock`
+rows in `Contents/Resources` that carry `serve`, read by
+`src/registry/bundle-catalog.ts`) and gives each catalog app an rt row in
+either flavor. An app it cannot create (no `Helpers/<name>` in the bundle,
+its catalog port held by something else, a route-only row of its name, or a
+legacy `mrs` row still waiting for `deck adopt mrs --as board`) is reported on
+deck's own board row, from memory, since a helper-run deck has no platform
+record. A catalog app removed with `deck remove <name> --force` comes back on
+the next deck start. Until the first sweep settles, `/api/apps` holds its
+answer for up to 10s and then answers 503, so the launcher never takes a
+half-built catalog for the whole one. In prod the sweep also adopts a
+same-named user row, serves each catalog app as
+`Contents/Helpers/<name> <serve.args>` from `~/.mattstack/<name>`, which deck
+creates, and does not serve any other rt row (plist removed, row and dev link
+kept, hidden from `/api/apps`). In dev a catalog row serves its linked source,
+or the dev bundle's binary when it has no link. Deck never creates any other missing working directory: a user app or
+checkout whose dir is gone gets a launchd issue instead of a plist launchd
+would reject.
 
 ## .localhost redirects to .mattstack, app-side
 

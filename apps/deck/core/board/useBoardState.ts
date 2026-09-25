@@ -563,8 +563,8 @@ export function useBoardState() {
       const body = await res
         .json()
         .catch(() => ({}) as { message?: string; error?: string });
-      // Surface the API's message VERBATIM - for managed rows it carries the
-      // escape hatch ("Managed by mattstack - `rt uninstall <app>`").
+      // Surface the API's message VERBATIM: for managed rows it carries the
+      // escape hatch (`deck remove <name> --force`).
       notice(
         'bad',
         body.message || body.error || `remove failed (${res.status})`,

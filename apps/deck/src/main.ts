@@ -16,7 +16,7 @@ import { reresolveManagedApps } from './api/register.ts';
 import { startApi } from './api/server.ts';
 import { claimApiInfo, stateDir } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
-import { reresolveOnBoot } from './boot-reresolve.ts';
+import { bootSweepGate, reresolveOnBoot } from './boot-reresolve.ts';
 import { resolveCfDns, type CfDns } from './edge/cf-dns.ts';
 import { PortlessCli } from './edge/portless.ts';
 import { CloudflaredCli } from './edge/tunnel.ts';
@@ -48,6 +48,7 @@ const APP_NAME =
   listRecords().find(r => isPlatformManagedBy(r.managedBy))?.name ??
   'apps';
 const CANARY_INTERVAL_MS = 5 * 60_000;
+const BOOT_SWEEP_CAP_MS = 60_000;
 
 export async function serve(): Promise<void> {
   const bundleRoot = bundleRootFromExec();
@@ -121,6 +122,7 @@ export async function serve(): Promise<void> {
   // launchd's retry, naming the holder on the way out, instead of the
   // uncaught EADDRINUSE crash loop a held port otherwise produces.
   const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
+  const bootSweep = Promise.withResolvers<void>();
   let apiServer: ReturnType<typeof startApi>;
   try {
     apiServer = startApi({
@@ -132,6 +134,7 @@ export async function serve(): Promise<void> {
       onRouteWrite: () => setTimeout(runCanaryCheck, 500),
       tunnel: new CloudflaredCli(),
       deckOwner: liveDeckOwner(bundleRoot, process.pid),
+      bootSweep: bootSweepGate(bootSweep.promise, BOOT_SWEEP_CAP_MS),
     });
   } catch (err) {
     console.error('api failed to start, exiting so launchd retries:', err);
@@ -189,7 +192,7 @@ export async function serve(): Promise<void> {
     bundleRoot,
     reresolve: () => reresolveManagedApps(drivers),
     log: console.log,
-  });
+  }).finally(() => bootSweep.resolve());
 
   const reconcileInterval = setInterval(() => {
     reconcileOnce().catch(err => console.error('reconcile tick failed:', err));

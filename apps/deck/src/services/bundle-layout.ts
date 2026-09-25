@@ -46,3 +46,9 @@ export function bundleHelpersDir(execPath?: string): string | null {
   const root = bundleRootFromExec(execPath);
   return root ? join(root, 'Contents', 'Helpers') : null;
 }
+
+/** Absolute path to the bundle's Resources directory, or null outside a bundle. */
+export function bundleResourcesDir(execPath?: string): string | null {
+  const root = bundleRootFromExec(execPath);
+  return root ? join(root, 'Contents', 'Resources') : null;
+}

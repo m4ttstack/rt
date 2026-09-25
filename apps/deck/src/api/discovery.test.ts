@@ -44,6 +44,7 @@ beforeEach(() => {
 });
 
 const statusOpts = {
+  local: false,
   port: 7940,
   canaryPort: 7942,
   proxyFreshness: 'unknown' as const,
@@ -375,4 +376,41 @@ test('GET /api/apps/:name/icon carries vary: origin with no Origin header at all
   const res = await fetch(`http://127.0.0.1:${PORT}/api/apps/chat/icon`);
   expect(res.headers.get('vary')).toBe('origin');
   expect(res.headers.get('access-control-allow-origin')).toBeNull();
+});
+
+test('discovery hides an rt app the prod catalog does not serve, and shows it in dev', async () => {
+  putRecord({
+    name: 'chat',
+    managedBy: 'rt',
+    port: 11002,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+  });
+  putRecord({
+    name: 'gitq',
+    managedBy: 'rt',
+    port: 11008,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+  });
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'chat.localhost', port: 11002 },
+      { hostname: 'gitq.localhost', port: 11008 },
+    ])
+  );
+  const catalog = new Map([['chat', { port: 11002, args: [] as string[] }]]);
+
+  const prod = await buildDiscoveryApps(statusOpts, {
+    devMode: () => false,
+    catalog,
+  });
+  expect(prod.map(a => a.name)).toEqual(['chat']);
+
+  const dev = await buildDiscoveryApps(statusOpts, {
+    devMode: () => true,
+    catalog,
+  });
+  expect(dev.map(a => a.name).sort()).toEqual(['chat', 'gitq']);
 });

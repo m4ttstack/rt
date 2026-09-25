@@ -136,6 +136,69 @@ test('restart --managed / remove --managed only touch non-user records', async (
   await runCommand(['remove', 't-user-only'], io());
 });
 
+test('remove --managed <name> removes only that app', async () => {
+  const helpers = mkdtempSync(join(tmpdir(), 'helpers-'));
+  for (const n of ['t-one', 't-two']) writeFileSync(join(helpers, n), '');
+  setServeShapeDeps({ helpersDir: helpers });
+  for (const n of ['t-one', 't-two'])
+    await fetch(`http://127.0.0.1:${PORT}/api/v1/apps`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-caller': 'rt' },
+      body: JSON.stringify({
+        name: n,
+        command: [join(helpers, n)],
+        workingDirectory: dir,
+      }),
+    });
+
+  const removed = io();
+  expect(await runCommand(['remove', '--managed', 't-one'], removed)).toBe(0);
+  expect(removed.lines.join('\n')).toContain('removed t-one');
+  expect(removed.lines.join('\n')).not.toContain('t-two');
+
+  const missing = io();
+  expect(await runCommand(['remove', '--managed', 't-ghost'], missing)).toBe(1);
+  expect(missing.lines.join('\n')).toContain('unknown app');
+
+  const s = io();
+  await runCommand(['status'], s);
+  expect(s.lines.join('\n')).toContain('t-two');
+  expect(s.lines.join('\n')).not.toContain('t-one');
+
+  await runCommand(['remove', '--managed'], io());
+  setServeShapeDeps({});
+});
+
+test('remove --managed <name> against a deck that predates named removes fails instead of removing every managed app', async () => {
+  const bulkCalls: string[] = [];
+  const oldDeck = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch(req) {
+      const { pathname } = new URL(req.url);
+      if (pathname === '/api/v1/apps/managed/remove') {
+        bulkCalls.push(req.method);
+        return Response.json({
+          ok: true,
+          removed: ['board', 'chat', 'console'],
+          failed: [],
+        });
+      }
+      return Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  writeApiInfo(oldDeck.port!);
+  try {
+    const x = io();
+    expect(await runCommand(['remove', '--managed', 'chat'], x)).toBe(1);
+    expect(bulkCalls).toEqual([]);
+    expect(x.lines.join('\n')).toContain('not found');
+  } finally {
+    writeApiInfo(PORT);
+    oldDeck.stop(true);
+  }
+});
+
 test('unknown verb exits 2 with usage', async () => {
   const x = io();
   expect(await runCommand(['frobnicate'], x)).toBe(2);

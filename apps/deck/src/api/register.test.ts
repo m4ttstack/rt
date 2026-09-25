@@ -10,6 +10,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 
+import type { AppRecord } from '../registry/records.ts';
+
 const dir = mkdtempSync(join(tmpdir(), 'local-flows-'));
 process.env.LOCAL_REGISTRY_PATH = join(dir, 'registry.json');
 process.env.LOCAL_STATE_DIR = dir;
@@ -20,6 +22,8 @@ await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH, '[]');
 // so this test's port allocations aren't shifted by real launchd agents
 // already running on the dev machine (see LOCAL_AGENTS_DIR in core/discover.ts).
 process.env.LOCAL_AGENTS_DIR = join(dir, 'agents-not-present');
+// readServices() would otherwise run the machine's `launchctl list`.
+process.env.LOCAL_LAUNCHCTL_PIDS = '';
 // Settings live in the same throwaway dir: the rename tests write real
 // published/password state and must never touch the repo's data/settings.json.
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, 'settings.json');
@@ -37,12 +41,14 @@ const {
   restartLabelFor,
   reresolveManagedApps,
   removeManagedApps,
+  reinstallSupervised,
   setServeShapeDeps,
 } = await import('./register.ts');
 const { FakeServiceManager } = await import('../services/fake.ts');
 const { FakeEdgeProxy } = await import('../edge/portless.ts');
 const { getRecord, putRecord, reloadRegistry, listRecords, deleteRecord } =
   await import('../registry/records.ts');
+const { dataDir } = await import('../registry/serve-shape.ts');
 const {
   getAppSettings,
   setPublished,
@@ -60,6 +66,15 @@ type ServiceSpec = Parameters<
   InstanceType<typeof FakeServiceManager>['install']
 >[0];
 const { agentsDir } = await import('../services/launchd.ts');
+const { catalogReport } = await import('../registry/catalog-report.ts');
+
+/** agentsDir() falls back to the real ~/Library/LaunchAgents when its env
+    seam is unset, so a recursive rm checks it first. */
+function wipeAgentsDir(): void {
+  if (!agentsDir().startsWith(dir))
+    throw new Error(`refusing to remove ${agentsDir()} outside ${dir}`);
+  rmSync(agentsDir(), { recursive: true, force: true });
+}
 const { renderPlist } = await import('../services/plist.ts');
 
 let drivers: {
@@ -69,6 +84,8 @@ let drivers: {
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   rmSync(process.env.LOCAL_APPS_SETTINGS_PATH!, { force: true });
+  // The sweep's catalog rows write .mattstack routes into this shared file.
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, '[]');
   // A fresh HOME per test keeps deck.platform store state (read via register.ts)
   // from leaking test-to-test, same as server.test.ts.
   process.env.HOME = mkdtempSync(join(tmpdir(), 'local-flows-home-'));
@@ -84,7 +101,7 @@ afterEach(() => {
 const input = {
   name: 'myapp',
   command: ['bun', 'src/server.ts'],
-  workingDirectory: '/tmp/myapp',
+  workingDirectory: mkdtempSync(join(tmpdir(), 'myapp-')),
 };
 
 /** A managed row only serves what the resolver finds: a binary inside the
@@ -113,7 +130,7 @@ test('register: allocates from 11000, installs the service, registers the alias,
   expect(rec.label).toBe('com.mattstack.deck.myapp');
   const spec = drivers.manager.installed.get('com.mattstack.deck.myapp')!;
   expect(spec.environment.PORT).toBe('11000');
-  expect(spec.workingDirectory).toBe('/tmp/myapp');
+  expect(spec.workingDirectory).toBe(input.workingDirectory);
   expect(drivers.edge.aliases.get('myapp')).toBe(11000);
 });
 
@@ -204,6 +221,39 @@ test('adopt succeeds when the route ALREADY exists — the bootstrap/migrate rea
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, '[]');
 });
 
+test('register: a user app whose working directory is gone is refused with a launchd issue, never handed to launchd', async () => {
+  const gone = join(tmpdir(), `gone-${Date.now()}`);
+  const res = await registerApp(
+    { ...input, name: 'gone', workingDirectory: gone },
+    drivers
+  );
+  expect(res.status).toBe(201);
+  expect(drivers.manager.installed.has(`${LABEL_PREFIX}gone`)).toBe(false);
+  const issue = getRecord('gone')!.issues![0]!;
+  expect(issue.source).toBe('launchd');
+  expect(issue.message).toContain(`working directory ${gone} does not exist`);
+  expect(existsSync(gone)).toBe(false);
+});
+
+test('register: a managed app served from the bundle gets the data dir deck owns', async () => {
+  const h = bundleHelpers('fresh');
+  const res = await registerApp(
+    {
+      ...input,
+      name: 'fresh',
+      managedBy: 'rt',
+      command: h.command('fresh'),
+      workingDirectory: dataDir('fresh'),
+    },
+    drivers
+  );
+  expect(res.status).toBe(201);
+  expect(existsSync(dataDir('fresh'))).toBe(true);
+  expect(
+    drivers.manager.installed.get(`${LABEL_PREFIX}fresh`)!.workingDirectory
+  ).toBe(dataDir('fresh'));
+});
+
 test('a portless failure still registers, but lands a loud portless issue', async () => {
   drivers.edge.failNext = 'myapp';
   const res = await registerApp(input, drivers);
@@ -218,7 +268,7 @@ test('unregister: registrar-owned, 409 with escape hatch, force overrides', asyn
   const denied = await unregisterApp('myapp', 'user', false, drivers);
   expect(denied.status).toBe(409);
   expect((denied.body as any).message).toBe(
-    'Managed by mattstack — `rt uninstall myapp`'
+    'Managed by mattstack: remove it anyway with `deck remove myapp --force`'
   );
   const forced = await unregisterApp('myapp', 'user', true, drivers);
   expect(forced.status).toBe(200);
@@ -241,7 +291,11 @@ test('edit re-ports: reinstalls the service on the new port and re-aliases', asy
 test('edit re-ports onto a port already held by another record is a 409, and the port stays unchanged', async () => {
   await registerApp(input, drivers);
   const otherRes = await registerApp(
-    { name: 'other', command: ['bun', 'x'], workingDirectory: '/tmp/other' },
+    {
+      name: 'other',
+      command: ['bun', 'x'],
+      workingDirectory: mkdtempSync(join(tmpdir(), 'other-')),
+    },
     drivers
   );
   const otherPort = (otherRes.body as any).record.port as number;
@@ -839,7 +893,11 @@ test('adopt refuses a rename target that is a different existing app', async () 
   await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, '[]');
   await registerApp({ ...input, name: 'mrs' }, drivers);
   await registerApp(
-    { ...input, name: 'board', workingDirectory: '/tmp/other' },
+    {
+      ...input,
+      name: 'board',
+      workingDirectory: mkdtempSync(join(tmpdir(), 'other-')),
+    },
     drivers
   );
   const res = await adoptApp('mrs', { as: 'board' }, drivers);
@@ -1031,6 +1089,36 @@ test('removeManagedApps: tears down every non-user record, leaves user apps alon
   expect(drivers.manager.installed.has('com.mattstack.deck.board')).toBe(false);
 });
 
+test('removeManagedApps with a name removes only that managed record', async () => {
+  const h = bundleHelpers('one', 'two');
+  for (const n of ['one', 'two'])
+    await registerApp(
+      { ...input, name: n, managedBy: 'rt', command: h.command(n) },
+      drivers
+    );
+  await registerApp({ ...input, name: 'mine' }, drivers);
+
+  const res = await removeManagedApps(drivers, 'one');
+
+  expect(res.body).toMatchObject({ ok: true, removed: ['one'], failed: [] });
+  expect(getRecord('one')).toBeUndefined();
+  expect(getRecord('two')).toBeDefined();
+  expect(getRecord('mine')).toBeDefined();
+});
+
+test('removeManagedApps with an absent or user-owned name removes nothing and says so', async () => {
+  await registerApp({ ...input, name: 'mine' }, drivers);
+  expect(await removeManagedApps(drivers, 'ghost')).toEqual({
+    status: 404,
+    body: { error: 'unknown app' },
+  });
+  expect(await removeManagedApps(drivers, 'mine')).toEqual({
+    status: 409,
+    body: { error: 'mine is not managed' },
+  });
+  expect(getRecord('mine')).toBeDefined();
+});
+
 test('removeManagedApps: a driver failure keeps the record and reports it in failed', async () => {
   await registerApp({ ...input, name: 'board', managedBy: 'rt' }, drivers);
   drivers.manager.failNext = 'com.mattstack.deck.board';
@@ -1086,6 +1174,49 @@ class CountingManager extends FakeServiceManager {
   }
 }
 
+/** Writes and removes real plist files the way LaunchdManager does, so the
+    sweep's diff reads what the previous sweep installed. */
+class PlistManager extends CountingManager {
+  override async install(spec: ServiceSpec): Promise<void> {
+    await super.install(spec);
+    mkdirSync(agentsDir(), { recursive: true });
+    writeFileSync(join(agentsDir(), `${spec.label}.plist`), renderPlist(spec));
+  }
+  override async uninstall(label: string): Promise<void> {
+    await super.uninstall(label);
+    rmSync(join(agentsDir(), `${label}.plist`), { force: true });
+  }
+}
+
+const AT = '2026-09-24T00:00:00Z';
+
+function checkout(name: string, start: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `${name}-src-`));
+  writeFileSync(
+    join(dir, 'mattstack.deck.json'),
+    JSON.stringify({ name, dev: { start } })
+  );
+  return dir;
+}
+
+function rtRow(
+  name: string,
+  port: number,
+  over: Partial<AppRecord> = {}
+): void {
+  putRecord({
+    name,
+    managedBy: 'rt',
+    port,
+    kind: 'service',
+    label: `${LABEL_PREFIX}${name}`,
+    createdAt: AT,
+    ...over,
+  });
+}
+
+const CHAT_ONLY = new Map([['chat', { port: 11002, args: [] as string[] }]]);
+
 test('reresolve: reinstalls only the app whose resolved command differs from its installed plist', async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
@@ -1105,7 +1236,7 @@ test('reresolve: reinstalls only the app whose resolved command differs from its
       name: 'changed',
       managedBy: 'rt',
       command: h.command('changed', 'serve'),
-      workingDirectory: '/tmp/changed',
+      workingDirectory: mkdtempSync(join(tmpdir(), 'changed-')),
     },
     reresolveDrivers
   );
@@ -1189,7 +1320,7 @@ test('reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no d
       name: 'app2',
       managedBy: 'rt',
       command: h.command('app2', 'serve'),
-      workingDirectory: '/tmp/app2',
+      workingDirectory: mkdtempSync(join(tmpdir(), 'app2-')),
     },
     reresolveDrivers
   );
@@ -1488,6 +1619,184 @@ test('reresolve: a later successful install clears the launchd issue a previous 
   expect(getRecord('recovered')!.issues ?? []).toEqual([]);
 });
 
+test('reresolve: prod does not serve an rt row outside the catalog; its plist goes, its row and dev link stay', async () => {
+  wipeAgentsDir();
+  try {
+    const manager = new PlistManager();
+    const d = { manager, edge: drivers.edge };
+    const h = bundleHelpers('chat');
+    const gitqSrc = checkout('gitq', 'bun src/server/server.ts');
+    rtRow('gitq', 11008, { dev: { workingDirectory: gitqSrc } });
+    setServeShapeDeps({
+      devMode: () => true,
+      helpersDir: h.dir,
+      catalog: CHAT_ONLY,
+    });
+    await reresolveManagedApps(d);
+    const plist = join(agentsDir(), `${LABEL_PREFIX}gitq.plist`);
+    expect(existsSync(plist)).toBe(true);
+
+    setServeShapeDeps({
+      devMode: () => false,
+      helpersDir: h.dir,
+      catalog: CHAT_ONLY,
+    });
+    const body = (await reresolveManagedApps(d)).body as any;
+
+    expect(body).toMatchObject({ ok: true, notServed: ['gitq'], failed: [] });
+    expect(existsSync(plist)).toBe(false);
+    expect(manager.installed.has(`${LABEL_PREFIX}gitq`)).toBe(false);
+    expect(getRecord('gitq')!.dev).toEqual({ workingDirectory: gitqSrc });
+    expect(getRecord('gitq')!.issues).toBeUndefined();
+    expect(existsSync(dataDir('gitq'))).toBe(false);
+  } finally {
+    wipeAgentsDir();
+  }
+});
+
+test('reresolve: prod with no catalog serves rt rows as before and marks none not-served', async () => {
+  const h = bundleHelpers('gitq');
+  setServeShapeDeps({ devMode: () => false, helpersDir: h.dir, catalog: null });
+  await registerApp(
+    {
+      ...input,
+      name: 'gitq',
+      managedBy: 'rt',
+      command: h.command('gitq', 'board'),
+    },
+    drivers
+  );
+  const body = (await reresolveManagedApps(drivers)).body as any;
+  expect(body.notServed).toEqual([]);
+  expect(
+    drivers.manager.installed.get(`${LABEL_PREFIX}gitq`)!.programArguments
+  ).toEqual([join(h.dir, 'gitq'), 'board']);
+});
+
+test('reresolve: an unchanged plist whose owned data dir went missing gets the dir back and a kickstart', async () => {
+  wipeAgentsDir();
+  try {
+    const manager = new PlistManager();
+    const d = { manager, edge: drivers.edge };
+    const h = bundleHelpers('chat');
+    setServeShapeDeps({
+      devMode: () => false,
+      helpersDir: h.dir,
+      catalog: CHAT_ONLY,
+    });
+    rtRow('chat', 11002);
+    await reresolveManagedApps(d);
+    rmSync(dataDir('chat'), { recursive: true, force: true });
+    manager.kickstarts = [];
+
+    const body = (await reresolveManagedApps(d)).body as any;
+
+    expect(body).toMatchObject({
+      ok: true,
+      restarted: ['chat'],
+      unchanged: [],
+    });
+    expect(existsSync(dataDir('chat'))).toBe(true);
+    expect(manager.kickstarts).toEqual([`${LABEL_PREFIX}chat`]);
+    expect(manager.installCalls).toEqual([`${LABEL_PREFIX}chat`]);
+  } finally {
+    wipeAgentsDir();
+  }
+});
+
+test('reresolve: a managed row whose non-owned cwd is gone is refused with a launchd issue and never installed', async () => {
+  const counting = new CountingManager();
+  const h = bundleHelpers('legacy');
+  const gone = join(tmpdir(), `gone-${Date.now()}`);
+  rtRow('legacy', 11050, {
+    command: h.command('legacy'),
+    workingDirectory: gone,
+  });
+  setServeShapeDeps({ devMode: () => false, helpersDir: h.dir, catalog: null });
+
+  const body = (
+    await reresolveManagedApps({ manager: counting, edge: drivers.edge })
+  ).body as any;
+
+  expect(body.failed).toEqual([
+    {
+      name: 'legacy',
+      error: expect.stringContaining(
+        `working directory ${gone} does not exist`
+      ),
+    },
+  ]);
+  expect(getRecord('legacy')!.issues![0]!.source).toBe('launchd');
+  expect(counting.installCalls).toEqual([]);
+});
+
+test('restartManagedApps skips a row prod does not serve, so the verb does not fail on its missing plist', async () => {
+  const h = bundleHelpers('chat');
+  setServeShapeDeps({
+    devMode: () => false,
+    helpersDir: h.dir,
+    catalog: CHAT_ONLY,
+  });
+  rtRow('gitq', 11008);
+  await registerApp(
+    { ...input, name: 'chat', managedBy: 'rt', command: h.command('chat') },
+    drivers
+  );
+  const res = await restartManagedApps(drivers);
+  expect(res.body).toEqual({ ok: true, restarted: ['chat'], failed: [] });
+  expect(drivers.manager.kickstarts).toEqual([`${LABEL_PREFIX}chat`]);
+});
+
+test('prod: registering or linking a not-served row writes the record but never its plist', async () => {
+  const h = bundleHelpers('chat', 'gitq');
+  setServeShapeDeps({
+    devMode: () => false,
+    helpersDir: h.dir,
+    catalog: CHAT_ONLY,
+  });
+  await registerApp(
+    {
+      ...input,
+      name: 'gitq',
+      managedBy: 'rt',
+      command: h.command('gitq', 'board'),
+    },
+    drivers
+  );
+  expect(drivers.manager.installed.has(`${LABEL_PREFIX}gitq`)).toBe(false);
+  const src = checkout('gitq', 'bun src/server/server.ts');
+  const res = await editApp(
+    'gitq',
+    { dev: { workingDirectory: src } },
+    'user',
+    false,
+    drivers
+  );
+  expect(res.status).toBe(200);
+  expect(getRecord('gitq')!.dev).toEqual({ workingDirectory: src });
+  expect(drivers.manager.installed.has(`${LABEL_PREFIX}gitq`)).toBe(false);
+});
+
+test('reinstallSupervised in prod reinstalls the catalog app and skips an rt row outside the catalog', async () => {
+  const counting = new CountingManager();
+  const h = bundleHelpers('chat', 'gitq');
+  setServeShapeDeps({
+    devMode: () => false,
+    helpersDir: h.dir,
+    catalog: CHAT_ONLY,
+  });
+  rtRow('chat', 11002);
+  rtRow('gitq', 11008);
+
+  const res = await reinstallSupervised({
+    manager: counting,
+    edge: drivers.edge,
+  });
+
+  expect(res).toEqual({ reinstalled: ['chat'], failed: [] });
+  expect(counting.installCalls).toEqual([`${LABEL_PREFIX}chat`]);
+});
+
 // ─── editApp: never uninstall a shape the patch can't replace ─────────────
 
 test('edit: unlinking a slim row with no bundle installed is rejected before any teardown', async () => {
@@ -1530,4 +1839,381 @@ test('edit: unlinking a slim row with no bundle installed is rejected before any
   expect(counting.uninstallCalls).toEqual([]);
   expect(counting.installCalls).toEqual([]);
   expect(counting.installed.get(label)).toEqual(installedBefore);
+});
+
+test('edit: a port change on a user row whose directory is gone is refused before any teardown', async () => {
+  const counting = new CountingManager();
+  const d = { manager: counting, edge: drivers.edge };
+  const gone = mkdtempSync(join(tmpdir(), 'gone-edit-'));
+  await registerApp({ ...input, name: 'goneapp', workingDirectory: gone }, d);
+  const port = getRecord('goneapp')!.port;
+  rmSync(gone, { recursive: true, force: true });
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await editApp('goneapp', { port: 11999 }, 'user', false, d);
+
+  expect(res.status).toBe(400);
+  expect((res.body as any).error).toBe(
+    `working directory ${gone} does not exist`
+  );
+  expect(counting.uninstallCalls).toEqual([]);
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.installed.has(`${LABEL_PREFIX}goneapp`)).toBe(true);
+  expect(getRecord('goneapp')!.port).toBe(port);
+});
+
+// The flavor flip on a lived-in registry.
+
+const FLIP_CATALOG = new Map([
+  ['board', { port: 11006, args: [] as string[] }],
+  ['chat', { port: 11002, args: [] as string[] }],
+  ['console', { port: 11001, args: [] as string[] }],
+  ['boxscore', { port: 11005, args: [] as string[] }],
+]);
+
+function fakeBundle(appName: string): string {
+  const helpers = join(
+    mkdtempSync(join(tmpdir(), 'flip-')),
+    appName,
+    'Contents',
+    'Helpers'
+  );
+  mkdirSync(helpers, { recursive: true });
+  for (const n of ['board', 'chat', 'console', 'boxscore', 'gitq', 'deck'])
+    writeFileSync(join(helpers, n), '');
+  return helpers;
+}
+
+/** Every key an AppRecord could carry in deck 1.0.7; the other flavor's
+    pinned deck reads the same registry file. */
+const DECK_107_RECORD_KEYS = new Set([
+  'name',
+  'managedBy',
+  'port',
+  'kind',
+  'command',
+  'workingDirectory',
+  'env',
+  'label',
+  'displayName',
+  'description',
+  'icon',
+  'badge',
+  'commands',
+  'altConfigs',
+  'activeAlt',
+  'sourceDirectory',
+  'dev',
+  'grandfathered',
+  'createdAt',
+  'issues',
+  'remote',
+]);
+
+test('flip: dev -> prod -> dev on a lived-in registry creates missing catalog rows in either flavor, adopts only in prod, and deletes nothing', async () => {
+  wipeAgentsDir();
+  try {
+    const manager = new PlistManager();
+    const flip = { manager, edge: drivers.edge };
+    const prodHelpers = fakeBundle('mattstack.app');
+    const devHelpers = fakeBundle('mattstack-dev.app');
+    const chatSrc = checkout('chat', 'bun src/server/index.ts');
+    const gitqSrc = checkout('gitq', 'bun src/server/server.ts');
+    const boxSrc = checkout('boxscore', 'bun src/server/index.ts');
+    rtRow('chat', 11002, { dev: { workingDirectory: chatSrc } });
+    rtRow('gitq', 11008, { dev: { workingDirectory: gitqSrc } });
+    rtRow('console', 11001, {
+      command: [join(devHelpers, 'console')],
+      workingDirectory: dataDir('console'),
+    });
+    rtRow('boxscore', 11005, {
+      managedBy: 'user',
+      command: ['bun', 'src/server/index.ts'],
+      workingDirectory: boxSrc,
+    });
+    const spec = (name: string) =>
+      manager.installed.get(`${LABEL_PREFIX}${name}`);
+    const dev = {
+      devMode: () => true,
+      helpersDir: devHelpers,
+      catalog: FLIP_CATALOG,
+    };
+    const prod = {
+      devMode: () => false,
+      helpersDir: prodHelpers,
+      catalog: FLIP_CATALOG,
+    };
+
+    setServeShapeDeps(dev);
+    const dev0 = (await reresolveManagedApps(flip)).body as any;
+    expect(dev0).toMatchObject({
+      created: ['board'],
+      adopted: [],
+      notServed: [],
+      failed: [],
+    });
+    expect(getRecord('board')!.managedBy).toBe('rt');
+    expect(getRecord('board')!.command).toBeUndefined();
+    expect(spec('board')!.programArguments).toEqual([
+      join(devHelpers, 'board'),
+    ]);
+    expect(spec('board')!.workingDirectory).toBe(dataDir('board'));
+    expect(getRecord('boxscore')!.managedBy).toBe('user');
+    expect(spec('chat')!.workingDirectory).toBe(chatSrc);
+    expect(existsSync(dataDir('chat'))).toBe(false);
+
+    setServeShapeDeps(prod);
+    const toProd = (await reresolveManagedApps(flip)).body as any;
+    expect(toProd).toMatchObject({
+      ok: true,
+      created: [],
+      adopted: ['boxscore'],
+      notServed: ['gitq'],
+      failed: [],
+    });
+    expect([...toProd.restarted].sort()).toEqual([
+      'board',
+      'boxscore',
+      'chat',
+      'console',
+    ]);
+    for (const name of ['board', 'boxscore', 'chat', 'console']) {
+      expect(spec(name)!.programArguments).toEqual([join(prodHelpers, name)]);
+      expect(spec(name)!.workingDirectory).toBe(dataDir(name));
+      expect(existsSync(dataDir(name))).toBe(true);
+      expect(getRecord(name)!.managedBy).toBe('rt');
+      expect(getRecord(name)!.issues ?? []).toEqual([]);
+    }
+    expect(spec('gitq')).toBeUndefined();
+    expect(existsSync(join(agentsDir(), `${LABEL_PREFIX}gitq.plist`))).toBe(
+      false
+    );
+    expect(getRecord('gitq')!.dev).toEqual({ workingDirectory: gitqSrc });
+    expect(getRecord('board')!.port).toBe(11006);
+    expect(drivers.edge.aliases.get('board')).toBe(11006);
+    expect(getRecord('boxscore')!.dev).toEqual({ workingDirectory: boxSrc });
+    expect(getRecord('boxscore')!.command).toBeUndefined();
+
+    setServeShapeDeps(dev);
+    const toDev = (await reresolveManagedApps(flip)).body as any;
+    expect(toDev).toMatchObject({
+      ok: true,
+      created: [],
+      adopted: [],
+      notServed: [],
+      failed: [],
+    });
+    expect(spec('chat')!.workingDirectory).toBe(chatSrc);
+    expect(spec('gitq')!.workingDirectory).toBe(gitqSrc);
+    expect(spec('boxscore')!.workingDirectory).toBe(boxSrc);
+    expect(spec('console')!.programArguments).toEqual([
+      join(devHelpers, 'console'),
+    ]);
+    expect(spec('board')!.programArguments).toEqual([
+      join(devHelpers, 'board'),
+    ]);
+    expect(
+      listRecords()
+        .map(r => r.name)
+        .sort()
+    ).toEqual(['board', 'boxscore', 'chat', 'console', 'gitq']);
+
+    setServeShapeDeps(prod);
+    await reresolveManagedApps(flip);
+    const settled = (await reresolveManagedApps(flip)).body as any;
+    expect(settled).toMatchObject({
+      ok: true,
+      restarted: [],
+      created: [],
+      adopted: [],
+      notServed: ['gitq'],
+    });
+    expect([...settled.unchanged].sort()).toEqual([
+      'board',
+      'boxscore',
+      'chat',
+      'console',
+    ]);
+
+    const file = JSON.parse(
+      readFileSync(process.env.LOCAL_REGISTRY_PATH!, 'utf8')
+    );
+    expect(file.version).toBe(1);
+    for (const record of Object.values(file.apps) as Array<
+      Record<string, unknown>
+    >)
+      for (const key of Object.keys(record))
+        expect(DECK_107_RECORD_KEYS.has(key)).toBe(true);
+  } finally {
+    wipeAgentsDir();
+  }
+});
+
+test('prod catalog: a catalog port held by another row, or a route-only row with a catalog name, is reported and never duplicated', async () => {
+  const helpers = fakeBundle('mattstack.app');
+  putRecord({
+    name: 'mine',
+    managedBy: 'user',
+    port: 11006,
+    kind: 'external',
+    createdAt: AT,
+  });
+  putRecord({
+    name: 'chat',
+    managedBy: 'user',
+    port: 11002,
+    kind: 'external',
+    createdAt: AT,
+  });
+  setServeShapeDeps({
+    devMode: () => false,
+    helpersDir: helpers,
+    catalog: new Map([
+      ['board', { port: 11006, args: [] as string[] }],
+      ['chat', { port: 11002, args: [] as string[] }],
+    ]),
+  });
+
+  const body = (await reresolveManagedApps(drivers)).body as any;
+
+  expect(body.created).toEqual([]);
+  expect(body.adopted).toEqual([]);
+  expect(body.failed).toEqual([
+    { name: 'board', error: 'catalog port 11006 is held by mine' },
+    {
+      name: 'chat',
+      error:
+        'chat is a route-only app; `deck remove chat` lets mattstack serve it',
+    },
+  ]);
+  expect(getRecord('board')).toBeUndefined();
+  expect(getRecord('chat')!.managedBy).toBe('user');
+  expect(getRecord('chat')!.kind).toBe('external');
+});
+
+test('catalog: an app the bundle ships no Helpers binary for gets no row, and the catalog report names it until it ships, with no platform record', async () => {
+  const helpers = mkdtempSync(join(tmpdir(), 'partial-helpers-'));
+  writeFileSync(join(helpers, 'chat'), '');
+  setServeShapeDeps({
+    devMode: () => true,
+    helpersDir: helpers,
+    catalog: new Map([
+      ['chat', { port: 11002, args: [] as string[] }],
+      ['board', { port: 11006, args: [] as string[] }],
+    ]),
+  });
+
+  const body = (await reresolveManagedApps(drivers)).body as any;
+
+  expect(body.created).toEqual(['chat']);
+  expect(body.failed).toEqual([
+    { name: 'board', error: 'this bundle ships no Helpers/board' },
+  ]);
+  expect(getRecord('board')).toBeUndefined();
+  expect(listRecords().some(r => r.managedBy === 'deck')).toBe(false);
+  expect(catalogReport()).toEqual({
+    source: 'launchd',
+    message:
+      'bundled apps deck cannot serve: board (this bundle ships no Helpers/board)',
+    at: expect.any(String),
+  });
+
+  writeFileSync(join(helpers, 'board'), '');
+  const healed = (await reresolveManagedApps(drivers)).body as any;
+
+  expect(healed).toMatchObject({ ok: true, created: ['board'], failed: [] });
+  expect(getRecord('board')!.port).toBe(11006);
+  expect(catalogReport()).toBeNull();
+});
+
+test("catalog: the report leaves deck's own record and its launchd issue alone", async () => {
+  const platformIssue = {
+    source: 'launchd' as const,
+    message: 'bootstrap install failed',
+    at: AT,
+  };
+  putRecord({
+    name: PLATFORM_NAME,
+    managedBy: 'deck',
+    port: 11000,
+    kind: 'service',
+    label: PLATFORM_LABEL,
+    createdAt: AT,
+    issues: [platformIssue],
+  });
+  setServeShapeDeps({
+    devMode: () => false,
+    helpersDir: mkdtempSync(join(tmpdir(), 'empty-helpers-')),
+    catalog: new Map([['board', { port: 11006, args: [] as string[] }]]),
+  });
+
+  await reresolveManagedApps(drivers);
+
+  expect(catalogReport()!.message).toContain('board');
+  expect(getRecord(PLATFORM_NAME)!.issues).toEqual([platformIssue]);
+});
+
+test("catalog: a catalog port a portless route holds is reported and never written; the app's own leftover plist is not a holder", async () => {
+  const helpers = fakeBundle('mattstack.app');
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'squatter.localhost', port: 11006, pid: 0 }])
+  );
+  wipeAgentsDir();
+  try {
+    seedPlist(`${LABEL_PREFIX}chat`, [join(helpers, 'chat')], '/tmp', {
+      PORT: '11002',
+    });
+    setServeShapeDeps({
+      devMode: () => false,
+      helpersDir: helpers,
+      catalog: new Map([
+        ['board', { port: 11006, args: [] as string[] }],
+        ['chat', { port: 11002, args: [] as string[] }],
+      ]),
+    });
+
+    const body = (await reresolveManagedApps(drivers)).body as any;
+
+    expect(body.created).toEqual(['chat']);
+    expect(body.failed).toEqual([
+      {
+        name: 'board',
+        error: 'catalog port 11006 is held by squatter.localhost',
+      },
+    ]);
+    expect(getRecord('board')).toBeUndefined();
+    expect(catalogReport()!.message).toContain(
+      'board (catalog port 11006 is held by squatter.localhost)'
+    );
+  } finally {
+    wipeAgentsDir();
+  }
+});
+
+test('catalog: board is not created while a legacy mrs row waits for its rename, and is once mrs is gone', async () => {
+  const helpers = fakeBundle('mattstack-dev.app');
+  rtRow('mrs', 11040, { managedBy: 'user' });
+  setServeShapeDeps({
+    devMode: () => true,
+    helpersDir: helpers,
+    catalog: new Map([['board', { port: 11006, args: [] as string[] }]]),
+  });
+
+  const waiting = (await reresolveManagedApps(drivers)).body as any;
+
+  expect(waiting.created).toEqual([]);
+  expect(waiting.failed).toEqual([
+    {
+      name: 'board',
+      error:
+        'the legacy mrs row becomes board through `deck adopt mrs --as board`',
+    },
+  ]);
+  expect(getRecord('board')).toBeUndefined();
+
+  deleteRecord('mrs');
+  const created = (await reresolveManagedApps(drivers)).body as any;
+  expect(created.created).toEqual(['board']);
 });

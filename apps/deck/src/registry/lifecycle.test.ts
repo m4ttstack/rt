@@ -18,7 +18,10 @@ test("user caller on an rt-managed record gets the spec's exact 409", () => {
   if (!v.ok) {
     expect(v.status).toBe(409);
     expect(v.body.managedBy).toBe('rt');
-    expect(v.body.message).toBe('Managed by mattstack — `rt uninstall gitq`');
+    expect(v.body.message).toBe(
+      'Managed by mattstack: remove it anyway with `deck remove gitq --force`'
+    );
+    expect(v.body.message).not.toContain('uninstall');
     expect(v.body.escapeHatch).toBe('?force=true');
   }
 });

@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 
 import { iconPathFor } from '../registry/manifest.ts';
 import { listRecords } from '../registry/records.ts';
+import { notServedHere, type ServeShapeDeps } from '../registry/serve-shape.ts';
 import { isPlatformManagedBy } from '../services/manager.ts';
 import { buildStatus, type BuildStatusOpts } from './status.ts';
 
@@ -17,13 +18,14 @@ export interface DiscoveryApp {
 }
 
 /**
- * The launcher's app list: managed products only, deck's own platform row and
- * all user apps excluded. `url` is reused verbatim from buildStatus (never
+ * The launcher's app list: managed products this flavor serves, deck's own
+ * platform row and all user apps excluded. `url` is reused verbatim from buildStatus (never
  * recomputed) so it matches deck's routing. No internal record field
  * (command, workingDirectory, env, port, health) crosses this boundary.
  */
 export async function buildDiscoveryApps(
-  opts: BuildStatusOpts
+  opts: BuildStatusOpts,
+  flavor: ServeShapeDeps = {}
 ): Promise<DiscoveryApp[]> {
   const status = await buildStatus(opts);
   const urlByName = new Map(status.apps.map(row => [row.name, row.url]));
@@ -31,6 +33,7 @@ export async function buildDiscoveryApps(
   for (const record of listRecords()) {
     if (record.managedBy === 'user' || isPlatformManagedBy(record.managedBy))
       continue;
+    if (notServedHere(record, flavor)) continue;
     const url = urlByName.get(record.name);
     if (!url) continue;
     apps.push({

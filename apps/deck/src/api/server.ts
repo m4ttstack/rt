@@ -84,6 +84,7 @@ import {
   reresolveManagedApps,
   restartLabelFor,
   restartManagedApps,
+  serveShapeDeps,
   unregisterApp,
   type Drivers,
 } from './register.ts';
@@ -114,6 +115,38 @@ export interface ApiDeps extends Drivers {
   readyFetch?: typeof fetch;
   /** Tests inject an absolute fake path; production resolves cloudflared on the service PATH. */
   resolveCloudflared?: () => string | null;
+  /**
+   * Settles when the first boot sweep has finished. The sweep creates every
+   * catalog row, and the launcher treats its first 200 from /api/apps as the
+   * whole catalog, so /api/apps must not answer 200 before this settles.
+   */
+  bootSweep?: Promise<void>;
+  /** How long /api/apps waits on `bootSweep` before answering 503. */
+  bootSweepWaitMs?: number;
+}
+
+const BOOT_SWEEP_WAIT_MS = 10_000;
+
+async function settlesWithin(
+  promise: Promise<unknown> | undefined,
+  ms: number
+): Promise<boolean> {
+  if (!promise) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<false>(resolve => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([
+      promise.then(
+        () => true,
+        () => true
+      ),
+      timedOut,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** DNS driver for the edge routes, or null when the deck secrets do not carry a zone id and a DNS-capable token. */
@@ -366,8 +399,29 @@ export function startApi(deps: ApiDeps) {
         if (req.method === 'OPTIONS')
           return new Response(null, { status: 204, headers: cors });
         if (pathname === '/api/apps' && req.method === 'GET') {
+          if (
+            !(await settlesWithin(
+              deps.bootSweep,
+              deps.bootSweepWaitMs ?? BOOT_SWEEP_WAIT_MS
+            ))
+          ) {
+            return new Response(
+              JSON.stringify({ error: 'deck is still starting its apps' }),
+              {
+                status: 503,
+                headers: {
+                  'content-type': 'application/json',
+                  'retry-after': '1',
+                  vary: 'origin',
+                  ...cors,
+                },
+              }
+            );
+          }
           const base = deckBaseFor(host); // https://deck.<tld> from the request host
-          const apps = (await buildDiscoveryApps(statusOpts)).map(a => ({
+          const apps = (
+            await buildDiscoveryApps(statusOpts, serveShapeDeps)
+          ).map(a => ({
             ...a,
             icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
           }));
@@ -486,10 +540,21 @@ export function startApi(deps: ApiDeps) {
           const r = await reresolveManagedApps(deps);
           return json(r.body, r.status);
         }
-        if (
-          pathname === '/api/v1/apps/managed/remove' &&
-          req.method === 'POST'
-        ) {
+        // A named remove carries its name in the path: deck 1.0.x reads no
+        // body here and would remove every managed row, but 404s this path.
+        const managedRemove = pathname.match(
+          /^\/api\/v1\/apps\/managed\/remove(?:\/([^/]+))?$/
+        );
+        if (managedRemove && req.method === 'POST') {
+          const only = managedRemove[1];
+          if (only === undefined && (await body(req)).name !== undefined)
+            return json(
+              {
+                error:
+                  'name the app in the path: /api/v1/apps/managed/remove/<name>',
+              },
+              400
+            );
           const remoteDrivers = listRecords().some(
             r => r.managedBy !== 'user' && r.remote
           )
@@ -498,7 +563,10 @@ export function startApi(deps: ApiDeps) {
                 await readDeckSecrets(deps.deckSecrets)
               )
             : {};
-          const r = await removeManagedApps({ ...deps, ...remoteDrivers });
+          const r = await removeManagedApps(
+            { ...deps, ...remoteDrivers },
+            only
+          );
           return json(r.body, r.status);
         }
 

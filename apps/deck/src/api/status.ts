@@ -19,6 +19,7 @@ import { tunnelRowHealth } from '../edge/edge-health.ts';
 import { edgeDrift } from '../edge/edge-reconcile.ts';
 import { getOAuth, type OAuth } from '../edge/oauth.ts';
 import { allocatePort } from '../registry/allocate.ts';
+import { withCatalogReport } from '../registry/catalog-report.ts';
 import {
   listRecords,
   type RemoteState,
@@ -183,6 +184,12 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       const settings = getAppSettings(a.name);
       const follows = settings.publicFollowsOverride ?? false;
       const record = recordsByName.get(a.name);
+      // Also matches CANARY_PORT: during a freshness check the board's route
+      // points at its canary listener, and it is still the board's own row.
+      const self =
+        a.port === opts.port ||
+        a.port === opts.canaryPort ||
+        (platformRecord !== undefined && a.port === platformRecord.port);
       // Ownership decides the displayed TLD: a managed record (managedBy set
       // to anything but "user") is a mattstack product and surfaces as
       // name.mattstack; user-added apps surface as name.localhost. Through a
@@ -205,12 +212,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         isTunnel: false,
         override: settings.override ?? null,
         publicFollowsOverride: follows,
-        // Also matches CANARY_PORT: during a freshness check the board's route
-        // points at its canary listener, and it is still the board's own row.
-        self:
-          a.port === opts.port ||
-          a.port === opts.canaryPort ||
-          (platformRecord !== undefined && a.port === platformRecord.port),
+        self,
         managedBy: record?.managedBy ?? null,
         icon: record
           ? isPlatformManagedBy(record.managedBy)
@@ -219,7 +221,9 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
               ? `/api/apps/${a.name}/icon`
               : null
           : null,
-        issues: record?.issues ?? [],
+        issues: self
+          ? withCatalogReport(record?.issues ?? [])
+          : (record?.issues ?? []),
         record: record
           ? {
               kind: record.kind,

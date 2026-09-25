@@ -10,7 +10,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, expect, test } from 'bun:test';
 
-import { bundleHelpersDir, bundleRootFromExec } from './bundle-layout.ts';
+import {
+  bundleHelpersDir,
+  bundleResourcesDir,
+  bundleRootFromExec,
+} from './bundle-layout.ts';
 
 // macOS's /tmp is itself a symlink (-> /private/tmp); bundleRootFromExec
 // realpath-resolves execPath, so expectations must be built on the same
@@ -91,6 +95,12 @@ test('bundleHelpersDir joins the resolved root with Contents/Helpers', () => {
 
 test('bundleHelpersDir returns null outside a bundle', () => {
   expect(bundleHelpersDir('/no/such/binary')).toBeNull();
+});
+
+test('bundleResourcesDir is Contents/Resources beside Helpers, null outside a bundle', () => {
+  const { appRoot, exec } = tmpApp();
+  expect(bundleResourcesDir(exec)).toBe(join(appRoot, 'Contents', 'Resources'));
+  expect(bundleResourcesDir(join(TMPDIR, 'no-such-bundle', 'deck'))).toBeNull();
 });
 
 test('an unargumented call honors a valid DECK_BUNDLE_ROOT', () => {

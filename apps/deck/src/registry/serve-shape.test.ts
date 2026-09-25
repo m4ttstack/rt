@@ -7,7 +7,9 @@ import { getRecord, putRecord, reloadRegistry } from './records.ts';
 import type { AppRecord } from './records.ts';
 import {
   bundleBinaryPath,
+  bundleShape,
   dataDir,
+  notServedHere,
   readLinkedManifest,
   serveShape,
 } from './serve-shape.ts';
@@ -268,5 +270,151 @@ describe('serveShape matrix', () => {
     expect(serveShape(r, { devMode: () => false, helpersDir: null })?.cwd).toBe(
       dir
     );
+  });
+});
+
+const CATALOG = new Map([
+  ['chat', { port: 11002, args: [] }],
+  ['board', { port: 11006, args: ['serve', '--quiet'] }],
+]);
+
+function fakeHelpers(...names: string[]): string {
+  const helpers = join(
+    mkdtempSync(join(tmpdir(), 'catalog-')),
+    'mattstack.app',
+    'Contents',
+    'Helpers'
+  );
+  mkdirSync(helpers, { recursive: true });
+  for (const n of names) writeFileSync(join(helpers, n), '');
+  return helpers;
+}
+
+describe('bundle catalog', () => {
+  test('a catalog app serves its helper with the catalog args from its data dir', () => {
+    const helpers = fakeHelpers('board');
+    const r = rec({ name: 'board', port: 11006 });
+    putRecord(r);
+    expect(
+      serveShape(r, {
+        devMode: () => false,
+        helpersDir: helpers,
+        catalog: CATALOG,
+      })
+    ).toEqual({
+      command: [join(helpers, 'board'), 'serve', '--quiet'],
+      cwd: dataDir('board'),
+    });
+  });
+
+  test("catalog args win over a stored command in the other flavor's bundle, silently", () => {
+    const helpers = fakeHelpers('chat');
+    const r = rec({
+      command: ['/Applications/mattstack-dev.app/Contents/Helpers/chat'],
+      workingDirectory: dataDir('chat'),
+    });
+    putRecord(r);
+    expect(
+      serveShape(r, {
+        devMode: () => false,
+        helpersDir: helpers,
+        catalog: CATALOG,
+      })
+    ).toEqual({ command: [join(helpers, 'chat')], cwd: dataDir('chat') });
+    expect(getRecord('chat')?.issues).toBeUndefined();
+  });
+
+  test('a stored command outside any bundle is still flagged as legacy on a catalog app', () => {
+    const helpers = fakeHelpers('chat');
+    const r = rec({
+      command: ['bun', 'src/server/index.ts'],
+      workingDirectory: '/somewhere',
+    });
+    putRecord(r);
+    serveShape(r, {
+      devMode: () => false,
+      helpersDir: helpers,
+      catalog: CATALOG,
+    });
+    expect(getRecord('chat')?.issues?.[0]?.message).toContain(
+      'legacy stored command'
+    );
+  });
+
+  test('a helper outside the catalog is never served by name alone', () => {
+    const helpers = fakeHelpers('gitq');
+    const r = rec({ name: 'gitq', port: 11008 });
+    putRecord(r);
+    expect(bundleShape(r, helpers, CATALOG)).toBeNull();
+    expect(
+      serveShape(r, {
+        devMode: () => true,
+        helpersDir: helpers,
+        catalog: CATALOG,
+      })
+    ).toBeNull();
+  });
+
+  test('dev: a linked row outside the catalog serves its source', () => {
+    const helpers = fakeHelpers('gitq');
+    const dir = linkedDir({
+      name: 'gitq',
+      dev: { start: 'bun src/server/server.ts' },
+    });
+    const r = rec({
+      name: 'gitq',
+      port: 11008,
+      dev: { workingDirectory: dir },
+    });
+    putRecord(r);
+    expect(
+      serveShape(r, {
+        devMode: () => true,
+        helpersDir: helpers,
+        catalog: CATALOG,
+      })
+    ).toEqual({ command: ['bun', 'src/server/server.ts'], cwd: dir });
+  });
+
+  test('without a catalog the name-derived bundle shape is unchanged', () => {
+    const helpers = fakeHelpers('gitq');
+    expect(bundleShape(rec({ name: 'gitq' }), helpers, null)).toEqual({
+      command: [join(helpers, 'gitq')],
+      cwd: dataDir('gitq'),
+    });
+  });
+});
+
+describe('notServedHere', () => {
+  test('prod with a catalog: an rt row outside it is not served', () => {
+    expect(
+      notServedHere(rec({ name: 'gitq' }), {
+        devMode: () => false,
+        catalog: CATALOG,
+      })
+    ).toBe(true);
+  });
+
+  test('catalog apps, dev mode, user rows, the platform and a missing catalog are all served', () => {
+    const prod = { devMode: () => false, catalog: CATALOG };
+    expect(notServedHere(rec({ name: 'chat' }), prod)).toBe(false);
+    expect(
+      notServedHere(rec({ name: 'gitq' }), {
+        devMode: () => true,
+        catalog: CATALOG,
+      })
+    ).toBe(false);
+    expect(notServedHere(rec({ name: 'gitq', managedBy: 'user' }), prod)).toBe(
+      false
+    );
+    expect(notServedHere(rec({ name: 'deck', managedBy: 'deck' }), prod)).toBe(
+      false
+    );
+    expect(
+      notServedHere(rec({ name: 'gitq' }), {
+        devMode: () => false,
+        catalog: null,
+      })
+    ).toBe(false);
   });
 });

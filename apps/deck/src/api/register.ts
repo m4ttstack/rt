@@ -20,6 +20,11 @@ import type { RailwayDriver } from '../edge/railway.ts';
 import { disableRemote } from '../edge/remote.ts';
 import type { TunnelDriver } from '../edge/tunnel.ts';
 import { allocatePort } from '../registry/allocate.ts';
+import {
+  MATTSTACK_REGISTRAR,
+  type BundleCatalog,
+} from '../registry/bundle-catalog.ts';
+import { setCatalogReport } from '../registry/catalog-report.ts';
 import { readDeckManifest } from '../registry/deck-manifest.ts';
 import { authorizeStructural } from '../registry/lifecycle.ts';
 import { ingestManifest, removeIcon } from '../registry/manifest.ts';
@@ -28,6 +33,7 @@ import {
   clearIssues,
   deleteRecord,
   getRecord,
+  isMattstackOwned,
   listRecords,
   putRecord,
   reloadRegistry,
@@ -35,6 +41,10 @@ import {
   type SyncIssue,
 } from '../registry/records.ts';
 import {
+  bundleBinaryPath,
+  dataDir,
+  notServedHere,
+  resolveFlavor,
   serveShape,
   type ResolvedShape,
   type ServeShapeDeps,
@@ -95,33 +105,59 @@ export function setServeShapeDeps(deps: ServeShapeDeps): void {
   serveShapeDeps = deps;
 }
 
+interface BuiltSpec {
+  spec: ServiceSpec;
+  createdCwd: boolean;
+}
+
 /**
  * launchd does not search PATH for `ProgramArguments[0]`, so argv0 must be
- * absolute in the plist. The caller passes the shape resolved for this render
- * (bundled binary or linked source), and this resolves argv0 to an absolute
- * path on every render, so an interpreter that moves -- a version manager
- * reorganizing, or being swapped for another -- is picked up by the next
- * render instead of being frozen at registration.
+ * absolute in the plist, and it is resolved again on every render so an
+ * interpreter that moves is picked up by the next render.
  *
- * Throws rather than naming a program that does not exist: launchd declines
- * to start such a job without logging anything, so writing it anyway produces
- * an app that is silently, inexplicably down.
+ * Throws rather than naming a program or a working directory that does not
+ * exist: launchd declines such a job (exit 78 for a missing cwd) without
+ * logging anything, so writing it anyway produces an app that is silently down.
  */
-function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
+function buildSpec(record: AppRecord, shape: ResolvedShape): BuiltSpec {
   const env = serviceEnv(record);
   const path = env.PATH ?? composeServicePath();
   const [argv0, ...rest] = shape.command;
   const program = resolveProgram(argv0!, path);
   if (!program)
     throw new Error(`${argv0} not found on the service PATH (${path})`);
+  const createdCwd = ensureWorkingDirectory(record, shape.cwd);
   return {
-    label: record.label!,
-    programArguments: [program, ...rest],
-    workingDirectory: shape.cwd,
-    environment: { ...env, PATH: path },
-    stdoutPath: join(logsDir(), `${record.name}.out.log`),
-    stderrPath: join(logsDir(), `${record.name}.err.log`),
+    spec: {
+      label: record.label!,
+      programArguments: [program, ...rest],
+      workingDirectory: shape.cwd,
+      environment: { ...env, PATH: path },
+      stdoutPath: join(logsDir(), `${record.name}.out.log`),
+      stderrPath: join(logsDir(), `${record.name}.err.log`),
+    },
+    createdCwd,
   };
+}
+
+/** Deck owns only a mattstack app's data dir; creating anyone else's missing
+    dir would hide a deleted checkout behind an empty one. */
+function missingCwdRefusal(record: AppRecord, cwd: string): string | null {
+  if (existsSync(cwd)) return null;
+  if (isMattstackOwned(record) && cwd === dataDir(record.name)) return null;
+  return `working directory ${cwd} does not exist`;
+}
+
+function ensureWorkingDirectory(record: AppRecord, cwd: string): boolean {
+  if (existsSync(cwd)) return false;
+  const refusal = missingCwdRefusal(record, cwd);
+  if (refusal) throw new Error(refusal);
+  mkdirSync(cwd, { recursive: true });
+  return true;
+}
+
+function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
+  return buildSpec(record, shape).spec;
 }
 
 function sameEnvironment(
@@ -180,28 +216,40 @@ async function runDriver(
 }
 
 /**
- * True when `port` is already held by another record, a portless route, or a
- * launchd service. Used only for a manifest-declared SERVICE port
- * (`registerApp`'s `input.port`, `editApp`'s `patch.port`): `allocatePort`
- * never sees a caller-declared port, so nothing else guards against handing
- * out a port a real process is already bound to.
+ * What already holds `port`: another record, a portless route, or a launchd
+ * service other than `excludeName`'s own, named for a refusal message.
+ * `allocatePort` never sees a caller-declared or catalog port, so nothing
+ * else guards against handing out a port a real process is already bound to.
  */
+async function portHolder(
+  port: number,
+  excludeName: string,
+  routes: PortlessRoute[]
+): Promise<string | null> {
+  const record = listRecords().find(
+    r => r.name !== excludeName && r.port === port
+  );
+  if (record) return record.name;
+  const tlds = getPlatformSettings().tlds;
+  const route = routes.find(
+    r => bareName(r.hostname, tlds) !== excludeName && r.port === port
+  );
+  if (route) return route.hostname;
+  const ownLabel = `${LABEL_PREFIX}${excludeName}`;
+  const service = (await readServices()).find(
+    s => s.label !== ownLabel && s.port === port
+  );
+  return service?.label ?? null;
+}
+
+/** Guards a manifest-declared SERVICE port (`registerApp`'s `input.port`,
+    `editApp`'s `patch.port`). */
 async function portCollides(
   port: number,
   excludeName: string,
   routes: PortlessRoute[]
 ): Promise<boolean> {
-  if (listRecords().some(r => r.name !== excludeName && r.port === port))
-    return true;
-  const tlds = getPlatformSettings().tlds;
-  if (
-    routes.some(
-      r => bareName(r.hostname, tlds) !== excludeName && r.port === port
-    )
-  )
-    return true;
-  const services = await readServices();
-  return services.some(s => s.port === port);
+  return (await portHolder(port, excludeName, routes)) !== null;
 }
 
 export async function registerApp(
@@ -264,7 +312,7 @@ export async function registerApp(
 
   if (!input.adopt) {
     mkdirSync(logsDir(), { recursive: true });
-    if (isService) {
+    if (isService && !notServedHere(record, serveShapeDeps)) {
       const shape = serveShape(record, serveShapeDeps);
       if (shape)
         await tryDriver(name, 'launchd', () =>
@@ -411,6 +459,7 @@ export async function restartManagedApps(
   const failed: Array<{ name: string; error: string }> = [];
   for (const record of managed) {
     if (record.kind !== 'service' || !record.label) continue;
+    if (notServedHere(record, serveShapeDeps)) continue;
     try {
       // kickstart signals failure via its boolean return (label not
       // installed), not by throwing — same contract the single-app
@@ -425,21 +474,139 @@ export async function restartManagedApps(
   return { status: 200, body: { ok: failed.length === 0, restarted, failed } };
 }
 
+type SweepFailure = { name: string; error: string };
+
+interface EnsuredCatalog {
+  created: string[];
+  adopted: string[];
+  failed: SweepFailure[];
+}
+
+/** rt setup renames these legacy rows with `deck adopt <old> --as <new>`,
+    which answers "name taken" once a row of the new name exists. */
+const RENAMED_FROM: Record<string, string> = { board: 'mrs' };
+
 /**
- * Selective restart after the dev/prod flavor may have moved: deck runs this
- * at boot, since switching between mattstack-dev.app and mattstack.app starts
- * a different deck, so every managed app must re-resolve its shape, but only
- * the ones whose resolved command actually moved get torn down and rebuilt. The diff is against the installed plist (ProgramArguments,
- * WorkingDirectory, EnvironmentVariables), not any last-resolved value on the
- * record, so a flip and a flip-back reads as the same "unchanged" outcome
- * both times.
+ * Every catalog app gets an rt row in either flavor, so a fresh machine
+ * serves the catalog whichever app it opens first. Only prod (`adopt`) takes
+ * over a same-named user row: dev serves the user's registrations as they
+ * are. A route-only row, a catalog port something else holds, a legacy row
+ * awaiting its rename, or an app whose binary this bundle does not ship is
+ * reported, never written.
+ */
+async function ensureCatalogRows(
+  catalog: BundleCatalog,
+  helpersDir: string | null,
+  drivers: Drivers,
+  adopt: boolean
+): Promise<EnsuredCatalog> {
+  const out: EnsuredCatalog = { created: [], adopted: [], failed: [] };
+  for (const [name, entry] of catalog) {
+    const existing = getRecord(name);
+    if (!existing) {
+      if (!bundleBinaryPath(name, helpersDir)) {
+        out.failed.push({
+          name,
+          error: `this bundle ships no Helpers/${name}`,
+        });
+        continue;
+      }
+      const legacy = RENAMED_FROM[name];
+      if (legacy && getRecord(legacy)) {
+        out.failed.push({
+          name,
+          error: `the legacy ${legacy} row becomes ${name} through \`deck adopt ${legacy} --as ${name}\``,
+        });
+        continue;
+      }
+      const holder = await portHolder(entry.port, name, readRoutes());
+      if (holder) {
+        out.failed.push({
+          name,
+          error: `catalog port ${entry.port} is held by ${holder}`,
+        });
+        continue;
+      }
+      putRecord({
+        name,
+        managedBy: MATTSTACK_REGISTRAR,
+        port: entry.port,
+        kind: 'service',
+        label: `${LABEL_PREFIX}${name}`,
+        createdAt: new Date().toISOString(),
+      });
+      await tryDriver(name, 'portless', () =>
+        drivers.edge.alias(name, entry.port)
+      );
+      ingestManifest(name);
+      out.created.push(name);
+      continue;
+    }
+    if (!adopt || existing.managedBy !== 'user') continue;
+    if (existing.kind !== 'service') {
+      out.failed.push({
+        name,
+        error: `${name} is a route-only app; \`deck remove ${name}\` lets mattstack serve it`,
+      });
+      continue;
+    }
+    putRecord(adoptedCatalogRow(existing));
+    ingestManifest(name);
+    out.adopted.push(name);
+  }
+  return out;
+}
+
+/** A registered checkout becomes the dev link, the way migrateManagedDevShape
+    slims a row; without one the stored command stays and is flagged as legacy. */
+function adoptedCatalogRow(record: AppRecord): AppRecord {
+  const dir = record.workingDirectory;
+  const parsed = !record.dev && dir ? readDeckManifest(dir) : null;
+  const dev =
+    record.dev ??
+    (parsed?.ok && parsed.manifest.name === record.name
+      ? { workingDirectory: dir! }
+      : undefined);
+  if (!dev) return { ...record, managedBy: MATTSTACK_REGISTRAR };
+  return {
+    ...record,
+    managedBy: MATTSTACK_REGISTRAR,
+    dev,
+    command: undefined,
+    workingDirectory: undefined,
+    commands: undefined,
+  };
+}
+
+/**
+ * The flavor sweep. Deck runs it on every bundled start, which is every
+ * switch between mattstack-dev.app and mattstack.app, and it is the only
+ * writer that moves managed apps between shapes. It first gives every catalog
+ * app an rt row in either flavor, adopting same-named user rows only in prod
+ * (ensureCatalogRows). An rt row prod does not serve loses its plist but
+ * keeps its record and dev link for the other flavor. Every other managed row
+ * is re-resolved and diffed against its installed plist (ProgramArguments,
+ * WorkingDirectory, EnvironmentVariables), so a flip and a flip-back both
+ * read as "unchanged".
  */
 export async function reresolveManagedApps(
   drivers: Drivers
 ): Promise<FlowResult> {
   const restarted: string[] = [];
   const unchanged: string[] = [];
-  const failed: Array<{ name: string; error: string }> = [];
+  const notServed: string[] = [];
+  const failed: SweepFailure[] = [];
+  const flavor = resolveFlavor(serveShapeDeps);
+  const ensured = flavor.catalog
+    ? await ensureCatalogRows(
+        flavor.catalog,
+        flavor.helpersDir,
+        drivers,
+        !flavor.dev
+      )
+    : { created: [], adopted: [], failed: [] };
+  failed.push(...ensured.failed);
+  setCatalogReport(ensured.failed);
   for (const record of listRecords()) {
     if (
       record.managedBy === 'user' ||
@@ -449,38 +616,62 @@ export async function reresolveManagedApps(
       continue;
     // The platform never restarts itself mid-request; bootstrapSelf owns its shape.
     if (isPlatformManagedBy(record.managedBy)) continue;
+    if (notServedHere(record, serveShapeDeps)) {
+      const issue = await runDriver('launchd', () =>
+        drivers.manager.uninstall(record.label!)
+      );
+      if (issue) {
+        addIssue(record.name, issue);
+        failed.push({ name: record.name, error: issue.message });
+        continue;
+      }
+      clearIssues(record.name, 'launchd');
+      clearIssues(record.name, 'dev-link');
+      notServed.push(record.name);
+      continue;
+    }
     const shape = serveShape(record, serveShapeDeps);
     if (!shape) {
       failed.push({ name: record.name, error: 'no runnable shape' });
       continue;
     }
-    let spec: ServiceSpec;
+    let built: BuiltSpec;
     try {
-      spec = specFor(record, shape);
+      built = buildSpec(record, shape);
     } catch (err) {
-      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+      const message = String(err).slice(0, 300);
+      addIssue(record.name, {
+        source: 'launchd',
+        message,
+        at: new Date().toISOString(),
+      });
+      failed.push({ name: record.name, error: message });
       continue;
     }
-    const installed = readInstalledProgramArguments(record.label);
-    const installedCwd = readInstalledWorkingDirectory(record.label);
-    const installedEnv = readInstalledEnvironment(record.label);
-    if (
-      installed !== null &&
-      installed.length === spec.programArguments.length &&
-      installed.every((a, i) => a === spec.programArguments[i]) &&
-      installedCwd === spec.workingDirectory &&
-      installedEnv !== null &&
-      sameEnvironment(installedEnv, renderedEnvironment(spec))
-    ) {
-      unchanged.push(record.name);
+    const { spec, createdCwd } = built;
+    if (installedMatches(record.label, spec)) {
+      if (!createdCwd) {
+        clearIssues(record.name, 'launchd');
+        unchanged.push(record.name);
+        continue;
+      }
+      // The installed job has been failing to spawn on the missing dir, and
+      // launchd's KeepAlive backoff would otherwise decide when it recovers.
+      const ok = await drivers.manager
+        .kickstart(record.label)
+        .catch(() => false);
+      if (ok) {
+        clearIssues(record.name, 'launchd');
+        restarted.push(record.name);
+      } else {
+        failed.push({ name: record.name, error: 'kickstart failed' });
+      }
       continue;
     }
     // launchd has no atomic replace, so a failure between the two calls is a
-    // real possibility, not just a defensive catch: an uninstall that throws
-    // must not be followed by an install attempt (nothing to replace), and an
-    // install that throws leaves the app down -- loud enough to survive past
-    // this response body via a SyncIssue, the same convention editApp and
-    // registerApp already use for their own install failures.
+    // real possibility: an uninstall that throws must not be followed by an
+    // install attempt, and an install that throws leaves the app down, which
+    // is recorded as a SyncIssue so it outlives this response.
     const uninstallIssue = await runDriver('launchd', () =>
       drivers.manager.uninstall(record.label!)
     );
@@ -499,21 +690,62 @@ export async function reresolveManagedApps(
     clearIssues(record.name, 'launchd');
     restarted.push(record.name);
   }
+  if (ensured.created.length || ensured.adopted.length) {
+    try {
+      reconcileMattstackTld();
+    } catch (err) {
+      failed.push({
+        name: 'deck',
+        error: `mattstack route reconcile failed: ${String(err).slice(0, 200)}`,
+      });
+    }
+  }
   return {
     status: 200,
-    body: { ok: failed.length === 0, restarted, unchanged, failed },
+    body: {
+      ok: failed.length === 0,
+      restarted,
+      unchanged,
+      notServed,
+      created: ensured.created,
+      adopted: ensured.adopted,
+      failed,
+    },
   };
 }
 
+function installedMatches(label: string, spec: ServiceSpec): boolean {
+  const installed = readInstalledProgramArguments(label);
+  const installedEnv = readInstalledEnvironment(label);
+  return (
+    installed !== null &&
+    installed.length === spec.programArguments.length &&
+    installed.every((a, i) => a === spec.programArguments[i]) &&
+    readInstalledWorkingDirectory(label) === spec.workingDirectory &&
+    installedEnv !== null &&
+    sameEnvironment(installedEnv, renderedEnvironment(spec))
+  );
+}
+
 /**
- * Bulk lifecycle verb behind `deck remove --managed`: the app calls this
- * during `rt uninstall` (installer spec §12.3) to unregister every non-user
- * record deck supervises. Same implicit-authority model as restartManagedApps.
+ * Lifecycle verb behind `deck remove --managed [name]`: with a name it removes
+ * only that managed record, without one every non-user record deck
+ * supervises. Same implicit-authority model as restartManagedApps.
  */
-export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
-  const managed = listRecords().filter(
+export async function removeManagedApps(
+  drivers: Drivers,
+  only?: string
+): Promise<FlowResult> {
+  let managed = listRecords().filter(
     r => r.managedBy !== 'user' && !isPlatformManagedBy(r.managedBy)
   );
+  if (only !== undefined) {
+    if (!getRecord(only))
+      return { status: 404, body: { error: 'unknown app' } };
+    managed = managed.filter(r => r.name === only);
+    if (managed.length === 0)
+      return { status: 409, body: { error: `${only} is not managed` } };
+  }
   const removed: string[] = [];
   const failed: string[] = [];
   for (const record of managed) {
@@ -645,7 +877,10 @@ export async function editApp(
   // runnable one: resolve the prospective shape before any teardown call, not
   // after, or a patch that resolves to nothing tears down with nothing to fall
   // back on.
-  if (next.kind === 'service' && !serveShape(next, serveShapeDeps)) {
+  const servedHere =
+    next.kind === 'service' && !notServedHere(next, serveShapeDeps);
+  const nextShape = servedHere ? serveShape(next, serveShapeDeps) : null;
+  if (servedHere && !nextShape) {
     return {
       status: 400,
       body: {
@@ -653,6 +888,8 @@ export async function editApp(
       },
     };
   }
+  const cwdRefusal = nextShape && missingCwdRefusal(next, nextShape.cwd);
+  if (cwdRefusal) return { status: 400, body: { error: cwdRefusal } };
 
   // Teardown-phase failures are collected, not recorded yet: the record they
   // belong to doesn't exist under its final cache key yet (a rename deletes the
@@ -698,7 +935,7 @@ export async function editApp(
   }
   if (portChanged) clearOverride(next.name);
   putRecord(next);
-  if (next.kind === 'service') {
+  if (servedHere) {
     const shape = serveShape(next, serveShapeDeps);
     if (shape)
       await tryDriver(next.name, 'launchd', () =>
@@ -822,6 +1059,7 @@ export async function reinstallSupervised(
       !record.label
     )
       continue;
+    if (notServedHere(record, serveShapeDeps)) continue;
     const shape = serveShape(record, serveShapeDeps);
     if (!shape) {
       failed.push(record.name);

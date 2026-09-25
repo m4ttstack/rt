@@ -20,6 +20,7 @@ process.env.HOME = dir;
 
 const { buildStatus } = await import('./status.ts');
 const { putRecord, reloadRegistry } = await import('../registry/records.ts');
+const { setCatalogReport } = await import('../registry/catalog-report.ts');
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
@@ -32,6 +33,7 @@ beforeEach(() => {
     process.env.LOCAL_APPS_ROUTES_PATH!,
     JSON.stringify([{ hostname: 'myapp.localhost', port: 19999, pid: 0 }])
   );
+  setCatalogReport([]);
 });
 
 const opts = {
@@ -86,6 +88,67 @@ test("the platform's own record marks its row self, wherever its port is", async
   });
   const status = await buildStatus(opts);
   expect(status.apps.find(a => a.name === 'myapp')!.self).toBe(true);
+});
+
+test("deck's own row carries the catalog report with no platform record, and no other row does", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'deck.localhost', port: 7940, pid: 0 },
+      { hostname: 'myapp.localhost', port: 19999, pid: 0 },
+    ])
+  );
+  setCatalogReport([
+    { name: 'board', error: 'this bundle ships no Helpers/board' },
+  ]);
+
+  const status = await buildStatus(opts);
+
+  expect(status.apps.find(a => a.name === 'deck')!.issues).toEqual([
+    {
+      source: 'launchd',
+      message:
+        'bundled apps deck cannot serve: board (this bundle ships no Helpers/board)',
+      at: expect.any(String),
+    },
+  ]);
+  expect(status.apps.find(a => a.name === 'myapp')!.issues).toEqual([]);
+});
+
+test("the catalog report joins the platform record's own launchd issue, one issue per source", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port: 7940, pid: 0 }])
+  );
+  putRecord({
+    name: 'deck',
+    managedBy: 'deck',
+    port: 7940,
+    kind: 'service',
+    label: 'com.mattstack.deck',
+    createdAt: '2026-08-10T00:00:00Z',
+    issues: [
+      {
+        source: 'launchd',
+        message: 'bootstrap install failed',
+        at: '2026-08-10T00:00:00Z',
+      },
+    ],
+  });
+  setCatalogReport([
+    { name: 'board', error: 'catalog port 11006 is held by mine' },
+  ]);
+
+  const status = await buildStatus(opts);
+
+  expect(status.apps.find(a => a.name === 'deck')!.issues).toEqual([
+    {
+      source: 'launchd',
+      message:
+        'bootstrap install failed; bundled apps deck cannot serve: board (catalog port 11006 is held by mine)',
+      at: '2026-08-10T00:00:00Z',
+    },
+  ]);
 });
 
 test('a pre-rename self-record (managedBy local) still marks its row self', async () => {

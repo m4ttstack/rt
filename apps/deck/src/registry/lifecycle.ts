@@ -32,7 +32,7 @@ export function authorizeStructural(
     ? 'This is Deck itself: `deck uninstall`'
     : record.managedBy === 'user'
       ? `Managed by user: remove it from the board or \`deck remove ${record.name}\``
-      : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy} — \`${record.managedBy} uninstall ${record.name}\``;
+      : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy}: remove it anyway with \`deck remove ${record.name} --force\``;
   return {
     ok: false,
     status: 409,

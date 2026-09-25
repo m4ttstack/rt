@@ -30,7 +30,8 @@ const { FakeServiceManager } = await import('../services/fake.ts');
 const { FakeEdgeProxy } = await import('../edge/portless.ts');
 const { FakeTunnelDriver } = await import('../edge/tunnel.ts');
 const { FakeCfDns } = await import('../../test/fixture/remote.ts');
-const { reloadRegistry, getRecord } = await import('../registry/records.ts');
+const { reloadRegistry, getRecord, putRecord } =
+  await import('../registry/records.ts');
 const { reloadPlatformSettings } = await import('./platform-settings.ts');
 
 const PORT = 18917;
@@ -235,10 +236,11 @@ test('a freshly-registered app with no route yet shows up in the list without le
 });
 
 test("a public host gets the row's record shape redacted; a local one still pre-fills the edit dialog", async () => {
+  const secretDir = mkdtempSync(join(tmpdir(), 'secret-dir-'));
   const created = await post('/api/v1/apps', {
     name: 'secretful',
     command: ['bun', 's.ts'],
-    workingDirectory: '/tmp/secret-dir',
+    workingDirectory: secretDir,
     env: { API_KEY: 'shh-do-not-leak' },
   });
   expect(created.status).toBe(201);
@@ -248,7 +250,7 @@ test("a public host gets the row's record shape redacted; a local one still pre-
     await api('/api/v1/apps', { headers: pubHeaders })
   ).text();
   // Whole-body assertions: a leak that sinks one level deeper must still fail.
-  expect(pubRaw).not.toContain('/tmp/secret-dir');
+  expect(pubRaw).not.toContain(secretDir);
   expect(pubRaw).not.toContain('shh-do-not-leak');
   const pubRow = JSON.parse(pubRaw).apps.find(
     (a: any) => a.name === 'secretful'
@@ -263,7 +265,7 @@ test("a public host gets the row's record shape redacted; a local one still pre-
   const oneRaw = await (
     await api('/api/v1/apps/secretful', { headers: pubHeaders })
   ).text();
-  expect(oneRaw).not.toContain('/tmp/secret-dir');
+  expect(oneRaw).not.toContain(secretDir);
   expect(JSON.parse(oneRaw).row.record).toEqual({
     kind: 'service',
     command: null,
@@ -276,7 +278,7 @@ test("a public host gets the row's record shape redacted; a local one still pre-
   expect(localRow.record).toEqual({
     kind: 'service',
     command: ['bun', 's.ts'],
-    workingDirectory: '/tmp/secret-dir',
+    workingDirectory: secretDir,
   });
 });
 
@@ -360,6 +362,147 @@ test('managed/reresolve answers 200 with the ok/restarted/unchanged/failed body 
     restarted: ['rr1'],
     unchanged: [],
     failed: [],
+  });
+});
+
+test('managed/remove/<name> removes only that managed row', async () => {
+  for (const [name, port] of [
+    ['mr-one', 12101],
+    ['mr-two', 12102],
+  ] as const)
+    putRecord({
+      name,
+      managedBy: 'rt',
+      port,
+      kind: 'external',
+      createdAt: '2026-09-25T00:00:00Z',
+    });
+  putRecord({
+    name: 'mr-mine',
+    managedBy: 'user',
+    port: 12103,
+    kind: 'external',
+    createdAt: '2026-09-25T00:00:00Z',
+  });
+
+  const one = await api('/api/v1/apps/managed/remove/mr-one', {
+    method: 'POST',
+  });
+  expect(one.status).toBe(200);
+  expect(await one.json()).toMatchObject({
+    ok: true,
+    removed: ['mr-one'],
+    failed: [],
+  });
+  expect(getRecord('mr-one')).toBeUndefined();
+  expect(getRecord('mr-two')).toBeDefined();
+
+  const ghost = await api('/api/v1/apps/managed/remove/mr-ghost', {
+    method: 'POST',
+  });
+  expect(ghost.status).toBe(404);
+  const mine = await api('/api/v1/apps/managed/remove/mr-mine', {
+    method: 'POST',
+  });
+  expect(mine.status).toBe(409);
+  expect(getRecord('mr-two')).toBeDefined();
+  expect(getRecord('mr-mine')).toBeDefined();
+});
+
+test('managed/remove refuses a name in its body instead of removing every managed row', async () => {
+  for (const [name, port] of [
+    ['mb-one', 12111],
+    ['mb-two', 12112],
+  ] as const)
+    putRecord({
+      name,
+      managedBy: 'rt',
+      port,
+      kind: 'external',
+      createdAt: '2026-09-25T00:00:00Z',
+    });
+
+  const res = await post('/api/v1/apps/managed/remove', { name: 'mb-one' });
+
+  expect(res.status).toBe(400);
+  expect(((await res.json()) as { error: string }).error).toContain(
+    '/api/v1/apps/managed/remove/<name>'
+  );
+  expect(getRecord('mb-one')).toBeDefined();
+  expect(getRecord('mb-two')).toBeDefined();
+});
+
+describe('/api/apps during the boot sweep', () => {
+  const BOOT_PORT = 18927;
+
+  function bootingServer(bootSweep: Promise<void>, bootSweepWaitMs: number) {
+    return startApi({
+      manager: new FakeServiceManager(),
+      edge: new FakeEdgeProxy(),
+      port: BOOT_PORT,
+      canaryPort: BOOT_PORT + 1,
+      freshness: () => 'unknown',
+      autoHeal: () => null,
+      onRouteWrite: () => {},
+      tunnel: new FakeTunnelDriver(),
+      bootSweep,
+      bootSweepWaitMs,
+    });
+  }
+
+  async function appNames(res: Response): Promise<string[]> {
+    const body = (await res.json()) as { apps: Array<{ name: string }> };
+    return body.apps.map(a => a.name);
+  }
+
+  function sweptApp(): void {
+    putRecord({
+      name: 'bs-app',
+      managedBy: 'rt',
+      port: 12120,
+      kind: 'external',
+      createdAt: '2026-09-25T00:00:00Z',
+    });
+    writeFileSync(
+      process.env.LOCAL_APPS_ROUTES_PATH!,
+      JSON.stringify([{ hostname: 'bs-app.localhost', port: 12120, pid: 0 }])
+    );
+  }
+
+  test('answers 503 with no app list while the sweep runs past the wait, then the list once it settles', async () => {
+    const sweep = Promise.withResolvers<void>();
+    const booting = bootingServer(sweep.promise, 20);
+    try {
+      const waiting = await fetch(`http://127.0.0.1:${BOOT_PORT}/api/apps`);
+      expect(waiting.status).toBe(503);
+      expect(await waiting.json()).not.toHaveProperty('apps');
+
+      sweptApp();
+      sweep.resolve();
+      const ready = await fetch(`http://127.0.0.1:${BOOT_PORT}/api/apps`);
+      expect(ready.status).toBe(200);
+      expect(await appNames(ready)).toEqual(['bs-app']);
+    } finally {
+      booting.stop(true);
+      writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, '[]');
+    }
+  });
+
+  test('a request that arrives mid-sweep waits for the rows the sweep creates', async () => {
+    const sweep = Promise.withResolvers<void>();
+    const booting = bootingServer(sweep.promise, 10_000);
+    try {
+      const pending = fetch(`http://127.0.0.1:${BOOT_PORT}/api/apps`);
+      await Bun.sleep(20);
+      sweptApp();
+      sweep.resolve();
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(await appNames(res)).toEqual(['bs-app']);
+    } finally {
+      booting.stop(true);
+      writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, '[]');
+    }
   });
 });
 
