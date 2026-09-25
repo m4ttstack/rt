@@ -15,7 +15,7 @@
  * Without --yes either form prints what it would do and exits. Builds run in
  * a scratch copy, never in a checkout's rt-tray/.
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { dirname, join } from "path";
 import { createRealUpdateMachineSeams } from "../commands/release.ts";
@@ -60,12 +60,27 @@ if (parsed.local) {
   const scratch = mkdtempSync(join(tmpdir(), "rt-dev-app-local-"));
   let code = 1;
   try {
-    const { stamp, stagedPath } = await stageLocalDevApp(
+    const result = await stageLocalDevApp(
       {
         home: homedir(),
+        runningApp: "/Applications/mattstack-dev.app",
         now: () => new Date(),
         scratchDir: () => scratch,
         pathExists: existsSync,
+        listDir: (path) => {
+          try {
+            return readdirSync(path);
+          } catch {
+            return [];
+          }
+        },
+        readBytes: (path) => {
+          try {
+            return statSync(path).isFile() ? readFileSync(path) : null;
+          } catch {
+            return null;
+          }
+        },
         writeFile: (path, content) => {
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, content);
@@ -85,7 +100,14 @@ if (parsed.local) {
       },
       process.cwd(),
     );
-    console.log(`✓ staged ${stagedPath} (${stamp}); restart it from mattstack-dev's "New build · Restart"`);
+    if (result.outcome === "running") {
+      console.log(`✓ already running this build (${result.stamp}); nothing to stage`);
+    } else {
+      const from = result.outcome === "cached" ? " from the build cache, nothing rebuilt" : "";
+      console.log(
+        `✓ staged ${result.stagedPath} (${result.stamp})${from}; restart it from mattstack-dev's "New build · Restart"`,
+      );
+    }
     code = 0;
   } catch (err) {
     if (!(err instanceof UserActionableError)) throw err;
