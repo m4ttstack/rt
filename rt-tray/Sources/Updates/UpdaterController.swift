@@ -8,12 +8,22 @@ import MattstackCore
 final class UpdaterController: NSObject, UpdateChecking, SPUUpdaterDelegate, SPUStandardUserDriverDelegate, @unchecked Sendable {
     @objc dynamic private(set) var canCheckForUpdates = false
     var onUpdateAvailable: ((String) -> Void)?
+    /// Called on the main thread, synchronously, so the flag it sets is in
+    /// place before Sparkle's installer sends its quit event.
+    var onUpdateInstallingChanged: ((Bool) -> Void)?
     private let isBusy: () -> Bool
     private let enabled: Bool
     private var controller: SPUStandardUpdaterController?
     private var observation: NSKeyValueObservation?
 
     private let feedOverride: String?
+
+    // These delegate methods are optional, so a Sparkle rename would leave
+    // ours compiling but never called; naming them here fails the build.
+    private static let requiredDelegateSelectors = [
+        #selector(SPUUpdaterDelegate.updater(_:willInstallUpdate:)),
+        #selector(SPUUpdaterDelegate.updater(_:didFinishUpdateCycleFor:error:)),
+    ]
 
     init(isDevBuild: Bool, isBusy: @escaping () -> Bool) {
         self.isBusy = isBusy
@@ -81,6 +91,18 @@ final class UpdaterController: NSObject, UpdateChecking, SPUUpdaterDelegate, SPU
     // MARK: SPUUpdaterDelegate — feed override, install when idle
 
     func feedURLString(for updater: SPUUpdater) -> String? { feedOverride }
+
+    // Sparkle calls this once per update session, just before it asks its
+    // installer to quit the app, and not again when "Install and Relaunch"
+    // is retried, so the flag must hold until the cycle ends.
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        TrayLog.info("update installing", ["version": item.displayVersionString])
+        onUpdateInstallingChanged?(true)
+    }
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        onUpdateInstallingChanged?(false)
+    }
 
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {

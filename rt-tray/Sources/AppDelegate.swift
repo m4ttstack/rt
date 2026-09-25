@@ -93,6 +93,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// path and visibly block the OS ("app is preventing logout/shutdown").
     /// This backstop trusts the session itself, not just the reason code.
     private var systemSessionEnding = false
+    /// Set by `UpdaterController` while Sparkle installs an update. Read
+    /// here rather than through `updater`, whose lazy init would start
+    /// Sparkle on a copy that is only quitting.
+    private var updateInstalling = false
 
     // MARK: - Lifecycle
 
@@ -509,14 +513,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// via the existing `windowWillClose`) and cancels the termination, so
     /// daemon supervision never dies just because the window did. System
     /// shutdown/restart/logout are read from the quit AppleEvent's reason
-    /// and always honored: this interception must never block the OS.
+    /// and always honored: this interception must never block the OS. Nor
+    /// may it block Sparkle's installer, whose quit is what lets an update
+    /// install and relaunch.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
-            .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        let quitEvent = NSAppleEventManager.shared().currentAppleEvent
+        let reasonCode = quitEvent?.paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        let senderPID = quitEvent?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value ?? 0
+        let senderBundleIdentifier = senderPID > 0
+            ? NSRunningApplication(processIdentifier: senderPID)?.bundleIdentifier : nil
         let window = mattstackWindow?.window
         let windowOnScreen = (window?.isVisible ?? false) || (window?.isMiniaturized ?? false)
-        if QuitReason.shouldTerminate(quitConfirmed: quitConfirmed, sessionEnding: systemSessionEnding,
-                                      reasonCode: reasonCode, windowOnScreen: windowOnScreen) {
+        let terminate = QuitReason.shouldTerminate(quitConfirmed: quitConfirmed, sessionEnding: systemSessionEnding,
+                                                   updateInstalling: updateInstalling,
+                                                   senderBundleIdentifier: senderBundleIdentifier,
+                                                   reasonCode: reasonCode, windowOnScreen: windowOnScreen)
+        if updateInstalling {
+            TrayLog.info("quit during update install", ["sender": senderBundleIdentifier ?? "none",
+                                                        "terminate": terminate])
+        }
+        if terminate {
             return .terminateNow
         }
         Task { @MainActor in
@@ -1484,6 +1500,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             MainActor.assumeIsolated {
                 TrayState.shared.updateAvailable = version.isEmpty ? nil : version
             }
+        }
+        updater.onUpdateInstallingChanged = { [weak self] installing in
+            self?.updateInstalling = installing
         }
     }
 
