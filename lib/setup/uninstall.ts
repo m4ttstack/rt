@@ -67,11 +67,13 @@ function shellRcHasMarker(): boolean {
 export function computeUninstallActions(p: Probes, opts: { keepData: boolean }, seams: UninstallSeams = REAL_UNINSTALL_SEAMS): UninstallAction[] {
   const actions: UninstallAction[] = [];
 
-  actions.push({ id: "services.unregister", title: "Stop and remove the rt daemon and deck services", kind: "app" });
-
+  // Before services.unregister: that action unregisters deck's own agent, and
+  // the managed remove needs a live deck to tear its apps down.
   if (resolveTool(p, "deck").chosen !== null) {
     actions.push({ id: "deck.managed-remove", title: "Remove mattstack's apps from deck", kind: "rt" });
   }
+
+  actions.push({ id: "services.unregister", title: "Stop and remove the rt daemon and deck services", kind: "app" });
 
   if (p.exists(PORTLESS_LAUNCHD_PLIST)) {
     actions.push({ id: "proxy.remove", title: "Remove the local HTTPS proxy (admin prompt)", kind: "privileged" });

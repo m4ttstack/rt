@@ -68,7 +68,7 @@ test("setup apply streams plan/step/need/done; apply-fail-retry fails once then 
 
 test("uninstall --dry-run lists L1's action ids; --delete-data needs --yes; version build is numeric", async () => {
   const dry = await run("uninstall", ["uninstall", "--dry-run", "--json"]);
-  expect(dry.lines[0].actions.map((a: { id: string }) => a.id)).toEqual(["services.unregister", "deck.managed-remove", "proxy.remove", "path.unlink", "shell.remove", "extension.uninstall", "plugins.uninstall", "app.trash"]);
+  expect(dry.lines[0].actions.map((a: { id: string }) => a.id)).toEqual(["deck.managed-remove", "services.unregister", "proxy.remove", "path.unlink", "shell.remove", "extension.uninstall", "plugins.uninstall", "app.trash"]);
   const dryDelete = await run("uninstall", ["uninstall", "--dry-run", "--delete-data", "--json"]);
   expect(dryDelete.lines[0].actions.map((a: { id: string }) => a.id)).toContain("data");
   const noYes = await run("uninstall", ["uninstall", "--delete-data", "--json"]);
@@ -116,7 +116,7 @@ test("restore scenario's apply stream starts at home.restore", async () => {
 test("uninstall real run streams every v1 action id, the two need events, and honours --delete-data", async () => {
   const keep = await run("uninstall", ["uninstall", "--keep-data", "--yes", "--json"]);
   expect(keep.lines[0].event).toBe("plan");
-  expect(keep.lines[0].steps.map((s: { id: string }) => s.id)).toEqual(["services.unregister", "deck.managed-remove", "proxy.remove", "path.unlink", "shell.remove", "extension.uninstall", "plugins.uninstall", "app.trash"]);
+  expect(keep.lines[0].steps.map((s: { id: string }) => s.id)).toEqual(["deck.managed-remove", "services.unregister", "proxy.remove", "path.unlink", "shell.remove", "extension.uninstall", "plugins.uninstall", "app.trash"]);
   const needs = keep.lines.filter((l: { event: string }) => l.event === "need");
   expect(needs.map((n: { id: string }) => n.id)).toEqual(["services.unregister", "proxy.remove"]);
   expect(needs[0].request.type).toBe("app-unregister-services");

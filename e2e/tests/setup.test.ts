@@ -105,9 +105,11 @@ describe("rt setup verbs (e2e, no live app/daemon)", () => {
     const out = JSON.parse(res.stdout.trim());
     expect(out.contract).toBe(1);
     expect(Array.isArray(out.actions)).toBe(true);
-    // services.unregister is pushed unconditionally — the one action every
-    // machine has regardless of what's actually installed.
-    expect(out.actions[0].id).toBe("services.unregister");
+    // services.unregister is on every machine; deck.managed-remove appears only
+    // where deck resolves (an installed mattstack.app does), and then first.
+    const ids = out.actions.map((a: { id: string }) => a.id);
+    expect(ids).toContain("services.unregister");
+    if (ids.includes("deck.managed-remove")) expect(ids.indexOf("deck.managed-remove")).toBeLessThan(ids.indexOf("services.unregister"));
   }, 15_000);
 
   // --dry-run on purpose: if the rejection ever regresses, the compiled binary

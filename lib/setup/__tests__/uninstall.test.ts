@@ -139,8 +139,8 @@ describe("rt uninstall", () => {
 
       const actions = computeUninstallActions(p, { keepData: true }, noEditorSeams);
       expect(actions.map((a) => a.id)).toEqual([
-        "services.unregister",
         "deck.managed-remove",
+        "services.unregister",
         "proxy.remove",
         "path.unlink",
         "shell.remove",
@@ -162,6 +162,12 @@ describe("rt uninstall", () => {
 
       const withDeck = computeUninstallActions(bareProbes(pathTool("deck")), { keepData: true }, noEditorSeams);
       expect(withDeck.some((a) => a.id === "deck.managed-remove")).toBe(true);
+    });
+
+    test("deck.managed-remove runs before services.unregister, which stops deck itself", () => {
+      const ids = computeUninstallActions(bareProbes(pathTool("deck")), { keepData: true }, noEditorSeams).map((a) => a.id);
+      expect(ids.indexOf("deck.managed-remove")).toBe(0);
+      expect(ids.indexOf("services.unregister")).toBe(1);
     });
 
     test("proxy.remove: gated on the portless LaunchDaemon plist existing", () => {
