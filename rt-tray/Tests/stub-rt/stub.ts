@@ -169,8 +169,9 @@ function plan(): unknown {
     row("account.gitlab", "account", "GitLab", "The team's merge requests live on gitlab.example.com.", true,
         stateGet("gitlab-connected") ? "ready" : "missing", stateGet("gitlab-connected") ? "token can see group acme" : null,
         { type: "connect", label: "Connect", integration: "gitlab",
-          fields: [{ name: "token", label: "Personal access token", secret: true, hint: "scopes: read_api, read_user" }],
-          alternatives: [] }),
+          fields: [{ name: "token", label: "Personal access token", secret: true, hint: "read_api, read_user, read_repository" }],
+          alternatives: [],
+          create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user%2Cread_repository" } }),
   ];
   const access = [row("access.team-repo", "access", "Team repo reachable", "github.com/acme/mattstack-team-acme", true, "ready", "ls-remote ok", null)];
   const tools = [

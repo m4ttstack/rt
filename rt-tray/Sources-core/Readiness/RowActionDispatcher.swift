@@ -7,7 +7,7 @@ public enum DispatchedAction: Equatable, Sendable {
     case openURL(URL)
     case showSteps([String])
     case chooseFolder(startAt: String?)
-    case collectFields([ActionField], integration: String, alternatives: [ActionAlternative])
+    case collectFields([ActionField], integration: String, alternatives: [ActionAlternative], create: ActionLink?)
     case chooseOption(options: [ChooseOption], other: ChooseOther?)
     case none
 }
@@ -24,16 +24,16 @@ public enum RowActionDispatcher {
             guard let integration = action.integration else { return .none }
             if alternative == "use-gh" { return .rtVerb(args: ["setup", integration, "connect", "--json"], stdin: json(["useGh": true])) }
             if let values = fieldValues { return .rtVerb(args: ["setup", integration, "connect", "--json"], stdin: json(values)) }
-            return .collectFields(action.fields ?? [], integration: integration, alternatives: action.alternatives ?? [])
+            return .collectFields(action.fields ?? [], integration: integration, alternatives: action.alternatives ?? [], create: action.create)
         case .ownerOnce:
             guard let integration = action.integration else { return .none }
             if let values = fieldValues { return .rtVerb(args: ["setup", integration, "create-app", "--json"], stdin: json(values)) }
-            return .collectFields(action.fields ?? [], integration: integration, alternatives: [])
+            return .collectFields(action.fields ?? [], integration: integration, alternatives: [], create: nil)
         case .form:
             guard let verb = action.verb, !verb.isEmpty else { return .none }
             if let alternative { return .rtVerb(args: verb + ["--json"], stdin: json(["alternative": alternative])) }
             if let values = fieldValues { return .rtVerb(args: verb + ["--json"], stdin: json(values)) }
-            return .collectFields(action.fields ?? [], integration: "", alternatives: action.alternatives ?? [])
+            return .collectFields(action.fields ?? [], integration: "", alternatives: action.alternatives ?? [], create: nil)
         case .oauth, .run:
             guard let verb = action.verb, !verb.isEmpty else { return .none }
             return .rtVerb(args: verb + ["--json"], stdin: nil)

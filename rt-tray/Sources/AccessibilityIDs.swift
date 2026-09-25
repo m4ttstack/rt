@@ -47,6 +47,7 @@ enum AXID {
     static func connectField(_ name: String) -> String { "setup.checklist.connect.field.\(name)" }
     static func connectAlternative(_ id: String) -> String { "setup.checklist.connect.alt.\(id)" }
     static let connectSubmit = "setup.checklist.connect.submit"
+    static let connectCreate = "setup.checklist.connect.create"
     static let connectCancel = "setup.checklist.connect.cancel"
     static let stepsDone = "setup.checklist.steps.done"
     static let chooseSheet = "setup.choose"

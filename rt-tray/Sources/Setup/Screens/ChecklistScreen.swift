@@ -5,7 +5,7 @@ struct ChecklistScreen: View {
     @ObservedObject var model: ReadinessModel
     let permissions: PermissionsService
     let rt: RtRunning
-    @State private var connect: (row: PlanRow, fields: [ActionField], alternatives: [ActionAlternative])?
+    @State private var connect: (row: PlanRow, fields: [ActionField], alternatives: [ActionAlternative], create: ActionLink?)?
     @State private var steps: (title: String, steps: [String])?
     @State private var choose: PlanRow?
     @State private var actionError: (rowId: String, message: String)?
@@ -51,7 +51,7 @@ struct ChecklistScreen: View {
         }
         .sheet(isPresented: Binding(get: { connect != nil }, set: { if !$0 { connect = nil } })) {
             if let c = connect {
-                ConnectSheet(title: c.row.title, fields: c.fields, alternatives: c.alternatives) { values, alt in
+                ConnectSheet(title: c.row.title, fields: c.fields, alternatives: c.alternatives, create: c.create) { values, alt in
                     guard let action = c.row.action else { return }
                     actionError = nil
                     run(RowActionDispatcher.dispatch(action, fieldValues: values, alternative: alt), for: c.row)
@@ -138,8 +138,8 @@ struct ChecklistScreen: View {
             NSWorkspace.shared.open(url)
         case .showSteps(let list):
             steps = (row.title, list)
-        case .collectFields(let fields, _, let alternatives):
-            connect = (row, fields, alternatives)
+        case .collectFields(let fields, _, let alternatives, let create):
+            connect = (row, fields, alternatives, create)
         case .chooseOption:
             choose = row
         case .none:

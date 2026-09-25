@@ -112,6 +112,15 @@ public struct ActionAlternative: Codable, Equatable, Sendable {
     public init(id: String, label: String) { self.id = id; self.label = label }
 }
 
+/// A web page the sheet offers alongside its fields (the service's own
+/// new-credential page with rt's needs prefilled); opening it never sends
+/// anything, so the sheet stays up for the paste.
+public struct ActionLink: Codable, Equatable, Sendable {
+    public var label: String
+    public var url: String
+    public init(label: String, url: String) { self.label = label; self.url = url }
+}
+
 /// One shape for every contract action; which optionals are present is
 /// discriminated by `type`. Kept flat so rt can add a field without a
 /// decoder change here.
@@ -136,17 +145,19 @@ public struct RowAction: Codable, Equatable, Sendable {
     public var subtitle: String?
     /// A line at the foot of the sheet (the CLI alternative).
     public var footnote: String?
+    /// `connect` only: the create-credential page the sheet links to.
+    public var create: ActionLink?
     public init(type: ActionType, label: String, target: String? = nil, which: String? = nil,
                 integration: String? = nil, fields: [ActionField]? = nil,
                 alternatives: [ActionAlternative]? = nil, verb: [String]? = nil, tool: String? = nil,
                 via: String? = nil, steps: [String]? = nil, url: String? = nil, startAt: String? = nil,
                 options: [ChooseOption]? = nil, selected: String? = nil, other: ChooseOther? = nil,
-                subtitle: String? = nil, footnote: String? = nil) {
+                subtitle: String? = nil, footnote: String? = nil, create: ActionLink? = nil) {
         self.type = type; self.label = label; self.target = target; self.which = which
         self.integration = integration; self.fields = fields; self.alternatives = alternatives
         self.verb = verb; self.tool = tool; self.via = via; self.steps = steps; self.url = url
         self.startAt = startAt; self.options = options; self.selected = selected; self.other = other
-        self.subtitle = subtitle; self.footnote = footnote
+        self.subtitle = subtitle; self.footnote = footnote; self.create = create
     }
 }
 
