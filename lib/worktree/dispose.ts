@@ -14,8 +14,8 @@
  */
 
 import { existsSync } from "fs";
-import { branchExistsLocalAsync, gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
-import { patchIdenticalToMr } from "./containment.ts";
+import { gitOk, headSha, runGit } from "./git-async.ts";
+import { containmentOf } from "./containment.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "./registry.ts";
 import { hasFreshAttendantLease } from "./lease.ts";
 import { loadSyncConfig, matchRule } from "../sync-config.ts";
@@ -161,41 +161,6 @@ function joinedMr(
 }
 
 /**
- * A merged MR proves containment only for the commits it actually merged: a
- * reused branch name can resurface an older lifecycle's merged entry (the
- * cache is branch-keyed, and a by-branch API lookup returns the old MR until
- * a new one opens), and trusting it would dispose committed work the merge
- * never saw. The MR's source head sha settles it — squash/rebase merges
- * rewrite the TARGET, never the source branch, so local HEAD being an
- * ancestor of `mr.sha` means everything here reached the MR that merged.
- * No sha (pre-field cache rows) or an unknown sha fails safe to the anchor.
- */
-export async function mergedMrCoversHead(rec: TreeRecord, mr: { state?: string | null; sha?: string | null }): Promise<boolean> {
-  if (mr.state !== "merged" || !mr.sha) return false;
-  return isAncestorAsync(rec.path, "HEAD", mr.sha);
-}
-
-/**
- * Guard 3's anchor: every tip dispose drops (HEAD, and the branch it deletes,
- * which need not be checked out) must be on origin/<branch> or on the default
- * branch. The default branch alone is enough because origin/<branch> outlives
- * a forge's delete-on-merge until a prune. Full refs, so a local branch named
- * `origin/main` can never vouch.
- */
-async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
-  const anchors = [`refs/remotes/${await remoteDefaultRef(rec.path)}`];
-  if (rec.branch && (await remoteRefExists(rec.path, rec.branch))) anchors.push(`refs/remotes/origin/${rec.branch}`);
-  const tips = ["HEAD"];
-  if (rec.branch && (await branchExistsLocalAsync(rec.path, rec.branch))) tips.push(`refs/heads/${rec.branch}`);
-  for (const tip of tips) {
-    let onRemote = false;
-    for (const anchor of anchors) if (!onRemote) onRemote = await isAncestorAsync(rec.path, tip, anchor);
-    if (!onRemote) return "unpushed";
-  }
-  return null;
-}
-
-/**
  * Guard the tree, then remove it: worktree, branch, registry entry, event.
  *
  * Returns the refusal reason instead of throwing; callers decide what to do
@@ -248,26 +213,12 @@ export async function disposeTree(
       discarded = discard;
     }
 
-    // 3. Containment. A merged MR is authoritative that the branch's work
-    //    reached the target: squash-merge and rebase-before-merge both leave
-    //    the local head diverged from whatever landed, so every local ancestry
-    //    or patch-id check against the TARGET reads "unpushed" for work that
-    //    demonstrably merged. But merged-state alone is trusted only when the
-    //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead)...
-    //    a reused branch's stale merged entry must fall through to the anchor,
-    //    which a rebased-then-merged branch escapes only via the
-    //    patch-identical check below (see patchIdenticalToMr).
+    // 3. Containment, by the same rule triage offers Dispose on (containmentOf).
     //    The dirty guard above still blocks uncommitted work, --force still
     //    overrides, and a disposed tree is recoverable from the trash for the
     //    retention window.
     const mr = joinedMr(deps, rec);
-    if (!mr || !(await mergedMrCoversHead(rec, mr))) {
-      const anchorRefusal = await remoteAnchorRefusal(rec);
-      const rebasedIntoMr = anchorRefusal !== null && mr?.state === "merged" && mr.sha
-        ? await patchIdenticalToMr(rec.path, mr.sha, await remoteDefaultRef(rec.path))
-        : false;
-      if (anchorRefusal && !rebasedIntoMr) return refuse(anchorRefusal);
-    }
+    if ((await containmentOf(rec.path, rec.branch, mr)) === "none") return refuse("unpushed");
 
     // 4. No pipeline run is still live in this worktree: a running run can go
     //    on writing to the filesystem disposal is about to remove. A scan

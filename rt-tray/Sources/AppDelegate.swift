@@ -38,6 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // ── Worktree panel ─────────────────────────────────────────────────────
     private var worktreeWindow: NSWindow?
+    private var worktreePolling: WindowScopedPolling?
     private var triageCounts: TriageCounts?
     /// The item in the menu currently open, retitled in place when the count
     /// query lands after the menu has already been shown.
@@ -1439,6 +1440,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor
     func showWorktreePanel() {
         if let w = worktreeWindow {
+            worktreePolling?.show()
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -1471,6 +1473,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
             MainActor.assumeIsolated { WorktreeReviewWindow.shared.close() }
         }
+        let polling = WindowScopedPolling(window: w, closing: NSWindow.willCloseNotification,
+                                          start: { controller.startPolling() }, stop: { controller.stopPolling() })
+        polling.show()
+        worktreePolling = polling
         worktreeWindow = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

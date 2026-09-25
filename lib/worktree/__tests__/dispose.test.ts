@@ -520,6 +520,61 @@ describe("disposeTree", () => {
     expect(await branchExistsLocalAsync(repo, "feature-a")).toBe(true);
   });
 
+  test("a merged MR covering HEAD never lets dispose delete a branch holding a commit the MR lacks", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "in the MR\n");
+    const mergedSha = execSync(`git -C ${path} rev-parse HEAD`, { encoding: "utf8" }).trim();
+    commitIn(path, "later.txt", "never pushed, never merged\n");
+    execSync(`git -C ${path} checkout --detach ${mergedSha}`, { shell: "/bin/zsh", stdio: "pipe" });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mergedSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(await branchExistsLocalAsync(repo, "feature-a")).toBe(true);
+  });
+
+  /** feature-a's one commit, cherry-picked onto a moved main and landed there: what a rebase-then-merge leaves. */
+  function rebasedAndMerged(path: string): string {
+    commitIn(path, "new.txt", "rebased before merge\n");
+    commitIn(repo, "other.txt", "main moved on\n");
+    execSync(
+      `git -C ${repo} checkout -q -b rebased && git -C ${repo} ${GIT_ID} cherry-pick feature-a && git -C ${repo} push -q origin rebased:main && git -C ${repo} checkout -q main && git -C ${repo} fetch -q origin`,
+      { shell: "/bin/zsh", stdio: "pipe" },
+    );
+    return execSync(`git -C ${repo} rev-parse rebased`, { encoding: "utf8" }).trim();
+  }
+
+  test("a tree rebased before its MR merged disposes on the patch-identical check", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const mrSha = rebasedAndMerged(path);
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mrSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toMatchObject({ disposed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a rebased-and-merged HEAD never lets dispose delete a branch holding a commit the MR lacks", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const mrSha = rebasedAndMerged(path);
+    commitIn(path, "later.txt", "never pushed, never merged\n");
+    execSync(`git -C ${path} checkout --detach HEAD~1`, { shell: "/bin/zsh", stdio: "pipe" });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mrSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(await branchExistsLocalAsync(repo, "feature-a")).toBe(true);
+  });
+
   test("a local branch named origin/main never vouches for unpushed commits", async () => {
     const path = addTree(repo, "tree-a", "feature-a");
     commitIn(path, "local.txt", "never pushed\n");
