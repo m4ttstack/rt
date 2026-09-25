@@ -5,7 +5,9 @@
  * no file IO; callers hand in store sections.
  */
 
+import { createHash } from "crypto";
 import { allDefs, getDef, isRetiredKey, type SettingDef } from "./registry-machinery.ts";
+import { checkSchema, firstIssueText } from "./schema.ts";
 
 export const MIGRATED_PROP = "$migrated";
 
@@ -102,4 +104,118 @@ export function runChain(def: SettingDef, value: unknown, fromVersion: number): 
     }
   }
   return { ok: true, value: current };
+}
+
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(sortKeys(value));
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(obj).sort().map((k) => [k, sortKeys(obj[k])]));
+  }
+  return value;
+}
+
+export function valueHash(value: unknown): string {
+  return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex").slice(0, 16)}`;
+}
+
+export type OlderLabel = "leftover" | "stale" | "diverged";
+
+export interface OlderNameRead {
+  storeName: string;
+  storedVersion: number;
+  label: OlderLabel;
+  /** Migrated to the current shape; the authored value when migration failed. */
+  value: unknown;
+  authored: unknown;
+  migrationError?: string;
+}
+
+export interface SectionRead {
+  present: boolean;
+  storeName?: string;
+  storedVersion?: number;
+  /** In the current shape, unless migration failed: then the value as stored. */
+  value?: unknown;
+  authored?: unknown;
+  migrationError?: string;
+  /** Older names beside a present current name, each labeled; empty otherwise. */
+  older: OlderNameRead[];
+}
+
+export function baselinesOf(section: Record<string, unknown> | undefined): Record<string, unknown> {
+  const m = section?.[MIGRATED_PROP];
+  return m !== null && typeof m === "object" && !Array.isArray(m) ? (m as Record<string, unknown>) : {};
+}
+
+function migrate(def: SettingDef, authored: unknown, fromVersion: number, layer: boolean): ChainResult {
+  const sv = def.storeVersion ?? 1;
+  if (fromVersion >= sv) return { ok: true, value: authored };
+  const out = runChain(def, authored, fromVersion);
+  if (!out.ok) return out;
+  const issues = checkSchema(def, out.value, { layer });
+  return issues.length === 0
+    ? out
+    : { ok: false, message: `migration ${fromVersion} -> ${sv} gives a value that fails the schema: ${firstIssueText(issues)}` };
+}
+
+function labelOlder(def: SettingDef, older: OlderStoreName, authored: unknown, current: unknown, baseline: unknown, layer: boolean): OlderNameRead {
+  const migrated = migrate(def, authored, older.version, layer);
+  const value = migrated.ok ? migrated.value : authored;
+  const label: OlderLabel =
+    migrated.ok && canonicalJson(value) === canonicalJson(current) ? "leftover" : baseline === valueHash(authored) ? "stale" : "diverged";
+  const read: OlderNameRead = { storeName: older.name, storedVersion: older.version, label, value, authored };
+  if (!migrated.ok) read.migrationError = migrated.message;
+  return read;
+}
+
+/**
+ * The key's value in one store section. `layer` picks the schema a
+ * migrated value must pass: a deep-merge store value is one partial layer.
+ */
+export function readSection(def: SettingDef, section: Record<string, unknown> | undefined, opts: { layer: boolean }): SectionRead {
+  if (!section) return { present: false, older: [] };
+  const found = olderStoreNames(def).filter((o) => section[o.name] !== undefined);
+  const current = currentStoreName(def);
+  if (section[current] !== undefined) {
+    const value = section[current];
+    const baselines = baselinesOf(section);
+    const older = found.map((o) => labelOlder(def, o, section[o.name], value, baselines[o.name], opts.layer));
+    return { present: true, storeName: current, storedVersion: def.storeVersion ?? 1, value, authored: value, older };
+  }
+  const top = found[0];
+  if (!top) return { present: false, older: [] };
+  const authored = section[top.name];
+  const migrated = migrate(def, authored, top.version, opts.layer);
+  const read: SectionRead = { present: true, storeName: top.name, storedVersion: top.version, value: migrated.ok ? migrated.value : authored, authored, older: [] };
+  if (!migrated.ok) read.migrationError = migrated.message;
+  return read;
+}
+
+const RANK: Record<OlderLabel, number> = { leftover: 0, stale: 1, diverged: 2 };
+
+export function worstLabel(older: OlderNameRead[]): OlderLabel | undefined {
+  let worst: OlderLabel | undefined;
+  for (const o of older) if (worst === undefined || RANK[o.label] > RANK[worst]) worst = o.label;
+  return worst;
+}
+
+/**
+ * The baselines a write of the current name records: only when the current
+ * name is absent from the section, and only for present older names that
+ * have none, so a name already diverged from an earlier bump stays so.
+ */
+export function baselinesToRecord(def: SettingDef, section: Record<string, unknown> | undefined): Record<string, string> {
+  if (!section || section[currentStoreName(def)] !== undefined) return {};
+  const existing = baselinesOf(section);
+  const out: Record<string, string> = {};
+  for (const o of olderStoreNames(def)) {
+    if (section[o.name] === undefined || existing[o.name] !== undefined) continue;
+    out[o.name] = valueHash(section[o.name]);
+  }
+  return out;
 }
