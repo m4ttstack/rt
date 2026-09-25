@@ -78,6 +78,8 @@ Matt's ruling: the whole window waits.
 
 Full gate: apps PRs, then `bundle-apps` for deck and boxscore, then the deps.lock PRs, then the rt PRs, then the release walkthrough, notarization and Sparkle feed. Afterwards, update Matt's prod through Sparkle and rebuild the dev app from main.
 
+The release runs through the `rt:release` skill, and I consult Max over rt chat before and during the cut (he ran the last three releases).
+
 ## Order
 
 1. In parallel: B + C (deck) and D (boxscore app) in mattstack-apps; A (deps.lock schema) and F + G (tray) and E (setup/CLI) in repo-tools.
