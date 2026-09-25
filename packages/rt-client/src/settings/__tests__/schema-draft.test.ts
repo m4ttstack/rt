@@ -45,6 +45,22 @@ describe("draftMigrations", () => {
     expect(evalUp(onlyStep(draftMigrations(prev, next)).upSource)({ a: "x", b: "y" })).toEqual({ a: "x" });
   });
 
+  test("a property removed from a closed object, when it was the only required property: the step still deletes it", () => {
+    const prev: Lock = { "t.k": { storeVersion: 1, schema: obj({ a: str, b: str }, ["b"], { additionalProperties: false }) } };
+    const next: Lock = { "t.k": { storeVersion: 2, schema: obj({ a: str }, [], { additionalProperties: false }) } };
+    const d = onlyStep(draftMigrations(prev, next));
+    expect(evalUp(d.upSource)({ a: "x", b: "y" })).toEqual({ a: "x" });
+    expect(d.notes).toEqual([]);
+  });
+
+  test("a rename where the old property was the only required one and the new one is optional: the step still renames it", () => {
+    const prev: Lock = { "t.k": { storeVersion: 1, schema: obj({ pattern: str }, ["pattern"], { additionalProperties: false }) } };
+    const next: Lock = { "t.k": { storeVersion: 2, schema: obj({ match: str }, [], { additionalProperties: false }) } };
+    const d = onlyStep(draftMigrations(prev, next));
+    expect(evalUp(d.upSource)({ pattern: "p" })).toEqual({ match: "p" });
+    expect(d.notes.join("\n")).toContain("confirm it is a rename");
+  });
+
   test("one property removed and one of the same type added: a rename, flagged for confirmation", () => {
     const prev: Lock = { "t.k": { storeVersion: 1, schema: { type: "array", items: obj({ pattern: str, category: str }, ["pattern", "category"]) } } };
     const next: Lock = { "t.k": { storeVersion: 2, schema: { type: "array", items: obj({ match: str, category: str }, ["match", "category"]) } } };

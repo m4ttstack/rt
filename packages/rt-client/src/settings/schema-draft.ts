@@ -106,7 +106,6 @@ function replay(schema: JsonSchema, ops: Op[]): JsonSchema {
   for (const o of ops) {
     const node = nodeAt(root, o.path);
     if (!node) continue;
-    const hadRequired = Array.isArray(node.required);
     const props = (node.properties ??= {}) as Record<string, JsonSchema>;
     const req = requiredOf(node);
     if (o.op === "rename") {
@@ -123,7 +122,7 @@ function replay(schema: JsonSchema, ops: Op[]): JsonSchema {
     } else {
       props[o.name] = o.schema;
     }
-    if (req.size > 0 || hadRequired) node.required = [...req];
+    if (req.size > 0) node.required = [...req];
     else delete node.required;
   }
   return root;
