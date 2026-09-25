@@ -12,6 +12,9 @@ describe('turbo task graph', () => {
     expect(tasks.get('board#test')?.dependencies).toContain(
       '@mattstack/tui-kit#build'
     );
+    expect(tasks.get('board#test')?.dependencies).toContain(
+      '@mattstack/tui-kit#browsers'
+    );
     expect(tasks.get('deck#test')?.dependencies).toContain(
       '@mattstack/tui-kit#build'
     );
