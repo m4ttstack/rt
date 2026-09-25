@@ -181,7 +181,7 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  *
  * A launch never emits two --settings flags (repeated-flag semantics are
  * unverified against the real CLI): when this launch would otherwise get
- * the --name-triggered inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
+ * the inbound-accept inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
  * reserved handle, non-headless -- claudeArgs' own condition), that object
  * is folded into this SAME file via mergeGateForkHookSettings instead of
  * being emitted as a second flag. lib/agent-argv/claude.ts's claudeArgs skips its
@@ -323,7 +323,7 @@ export function createAgentHandlers(opts: {
       ...(rec.account !== undefined && { account: rec.account }),
       ...(rec.model !== undefined && { model: rec.model }),
       ...(rec.effort !== undefined && { effort: rec.effort }),
-      ...(rec.handle !== undefined && { name: rec.handle }),
+      ...(rec.handle !== undefined && { inboundAccept: true }),
       ...(rec.extraArgs !== undefined && { extraArgs: rec.extraArgs }),
       ...(rec.yolo !== undefined && { yolo: rec.yolo }),
       ...(prompt !== undefined && { prompt }),
@@ -339,7 +339,10 @@ export function createAgentHandlers(opts: {
         ? (opts.herdrRunnerForSocket ?? ((socket: string) => defaultHerdrRunner({ ...process.env, HERDR_SOCKET_PATH: socket })))(extra.herdrSocket)
         : (opts.herdrRunner ?? defaultHerdrRunner());
       const out = await launchInWorkspace(
-        { workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv) },
+        {
+          workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv),
+          ...(rec.label !== undefined && { paneLabel: rec.label }),
+        },
         runner,
       );
       if (out.focusedExisting) {
@@ -528,7 +531,7 @@ export function createAgentHandlers(opts: {
       } else if (provider === "claude") {
         // Headless never signs into chat (see claudeArgs), so reserving a
         // handle for it would only burn an LRU pool slot no one adopts. Nor
-        // does codex at any surface: its builders have no --name / chat-handle
+        // does codex at any surface: its builders have no chat-handle
         // mechanism (a spec Non-goal), so a reserved handle would be a pool
         // slot spent on a record signed into nothing.
         rec.handle = reserveAgentHandle(db);

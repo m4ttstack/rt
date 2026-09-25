@@ -82,10 +82,15 @@ export interface LaunchOutcome {
   focusedExisting: boolean;
 }
 
+/** `paneLabel` is set before the command runs: herdr and Flock show a pane's own name over its terminal title. */
 export async function launchInWorkspace(
-  opts: { workspaceLabel: string; tabLabel: string; paneCommand: string },
+  opts: { workspaceLabel: string; tabLabel: string; paneCommand: string; paneLabel?: string },
   runner: HerdrRunner = defaultHerdrRunner(),
 ): Promise<LaunchOutcome> {
+  const runInPane = async (paneId: string): Promise<void> => {
+    if (opts.paneLabel) await runHerdr(runner, ["pane", "rename", paneId, opts.paneLabel]);
+    await runHerdr(runner, ["pane", "run", paneId, opts.paneCommand]);
+  };
   const list = await herdrJson(runner, ["workspace", "list"]);
   const workspaces: any[] = list?.result?.workspaces ?? [];
   const existing = workspaces.find((w) => w?.label === opts.workspaceLabel);
@@ -97,7 +102,7 @@ export async function launchInWorkspace(
     const root = created?.result?.root_pane;
     if (!root?.pane_id) throw new Error("herdr workspace create returned no root pane");
     await runHerdr(runner, ["tab", "rename", root.tab_id, opts.tabLabel]);
-    await runHerdr(runner, ["pane", "run", root.pane_id, opts.paneCommand]);
+    await runInPane(root.pane_id);
     return { workspaceId: root.workspace_id, tabId: root.tab_id, paneId: root.pane_id, focusedExisting: false };
   }
 
@@ -112,7 +117,7 @@ export async function launchInWorkspace(
   const created = await herdrJson(runner, ["tab", "create", "--workspace", wsId, "--label", opts.tabLabel, "--no-focus"]);
   const root = created?.result?.root_pane;
   if (!root?.pane_id) throw new Error("herdr tab create returned no root pane");
-  await runHerdr(runner, ["pane", "run", root.pane_id, opts.paneCommand]);
+  await runInPane(root.pane_id);
   return { workspaceId: wsId, tabId: root.tab_id, paneId: root.pane_id, focusedExisting: false };
 }
 

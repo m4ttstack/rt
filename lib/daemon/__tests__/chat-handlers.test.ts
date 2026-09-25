@@ -4,7 +4,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { openStateDb, postMessage } from "../../state/index.ts";
+import { insertAgent, openStateDb, postMessage } from "../../state/index.ts";
 import { createChatHandlers, inviteText, renderWelcome, type InboxDeps } from "../handlers/chat.ts";
 import { herdrRequest } from "../../herdr/client.ts";
 import { bgSocketPath } from "../bg-service.ts";
@@ -694,6 +694,33 @@ test("chat:sign-in skips a DERIVED registry name (chat-c6 style) and draws from 
   const res = await h["chat:sign-in"]({ sessionId: "s1" });
   if (!res.ok) throw new Error("unreachable");
   expect(res.data.handle).not.toBe("chat-c6");
+});
+
+test("chat:sign-in adopts the handle rt agent start reserved for this session", async () => {
+  const reserved = AGENT_NAMES[3]!;
+  const inboxDeps: InboxDeps = {
+    resolve: (sessionId) => (sessionId === "s1" ? { pid: process.pid, socketPath: fakeSocketPath(), status: "idle", name: "chat-c6", nameSource: "derived" } : null),
+    deliver: async () => ({ ok: true }),
+  };
+  const db = openStateDb(join(tmpdir(), `chat-h-reg-${process.pid}-${n++}.db`));
+  insertAgent({ id: "ag-1", repo: "r", cwd: "/tmp/x", provider: "claude", surface: "herdr", sessionId: "s1", createdAt: 1, handle: reserved }, db);
+  const h = createChatHandlers({ db, emitEvent: () => 0, inboxDeps });
+  const res = await h["chat:sign-in"]({ sessionId: "s1" });
+  if (!res.ok) throw new Error("unreachable");
+  expect(res.data).toMatchObject({ handle: reserved, baseHandle: reserved });
+});
+
+test("chat:sign-in prefers a user-chosen session name over the handle rt agent start reserved", async () => {
+  const inboxDeps: InboxDeps = {
+    resolve: (sessionId) => (sessionId === "s1" ? { pid: process.pid, socketPath: fakeSocketPath(), status: "idle", name: "kai", nameSource: "user" } : null),
+    deliver: async () => ({ ok: true }),
+  };
+  const db = openStateDb(join(tmpdir(), `chat-h-reg-${process.pid}-${n++}.db`));
+  insertAgent({ id: "ag-1", repo: "r", cwd: "/tmp/x", provider: "claude", surface: "herdr", sessionId: "s1", createdAt: 1, handle: AGENT_NAMES[3]! }, db);
+  const h = createChatHandlers({ db, emitEvent: () => 0, inboxDeps });
+  const res = await h["chat:sign-in"]({ sessionId: "s1" });
+  if (!res.ok) throw new Error("unreachable");
+  expect(res.data.baseHandle).toBe("kai");
 });
 
 test("sign-in rejects an invalid baseHandle with a reason rather than normalizing it", async () => {

@@ -29,6 +29,7 @@ import {
   listMembers,
   dmRoomFor,
   dmParticipants,
+  getAgent,
   paneHandleFor,
   rememberPaneHandle,
   signIn,
@@ -1137,6 +1138,12 @@ export function createChatHandlers(opts: {
       if (resolvedBase === undefined) {
         const binding = inboxDeps.resolve(sessionId);
         if (binding?.name && binding.nameSource === "user" && isValidChatName(binding.name)) resolvedBase = binding.name;
+      }
+      // The handle `rt agent start` reserved rides on the agent record, never
+      // on the session name (a session name becomes the pane's title).
+      if (resolvedBase === undefined) {
+        const reserved = getAgent(sessionId, db)?.handle;
+        if (reserved && isValidChatName(reserved)) resolvedBase = reserved;
       }
       // Consulted only after --as / chat.handle (both already folded into
       // baseHandle client-side) and the registry's user-chosen name, so every
