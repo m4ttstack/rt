@@ -155,9 +155,10 @@ Nothing in this repo publishes to npm. `@mattstack/app-kit`,
 `@mattstack/app-server`, `@mattstack/mantine-tokyo`, and
 `@mattstack/tui-kit` each carry a version (bumped together via
 `scripts/set-platform-version.ts`), but that version is a tree-internal
-identity only: it has never been published and, per the fold-in decision,
-never will be. `packages/tokens` and `packages/gate-kit` stay private and
-unpublished. Every app
+identity only. Per the fold-in decision none of them publishes
+(`mantine-tokyo` 0.3.0, from before the fold-in, is the last version on
+npm), and every one is marked `private`. `packages/tokens` and
+`packages/gate-kit` stay private and unpublished. Every app
 under `apps/` consumes the four platform packages workspace-only
 (`workspace:*`); external npm deps such as `@mattstack/rt-client` (pinned
 exact in the root catalog), `@mattstack/glance`, `@mattstack/settings-kit`, and

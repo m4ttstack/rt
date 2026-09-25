@@ -1,6 +1,7 @@
 {
   "name": "@mattstack/app-server",
   "version": "0.4.0",
+  "private": true,
   "description": "The Hono/Bun server frame for mattstack apps: health, JSON floors, static or embedded assets, the rt-client relay, Bun.serve.",
   "type": "module",
   "license": "MIT",

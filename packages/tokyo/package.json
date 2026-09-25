@@ -1,6 +1,7 @@
 {
   "name": "@mattstack/mantine-tokyo",
   "version": "0.4.0",
+  "private": true,
   "description": "Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, css, font) for mantine-kit apps.",
   "type": "module",
   "types": "./src/index.ts",
