@@ -33,7 +33,7 @@ function seams(): ReleaseAppSeams {
 function report(status: ReleaseAppReport["status"], extra: Partial<ReleaseAppReport> = {}): ReleaseAppReport {
   return {
     app: "board", status, lastTag: "v2.13.1", tag: "v2.13.2", appVersion: "0.1.8", appTag: "board-v0.1.8",
-    steps: [], notes: null, verify: null, resume: null, ...extra,
+    steps: [], notes: null, notesHash: null, heldApps: [], verify: null, resume: null, ...extra,
   };
 }
 
@@ -126,17 +126,39 @@ describe("rt release app: the omitted-name picker", () => {
 });
 
 describe("rt release app: flags and output", () => {
-  test("passes the name and every flag through", async () => {
-    const h = await invoke(["board", "--dry-run", "--yes-notes"]);
-    expect(h.runs).toEqual([{ name: "board", dryRun: true, json: false, yesNotes: true }]);
+  test("passes the name and every flag through, --yes-notes with its approval token", async () => {
+    const h = await invoke(["board", "--dry-run", "--yes-notes", "0123456789ab"]);
+    expect(h.runs).toEqual([{ name: "board", dryRun: true, json: false, yesNotes: "0123456789ab" }]);
+  });
+
+  test("the --yes-notes value is never mistaken for the app name", async () => {
+    const h = await invoke(["--yes-notes", "v2.13.2", "board"]);
+    expect(h.runs.map((r) => [r.name, r.yesNotes])).toEqual([["board", "v2.13.2"]]);
+  });
+
+  test("--yes-notes without a value is a usage error", async () => {
+    const h = await invoke(["board", "--yes-notes"]);
+    expect(h.runs).toEqual([]);
+    expect(h.exitCalled).toBe(2);
+  });
+
+  test("no --yes-notes means no approval", async () => {
+    const h = await invoke(["board"]);
+    expect(h.runs[0]!.yesNotes).toBeNull();
+  });
+
+  test("a pending publish exits 1 and names the recheck", async () => {
+    const h = await invoke(["board"], { result: report("pending", { resume: "rt release verify v2.13.2" }) });
+    expect(h.exitCode).toBe(1);
+    expect(h.logs.join("\n")).toContain("rt release verify v2.13.2");
   });
 
   test("--json prints the report in the envelope; an approval stop exits 0", async () => {
-    const h = await invoke(["board", "--json"], { result: report("awaiting-approval", { notes: "notes\n", resume: "rt release app board --yes-notes" }) });
+    const h = await invoke(["board", "--json"], { result: report("awaiting-approval", { notes: "notes\n", notesHash: "0123456789ab", resume: "rt release app board --json --yes-notes 0123456789ab" }) });
     const body = JSON.parse(h.logs.at(-1)!) as ReleaseAppReport & { contract: number };
     expect(body.contract).toBe(1);
     expect(body.status).toBe("awaiting-approval");
-    expect(body.resume).toBe("rt release app board --yes-notes");
+    expect(body.resume).toBe("rt release app board --json --yes-notes 0123456789ab");
     expect(h.exitCode).toBe(0);
   });
 

@@ -254,7 +254,7 @@ export interface ReleaseAppCommandDeps {
   run?: (seams: ReleaseAppSeams, opts: ReleaseAppOptions) => Promise<ReleaseAppReport>;
 }
 
-const RELEASE_APP_USAGE = "usage: rt release app <name> [--dry-run] [--json] [--yes-notes]";
+const RELEASE_APP_USAGE = "usage: rt release app <name> [--dry-run] [--json] [--yes-notes <notes hash|tag>]";
 
 async function pickReleaseApp(options: SelectOption[]): Promise<string | null> {
   const { filterableSelect } = await import("../lib/pick-wrappers.ts");
@@ -282,6 +282,8 @@ function releaseAppSummary(report: ReleaseAppReport): string {
       return `the notes need approval; to accept them: ${report.resume}`;
     case "declined":
       return `declined; nothing committed or tagged. To regenerate and ask again: ${report.resume}`;
+    case "pending":
+      return `${report.tag} is tagged but its publish has not verified yet; recheck with: ${report.resume}`;
     case "failed": {
       const step = report.steps.at(-1)?.label ?? "qualify";
       return report.resume ? `stopped at ${step}; resume: ${report.resume}` : `stopped at ${step}; this needs a decision, not a rerun`;
@@ -296,7 +298,14 @@ export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps
   const usage = () => exitUserError(new UserActionableError("usage", RELEASE_APP_USAGE), json, "release app");
 
   try {
-    let name = args.find((a) => !a.startsWith("--"));
+    let yesNotes: string | null;
+    try {
+      yesNotes = flagValue(args, "--yes-notes") ?? null;
+    } catch {
+      return usage();
+    }
+    const yesAt = args.indexOf("--yes-notes");
+    let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
     if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
       const options = releaseAppOptions(seams);
       if (options.length) {
@@ -311,11 +320,11 @@ export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps
       name: name!,
       dryRun: args.includes("--dry-run"),
       json,
-      yesNotes: args.includes("--yes-notes"),
+      yesNotes,
     });
     if (json) console.log(JSON.stringify(envelope(report)));
     else console.log(releaseAppSummary(report));
-    if (report.status === "failed" || report.status === "declined") process.exitCode = 1;
+    if (report.status === "failed" || report.status === "declined" || report.status === "pending") process.exitCode = 1;
   } finally {
     realSeams?.cleanup();
   }
