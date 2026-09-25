@@ -16,6 +16,8 @@ struct StubServicesProvider: ServicesProviding {
         plists.map { ServiceRegisterResult(plist: $0, ok: true, status: "stubbed") }
     }
     func restart(label: String) async -> Bool { true }
+    func start(label: String) async -> Bool { true }
+    func waitForJobToLeave(label: String) async -> AgentDrainOutcome { .drained }
 }
 
 struct StubPrivilegedInstaller: PrivilegedInstalling {

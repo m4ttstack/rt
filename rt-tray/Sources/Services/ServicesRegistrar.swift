@@ -17,15 +17,20 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     /// one won't be registered rather than claim the bundle doesn't ship it.
     private let scanned: [AgentPlist]
     private let runner: CommandRunner
+    /// Bounded well under an answer budget: one hung `deck list` must not
+    /// eat the whole wait.
+    private let probeRunner: CommandRunner
     private let uid: uid_t
     private let handDeckPreflight = HandDeckPreflight()
     /// Called on the main actor after every hand-agent preflight, with nil
     /// once nothing blocks the deck helper.
     var onHandDeckBlocked: (@MainActor (HandDeckBlockedNotice?) -> Void)?
 
-    init(bundlePath: String, runner: CommandRunner, uid: uid_t = getuid()) {
+    init(bundlePath: String, runner: CommandRunner,
+         probeRunner: CommandRunner = SystemCommandRunner(timeout: 5), uid: uid_t = getuid()) {
         self.bundlePath = bundlePath
         self.runner = runner
+        self.probeRunner = probeRunner
         self.uid = uid
         let dir = bundlePath + "/Contents/Library/LaunchAgents"
         scanned = ServicePlistScanner.scan(directory: dir, list: ServicePlistScanner.systemList,
@@ -47,57 +52,51 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     @discardableResult
     func registerAll() async -> [ServiceRegisterResult] { await register(plists: agents.map(\.fileName)) }
 
-    /// The launch registration pass. An agent whose shipped plist changed
-    /// since this app last registered it is unregistered and registered
-    /// again first, because launchd keeps the definition it bootstrapped;
-    /// the daemon goes through `reregisterDaemon` so its lifecycle gate
-    /// covers the gap. `registerAll` then runs as before, which also puts
-    /// back any agent a failed re-register left unregistered.
-    @discardableResult
+    /// launchd keeps the definition it bootstrapped, so an agent whose shipped
+    /// plist changed is unregistered and registered again first; the daemon
+    /// goes through `reregisterDaemon` so its lifecycle gate covers the gap.
+    /// `registerAll` then puts back any agent a failed re-register left
+    /// unregistered.
     func registerAllAtLaunch(store: KeyValueStore, daemonLabel: String,
-                             reregisterDaemon: () async -> Bool) async -> [ServiceRegisterResult] {
+                             reregisterDaemon: () async -> Bool) async -> LaunchRegistration {
         let dir = bundlePath + "/Contents/Library/LaunchAgents"
-        let plan = AgentPlistRefresh.plan(agents.map { agent in
+        let before = agents.map { Self.registration(service($0).status) }
+        let plan = AgentPlistRefresh.plan(zip(agents, before).map { agent, registration in
             AgentPlistState(label: agent.label,
                             bundleHash: FileManager.default.contents(atPath: dir + "/" + agent.fileName)
                                 .map(AgentPlistRefresh.hash),
                             recordedHash: store.string(forKey: AgentPlistRefresh.storeKey(label: agent.label)),
-                            registration: Self.registration(service(agent).status))
+                            registration: registration)
         })
+        var reregistered: [String: Bool] = [:]
         for (agent, entry) in zip(agents, plan) {
-            guard case .reregister(let hash) = entry.action else { continue }
+            guard case .reregister = entry.action else { continue }
             TrayLog.info("agent plist changed; re-registering", ["label": agent.label])
             let ok = agent.label == daemonLabel ? await reregisterDaemon() : await reregister(agent)
-            if ok {
-                store.set(hash, forKey: AgentPlistRefresh.storeKey(label: agent.label))
-            } else {
-                TrayLog.warn("agent plist change not applied; retrying next launch", ["label": agent.label])
-            }
+            reregistered[agent.label] = ok
+            if !ok { TrayLog.warn("agent plist change not applied; retrying next launch", ["label": agent.label]) }
         }
         let results = await registerAll()
-        for (agent, (entry, result)) in zip(agents, zip(plan, results)) {
-            guard case .recordAfterRegister(let hash) = entry.action,
-                  AgentPlistRefresh.shouldRecordAfterRegister(ok: result.ok,
-                                                              registration: Self.registration(service(agent).status))
-            else { continue }
-            store.set(hash, forKey: AgentPlistRefresh.storeKey(label: agent.label))
+        var outcomes: [LaunchAgentOutcome] = []
+        for (index, agent) in agents.enumerated() {
+            outcomes.append(LaunchAgentOutcome(
+                label: agent.label, action: plan[index].action, before: before[index],
+                reregistered: reregistered[agent.label],
+                registerOk: index < results.count && results[index].ok,
+                after: Self.registration(service(agent).status)))
         }
-        return results
+        return LaunchRecording.summarize(outcomes)
     }
 
     private func reregister(_ agent: AgentPlist) async -> Bool {
         let svc = service(agent)
         let outcome = await AgentReregister.run(
-            unregister: {
-                do {
-                    try await svc.unregister()
-                    return true
-                } catch {
-                    return svc.status == .notRegistered
-                }
-            },
+            unregister: { await self.unregister(plists: [agent.fileName]).allSatisfy(\.ok) },
+            drain: { _ = await self.waitForJobToLeave(label: agent.label) },
+            settle: { try? await Task.sleep(nanoseconds: AgentReregister.settleNanoseconds) },
             register: { await self.register(plists: [agent.fileName]).allSatisfy(\.ok) },
-            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) })
+            beforeRetry: { try? await Task.sleep(nanoseconds: AgentReregister.retryPauseNanoseconds) },
+            start: { _ = await self.start(label: agent.label) })
         let fields = ["label": agent.label, "outcome": String(describing: outcome),
                       "status": TrayServer.statusName(svc.status)]
         if outcome.succeeded {
@@ -220,52 +219,164 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
         return out.ok
     }
 
-    func restartAll() async { _ = await restartAllChecked() }
-
-    /// Kickstarts every agent and asks deck to restart its managed apps,
-    /// reporting whether every spawn in the sequence succeeded — the signal
-    /// `handleVersionChange` gates recording the new version on.
-    private func restartAllChecked() async -> Bool {
-        var ok = true
-        for agent in agents { ok = await restart(label: agent.label) && ok }
-        let deck = bundlePath + "/Contents/Helpers/deck"
-        guard FileManager.default.isExecutableFile(atPath: deck) else {
-            TrayLog.info("deck helper not bundled; skipping managed-app restart")
-            return ok
-        }
-        let (exe, args) = DeckRestart.arguments(deckPath: deck)
+    func start(label: String) async -> Bool {
+        let (exe, args) = StartJob.arguments(label: label, uid: uid)
         let out = await runner.run(exe, args)
         if !out.ok {
-            TrayLog.warn("deck restart --managed failed", ["stderr": out.stderr])
-            ok = false
+            TrayLog.warn("start after register failed", ["label": label, "exit": Int(out.exitCode), "stderr": out.stderr])
         }
-        return ok
+        return out.ok
     }
 
-    /// Called once per launch. On a version change: re-register (idempotent),
-    /// kickstart every agent, ask deck to restart its managed apps. The new
-    /// version is recorded only once every register + restart step for the
-    /// bundle's *runnable* agents succeeds — a partial upgrade must stay
-    /// unrecorded so the next launch retries it, never gets silently stuck,
-    /// and an agent this bundle can't run at all must not veto the record
-    /// forever (that would re-register and kickstart on every launch).
-    func handleVersionChange(current: String, store: KeyValueStore) async -> VersionChange {
+    func waitForJobToLeave(label: String) async -> AgentDrainOutcome {
+        let started = ProcessInfo.processInfo.systemUptime
+        let outcome = await AgentDrain.wait(lookup: { await self.launchdLookup(label: label) },
+                                            now: { ProcessInfo.processInfo.systemUptime },
+                                            sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) })
+        let fields: [String: Any] = ["label": label, "outcome": String(describing: outcome),
+                                     "seconds": Int(ProcessInfo.processInfo.systemUptime - started)]
+        if outcome == .drained {
+            TrayLog.info("launchd dropped the unregistered job", fields)
+        } else {
+            TrayLog.warn("unregistered job did not leave launchd; registering anyway", fields)
+        }
+        return outcome
+    }
+
+    /// On a version change, an agent launchd did not bootstrap this launch
+    /// may still run the old bundle's inode, so it is kickstarted with -k.
+    /// Recording the new version waits for the agents to answer
+    /// (`recordAfterSettle`); an unchanged or first-launch version is
+    /// recorded here.
+    func handleVersionChange(current: String, store: KeyValueStore,
+                             registeredThisLaunch: Set<String>) async -> VersionChangeProgress {
         let change = VersionChangeDetector.evaluate(current: current, store: store)
         guard case .changed(let from, let to) = change else {
             VersionChangeDetector.record(current: current, store: store)
-            return change
+            return VersionChangeProgress(change: change, failedRegisters: [], failedKickstarts: [])
         }
-        TrayLog.info("app version changed; restarting agents", ["from": from, "to": to])
-        let registerResults = await registerAll()
-        let restarted = await restartAllChecked()
-        let failedRegisters = registerResults.filter { !$0.ok }.map(\.plist)
-        guard failedRegisters.isEmpty, restarted else {
+        let labels = LaunchRecording.kickstartLabels(agents.map(\.label), registeredThisLaunch: registeredThisLaunch)
+        TrayLog.info("app version changed; restarting agents",
+                     ["from": from, "to": to, "kickstart": labels.joined(separator: ","),
+                      "bootstrappedThisLaunch": registeredThisLaunch.sorted().joined(separator: ",")])
+        let failedRegisters = await registerAll().filter { !$0.ok }.map(\.plist)
+        var failedKickstarts: [String] = []
+        for label in labels {
+            if !(await restart(label: label)) { failedKickstarts.append(label) }
+        }
+        return VersionChangeProgress(change: change, failedRegisters: failedRegisters,
+                                     failedKickstarts: failedKickstarts)
+    }
+
+    /// Only the daemon and the deck helper can be heard answering; any other
+    /// agent is neither waited on nor healed.
+    func launchProbes(daemonLabel: String, daemonAnswers: @escaping @Sendable () async -> Bool,
+                      healAgent: @escaping @Sendable (String) async -> Bool) -> [LaunchAgentProbe] {
+        agents.compactMap { agent -> LaunchAgentProbe? in
+            let answers: @Sendable () async -> Bool
+            let budget: AnswerBudget
+            switch AgentRole.of(agent, daemonLabel: daemonLabel) {
+            case .daemon:
+                answers = daemonAnswers
+                budget = .daemon
+            case .deck:
+                answers = { await self.deckAnswers() }
+                budget = .deck
+            case .other:
+                return nil
+            }
+            let label = agent.label
+            return LaunchAgentProbe(label: label, budget: budget, answers: answers,
+                                    registration: { Self.registration(self.service(agent).status) },
+                                    lookup: { await self.launchdLookup(label: label) },
+                                    heal: { await healAgent(label) })
+        }
+    }
+
+    private func deckAnswers() async -> Bool {
+        let (exe, args) = DeckProbe.arguments(deckPath: bundlePath + "/Contents/Helpers/deck")
+        return await probeRunner.run(exe, args).ok
+    }
+
+    func deckLabel(daemonLabel: String) -> String? {
+        agents.first { AgentRole.of($0, daemonLabel: daemonLabel) == .deck }?.label
+    }
+
+    /// Runs on the long runner, not the probe runner: deck's managed restart
+    /// takes around 10s, and a timeout SIGKILLs it partway through. The
+    /// outcome is only logged, never recorded.
+    func restartServedApps() async {
+        let (exe, args) = DeckRestart.arguments(deckPath: bundlePath + "/Contents/Helpers/deck")
+        await ServedAppsRestart.run(
+            now: { ProcessInfo.processInfo.systemUptime },
+            sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) },
+            sweepFinished: { await Self.deckSweepFinished() },
+            restart: { afterSweep in
+                let outcome = await self.runner.run(exe, args)
+                if outcome.ok {
+                    TrayLog.info("served apps restarted after version change", ["afterSweep": afterSweep])
+                } else {
+                    TrayLog.warn("served apps restart after version change failed",
+                                 ["exit": Int(outcome.exitCode), "stderr": outcome.stderr, "afterSweep": afterSweep])
+                }
+            })
+    }
+
+    private static func deckSweepFinished() async -> Bool {
+        let request = URLRequest(url: URL(string: DeckSweep.appsURL)!, cachePolicy: .reloadIgnoringLocalCacheData,
+                                 timeoutInterval: DeckSweep.requestTimeout)
+        let response = try? await URLSession.shared.data(for: request).1
+        return DeckSweep.finished(status: (response as? HTTPURLResponse)?.statusCode)
+    }
+
+    private func launchdLookup(label: String) async -> LaunchdJobLookup {
+        let (exe, args) = LaunchdPrint.arguments(label: label, uid: uid)
+        return LaunchdPrint.parse(await runner.run(exe, args))
+    }
+
+    func reregisterAgent(label: String) async -> Bool {
+        guard let agent = agents.first(where: { $0.label == label }) else { return false }
+        return await reregister(agent)
+    }
+
+    func settleLaunch(_ probes: [LaunchAgentProbe], latch: SpawnHealLatch) async -> LaunchSettleReport {
+        await LaunchSettle.run(probes, latch: latch, now: { ProcessInfo.processInfo.systemUptime },
+                               sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }) { event in
+            switch event {
+            case .answered(let label):
+                TrayLog.info("agent answered after launch", ["label": label])
+            case .left(let label, let reason):
+                TrayLog.warn("agent not answering after launch; no spawn heal", ["label": label, "reason": reason])
+            case .healed(let label, let reason, let reregistered, let answered):
+                let fields: [String: Any] = ["label": label, "reason": reason,
+                                             "reregistered": reregistered, "answered": answered]
+                if answered {
+                    TrayLog.info("spawn heal brought the agent back", fields)
+                } else {
+                    TrayLog.warn("spawn heal did not bring the agent back", fields)
+                }
+            }
+        }
+    }
+
+    func recordAfterSettle(_ plan: LaunchRecordPlan, progress: VersionChangeProgress,
+                           current: String, store: KeyValueStore) {
+        for (label, hash) in plan.hashes {
+            store.set(hash, forKey: AgentPlistRefresh.storeKey(label: label))
+        }
+        if !plan.heldHashes.isEmpty {
+            TrayLog.warn("agent plist change applied but agent did not answer; retrying next launch",
+                         ["labels": plan.heldHashes.joined(separator: ",")])
+        }
+        guard case .changed(let from, let to) = progress.change else { return }
+        if plan.recordVersion {
+            VersionChangeDetector.record(current: current, store: store)
+            TrayLog.info("app version recorded after agents answered", ["from": from, "to": to])
+        } else {
             TrayLog.warn("version-change restart incomplete; leaving version unrecorded for retry",
-                         ["from": from, "to": to, "failedRegisters": failedRegisters, "restarted": restarted])
-            return change
+                         ["from": from, "to": to, "failedRegisters": progress.failedRegisters,
+                          "failedKickstarts": progress.failedKickstarts])
         }
-        VersionChangeDetector.record(current: current, store: store)
-        return change
     }
 }
 

@@ -21,6 +21,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private let daemonClient = DaemonClient()
     private let notificationManager = NotificationManager()
     private let daemonLifecycle = DaemonLifecycle()
+    private let spawnHealLatch = SpawnHealLatch()
+    /// Set when this app serves before its takeover has booted the other
+    /// flavor's agents out, or after one that failed; until a takeover
+    /// succeeds, their answers are not this app's.
+    private var launchTakeover: Task<String?, Never>?
 
     // ── Polling timers ──────────────────────────────────────────────────────
     private var statusTimer: Timer?
@@ -206,33 +211,75 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         Task { @MainActor in
             setHealth(.starting)
+            var launch: (registration: LaunchRegistration, progress: VersionChangeProgress, version: String)?
             if BundleFlavor.isStubActive {
                 TrayLog.info("stub mode: skipping real service registration and version-change restart")
             } else {
                 let lifecycle = daemonLifecycle
-                await servicesRegistrar.registerAllAtLaunch(store: UserDefaults.standard, daemonLabel: lifecycle.label) {
+                let registration = await servicesRegistrar.registerAllAtLaunch(store: UserDefaults.standard,
+                                                                               daemonLabel: lifecycle.label) {
                     await lifecycle.reregisterDaemon(origin: DaemonOrigin.plistChanged)
                 }
                 let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-                let change = await servicesRegistrar.handleVersionChange(current: version, store: UserDefaults.standard)
-                TrayLog.info("version change evaluated", ["change": String(describing: change)])
+                let progress = await servicesRegistrar.handleVersionChange(
+                    current: version, store: UserDefaults.standard,
+                    registeredThisLaunch: registration.registeredThisLaunch)
+                TrayLog.info("version change evaluated", ["change": String(describing: progress.change)])
+                launch = (registration, progress, version)
             }
             await recordAppPath()
 
-            // First-run Setup has no daemon dependency — show it now rather
-            // than after the wait loop below, or a genuine first run (daemon
-            // not installed yet) sits at a blank menu bar for the full 4s.
+            // First-run Setup has no daemon dependency, so it shows before the
+            // agent wait below; a genuine first run (daemon not installed yet)
+            // would otherwise sit at a blank menu bar for the whole wait.
             if let coordinator, !coordinator.setupIsComplete {
                 coordinator.showSetup(step: SetupResume.step(from: CommandLine.arguments))
             }
 
-            // Wait for launchd to bring the daemon up
-            for _ in 0..<8 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if await daemonClient.isReachable() { break }
+            if let launch {
+                if let takeover = launchTakeover, let failure = await takeover.value {
+                    TrayLog.warn("takeover failed; launch records wait for the next launch", ["failure": failure])
+                } else {
+                    await settleAgentsAfterLaunch(launch.registration, launch.progress, version: launch.version)
+                }
+            } else {
+                for _ in 0..<8 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if await daemonClient.isReachable() { break }
+                }
             }
             await refreshStatus()
             await drainPendingNotifications()
+        }
+    }
+
+    @MainActor
+    private func settleAgentsAfterLaunch(_ registration: LaunchRegistration, _ progress: VersionChangeProgress,
+                                         version: String) async {
+        guard let registrar = servicesRegistrar else { return }
+        let lifecycle = daemonLifecycle
+        let client = daemonClient
+        let flavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
+        let probes = registrar.launchProbes(
+            daemonLabel: lifecycle.label,
+            daemonAnswers: { await client.answers(asFlavor: flavor) },
+            healAgent: { label in
+                await SpawnHealRoute.heal(label: label, daemonLabel: lifecycle.label,
+                                          reregisterDaemon: { await lifecycle.reregisterDaemon(origin: $0) },
+                                          runGated: { await lifecycle.runGated(origin: $0, $1) },
+                                          reregisterAgent: { await registrar.reregisterAgent(label: $0) })
+            })
+        let report = await registrar.settleLaunch(probes, latch: spawnHealLatch)
+        registrar.recordAfterSettle(LaunchRecording.plan(registration: registration, progress: progress, report: report),
+                                    progress: progress, current: version, store: UserDefaults.standard)
+        if LaunchRecording.restartsServedApps(progress: progress, report: report,
+                                              deckLabel: registrar.deckLabel(daemonLabel: lifecycle.label)) {
+            // Off the launch Task, which holds the first refreshStatus: the
+            // sweep wait alone can take a minute.
+            Task { @MainActor [weak self] in
+                await registrar.restartServedApps()
+                await self?.windowModel?.retryFailedTabsAfterServedAppsRestart()
+            }
         }
     }
 
@@ -246,9 +293,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private func takeOver() {
         FlavorLaunchState.takingOver = true
         guard FlavorLaunchState.otherTrayAlive != nil else {
+            let takeover = Task { @MainActor in await runTakeover() }
+            launchTakeover = takeover
             startNormalOperation()
             Task { @MainActor in
-                if let failure = await runTakeover() { reportTakeoverFailure(failure, fatal: false) }
+                if let failure = await takeover.value { reportTakeoverFailure(failure, fatal: false) }
             }
             return
         }
@@ -261,6 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                 let claimed = TrayServer.claimSocket() == .claimed
                 switch FlavorLaunch.afterFailedTakeover(socketClaimed: claimed) {
                 case .serveAndReport:
+                    launchTakeover = Task { failure }
                     startNormalOperation()
                     reportTakeoverFailure(failure, fatal: false)
                 case .quitAndReport:

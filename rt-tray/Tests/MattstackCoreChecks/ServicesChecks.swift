@@ -31,13 +31,23 @@ let servicesChecks: [Check] = [
         c.expectEqual(ServiceProgramGuard.missingProgramPath(bundleProgram: nil, bundlePath: "/App.app", exists: { _ in false }), nil)
         c.expectEqual(ServiceProgramGuard.missingProgramPath(bundleProgram: "", bundlePath: "/App.app", exists: { _ in false }), nil)
     },
-    Check("Kickstart and DeckRestart build the exact argv") { c in
+    Check("Kickstart, DeckProbe and DeckRestart build the exact argv") { c in
         let (exe, args) = Kickstart.arguments(label: "com.mattstack.daemon.dev", uid: 501)
         c.expect(exe.hasPrefix("/bin/") && exe.hasSuffix("ctl"), "launchd's control tool, by absolute path (name kept out of check sources by the source guard)")
         c.expectEqual(args, ["kickstart", "-k", "gui/501/com.mattstack.daemon.dev"])
-        let (d, dargs) = DeckRestart.arguments(deckPath: "/Applications/mattstack.app/Contents/Helpers/deck")
-        c.expectEqual(d, "/Applications/mattstack.app/Contents/Helpers/deck")
-        c.expectEqual(dargs, ["restart", "--managed"])
+        let deck = "/Applications/mattstack.app/Contents/Helpers/deck"
+        let (d, dargs) = DeckProbe.arguments(deckPath: deck)
+        c.expectEqual(d, deck)
+        c.expectEqual(dargs, ["list"])
+        let (r, rargs) = DeckRestart.arguments(deckPath: deck)
+        c.expectEqual(r, deck)
+        c.expectEqual(rargs, ["restart", "--managed"])
+    },
+    Check("StartJob starts a job without killing a running one") { c in
+        let (exe, args) = StartJob.arguments(label: "com.mattstack.daemon", uid: 501)
+        c.expect(exe.hasPrefix("/bin/") && exe.hasSuffix("ctl"), "launchd's control tool, by absolute path")
+        c.expectEqual(args, ["kickstart", "gui/501/com.mattstack.daemon"])
+        c.expect(!args.contains("-k"))
     },
     Check("VersionChangeDetector: first launch, unchanged, changed; record persists") { c in
         let store = MemoryKeyValueStore()

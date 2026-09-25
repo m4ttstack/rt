@@ -15,6 +15,8 @@ public enum DaemonOrigin {
     public static let flavorRetire = "flavor retire"
     /// Launch re-registering the agent because the bundle's plist changed.
     public static let plistChanged = "agent plist changed"
+    /// Launch re-registering an agent launchd refused to spawn.
+    public static let spawnHeal = "spawn heal"
 
     /// A request that arrived on tray.sock. rt's clients identify themselves
     /// in `X-RT-Client` (`rt-cli/<pid>`, `rt-client/<pid>`); a caller that

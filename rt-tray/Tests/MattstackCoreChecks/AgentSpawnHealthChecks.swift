@@ -42,4 +42,59 @@ let agentSpawnHealthChecks: [Check] = [
         c.expectEqual(printed("", exit: 5, stderr: "boom"), .unknown("exit 5"))
         c.expectEqual(printed("nothing a job print would contain\n"), .unknown("unrecognised print shape"))
     },
+    Check("spawn heal: a refused spawn on an enabled agent is healed") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: printed(LaunchdPrintFixtures.refusedSpawn),
+                                              alreadyAttempted: false),
+                      .heal(reason: "last exit 78 (EX_CONFIG)"))
+    },
+    Check("spawn heal: spawn failed, or a pending LWCR, is healed without exit 78") { c in
+        c.expectEqual(AgentSpawnHealth.decide(
+            registration: .enabled,
+            lookup: .loaded(LaunchdJobSnapshot(state: "not running", jobState: "spawn failed", lastExitCode: 0)),
+            alreadyAttempted: false), .heal(reason: "job state spawn failed"))
+        c.expectEqual(AgentSpawnHealth.decide(
+            registration: .enabled,
+            lookup: .loaded(LaunchdJobSnapshot(state: "not running", properties: ["needs LWCR update"])),
+            alreadyAttempted: false), .heal(reason: "needs LWCR update"))
+    },
+    Check("spawn heal: an enabled agent launchd holds no job for is healed") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: .notLoaded, alreadyAttempted: false),
+                      .heal(reason: "enabled but launchd holds no job"))
+    },
+    Check("spawn heal: a running job is left, whatever its last exit code") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: printed(LaunchdPrintFixtures.healthy),
+                                              alreadyAttempted: false),
+                      .leave(reason: "job is running"))
+        c.expectEqual(AgentSpawnHealth.decide(
+            registration: .enabled,
+            lookup: .loaded(LaunchdJobSnapshot(state: "running", lastExitCode: 78, pid: 5)),
+            alreadyAttempted: false), .leave(reason: "job is running"))
+    },
+    Check("spawn heal: a job that crashed on its own is left") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: printed(LaunchdPrintFixtures.crashedOnItsOwn),
+                                              alreadyAttempted: false),
+                      .leave(reason: "not a refused spawn"))
+    },
+    Check("spawn heal: an unreadable launchd state is left") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: .unknown("exit 5"), alreadyAttempted: false),
+                      .leave(reason: "launchd state unknown: exit 5"))
+    },
+    Check("spawn heal: only an enabled registration is healed") { c in
+        for registration in [AgentRegistration.notRegistered, .requiresApproval, .notFound] {
+            c.expectEqual(AgentSpawnHealth.decide(registration: registration, lookup: .notLoaded, alreadyAttempted: false),
+                          .leave(reason: "registration is \(registration)"))
+        }
+    },
+    Check("spawn heal: a second attempt in one launch is left") { c in
+        c.expectEqual(AgentSpawnHealth.decide(registration: .enabled, lookup: .notLoaded, alreadyAttempted: true),
+                      .leave(reason: "already healed this launch"))
+    },
+    Check("spawn heal: the latch grants each label once") { c in
+        let latch = SpawnHealLatch()
+        c.expect(!latch.attempted("a"))
+        c.expect(latch.claim("a"))
+        c.expect(!latch.claim("a"))
+        c.expect(latch.attempted("a"))
+        c.expect(latch.claim("b"))
+    },
 ]
