@@ -161,7 +161,12 @@ func TestCursorLineTallerThanThePaneKeepsItsFirstRowOnTop(t *testing.T) {
 		t.Fatalf("first row of the cursor line is not on top:\n%s", strings.Join(rows, "\n"))
 	}
 	m.moveDiffCursor(1)
-	_ = m.renderDiffLines(30, 3)
+	rows = strings.Split(ansi.Strip(m.renderDiffLines(30, 3)), "\n")
+	// tail is the last line, so the window clamps at the end of the diff
+	// with tail on its bottom row rather than its top.
+	if len(rows) != 3 || !strings.Contains(rows[2], " 2 + tail") || strings.Contains(rows[0], " 1 + word") {
+		t.Fatalf("the window did not follow the cursor off the tall line:\n%s", strings.Join(rows, "\n"))
+	}
 }
 
 func TestCursorWalkKeepsEveryWrappedLineWholeInView(t *testing.T) {

@@ -41,9 +41,8 @@ func Viewport(cursor, top, n, cap_, paneRows, chromeRows int) (newTop, h int) {
 
 // ViewportAround is Viewport with the cursor's margins set by the caller:
 // before rows stay in view above the cursor row and after rows below it,
-// each shrinking on a short window exactly as scrolloff does. A list whose
-// cursor row opens a multi-row block counts the block's own trailing rows
-// in after.
+// each shrinking on a short window exactly as scrolloff does. Both are
+// capped at (h-1)/2, so after cannot hold a multi-row block taller than that.
 func ViewportAround(cursor, top, n, cap_, paneRows, chromeRows, before, after int) (newTop, h int) {
 	if cap_ <= 0 {
 		cap_ = defaultCap

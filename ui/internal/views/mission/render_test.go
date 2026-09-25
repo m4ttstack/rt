@@ -3583,9 +3583,11 @@ func TestDiffMarkSitsInItsOwnColumn(t *testing.T) {
 
 func TestDiffHoverKeepsHighlighting(t *testing.T) {
 	d := DiffModel{Lang: "go"}
-	out := renderDiffLine(d, DiffLine{Kind: "add", NewNo: 1, Text: `s := "hi"`}, 60, true, false)
-	if !strings.Contains(out, fgSGR(chromaStyleTable[chroma.LiteralString].fg)) {
-		t.Fatalf("hovered row lost syntax colour:\n%q", out)
+	out := renderDiffLine(d, DiffLine{Kind: "del", OldNo: 1, Text: `var s = "hi"`}, 60, true, false)
+	for _, tok := range []chroma.TokenType{chroma.Keyword, chroma.LiteralString} {
+		if !strings.Contains(out, fgSGR(chromaStyleTable[tok].fg)) {
+			t.Fatalf("hovered row lost %v colour:\n%q", tok, out)
+		}
 	}
 	if !strings.Contains(out, bgSGR(theme.HoverBg)) {
 		t.Fatalf("hovered row not on HoverBg:\n%q", out)

@@ -10,11 +10,9 @@ import (
 )
 
 // controlSpaces rewrites the whitespace ansi.Wrap and lipgloss measure
-// differently. ansi.Wrap counts each of these as one cell, but lipgloss
-// paints a tab as four spaces (its default tab width), so a tabbed row
-// painted wider than it measured and lost its tail to the clip; and it
-// passes \r, \v and \f through raw at zero width, where the terminal moves
-// its cursor instead (a \r would repaint the row over its own gutter).
+// differently: ansi.Wrap counts each as one cell, while lipgloss paints a
+// tab as four and passes \r, \v and \f through raw at zero width, where the
+// terminal moves its cursor (a \r repaints the row over its own gutter).
 var controlSpaces = strings.NewReplacer("\t", "    ", "\r", " ", "\v", " ", "\f", " ")
 
 // wrapSpans breaks a line at ansi.Wrap's word boundaries, computed on the
@@ -92,7 +90,8 @@ type diffRowIndex struct {
 // painted. It counts from DiffLine.Text less a CRLF ending, the exact text
 // diffLineSpans guarantees every painted span list carries. Like forDiff
 // it keys on the decoded Lines backing array, which each model push
-// replaces.
+// replaces; holding &Lines[0] keeps that array alive, so its address cannot
+// be reused while cached.
 func (m *Mission) diffRows(textW int) *diffRowIndex {
 	lines := m.model.Diff.Lines
 	ix := &m.diffRowsCache

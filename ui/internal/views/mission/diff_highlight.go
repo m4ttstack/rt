@@ -6,42 +6,54 @@ package mission
 
 import (
 	"hash/maphash"
+	"slices"
 	"strings"
 )
 
-// diffHighlightCacheCap bounds the tokenized-text cache: every model push
-// re-sends the sources, so the cache only has to span a few selections.
-const diffHighlightCacheCap = 8
+// Every model push re-sends the sources, so each cache only has to span a
+// few selections. Sources and hunk blocks are cached apart so a fallback
+// that tokenizes many blocks can never evict the sources.
+const (
+	diffSourceCacheCap = 8
+	diffBlockCacheCap  = 16
+)
+
+type tokenCache struct {
+	seed  maphash.Seed
+	lines map[uint64][][]span
+}
 
 type diffHighlighter struct {
-	seed      maphash.Seed
-	cache     map[uint64][][]span
+	sources   tokenCache
+	blocks    tokenCache
 	tokenized int
 	lastKey   *DiffLine
 	lastN     int
 	last      [][]span
 }
 
-func (h *diffHighlighter) tokenize(lang, src string) [][]span {
-	if h.cache == nil {
-		h.seed = maphash.MakeSeed()
-		h.cache = map[uint64][][]span{}
+func (h *diffHighlighter) tokenize(c *tokenCache, capacity int, lang, src string) [][]span {
+	if c.lines == nil {
+		c.seed = maphash.MakeSeed()
+		c.lines = map[uint64][][]span{}
 	}
-	key := maphash.String(h.seed, lang+"\x00"+src)
-	if lines, ok := h.cache[key]; ok {
+	key := maphash.String(c.seed, lang+"\x00"+src)
+	if lines, ok := c.lines[key]; ok {
 		return lines
 	}
-	if len(h.cache) >= diffHighlightCacheCap {
-		h.cache = map[uint64][][]span{}
+	if len(c.lines) >= capacity {
+		c.lines = map[uint64][][]span{}
 	}
 	lines := tokenizeLines(lang, src)
-	h.cache[key] = lines
+	c.lines[key] = lines
 	h.tokenized++
 	return lines
 }
 
 // forDiff keys on the decoded Lines backing array: each model push decodes
 // a fresh one, so a repeat frame of the same model reuses the result.
+// Holding &Lines[0] keeps that array alive, so its address cannot be reused
+// by a later push while it is cached.
 func (h *diffHighlighter) forDiff(d DiffModel) [][]span {
 	if d.Lang == "" || d.Kind != "text" || len(d.Lines) == 0 {
 		return nil
@@ -51,10 +63,10 @@ func (h *diffHighlighter) forDiff(d DiffModel) [][]span {
 	}
 	var oldLines, newLines [][]span
 	if d.OldSource != nil {
-		oldLines = h.tokenize(d.Lang, *d.OldSource)
+		oldLines = h.tokenize(&h.sources, diffSourceCacheCap, d.Lang, *d.OldSource)
 	}
 	if d.NewSource != nil {
-		newLines = h.tokenize(d.Lang, *d.NewSource)
+		newLines = h.tokenize(&h.sources, diffSourceCacheCap, d.Lang, *d.NewSource)
 	}
 	out := make([][]span, len(d.Lines))
 	missing := false
@@ -88,10 +100,11 @@ func sourceLine(lines [][]span, no int, want string) ([]span, bool) {
 }
 
 // fillHunkBlocks tokenizes each hunk's new side (context + add) and old side
-// (context + del) as one text apiece, for the lines no source could answer.
+// (context + del) as one text apiece, only where a line no source could
+// answer sits in that block.
 func (h *diffHighlighter) fillHunkBlocks(d DiffModel, out [][]span) {
 	flush := func(idx []int, texts []string) {
-		if len(idx) == 0 {
+		if !slices.ContainsFunc(idx, func(i int) bool { return out[i] == nil }) {
 			return
 		}
 		// chroma reads a lone \r as a line break, which would split one
@@ -100,7 +113,7 @@ func (h *diffHighlighter) fillHunkBlocks(d DiffModel, out [][]span) {
 		for j, t := range texts {
 			texts[j] = strings.ReplaceAll(strings.TrimSuffix(t, "\r"), "\r", " ")
 		}
-		lines := h.tokenize(d.Lang, strings.Join(texts, "\n")+"\n")
+		lines := h.tokenize(&h.blocks, diffBlockCacheCap, d.Lang, strings.Join(texts, "\n")+"\n")
 		for j, i := range idx {
 			if out[i] == nil && j < len(lines) {
 				out[i] = lines[j]

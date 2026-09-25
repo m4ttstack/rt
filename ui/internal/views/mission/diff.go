@@ -482,10 +482,10 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 // old/new numbers) and its mark/text, or the full-width hunk bar when Kind
 // is "hunk" -- the "@@ ... @@" text IS the hunk toggle, so it gets no
 // gutter columns of its own. hover paints both gutter and row on HoverBg
-// while keeping spans' own syntax colours (paintSpans repaints each span's
-// background, so HoverBg reaches every token instead of being cut out by a
-// per-token SGR reset). gutterHover additionally previews the stage bar in
-// GutterHoverBar on an unselected add/del line -- a selected line keeps its
+// while keeping spans' own syntax colours (each span ends in an SGR reset,
+// so paintSpans must set the background on every span). gutterHover
+// additionally previews the stage bar in GutterHoverBar on an unselected
+// add/del line -- a selected line keeps its
 // solid Pink bar regardless, since there is nothing left to preview. A
 // read-only line has nothing to stage, so it paints no bar at all. A long
 // line wraps onto continuation rows (wrapSpans) whose count must match
@@ -520,7 +520,8 @@ func renderDiffRows(d DiffModel, line DiffLine, spans []span, width int, hover, 
 	markCell := on.Render(" ") + on.Foreground(markCol).Render(mark) + on.Render(" ")
 	textW := max(width-diffGutterWidth-diffMarkWidth, 0)
 	wrapped := wrapSpans(spans, textW)
-	// A selected wrapped line keeps its pink bar down every row.
+	// The stage bar (selected or previewed) carries down every row so the
+	// whole wrapped line reads as one click target.
 	blankGutter := barStyle.Render(bar) + gOn.Render(strings.Repeat(" ", diffNumWidth*2))
 	blankMark := on.Render(strings.Repeat(" ", diffMarkWidth))
 	out := make([]string, len(wrapped))

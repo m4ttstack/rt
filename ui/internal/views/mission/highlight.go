@@ -1,4 +1,4 @@
-// Chroma syntax highlighting for the diff pane's context and add lines: a
+// Chroma syntax highlighting for the diff pane's context, add and del lines: a
 // lexer picked by Lang, rendered through a chroma.Style built once from the
 // theme ramp so no non-theme hex ever reaches the terminal.
 package mission

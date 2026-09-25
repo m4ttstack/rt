@@ -1,6 +1,8 @@
 package mission
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/alecthomas/chroma/v2"
@@ -83,6 +85,48 @@ func TestForDiffCachesTokenizedSources(t *testing.T) {
 	h.forDiff(mk())
 	if h.tokenized != n {
 		t.Fatalf("an identical second push re-tokenized the source (%d -> %d)", n, h.tokenized)
+	}
+}
+
+func TestForDiffHunkFallbackKeepsTheSourcesCached(t *testing.T) {
+	var oldSrc, newSrc strings.Builder
+	for n := 1; n <= 20; n++ {
+		fmt.Fprintf(&newSrc, "a%d := %d\n", n, n)
+		if n%4 == 2 {
+			fmt.Fprintf(&oldSrc, "b%d := %d\n", n, n)
+		} else {
+			fmt.Fprintf(&oldSrc, "a%d := %d\n", n, n)
+		}
+	}
+	mk := func() DiffModel {
+		var lines []DiffLine
+		for k := 0; k < 5; k++ {
+			ctx, changed := 4*k+1, 4*k+2
+			addText := fmt.Sprintf("a%d := %d", changed, changed)
+			if k == 2 {
+				addText = "stale := true"
+			}
+			lines = append(lines,
+				DiffLine{Kind: "hunk", Text: "@@"},
+				DiffLine{Kind: "context", OldNo: ctx, NewNo: ctx, Text: fmt.Sprintf("a%d := %d", ctx, ctx)},
+				DiffLine{Kind: "del", OldNo: changed, Text: fmt.Sprintf("b%d := %d", changed, changed)},
+				DiffLine{Kind: "add", NewNo: changed, Text: addText},
+			)
+		}
+		return DiffModel{Kind: "text", Lang: "go", OldSource: strp(oldSrc.String()), NewSource: strp(newSrc.String()), Lines: lines}
+	}
+	var h diffHighlighter
+	first := h.forDiff(mk())
+	if spansText(first[11]) != "stale := true" {
+		t.Fatalf("mismatched line painted the wrong text: %q", spansText(first[11]))
+	}
+	n := h.tokenized
+	if n != 3 {
+		t.Fatalf("want 2 sources + the one block holding the mismatch tokenized, got %d", n)
+	}
+	h.forDiff(mk())
+	if h.tokenized != n {
+		t.Fatalf("a second push re-tokenized (%d -> %d): the hunk fallback evicted the sources", n, h.tokenized)
 	}
 }
 

@@ -1149,10 +1149,10 @@ func fileRowHit(c ChangeRow, idx, x int) hit {
 // row after it is a screen row offset from m.diffTop, mapped to its line
 // through the same diffRows index the renderer wrapped with, so a click on
 // a continuation row hits the line it belongs to. A hunk line has no
-// separate gutter -- its whole width IS the toggle, per diff.go's own
-// renderDiffLine comment -- so it resolves to hitDiffGutter across the
-// full content width instead of just diffGutterWidth. A read-only diff toggles nothing, so every line is a
-// plain hitDiffLine.
+// separate gutter -- its whole width IS the toggle, per renderDiffRows'
+// comment in diff.go -- so it resolves to hitDiffGutter across the full
+// content width instead of just diffGutterWidth. A read-only diff toggles
+// nothing, so every line is a plain hitDiffLine.
 func (m *Mission) diffHit(diffX, y, paneW int) hit {
 	if y == 0 {
 		return hit{}
