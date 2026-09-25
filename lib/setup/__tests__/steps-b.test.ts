@@ -598,25 +598,7 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       expect(p.calls.exec).toEqual([]);
     });
 
-    test("gitq bundled but no gitq.board repos yet: gitq is not handed to deck (it exits 1 on an empty repo list, and launchd would loop it)", async () => {
-      const p = bundledProbes({
-        tools: ["gitq", "board", "console", "chat"],
-        overrides: {
-          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-          fetch: healthyFetch(4100),
-          exec: async () => ok(""),
-        },
-      });
-      const { ctx } = makeCtx(p);
-
-      const outcome = await deckManagedStep.run(ctx);
-      expect(outcome.state).toBe("done");
-      expect(detailOf(outcome)).toContain("gitq not registered: no gitq.board repos yet");
-      expect(p.calls.exec.some((argv) => argv[1] === "add" && argv[2] === "gitq")).toBe(false);
-      expect(p.calls.exec.some((argv) => argv[1] === "add" && argv[2] === "console")).toBe(true);
-    });
-
-    test("healthy + board bundled: adopts, repoints via PATCH, registers gitq, console, chat as mattstack-managed", async () => {
+    test("healthy deck: registers no app itself, even with gitq.board repos set and gitq, console, chat bundled", async () => {
       setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
       const p = bundledProbes({
         tools: ["gitq", "board", "console", "chat"],
@@ -626,32 +608,16 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
           exec: async () => ok(""),
         },
       });
-      const { ctx } = makeCtx(p);
+      const { ctx, logs } = makeCtx(p);
 
-      const outcome = await deckManagedStep.run(ctx);
-      expect(outcome.state).toBe("done");
-      expect(detailOf(outcome)).toContain("repointed");
-      expect(detailOf(outcome)).toContain("gitq registered (managed)");
-      expect(detailOf(outcome)).toContain("console registered (managed)");
-      expect(detailOf(outcome)).toContain("chat registered (managed)");
+      expect(await deckManagedStep.run(ctx)).toEqual({ state: "done", detail: "deck ready; board adopted from legacy mrs, repointed" });
 
       const deckBin = join(appRoot, HELPERS_DIR, "deck");
-      expect(p.calls.exec[0]).toEqual([deckBin, "adopt", "mrs", "--as", "board", "--json"]);
-      // `deck add` alone leaves the record managedBy:"user" — invisible to
-      // `deck remove --managed` — so every app is added THEN adopted. The
-      // registrar id is "rt"; deck renders that as "mattstack".
-      // gitq's bare argv is its CLI — deck must supervise `gitq board`, the
-      // server verb, not a command that prints usage and exits.
-      expect(p.calls.exec[1]).toEqual([deckBin, "add", "gitq", "--cmd", `${join(appRoot, HELPERS_DIR, "gitq")} board`, "--dir", join(home, ".mattstack", "gitq")]);
-      expect(p.calls.exec[2]).toEqual([deckBin, "adopt", "gitq", "--managed-by", "rt", "--json"]);
-      expect(p.calls.exec[3]).toEqual([deckBin, "add", "console", "--cmd", join(appRoot, HELPERS_DIR, "console"), "--dir", join(home, ".mattstack", "console")]);
-      expect(p.calls.exec[4]).toEqual([deckBin, "adopt", "console", "--managed-by", "rt", "--json"]);
-      expect(p.calls.exec[5]).toEqual([deckBin, "add", "chat", "--cmd", join(appRoot, HELPERS_DIR, "chat"), "--dir", join(home, ".mattstack", "chat")]);
-      expect(p.calls.exec[6]).toEqual([deckBin, "adopt", "chat", "--managed-by", "rt", "--json"]);
-      expect(p.calls.fetch).toContain("http://127.0.0.1:4100/api/v1/apps/board");
-      // launchd refuses to spawn (EX_CONFIG, forever) when a plist's
-      // WorkingDirectory does not exist, so every dir handed to deck exists first.
-      for (const name of ["board", "gitq", "console", "chat"]) expect(p.exists(join(home, ".mattstack", name))).toBe(true);
+      expect(p.calls.exec).toEqual([[deckBin, "adopt", "mrs", "--as", "board", "--json"]]);
+      expect(p.calls.fetch.filter((u) => u.includes("/api/v1/apps/"))).toEqual(["http://127.0.0.1:4100/api/v1/apps/board"]);
+      expect(p.exists(join(home, ".mattstack", "board"))).toBe(true);
+      for (const name of ["gitq", "console", "chat"]) expect(p.exists(join(home, ".mattstack", name))).toBe(false);
+      expect(logs).toEqual([]);
     });
 
     test("healthy + board NOT bundled: adopts, skips the repoint honestly", async () => {
@@ -665,11 +631,10 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       });
       const { ctx, logs } = makeCtx(p);
 
-      const outcome = await deckManagedStep.run(ctx);
-      expect(outcome.state).toBe("done");
-      expect(detailOf(outcome)).toContain("repoint skipped (board not bundled yet)");
+      expect(await deckManagedStep.run(ctx)).toEqual({ state: "done", detail: "deck ready; board adopted from legacy mrs, repoint skipped (board not bundled yet)" });
       expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/board"))).toBe(false);
-      expect(logs).toEqual([]); // the skip is in the outcome detail, not a separate log line
+      expect(p.calls.exec).toHaveLength(1);
+      expect(logs).toEqual([]);
     });
 
     test("adopt fails with 'deck not running' -> failed, retryable precondition (not a rejection)", async () => {
@@ -704,9 +669,24 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       expect(await deckManagedStep.run(ctx)).toEqual({ state: "failed", detail: "name taken", remedy: "Retry" });
     });
 
-    test("gitq not bundled: logged and reported, board portion still completes, never fatal", async () => {
+    test("fresh install (no legacy 'mrs'): adopt answers 'unknown app', the step is done and nothing else runs", async () => {
       setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
-      // "board" only, no "gitq" — bundledToolPath(p, "gitq") has nothing to find.
+      const p = bundledProbes({
+        tools: ["gitq", "board", "console", "chat"],
+        overrides: {
+          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
+          fetch: healthyFetch(4100),
+          exec: async () => ({ code: 1, stdout: '{"adopted":false,"error":"unknown app"}', stderr: "" }),
+        },
+      });
+      const { ctx } = makeCtx(p);
+
+      expect(await deckManagedStep.run(ctx)).toEqual({ state: "done", detail: "deck ready; no legacy mrs to adopt" });
+      expect(p.calls.exec).toHaveLength(1);
+      expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/"))).toBe(false);
+    });
+
+    test("idempotent re-run: the second pass adopts and repoints again with the same outcome", async () => {
       const p = bundledProbes({
         tools: ["board"],
         overrides: {
@@ -715,105 +695,13 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
           exec: async () => ok(""),
         },
       });
-      const { ctx, logs } = makeCtx(p);
-      const outcome = await deckManagedStep.run(ctx);
-      expect(outcome).toEqual({
-        state: "done",
-        detail: "board adopted (repointed); gitq not registered: not bundled; console not registered: not bundled; chat not registered: not bundled",
-      });
-      expect(logs.some((l) => l.line.includes("gitq") && l.line.includes("not bundled"))).toBe(true);
-      expect(logs.some((l) => l.line.includes("console") && l.line.includes("not bundled"))).toBe(true);
-      expect(logs.some((l) => l.line.includes("chat") && l.line.includes("not bundled"))).toBe(true);
-      expect(p.calls.exec).toHaveLength(1); // only the adopt — no `deck add` with a null bin
-    });
-
-    test("gitq's real 'deck add' is a stub (MAT-384): a driver-fatal response is logged and tallied, never fails the run", async () => {
-      setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
-      const p = bundledProbes({
-        tools: ["gitq", "board"],
-        overrides: {
-          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-          fetch: healthyFetch(4100),
-          exec: async (argv) => (argv.includes("add") ? { code: 400, stdout: "", stderr: "command + workingDirectory, or staticPort, required" } : ok("")),
-        },
-      });
-      const { ctx, logs } = makeCtx(p);
-      const outcome = await deckManagedStep.run(ctx);
-      expect(outcome.state).toBe("done");
-      expect(detailOf(outcome)).toContain("gitq not registered: command + workingDirectory, or staticPort, required");
-      expect(logs.some((l) => l.line.includes("deck add failed"))).toBe(true);
-    });
-
-    test("gitq duplicate registration answers deck's frozen 'name taken', not '/already/' — recognized as already-registered, not a failure", async () => {
-      setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
-      const p = bundledProbes({
-        tools: ["gitq", "board"],
-        overrides: {
-          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-          fetch: healthyFetch(4100),
-          exec: async (argv) => (argv.includes("add") ? { code: 1, stdout: "", stderr: '409 {"error":"name taken"}' } : ok("")),
-        },
-      });
-      const { ctx } = makeCtx(p);
-      const outcome = await deckManagedStep.run(ctx);
-      // "name taken" on add is not the end of the story: the adopt still runs,
-      // because a record left over from an earlier add may still be
-      // managedBy:"user" and would survive uninstall unclaimed.
-      expect(detailOf(outcome)).toContain("gitq already registered (managed)");
-      expect(p.calls.exec.some((argv) => argv.includes("adopt") && argv.includes("gitq"))).toBe(true);
-    });
-
-    test("fresh install (no legacy 'mrs'): adopt answers 'unknown app' — skips the board leg honestly, run continues past deck.managed", async () => {
-      setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
-      const p = bundledProbes({
-        tools: ["gitq", "board"],
-        overrides: {
-          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-          fetch: healthyFetch(4100),
-          // Scoped to the legacy-mrs adopt only: the gitq/console adopts that
-          // follow are a different call and must still succeed, or this test
-          // would assert the unknown-app path for all three at once.
-          exec: async (argv) => (argv.includes("adopt") && argv.includes("mrs") ? { code: 1, stdout: '{"adopted":false,"error":"unknown app"}', stderr: "" } : ok("")),
-        },
-      });
-      const { ctx } = makeCtx(p);
-      const outcome = await deckManagedStep.run(ctx);
-      // "done", not "failed" — the run is free to proceed to skills.materialize/board.keys/cron.triage next.
-      expect(outcome).toEqual({
-        state: "done",
-        detail: "board not adopted (no legacy mrs to adopt); gitq registered (managed); console not registered: not bundled; chat not registered: not bundled",
-      });
-      // No repoint PATCH was issued — there was nothing to repoint.
-      expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/board"))).toBe(false);
-    });
-
-    test("idempotent re-run: second pass's adopt/repoint/gitq-add all still succeed against deck's real idempotent replies", async () => {
-      setSetting("gitq.board", { repos: ["acme/acme-dev"] }, "machine");
-      let addCalls = 0;
-      const p = bundledProbes({
-        tools: ["gitq", "board"],
-        overrides: {
-          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-          fetch: healthyFetch(4100),
-          exec: async (argv) => {
-            // adopt: exit 0 both passes — deck's own "already adopted" idempotency.
-            if (!argv.includes("add")) return ok("");
-            // add: only the SECOND call is a duplicate — deck's frozen "name taken".
-            addCalls += 1;
-            return addCalls === 1 ? ok("") : { code: 1, stdout: "", stderr: '409 {"error":"name taken"}' };
-          },
-        },
-      });
       const { ctx: first } = makeCtx(p);
       const { ctx: second } = makeCtx(p);
-      expect(await deckManagedStep.run(first)).toEqual({
-        state: "done",
-        detail: "board adopted (repointed); gitq registered (managed); console not registered: not bundled; chat not registered: not bundled",
-      });
-      expect(await deckManagedStep.run(second)).toEqual({
-        state: "done",
-        detail: "board adopted (repointed); gitq already registered (managed); console not registered: not bundled; chat not registered: not bundled",
-      });
+      const expected: StepOutcome = { state: "done", detail: "deck ready; board adopted from legacy mrs, repointed" };
+
+      expect(await deckManagedStep.run(first)).toEqual(expected);
+      expect(await deckManagedStep.run(second)).toEqual(expected);
+      expect(p.calls.exec.every((argv) => argv[1] === "adopt" && argv[2] === "mrs")).toBe(true);
     });
   });
 
