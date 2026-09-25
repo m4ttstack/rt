@@ -11,8 +11,32 @@ public struct AnswerBudget: Equatable, Sendable {
     public static let daemon = AnswerBudget(deadline: 15, interval: 0.5)
     /// Each deck probe spawns its CLI, so it polls half as often.
     public static let deck = AnswerBudget(deadline: 30, interval: 1)
-    /// deck holds /api/apps up to 10s for its boot sweep before a 503.
+    /// deck opens /api/apps at most 60s after it boots, sweep or no sweep.
     public static let deckSweep = AnswerBudget(deadline: 60, interval: 1)
+}
+
+/// `deck list` answers as soon as deck's API binds, while its boot sweep may
+/// still be adopting rows and installing plists; /api/apps answers 200 only
+/// once that sweep has finished.
+public enum DeckSweep {
+    public static let appsURL = "https://deck.mattstack/api/apps"
+    /// deck holds /api/apps up to 10s on its sweep, then answers 503.
+    public static let requestTimeout: TimeInterval = 12
+
+    public static func finished(status: Int?) -> Bool { status == 200 }
+}
+
+/// A restart racing the sweep fails on labels not installed yet and kills
+/// apps the sweep just started. One that never sees the sweep finish still
+/// runs: deck's cap has opened /api/apps by then, so only an unreachable
+/// route gets there, and `deck restart --managed` does not go through it.
+public enum ServedAppsRestart {
+    public static func run(budget: AnswerBudget = .deckSweep, now: () -> TimeInterval,
+                           sleep: (TimeInterval) async -> Void, sweepFinished: () async -> Bool,
+                           restart: (_ afterSweep: Bool) async -> Void) async {
+        let swept = await AgentAnswerWait.wait(budget, now: now, sleep: sleep, probe: sweepFinished)
+        await restart(swept)
+    }
 }
 
 public enum AgentAnswerWait {

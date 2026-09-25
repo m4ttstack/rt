@@ -307,13 +307,26 @@ final class ServicesRegistrar: ServicesProviding, @unchecked Sendable {
     /// outcome is only logged, never recorded.
     func restartServedApps() async {
         let (exe, args) = DeckRestart.arguments(deckPath: bundlePath + "/Contents/Helpers/deck")
-        let outcome = await runner.run(exe, args)
-        if outcome.ok {
-            TrayLog.info("served apps restarted after version change")
-        } else {
-            TrayLog.warn("served apps restart after version change failed",
-                         ["exit": Int(outcome.exitCode), "stderr": outcome.stderr])
-        }
+        await ServedAppsRestart.run(
+            now: { ProcessInfo.processInfo.systemUptime },
+            sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) },
+            sweepFinished: { await Self.deckSweepFinished() },
+            restart: { afterSweep in
+                let outcome = await self.runner.run(exe, args)
+                if outcome.ok {
+                    TrayLog.info("served apps restarted after version change", ["afterSweep": afterSweep])
+                } else {
+                    TrayLog.warn("served apps restart after version change failed",
+                                 ["exit": Int(outcome.exitCode), "stderr": outcome.stderr, "afterSweep": afterSweep])
+                }
+            })
+    }
+
+    private static func deckSweepFinished() async -> Bool {
+        let request = URLRequest(url: URL(string: DeckSweep.appsURL)!, cachePolicy: .reloadIgnoringLocalCacheData,
+                                 timeoutInterval: DeckSweep.requestTimeout)
+        let response = try? await URLSession.shared.data(for: request).1
+        return DeckSweep.finished(status: (response as? HTTPURLResponse)?.statusCode)
     }
 
     private func launchdLookup(label: String) async -> LaunchdJobLookup {

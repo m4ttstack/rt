@@ -273,7 +273,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                                     progress: progress, current: version, store: UserDefaults.standard)
         if LaunchRecording.restartsServedApps(progress: progress, report: report,
                                               deckLabel: registrar.deckLabel(daemonLabel: lifecycle.label)) {
-            await registrar.restartServedApps()
+            // Off the launch Task, which holds the first refreshStatus: the
+            // sweep wait alone can take a minute.
+            Task { await registrar.restartServedApps() }
         }
     }
 

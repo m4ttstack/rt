@@ -258,6 +258,27 @@ let launchLifecycleChecks: [Check] = [
         c.expect(!LaunchRecording.plan(registration: noPending, progress: held, report: bothAnswered).recordVersion)
         c.expect(LaunchRecording.restartsServedApps(progress: held, report: bothAnswered, deckLabel: "deck"))
     },
+    Check("served apps restart: waits for deck's boot sweep, then restarts once") { c in
+        let steps = Steps(), tally = Tally(), clock = FakeClock()
+        await ServedAppsRestart.run(budget: quick, now: { clock.now }, sleep: { clock.advance($0) },
+                                    sweepFinished: { steps.add("sweep"); return await tally.bump("sweep") >= 2 },
+                                    restart: { swept in steps.add("restart swept=\(swept)") })
+        c.expectEqual(steps.all, ["sweep", "sweep", "restart swept=true"])
+    },
+    Check("served apps restart: a sweep deck never reports finished still gets one restart, at the deadline") { c in
+        let steps = Steps(), clock = FakeClock()
+        await ServedAppsRestart.run(budget: quick, now: { clock.now }, sleep: { clock.advance($0) },
+                                    sweepFinished: { steps.add("sweep"); return false },
+                                    restart: { swept in steps.add("restart swept=\(swept) at \(clock.now)") })
+        c.expectEqual(steps.all, ["sweep", "sweep", "sweep", "restart swept=false at 2.0"])
+    },
+    Check("deck sweep: only deck's 200 on /api/apps says the sweep finished") { c in
+        c.expect(DeckSweep.finished(status: 200))
+        for status in [503, 502, 404, nil] as [Int?] {
+            c.expect(!DeckSweep.finished(status: status), String(describing: status))
+        }
+        c.expect(DeckSweep.requestTimeout > 10, "a request must outlast the 10s deck holds /api/apps before its 503")
+    },
     Check("spawn heal: the daemon heals through its own re-register, as a spawn heal") { c in
         let steps = Steps()
         let ok = await SpawnHealRoute.heal(label: "com.mattstack.daemon", daemonLabel: "com.mattstack.daemon",
