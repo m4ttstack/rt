@@ -8,6 +8,7 @@ import {
   findCachedBuild,
   readBundleIdentity,
   sameBuild,
+  snapshotTree,
   treeIdentity,
   type CacheSeams,
 } from "../dev-app-cache.ts";
@@ -18,8 +19,11 @@ const fail = () => Promise.resolve({ stdout: "", stderr: "nope", exitCode: 1 });
 
 interface Fake {
   diff?: string;
+  tracked?: string[];
+  deleted?: string[];
   untracked?: string[];
   files?: Record<string, string>;
+  links?: Record<string, string>;
   plists?: Record<string, Record<string, string>>;
   dirs?: Record<string, string[]>;
   failCmd?: string;
@@ -32,13 +36,17 @@ function fakeSeams(f: Fake = {}): CacheSeams & { calls: string[] } {
     pathExists: (p) => Object.keys(f.plists ?? {}).some((b) => `${b}/Contents/Info.plist` === p),
     listDir: (p) => f.dirs?.[p] ?? [],
     readBytes: (p) => (f.files?.[p] === undefined ? null : new TextEncoder().encode(f.files[p])),
+    readLink: (p) => f.links?.[p] ?? null,
     exec: (argv) => {
       const cmd = argv.join(" ");
       calls.push(cmd);
       if (f.failCmd && cmd.startsWith(f.failCmd)) return fail();
       if (cmd === "git rev-parse HEAD") return ok(`${SHA}\n`);
       if (cmd.startsWith("git diff HEAD")) return ok(f.diff ?? "");
-      if (cmd.startsWith("git ls-files --others")) return ok((f.untracked ?? []).map((p) => `${p}\0`).join(""));
+      const listing = (paths: string[] | undefined) => ok((paths ?? []).map((p) => `${p}\0`).join(""));
+      if (cmd === "git ls-files -z --others --exclude-standard") return listing(f.untracked);
+      if (cmd === "git ls-files -z --cached") return listing(f.tracked);
+      if (cmd === "git ls-files -z --deleted") return listing(f.deleted);
       if (argv[0] === "plutil" && argv[1] === "-extract") {
         const key = argv[2]!;
         const bundle = argv[argv.length - 1]!.replace(/\/Contents\/Info\.plist$/, "");
@@ -92,9 +100,41 @@ describe("treeIdentity", () => {
     expect(renamed!.diffHash).not.toBe(base!.diffHash);
   });
 
-  test("an unreadable untracked entry still counts, so it never passes for a clean tree", async () => {
-    const id = await treeIdentity(fakeSeams({ untracked: ["nested-repo/"] }), "/src/tree", "v2.11.0");
+  test("an unreadable untracked file still counts, so it never passes for a clean tree", async () => {
+    const id = await treeIdentity(fakeSeams({ untracked: ["locked.ts"] }), "/src/tree", "v2.11.0");
     expect(id!.diffHash).not.toBe(CLEAN_DIFF_HASH);
+  });
+
+  test("an untracked symlink counts by its target, the way the copy carries it", async () => {
+    const at = (target: string) =>
+      treeIdentity(
+        fakeSeams({ untracked: ["link"], links: { "/src/tree/link": target }, files: { "/src/tree/link": "same" } }),
+        "/src/tree",
+        "v2.11.0",
+      );
+    expect((await at("a/one"))!.diffHash).not.toBe((await at("a/two"))!.diffHash);
+    expect((await at("a/one"))!.diffHash).toBe((await at("a/one"))!.diffHash);
+  });
+
+  test("an untracked nested repo makes the tree uncacheable instead of hashing to a constant", async () => {
+    const snap = await snapshotTree(fakeSeams({ untracked: ["nested-repo/"] }), "/src/tree", "v2.11.0");
+    expect(snap!.identity).toBeNull();
+    expect(snap!.uncacheable).toContain("nested-repo/");
+    expect(snap!.files).toContain("nested-repo/");
+  });
+
+  test("the copy list is the tracked files still on disk plus the untracked ones the key hashes", async () => {
+    const snap = await snapshotTree(
+      fakeSeams({ tracked: ["a.ts", "gone.ts", "b/c.ts"], deleted: ["gone.ts"], untracked: ["new.ts"], files: { "/src/tree/new.ts": "x" } }),
+      "/src/tree",
+      "v2.11.0",
+    );
+    expect(snap!.files).toEqual(["a.ts", "b/c.ts", "new.ts"]);
+    expect(snap!.uncacheable).toBeNull();
+  });
+
+  test("a tree git cannot list has no snapshot at all", async () => {
+    expect(await snapshotTree(fakeSeams({ failCmd: "git ls-files -z --cached" }), "/src/tree", "v2.11.0")).toBeNull();
   });
 
   test("any git failure means no identity rather than a guessed one", async () => {

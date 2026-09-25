@@ -28,6 +28,7 @@ function fakeSeams(
     failCmd?: string;
     plists?: Record<string, Record<string, string>>;
     cacheEntries?: string[];
+    untracked?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -44,6 +45,7 @@ function fakeSeams(
     scratchDir: () => "/scratch",
     listDir: (p) => (p === BUILDS ? (opts.cacheEntries ?? []) : []),
     readBytes: () => null,
+    readLink: () => null,
     pathExists: (p) =>
       Object.keys(plists).some((b) => `${b}/Contents/Info.plist` === p) ||
       p === "/src/tree/rt-tray/build.sh" ||
@@ -69,7 +71,9 @@ function fakeSeams(
       if (cmd === "git rev-parse --short HEAD") return ok("abc1234\n");
       if (cmd === "git rev-parse HEAD") return ok(`${FULL_SHA}\n`);
       if (cmd.startsWith("git diff HEAD")) return ok(opts.dirty ? "diff --git a/x b/x\n+1\n" : "");
-      if (cmd.startsWith("git ls-files --others")) return ok("");
+      if (cmd === "git ls-files -z --cached") return ok("cli.ts\0rt-tray/build.sh\0");
+      if (cmd === "git ls-files -z --deleted") return ok("");
+      if (cmd === "git ls-files -z --others --exclude-standard") return ok(opts.untracked ?? "");
       if (argv[0] === "plutil" && argv[1] === "-extract") {
         const bundle = argv[argv.length - 1]!.replace(/\/Contents\/Info\.plist$/, "");
         const v = plists[bundle]?.[argv[2]!];
@@ -95,7 +99,6 @@ describe("stageLocalDevApp", () => {
     const copy = calls.find((c) => c.startsWith("rsync"))!;
     expect(copy).toContain("/src/tree/ /scratch/");
     expect(copy).toContain("--exclude=.git");
-    expect(copy).toContain("--filter=:- .gitignore");
     expect(calls).toContain("cp -R /src/tree/rt-tray/deps /scratch/rt-tray/deps");
     expect(calls.some((c) => c.includes("fetch-deps.sh"))).toBe(false);
     const build = calls.find((c) => c.includes("rt-tray/build.sh dev"))!;
@@ -337,5 +340,34 @@ describe("stageLocalDevApp", () => {
     expect(cleanup).toBeGreaterThan(verify);
     expect(build).toBeGreaterThan(cleanup);
     expect(logs.some((l) => l.includes("signature") && l.includes(`${BUILDS}/tree-abc/bundle`))).toBe(true);
+  });
+
+  test("the copy is driven by the same git listing the key hashes, not by .gitignore alone", async () => {
+    const { seams, calls, writes } = fakeSeams({ untracked: "new.ts\0" });
+    const paths = devAppStagePaths("/Users/t");
+    await stageLocalDevApp(seams, "/src/tree");
+    const copy = calls.find((c) => c.startsWith("rsync"))!;
+    expect(copy).not.toContain(".gitignore");
+    expect(copy).toContain(" -r ");
+    expect(copy).toContain(" --from0 ");
+    const listFile = copy.match(/--files-from=(\S+)/)![1]!;
+    expect(listFile.startsWith(`${paths.root}/`)).toBe(true);
+    expect(writes[listFile]).toBe("cli.ts\0new.ts\0rt-tray/build.sh\0");
+    const removed = calls.findIndex((c) => c === `rm -f ${listFile}`);
+    expect(removed).toBeGreaterThan(calls.indexOf(copy));
+  });
+
+  test("a tree with an untracked nested repo still builds, uncached, and says why", async () => {
+    const { seams, calls, logs } = fakeSeams({ untracked: "vendor/thing/\0" });
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result.outcome).toBe("built");
+    expect(calls.find((c) => c.includes("rt-tray/build.sh dev"))).not.toContain("MS_BUILD_SHA");
+    expect(logs.some((l) => l.includes("not be cached") && l.includes("vendor/thing/"))).toBe(true);
+  });
+
+  test("a tree git cannot list is refused before copying", async () => {
+    const { seams, calls } = fakeSeams({ failCmd: "git ls-files -z --cached" });
+    await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow(UserActionableError);
+    expect(calls.some((c) => c.startsWith("rsync"))).toBe(false);
   });
 });

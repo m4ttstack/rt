@@ -6,7 +6,7 @@
  */
 import { UserActionableError } from "../setup/errors.ts";
 import type { RunResult } from "../subprocess.ts";
-import { findCachedBuild, readBundleIdentity, sameBuild, treeIdentity, type CacheSeams } from "./dev-app-cache.ts";
+import { findCachedBuild, readBundleIdentity, sameBuild, snapshotTree, type CacheSeams } from "./dev-app-cache.ts";
 
 export interface StageSeams extends CacheSeams {
   home: string;
@@ -56,7 +56,10 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   const stamp = `${stampTime(seams.now())} ${sha}${dirty ? "+dirty" : ""} ${tree}`;
   const paths = devAppStagePaths(seams.home);
 
-  const identity = await treeIdentity(seams, source, version);
+  const snapshot = await snapshotTree(seams, source, version);
+  if (!snapshot) throw new UserActionableError("dev-app-copy-failed", `git could not list the files in ${source}`);
+  const identity = snapshot.identity;
+  if (snapshot.uncacheable) seams.log(`this build will not be cached: ${snapshot.uncacheable}`);
   if (identity) {
     const running = await readBundleIdentity(seams, seams.runningApp);
     if (running && sameBuild(running, identity)) {
@@ -89,7 +92,21 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   }
 
   const scratch = seams.scratchDir();
-  const copy = await seams.exec(["rsync", "-a", "--exclude=.git", "--filter=:- .gitignore", `${source}/`, `${scratch}/`]);
+  // --files-from turns off the recursion -a implies; -r puts it back for the
+  // one kind of directory entry git lists, an untracked nested repo.
+  const listFile = `${paths.root}/.copy-list-${Date.now()}`;
+  seams.writeFile(listFile, snapshot.files.map((p) => `${p}\0`).join(""));
+  const copy = await seams.exec([
+    "rsync",
+    "-a",
+    "-r",
+    "--exclude=.git",
+    `--files-from=${listFile}`,
+    "--from0",
+    `${source}/`,
+    `${scratch}/`,
+  ]);
+  await seams.exec(["rm", "-f", listFile]);
   if (copy.exitCode !== 0) throw new UserActionableError("dev-app-copy-failed", `copying ${source} failed: ${tail(copy)}`);
 
   // rt-tray/deps is gitignored, so the copy skips it; reuse the tree's own when

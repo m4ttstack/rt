@@ -40,16 +40,59 @@ export interface CacheSeams {
   listDir(path: string): string[];
   /** File bytes, or null for anything that is not a readable file. */
   readBytes(path: string): Uint8Array | null;
+  /** A symlink's target, or null when the path is not a symlink. */
+  readLink(path: string): string | null;
   exec(argv: [string, ...string[]], opts?: { cwd?: string; timeoutMs?: number }): Promise<RunResult>;
 }
 
 const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 
+export interface TreeSnapshot {
+  /** Paths relative to the tree: what the build's scratch copy receives. */
+  files: string[];
+  identity: BuildIdentity | null;
+  /** Why a listed tree still has no identity, when that is the reason. */
+  uncacheable: string | null;
+}
+
+const listing = (stdout: string) => stdout.split("\0").filter(Boolean);
+
 /**
- * The one key function for both stamping and lookup. Ignored files are left
- * out because the build's scratch copy skips them too.
+ * The one listing for both the key and the copy: the key hashes the tracked
+ * diff plus exactly the untracked files the copy receives, so a file the copy
+ * skips (any git exclude) can never change the key, and vice versa.
  */
+export async function snapshotTree(seams: CacheSeams, source: string, version: string): Promise<TreeSnapshot | null> {
+  const run = (args: string[]) => seams.exec(["git", ...args], { cwd: source });
+  const [tracked, deleted, others] = await Promise.all([
+    run(["ls-files", "-z", "--cached"]),
+    run(["ls-files", "-z", "--deleted"]),
+    run(["ls-files", "-z", "--others", "--exclude-standard"]),
+  ]);
+  if (tracked.exitCode !== 0 || deleted.exitCode !== 0 || others.exitCode !== 0) return null;
+  const gone = new Set(listing(deleted.stdout));
+  const untracked = listing(others.stdout).sort();
+  const files = [...new Set([...listing(tracked.stdout).filter((p) => !gone.has(p)), ...untracked])].sort();
+
+  // git lists an untracked nested repo as one `dir/` entry and the copy
+  // recurses into it; hashing its contents is not worth it for a dev build.
+  const nested = untracked.filter((p) => p.endsWith("/"));
+  if (nested.length > 0) {
+    return { files, identity: null, uncacheable: `untracked nested repo ${nested.join(", ")}` };
+  }
+  return { files, identity: await identityOf(seams, source, version, untracked), uncacheable: null };
+}
+
 export async function treeIdentity(seams: CacheSeams, source: string, version: string): Promise<BuildIdentity | null> {
+  return (await snapshotTree(seams, source, version))?.identity ?? null;
+}
+
+async function identityOf(
+  seams: CacheSeams,
+  source: string,
+  version: string,
+  untracked: string[],
+): Promise<BuildIdentity | null> {
   const head = await seams.exec(["git", "rev-parse", "HEAD"], { cwd: source });
   const sha = head.stdout.trim();
   if (head.exitCode !== 0 || !/^[0-9a-f]{40,64}$/.test(sha)) return null;
@@ -57,17 +100,18 @@ export async function treeIdentity(seams: CacheSeams, source: string, version: s
     cwd: source,
   });
   if (diff.exitCode !== 0) return null;
-  const others = await seams.exec(["git", "ls-files", "--others", "--exclude-standard", "-z"], { cwd: source });
-  if (others.exitCode !== 0) return null;
-  const untracked = others.stdout.split("\0").filter(Boolean).sort();
   if (diff.stdout === "" && untracked.length === 0) return { tree: source, sha, diffHash: CLEAN_DIFF_HASH, version };
 
   const h = createHash("sha256");
   h.update(diff.stdout);
   h.update("\0");
   for (const path of untracked) {
-    const bytes = seams.readBytes(`${source}/${path}`);
-    h.update(`${path}\0${bytes ? sha256(bytes) : "unreadable"}\n`);
+    const full = `${source}/${path}`;
+    // The copy carries a symlink as a link, so its target is its content.
+    const link = seams.readLink(full);
+    const bytes = link === null ? seams.readBytes(full) : null;
+    const content = link !== null ? `link:${link}` : bytes ? sha256(bytes) : "unreadable";
+    h.update(`${path}\0${content}\n`);
   }
   return { tree: source, sha, diffHash: h.digest("hex"), version };
 }

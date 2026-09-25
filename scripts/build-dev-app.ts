@@ -15,7 +15,18 @@
  * Without --yes either form prints what it would do and exits. Builds run in
  * a scratch copy, never in a checkout's rt-tray/.
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { homedir, tmpdir } from "os";
 import { dirname, join } from "path";
 import { createRealUpdateMachineSeams } from "../commands/release.ts";
@@ -82,6 +93,13 @@ if (parsed.local) {
           }
         },
         log: (line) => console.log(line),
+        readLink: (path) => {
+          try {
+            return lstatSync(path).isSymbolicLink() ? readlinkSync(path) : null;
+          } catch {
+            return null;
+          }
+        },
         writeFile: (path, content) => {
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, content);
