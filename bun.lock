@@ -39,7 +39,7 @@
     },
     "packages/rt-client": {
       "name": "@mattstack/rt-client",
-      "version": "0.31.1",
+      "version": "0.32.0",
       "dependencies": {
         "@cfworker/json-schema": "^4.1.1",
         "jsonc-parser": "^3.3.1",
@@ -54,7 +54,7 @@
     },
     "packages/settings-kit": {
       "name": "@mattstack/settings-kit",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@cfworker/json-schema": "^4.1.1",
       },
@@ -63,7 +63,7 @@
         "react": "^18.3.0",
       },
       "peerDependencies": {
-        "@mattstack/rt-client": ">=0.4.1 <1",
+        "@mattstack/rt-client": ">=0.32.0 <1",
         "react": ">=18",
       },
       "optionalPeers": [
