@@ -35,7 +35,7 @@ Verified against live data and a full code trace on 2026-09-23:
 |---|---|---|
 | MR gates (`mr:`) owned by Matt | Board decision queue | Board tab |
 | Pane-attention gates, open 2+ min, owned by Matt | Board decision queue (`agent:`/`herd:` subjects); console run row (`run:` subject, e.g. an orphaned :work run) | Board tab, or Console tab for a `run:` subject |
-| :work and pipeline gates (`run:`, owner human, run exists) | Console run row and run page; also the MR row its run recorded on the board | Console tab only (the board never counts a `run:` subject, so the dock never double counts) |
+| :work and pipeline gates (`run:`, owner human, run exists) | Console run row and run page; also the MR row its run recorded on the board | Console tab, and the Board tab when the gate shows on a board MR row; the dock counts it once by gate id |
 | Shepherd workers' gates (`run:`, owner `herd:*`) | Console run row ("waiting on shepherd"); shepherd pane form | No |
 | Escalated shepherd gates (all `run:` today) | Console run row ("waiting on shepherd"); notification to the shepherd pane | No. A "shepherd is slow" signal the shepherd resolves. |
 | Board queue items for `execution: unassigned` or `delivery: stuck` | Board decision queue | No. They mean an answer did not land, not a decision waiting. They stay in the queue. |
@@ -82,8 +82,13 @@ An app opts in by declaring a badge path in its `mattstack.deck.json`:
 The path is relative to the app's URL. `GET <app url><badge>` returns:
 
 ```json
-{ "count": 2, "path": "/?gate=<id>" }
+{ "count": 2, "path": "/?gate=<id>", "ids": ["<gate id>", "<gate id>"] }
 ```
+
+`ids` are the daemon's global gate ids behind `count`. Each tab shows its
+own `count`; the dock unions `ids` across apps so a gate two apps badge
+counts once, and adds the `count` of any reading without `ids`. An app
+must never report ids of its own making: the tray merges them across apps.
 
 `count` is a non-negative integer. `path` is optional: a path inside the
 same app (starting with `/`) to the page showing the oldest counted
@@ -121,8 +126,8 @@ The board's gate cache must be correct before its count can be:
 Then the count:
 
 - `src/gates/badge.ts` exports the badge predicate (the rule above). It
-  never counts a `run:` subject, even when the board shows that gate on
-  the MR row its run recorded; the console counts those. The
+  counts a `run:` gate the board shows on the MR row its run recorded,
+  the same set its decision queue shows. The
   client's `needsQueue` and queue button are unchanged. The server applies it to the rows the board holds
   (MR rows with attached gates, plus `queueExtras`), unaffected by the
   client's tab or author filter.
@@ -134,8 +139,8 @@ Then the count:
 
 - `GET /api/badge` counts gates on `run:` subjects whose run exists in
   `listRuns`, under the rule above. A `kind: pane-attention` gate on a
-  `run:` subject counts once it is 2 minutes old; the board never counts
-  a `run:` subject, so it is the console's.
+  `run:` subject counts once it is 2 minutes old. The board may count the
+  same `run:` gate; the tray counts each id once in the dock.
   `path` is the run page of the oldest counted gate (`/runs/<repo>/<runId>`).
 - The run row marker (`hasOpenGate`, `src/app/runs/useGates.ts`, painted by
   `RunRow.tsx`) shows for any `open` or `parked` gate, labeled by owner:

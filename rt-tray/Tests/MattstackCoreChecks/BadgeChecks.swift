@@ -80,6 +80,7 @@ let badgeChecks: [Check] = [
     Check("a reading without ids still adds its count to the dock") { c in
         var book = BadgeBook()
         book.record(app: "board", reading: BadgeReading(count: 1, path: nil, ids: ["g1"]))
+        book.record(app: "console", reading: BadgeReading(count: 1, path: nil, ids: ["g1"]))
         book.record(app: "other", reading: BadgeReading(count: 3, path: nil))
         try c.requireEqual(book.total, 4)
     },
