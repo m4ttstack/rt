@@ -33,6 +33,8 @@ export interface VerifyReport {
 export interface VerifyOptions {
   tag?: string;
   noWait?: boolean;
+  /** Leave out releases/latest: its propagation lag says nothing about whether the tag itself published. */
+  skipLatest?: boolean;
 }
 
 export interface VerifySeams {
@@ -58,6 +60,8 @@ const RELEASE_WORKFLOW = "release.yml";
 // every run watched right after the tag push.
 const RUN_POLL_MAX_ATTEMPTS = 240;
 const RUN_POLL_INTERVAL_MS = 15_000;
+/** The tag-push run can take a minute or two to be listed after the push lands. */
+const FIND_RUN_ATTEMPTS = 12;
 const LATEST_PROPAGATION_WINDOW_MS = 20 * 60 * 1000;
 
 export function requiredAssetNames(tag: string): string[] {
@@ -174,14 +178,19 @@ function runRowFromPoll(runId: number, url: string, poll: PollResult): VerifyRow
 }
 
 export async function checkRun(seams: VerifySeams, tag: string, noWait: boolean): Promise<VerifyRow> {
-  let found: FoundRun | null;
-  try {
-    found = await findRun(seams, tag);
-  } catch (err) {
-    return { id: "run", label: "release run", status: "error", detail: String((err as Error).message ?? err) };
+  let found: FoundRun | null = null;
+  const lookups = noWait ? 1 : FIND_RUN_ATTEMPTS;
+  for (let attempt = 1; attempt <= lookups && !found; attempt++) {
+    try {
+      found = await findRun(seams, tag);
+    } catch (err) {
+      return { id: "run", label: "release run", status: "error", detail: String((err as Error).message ?? err) };
+    }
+    if (!found && attempt < lookups) await seams.sleep(RUN_POLL_INTERVAL_MS);
   }
   if (!found) {
-    return { id: "run", label: "release run", status: "error", detail: `no release.yml run found for a tag push of ${tag}` };
+    const waited = lookups > 1 ? ` after ${lookups} lookups over ${Math.round(((lookups - 1) * RUN_POLL_INTERVAL_MS) / 60_000)}m` : "";
+    return { id: "run", label: "release run", status: "error", detail: `no release.yml run found for a tag push of ${tag}${waited}` };
   }
   const poll = await pollRunCompletion(seams, found.id, noWait);
   return runRowFromPoll(found.id, found.url, poll);
@@ -311,14 +320,14 @@ export async function runVerify(seams: VerifySeams, opts: VerifyOptions = {}): P
     rows.push({ id: "release-body", label: "release notes", status: "error", detail: release.error });
     rows.push({ id: "release-assets", label: "release assets", status: "error", detail: release.error });
     rows.push({ id: "release-state", label: "release state", status: "error", detail: release.error });
-    rows.push(await checkLatest(seams, tag, null));
+    if (!opts.skipLatest) rows.push(await checkLatest(seams, tag, null));
     return finalize(tag, rows);
   }
 
   rows.push(await checkReleaseBody(seams, tag, release.data));
   rows.push(checkReleaseAssets(tag, release.data));
   rows.push(checkReleaseState(release.data));
-  rows.push(await checkLatest(seams, tag, release.data));
+  if (!opts.skipLatest) rows.push(await checkLatest(seams, tag, release.data));
 
   return finalize(tag, rows);
 }
