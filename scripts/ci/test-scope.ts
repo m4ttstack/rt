@@ -28,21 +28,9 @@ export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage(
   return dirs.split(/\s+/);
 }
 
-// These read source as text, so --changed never selects them, and they are
-// not named no-*, so the glob below does not find them.
-const SCANNER_GUARDS = [
-  "lib/__tests__/spawn-env.test.ts",
-  "lib/state/__tests__/source-guards.test.ts",
-  "lib/__tests__/rt-paths.test.ts",
-  "packages/rt-client/test/command-call-sites.test.ts",
-];
-
 export function alwaysRun(): string[] {
-  const dir = join(ROOT, "lib", "__tests__");
-  const globbed = readdirSync(dir)
-    .filter((f) => /^no-.*\.test\.ts$/.test(f))
-    .map((f) => `lib/__tests__/${f}`);
-  return [...new Set([...globbed, ...SCANNER_GUARDS])].sort();
+  const files = unitDirs().flatMap((dir) => testFiles(join(ROOT, dir)));
+  return files.filter((f) => /^no-.*\.test\.tsx?$/.test(basename(f))).sort();
 }
 
 function readPackage() {

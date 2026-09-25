@@ -63,7 +63,7 @@ describe("captureProcessFlavor", () => {
       expect(seen.flavor).toBe("dev");
       expect(seen.passed).toBe("");
       // Bun hands an env-less child the environment the parent started with,
-      // which no delete can reach: why lib/__tests__/spawn-env.test.ts
+      // which no delete can reach: why lib/__tests__/no-spawn-without-env.test.ts
       // requires env on every call.
       expect(seen.plain).toBe("dev");
     } finally {
