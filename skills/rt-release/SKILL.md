@@ -37,34 +37,53 @@ left as-is or reduced to a pointer here.
 ## Fast path: one served-app fix
 
 When the release exists to ship a fix in ONE served app (board, chat,
-console, boxscore) and nothing but pins has landed on main since the last
-tag, the whole release is one verb, `rt release app <name>` (bare
-`rt release app` on a terminal picks the app; from source,
-`bun run cli.ts release app <name>`). It replaces steps 1-10, preflight
-included: it runs preflight's gate before its first write, bumps the app's
-version straight onto apps main, dispatches `bundle-apps.yml`, checks the
-bot deps.lock PR (only that row, sha256 of the published asset, codesign
-identity), merges it on green CI without waiting on CodeRabbit, writes the
-notes, tags the next patch and runs `rt release verify`. It tags without
-the step 8 rehearsal: its gate admits only serve-only pins, notes and
-`website/`, so the tag runs the pipeline the last tag already ran.
+console, boxscore), already merged on apps main, and rt's main has gained
+nothing since the last tag but serve-only pins, `RELEASE_NOTES.md` and
+`website/`, the whole release is one verb, `rt release app <name>` (bare `rt release app` on a terminal
+picks the app; from source, `bun run cli.ts release app <name>`). It covers
+steps 2-10 for that app: it bumps the app's version straight onto apps
+main, dispatches `bundle-apps.yml`, checks the bot deps.lock PR (the
+workflow's own, only that row's pin, the published asset's sha256,
+`codesign --verify --strict` plus the signing identity and team), merges it
+on green CI without waiting on CodeRabbit, writes the notes, tags the next
+patch without the step 8 rehearsal, and runs `rt release verify`. Of step
+1's preflight it runs only the gate: the last tag read from origin, then
+the diff since it. Preflight's other rows (picker conformance, tool,
+catalog and extension drift, rt-client parity) it does not run; a pin-only
+release leaves those layers where the last tag put them. Pins already
+merged for other served apps ride along with a notes section each, and
+every app whose code moved since its pin is listed as held, in the plan and
+in the notes.
 
 1. `rt release app <name> --dry-run` and read the plan: versions, both tags,
-   the commands.
+   held apps, the commands.
 2. Run it. On a terminal it asks y/N on the notes itself. From an agent,
-   run `rt release app <name> --json` in the background (a full run spends
-   30-60 minutes waiting on the bundle run, CI and release.yml) and read
-   its output when it exits: it stops at the notes with them in the
-   envelope. Show Matt the tag and the notes (step 6); after he approves,
-   run `rt release app <name> --json --yes-notes` the same way.
-3. A failure names the step and the resume command. Rerunning the same
-   command resumes, even after a run killed mid-wait, since every step
-   detects its own completion.
+   run `rt release app <name> --json` in the background (it waits on the
+   bundle run and the PR's CI) and read the envelope when it exits: it
+   stops at the notes, with the notes, their `notesHash` and a `resume`
+   command. Show Matt the tag and the notes (step 6). After he approves,
+   run that `resume` command, `rt release app <name> --json --yes-notes
+   <notesHash>`, the same way; it commits, tags and waits on release.yml
+   (25-50 minutes).
+3. Read the final envelope's `status`:
+   - `released`: go on to step 4.
+   - `pending`: tagged and published, but a check (usually
+     releases/latest) has not caught up. Not a failure: rerun its `resume`,
+     `rt release verify <tag>`, until it is clean.
+   - `failed`: the last step names what failed and `resume` names the next
+     command. Rerunning `rt release app <name>` resumes, even after a run
+     killed mid-wait, since every step detects its own completion; a
+     newest tag whose publish has not verified is re-verified before
+     anything new starts.
+   - A `--yes-notes` refusal ("does not match these notes") means the tag
+     or the notes changed after Matt approved, for example another pin
+     merged. Nothing was committed; show Matt the new notes from that
+     envelope and, once he approves, run its new `resume`.
 4. Then finish with steps 11 and 12.
 
 Use the full process below for a deck fix and for a main carrying anything
-outside the pin allowlist (the verb refuses both, naming why), and for a
-release that ships more than one app's fix.
+outside the pin allowlist (the verb refuses both, naming why), and when
+Matt wants several apps bumped and bundled in one release.
 
 ## Process
 
@@ -292,6 +311,12 @@ release that ships more than one app's fix.
    walkthrough gated on 2026-09-18), fast-browser (fastbrowser.setup ran
    a real setup regression to ground in v2.9.0), and every tool row (bun,
    sparkle, age, zstd, git-lfs, and the rest all run during install). Any changed file outside that list also means the full gate.
+
+   `rt release app` goes one step further (ratified with its design on
+   2026-09-25): it tags with no rehearsal at all, because its own gate
+   admits nothing but serve-only pins, notes and `website/` since a tag
+   whose pipeline run already published. Every other pin-only release
+   still tags on the rehearsal.
 
    When a walkthrough fails on `deck.managed`, read
    `~/.mattstack/deck/logs/agent.log` from the guest-home tarball FIRST;
