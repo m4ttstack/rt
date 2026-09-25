@@ -23,7 +23,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private let daemonLifecycle = DaemonLifecycle()
     private let spawnHealLatch = SpawnHealLatch()
     /// Set when this app serves before its takeover has booted the other
-    /// flavor's agents out; until then their answers are not this app's.
+    /// flavor's agents out, or after one that failed; until a takeover
+    /// succeeds, their answers are not this app's.
     private var launchTakeover: Task<String?, Never>?
 
     // ── Polling timers ──────────────────────────────────────────────────────
@@ -309,6 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                 let claimed = TrayServer.claimSocket() == .claimed
                 switch FlavorLaunch.afterFailedTakeover(socketClaimed: claimed) {
                 case .serveAndReport:
+                    launchTakeover = Task { failure }
                     startNormalOperation()
                     reportTakeoverFailure(failure, fatal: false)
                 case .quitAndReport:
