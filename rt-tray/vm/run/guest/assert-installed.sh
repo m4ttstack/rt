@@ -19,6 +19,7 @@ SOCK="$HOME/.mattstack/rt/tray.sock"
 # is linked into ~/.local/bin, so the bundle's own copy is the one every
 # block below uses to read `rt setup status --json`.
 JQ=/Applications/mattstack.app/Contents/Helpers/jq
+source "$(cd "$(dirname "$0")" && pwd)/served-apps.sh" || { echo "assert-installed.sh: cannot load served-apps.sh" >&2; exit 2; }
 
 # rt on PATH, symlink into the bundle
 if [ -L "$HOME/.local/bin/rt" ]; then
@@ -303,35 +304,17 @@ if [ "$HEADLESS" = 0 ]; then
     ""|0) bad "portless daemon not running (launchctl print system pid: ${proxy_pid:-not listed})";;
     *)    ok "portless daemon running (pid $proxy_pid)";;
   esac
-  # The end-to-end fact: an app domain resolving to loopback (the root daemon
-  # rewrites /etc/hosts from routes.json) and answering TLS with a host cert it
-  # mints on demand under the CA the installer trusted.
-  #
-  # The hostname comes from the route table, not a literal. Which apps hold a
-  # .mattstack route is deck's business: `deck adopt` reconciles one per managed
-  # record, and deck's own `deck.mattstack` comes from `deck setup`, which rt
-  # never runs. Hard-coding one app would assert deck's registrations, not this
-  # proxy. Both halves are still asserted: a route has to exist, and it has to
-  # answer.
-  cat "$HOME/.portless/routes.json" > "$LOGS/proxy-routes.json" 2>&1
-  served=$([ -x "$JQ" ] && "$JQ" -r '.[].hostname | select(endswith(".mattstack"))' < "$LOGS/proxy-routes.json" 2>/dev/null | head -1)
-  if [ -z "$served" ]; then
-    bad "no .mattstack route in ~/.portless/routes.json for the proxy to serve"
-  elif [ "$UNTRUSTED" = 1 ]; then
-    # Serving and being trusted are separate claims, and this scenario needs
-    # both halves proven: the proxy answers, and the CA is genuinely not
-    # trusted (curl without --insecure is the same trust store a browser uses).
-    curl -fsS --insecure --max-time 10 "https://$served" >/dev/null 2>&1 \
-      && ok "$served answers over https through the untrusted proxy" \
-      || bad "$served is routed but does not answer through the proxy"
-    curl -fsS --max-time 10 "https://$served" >/dev/null 2>&1 \
-      && bad "$served verified against the system trust store, so the certificate was not declined" \
-      || ok "$served is not trusted yet, as the declined scenario expects"
-  elif curl -fsS --max-time 10 "https://$served" >/dev/null 2>&1; then
-    ok "$served answers over https through the proxy"
+  # The end-to-end fact: every app domain resolving to loopback (the root
+  # daemon rewrites /etc/hosts from routes.json) and answering TLS with a host
+  # cert it mints on demand under the CA the installer trusted. Hostnames come
+  # from the route table; which apps must hold one is assert_served_apps' call,
+  # from the bundle's deps.lock.
+  if [ "$UNTRUSTED" = 1 ]; then
+    assert_mattstack_routes untrusted proxy
   else
-    bad "$served is routed but does not answer through the proxy"
+    assert_mattstack_routes trusted proxy
   fi
+  assert_served_apps assert-served 90
 
   # The remedy the row offers, exercised end to end: the tray's own escalator
   # runs the helper's trust verb, both dialogs get answered, and the row that
@@ -355,9 +338,7 @@ if [ "$HEADLESS" = 0 ]; then
       ready:*) ok "the certificate row cleared: tool.proxy $row"; assert_trust_record;;
       *)       bad "tool.proxy did not clear after the trust verb: ${row:-no row}";;
     esac
-    curl -fsS --max-time 10 "https://$served" >/dev/null 2>&1 \
-      && ok "$served now answers with a trusted certificate" \
-      || bad "$served still fails against the system trust store after trusting"
+    assert_mattstack_routes trusted proxy-after-trust
   elif [ "$UNTRUSTED" = 1 ]; then
     # Skipping silently would report zero failures for a run that never
     # exercised the trust verb, the row clearing, or the post-trust https
@@ -370,9 +351,14 @@ if [ "$HEADLESS" = 0 ]; then
   # what it said while doing it.
   sed -n '/# portless-start/,/# portless-end/p' /etc/hosts > "$LOGS/proxy-hosts.txt" 2>&1
   ls -la "$HOME/.portless" "$HOME/.portless/host-certs" > "$LOGS/proxy-statedir.txt" 2>&1
-  curl -sS -o /dev/null -D - --max-time 10 "https://${served:-deck.mattstack}" > "$LOGS/proxy-curl.txt" 2>&1
+  : > "$LOGS/proxy-curl.txt"
+  for h in $("$JQ" -r '.[].hostname | select(endswith(".mattstack"))' "$HOME/.portless/routes.json" 2>/dev/null); do
+    { echo "== $h"; curl -sS -o /dev/null -D - --max-time 10 "https://$h"; } >> "$LOGS/proxy-curl.txt" 2>&1
+  done
   tail -100 "/Library/Application Support/mattstack/proxy/log/service.log" > "$LOGS/proxy-service.log" 2>&1
   cat "$HOME/.mattstack/deck/platform.json" "$HOME/.mattstack/deck/registry.json" > "$LOGS/proxy-deck-state.json" 2>&1
+else
+  ok "served apps and .mattstack routes not asserted (headless: no proxy, so deck has no routes)"
 fi
 echo "$fails" > "$LOGS/assert-fails.txt"
 [ "$fails" -eq 0 ]

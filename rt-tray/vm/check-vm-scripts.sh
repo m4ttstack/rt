@@ -200,6 +200,15 @@ t "assert-installed.sh takes --expect-untrusted"  bash -c 'grep -q -- "--expect-
 t "drive-setup.sh answers repos.root before Continue" bash -c 'grep -q "setup repo-root set" run/guest/drive-setup.sh'
 t "drive-setup.sh rechecks after setting the root"    bash -c 'grep -q "setup.checklist.recheck" run/guest/drive-setup.sh'
 t "assert-installed.sh handles repos.root absent"     bash -c 'grep -q "repos.root" run/guest/assert-installed.sh'
+t "assert-installed.sh checks every .mattstack route, not the first" bash -c \
+  '! grep -qE "endswith\(\"\.mattstack\"\)\).*head -1" run/guest/assert-installed.sh \
+   && grep -q "assert_mattstack_routes untrusted proxy" run/guest/assert-installed.sh \
+   && grep -q "assert_mattstack_routes trusted proxy-after-trust" run/guest/assert-installed.sh'
+t "assert-installed.sh asserts the served apps the bundle's deps.lock names" bash -c \
+  'grep -q "assert_served_apps assert-served" run/guest/assert-installed.sh \
+   && grep -q "Contents/Resources/deps.lock" run/guest/served-apps.sh'
+t "no served-app name is written into the guest assert" bash -c \
+  '! grep -qwE "board|chat|console|boxscore|gitq" run/guest/served-apps.sh run/guest/jq/catalog.jq run/guest/jq/served-verdict.jq run/guest/jq/launchctl-print.jq'
 
 
 rm -rf /tmp/vmcheck-tu
