@@ -1,7 +1,7 @@
 import type { ClientContext } from "./client.ts";
 import { rawGit } from "./exec.ts";
 import { classifyDiffText } from "./diff-classify.ts";
-import { DiffParser } from "./vendor/ghd/diff-parser.ts";
+import { parseFileDiff } from "./diff-hunks.ts";
 import type { DiffSelection } from "./vendor/ghd/diff-selection.ts";
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
 import { formatPatch, formatPatchToDiscardChanges } from "./vendor/ghd/patch-formatter.ts";
@@ -40,11 +40,9 @@ export async function getStagingDiff(ctx: ClientContext, path: string, opts: Dif
   if (kind !== "text") {
     return { path, kind, untracked, hunks: [] };
   }
-  // DiffParser tolerates (and ignores) the `diff --git` / `index` preamble,
-  // so the raw command output goes straight in.
-  const hunks = text.trim() === "" ? [] : new DiffParser().parse(text).hunks;
+  const { hunks, typechange } = parseFileDiff(text);
   const sources = opts.withSources ? await workingDiffSources(ctx, path, { untracked, renamed }) : undefined;
-  return { path, kind: "text", untracked, hunks, ...(sources ? { sources } : {}) };
+  return { path, kind: "text", untracked, hunks, ...(typechange ? { typechange: true as const } : {}), ...(sources ? { sources } : {}) };
 }
 
 export async function stageSelection(
@@ -55,6 +53,9 @@ export async function stageSelection(
 ): Promise<void> {
   if (diff.kind !== "text") {
     throw new Error(`cannot line-stage ${diff.kind} file: ${diff.path}`);
+  }
+  if (diff.typechange) {
+    throw new Error(`cannot line-stage a typechange, stage it whole: ${diff.path}`);
   }
 
   if (opts.originalPath !== undefined && diff.untracked) {
@@ -138,6 +139,9 @@ export async function discardSelection(
   }
   if (diff.kind !== "text") {
     throw new Error(`cannot line-discard ${diff.kind} file: ${diff.path}`);
+  }
+  if (diff.typechange) {
+    throw new Error(`cannot line-discard a typechange, discard it whole: ${diff.path}`);
   }
 
   const patch = formatPatchToDiscardChanges(diff.path, { hunks: diff.hunks }, selection);

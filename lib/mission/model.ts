@@ -396,7 +396,10 @@ function buildDiffModel(input: {
   oversizedOverride: boolean;
   readOnly: boolean;
 }): MissionDiffModel {
-  const { path, status, stagingDiff, selection, oversizedOverride, readOnly } = input;
+  const { path, status, stagingDiff, selection, oversizedOverride } = input;
+  // Half a file and half a symlink is no state git can stage, so a
+  // typechange stages only whole, from its file row.
+  const readOnly = input.readOnly || stagingDiff?.typechange === true;
   if (path === null || stagingDiff === null) {
     return { path: "", status: "", kind: "none", stats: "", lang: "", lines: [], readOnly };
   }

@@ -9,7 +9,7 @@ import {
   type CommittedFileChange,
 } from "./vendor/ghd/log-parse.ts";
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
-import { DiffParser } from "./vendor/ghd/diff-parser.ts";
+import { parseFileDiff } from "./diff-hunks.ts";
 import { classifyDiffText } from "./diff-classify.ts";
 import { commitDiffSources } from "./diff-sources.ts";
 import type { ChangesetData, Commit, DiffReadOpts, StagingDiff } from "./types.ts";
@@ -116,8 +116,8 @@ function buildCommitDiff(stdout: string, file: CommittedFileChange): StagingDiff
   const patch = stdout.split("\0").at(-1) ?? "";
   const kind = classifyDiffText(patch);
   if (kind !== "text") return { path: file.path, kind, untracked: false, hunks: [] };
-  const hunks = patch.trim() === "" ? [] : new DiffParser().parse(patch).hunks;
-  return { path: file.path, kind: "text", untracked: false, hunks };
+  const { hunks, typechange } = parseFileDiff(patch);
+  return { path: file.path, kind: "text", untracked: false, hunks, ...(typechange ? { typechange: true as const } : {}) };
 }
 
 /** Port of GHD getChangedFiles (app/src/lib/git/log.ts). */
@@ -155,7 +155,7 @@ export async function getCommitDiff(
   opts: DiffReadOpts = {},
 ): Promise<StagingDiff> {
   const stdout = await rawGit(ctx.dir, [
-    "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color",
+    "log", commitish, "-m", "-1", "--first-parent", "--patch-with-raw", "--format=", "-z", "--no-color", "-M",
     "--", file.path, ...oldPathArgs(file),
   ]);
   const diff = buildCommitDiff(stdout, file);
@@ -176,7 +176,7 @@ export async function getCommitRangeDiff(
   const latestCommit = commits.at(-1) ?? "";
   try {
     const stdout = await rawGit(ctx.dir, [
-      "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color",
+      "diff", oldestCommitRef, latestCommit, "--patch-with-raw", "--format=", "-z", "--no-color", "-M",
       "--", file.path, ...oldPathArgs(file),
     ]);
     const diff = buildCommitDiff(stdout, file);
