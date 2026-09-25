@@ -55,6 +55,19 @@ describe("mr:create", () => {
     expect(inputs).toEqual([]);
   });
 
+  test("the same-branch guard compares trimmed values", async () => {
+    const { handlers, inputs } = harness(async () => { throw new Error("should not be called"); });
+    const res = await handlers["mr:create"]({ ...base, sourceBranch: " feat ", targetBranch: "feat" });
+    expect(res).toEqual({ ok: false, error: "sourceBranch and targetBranch are the same" });
+    expect(inputs).toEqual([]);
+  });
+
+  test("sourceBranch, targetBranch and title are trimmed before reaching the provider", async () => {
+    const { handlers, inputs } = harness(async () => ({ iid: 12, webUrl: "u" }));
+    await handlers["mr:create"]({ ...base, sourceBranch: " feat", targetBranch: "main ", title: " Add thing " });
+    expect(inputs[0]).toMatchObject({ sourceBranch: "feat", targetBranch: "main", title: "Add thing" });
+  });
+
   test("a non-boolean draft or non-string description is refused", async () => {
     const { handlers, inputs } = harness(async () => { throw new Error("should not be called"); });
     expect(await handlers["mr:create"]({ ...base, draft: "false" })).toEqual({ ok: false, error: "invalid draft" });

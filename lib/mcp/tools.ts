@@ -71,6 +71,17 @@ function checkOptional(input: Record<string, unknown>, fields: Array<{ name: str
   return undefined;
 }
 
+/** mr:action only checks typeof on iid/jobId/pipelineId, so 0, negative, fractional or NaN
+    would otherwise reach the forge as a 404 instead of a clear input error. */
+function checkPositiveInts(input: Record<string, unknown>, names: string[]): string | undefined {
+  for (const name of names) {
+    const v = input[name];
+    if (v === undefined) continue;
+    if (typeof v !== "number" || !Number.isInteger(v) || v <= 0) return `"${name}" must be a positive integer`;
+  }
+  return undefined;
+}
+
 const SIGN_IN_HINT = "no signed-in chat session for this pane; run `rt chat sign-in` in bash first";
 
 /** No derived-handle fallback: a tool call with no session file is a hard error, unlike the CLI's resolveHandle. */
@@ -90,9 +101,10 @@ const MR_WRITE_TIMEOUT_MS = 30_000;
 
 const REPO_NAME_RULE = "repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.";
 
-/** A timed-out create or post may still land daemon-side (see MR_WRITE_TIMEOUT_MS). */
+/** A timed-out or gateway-timed-out create or post may still land daemon-side (see
+    MR_WRITE_TIMEOUT_MS); the pattern also matches GitLab's own wording (e.g. "504 Gateway Timeout"). */
 function withLandingHint(res: ToolResult, check: string): ToolResult {
-  if (res.ok || !/timed out/i.test(res.error ?? "")) return res;
+  if (res.ok || !/timed ?out|timeout/i.test(res.error ?? "")) return res;
   return err(`${res.error}; the write may still land, so check ${check} before retrying`);
 }
 
@@ -404,7 +416,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_reply_thread",
-      description: `Reply to an existing merge or pull request discussion thread on the given repo and IID. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Reply to an existing MR discussion thread on the given repo and IID. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -490,7 +502,8 @@ export function mcpTools(): McpToolDef[] {
           { name: "repoName", type: "string" },
           { name: "iid", type: "number" },
           { name: "body", type: "string" },
-        ]) ?? checkOptional(input, [{ name: "resolvable", type: "boolean" }]);
+        ]) ?? checkOptional(input, [{ name: "resolvable", type: "boolean" }])
+          ?? checkPositiveInts(input, ["iid"]);
         if (bad) return err(bad);
         const payload: Commands["mr:comment"]["payload"] = {
           repoName: input.repoName as string,
@@ -548,7 +561,8 @@ export function mcpTools(): McpToolDef[] {
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "approved", type: "boolean" }]);
+        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "approved", type: "boolean" }])
+          ?? checkPositiveInts(input, ["iid"]);
         if (bad) return err(bad);
         const approved = input.approved !== false;
         return runMrAction(input, approved ? "approve" : "unapprove", [], { approved });
@@ -565,7 +579,8 @@ export function mcpTools(): McpToolDef[] {
       },
       async handler(input) {
         const bad = checkRequired(input, [...MR_TARGET_FIELDS, { name: "discussionId", type: "string" }])
-          ?? checkOptional(input, [{ name: "resolved", type: "boolean" }]);
+          ?? checkOptional(input, [{ name: "resolved", type: "boolean" }])
+          ?? checkPositiveInts(input, ["iid"]);
         if (bad) return err(bad);
         const discussionId = input.discussionId as string;
         const resolved = input.resolved !== false;
@@ -588,7 +603,8 @@ export function mcpTools(): McpToolDef[] {
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "ready", type: "boolean" }]);
+        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "ready", type: "boolean" }])
+          ?? checkPositiveInts(input, ["iid"]);
         if (bad) return err(bad);
         const ready = input.ready !== false;
         return runMrAction(input, "toggleDraft", [!ready], { ready });
@@ -605,7 +621,8 @@ export function mcpTools(): McpToolDef[] {
       },
       async handler(input) {
         const bad = checkRequired(input, MR_TARGET_FIELDS)
-          ?? checkOptional(input, [{ name: "jobId", type: "number" }, { name: "pipelineId", type: "number" }]);
+          ?? checkOptional(input, [{ name: "jobId", type: "number" }, { name: "pipelineId", type: "number" }])
+          ?? checkPositiveInts(input, ["iid", "jobId", "pipelineId"]);
         if (bad) return err(bad);
         const hasJob = input.jobId !== undefined;
         if (hasJob === (input.pipelineId !== undefined)) return err('pass exactly one of "jobId" or "pipelineId"');
@@ -624,7 +641,7 @@ export function mcpTools(): McpToolDef[] {
         additionalProperties: false,
       },
       async handler(input) {
-        const bad = checkRequired(input, MR_TARGET_FIELDS);
+        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkPositiveInts(input, ["iid"]);
         if (bad) return err(bad);
         return runMrAction(input, "rebase", [], { rebased: true });
       },

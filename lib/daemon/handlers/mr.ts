@@ -171,10 +171,15 @@ export function createMRHandlers(
     "mr:create": async (payload) => {
       const p = payload as { sourceBranch?: unknown; targetBranch?: unknown; title?: unknown; description?: unknown; draft?: unknown } | undefined;
       const nonBlank = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
-      const sourceBranch = p?.sourceBranch, targetBranch = p?.targetBranch, title = p?.title;
-      if (!nonBlank(sourceBranch) || !nonBlank(targetBranch) || !nonBlank(title)) {
+      const sourceBranchInput = p?.sourceBranch, targetBranchInput = p?.targetBranch, titleInput = p?.title;
+      if (!nonBlank(sourceBranchInput) || !nonBlank(targetBranchInput) || !nonBlank(titleInput)) {
         return { ok: false, error: "missing repoName/sourceBranch/targetBranch/title" };
       }
+      // Trimmed once here so the same-branch guard and the provider call see identical values;
+      // untrimmed " main" vs "main" would pass the guard and reach GitLab as a bad branch name.
+      const sourceBranch = sourceBranchInput.trim();
+      const targetBranch = targetBranchInput.trim();
+      const title = titleInput.trim();
       if (p?.description !== undefined && typeof p.description !== "string") return { ok: false, error: "invalid description" };
       if (p?.draft !== undefined && typeof p.draft !== "boolean") return { ok: false, error: "invalid draft" };
       if (sourceBranch === targetBranch) return { ok: false, error: "sourceBranch and targetBranch are the same" };

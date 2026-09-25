@@ -313,6 +313,13 @@ describe("mcpTools", () => {
     }
   });
 
+  test("mr_reply_thread's description says GitLab only and names an MR discussion thread", () => {
+    const tool = mcpTools().find((t) => t.name === "mr_reply_thread")!;
+    expect(tool.description.startsWith("GitLab only.")).toBe(true);
+    expect(tool.description).toContain("MR discussion thread");
+    expect(tool.description).not.toContain("merge or pull request discussion thread");
+  });
+
   describe("mr write tools: mr_comment, mr_create", () => {
     afterEach(() => {
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
@@ -368,6 +375,14 @@ describe("mcpTools", () => {
       expect(res.ok).toBe(false);
       expect(res.error).toContain("may still land");
       expect(res.error).toContain("discussions");
+    });
+
+    test("a gateway-timeout mr_comment error also gets the landing hint", async () => {
+      fakeDaemon(() => ({ ok: false, error: "createDiscussion failed: 504 Gateway Timeout" }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, body: "hi" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("may still land");
     });
 
     test("a daemon error that is not a timeout passes through without the landing hint", async () => {
@@ -471,6 +486,24 @@ describe("mcpTools", () => {
       const tool = mcpTools().find((t) => t.name === "mr_retry")!;
       const res = await tool.handler({ ...T, jobId: "812" }, {} as NodeJS.ProcessEnv);
       expect(res.error).toBe('"jobId" must be a number');
+      expect(calls).toEqual([]);
+    });
+
+    test("mr_approve refuses a non-positive-integer iid", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_approve")!;
+      const zero = await tool.handler({ repoName: "remote:x", iid: 0 }, {} as NodeJS.ProcessEnv);
+      const fractional = await tool.handler({ repoName: "remote:x", iid: 1.5 }, {} as NodeJS.ProcessEnv);
+      expect(zero.error).toBe('"iid" must be a positive integer');
+      expect(fractional.error).toBe('"iid" must be a positive integer');
+      expect(calls).toEqual([]);
+    });
+
+    test("mr_retry refuses a negative jobId", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_retry")!;
+      const res = await tool.handler({ ...T, jobId: -1 }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('"jobId" must be a positive integer');
       expect(calls).toEqual([]);
     });
 
