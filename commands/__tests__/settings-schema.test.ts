@@ -65,6 +65,18 @@ describe("settingsSchemaDiff", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  const captureErrors = async (fn: () => Promise<void>): Promise<string[]> => {
+    const origError = console.error;
+    const errors: string[] = [];
+    console.error = (...args: unknown[]) => { errors.push(args.map(String).join(" ")); };
+    try {
+      await fn();
+    } finally {
+      console.error = origError;
+    }
+    return errors;
+  };
+
   const writeLock = (lock: unknown): string => {
     const p = join(dir, "prev.lock.json");
     writeFileSync(p, JSON.stringify(lock));
@@ -95,11 +107,29 @@ describe("settingsSchemaDiff", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("a missing --against file reads as an empty lock", async () => {
-    await settingsSchemaDiff(["--against", join(dir, "absent.json"), "--json"]);
+  test("a missing --against file reads as an empty lock and warns naming the path", async () => {
+    const absent = join(dir, "absent.json");
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", absent, "--json"]));
 
     expect(JSON.parse(logs.join("\n")).ok).toBe(true);
     expect(process.exitCode).toBe(0);
+    expect(errors.some((e) => e.includes(absent))).toBe(true);
+  });
+
+  test("--against and --against-ref together is a usage error", async () => {
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock({}), "--against-ref", "HEAD", "--json"]));
+
+    expect(process.exitCode).toBe(1);
+    expect(logs).toEqual([]);
+    expect(errors.some((e) => e.includes("--against") && e.includes("--against-ref"))).toBe(true);
+  });
+
+  test("a compiled-binary repo root refuses and exits 1", async () => {
+    const errors = await captureErrors(() => settingsSchemaDiff(["--json"], { repoRoot: "/$bunfs/root/" }));
+
+    expect(process.exitCode).toBe(1);
+    expect(logs).toEqual([]);
+    expect(errors.some((e) => e.includes("run from source"))).toBe(true);
   });
 
   test("the committed lock diffed against itself prints no changes", async () => {
@@ -110,14 +140,7 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("an unknown --against-ref is an error, not an empty lock", async () => {
-    const origError = console.error;
-    const errors: string[] = [];
-    console.error = (...args: unknown[]) => { errors.push(args.map(String).join(" ")); };
-    try {
-      await settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"]);
-    } finally {
-      console.error = origError;
-    }
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"]));
 
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-branch-for-schema-diff"))).toBe(true);

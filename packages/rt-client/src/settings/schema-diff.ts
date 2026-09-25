@@ -79,11 +79,13 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
         break;
       case "properties": {
         const ap = (av ?? {}) as Record<string, JsonSchema>, bp = (bv ?? {}) as Record<string, JsonSchema>;
-        // A removed property's values fall through to additionalProperties, which may reject them.
+        // A removed property's values fall through to the new additionalProperties, and an added
+        // property's values used to be checked by the old one, so either side's extras schema can reject.
         const closed = !openExtras(b.additionalProperties);
+        const prevExtrasSchema = isObject(a.additionalProperties) && !openExtras(a.additionalProperties);
         for (const p of new Set([...Object.keys(ap), ...Object.keys(bp)])) {
           const path = at ? `${at}.${p}` : p;
-          if (!(p in ap)) out.push({ kind: "safe", detail: `${path}: property added` });
+          if (!(p in ap)) out.push({ kind: prevExtrasSchema ? "breaking" : "safe", detail: `${path}: property added` });
           else if (!(p in bp)) out.push({ kind: closed ? "breaking" : "safe", detail: `${path}: property removed` });
           else out.push(...diffNode(ap[p]!, bp[p]!, path));
         }
@@ -94,11 +96,13 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
         else if (isObject(av) && isObject(bv)) out.push(...diffNode(av, bv, `${at}[]`));
         else verdict(false, `${k} changed`);
         break;
-      case "prefixItems": verdict(bv === undefined, "prefixItems changed"); break;
+      // Without prefixItems, items applies to the formerly prefixed elements too.
+      case "prefixItems": verdict(bv === undefined && openExtras(b.items), `prefixItems ${bv === undefined ? "removed" : "changed"}`); break;
       case "anyOf":
         verdict(bv === undefined || (Array.isArray(av) && Array.isArray(bv) && av.every((x) => bv.some((y) => isObject(x) && isObject(y) && safeOnly(x, y)))), "anyOf changed");
         break;
-      case "oneOf": verdict(bv === undefined || superset(bv, av), "oneOf changed"); break;
+      // An added branch can make a value match twice, which oneOf rejects.
+      case "oneOf": verdict(bv === undefined, "oneOf changed"); break;
       case "minimum": case "exclusiveMinimum": case "minLength": case "minItems":
         verdict(bv === undefined || (av !== undefined && (bv as number) <= (av as number)), `${k} ${av} -> ${bv}`); break;
       case "maximum": case "exclusiveMaximum": case "maxLength": case "maxItems":

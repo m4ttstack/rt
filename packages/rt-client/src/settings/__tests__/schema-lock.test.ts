@@ -91,6 +91,37 @@ describe("classifyLockDiff", () => {
     expect(kinds({ anyOf: [{ type: "string" }, { type: "null" }] }, { anyOf: [{ type: "string" }] })).toEqual(["breaking"]);
   });
 
+  test("one case per remaining keyword rule", () => {
+    expect(kinds({ type: "string" }, { type: ["string", "null"] })).toEqual(["safe"]);
+    expect(kinds({ type: "string", pattern: "^x" }, { type: "string" })).toEqual(["safe"]);
+    expect(kinds({ type: "string" }, { type: "string", format: "uri" })).toEqual(["breaking"]);
+    expect(kinds({ type: "string", format: "uri" }, { type: "string", format: "email" })).toEqual(["breaking"]);
+    expect(kinds({ type: "string", format: "uri" }, { type: "string" })).toEqual(["safe"]);
+    expect(kinds({ type: "string", maxLength: 10 }, { type: "string", maxLength: 5 })).toEqual(["breaking"]);
+    expect(kinds({ type: "number", maximum: 10 }, { type: "number", maximum: 5 })).toEqual(["breaking"]);
+    expect(kinds({ type: "object", propertyNames: { type: "string" } }, { type: "object", propertyNames: { type: "string", pattern: "^a" } })).toEqual(["breaking"]);
+    expect(kinds({ type: "object", propertyNames: { type: "string", pattern: "^a" } }, { type: "object" })).toEqual(["safe"]);
+    expect(kinds({ type: "array", prefixItems: [{ type: "string" }] }, { type: "array", prefixItems: [{ type: "number" }] })).toEqual(["breaking"]);
+  });
+
+  test("oneOf: a branch added or removed is breaking, dropping oneOf entirely is safe", () => {
+    expect(kinds({ oneOf: [{ type: "string" }, { type: "number" }] }, { oneOf: [{ type: "string" }] })).toEqual(["breaking"]);
+    expect(kinds({ oneOf: [{ type: "number" }] }, { oneOf: [{ type: "number" }, { type: "integer" }] })).toEqual(["breaking"]);
+    expect(kinds({ oneOf: [{ type: "number" }] }, {})).toEqual(["safe"]);
+  });
+
+  test("a property added under a closed extras schema is breaking; under open or false extras it is safe", () => {
+    expect(kinds(obj({}, [], { additionalProperties: { type: "string" } }), obj({ a: { type: "number" } }, [], { additionalProperties: { type: "string" } }))).toEqual(["breaking"]);
+    expect(kinds(obj({}, [], { additionalProperties: {} }), obj({ a: { type: "number" } }, [], { additionalProperties: {} }))).toEqual(["safe"]);
+    expect(kinds(obj({}, [], { additionalProperties: false }), obj({ a: { type: "number" } }, [], { additionalProperties: false }))).toEqual(["safe"]);
+  });
+
+  test("rest tuple: dropping prefixItems lets items reach the prefixed elements, so it is breaking unless items is open", () => {
+    const rest = { type: "array", prefixItems: [{ type: "string" }], items: { type: "number" } };
+    expect(kinds(rest, { type: "array", items: { type: "number" } })).toEqual(["breaking"]);
+    expect(kinds({ type: "array", prefixItems: [{ type: "string" }] }, { type: "array" })).toEqual(["safe"]);
+  });
+
   test("integer widened to number is safe", () => {
     expect(kinds({ type: "integer" }, { type: "number" })).toEqual(["safe"]);
     expect(kinds({ type: "number" }, { type: "integer" })).toEqual(["breaking"]);

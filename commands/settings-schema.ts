@@ -32,24 +32,33 @@ export async function settingsSchemaLock(args: string[], deps: { lockPath?: stri
 }
 
 /** A ref with no lock file is `{}`; a ref git cannot resolve is an error, never a silent pass. */
-function lockAtRef(ref: string): Lock | Error {
-  const verify = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: REPO_ROOT, encoding: "utf8" });
+function lockAtRef(ref: string, repoRoot: string): Lock | Error {
+  const verify = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: repoRoot, encoding: "utf8" });
   if (verify.status !== 0) return new Error(`unknown git ref ${ref} (run git fetch origin?)`);
-  const show = spawnSync("git", ["show", `${ref}:${LOCK_REL}`], { cwd: REPO_ROOT, encoding: "utf8" });
+  const show = spawnSync("git", ["show", `${ref}:${LOCK_REL}`], { cwd: repoRoot, encoding: "utf8" });
   return show.status === 0 ? (JSON.parse(show.stdout) as Lock) : {};
 }
 
-export async function settingsSchemaDiff(args: string[]): Promise<void> {
+function lockAtPath(path: string): Lock {
+  if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as Lock;
+  console.error(`rt settings schema diff: ${path} does not exist; diffing against an empty lock`);
+  return {};
+}
+
+export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string } = {}): Promise<void> {
+  const repoRoot = deps.repoRoot ?? REPO_ROOT;
+  const fail = (message: string) => {
+    console.error(`rt settings schema diff: ${message}`);
+    process.exitCode = 1;
+  };
+  // A compiled rt diffs its own bundled registry and has no checkout for git to read.
+  if (repoRoot.startsWith("/$bunfs/")) return fail("run from source (bun run cli.ts settings schema diff); the compiled binary has no checkout to diff");
   const json = args.includes("--json");
   const against = flagValue(args, "--against");
-  const prev = against !== undefined
-    ? (existsSync(against) ? (JSON.parse(readFileSync(against, "utf8")) as Lock) : {})
-    : lockAtRef(flagValue(args, "--against-ref") ?? "origin/main");
-  if (prev instanceof Error) {
-    console.error(`rt settings schema diff: ${prev.message}`);
-    process.exitCode = 1;
-    return;
-  }
+  const againstRef = flagValue(args, "--against-ref");
+  if (against !== undefined && againstRef !== undefined) return fail("pass --against <file> or --against-ref <ref>, not both");
+  const prev = against !== undefined ? lockAtPath(against) : lockAtRef(againstRef ?? "origin/main", repoRoot);
+  if (prev instanceof Error) return fail(prev.message);
 
   const next = buildLock();
   const changes = classifyLockDiff(prev, next);
