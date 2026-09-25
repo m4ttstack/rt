@@ -1,4 +1,8 @@
 name: Bundle apps
+# rt release app reads the apps and dry_run inputs back from this title to
+# tell which in-flight run is building an app; keep the shape in step with
+# bundleRunTargets in lib/release/release-app.ts.
+run-name: "Bundle apps: ${{ inputs.apps }}${{ inputs.dry_run && ' (dry run)' || '' }}"
 
 on:
   workflow_dispatch:
