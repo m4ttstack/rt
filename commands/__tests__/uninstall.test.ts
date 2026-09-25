@@ -211,7 +211,7 @@ describe("rt uninstall: takes no app name", () => {
     expect(payload.contract).toBe(1);
     expect(payload.error.code).toBe("unexpected-args");
     expect(payload.error.args).toEqual(["gitq", "extra"]);
-    expect(payload.error.message).toContain("deck remove <name> --force");
+    expect(payload.error.message).toContain("run: deck remove <name> (add --force for a mattstack app");
   });
 
   test("human mode: one line naming the argument, the whole-product scope and the per-app command", async () => {
@@ -220,7 +220,7 @@ describe("rt uninstall: takes no app name", () => {
     await runExpectingExit(() => runUninstallCommand(["gitq"], {}, deps));
 
     expect(deps.lines).toEqual([
-      'rt uninstall: unexpected argument "gitq". It takes no app name and removes all of mattstack; to remove one app from deck, run: deck remove <name> --force',
+      'rt uninstall: unexpected argument "gitq". It takes no app name and removes all of mattstack; to remove one app from deck, run: deck remove <name> (add --force for a mattstack app; bundled apps return when deck restarts)',
     ]);
   });
 
