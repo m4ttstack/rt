@@ -55,8 +55,7 @@ describe("accountRows — account.gitlab", () => {
         type: "connect",
         label: "Connect",
         integration: "gitlab",
-        fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user, read_repository" }],
-        create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user%2Cread_repository" },
+        fields: [{ name: "token", label: "GitLab token", secret: true, hint: "api" }],
       },
       recheck: "on-change",
     });
@@ -69,9 +68,30 @@ describe("accountRows — account.gitlab", () => {
       type: "connect",
       label: "Connect",
       integration: "gitlab",
-      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "api, read_user, write_repository" }],
-      create: { label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=api%2Cread_user%2Cwrite_repository" },
+      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "api" }],
+      create: { label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=api" },
     });
+  });
+
+  test("join intent -> a member's scopes", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.com", provider: "gitlab" } } });
+    const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), JOIN_INTENT), "account.gitlab");
+    expect(r.action).toEqual({
+      type: "connect",
+      label: "Connect",
+      integration: "gitlab",
+      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user" }],
+      create: { label: "Create a token on GitLab…", url: "https://gitlab.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user" },
+    });
+  });
+
+  test("no intent (Install cleared it): a clone rt joined stays a member, any other team is the owner's", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.com", provider: "gitlab" } } });
+    const joined = fakeProbes({ files: { "/fake-home/.mattstack/rt/teams/acme.json": JSON.stringify({ joinedByRt: true }) } });
+    const member = await pickRow(accountRows(joined, team, [], fakeSecrets(), null), "account.gitlab");
+    expect((member.action as { fields: { hint?: string }[] }).fields[0]!.hint).toBe("read_api, read_user");
+    const owner = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), null), "account.gitlab");
+    expect((owner.action as { fields: { hint?: string }[] }).fields[0]!.hint).toBe("api");
   });
 
   test("the create link opens the host the user confirmed over the one the team declares", async () => {
@@ -80,10 +100,32 @@ describe("accountRows — account.gitlab", () => {
     expect((r.action as { create?: { url: string } }).create?.url).toStartWith("https://git.internal.example/-/user_settings/personal_access_tokens?");
   });
 
+  test("a self-hosted forge the team declares but the user has not confirmed gets no create link (a link is still a place rt sends the user)", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+    const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), JOIN_INTENT), "account.gitlab");
+    expect(r.action?.type).toBe("connect");
+    expect((r.action as { create?: unknown }).create).toBeUndefined();
+  });
+
   test("no forge declared and nothing confirmed -> the create link falls back to gitlab.com", async () => {
     const reqs: PackRequirements[] = [{ pack: "somepack", integrations: ["gitlab"], tools: [] }];
     const r = await pickRow(accountRows(fakeProbes(), baseTeam(), reqs, fakeSecrets(), null), "account.gitlab");
     expect((r.action as { create?: { url: string } }).create?.url).toStartWith("https://gitlab.com/-/user_settings/personal_access_tokens?");
+  });
+
+  test("a stored token the forge accepts but that lacks the role's scopes reads invalid, names the shortfall, and offers the create link", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+    const fetch = async (url: string) => {
+      if (url.includes("personal_access_tokens/self")) return { status: 200, body: JSON.stringify({ scopes: ["read_api", "read_user"] }), headers: {} };
+      return { status: 200, body: "{}", headers: {} };
+    };
+    const r = await pickRow(
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.gitlabToken": "tok123" }), null, { forgeHost: "gitlab.example.com" }),
+      "account.gitlab",
+    );
+    expect(r.status).toBe("invalid");
+    expect(r.detail).toBe("token is missing: api");
+    expect((r.action as { create?: { url: string } }).create?.url).toStartWith("https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=api");
   });
 
   test("secret present, host user-confirmed, validate 200s -> ready", async () => {
@@ -93,10 +135,8 @@ describe("accountRows — account.gitlab", () => {
       if (url.includes("personal_access_tokens/self")) return { status: 200, body: JSON.stringify({ scopes: ["read_api"] }), headers: {} };
       return { status: 200, body: "{}", headers: {} };
     };
-    const r = await pickRow(
-      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.gitlabToken": "tok123" }), null, { forgeHost: "gitlab.example.com" }),
-      "account.gitlab",
-    );
+    const joined = fakeProbes({ fetch, files: { "/fake-home/.mattstack/rt/teams/acme.json": JSON.stringify({ joinedByRt: true }) } });
+    const r = await pickRow(accountRows(joined, team, [], fakeSecrets({ "rt.gitlabToken": "tok123" }), null, { forgeHost: "gitlab.example.com" }), "account.gitlab");
     expect(r.status).toBe("ready");
     expect(r.detail).toBe("gitlab token valid");
   });
@@ -113,8 +153,8 @@ describe("accountRows — account.gitlab", () => {
       type: "connect",
       label: "Connect",
       integration: "gitlab",
-      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "read_api, read_user, read_repository" }],
-      create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=read_api%2Cread_user%2Cread_repository" },
+      fields: [{ name: "token", label: "GitLab token", secret: true, hint: "api" }],
+      create: { label: "Create a token on GitLab…", url: "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=mattstack&scopes=api" },
     });
   });
 
@@ -199,6 +239,15 @@ describe("accountRows — account.github", () => {
     const r = await pickRow(accountRows(p, githubTeam(), [], fakeSecrets({ "rt.githubToken": "gh_tok" }), null), "account.github");
     expect(r.status).toBe("ready");
     expect(p.calls.exec).not.toContainEqual(["gh", "auth", "status"]);
+  });
+
+  test("token present, forge accepts it but its classic scopes fall short -> invalid naming the shortfall, still replaceable", async () => {
+    const fetch = async () => ({ status: 200, body: "{}", headers: { "x-oauth-scopes": "repo" } as Record<string, string> });
+    const exec: ExecScript = (argv) => (argv[0] === "gh" ? { code: 1, stdout: "", stderr: "" } : ok());
+    const r = await pickRow(accountRows(fakeProbes({ exec, fetch }), githubTeam(), [], fakeSecrets({ "rt.githubToken": "gh_tok" }), null), "account.github");
+    expect(r.status).toBe("invalid");
+    expect(r.detail).toBe("token is missing: read:org");
+    expect(r.action).toMatchObject({ type: "connect", create: { url: "https://github.com/settings/tokens/new?description=mattstack&scopes=repo%2Cread%3Aorg" } });
   });
 
   test("token present, validate invalid + gh authenticated -> invalid WITH alternatives (H1 fixed direction)", async () => {

@@ -33,7 +33,8 @@ import { realWaiverStore, unwaiveRow, waiveRow, type WaiverChange, type WaiverSt
 import { isValidHostname, isValidHttpsUrl } from "../lib/setup/host-validate.ts";
 import { integrationDef, type ValidateCtx } from "../lib/setup/integrations.ts";
 import { clearIntent, readIntent, teamRefFromIntent, writeIntent } from "../lib/setup/intent.ts";
-import { missingScopes, type ForgeRole } from "../lib/setup/token-create.ts";
+import { forgeRole, missingScopes } from "../lib/setup/token-create.ts";
+import { readTeamLocal } from "../lib/team/team-local.ts";
 import { NO_MANIFEST_DETAIL, setupPackFlow } from "../lib/setup/pack.ts";
 import { composePlan, enrichSnapshotForge, realSecretPresence } from "../lib/setup/plan.ts";
 import { createRealProbes, type Probes } from "../lib/setup/probes.ts";
@@ -1187,12 +1188,15 @@ async function connectCredential(id: Integration, args: string[], deps: ConnectD
     return;
   }
   if (result.status === "error") throw new UserActionableError("unreachable", result.detail);
-  // A token the forge accepts can still lack what git needs later (the private clone, the owner's push), so the shortfall is named here, at the paste, not at the clone.
+  // A token the forge accepts can still lack what the owner's push or the members API needs later, so the shortfall is named here, at the paste, not at the clone.
   if (id === "github" || id === "gitlab") {
-    const role: ForgeRole = readIntent(deps.probes)?.mode === "create" ? "owner" : "member";
+    const team = snapshotFor(deps);
+    const joinedByRt = team.slug ? readTeamLocal(deps.probes, team.slug).joinedByRt : false;
+    const role = forgeRole({ intentMode: readIntent(deps.probes)?.mode ?? null, joinedByRt, hasTeam: team.slug !== "" });
     const missing = missingScopes(id, role, result.scopesSeen);
     if (missing.length > 0) {
-      printIntegrationResult(deps, args.includes("--json"), { integration: id, status: "invalid", detail: `token is missing: ${missing.join(", ")}`, scopesSeen: result.scopesSeen });
+      const how = sourceDetail === "via gh" ? ` (run: gh auth refresh -s ${missing.join(",")})` : "";
+      printIntegrationResult(deps, args.includes("--json"), { integration: id, status: "invalid", detail: `token is missing: ${missing.join(", ")}${how}`, scopesSeen: result.scopesSeen });
       return;
     }
   }

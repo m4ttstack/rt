@@ -231,7 +231,7 @@ describe("integrationConnect — gitlab (generic token flow)", () => {
   });
 });
 
-describe("integrationConnect — forge token scopes", () => {
+describe("integrationConnect: forge token scopes", () => {
   const gitlabWithScopes = (scopes: string[]): Probes["fetch"] => async (url) => {
     if (url.includes("personal_access_tokens/self")) return { status: 200, body: JSON.stringify({ scopes }), headers: {} };
     if (url.includes("/api/v4/user")) return { status: 200, body: "{}", headers: {} };
@@ -239,28 +239,58 @@ describe("integrationConnect — forge token scopes", () => {
   };
   const CREATE_INTENT = JSON.stringify({ v: 1, at: "2026-09-24T00:00:00.000Z", mode: "create", team: { slug: "acme", name: "Acme", remote: "https://gitlab.com/acme/mattstack.git", others: false } });
 
-  test("a gitlab token that validates but lacks read_repository is refused before storage, naming the scope", async () => {
-    const probes = fakeProbes({ fetch: gitlabWithScopes(["read_api", "read_user"]) });
+  test("a gitlab token that validates but lacks read_api is refused before storage, naming the scope", async () => {
+    const probes = fakeProbes({ fetch: gitlabWithScopes(["read_user"]) });
     const deps = baseDeps({ probes, stdin: async () => ({ token: "glpat-x" }), writer: { storeReady: async () => false, write: neverCalled("writer.write") } });
 
     await integrationConnect("gitlab", ["--json"], deps);
 
     const body = JSON.parse(deps.lines[0]!) as { status: string; detail: string; scopesSeen: string[] };
     expect(body.status).toBe("invalid");
-    expect(body.detail).toBe("token is missing: read_repository");
-    expect(body.scopesSeen).toEqual(["read_api", "read_user"]);
+    expect(body.detail).toBe("token is missing: read_api");
+    expect(body.scopesSeen).toEqual(["read_user"]);
     expect(Object.keys(probes.calls.writes).some((k) => k.includes("setup-staging"))).toBe(false);
   });
 
   test("a create intent checks the owner's scopes", async () => {
-    const probes = fakeProbes({ fetch: gitlabWithScopes(["read_api", "read_user", "read_repository"]), files: { "/fake-home/.mattstack/rt/setup-intent.json": CREATE_INTENT } });
+    const probes = fakeProbes({ fetch: gitlabWithScopes(["read_api", "read_user"]), files: { "/fake-home/.mattstack/rt/setup-intent.json": CREATE_INTENT } });
     const deps = baseDeps({ probes, stdin: async () => ({ token: "glpat-x" }), writer: { storeReady: async () => false, write: neverCalled("writer.write") } });
 
     await integrationConnect("gitlab", ["--json"], deps);
 
     const body = JSON.parse(deps.lines[0]!) as { status: string; detail: string };
     expect(body.status).toBe("invalid");
-    expect(body.detail).toBe("token is missing: api, write_repository");
+    expect(body.detail).toBe("token is missing: api");
+  });
+
+  test("no intent (after Install): the owner of a team rt did not join is held to the owner's scopes", async () => {
+    const probes = fakeProbes({ fetch: gitlabWithScopes(["read_api", "read_user"]) });
+    const deps = baseDeps({
+      probes,
+      stdin: async () => ({ token: "glpat-x" }),
+      writer: { storeReady: async () => false, write: neverCalled("writer.write") },
+      teamSnapshot: () => ({ ...slackTeamSnapshot(), integrations: { forge: { host: "gitlab.com", provider: "gitlab" } } }),
+    });
+
+    await integrationConnect("gitlab", ["--json"], deps);
+
+    const body = JSON.parse(deps.lines[0]!) as { status: string; detail: string };
+    expect(body.status).toBe("invalid");
+    expect(body.detail).toBe("token is missing: api");
+  });
+
+  test("a gh session token short of a scope is refused with the gh command that widens it", async () => {
+    const exec: Probes["exec"] = async (argv) => (argv[0] === "gh" && argv[1] === "auth" && argv[2] === "token" ? ok("ghp_from_gh\n") : ok());
+    const fetch: Probes["fetch"] = async (url) =>
+      url.includes("api.github.com/user") ? { status: 200, body: "{}", headers: { "x-oauth-scopes": "repo" } as Record<string, string> } : { status: 0, body: "", headers: {} };
+    const probes = fakeProbes({ exec, fetch });
+    const deps = baseDeps({ probes, writer: { storeReady: async () => true, write: neverCalled("writer.write") } });
+
+    await integrationConnect("github", ["--use-gh", "--json"], deps);
+
+    const body = JSON.parse(deps.lines[0]!) as { status: string; detail: string };
+    expect(body.status).toBe("invalid");
+    expect(body.detail).toBe("token is missing: read:org (run: gh auth refresh -s read:org)");
   });
 
   test("a github token that reports no scopes (fine-grained) is stored as ready", async () => {
