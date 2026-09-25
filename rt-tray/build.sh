@@ -271,6 +271,11 @@ bundle_helpers() {
         echo "  ✓ Helpers/$name $version"
     done < "$tsv"
     cp "$SCRIPT_DIR/deps.lock" "$CONTENTS/Resources/deps.lock"
+    # Deck reads a served app's name, icon and badge from here when no
+    # source checkout is linked; build it only from deps.lock's served rows.
+    bun "$REPO_DIR/scripts/lib/app-identity.ts" land --deps "$DEPS_DIR" --resources "$CONTENTS/Resources" --lock "$SCRIPT_DIR/deps.lock" \
+        || { echo "  ✗ app identity landing failed"; exit 1; }
+    xattr -cr "$CONTENTS/Resources/apps" 2>/dev/null || true
 }
 bundle_helpers
 
