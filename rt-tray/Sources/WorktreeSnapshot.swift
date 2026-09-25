@@ -3,7 +3,7 @@ import SwiftUI
 import MattstackCore
 
 /// `rt-tray --render-worktree-snapshots <fixtures-dir> <out-dir>` renders the
-/// Worktrees panel, the Review sheet and the interaction states from fixture
+/// Worktrees panel, the Review window (collapsed and expanded) and the interaction states from fixture
 /// JSON, light and dark, then returns true so the caller exits before any
 /// window, status item, socket or daemon work exists. DEBUG builds only.
 enum WorktreeSnapshot {
@@ -39,10 +39,14 @@ enum WorktreeSnapshot {
             render(WorktreeReviewSheet(row: look, controller: WorktreePanelController(fixture: catalog),
                                        initialLoad: TriageDiffLoad(files: diff, truncatedFiles: false)),
                    width: 680, scheme, out.appendingPathComponent("review-sheet-\(tag).png"))
+            render(WorktreeReviewSheet(row: look, controller: WorktreePanelController(fixture: catalog),
+                                       initialLoad: TriageDiffLoad(files: diff, truncatedFiles: false),
+                                       expanded: [diff[1].path]),
+                   width: 680, scheme, out.appendingPathComponent("review-sheet-expanded-\(tag).png"))
             render(InteractionStatesSnapshot(row: voldemort),
                    width: 1180, scheme, out.appendingPathComponent("interaction-states-\(tag).png"))
         }
-        print("wrote 8 snapshots to \(out.path)")
+        print("wrote 10 snapshots to \(out.path)")
         return true
         #else
         return false

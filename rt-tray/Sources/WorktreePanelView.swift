@@ -120,7 +120,6 @@ enum TriageLabels {
 
 struct WorktreePanelView: View {
     @StateObject private var controller: WorktreePanelController
-    @State private var reviewing: TriageRow?
     @State private var confirmingDisposeAnyway: TriageRow?
     @State private var keptOpen: Bool
     /// The verb each busy row is running, so its button can say what it is doing.
@@ -147,10 +146,7 @@ struct WorktreePanelView: View {
         .background(WT.window)
         .environment(\.triageSnapshot, isSnapshot)
         .onAppear { controller.startPolling() }
-        .onDisappear { controller.stopPolling() }
-        .sheet(item: $reviewing) { row in
-            WorktreeReviewSheet(row: row, controller: controller) { inFlight[row.id] = $0 }
-        }
+        .onDisappear { controller.stopPolling(); WorktreeReviewWindow.shared.close() }
         .alert(confirmingDisposeAnyway.map(TriageConfirm.disposeAnywayTitle) ?? "",
                isPresented: Binding(get: { confirmingDisposeAnyway != nil },
                                     set: { if !$0 { confirmingDisposeAnyway = nil } }),
@@ -285,7 +281,7 @@ struct WorktreePanelView: View {
         switch action {
         case "dispose": inFlight[r.id] = "dispose"; controller.dispose(r)
         case "dispose-anyway": confirmingDisposeAnyway = r
-        case "review": reviewing = r
+        case "review": WorktreeReviewWindow.shared.show(r, controller: controller) { inFlight[r.id] = $0 }
         case "push-branch": inFlight[r.id] = "push-branch"; controller.pushBranch(r)
         case "keep": inFlight[r.id] = "keep"; controller.keep(r)
         case "unkeep": inFlight[r.id] = "unkeep"; controller.unkeep(r)
