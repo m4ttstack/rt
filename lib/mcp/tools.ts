@@ -115,7 +115,7 @@ const REPO_NAME_RULE = "Name the target with repoName (the repo's serialized ide
 
 const MR_TARGET_PROPS = {
   repoName: { type: "string", description: "Serialized identity, absolute checkout or worktree path, or a label matching exactly one registered repo." },
-  iid: { type: "number" },
+  iid: { type: "number", description: "The MR's iid; omit when mrUrl is given, which supplies it." },
   mrUrl: { type: "string", description: "The MR's https URL; supplies both the repo and iid." },
 };
 

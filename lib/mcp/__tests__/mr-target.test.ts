@@ -62,7 +62,19 @@ describe("resolveMrTarget", () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), "rt-mr-target-repo-")));
     execSync("git init -q", { cwd: repo });
     execSync("git remote add origin https://gitlab.example.com/acme/app.git", { cwd: repo });
+    setKvValue(REPO_INDEX_NS, APP, repo);
     expect(await resolveMrTarget({ repoName: repo, iid: 7 })).toEqual({ ok: true, identity: APP, iid: 7 });
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  test("an absolute path to an unregistered checkout is refused with the register hint", async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "rt-mr-target-unreg-")));
+    execSync("git init -q", { cwd: repo });
+    execSync("git remote add origin https://gitlab.example.com/acme/app.git", { cwd: repo });
+    expect(await resolveMrTarget({ repoName: repo, iid: 7 })).toEqual({
+      ok: false,
+      error: `repoName "${repo}" is a checkout of ${APP}, which is not registered with rt; run rt repos register in its checkout first`,
+    });
     rmSync(repo, { recursive: true, force: true });
   });
 

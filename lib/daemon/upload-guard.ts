@@ -136,16 +136,21 @@ function readVerified(real: string, expect: Stats, maxBytes: number): { bytes: U
   } catch (err) {
     return { error: String(err) };
   } finally {
-    closeSync(fd);
+    // The bytes are already read and verified; a close failure must not turn this never-throw function into a throw.
+    try {
+      closeSync(fd);
+    } catch {
+      // ignore
+    }
   }
 }
 
 export function checkUploadPath(path: unknown, roots: readonly string[], opts: { maxBytes?: number } = {}): UploadCheck {
   if (typeof path !== "string" || !isAbsolute(path)) return { ok: false, error: "path must be absolute" };
   const real = safeRealpath(path);
-  if (real === null) return { ok: false, error: `file not found: ${path}` };
+  if (real === null) return { ok: false, error: "file not found" };
   const stat = safeStat(real);
-  if (stat === null) return { ok: false, error: `file not found: ${path}` };
+  if (stat === null) return { ok: false, error: "file not found" };
   if (!stat.isFile()) return { ok: false, error: "path is not a regular file" };
 
   if (!contained(real, roots)) {

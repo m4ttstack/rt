@@ -787,6 +787,15 @@ describe("mcpTools", () => {
       expect(tool.description).toContain("png");
       expect(tool.description).toContain("50 MB");
     });
+
+    test("a missing file named timeout-error.png does not trigger the retry hint", async () => {
+      fakeDaemon(() => ({ ok: false, error: "file not found" }));
+      const tool = mcpTools().find((t) => t.name === "mr_upload")!;
+      const res = await tool.handler({ repoName: "remote:x", path: "/tmp/timeout-error.png" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe("file not found");
+      expect(res.error).not.toContain("retrying is safe");
+    });
   });
 
   describe("mr_map", () => {

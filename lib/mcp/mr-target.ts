@@ -14,7 +14,7 @@
 import { getRemoteUrl } from "../pickers.ts";
 import { tryResolveRepoArg } from "../repo-arg.ts";
 import { isRepoRegistered, loadRepoIndex } from "../repo-index.ts";
-import { identityFromRemote, normalizeRemote, serializeIdentity } from "../settings/identity.ts";
+import { identityFromRemote, normalizeRemote, parseIdentity, serializeIdentity } from "../settings/identity.ts";
 
 export type TargetInput = { repoName?: unknown; iid?: unknown; mrUrl?: unknown };
 
@@ -92,6 +92,9 @@ export async function resolveRepoTarget(input: TargetInput): Promise<RepoTarget>
       return { ok: false, error: `repoName "${repoName}" did not match a registered repo; pass its serialized identity, an absolute checkout path, or the label of exactly one registered repo` };
     }
     fromName = res.identity;
+    if (!parseIdentity(repoName) && !isRepoRegistered(fromName)) {
+      return { ok: false, error: `repoName "${repoName}" is a checkout of ${fromName}, which is not registered with rt; run rt repos register in its checkout first` };
+    }
   }
 
   if (fromName && fromUrl && fromName !== fromUrl.identity) {

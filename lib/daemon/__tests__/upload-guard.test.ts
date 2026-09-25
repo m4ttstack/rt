@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execSync } from "child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, relative } from "path";
 import { UPLOAD_MAX_BYTES, checkUploadPath, claudeTempRoots, isInsideRoot } from "../upload-guard.ts";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
@@ -71,7 +71,7 @@ describe("checkUploadPath", () => {
 
   test("a missing file is refused", () => {
     const res = checkUploadPath(join(root, "nope.png"), [root]);
-    expect(res).toEqual({ ok: false, error: `file not found: ${join(root, "nope.png")}` });
+    expect(res).toEqual({ ok: false, error: "file not found" });
   });
 
   test("a directory is refused", () => {
@@ -140,6 +140,12 @@ describe("checkUploadPath", () => {
     expect(checkUploadPath(p, ["."]).ok).toBe(false);
     expect(checkUploadPath(p, ["relative/dir"]).ok).toBe(false);
     expect(checkUploadPath(p, [5 as unknown as string]).ok).toBe(false);
+  });
+
+  test("a relative root that would resolve to the real root via cwd is still refused", () => {
+    const p = file(root, "shot.png", PNG);
+    const relRoot = relative(process.cwd(), rootReal);
+    expect(checkUploadPath(p, [relRoot]).ok).toBe(false);
   });
 
   test("a bad root entry beside a valid one does not stop the valid root from admitting", () => {
