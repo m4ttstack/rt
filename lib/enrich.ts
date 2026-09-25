@@ -57,7 +57,8 @@ export function parseRemoteUrl(url: string): { host: string; projectPath: string
   const sshMatch = /^git@([^:]+):(.+?)(?:\.git)?$/.exec(url);
   if (sshMatch) return { host: `https://${sshMatch[1]}`, projectPath: sshMatch[2]! };
 
-  const httpsMatch = /^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/.exec(url);
+  // Userinfo (a token-bearing clone's `oauth2:<token>@`) must never reach host: every URL built from it would carry the token.
+  const httpsMatch = /^https?:\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?$/.exec(url);
   if (httpsMatch) return { host: `https://${httpsMatch[1]}`, projectPath: httpsMatch[2]! };
 
   return null;
