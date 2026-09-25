@@ -118,6 +118,8 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 		glyph = theme.GlyphOn
 	case stagedTotal > 0:
 		glyph = theme.GlyphMixed
+	case changedTotal == 0:
+		glyph = strings.Repeat(" ", lipgloss.Width(theme.GlyphStopped))
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
 	on := lipgloss.NewStyle().Background(theme.Bg)

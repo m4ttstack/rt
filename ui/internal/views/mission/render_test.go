@@ -532,6 +532,23 @@ func TestRenderMasterRowClipsLongCountsToOneRow(t *testing.T) {
 	}
 }
 
+func TestRenderMasterRowWithNoChangesHasNoCheckbox(t *testing.T) {
+	plain := ansi.Strip(renderMasterRow(0, 0, sidebarWidth))
+	for _, g := range []string{theme.GlyphStopped, theme.GlyphOn, theme.GlyphMixed} {
+		if strings.Contains(plain, g) {
+			t.Fatalf("an empty Changes list has nothing to toggle, found %q: %q", g, plain)
+		}
+	}
+	withChanges := ansi.Strip(renderMasterRow(2, 0, sidebarWidth))
+	col := func(s, sub string) int { return lipgloss.Width(s[:strings.Index(s, sub)]) }
+	if col(plain, "0 changed") != col(withChanges, "2 changed") {
+		t.Fatalf("the count text should not shift columns:\n%q\n%q", plain, withChanges)
+	}
+	if got := lipgloss.Width(plain); got != sidebarWidth {
+		t.Fatalf("master row should stay exactly sidebarWidth %d, got %d", sidebarWidth, got)
+	}
+}
+
 func TestRenderKeybarContainsSpaceStage(t *testing.T) {
 	out := ansi.Strip(renderKeybar(100, "changes"))
 	if !strings.Contains(out, "space stage") {
