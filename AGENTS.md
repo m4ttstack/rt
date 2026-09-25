@@ -375,6 +375,17 @@ the termwright gate that drives the compiled binary in a real pty, 120s
 timeout). `test:all` runs all three. A green local `bun run test` says nothing
 about either of the others, and the difference is invisible in the output.
 
+CI runs the unit suite as three macOS shards (`bun test --shard=i/3
+--timings=test-timings.json`, balanced by the committed timings file;
+`bun run test:timings` refreshes it) and runs the non-Mac gates on ubuntu.
+`scripts/ci/test-scope.ts` decides a PR's scope from its diff: only docs or
+tray files that no unit test reads skips the shards; a TypeScript-only diff runs
+`--changed=HEAD^1` plus the `lib/__tests__/no-*.test.ts` guards; a change to
+anything else a test reads (a shell script, a fixture, the preload or its
+imports) runs the full suite. A test that spawns `cli.ts` or reads source as
+text is not selected by `--changed`; it runs on main, so a TypeScript-only PR
+can go green and break main there.
+
 It matters most for anything asserted verbatim end to end (the chat delivery
 frame, a CLI's `--json` envelope, a usage string) and for anything glitter or
 rt-ui paints: those have exact-string or screen assertions no unit suite
