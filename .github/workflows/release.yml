@@ -143,6 +143,19 @@ jobs:
         run: bun scripts/bench-startup.ts
         continue-on-error: true
 
+      # fetch-deps re-hashes every cached file against deps.lock, so a bad
+      # entry fails the run rather than shipping; it also fails every later
+      # run on the same key, so clear it with
+      # `gh cache delete mattstack-deps-macOS-<hash>`. A tag run can only
+      # restore what the rehearsal dispatch on main saved.
+      - name: Restore dependency downloads
+        id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/mattstack-deps
+          key: mattstack-deps-${{ runner.os }}-${{ hashFiles('rt-tray/deps.lock') }}
+          restore-keys: mattstack-deps-${{ runner.os }}-
+
       - name: Fetch bundled dependencies
         # GH_TOKEN: console and chat are private repos, so their release
         # assets refuse bare curl; fetch-deps falls back to gh, which needs
@@ -150,6 +163,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
         run: scripts/fetch-deps.sh arm64
+
+      # Saved straight after the fetch, so a run that fails later (notarize,
+      # clean room) still keeps its downloads. Files deps.lock no longer pins
+      # are dropped first, or a restore-keys hit would carry them forever.
+      - name: Prune dependency downloads
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          keep="$(jq -r '.tools[].sha256' rt-tray/deps.lock)"
+          for f in "$HOME"/Library/Caches/mattstack-deps/*; do
+            [ -e "$f" ] || continue
+            grep -qxF "$(basename "$f" | cut -d- -f1)" <<<"$keep" || rm -f "$f"
+          done
+
+      - name: Save dependency downloads
+        uses: actions/cache/save@v4
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/Library/Caches/mattstack-deps
+          key: mattstack-deps-${{ runner.os }}-${{ hashFiles('rt-tray/deps.lock') }}
 
       # bunx vsce package runs a Node CLI under Bun's Node-compat shim, which
       # this repo has already hit drift on (bunx --bun wrangler silently
