@@ -175,13 +175,15 @@ export async function mergedMrCoversHead(rec: TreeRecord, mr: { state?: string |
   return isAncestorAsync(rec.path, "HEAD", mr.sha);
 }
 
-/** Guard 3, non-merged: a branch that has not merged anchors on its remote ref. */
+/**
+ * Guard 3, non-merged: HEAD must be on its remote branch or on the default
+ * branch. The remote-tracking ref can be a stale copy of a branch the forge
+ * deleted at merge, so a tree that has since pulled main is judged by main.
+ */
 async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
-  const anchor =
-    rec.branch && (await remoteRefExists(rec.path, rec.branch))
-      ? `refs/remotes/origin/${rec.branch}`
-      : await remoteDefaultRef(rec.path);
-  return (await isAncestorAsync(rec.path, "HEAD", anchor)) ? null : "unpushed";
+  if (rec.branch && (await remoteRefExists(rec.path, rec.branch))
+    && (await isAncestorAsync(rec.path, "HEAD", `refs/remotes/origin/${rec.branch}`))) return null;
+  return (await isAncestorAsync(rec.path, "HEAD", await remoteDefaultRef(rec.path))) ? null : "unpushed";
 }
 
 /**

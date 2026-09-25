@@ -463,6 +463,45 @@ describe("disposeTree", () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  /** Push feature-a at one commit, then advance origin/main past it and pull that into the tree. */
+  function treePastItsPushedBranch(): { path: string; mergedSha: string } {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "in the MR\n");
+    const mergedSha = execSync(`git -C ${path} rev-parse HEAD`, { encoding: "utf8" }).trim();
+    execSync(`git -C ${path} push origin feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    execSync(`git -C ${repo} merge --ff-only feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    commitIn(repo, "later-on-main.txt", "landed after the merge\n");
+    execSync(`git -C ${repo} push origin main && git -C ${repo} fetch origin`, { shell: "/bin/zsh", stdio: "pipe" });
+    execSync(`git -C ${path} merge --ff-only origin/main`, { shell: "/bin/zsh", stdio: "pipe" });
+    return { path, mergedSha };
+  }
+
+  test("a tree that pulled main past its merged branch disposes despite a stale origin/<branch>", async () => {
+    const { path, mergedSha } = treePastItsPushedBranch();
+    expect(await remoteRefExists(path, "feature-a")).toBe(true);
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mergedSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toMatchObject({ disposed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a stale origin/<branch> never vouches for local-only commits past main", async () => {
+    const { path, mergedSha } = treePastItsPushedBranch();
+    commitIn(path, "local.txt", "never pushed\n");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mergedSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(existsSync(path)).toBe(true);
+  });
+
   test("a squash-merged tree with its source branch deleted disposes", async () => {
     // Squash-merged upstream, source branch deleted: the tip is an ancestor of
     // nothing the remote still has, so only the merge state proves containment.
