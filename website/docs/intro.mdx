@@ -6,7 +6,17 @@ title: What is rt
 
 # rt
 
-rt is a personal developer CLI for branch management, service orchestration, git workflows, and notifications. It's designed for monorepos with git worktrees.
+rt is the command line piece of **mattstack**, a suite of macOS developer tools for working in git worktrees, with AI agents alongside you. rt covers worktree navigation and lifecycle, safer git operations, service orchestration, port scanning, and the plumbing agents use to coordinate (chat, gates, runs, events).
+
+## Part of mattstack
+
+rt is not installed on its own. It ships inside **mattstack.app**, the menu bar app that installs, updates, and supervises the whole suite, and every mattstack app shares rt's daemon and settings:
+
+- [board](https://github.com/m4ttstack/board) for reviewing merge requests
+- [gitq](https://github.com/m4ttstack/gitq) for stacked branches
+- [deck](https://github.com/m4ttstack/deck) for local app hosting
+- [fast-browser](https://github.com/m4ttstack/fast-browser) for driving your real Chrome
+- [skills](https://github.com/m4ttstack/skills), the mattstack Claude Code plugins
 
 ## Mental model
 
@@ -16,11 +26,11 @@ Run `rt` with no arguments to get an interactive menu that walks you from repo, 
 rt <command> [subcommand] [args]
 ```
 
-A background daemon runs alongside the CLI, caching MR and branch data, scanning ports, and guarding git hooks so commands like `rt status` and `rt port` stay fast and work from anywhere on your machine.
+A background daemon runs alongside the CLI, caching MR and branch data, scanning ports, guarding git hooks, and snapshotting your home repo, so commands like `rt cd` and `rt port` stay fast and work from anywhere on your machine.
 
 ## Zero footprint
 
-rt is macOS-only. It keeps all of its state, config, and per-repo data under `~/.mattstack/` and never writes anything into the repos it manages, so onboarding a repo or uninstalling rt never touches your git history or working tree.
+rt runs on Apple silicon Macs only. It keeps all of its state, config, and per-repo data under `~/.mattstack/` and never writes anything into the repos it manages, so onboarding a repo or uninstalling never touches your git history or working tree.
 
 ## Reference is generated
 
@@ -28,4 +38,4 @@ The Command reference section in the sidebar is generated from the same command 
 
 ## Where to go next
 
-Start with [Install](/getting-started/install) to get rt onto your machine, then [Onboard a repo](/getting-started/onboard-a-repo) and [First commands](/getting-started/first-commands) to get moving day-to-day.
+Start with [Install](/getting-started/install) to get mattstack.app onto your machine, then [Onboard a repo](/getting-started/onboard-a-repo) and [First commands](/getting-started/first-commands) to get moving day-to-day.

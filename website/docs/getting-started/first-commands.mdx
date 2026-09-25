@@ -17,6 +17,12 @@ rt <command> [subcommand] [args]
 - [`rt nav`](/reference/nav) ... filesystem navigator; `ctrl-o` opens the selected folder in your preferred editor.
 - `rtcd` ... a shell alias added by install that `cd`s into a picked worktree (wraps `rt cd`).
 
+## Worktrees
+
+- [`rt worktree provision`](/reference/worktree/provision) ... claim a worktree for a ticket or branch, from the warm on-deck pool when one is ready.
+- [`rt worktree list`](/reference/worktree/list) ... list worktrees.
+- [`rt worktree dispose`](/reference/worktree/dispose) ... dispose a worktree; [`rt worktree restore`](/reference/worktree/restore) brings it back.
+
 ## Editor
 
 - [`rt code`](/reference/code) ... open a worktree in your preferred editor. Detects installed editors and picks one; set a default with `rt settings set rt.workspacePrefs '{"defaultEditor":"zed"}' --scope machine`.
@@ -26,6 +32,7 @@ Non-web links (e.g. `vscode://file/...`) opened from the console webview are han
 ## Run
 
 - [`rt run`](/reference/run) ... interactive script runner that walks repo, then worktree, then package, then script.
+- [`rt runner`](/reference/runner) ... a board of long-running commands in tmux (or herdr) panes. See [Runner](/guides/runner).
 
 ## Status
 
@@ -40,5 +47,6 @@ Non-web links (e.g. `vscode://file/...`) opened from the console webview are han
 
 - [`rt git rebase`](/reference/git/rebase) ... smart rebase onto origin/master with auto-resolve.
 - [`rt git commit`](/reference/git/commit) ... interactive staging and commit with a live diff preview.
+- [`rt glitter`](/reference/glitter) ... a full-screen board for changes, diffs, history, branches, and commits. See [Glitter](/guides/glitter).
 
 For flags and full detail on any of these, follow the link to its reference page.
