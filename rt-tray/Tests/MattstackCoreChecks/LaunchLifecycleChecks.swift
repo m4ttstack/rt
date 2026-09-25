@@ -279,6 +279,18 @@ let launchLifecycleChecks: [Check] = [
         }
         c.expect(DeckSweep.requestTimeout > 10, "a request must outlast the 10s deck holds /api/apps before its 503")
     },
+    Check("failed tab retry: reloads on the schedule while a tab still fails") { c in
+        let steps = Steps()
+        await FailedTabRetry.run(offsets: [2, 5, 10], sleep: { steps.add("sleep \($0)") },
+                                 anyFailed: { true }, reload: { steps.add("reload") })
+        c.expectEqual(steps.all, ["sleep 2.0", "reload", "sleep 3.0", "reload", "sleep 5.0", "reload"])
+    },
+    Check("failed tab retry: stops once no tab has failed") { c in
+        let steps = Steps(), tally = Tally()
+        await FailedTabRetry.run(offsets: [2, 5, 10], sleep: { steps.add("sleep \($0)") },
+                                 anyFailed: { await tally.bump("asked") == 1 }, reload: { steps.add("reload") })
+        c.expectEqual(steps.all, ["sleep 2.0", "reload", "sleep 3.0"])
+    },
     Check("spawn heal: the daemon heals through its own re-register, as a spawn heal") { c in
         let steps = Steps()
         let ok = await SpawnHealRoute.heal(label: "com.mattstack.daemon", daemonLabel: "com.mattstack.daemon",

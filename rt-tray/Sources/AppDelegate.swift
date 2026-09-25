@@ -275,7 +275,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                                               deckLabel: registrar.deckLabel(daemonLabel: lifecycle.label)) {
             // Off the launch Task, which holds the first refreshStatus: the
             // sweep wait alone can take a minute.
-            Task { await registrar.restartServedApps() }
+            Task { @MainActor [weak self] in
+                await registrar.restartServedApps()
+                await self?.windowModel?.retryFailedTabsAfterServedAppsRestart()
+            }
         }
     }
 

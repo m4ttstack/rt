@@ -31,6 +31,25 @@ public enum WindowReload {
     }
 }
 
+/// A served-app restart kickstarts each app in turn and returns before the
+/// last ones listen again, so a tab that failed against one gets a few
+/// spaced reloads rather than one that lands too early.
+public enum FailedTabRetry {
+    /// Seconds after the restart finished.
+    public static let offsets: [TimeInterval] = [2, 5, 10]
+
+    public static func run(offsets: [TimeInterval] = FailedTabRetry.offsets, sleep: (TimeInterval) async -> Void,
+                           anyFailed: () async -> Bool, reload: () async -> Void) async {
+        var elapsed: TimeInterval = 0
+        for offset in offsets {
+            await sleep(offset - elapsed)
+            elapsed = offset
+            guard await anyFailed() else { return }
+            await reload()
+        }
+    }
+}
+
 public struct IconTarget: Equatable, Sendable {
     public let name: String
     public let url: String

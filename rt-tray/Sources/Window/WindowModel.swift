@@ -366,6 +366,17 @@ final class WindowModel: ObservableObject {
         for (name, failed) in loadFailures where failed { store.reload(name) }
     }
 
+    /// A served-app restart runs after deck's ready reload, so a tab that
+    /// failed against a restarting app has nothing else to reload it.
+    func retryFailedTabsAfterServedAppsRestart() async {
+        await FailedTabRetry.run(sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) },
+                                 anyFailed: { self.loadFailures.values.contains(true) },
+                                 reload: {
+                                     TrayLog.info("window: reloading tabs that failed during a served-app restart")
+                                     self.reloadFailedTabs()
+                                 })
+    }
+
     /// Deterministic fade, not a conditional-removal `.transition`: a plain
     /// `if splashVisible` conditional pops the instant the flag flips
     /// (that removal isn't guaranteed to pick up an ambient `.animation`),
