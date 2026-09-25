@@ -18,6 +18,8 @@ export const APPS_REPO = "m4ttstack/apps";
 export const RT_REPO = "m4ttstack/rt";
 /** MATTSTACK_RELEASE_TOKEN belongs to this account, so every bundle-apps deps.lock PR is opened as it. */
 export const BUNDLE_PR_AUTHOR = "m4ttheweric";
+/** bundle-apps.yml's `git config user.name` for the deps.lock commit. */
+export const BUNDLE_COMMIT_AUTHOR = "bundle-apps workflow";
 const LOCK_PATH = "rt-tray/deps.lock";
 const PROJECT_YML = "rt-tray/project.yml";
 
@@ -150,6 +152,22 @@ export function pinOnlyLockProblems(oldText: string, newText: string): string[] 
   return problems;
 }
 
+export interface RevertedPin {
+  name: string;
+  from: string;
+  to: string;
+}
+
+/** Rows whose version moved below the one `before` pinned; a release notes them as "version bump only" otherwise. */
+export function revertedPins(before: DepsRow[], after: DepsRow[]): RevertedPin[] {
+  const old = byName(before);
+  return after.flatMap((r) => {
+    const was = old.get(r.name)?.version;
+    if (typeof was !== "string" || typeof r.version !== "string") return [];
+    return compareVersions(r.version, was) < 0 ? [{ name: r.name, from: was, to: r.version }] : [];
+  });
+}
+
 export function checkBotPrLock(o: {
   name: string;
   version: string;
@@ -199,6 +217,24 @@ export function checkBotPrLock(o: {
   if (row.url !== url) problems.push(`pins url ${row.url}, expected ${url}`);
   if (!/^[0-9a-f]{64}$/.test(row.sha256 ?? "")) problems.push(`has no sha256 on the ${o.name} row`);
   return { row, problems };
+}
+
+export interface BundleRunInfo {
+  path?: unknown;
+  head_branch?: unknown;
+}
+
+/** A bundle-ci branch is named for the run that pushed it; `run` is that run as the API reports it, null when it does not exist. */
+export function botPrOriginProblems(o: { runId: number | null; commitAuthor: string; run: BundleRunInfo | null }): string[] {
+  const problems: string[] = [];
+  if (o.commitAuthor !== BUNDLE_COMMIT_AUTHOR) problems.push(`head commit authored by "${o.commitAuthor}", not "${BUNDLE_COMMIT_AUTHOR}"`);
+  if (o.runId === null) problems.push("branch names no bundle-apps run");
+  else if (!o.run) problems.push(`run ${o.runId} does not exist`);
+  else {
+    if (o.run.path !== BUNDLE_WORKFLOW_PATH) problems.push(`run ${o.runId} is ${String(o.run.path)}, not ${BUNDLE_WORKFLOW_PATH}`);
+    if (o.run.head_branch !== "main") problems.push(`run ${o.runId} ran on ${String(o.run.head_branch)}, not main`);
+  }
+  return problems;
 }
 
 /** rt-tray/project.yml is where the release signs; the helper artifacts must come from the same team. */
@@ -443,6 +479,7 @@ export function formatStep(s: StepResult): string {
 }
 
 const BUNDLE_WORKFLOW = "bundle-apps.yml";
+const BUNDLE_WORKFLOW_PATH = `.github/workflows/${BUNDLE_WORKFLOW}`;
 const RUN_DISCOVERY_ATTEMPTS = 36;
 const RUN_DISCOVERY_INTERVAL_MS = 5_000;
 /** A dispatched run's created_at comes from GitHub's clock, which can trail ours. */
@@ -658,13 +695,17 @@ async function assertFastPath(seams: ReleaseAppSeams, ctx: Pick<Ctx, "lastTag" |
   const outside = files.filter((f) => f !== LOCK_PATH && !isAllowlisted(f));
   if (outside.length) throw refuse(`changes outside the pin allowlist: ${outside.slice(0, 5).join(", ")}`);
   if (!files.includes(LOCK_PATH)) return;
+  const oldLock = await git(seams, ["show", `${ctx.lastCommit}:${LOCK_PATH}`]);
+  const newLock = await git(seams, ["show", `${ref}:${LOCK_PATH}`]);
   const gate = await checkGate(seams, ctx.lastCommit, ref);
   if (gate.path !== "fast") throw refuse(gate.reason);
-  const problems = pinOnlyLockProblems(
-    await git(seams, ["show", `${ctx.lastCommit}:${LOCK_PATH}`]),
-    await git(seams, ["show", `${ref}:${LOCK_PATH}`]),
-  );
+  const problems = pinOnlyLockProblems(oldLock, newLock);
   if (problems.length) throw refuse(problems.join("; "));
+  const reverted = revertedPins(parseLock(oldLock), parseLock(newLock));
+  if (reverted.length) {
+    const moves = reverted.map((p) => `${p.name} ${p.from} → ${p.to}`).join(", ");
+    throw new StepFailure(step, `${where} moves pins backwards since ${ctx.lastTag} (${moves}): a revert, not a patch release; cut this release with the full /rt:release`, null);
+  }
 }
 
 const appsHeadSha = async (seams: ReleaseAppSeams): Promise<string> =>
@@ -961,10 +1002,31 @@ async function findBotPr(seams: ReleaseAppSeams, ctx: Ctx): Promise<BotPr | null
   return matching.find((p) => p.state === "OPEN") ?? matching[0] ?? null;
 }
 
+async function botPrOrigin(seams: ReleaseAppSeams, pr: BotPr): Promise<string[]> {
+  const commitAuthor = (await gh(seams, ["api", `repos/${RT_REPO}/commits/${pr.headRefOid}`, "--jq", ".commit.author.name"])).trim();
+  const m = pr.headRefName.match(/^bundle-ci\/(\d+)$/);
+  const runId = m ? Number(m[1]) : null;
+  let run: BundleRunInfo | null = null;
+  if (runId !== null) {
+    const r = await seams.exec(["gh", "api", `repos/${RT_REPO}/actions/runs/${runId}`], { timeoutMs: 30_000 });
+    if (r.exitCode === 0) run = JSON.parse(r.stdout) as BundleRunInfo;
+    else if (!/HTTP 404|Not Found/i.test(`${r.stderr}\n${r.stdout}`)) {
+      throw new Error(`gh api repos/${RT_REPO}/actions/runs/${runId} failed: ${(r.stderr || r.stdout).trim()}`);
+    }
+  }
+  return botPrOriginProblems({ runId, commitAuthor, run });
+}
+
 /** Never executes the binary: codesign reads the signature off disk. */
 async function verifyBotPr(seams: ReleaseAppSeams, ctx: Ctx, pr: BotPr): Promise<void> {
+  const origin = await botPrOrigin(seams, pr);
+  if (origin.length) {
+    throw new StepFailure("pr", `PR #${pr.number} is not the bundle workflow's own (${origin.join("; ")}); not merging (${pr.url})`, null);
+  }
+  const runId = pr.headRefName.slice("bundle-ci/".length);
   const refuse = (problem: string) =>
-    new StepFailure("pr", `PR #${pr.number} ${problem}; not merging (${pr.url})`, `inspect ${pr.url}; once it is fixed or closed, rt release app ${ctx.name}`);
+    new StepFailure("pr", `PR #${pr.number} ${problem}; not merging (${pr.url})`,
+      `rerun its pr job (gh run rerun ${runId} --failed --repo ${RT_REPO}) or close it, then rt release app ${ctx.name}`);
 
   const files = JSON.parse(await gh(seams, ["pr", "view", String(pr.number), "--repo", RT_REPO, "--json", "files", "--jq", "[.files[].path]"])) as string[];
   const base = (await gh(seams, ["api", `repos/${RT_REPO}/compare/main...${pr.headRefOid}`, "--jq", ".merge_base_commit.sha"])).trim();
@@ -1143,16 +1205,16 @@ async function notesStep(seams: ReleaseAppSeams, ctx: Ctx, opts: ReleaseAppOptio
   }
 
   const sections = await noteSections(ctx);
+  ctx.held = await heldApps(ctx.apps, ctx.mainRows, ctx.lastRows, ctx.name);
   const notes = renderNotes({ sections, held: ctx.held, lastTag: ctx.lastTag, nextTag: ctx.tag });
   const hash = notesHash(notes);
   ctx.notes = notes;
   ctx.notesHash = hash;
-  const approve = `rt release app ${ctx.name}${opts.json ? " --json" : ""} --yes-notes ${hash}`;
   if (opts.yesNotes !== null) {
     if (opts.yesNotes !== hash) {
-      throw new StepFailure("notes",
-        `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.tag}): only the hash a stopped run printed approves its notes, and these changed or were never shown. Nothing was committed`,
-        `review the new notes, then ${approve}`);
+      if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
+      rec("notes", "stopped", `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.tag}): only the hash a stopped run printed approves its notes, and these changed or were never shown; these notes need approval, nothing committed`);
+      return "awaiting-approval";
     }
   } else {
     if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
@@ -1203,6 +1265,12 @@ async function verifyStep(seams: ReleaseAppSeams, ctx: Ctx, rec: Recorder): Prom
   if (ctx.verify.clean) {
     rec("verify", "ok", `${ctx.tag} is published: run, notes, assets, state and releases/latest all verify`);
     return "ok";
+  }
+  const runRow = ctx.verify.rows.find((r) => r.id === "run");
+  // Until release.yml finishes, the release it creates is missing or a draft, so those rows fail for no reason of their own.
+  if (runRow?.status === "pending") {
+    rec("verify", "pending", `${runRow.label}: ${runRow.detail ?? runRow.status}`);
+    return "pending";
   }
   const open = ctx.verify.rows.filter((r) => r.status !== "ok").map((r) => `${r.label}: ${r.detail ?? r.status}`).join("; ");
   if (ctx.verify.staleCount === 0 && ctx.verify.errorCount === 0) {

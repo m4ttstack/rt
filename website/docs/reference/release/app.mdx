@@ -22,7 +22,7 @@ rt release app <name> [flags]
 | `<name>` | text |  | Served app to release (board, chat, console, boxscore); omit on a terminal to pick one |
 | [`--dry-run`](/guides/common-flags) | boolean | `false` | Resolve and print the whole plan without changing anything |
 | `--yes-notes` | text |  | Approve the notes a stopped run showed, by the 12-character hash it printed; refused if the notes changed since |
-| [`--json`](/guides/common-flags) | boolean | `false` | Emit the release report as JSON (stops at the notes unless --yes-notes) |
+| [`--json`](/guides/common-flags) | boolean | `false` | Emit the release report as JSON; without --yes-notes it stops at notes not yet committed on main |
 
 _See code: [commands/release.ts › releaseApp](https://github.com/m4ttstack/rt/blob/main/commands/release.ts)_
 

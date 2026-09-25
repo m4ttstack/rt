@@ -24,6 +24,9 @@ import {
   noteSubject,
   renderNotes,
   appAssetUrl,
+  revertedPins,
+  botPrOriginProblems,
+  BUNDLE_COMMIT_AUTHOR,
 } from "../release-app.ts";
 import type { DepsRow } from "../preflight.ts";
 
@@ -316,6 +319,16 @@ describe("the pin-only gate", () => {
   test("a removed row is refused", () => {
     expect(pinOnlyLockProblems(lock(ROWS), lock(ROWS.filter((r) => r.name !== "jq"))).join("; ")).toContain("jq");
   });
+
+  test("revertedPins names every row whose version moved below the shipped one", () => {
+    expect(revertedPins(ROWS, moved("chat", "0.1.4"))).toEqual([]);
+    expect(revertedPins(ROWS, moved("chat", "0.1.2"))).toEqual([{ name: "chat", from: "0.1.3", to: "0.1.2" }]);
+    expect(revertedPins(ROWS, moved("board", "0.1.10"))).toEqual([]);
+    expect(revertedPins(moved("board", "0.1.10"), ROWS)).toEqual([{ name: "board", from: "0.1.10", to: "0.1.7" }]);
+    const unversioned = ROWS.map((r) => (r.name === "chat" ? ({ ...r, version: undefined } as unknown as DepsRow) : r));
+    expect(revertedPins(ROWS, unversioned)).toEqual([]);
+    expect(revertedPins(unversioned, ROWS)).toEqual([]);
+  });
 });
 
 describe("checkBotPrLock: the app's own row", () => {
@@ -349,6 +362,21 @@ describe("approval and run identity", () => {
     expect(bundleRunTargets("Bundle apps: board (dry run)")).toBeNull();
     expect(bundleRunTargets("Bundle apps: all")).toBeNull();
     expect(bundleRunTargets("Bundle apps")).toBeNull();
+  });
+
+  test("botPrOriginProblems wants the workflow's commit author and a bundle-apps run on main", () => {
+    const run = { path: ".github/workflows/bundle-apps.yml", head_branch: "main" };
+    expect(botPrOriginProblems({ runId: 7, commitAuthor: BUNDLE_COMMIT_AUTHOR, run })).toEqual([]);
+    expect(botPrOriginProblems({ runId: 7, commitAuthor: "Mallory", run }).join("; ")).toContain('head commit authored by "Mallory", not "bundle-apps workflow"');
+    expect(botPrOriginProblems({ runId: 7, commitAuthor: BUNDLE_COMMIT_AUTHOR, run: { ...run, head_branch: "evil" } }).join("; ")).toContain("run 7 ran on evil, not main");
+    expect(botPrOriginProblems({ runId: 7, commitAuthor: BUNDLE_COMMIT_AUTHOR, run: { ...run, path: ".github/workflows/ci.yml" } }).join("; ")).toContain("run 7 is .github/workflows/ci.yml, not .github/workflows/bundle-apps.yml");
+    expect(botPrOriginProblems({ runId: 7, commitAuthor: BUNDLE_COMMIT_AUTHOR, run: null }).join("; ")).toContain("run 7 does not exist");
+    expect(botPrOriginProblems({ runId: null, commitAuthor: BUNDLE_COMMIT_AUTHOR, run: null }).join("; ")).toContain("branch names no bundle-apps run");
+  });
+
+  test("bundle-apps.yml commits the deps.lock PR as the author the merge requires", () => {
+    const yml = readFileSync(join(import.meta.dir, "..", "..", "..", ".github", "workflows", "bundle-apps.yml"), "utf8");
+    expect(yml).toContain(`git config user.name "${BUNDLE_COMMIT_AUTHOR}"`);
   });
 
   test("bundle-apps.yml names its runs in the shape bundleRunTargets reads", () => {

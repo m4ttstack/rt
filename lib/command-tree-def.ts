@@ -1671,7 +1671,7 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Name", type: "text", placeholder: "board", hint: "Served app to release (board, chat, console, boxscore); omit on a terminal to pick one" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Resolve and print the whole plan without changing anything" },
           { name: "Yes notes", flag: "--yes-notes", type: "text", placeholder: "3f9c2a7b1e04", hint: "Approve the notes a stopped run showed, by the 12-character hash it printed; refused if the notes changed since" },
-          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the release report as JSON (stops at the notes unless --yes-notes)" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the release report as JSON; without --yes-notes it stops at notes not yet committed on main" },
         ],
       },
     },
