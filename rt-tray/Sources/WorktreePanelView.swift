@@ -145,8 +145,6 @@ struct WorktreePanelView: View {
         .frame(minWidth: 640, minHeight: isSnapshot ? 0 : 420)
         .background(WT.window)
         .environment(\.triageSnapshot, isSnapshot)
-        .onAppear { controller.startPolling() }
-        .onDisappear { controller.stopPolling() }
         .alert(confirmingDisposeAnyway.map(TriageConfirm.disposeAnywayTitle) ?? "",
                isPresented: Binding(get: { confirmingDisposeAnyway != nil },
                                     set: { if !$0 { confirmingDisposeAnyway = nil } }),
