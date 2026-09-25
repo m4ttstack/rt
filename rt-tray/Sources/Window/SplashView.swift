@@ -54,7 +54,9 @@ private let markFontSize: CGFloat = 56
 private let glyphSide: CGFloat = 42
 private let markGap: CGFloat = 8
 private let glyphStrokeWidth: CGFloat = glyphSide * 2 / 24
-private let spinnerLead: CGFloat = 30
+private let spinnerGap: CGFloat = 18
+// A regular-size spinner's own side, so the overlay can push it clear of the glyph.
+private let spinnerSide: CGFloat = 32
 private let unreachableGap: CGFloat = 28
 private let unreachableWidth: CGFloat = 420
 
@@ -85,6 +87,15 @@ private struct GlyphPolyline: Shape {
     }
 }
 
+/// The mark's own center, so the splash can hold the mark at the window's
+/// center while the Can't-reach panel stacks below it.
+private extension VerticalAlignment {
+    enum MarkCenter: AlignmentID {
+        static func defaultValue(in dimensions: ViewDimensions) -> CGFloat { dimensions[VerticalAlignment.center] }
+    }
+    static let markCenter = VerticalAlignment(MarkCenter.self)
+}
+
 struct SplashView: View {
     let content: SplashContent
     let retry: () -> Void
@@ -94,10 +105,11 @@ struct SplashView: View {
     private var strokeStyle: StrokeStyle { StrokeStyle(lineWidth: glyphStrokeWidth, lineCap: .round, lineJoin: .round) }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: Alignment(horizontal: .center, vertical: .markCenter)) {
             splashBackground.ignoresSafeArea()
             VStack(spacing: unreachableGap) {
                 mark
+                    .alignmentGuide(.markCenter) { $0[VerticalAlignment.center] }
                 if case .unreachable(let reason) = content {
                     UnreachablePanel(reason: reason, retry: retry)
                         .frame(width: unreachableWidth)
@@ -125,8 +137,9 @@ struct SplashView: View {
         .overlay(alignment: .trailing) {
             if content == .markWithSpinner {
                 ProgressView()
-                    .controlSize(.small)
-                    .offset(x: spinnerLead)
+                    .controlSize(.regular)
+                    .frame(width: spinnerSide, height: spinnerSide)
+                    .offset(x: spinnerSide + spinnerGap)
                     .transition(.opacity)
             }
         }
