@@ -120,15 +120,23 @@ token that crosses a break keeps its colour on both rows. (`ansi.Wrap` on a
 styled string does not reopen styles on the next row, and it drops the
 whitespace at each break, so it cannot be applied to the painted text
 directly.)
-Continuation rows paint the row's tint with an empty gutter and no mark.
+Tabs and the control spaces `\r`, `\v` and `\f` are normalized to spaces
+before wrapping, since `ansi.Wrap` and lipgloss measure them differently. A
+line whose highlighted text drifts from `DiffLine.Text` paints flat, so the
+rows painted always match the rows counted.
+Continuation rows have blank line numbers and no mark, the row's tint, and
+the stage bar (selected pink or the gutter-hover preview) carried down every
+row, so the whole line reads as one click target.
 Hunk headers stay clipped to one row.
 
 A per-diff row index (rows per line and its prefix sums), cached by
 `(diff identity, text width)`, maps between screen rows and diff lines:
 
 - `diffTop` becomes a screen-row offset. `renderDiffLines` places it with
-  `picker.ViewportAround`, passing the cursor line's first row and its extra
-  rows as the trailing margin, so a tall cursor line is kept whole in view.
+  `picker.Viewport` over a row space where the cursor line's extra rows
+  count as one (and the pane shrinks by as many), so a tall cursor line is
+  kept whole in view. `ViewportAround` cannot do this: it caps each margin
+  at (h-1)/2.
 - `diffHit` maps a screen row to its line through the index, so a click on
   a continuation row hits that line (gutter clicks included).
 - The cursor, the wheel (which moves the cursor) and staging stay
