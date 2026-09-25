@@ -7,7 +7,7 @@ sidebar_label: runner
 
 `rt › runner`
 
-Board of long-running commands in headless herdr panes (add, tail, restart, stop, focus)
+Board of long-running commands in a detached tmux session (add, tail, restart, stop, focus)
 
 ## Usage
 
@@ -19,6 +19,7 @@ rt runner [flags]
 
 | Flag / Arg | Type | Default | Description |
 | --- | --- | --- | --- |
+| `--herdr` | boolean | `false` | Run commands in background herdr panes instead of tmux (needs the rt daemon) |
 | `--seed-file` | text |  | Open the board pre-seeded from this file's &#123;"seed":[...]&#125; rows (the envelope `rt run --resolve-only` prints) instead of starting empty |
 
 _See code: [commands/runner.ts › runnerCommand](https://github.com/m4ttstack/rt/blob/main/commands/runner.ts)_

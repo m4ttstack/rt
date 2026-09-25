@@ -2,7 +2,7 @@
 
 ### Providers
 
-`--provider` selects which CLI to launch. The default is `claude` (Claude Code). `codex` launches OpenAI Codex CLI instead. Each provider has its own settings namespace (`agent.claude.*`, `agent.codex.*`) for model, effort, yolo, account, and extra args.
+`--provider` selects which CLI to launch: `claude` (Claude Code) or `codex` (OpenAI Codex CLI). Without the flag, the `agent.provider` setting decides, and it defaults to `claude`. Each provider has its own settings namespace (`agent.claude.*`, `agent.codex.*`) for model, effort, yolo, and extra args. The cswap account (`agent.claude.account`, `--account`) is claude only; codex has no account setting.
 
 ### Permission bypass
 

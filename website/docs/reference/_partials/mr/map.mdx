@@ -6,4 +6,4 @@ rt mr map --repo my-app       # a specific registered repo
 rt mr map --json              # machine-readable output
 ```
 
-The `--repo` flag accepts either the serialized repo identity or the short repo-label alias.
+The `--repo` flag accepts a serialized repo identity, a path to the checkout, or a short repo name (the last segment of the identity, or the checkout's folder name). A short name that matches more than one repo is refused as ambiguous; pass the full identity instead.

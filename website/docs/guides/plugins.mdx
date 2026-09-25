@@ -114,9 +114,9 @@ export async function run(args: string[], ctx: RtCommandContext) {
 }
 ```
 
-`args` is everything after your command name on the command line. `ctx` carries:
+`args` is everything after your command name on the command line (on a `"worktree"` node, rt first removes a `--repo <name>` pair and uses it to preselect the repo). `ctx` carries:
 
-- `ctx.identity` (when the node declares `context`): `{ repoName, repoRoot, dataDir, remoteUrl, baseUrl }`. With `"context": "worktree"` rt auto-detects from cwd or shows its repo/worktree picker first, exactly like built-in commands. `ctx.autoResolved` is true when it came from cwd without user interaction.
+- `ctx.identity` (when the node declares `context`): `{ repoName, repoRoot, dataDir, remoteUrl, baseUrl }`. rt auto-detects it from cwd or shows its picker first (a repo picker for `"repo"`, repo then worktree for `"worktree"`), exactly like built-in commands. On a `"worktree"` node, `ctx.autoResolved` is true when the identity came from cwd without user interaction; `"repo"` nodes never set it.
 - `ctx.rt`, the injected API:
 
 | Method | Behavior |
@@ -150,13 +150,13 @@ Plugin commands merge into the root tree on every invocation. Built-ins always w
 
 ## IDE setup
 
-rt writes a types-only package to `~/.mattstack/rt/plugin-api/` (regenerated automatically whenever the embedded contract changes, e.g. after an rt upgrade). The scaffolded `package.json` depends on it via `"rt-plugin": "file:../../../rt/plugin-api"`, which is why `import type { RtCommandContext } from "rt-plugin"` resolves in your editor after `bun install`. The import is type-only and erased at runtime; if you accidentally value-import `rt-plugin`, it throws with a message explaining the API arrives via `ctx`.
+rt writes a types-only package to `~/.mattstack/rt/plugin-api/` (regenerated automatically whenever the embedded contract changes, e.g. after mattstack.app updates rt). The scaffolded `package.json` depends on it via `"rt-plugin": "file:../../../rt/plugin-api"`, which is why `import type { RtCommandContext } from "rt-plugin"` resolves in your editor after `bun install`. The import is type-only and erased at runtime; if you accidentally value-import `rt-plugin`, it throws with a message explaining the API arrives via `ctx`.
 
 If your editor shows red squiggles in a plugin folder, run `bun install` in that folder. Typecheck a plugin any time with `bunx tsc --noEmit` from its folder.
 
 ## Letting an agent build your plugin
 
-The rt repo ships an agent skill at `skills/rt-create-plugin/` that teaches a coding agent the full authoring loop (scaffold, manifest, handlers, validate, run). Symlink or copy it into your skills directory (`~/.claude/skills/` for Claude Code, `~/.cursor/skills/` for Cursor, or wherever your harness discovers skills), then ask your agent for the command you want, e.g. "create an rt plugin that adds a `standup` command".
+mattstack.app ships an agent skill, `rt:create-plugin`, that teaches a coding agent the full authoring loop (scaffold, manifest, handlers, validate, run). Setup links it into `~/.claude/skills/` for Claude Code. For another harness, symlink or copy the skill folder (`/Applications/mattstack.app/Contents/Helpers/skills/rt/rt-create-plugin/`, or `skills/rt-create-plugin/` in the rt repo) into wherever it discovers skills, e.g. `~/.cursor/skills/` for Cursor. Then ask your agent for the command you want, e.g. "create an rt plugin that adds a `standup` command".
 
 ## Trust model
 

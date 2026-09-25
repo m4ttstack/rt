@@ -5,40 +5,50 @@ title: Onboard a repo
 
 # Onboard a repo
 
-There's no explicit "add repo" step. Any git repo with an `origin` remote is picked up automatically the first time you run an rt command inside it:
+There's no explicit "add repo" step for everyday use. Any git repo is indexed the first time you run a repo-aware rt command inside it:
 
 ```bash
 cd ~/code/my-repo
-rt status            # or rt cd, anything repo-aware
+rt cd                # or rt run, rt code, anything repo-aware
 ```
 
-On first invocation rt will:
+On that first invocation rt will:
 
-1. Derive the repo name from `git remote get-url origin`
-2. Register the repo in `~/.mattstack/rt/repos.json`
-3. Create a data dir at `~/.mattstack/rt/repos/<repo-name>/`
-4. Start the daemon watching it for MR, branch, and port state
+1. Derive a stable identity for the repo from `git config --get remote.origin.url`. A repo with no origin gets a path-based identity instead, so local commands still work.
+2. Record it in the repo index inside `~/.mattstack/rt/state.db`.
+3. Create a per-repo data directory under `~/.mattstack/rt/repos/`.
 
 All of this lives under `~/.mattstack/`, never inside the repo itself. Onboarding never adds files, config, or commits to your project.
 
-If the daemon was already running, the next refresh cycle picks the repo up (MR data refreshes every 5 minutes, port scans every ~30 seconds). From then on the runner, ticket lookup, port scanning, and MR notifications all work from anywhere on your machine.
+## Background tracking
+
+Indexing a repo is not the same as tracking it. The daemon only refreshes data in the background for repos you have explicitly granted:
+
+```bash
+rt repos register . --track live    # index this repo and grant background tracking
+rt daemon track                     # list tracking, or change a repo's level: live, poll, or off
+rt repos prune                      # drop index rows whose repos no longer exist on disk
+```
+
+An untracked repo still works everywhere; its data is fetched on demand instead of kept warm. Once a repo is tracked, merge-request data refreshes every 5 minutes. See [Daemon](/guides/daemon) for what each tracking level does.
 
 ## Optional per-repo config
 
 | Command | When you need it |
 |---|---|
-| [`rt hooks`](/reference/hooks) | Repo uses husky and you want a quick on/off toggle |
-| [`rt settings extension`](/reference/settings/extension) | Install the `rt-context` status-bar extension into local editors |
+| [`rt repos register --track`](/reference/repos/register) | You want the daemon refreshing this repo in the background |
+| [`rt hooks`](/reference/hooks) | The repo uses husky and you want a quick on/off toggle |
 
 ## Global settings that affect every repo
 
-Set these once; they apply to all repos, and are stored under `~/.mattstack/`, not in any repo:
+Set these once; they apply to all repos and are stored under `~/.mattstack/`, not in any repo. The setup window's checklist covers the tokens; from a terminal:
 
 ```bash
-rt settings gitlab token       # required for rt status, MR actions, notifications
-rt settings linear token       # required for ticket lookup in rt status
-rt settings linear team        # Set default Linear team
+rt setup gitlab connect        # GitLab token, for MR data and notifications
+rt setup linear connect        # Linear API key, for ticket lookup
+rt settings linear team        # default Linear team
 rt settings notifications      # pick which events fire native macOS notifications
+rt settings extension          # install the rt-context status-bar extension into local editors
 ```
 
-See [rt settings gitlab token](/reference/settings/gitlab/token), [rt settings linear token](/reference/settings/linear/token), [rt settings linear team](/reference/settings/linear/team), and [rt settings notifications](/reference/settings/notifications) for details.
+See [rt setup gitlab connect](/reference/setup/gitlab/connect), [rt setup linear connect](/reference/setup/linear/connect), [rt settings linear team](/reference/settings/linear/team), [rt settings notifications](/reference/settings/notifications), and [rt settings extension](/reference/settings/extension) for details.

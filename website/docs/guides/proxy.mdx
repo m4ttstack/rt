@@ -5,11 +5,11 @@ title: Local proxy
 
 # Local proxy
 
-rt installs a local HTTPS proxy so `.mattstack` domains (used by Deck apps and the console) resolve to `localhost` over TLS without port numbers. The proxy is a root-owned LaunchDaemon on port 443, powered by portless.
+Setup installs a local HTTPS proxy so `.mattstack` domains (used by Deck apps and the console) resolve to `localhost` over TLS without port numbers. The proxy is a root-owned LaunchDaemon on port 443, powered by portless, which ships inside mattstack.app.
 
 ## What gets installed
 
-When you run `rt setup` (or trigger the proxy step from `rt setup apply --only proxy.install`):
+The `proxy.install` step runs as part of setup (mattstack.app's setup wizard, `rt setup`, or `rt --post-install`), or on its own with `rt setup apply --only proxy.install`. rt can't do privileged work itself, so the step asks mattstack.app to run its bundled root helper; the app has to be running. Then:
 
 1. A copy of portless is placed under `/Library/Application Support/mattstack/proxy/` (root-owned, so root never executes from the user-writable `/Applications` path).
 2. A LaunchDaemon plist (`sh.portless.proxy`) is bootstrapped to listen on port 443.
@@ -21,7 +21,7 @@ When you run `rt setup` (or trigger the proxy step from `rt setup apply --only p
 
 macOS asks for your password twice during install:
 
-1. An escalation prompt to run the helper as root (installs the daemon and sudoers rule).
+1. An escalation prompt to run the helper as root (installs the proxy's LaunchDaemon and sudoers rule).
 2. A separate "Certificate Trust Settings" prompt to trust the CA in the System keychain.
 
 These cannot be collapsed into one. macOS's trust-settings authorization requires its own interactive prompt every time; the credential from the first dialog is not reused.
@@ -34,13 +34,13 @@ The setup checklist will show a row: "Browsers will warn until the proxy certifi
 
 ## Updating the proxy
 
-When mattstack.app ships a newer portless version, the setup checklist detects the drift (comparing the installed `VERSION` file against the bundle) and shows an **Update proxy** action. The update stops the running daemon, replaces the files (stage then rename), and bootstraps the new version. One admin prompt.
+When mattstack.app ships a newer portless version, the setup checklist detects the drift (comparing the installed `VERSION` file against the bundle) and shows an **Update proxy** action. The update stops the running proxy, replaces the files (stage then rename), and bootstraps the new version. One admin prompt.
 
 Pre-mattstack portless installs (an existing plist with no `VERSION` file) are adopted through the same update flow.
 
 ## Removing the proxy
 
-`rt uninstall` removes the proxy as part of its cleanup:
+`rt uninstall` removes the proxy as part of its cleanup. Like the install, this runs through mattstack.app's root helper, so the app has to be running and macOS asks for an admin password:
 
 1. Bootout the LaunchDaemon.
 2. Delete the plist.

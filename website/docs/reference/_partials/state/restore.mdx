@@ -17,7 +17,7 @@ rt state restore --from-backup --identity ~/team-key.txt
 rt state restore --from-backup --dry-run
 
 # From a local stamped copy
-rt state restore state-2026-09-13T12-00-00.db
+rt state restore state-2026-09-13T12-00-00-000Z.db
 ```
 
 The daemon must be stopped before restoring. The command refuses otherwise unless `--force` is passed.

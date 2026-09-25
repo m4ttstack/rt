@@ -1016,13 +1016,14 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   runner: {
-    description: "Board of long-running commands in headless herdr panes (add, tail, restart, stop, focus)",
+    description: "Board of long-running commands in a detached tmux session (add, tail, restart, stop, focus)",
     module: "./commands/runner.ts",
     fn: "runnerCommand",
     context: "worktree",
     requiresTTY: true,
     fullscreen: true,
     args: [
+      { name: "Herdr", flag: "--herdr", type: "boolean", default: false, hint: "Run commands in background herdr panes instead of tmux (needs the rt daemon)" },
       { name: "Seed file", flag: "--seed-file", type: "text", placeholder: "/tmp/seed.json", hint: 'Open the board pre-seeded from this file\'s {"seed":[...]} rows (the envelope `rt run --resolve-only` prints) instead of starting empty' },
     ],
   },
@@ -1432,7 +1433,7 @@ export const TREE: Record<string, CommandNode> = {
         omitBehavior: "list",
         aliases: ["events"],
         args: [
-          { name: "Repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json (omit to list; repo alone opens the interactive editor)" },
+          { name: "Repo", type: "text", placeholder: "acme-dev", hint: "Registered repo: name, path, or identity (omit to list; repo alone opens the interactive editor)" },
           { name: "Level", type: "text", placeholder: "live|poll|off", hint: "live (events + poll), poll (5-min only), off (on-demand only); omit to pick interactively" },
           { name: "Caches", type: "text", placeholder: "branches project-mrs", hint: "Cache kinds, space-separated: branches, project-mrs, discussions (default: branches)" },
         ],
@@ -1721,7 +1722,7 @@ export const TREE: Record<string, CommandNode> = {
         omitBehavior: { exempt: "agent-facing; the key is passed explicitly (discover the set with rt settings list)" },
         args: [
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key (see rt settings list)" },
-          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — enables repo-scoped rungs and ${repoRoot}" },
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs and ${repoRoot}" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
         ],
       },
@@ -1734,7 +1735,7 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key (must be migrated:true)" },
           { name: "Value", type: "text", placeholder: "{\"onDeck\":3}", hint: "JSON(C) value" },
           { name: "Scope", flag: "--scope", type: "select", hint: "Which store to write into", options: [{ value: "user", label: "user", hint: "~/.mattstack/user/settings.user.jsonc" }, { value: "team", label: "team", hint: "the local team clone's settings.team.jsonc" }, { value: "machine", label: "machine", hint: "~/.mattstack/user/local/<machine-key>/settings.local.jsonc" }] },
-          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — required for repo-scoped keys" },
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); required for repo-scoped keys" },
           { name: "Team", flag: "--team", type: "text", placeholder: "acme", hint: "Which team's local store to write, for --scope team (only needed when several are cloned)" },
         ],
       },
@@ -1746,7 +1747,7 @@ export const TREE: Record<string, CommandNode> = {
         args: [
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key to remove" },
           { name: "Scope", flag: "--scope", type: "select", hint: "Which store to remove it from", options: [{ value: "user", label: "user", hint: "~/.mattstack/user/settings.user.jsonc" }, { value: "team", label: "team", hint: "the local team clone's settings.team.jsonc" }, { value: "machine", label: "machine", hint: "~/.mattstack/user/local/<machine-key>/settings.local.jsonc" }] },
-          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — required for repo-scoped keys" },
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); required for repo-scoped keys" },
           { name: "Team", flag: "--team", type: "text", placeholder: "acme", hint: "Which team's local store to edit, for --scope team (only needed when several are cloned)" },
         ],
       },
@@ -1755,7 +1756,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/settings-keys.ts",
         fn: "settingsList",
         args: [
-          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — enables repo-scoped rungs" },
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
         ],
       },
@@ -1766,7 +1767,7 @@ export const TREE: Record<string, CommandNode> = {
         omitBehavior: { exempt: "agent-facing; the key is passed explicitly (discover the set with rt settings list)" },
         args: [
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key (see rt settings list)" },
-          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Repo name from ~/.mattstack/rt/repos.json — enables repo-scoped rungs" },
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs" },
         ],
       },
       linear: {
@@ -2408,7 +2409,7 @@ export const TREE: Record<string, CommandNode> = {
         fn: "setupWaive",
         omitBehavior: "picker",
         args: [
-          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Finish-gated row id (today only tool.fast-browser-extension)" },
+          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Waivable row id (today only tool.fast-browser-extension)" },
           SETUP_JSON_ARG,
         ],
       },
@@ -2418,7 +2419,7 @@ export const TREE: Record<string, CommandNode> = {
         fn: "setupUnwaive",
         omitBehavior: "picker",
         args: [
-          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Finish-gated row id (today only tool.fast-browser-extension)" },
+          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Waivable row id (today only tool.fast-browser-extension)" },
           SETUP_JSON_ARG,
         ],
       },
