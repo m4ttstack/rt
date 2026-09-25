@@ -82,7 +82,7 @@ let deckWaitChecks: [Check] = [
         c.expect(clock.now() >= 90 && clock.now() < 93, "stopped at \(clock.now())")
         c.expectEqual(probes.value, 31)
     },
-    Check("deck wait: a catalog load that takes its whole timeout overshoots the deadline by at most one load") { c in
+    Check("deck wait: a catalog load that takes its whole timeout overruns the deadline by at most one poll") { c in
         let clock = FakeClock()
         let deps = DeckWaitDeps(
             probe: { .healthy(pid: "1") },

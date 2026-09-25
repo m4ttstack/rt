@@ -29,8 +29,9 @@ public enum DeckWaitTuning {
     public static let deadline: TimeInterval = 90
     public static let pollInterval: TimeInterval = 1
     public static let probeTimeout: TimeInterval = 2
-    /// Deck builds /api/apps by health-probing every app, and URLSession's
-    /// default request timeout is 60s; one late poll may add this much.
+    /// Bounds the /api/apps request, which deck answers only after
+    /// health-probing every app (URLSession's default is 60s). A wait's last
+    /// poll may overrun its deadline by this much.
     public static let catalogTimeout: TimeInterval = 8
 }
 
