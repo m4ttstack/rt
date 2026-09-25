@@ -44,7 +44,7 @@ describe("notification prefs through the settings resolver", () => {
   });
 
   test("an unexpandable ${repoRoot} in a stored value degrades to all-enabled defaults instead of throwing", () => {
-    setSetting("rt.notifications", { pipeline_failed: "${repoRoot}" }, "user");
+    setSetting("rt.notifications", { pipeline_failed: false, note: "${repoRoot}" }, "user");
 
     expect(() => loadNotificationPrefs()).not.toThrow();
     const prefs = loadNotificationPrefs();

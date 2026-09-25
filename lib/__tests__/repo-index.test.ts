@@ -94,6 +94,13 @@ describe("repo-index — rt.repoRoots (RT-49)", () => {
     setSetting("rt.repoRoots", entries, "machine");
   }
 
+  /** setSetting refuses a value its schema rejects, so a hand-edited store is seeded as a file. */
+  function handEditRepoRoots(entries: unknown[]): void {
+    const p = machineSettingsPath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify({ "rt.repoRoots": entries }, null, 2));
+  }
+
   function seedTeam(name: string): void {
     const p = teamSettingsPath(name);
     mkdirSync(dirname(p), { recursive: true });
@@ -440,7 +447,7 @@ describe("repo-index — rt.repoRoots (RT-49)", () => {
     test("a non-string element and a nonexistent path each warn and are skipped; the rest of the scan is unaffected", () => {
       const root = mkdtempSync(join(tmpdir(), "rt-failopen-root-"));
       const repo = markerRepo(root, "survivor");
-      setRepoRoots([42, join(tmpdir(), "rt-does-not-exist-xyz"), root]);
+      handEditRepoRoots([42, join(tmpdir(), "rt-does-not-exist-xyz"), root]);
 
       const repos = getKnownRepos();
       expect(byName(repos, "survivor")?.worktrees[0]?.path).toBe(repo);

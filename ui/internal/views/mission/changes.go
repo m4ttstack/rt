@@ -20,15 +20,12 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the three-row tab strip per Main.png/History.png: a
-// pad row, the Changes/History label row, and the underline row. Each tab
-// owns HALF the width; the underline is Pink under the active half and Rule
-// under the other. All three rows of the INACTIVE half are its button
-// (sidebarHit/historySidebarHit resolve exactly those cells to hitTab). Its
-// hover is the top bar's half-block treatment, a lower half-block in the pad
-// row, the full label row, an upper half-block in place of the underline, so
-// the fill sits centered on the label rather than a whole row above it. The
-// active tab is inert and never hovers.
+// renderTabsRow paints the two-row tab strip: the Changes/History label row
+// and the underline row. Each tab owns HALF the width; the underline is Pink
+// under the active half and Rule under the other. Both rows of the INACTIVE
+// half are its button (sidebarHit/historySidebarHit resolve exactly those
+// cells to hitTab). Its hover fills the label row and swaps the underline
+// for an upper half-block. The active tab is inert and never hovers.
 func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
 	half := width / 2
@@ -59,7 +56,6 @@ func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width
 		return on.Foreground(restColor).Render(strings.Repeat(rest, w))
 	}
 
-	pad := edge(changesHover, "▄", " ", theme.Bg, half) + edge(historyHover, "▄", " ", theme.Bg, otherHalf)
 	changesLabel := label(changesOn, "Changes", !historyActive) + changesOn.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
 	historyLabel := label(historyOn, "History", historyActive)
 	top := changesOn.Width(half).Align(lipgloss.Center).Render(changesLabel) +
@@ -70,7 +66,7 @@ func renderTabsRow(changedTotal int, activeTab string, hoverInactive bool, width
 		changesRule, historyRule = theme.Rule, theme.Pink
 	}
 	underline := edge(changesHover, "▀", "─", changesRule, half) + edge(historyHover, "▀", "─", historyRule, otherHalf)
-	return pad + "\n" + top + "\n" + underline
+	return top + "\n" + underline
 }
 
 // renderFilterRow paints the "❯ filter" box for either tab: the typed filter
@@ -122,6 +118,8 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 		glyph = theme.GlyphOn
 	case stagedTotal > 0:
 		glyph = theme.GlyphMixed
+	case changedTotal == 0:
+		glyph = strings.Repeat(" ", lipgloss.Width(theme.GlyphStopped))
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
 	on := lipgloss.NewStyle().Background(theme.Bg)

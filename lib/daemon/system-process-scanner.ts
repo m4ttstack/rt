@@ -15,6 +15,7 @@ import { runCapture } from "../subprocess.ts";
 const log = lazyChildLogger("process-scan");
 import { homedir } from "os";
 import { getSetting } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 import {
   loadRepoIndex,
   buildWorktreeMap,
@@ -80,11 +81,7 @@ const DEFAULT_SUSTAIN_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_GRACE_MS = 2 * 60 * 1000; // 2 minutes
 const MAX_SAMPLES = 60; // 10 minutes at 10s intervals
 
-export interface ScannerConfig {
-  cpuThreshold?: number;
-  sustainMs?: number;
-  graceMs?: number;
-}
+export type ScannerConfig = Value<"rt.runaway">;
 
 /** A resolver throw (unexpandable ${...} variable) degrades to {} — the same
     "use the DEFAULT_* constants" fallback a missing/corrupt file gave today. */

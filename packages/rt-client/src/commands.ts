@@ -775,10 +775,36 @@ export interface Commands {
 
   /** Creates an MR (a draft unless `draft: false`) and writes it back so the
       board sees it before the next sweep. Never retries. `url` is null when
-      GitLab created the MR but reading it back failed. */
+      GitLab created the MR but reading it back failed. `labels` apply at
+      creation (an empty array sends nothing); `squash` is one follow-up write, and a create that landed is
+      never reported failed over it: `squashApplied: false` plus
+      `squashError` means set it with mr:update instead of creating again. */
   "mr:create": {
-    payload: { repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean };
-    data: { iid: number; url: string | null };
+    payload: { repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean; labels?: string[]; squash?: boolean };
+    data: { iid: number; url: string | null; squashApplied?: boolean; squashError?: string };
+  };
+
+  /** Edits an open MR. title/description go through glance (a title change
+      keeps draft state); addLabels/removeLabels/squash go in one REST PUT
+      (add and remove, never replace the set; an empty array sends nothing).
+      Glance first, then REST; a partial failure is ok:false naming what
+      landed, and every field is idempotent, so retrying with the failed
+      fields is safe. `applied` lists the fields that landed, in write order.
+      Refused as `nothing to update` when no field would change anything. */
+  "mr:update": {
+    payload: { repoName: string; iid: number; title?: string; description?: string; addLabels?: string[]; removeLabels?: string[]; squash?: boolean };
+    data: { iid: number; url: string; applied: string[] };
+  };
+
+  /** Uploads one local image or video to the target project (GitLab
+      POST /projects/:id/uploads, multipart) and returns the absolute url and
+      the markdown that embeds it in that project's MRs. Works before an MR
+      exists. The daemon refuses a path outside its allowed roots, a
+      directory, a file over 50 MB, or bytes that do not match the
+      extension. Uploads once; an orphaned upload is harmless. */
+  "mr:upload": {
+    payload: { repoName: string; path: string };
+    data: { url: string; markdown: string };
   };
 
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };
@@ -1016,6 +1042,8 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "mr:comment",
   "mr:action",
   "mr:create",
+  "mr:update",
+  "mr:upload",
   "mr:fetch-job-detail",
   "mr:fetch-job-trace",
   "endpoint:claim",

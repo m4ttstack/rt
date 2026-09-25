@@ -31,6 +31,7 @@ import type { Logger } from "pino";
 import { mattstackHome, rtDir } from "../rt-paths.ts";
 import { runCapture, type RunResult } from "../subprocess.ts";
 import { getSetting } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 import {
   deleteKvValue,
   getKvValue,
@@ -117,13 +118,7 @@ export interface HomeSnapshotHandle {
   ready: Promise<void>;
 }
 
-export interface HomeSnapshotSettings {
-  enabled: boolean;
-  debounceSec: number;
-  pushDelaySec: number;
-  janitorThresholdHours: number;
-  janitorIntervalMin: number;
-}
+export type HomeSnapshotSettings = Value<"rt.homeSnapshot">;
 
 type ExecFn = (argv: [string, ...string[]], opts?: { cwd?: string; timeoutMs?: number; stderr?: "ignore" | "pipe"; env?: Record<string, string> }) => Promise<RunResult>;
 type WatchFn = (path: string, options: { recursive: boolean }, listener: (eventType: string, filename: string | null) => void) => { close(): void };

@@ -10,6 +10,7 @@ import type { Database } from "bun:sqlite";
 import type { Logger } from "pino";
 
 import { getSetting } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 import { mattstackHome } from "../rt-paths.ts";
 import { createRealProbes, type Probes } from "../setup/probes.ts";
 import { convergePackCache } from "../setup/pack-cache.ts";
@@ -26,9 +27,7 @@ import {
 } from "./home-snapshot.ts";
 import { clampPullIntervalSec, PULL_INTERVAL_FALLBACK_SEC } from "./snapshot-interval.ts";
 
-export interface TeamSnapshotSettings extends HomeSnapshotSettings {
-  pullIntervalSec: number;
-}
+export type TeamSnapshotSettings = Value<"rt.teamSnapshot">;
 
 export interface TeamSnapshotEntry extends SnapshotStatus {
   slug: string;

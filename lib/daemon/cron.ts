@@ -8,16 +8,9 @@
  * the rt.cron machine-store setting is absent or empty.
  */
 import { getSetting } from "../settings/resolve.ts";
+import type { Value } from "../settings/registry-schemas.ts";
 
-export interface CronTrigger {
-  name: string;
-  /** Broadcast frame type to match exactly (e.g. "project-mrs"). */
-  event: string;
-  /** Optional: also require data.repoName to equal this. */
-  repoName?: string;
-  run: string[];
-  debounceMs?: number;
-}
+export type CronTrigger = NonNullable<Value<"rt.cron">["triggers"]>[number];
 
 export interface CronConfig {
   triggers: CronTrigger[];

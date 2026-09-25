@@ -3,7 +3,7 @@ import { basename, dirname, join } from "path";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
-import { teamSettingsPath } from "../../rt-paths.ts";
+import { teamSettingsPath, userSettingsPath } from "../../rt-paths.ts";
 import { updateRepoIndex } from "../../repo-index.ts";
 import { setSetting } from "../../settings/write.ts";
 import type { SecretsSeams } from "../../secrets/store.ts";
@@ -139,8 +139,8 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
     });
 
     test("a non-string claude.marketplaces/claude.plugins entry is dropped, logged, and never reaches argv", async () => {
-      setSetting("claude.marketplaces", ["https://example.com/ok-market", { name: "bad" }], "user");
-      setSetting("claude.plugins", [42, "ok-plugin@ok-market"], "user");
+      mkdirSync(dirname(userSettingsPath()), { recursive: true });
+      writeFileSync(userSettingsPath(), JSON.stringify({ "claude.marketplaces": ["https://example.com/ok-market", { name: "bad" }], "claude.plugins": [42, "ok-plugin@ok-market"] }));
 
       const execCalls: string[][] = [];
       const p = fakeProbes({

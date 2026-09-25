@@ -19,17 +19,22 @@ import {
   teamsDir,
   userSettingsPath,
 } from "../paths.ts";
-import { getDef, type SettingDef } from "../registry-machinery.ts";
+import { getDef, type SettingDef, type SettingScope } from "../registry-machinery.ts";
 import {
   expandVariables,
   explainSetting,
   getSetting,
   listSettings,
+  listUnregisteredSettings,
+  repoSectionsFor,
   type ExplainRow,
   type Provenance,
 } from "../resolve.ts";
+import { withSchema } from "./with-schema.ts";
 
-const IDENTITY = "gitlab.com/acme/acme-dev";
+const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
+
+const IDENTITY = "gitlab.example.com/acme/app";
 const TEAM = "acme";
 
 describe("settings/resolve", () => {
@@ -75,6 +80,25 @@ describe("settings/resolve", () => {
     } finally {
       if (prev === undefined) delete def.teamLocked;
       else def.teamLocked = prev;
+    }
+  }
+
+  /**
+   * `rt.homeSnapshot` is registered `scopes: ["machine"]` only, so a team-store
+   * write to it is normally refused for the store, before the schema check
+   * ever runs. Widening `scopes` for one assertion (same live-def-mutation
+   * technique as `withTeamLocked`) isolates the schema-labeling behavior from
+   * that unrelated store guard, so the nonconforming-vs-invalid distinction can
+   * be pinned against the team rung too, not only the machine rung.
+   */
+  function withScope(key: string, scope: SettingScope, fn: () => void): void {
+    const def = getDef(key) as SettingDef;
+    const prev = def.scopes;
+    def.scopes = [...prev, scope];
+    try {
+      fn();
+    } finally {
+      def.scopes = prev;
     }
   }
 
@@ -649,5 +673,70 @@ describe("settings/resolve", () => {
         expect(p.file === null || typeof p.file === "string").toBe(true);
       }
     }
+  });
+
+  // ─── schema labeling (lenient reads) ───────────────────────────────────────
+
+  describe("schema labeling (lenient reads)", () => {
+    test("a nonconforming layer stays in effect and is labeled, never skipped", () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+        writeMachine({ "rt.homeSnapshot": { enabled: "yes" } });
+        expect(getSetting<{ enabled: unknown }>("rt.homeSnapshot").value.enabled).toBe("yes");
+        const machine = explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!;
+        expect(machine.invalid).toBeUndefined();
+        expect(machine.nonconforming?.[0]?.path).toEqual(["enabled"]);
+      });
+    });
+
+    test("a team store written by an older rt is labeled nonconforming too, not invalid", () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+        withScope("rt.homeSnapshot", "team", () => {
+          writeTeam(TEAM, { "rt.homeSnapshot": { enabled: "yes" } });
+          expect(getSetting<{ enabled: unknown }>("rt.homeSnapshot").value.enabled).toBe("yes");
+          const team = explainSetting("rt.homeSnapshot").find((r) => r.scope === "team")!;
+          expect(team.invalid).toBeUndefined();
+          expect(team.nonconforming?.[0]?.path).toEqual(["enabled"]);
+        });
+      });
+    });
+
+    test("a type-invalid layer is still skipped and labeled invalid", () => {
+      writeMachine({ "rt.homeSnapshot": "nope" });
+      expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.invalid).toContain("expected object");
+      expect(getSetting("rt.homeSnapshot").value).toEqual(getDef("rt.homeSnapshot")?.default);
+    });
+
+    test("a partial deep layer is not labeled", () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+        writeMachine({ "rt.homeSnapshot": { enabled: false } });
+        expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.nonconforming).toBeUndefined();
+      });
+    });
+
+    test("listSettings carries nonconforming layers and merged issues", () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+        writeMachine({ "rt.homeSnapshot": { enabled: "yes" } });
+        const row = listSettings().find((s) => s.key === "rt.homeSnapshot")!;
+        expect(row.nonconforming?.[0]?.scope).toBe("machine");
+        expect(row.mergedIssues?.[0]?.path).toEqual(["enabled"]);
+      });
+    });
+  });
+
+  // ─── store helpers ──────────────────────────────────────────────────────────
+
+  describe("store helpers", () => {
+    test("listUnregisteredSettings names unknown keys in global and repo sections", () => {
+      writeMachine({ "board.rtRepos": [], repos: { [IDENTITY]: { "board.oldKey": 1 } } });
+      const found = listUnregisteredSettings();
+      expect(found.find((f) => f.key === "board.rtRepos")?.scope).toBe("machine");
+      expect(found.find((f) => f.key === "board.oldKey")?.scope).toBe("machine.repo");
+    });
+
+    test("repoSectionsFor reports which stores set a key per repo", () => {
+      writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 1 } } } });
+      writeUser({ repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 2 } } } });
+      expect(repoSectionsFor("rt.worktrees")).toEqual([{ identity: IDENTITY, scopes: ["team", "user"] }]);
+    });
   });
 });

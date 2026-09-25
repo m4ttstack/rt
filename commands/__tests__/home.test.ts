@@ -1415,7 +1415,7 @@ describe("homeInit", () => {
       process.env.HOME = isolatedHome;
       try {
         const seam = new FakeSeam();
-        setSetting("claude.marketplaces", [{ name: "example" }], "user");
+        setSetting("claude.marketplaces", ["acme/claude-plugins"], "user");
 
         const { logs } = await runHomeInit(FULLY_PROVISIONED_PROBES(), seam, new FakeAgeKeySeam());
 

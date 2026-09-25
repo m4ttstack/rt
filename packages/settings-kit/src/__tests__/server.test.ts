@@ -11,6 +11,8 @@ interface FakeDef {
   teamLocked?: boolean;
   repoScoped?: boolean;
   default?: unknown;
+  schema?: Record<string, unknown>;
+  layerSchema?: Record<string, unknown>;
 }
 
 const DEFS: Record<string, FakeDef> = {
@@ -18,9 +20,18 @@ const DEFS: Record<string, FakeDef> = {
   "board.rtRepos": { key: "board.rtRepos", type: "array", scopes: ["machine"], merge: "replace", description: "Project map" },
   "rt.secretThing": { key: "rt.secretThing", type: "string", scopes: ["user"], merge: "replace", description: "A secret", secret: true },
   "rt.legacyThing": { key: "rt.legacyThing", type: "string", scopes: ["user"], merge: "replace", description: "Unmigrated" },
-  "rt.repoRoots": { key: "rt.repoRoots", type: "array", scopes: ["machine"], merge: "replace", description: "Scan roots" },
+  "rt.repoRoots": { key: "rt.repoRoots", type: "array", scopes: ["machine"], merge: "replace", description: "Scan roots", schema: { type: "array", items: { type: "string" } } },
   "board.members": { key: "board.members", type: "array", scopes: ["team"], merge: "replace", description: "Roster" },
-  "board.slack": { key: "board.slack", type: "object", scopes: ["team"], merge: "deep", description: "Slack posting" },
+  "board.slack": {
+    key: "board.slack",
+    type: "object",
+    scopes: ["team"],
+    merge: "deep",
+    description: "Slack posting",
+    schema: { type: "object", required: ["webhookUrl"], properties: { webhookUrl: { type: "string" }, emoji: { type: "string" } } },
+    layerSchema: { type: "object", properties: { webhookUrl: { type: "string" }, emoji: { type: "string" } } },
+  },
+  "rt.roles": { key: "rt.roles", type: "object", scopes: ["team", "user", "machine"], merge: "deep", description: "Role bindings", repoScoped: true, schema: { type: "object", properties: { dev: { type: "object" } } } },
 };
 
 const setCalls: unknown[][] = [];
@@ -32,18 +43,54 @@ const RT = {
   allDefs: () => Object.values(DEFS),
   getDef: (key: string) => DEFS[key],
   isMigrated: (def: FakeDef) => def.key !== "rt.legacyThing",
-  explainSetting: (key: string) =>
-    key === "rt.legacyThing"
-      ? [
-          { scope: "user", file: "/home/user/settings.user.jsonc", present: false },
-          { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
-        ]
-      : [
-          { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: `${key}-user-value` },
-          { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
-        ],
+  explainSetting: (key: string, opts?: { repoIdentity?: string | null }) => {
+    if (key === "rt.legacyThing") {
+      return [
+        { scope: "user", file: "/home/user/settings.user.jsonc", present: false },
+        { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+      ];
+    }
+    if (key === "board.title") {
+      return [
+        { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: "board.title-user-value", nonconforming: [{ path: [], message: "bad" }] },
+        { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+      ];
+    }
+    if (key === "rt.secretThing") {
+      return [
+        {
+          scope: "user",
+          file: "/home/user/settings.user.jsonc",
+          present: true,
+          value: "rt.secretThing-user-value",
+          invalid: 'field "x" looks like a path literal ("/Users/someone/secret")',
+          nonconforming: [{ path: ["x"], message: "quoted /Users/someone/secret" }],
+        },
+        { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+      ];
+    }
+    if (key === "rt.roles") {
+      const rows = [
+        { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: { dev: { port: 3000 } }, nonconforming: [{ path: ["dev", "port"], message: "expected string, got number" }] },
+        { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+      ];
+      if (opts?.repoIdentity) {
+        rows.push({ scope: "team.repo", file: "/home/team/settings.team.jsonc", present: true, value: { dev: { port: 3000 } }, nonconforming: [{ path: ["dev", "port"], message: "expected string, got number" }] });
+      }
+      return rows;
+    }
+    return [
+      { scope: "user", file: "/home/user/settings.user.jsonc", present: true, value: `${key}-user-value` },
+      { scope: "machine", file: "/home/user/local/settings.local.jsonc", present: false },
+    ];
+  },
   validateValue: (_def: FakeDef, value: unknown) =>
     value === "invalid" ? { ok: false, reason: "value is invalid" } : { ok: true },
+  validateWrite: (_def: FakeDef, value: unknown) =>
+    value === "invalid" ? { ok: false, reason: "value is invalid", issues: [{ path: [], message: "value is invalid" }] } : { ok: true },
+  listUnregisteredSettings: () => [{ key: "board.rtRepos", scope: "machine", file: "/home/user/local/settings.local.jsonc" }],
+  repoSectionsFor: (key: string) => (key === "rt.roles" ? [{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }] : []),
+  listStoreRepoIdentities: () => ["gitlab.example.com/acme/app"],
   setSetting: (...args: unknown[]) => {
     setCalls.push(args);
     if (args[0] === "board.title" && args[1] === "explode") throw new Error("rt: store refused the write");
@@ -293,17 +340,10 @@ describe("allowComposite: 'shaped'", () => {
     expect(setCalls).toHaveLength(1);
   });
 
-  test("refuses a value that does not match the shape", async () => {
-    const res = await handle(post("/api/settings/set", { key: "rt.repoRoots", scope: "machine", value: [1] }), opts);
+  test("a bad value is refused by validateWrite, never a shape check", async () => {
+    const res = await handle(post("/api/settings/set", { key: "rt.repoRoots", scope: "machine", value: "invalid" }), opts);
     expect(res!.status).toBe(400);
-    expect(await res!.json()).toEqual({ error: "value does not match rt.repoRoots's shape" });
-    expect(setCalls).toHaveLength(0);
-  });
-
-  test("refuses a leaves value whose dotted-path parent is not a plain object", async () => {
-    const res = await handle(post("/api/settings/set", { key: "board.slack", scope: "team", value: { emoji: 5 } }), opts);
-    expect(res!.status).toBe(400);
-    expect(await res!.json()).toEqual({ error: "value does not match board.slack's shape" });
+    expect(await res!.json()).toEqual({ error: "value is invalid", issues: [{ path: [], message: "value is invalid" }] });
     expect(setCalls).toHaveLength(0);
   });
 
@@ -362,5 +402,75 @@ describe("JSON-only writes", () => {
       }),
     );
     expect(res!.status).toBe(200);
+  });
+});
+
+describe("schema on the wire", () => {
+  test("/defs carries schema, layerSchema, storeVersion, issues and unregistered", async () => {
+    const body = (await (await handle(get("/api/settings/defs")))!.json()) as any;
+    const slack = body.defs.find((d: any) => d.key === "board.slack");
+    expect(slack.schema.type).toBe("object");
+    expect(slack.layerSchema.required).toBeUndefined();
+    expect(slack.storeVersion).toBe(1);
+    expect(body.unregistered).toEqual([{ key: "board.rtRepos", scope: "machine", file: "/home/user/local/settings.local.jsonc" }]);
+  });
+
+  test("a nonconforming explain row is an issue on /defs and on the explain row", async () => {
+    const explain = (await (await handle(get("/api/settings/explain/board.title")))!.json()) as any;
+    expect(explain.rows[0].nonconforming).toEqual([{ path: [], message: "bad" }]);
+    const defs = (await (await handle(get("/api/settings/defs")))!.json()) as any;
+    expect(defs.defs.find((d: any) => d.key === "board.title").issues[0]).toMatchObject({ scope: "user", kind: "nonconforming", path: [], message: "bad" });
+  });
+
+  test("a secret key's issues never carry a value, even a path-guard reason or nonconforming message that quotes one", async () => {
+    const defs = (await (await handle(get("/api/settings/defs")))!.json()) as any;
+    const secret = defs.defs.find((d: any) => d.key === "rt.secretThing");
+    expect(secret.issues).toEqual([
+      { scope: "user", file: "/home/user/settings.user.jsonc", kind: "invalid", path: [], message: "refused" },
+      { scope: "user", file: "/home/user/settings.user.jsonc", kind: "nonconforming", path: ["x"], message: "does not match the schema" },
+    ]);
+    expect(secret.effective.invalid).toBe("refused");
+    const explain = (await (await handle(get("/api/settings/explain/rt.secretThing")))!.json()) as any;
+    expect(explain.rows[0].invalid).toBe("refused");
+    expect(explain.rows[0].nonconforming).toEqual([{ path: ["x"], message: "does not match the schema" }]);
+    expect(explain.def.effective.invalid).toBe("refused");
+    expect(JSON.stringify(explain)).not.toContain("/Users/someone/secret");
+    expect(JSON.stringify(defs)).not.toContain("/Users/someone/secret");
+  });
+
+  test("?repo= resolves repo rungs, repos[] lists sections, and repo is stamped only on repo-rung issues", async () => {
+    const body = (await (await handle(get("/api/settings/defs?repo=gitlab.example.com%2Facme%2Fapp")))!.json()) as any;
+    const roles = body.defs.find((d: any) => d.key === "rt.roles");
+    expect(roles.effective.scope).toBe("team.repo");
+    expect(roles.repos).toEqual([{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }]);
+    const userIssue = roles.issues.find((i: any) => i.scope === "user");
+    const repoIssue = roles.issues.find((i: any) => i.scope === "team.repo");
+    expect(userIssue.repo).toBeUndefined();
+    expect(repoIssue.repo).toBe("gitlab.example.com/acme/app");
+  });
+
+  test("GET /repos lists store identities with labels", async () => {
+    const body = (await (await handle(get("/api/settings/repos")))!.json()) as any;
+    expect(body.repos).toEqual([{ identity: "gitlab.example.com/acme/app", label: "acme/app" }]);
+  });
+
+  test("/set forwards repo, uses validateWrite, and explains for the repo afterwards", async () => {
+    const res = await handle(post("/api/settings/set", { key: "rt.roles", scope: "team", repo: "gitlab.example.com/acme/app", value: { dev: { port: 1 } } }), { allowComposite: true });
+    expect(setCalls.at(-1)).toEqual(["rt.roles", { dev: { port: 1 } }, "team", { repoIdentity: "gitlab.example.com/acme/app" }]);
+    const resBody = (await res!.json()) as any;
+    expect(resBody.rows.some((r: any) => r.scope === "team.repo")).toBe(true);
+    const bad = await handle(post("/api/settings/set", { key: "board.title", scope: "user", value: "invalid" }));
+    expect(bad!.status).toBe(400);
+    expect(await bad!.json()).toEqual({ error: "value is invalid", issues: [{ path: [], message: "value is invalid" }] });
+  });
+
+  test("an empty repo string is normalized to no repo, for both set and defs", async () => {
+    const res = await handle(post("/api/settings/set", { key: "board.title", value: "My Board", scope: "user", repo: "" }));
+    expect(res!.status).toBe(200);
+    expect(setCalls.at(-1)).toEqual(["board.title", "My Board", "user", {}]);
+    const body = (await (await handle(get("/api/settings/defs?repo=")))!.json()) as any;
+    const roles = body.defs.find((d: any) => d.key === "rt.roles");
+    expect(roles.effective.scope).toBe("user");
+    expect(roles.repos).toEqual([{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }]);
   });
 });

@@ -84,10 +84,10 @@ describe("loadRepoTracking through the settings resolver", () => {
   });
 
   test("invalid projectMrsWindowDays values are dropped, entry survives", () => {
-    setSetting("rt.repoTracking", {
+    writeStore(machineSettingsPath(), { "rt.repoTracking": {
       a: { mode: "live", caches: ["branches"], projectMrsWindowDays: -5 },
       b: { mode: "live", caches: ["branches"], projectMrsWindowDays: "soon" },
-    }, "machine");
+    } });
 
     const t = loadRepoTracking();
     expect(t.a).toBeDefined(); expect(t.a?.projectMrsWindowDays).toBeUndefined();

@@ -377,8 +377,7 @@ The board's cell unit is **26px per terminal row**. Quantizing a board
 height by a plain px÷26 division silently drops anything under half a
 cell — that dropped sub-cell padding is exactly what the 2026-09-19
 vertical-rhythm pass found missing: a cramped top bar with no bottom
-breathing, no gap between the tabs and the filter box, and a commit
-button collapsed to one thin row. This table is the binding row spec —
+breathing and a commit button collapsed to one thin row. This table is the binding row spec,
 the geometry class item 2 of the parity checklist calls for, the same
 kind of written contract theme.go is for tokens — measured board
 geometry on the left, the terminal row count the build renders on the
@@ -389,8 +388,8 @@ division.
 |---|---|---|---|---|
 | TopBar | 56 | 2.15 | 3 | label row + value row + one blank BgSubtle band row (the board's own bottom breathing; its text block ends at 44px into the 56px band). Segment hover/open fills cover all 3 rows. |
 | BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
-| Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
-| History top rows | n/a | n/a | 7 (tabs 3 + gap 1 + filter 3) | `historyFixedTopRows`: the same 3-row tabs strip (pad + label + underline), one blank band row, then the same 3-row filter box the Changes sidebar has ("Filter history"), directly above the commit list. |
+| Tabs + TabsRule | 36 + 1 | 1.42 | 2 | label row + underline row; the filter box sits directly under the underline, with no blank row between them. Both rows of the inactive half are its button: hover fills its label row with HoverBg and swaps its underline for a HoverBg `▀` edge. |
+| History top rows | n/a | n/a | 5 (tabs 2 + filter 3) | `historyFixedTopRows`: the same 2-row tabs strip (label + underline), then the same 3-row filter box the Changes sidebar has ("Filter history"), directly above the commit list. |
 | History date header | n/a | n/a | 1 per run | One row before the first commit of each run of equal date group in the visible (filtered) list: the label two cells in, bold Dim on Bg. Inert to hover and click. |
 | History commit row | n/a | n/a | 3 each | GHD's commit-list-item as a bold summary line (tag pill and unpushed ↑ flush right), a Dimmer byline · time line whose byline truncates before the time does, and a Rule separator row standing in for GHD's row border. The separator is inert to hover and click. |
 | History action row | n/a | n/a | 1 | Closes the list while there is more to load: "Load 100 more commits", or "Search 100 more commits" under a filter, in Lav; a cursor stop with a commit row's cursor and hover treatments. While its page loads it reads "Loading…" in Faint and is inert. A filter that matches nothing centers a Faint "No matching commits" in the list, with this row below it. |
@@ -408,10 +407,11 @@ division.
 | UndoStrip | 30 | 1.15 | 1 | |
 | Keybar | 28 | 1.08 | 1 | |
 | DiffHeader | 34 | 1.31 | 1 | |
-| Context menu | n/a | n/a | 2 + 3 + rows | 1 border row top and bottom (`modalBoxFrame`'s rounded border), `modalHeadRows`' 3 content rows (header, filter line, a rule) between them, then one line per menu row and one rule line per section boundary. Unlike every other foldout, which grows the frame to fit, glitter caps the box at the frame's remaining height and windows the row region behind the shared scroll viewport and thumb once rows don't fit, one column narrower beside the thumb. The Changes tab's shortest workable frame is 27 rows plus one per extra docked strip (pre-existing, for the docked commit block to fit; a stash strip makes 28), which is also the floor the menu-scrolling tests build against. |
+| Context menu | n/a | n/a | 2 + 3 + rows | 1 border row top and bottom (`modalBoxFrame`'s rounded border), `modalHeadRows`' 3 content rows (header, filter line, a rule) between them, then one line per menu row and one rule line per section boundary. Unlike every other foldout, which grows the frame to fit, glitter caps the box at the frame's remaining height and windows the row region behind the shared scroll viewport and thumb once rows don't fit, one column narrower beside the thumb. The Changes tab's shortest workable frame is 25 rows plus one per extra docked strip (pre-existing, for the docked commit block to fit; a stash strip makes 26), which is also the floor the menu-scrolling tests build against. |
 
-Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
-tabs-gap blank) and the docked block gains 4 (the commit-box top-pad blank,
+Net effect on `sidebarBlocks` (mission.go): the top block is
+`sidebarFixedTopRows` = 6 (tabs 2 + filter 3 + master 1) and the docked
+block gains 4 (the commit-box top-pad blank,
 the new description→button gap blank, plus 2 for the button's own half-block
 caps above and below its solid label row). `layout()`'s own filler
 arithmetic absorbs all of it unchanged — `sidebarDockedH` is measured by

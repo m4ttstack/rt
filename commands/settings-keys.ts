@@ -40,6 +40,8 @@ import {
 } from "../lib/settings/resolve.ts";
 import { setSetting, unsetSetting } from "../lib/settings/write.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
+import { firstIssueText, formatIssuePath } from "../lib/settings/schema.ts";
+import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
 // ─── arg parsing (commands/events.ts conventions) ────────────────────────────
@@ -442,6 +444,8 @@ export function renderListRow(s: ListedSetting): string {
   }
   if (s.expandError) labels.push(`expandError: ${s.expandError}`);
   for (const inv of s.invalid ?? []) labels.push(`invalid[${inv.scope}]: ${inv.reason}`);
+  for (const nc of s.nonconforming ?? []) labels.push(`nonconforming[${nc.scope}]: ${firstIssueText(nc.issues)}`);
+  if (s.mergedIssues && s.mergedIssues.length > 0) labels.push(`merged: ${firstIssueText(s.mergedIssues)}`);
 
   const labelStr = labels.length > 0 ? `  ${yellow}(${labels.join("; ")})${reset}` : "";
   return `  ${bold}${s.key}${reset} = ${formatValueInline(s.value)}${labelStr}`;
@@ -491,5 +495,37 @@ export function renderExplainRow(row: ExplainRow): string {
   if (row.invalid) {
     return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${red}[invalid: ${row.invalid}]${reset}`;
   }
+  if (row.nonconforming) {
+    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}`;
+  }
   return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}`;
+}
+
+// ─── check ──────────────────────────────────────────────────────────────────
+
+/** A header line per finding, then one line per issue. A `merged` finding
+    carries no scope or file, so its header names only the repo, if any. */
+export function renderCheckFinding(f: CheckFinding): string {
+  const where = [f.scope, f.repo].filter(Boolean).join("/");
+  const label = where ? `${where}  ` : "";
+  const file = f.file ? `  ${dim}${f.file}${reset}` : "";
+  const issues = f.issues.map((i) => `\n      ${formatIssuePath(i.path)}: ${i.message}`).join("");
+  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${file}${issues}`;
+}
+
+export async function settingsCheck(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const report = checkStores();
+
+  if (json) {
+    console.log(JSON.stringify({ ok: report.failing === 0, findings: report.findings }));
+  } else {
+    console.log("");
+    for (const f of report.findings) console.log(renderCheckFinding(f));
+    const unregistered = report.findings.filter((f) => f.kind === "unregistered").length;
+    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered`);
+    console.log("");
+  }
+
+  if (report.failing > 0) process.exitCode = 1;
 }

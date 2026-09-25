@@ -52,7 +52,7 @@ describe("loadSyncConfig over the settings resolver", () => {
   });
 
   test("a wrong-shaped resolved value degrades to defaults", () => {
-    setSetting("rt.sync", { autoResolve: "not-an-array" }, "team", { repoIdentity: IDENTITY });
+    writeFileSync(teamSettingsPath("acme"), JSON.stringify({ repos: { [IDENTITY]: { "rt.sync": { autoResolve: "not-an-array" } } } }));
 
     expect(loadSyncConfig(IDENTITY)).toEqual({ autoResolve: [] });
   });

@@ -487,7 +487,7 @@ describe("rt settings (four stores, one resolver — e2e)", () => {
 
   test("a non-rt suite key (deck.access) round-trips end to end with provenance", async () => {
     const res = await finished(
-      runRt(["settings", "set", "deck.access", '{"members":["alice"]}', "--scope", "user"]),
+      runRt(["settings", "set", "deck.access", '{"app":{"mode":"emails","emails":["alice@example.com"]}}', "--scope", "user"]),
     );
     expect(res.exitCode).toBe(0);
     expect(stripAnsi(res.stdout)).toContain("deck.access set (user)");
@@ -495,7 +495,7 @@ describe("rt settings (four stores, one resolver — e2e)", () => {
     const out = await rtJson(["settings", "get", "deck.access", "--json"]);
     expect(out.ok).toBe(true);
     expect(out.migrated).toBe(true);
-    expect(out.value).toEqual({ members: ["alice"] });
+    expect(out.value).toEqual({ app: { mode: "emails", emails: ["alice@example.com"] } });
     expect(out.provenance).toEqual([{ scope: "user", file: userStore }]);
   }, 30_000);
 

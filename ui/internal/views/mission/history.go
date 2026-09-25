@@ -24,10 +24,10 @@ import (
 const emptyCommitSummary = "Empty commit message"
 
 const (
-	// tabs(3, pad+label+underline) + the tabs-gap blank band row(1), then the
-	// filter box(3) from historyFilterTopRow.
-	historyFilterTopRow = 4
-	historyFixedTopRows = 7
+	// tabs(2, label+underline), then the filter box(3) from
+	// historyFilterTopRow.
+	historyFilterTopRow = 2
+	historyFixedTopRows = 5
 	historyFilesMin     = 24
 	historyFilesMax     = 40
 	historyFilesNarrow  = 12
@@ -418,13 +418,12 @@ func (m *Mission) historyTabKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // renderHistorySidebar is the History tab's sidebar (History.png): the tab
-// strip, the tabs-gap band, the filter box, then the commit list to the
+// strip, the filter box, then the commit list to the
 // bottom. No commit box or undo strip: GHD's History sidebar has neither.
 func (m *Mission) renderHistorySidebar(width, height int) string {
 	listH := max(height-historyFixedTopRows, 0)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, "history", m.hoverTab, width),
-		blankRows(width, 1),
 		renderFilterRow(m.historyFilter, "Filter history", m.focus == focusFilter, m.hoverFilterRow, width),
 		m.renderCommitList(width, listH),
 	)
@@ -743,12 +742,10 @@ func renderCommitRow(c HistoryCommitRow, width int, cursor, selected, hover bool
 // Headers and separator rules never hover or click.
 func (m *Mission) historySidebarHit(x, y, listRegionH int) hit {
 	switch {
-	case y < 3:
+	case y < historyFilterTopRow:
 		if x < sidebarWidth/2 {
 			return hit{kind: hitTab, idx: 0}
 		}
-		return hit{}
-	case y < historyFilterTopRow:
 		return hit{}
 	case y < historyFixedTopRows:
 		return hit{kind: hitFilterRow}

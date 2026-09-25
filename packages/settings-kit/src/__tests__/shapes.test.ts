@@ -1,112 +1,112 @@
 import { describe, expect, test } from "bun:test";
-import { allDefs } from "@mattstack/rt-client";
+import { allDefs, validateJson } from "@mattstack/rt-client";
 import type { SettingDefWire } from "../server.ts";
+import { LEGACY_SHAPES } from "./shapes-legacy-fixture.ts";
 import {
-  addToList, ENUMS, filterDefs, getLeaf, isSet, matchesShape, parseScalar,
-  rowKind, setLeaf, SHAPES, summarize, targetScope,
+  addToList, checkValue, ENUMS, filterDefs, getLeaf, isSet, matchesSchema, parseScalar,
+  recognize, rowKind, setLeaf, SHAPES, summarize, targetScope, type CompositeShape,
 } from "../shapes.ts";
 
 function def(over: Partial<SettingDefWire> & { key: string }): SettingDefWire {
   return {
     type: "string", scopes: ["user"], merge: "replace", secret: false, teamLocked: false,
     repoScoped: false, writable: true, description: "", hasDefault: false, defaultValue: null,
-    effective: { scope: null, file: null }, ...over,
+    effective: { scope: null, file: null }, storeVersion: 1, ...over,
   };
 }
 
-describe("SHAPES", () => {
-  test("every shaped key is registered and is an object or array", () => {
-    const byKey = new Map(allDefs().map((d) => [d.key, d]));
-    for (const key of Object.keys(SHAPES)) {
-      const d = byKey.get(key);
-      expect(d, key).toBeDefined();
-      expect(["object", "array"]).toContain(d!.type);
-    }
-  });
+const byKey = new Map(allDefs().map((d) => [d.key, d]));
+const schemaOf = (key: string) => byKey.get(key)!.schema!;
 
-  test("each shape kind matches its key's registered type", () => {
-    const byKey = new Map(allDefs().map((d) => [d.key, d]));
-    const expected: Record<string, string> = {
-      stringList: "array", pairList: "array", leaves: "object", stringMap: "object",
-    };
-    for (const [key, shape] of Object.entries(SHAPES)) {
-      const want = expected[shape.kind];
-      if (want === undefined) continue;
-      expect(`${key}: ${byKey.get(key)?.type}`).toBe(`${key}: ${want}`);
-    }
-  });
-
-  test("every ENUMS key is a registered string", () => {
-    const byKey = new Map(allDefs().map((d) => [d.key, d]));
-    for (const key of Object.keys(ENUMS)) expect(byKey.get(key)?.type, key).toBe("string");
-  });
-
-  test("each leaves shape accepts a fully typed sample and rejects a wrong-typed leaf", () => {
-    for (const [key, shape] of Object.entries(SHAPES)) {
-      if (shape.kind !== "leaves") continue;
-      let sample: Record<string, unknown> = {};
-      for (const [path, type] of Object.entries(shape.fields)) {
-        const v = type === "string" ? "x" : type === "number" ? 1 : type === "boolean" ? true : type.enum[0];
-        sample = setLeaf(sample, path, v);
+describe("recognize", () => {
+  test("reproduces every legacy shape: kind, fields, labels and fallbacks", () => {
+    for (const [key, entry] of Object.entries(LEGACY_SHAPES)) {
+      const legacy = entry as CompositeShape;
+      if (legacy.kind === "external") continue;
+      const r = recognize(schemaOf(key));
+      expect(`${key}: ${r.kind}`).toBe(`${key}: ${legacy.kind}`);
+      if (legacy.kind === "leaves" && r.kind === "leaves") {
+        expect(r.fields).toEqual(legacy.fields);
+        expect(r.placeholders).toEqual(legacy.fallbacks ?? {});
       }
-      expect(matchesShape(shape, sample), key).toBe(true);
-      const [firstPath, firstType] = Object.entries(shape.fields)[0]!;
-      const wrong = setLeaf(sample, firstPath, firstType === "number" ? "one" : 42);
-      expect(matchesShape(shape, wrong), key).toBe(false);
+      if (legacy.kind === "stringMap" && r.kind === "stringMap") expect(r.labels).toEqual([...legacy.labels]);
+    }
+  });
+
+  test("an array of flat objects is an objectList with its required names", () => {
+    const r = recognize(schemaOf("rt.notify.eventBridges"));
+    expect(r.kind).toBe("objectList");
+    if (r.kind === "objectList") expect(r.required).toEqual(["pattern", "category", "title", "message"]);
+  });
+
+  test("a map of flat objects is an objectMap", () => {
+    const r = recognize({ type: "object", propertyNames: { type: "string" }, additionalProperties: { type: "object", properties: { port: { type: "number" }, dir: { type: "string" } }, required: ["port"] } });
+    expect(r).toMatchObject({ kind: "objectMap", required: ["port"] });
+  });
+
+  test("anything deeper is json", () => {
+    expect(recognize({ type: "object", properties: { a: { type: "object", properties: { b: { type: "array", items: { type: "object" } } } } } }).kind).toBe("json");
+    expect(recognize(schemaOf("deck.apps")).kind).toBe("json");
+    expect(recognize(undefined).kind).toBe("json");
+  });
+});
+
+describe("checkValue", () => {
+  test("matches the server's issue shape and messages", () => {
+    const issues = checkValue({ type: "array", items: { type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] } }, [{ pattern: 1 }]);
+    expect(issues).toEqual([{ path: [0, "pattern"], message: "expected string, got number" }]);
+    expect(checkValue({ type: "object", properties: { a: { type: "string" } }, required: ["a"] }, {})).toEqual([{ path: ["a"], message: 'required property "a" is missing' }]);
+  });
+
+  test("record keys come back verbatim, not in their URI-encoded pointer form", () => {
+    const map = { type: "object", additionalProperties: { type: "string" } };
+    for (const key of ["remote:gitlab.example.com%2Facme%2Fapp", "/Users/dev/My App", "a~b/c", "café"]) {
+      expect(checkValue(map, { [key]: 1 })[0]!.path).toEqual([key]);
+    }
+  });
+
+  test("never drifts from rt-client's validateJson: same fixtures, same issues", () => {
+    const ruleSchema = {
+      type: "object",
+      properties: { pattern: { type: "string" }, category: { type: "string" }, url: { type: "string" }, owner: { const: "human" } },
+      required: ["pattern", "category"],
+    };
+    const listSchema = { type: "array", items: ruleSchema };
+    const cases: [schema: Record<string, unknown>, value: unknown][] = [
+      [listSchema, [{ pattern: 1, category: "gate" }]],
+      [listSchema, [{ category: "gate" }]],
+      [listSchema, [{ pattern: "x", category: "gate", owner: "herd" }]],
+      [{ type: "number", minimum: 1 }, 0],
+      [{ enum: ["a", "b"] }, "c"],
+      [{ type: "object", properties: { a: { type: "string" } }, additionalProperties: false }, { a: "x", b: 1 }],
+      [{ type: "object", additionalProperties: { type: "string" } }, { "remote:gitlab.example.com%2Facme%2Fapp": 1 }],
+      [listSchema, [{ pattern: "gate/*", category: "gate", extra: true }]],
+    ];
+    for (const [schema, value] of cases) {
+      expect(checkValue(schema, value)).toEqual(validateJson(schema, value));
     }
   });
 });
 
-describe("matchesShape", () => {
-  test("stringList accepts only arrays of strings", () => {
-    const s = SHAPES["board.projects"]!;
-    expect(matchesShape(s, [])).toBe(true);
-    expect(matchesShape(s, ["a/b"])).toBe(true);
-    expect(matchesShape(s, ["a", 1])).toBe(false);
-    expect(matchesShape(s, "a")).toBe(false);
+describe("matchesSchema", () => {
+  test("true only when the value matches the def's layer schema, false with no schema at all", () => {
+    const d = def({ key: "rt.homeSnapshot", type: "object", merge: "deep", schema: { type: "object", properties: { enabled: { type: "boolean" } }, required: ["enabled"] }, layerSchema: { type: "object", properties: { enabled: { type: "boolean" } } } });
+    expect(matchesSchema(d, { enabled: true })).toBe(true);
+    expect(matchesSchema(d, { enabled: "yes" })).toBe(false);
+    expect(matchesSchema(d, {})).toBe(true);
+    expect(matchesSchema(def({ key: "x.none" }), {})).toBe(false);
   });
+});
 
-  test("pairList accepts arrays of objects carrying both string fields", () => {
-    const s = { kind: "pairList", fields: ["project", "repo"] } as const;
-    expect(matchesShape(s, [{ project: "g/p", repo: "host/x" }])).toBe(true);
-    expect(matchesShape(s, [{ project: "g/p" }])).toBe(false);
-    expect(matchesShape(s, [["g/p", "x"]])).toBe(false);
+describe("SHAPES", () => {
+  test("holds only external keys", () => {
+    for (const shape of Object.values(SHAPES)) expect(shape.kind).toBe("external");
   });
+});
 
-  test("stringMap accepts a plain object of string values", () => {
-    const s = SHAPES["rt.repoIdentityOverrides"]!;
-    expect(matchesShape(s, {})).toBe(true);
-    expect(matchesShape(s, { "https://example.dev/a.git": "a" })).toBe(true);
-    expect(matchesShape(s, { "https://example.dev/a.git": 1 })).toBe(false);
-    expect(matchesShape(s, [["a", "b"]])).toBe(false);
-  });
-
-  test("leaves passes unknown keys through and checks enums", () => {
-    const s = SHAPES["board.triage"]!;
-    expect(matchesShape(s, {})).toBe(true);
-    expect(matchesShape(s, { enabled: true, fixClasses: { retryFlake: false }, notify: "rt" })).toBe(true);
-    expect(matchesShape(s, { enabled: "yes" })).toBe(false);
-    expect(matchesShape(s, { notify: "loud" })).toBe(false);
-    expect(matchesShape(s, { doctorSkill: "x" })).toBe(true);
-    expect(matchesShape(s, [])).toBe(false);
-  });
-
-  test("rt.worktreeApp claudeHook admits only the answers rt records", () => {
-    const s = SHAPES["rt.worktreeApp"]!;
-    expect(matchesShape(s, { claudeHook: "installed" })).toBe(true);
-    expect(matchesShape(s, { claudeHook: "declined" })).toBe(true);
-    expect(matchesShape(s, { claudeHook: "yes" })).toBe(false);
-  });
-
-  test("leaves refuses a present parent of a dotted path that is not a plain object", () => {
-    const slack = SHAPES["board.slack"]!;
-    expect(matchesShape(slack, { emoji: 5 })).toBe(false);
-    expect(matchesShape(slack, { emoji: null })).toBe(false);
-    expect(matchesShape(slack, {})).toBe(true);
-    expect(matchesShape(slack, { emoji: { looking: "eyes" } })).toBe(true);
-    const triage = SHAPES["board.triage"]!;
-    expect(matchesShape(triage, { fixClasses: [] })).toBe(false);
-    expect(matchesShape(triage, { fixClasses: "x" })).toBe(false);
+describe("ENUMS", () => {
+  test("every ENUMS key is a registered string", () => {
+    for (const key of Object.keys(ENUMS)) expect(byKey.get(key)?.type, key).toBe("string");
   });
 });
 
@@ -155,10 +155,10 @@ describe("rowKind", () => {
     expect(rowKind(def({ key: "x.secret", secret: true }))).toBe("readonly");
     expect(rowKind(def({ key: "x.locked", writable: false }))).toBe("readonly");
   });
-  test("composites dispatch on their shape, or read-only with none", () => {
-    expect(rowKind(def({ key: "rt.repoRoots", type: "array" }))).toBe("stringList");
-    expect(rowKind(def({ key: "rt.homeSnapshot", type: "object" }))).toBe("leaves");
-    expect(rowKind(def({ key: "rt.cron", type: "object" }))).toBe("readonly");
+  test("composites dispatch on their recognized shape", () => {
+    expect(rowKind(def({ key: "rt.repoRoots", type: "array", schema: { type: "array", items: { type: "string" } } }))).toBe("stringList");
+    expect(rowKind(def({ key: "rt.homeSnapshot", type: "object", schema: { type: "object", properties: { enabled: { type: "boolean" } } } }))).toBe("leaves");
+    expect(rowKind(def({ key: "rt.cron", type: "object", schema: { type: "object", properties: { triggers: { type: "array", items: {} } } } }))).toBe("json");
   });
   test("strings in ENUMS are enum, other scalars scalar", () => {
     expect(rowKind(def({ key: "rt.logLevel" }))).toBe("enum");
@@ -167,24 +167,31 @@ describe("rowKind", () => {
 });
 
 describe("summarize", () => {
+  const stringListSchema = { type: "array", items: { type: "string" } };
+  const stringMapSchema = { type: "object", propertyNames: { type: "string" }, additionalProperties: { type: "string" } };
+  const gitStatusSchema = {
+    type: "object",
+    properties: { sweep: { type: "boolean" }, sweepIntervalSec: { type: "number" }, fetchIntervalSec: { type: "number" } },
+  };
+
   test("stringList counts with a noun from the key", () => {
-    expect(summarize(def({ key: "rt.repoRoots", type: "array", effective: { scope: "machine", file: null, value: ["a", "b"] } }))).toBe("2 roots");
-    expect(summarize(def({ key: "board.ticketPrefixes", type: "array", effective: { scope: "team", file: null, value: ["RT"] } }))).toBe("1 prefix");
-    expect(summarize(def({ key: "rt.repoRoots", type: "array" }))).toBe("0 roots");
+    expect(summarize(def({ key: "rt.repoRoots", type: "array", schema: stringListSchema, effective: { scope: "machine", file: null, value: ["a", "b"] } }))).toBe("2 roots");
+    expect(summarize(def({ key: "board.ticketPrefixes", type: "array", schema: stringListSchema, effective: { scope: "team", file: null, value: ["RT"] } }))).toBe("1 prefix");
+    expect(summarize(def({ key: "rt.repoRoots", type: "array", schema: stringListSchema }))).toBe("0 roots");
   });
-  test("stringMap and pairList count entries", () => {
-    expect(summarize(def({ key: "rt.repoIdentityOverrides", type: "object", effective: { scope: "machine", file: null, value: { a: "b" } } }))).toBe("1 entry");
+  test("stringMap counts entries", () => {
+    expect(summarize(def({ key: "rt.repoIdentityOverrides", type: "object", schema: stringMapSchema, effective: { scope: "machine", file: null, value: { a: "b" } } }))).toBe("1 entry");
   });
   test("replace-merged leaves count fields in the effective value", () => {
-    expect(summarize(def({ key: "rt.gitStatus", type: "object", effective: { scope: "default", file: null, value: { sweep: true } } }))).toBe("1 of 3 set");
+    expect(summarize(def({ key: "rt.gitStatus", type: "object", schema: gitStatusSchema, effective: { scope: "default", file: null, value: { sweep: true } } }))).toBe("1 of 3 set");
   });
   test("deep-merged leaves count only the fields a store layer authored", () => {
     const effective = { scope: "machine", file: "/f", value: { sweep: true, sweepIntervalSec: 60, fetchIntervalSec: 30 }, authored: { sweep: true } };
-    expect(summarize(def({ key: "rt.gitStatus", type: "object", merge: "deep", effective }))).toBe("1 of 3 set");
+    expect(summarize(def({ key: "rt.gitStatus", type: "object", schema: gitStatusSchema, merge: "deep", effective }))).toBe("1 of 3 set");
   });
   test("deep-merged leaves with no authored layer read as none set", () => {
     const effective = { scope: "default", file: null, value: { sweep: true, sweepIntervalSec: 60, fetchIntervalSec: 30 } };
-    expect(summarize(def({ key: "rt.gitStatus", type: "object", merge: "deep", effective }))).toBe("0 of 3 set");
+    expect(summarize(def({ key: "rt.gitStatus", type: "object", schema: gitStatusSchema, merge: "deep", effective }))).toBe("0 of 3 set");
   });
   test("no shape falls back to a generic count", () => {
     expect(summarize(def({ key: "rt.cron", type: "object", effective: { scope: "machine", file: null, value: { a: 1, b: 2 } } }))).toBe("2 fields");

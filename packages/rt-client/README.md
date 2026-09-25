@@ -112,6 +112,43 @@ socket. The verbs and their payloads are specified in repo-tools
 `docs/superpowers/specs/2026-08-28-rt-chat-delivery-v2-design.md`; the
 agent-facing rules are `skills/rt-chat/SKILL.md`.
 
+## Settings schemas
+
+Every `object` or `array` settings key has a JSON Schema describing the value
+its readers accept. The schemas are authored in zod
+(`src/settings/registry-schemas.ts`) and committed as
+`src/settings/schema.lock.json`; the registry attaches each def's `schema`
+(and, for a deep-merged object, its `layerSchema`) from that lock, so zod
+never loads at runtime. Checks run through `@cfworker/json-schema`.
+
+```ts
+import { getDef, checkSchema, validateWrite, checkStores } from '@mattstack/rt-client';
+
+const def = getDef('rt.notify.eventBridges')!;
+checkSchema(def, [{ pattern: 1 }], { layer: false }); // [{ path: [0, 'pattern'], message: 'expected string, got number' }]
+
+const verdict = validateWrite(def, [{ pattern: 1 }], { scope: 'user' }); // also takes repoIdentity, team
+if (!verdict.ok) console.error(verdict.reason);                          // "[0].pattern: expected string, got number"
+
+const { findings, failing } = checkStores();                            // what `rt settings check` prints
+```
+
+| Function | What it does |
+| --- | --- |
+| `checkSchema(def, value, { layer })` | every issue against the layer schema (`layer: true`) or the full schema; `[]` for a key with no schema |
+| `validateJson(schema, value)` | the same check against a bare JSON Schema |
+| `validateWrite(def, value, { scope, repoIdentity?, team? })` | the write gate `setSetting` runs: type and path guard, the layer, then the merged result, refused only when the write makes a passing merge fail |
+| `checkStores()` | every stored value, every merged value and every unregistered key; `failing` excludes unregistered keys; a `merged` finding has no `scope` or `file` |
+| `listUnregisteredSettings()` / `repoSectionsFor(key)` / `listStoreRepoIdentities()` | unregistered keys in stores, which repos set a key in which stores, every identity with a `repos.<id>` section |
+| `mergedValueWith(def, { scope, value, repoIdentity?, team? }, opts)` | the value the resolver would merge with that one layer replaced |
+| `currentMergedValue(def, opts)` | the value `getSetting` would return, without its warnings for skipped layers |
+
+Reads never skip a value that fails only its schema: `explainSetting` rows
+carry `nonconforming` issues and `listSettings` carries `nonconforming` and
+`mergedIssues`, while the value stays in effect. The lock tooling
+(`buildLock`, `classifyLockDiff`) is not on this entry point; rt's
+`rt settings schema lock` and `rt settings schema diff` use it from source.
+
 ## Runs
 
 `RunStageRow.status` is one of `running | done | failed | redirected`; `rt runs stage-redirect` writes the fourth when the work engine leaves a stage for another one, so a reader that maps statuses to icons or filters must handle all four.

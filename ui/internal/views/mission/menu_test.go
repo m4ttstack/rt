@@ -666,7 +666,7 @@ func TestTheWheelNeverReachesTheBoardUnderAMenu(t *testing.T) {
 
 func TestTheShortestChangesFramePaintsItsHeightAndHitsItsDock(t *testing.T) {
 	m := newMouseTestMission()
-	m.height = 27
+	m.height = 25
 	m.model.Commit.LastCommit = &LastCommit{Summary: "x", When: "now", Undoable: true}
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if len(lines) != m.height {
@@ -683,12 +683,12 @@ func TestTheShortestChangesFramePaintsItsHeightAndHitsItsDock(t *testing.T) {
 	t.Fatal("the undo strip never painted")
 }
 
-// tallMenuMission is the Changes tab at 27 rows, the shortest frame its
+// tallMenuMission is the Changes tab at 25 rows, the shortest frame its
 // docked commit block fits in, with a nested file and Undo showing: the
-// file's menu is 30 lines, three more than the frame.
+// file's menu is 30 lines, five more than the frame.
 func tallMenuMission(width int) *Mission {
 	m := newMouseTestMission()
-	m.width, m.height = width, 27
+	m.width, m.height = width, 25
 	m.model.Action.Title = "Fetch origin"
 	m.model.Commit.LastCommit = &LastCommit{Summary: "x", When: "now", Undoable: true}
 	m.model.Changes[0].Path = "src/a.go"

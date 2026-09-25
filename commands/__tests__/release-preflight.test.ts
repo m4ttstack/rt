@@ -1,15 +1,28 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { PreflightSeams } from "../../lib/release/preflight.ts";
 import { releasePreflight } from "../release.ts";
 
 const ok = (stdout: string) => Promise.resolve({ stdout, stderr: "", exitCode: 0 });
 
-/** A seam set whose only fault is a stale rt-client (npm behind source). */
-function fakeSeams(rtClientSource: string): PreflightSeams {
+const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
+const COMMITTED_LOCK = readFileSync(join(import.meta.dir, "..", "..", LOCK_REL), "utf8");
+
+/**
+ * A seam set whose only fault is a stale rt-client (npm behind source).
+ * `prevLock` is what `git show <tag>:<lock>` answers; null makes git exit non-zero.
+ */
+function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_LOCK): PreflightSeams {
   return {
     repoRoot: "/repo",
     exec: (argv) => {
       const cmd = argv.join(" ");
+      if (cmd === `git show v2.10.2:${LOCK_REL}`) {
+        return prevLock === null
+          ? Promise.resolve({ stdout: "", stderr: `fatal: path '${LOCK_REL}' does not exist in 'v2.10.2'`, exitCode: 128 })
+          : ok(prevLock);
+      }
       if (cmd.includes("--show-current")) return ok("main\n");
       if (cmd.includes("status")) return ok("");
       if (cmd.includes("describe")) return ok("v2.10.2\n");
@@ -30,6 +43,8 @@ function fakeSeams(rtClientSource: string): PreflightSeams {
       if (p.endsWith("deps.lock")) return JSON.stringify({ schema: 1, arch: "arm64", tools: [] });
       if (p.endsWith("marketplace.json")) return JSON.stringify({ name: "m", plugins: [] });
       if (p.endsWith("packages/rt-client/package.json")) return JSON.stringify({ version: rtClientSource });
+      if (p === join("/repo", LOCK_REL)) return COMMITTED_LOCK;
+      if (p === join("/repo", "packages/rt-client/src/settings/breaking-schema-changes.json")) return "{}";
       return null;
     },
     violations: () => [],
@@ -85,5 +100,31 @@ describe("rt release preflight", () => {
     expect(out).toContain("gate:");
     expect(out).toMatch(/1 stale/);
     expect(exitCode).toBe(1);
+  });
+});
+
+describe("rt release preflight schema-lock row", () => {
+  const schemaRow = async (seams: PreflightSeams) => {
+    const { logs } = await run(["--json"], seams);
+    return (JSON.parse(logs[0]!).rows as { id: string; label: string; status: string; detail?: string }[]).find((r) => r.id === "schema-lock");
+  };
+
+  test("the committed lock matching the tag's lock is ok", async () => {
+    expect(await schemaRow(fakeSeams("0.20.0"))).toMatchObject({ label: "schema lock", status: "ok" });
+  });
+
+  test("a key narrowed since the tag without a storeVersion bump is stale and named", async () => {
+    const committed = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const key = Object.keys(committed)[0]!;
+    const prev = { ...committed, [key]: { ...committed[key]!, schema: { ...committed[key]!.schema, type: [committed[key]!.schema.type, "null"] } } };
+
+    const row = await schemaRow(fakeSeams("0.20.0", JSON.stringify(prev)));
+
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toContain(key);
+  });
+
+  test("no lock at the tag is ok and says so", async () => {
+    expect(await schemaRow(fakeSeams("0.20.0", null))).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
   });
 });

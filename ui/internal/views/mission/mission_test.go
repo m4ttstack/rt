@@ -220,18 +220,15 @@ func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
 }
 
 // TestMouseClickFileRowEmitsSelectWithPath clicks the second Changes row
-// (model.go, absolute y=13 per the coordinate walk on
+// (model.go, absolute y=11 per the coordinate walk on
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
-// on the first: the click moves the cursor and emits that row's select. The
-// third row (topbar.go) is not used here: with the padding rows added above
-// the tabs and top bar, the fixture's fixed 30-row PTY only has room to show
-// two of its three Changes rows without scrolling.
+// on the first: the click moves the cursor and emits that row's select.
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go.
 func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 13))
+	s.Type(sgrClick(0, 20, 11))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
 		t.Fatalf("file-row click select intent: %q", l)
@@ -602,11 +599,10 @@ const (
 
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath drives a left click at
 // the checkbox column of the fixture's second Changes row (topbar.go):
-// tabs(3, pad+label+underline)+tabs-gap(1)+filter(3)+master(1)=8 body rows
-// ahead of the list (docs/design/mission/README.md's Terminal geometry
-// table: the tabs-gap blank band row), +1 for row index 1 = bodyY 9;
-// topH(4)+bodyY(9) = frame y 13, checkbox at x=2 (the "  " prefix's own
-// width).
+// tabs(2, label+underline)+filter(3)+master(1)=6 body rows ahead of the
+// list (docs/design/mission/README.md's Terminal geometry table), +1 for
+// row index 1 = bodyY 7; topH(4)+bodyY(7) = frame y 11, checkbox at x=2
+// (the "  " prefix's own width).
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
 // topbar.go -- not the fixture's initial cursor row, so clicking its
@@ -615,7 +611,7 @@ const (
 // guaranteed and both lines are checked as a set.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 2, 13))
+	s.Type(sgrClick(0, 2, 11))
 	l1, ok1 := s.ReadLine(2 * time.Second)
 	l2, ok2 := s.ReadLine(2 * time.Second)
 	if !ok1 || !ok2 {
@@ -674,17 +670,14 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 // (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
 // pane height, not just the row count above it: PTY is 30x100, topbar
 // height 4 (docs/design/mission/README.md's Terminal geometry table), keybar
-// 1, no notice, so bodyH=25; the fixed top rows (tabs 3 + tabs-gap 1 +
-// filter 3 + master 1 = 8) plus a 2-row list region (the fixture's 3 changes
-// rows no longer all fit without scrolling once the tabs and top bar each
-// gained a padding row) plus the docked block (stash 1 + rule 1 + commit-box
-// top pad 1 + summary 3 + description 4 + gap 1 + button 3 (top half-block
-// cap, label, bottom half-block cap -- ratified 2026-09-20's sub-cell-height
-// treatment) + undo 1 = 15) exactly fill the 25-row body; undo sits at bodyY
-// 8+2+1+1+1+3+4+1+3=24, frame y = topH(4)+24 = 28 -- unchanged from before,
-// since the extra rows above cancel exactly against the shrunk list region
-// (docked-block-start = topH + bodyH - dockedH, and topH+bodyH is constant
-// for a fixed pane height regardless of how topH's own row count moves).
+// 1, no notice, so bodyH=25; the fixed top rows (tabs 2 + filter 3 +
+// master 1 = 6) plus a 4-row list region plus the docked block (stash 1 +
+// rule 1 + commit-box top pad 1 + summary 3 + description 4 + gap 1 +
+// button 3 (top half-block cap, label, bottom half-block cap) + undo 1 =
+// 15) exactly fill the 25-row body; undo sits at bodyY
+// 6+4+1+1+1+3+4+1+3=24, frame y = topH(4)+24 = 28. The docked block
+// starts at topH + bodyH - dockedH, so rows added or removed above it only
+// resize the list region.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 28))
@@ -749,13 +742,13 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 }
 
 // TestMouseClickHistoryTabEmitsTabHistory clicks the tabs button's label row
-// (absolute y=5, one row into the sidebar after topH(4): the tabs button is
-// a 2-row pad+label span, and either row hits the same target) right half:
+// (absolute y=4, the sidebar's first row after topH(4): the tabs button is
+// the 2-row label+underline span, and either row hits the same target) right half:
 // Changes and History each occupy half of sidebarWidth(46), so any x >= 23
 // resolves to History.
 func TestMouseClickHistoryTabEmitsTabHistory(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 30, 5))
+	s.Type(sgrClick(0, 30, 4))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"history"`) {
 		t.Fatalf("History tab click intent: %q", l)
@@ -778,7 +771,7 @@ const historyModel = `{"tab":"history","current":{"repo":"repo-tools","branch":"
 	`"stash":null,"notice":""}`
 
 // historyRowY is the frame row of commit idx's summary line: topH(4), then
-// the History sidebar's tabs(3) + tabs-gap(1) + filter box(3), then the
+// the History sidebar's tabs(2) + filter box(3), then the
 // Today header over s1 and s2 and the Yesterday header over s3, and three
 // rows per commit (summary, byline, separator rule).
 func historyRowY(idx int) int {
@@ -786,7 +779,7 @@ func historyRowY(idx int) int {
 	if idx >= 2 {
 		headers = 2
 	}
-	return 4 + 7 + headers + 3*idx
+	return 4 + 5 + headers + 3*idx
 }
 
 func openHistory(t *testing.T) *testutil.Session {
@@ -807,8 +800,8 @@ func longHistoryModel(n int, hasMore bool) string {
 }
 
 // listTopY is the frame row of the History list's first row: topH(4) plus
-// tabs(3) + tabs-gap(1) + filter box(3).
-const listTopY = 4 + 7
+// tabs(2) + filter box(3).
+const listTopY = 4 + 5
 
 // TestHistoryWheelScrollsTheListWithoutEmitting: a wheel tick over the list
 // moves the view three lines and sends nothing to the driver.
@@ -1025,8 +1018,8 @@ func TestHistoryClickShowingCommitDoesNotEmit(t *testing.T) {
 // Changes half, now the inactive one, must repaint in Bg, not HoverBg.
 func TestTabSwitchPushClearsTabHover(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrMotion(30, 5))
-	s.Type(sgrClick(0, 30, 5))
+	s.Type(sgrMotion(30, 4))
+	s.Type(sgrClick(0, 30, 4))
 	if l, ok := s.ReadLine(2 * time.Second); !ok || !strings.Contains(l, `"tab":"history"`) {
 		t.Fatalf("setup: History tab click intent: %q", l)
 	}
@@ -1068,7 +1061,7 @@ func TestHistoryPressOneEmitsTabChanges(t *testing.T) {
 
 func TestHistoryClickChangesTabEmitsTabChanges(t *testing.T) {
 	s := openHistory(t)
-	s.Type(sgrClick(0, 5, 5))
+	s.Type(sgrClick(0, 5, 4))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:tab"`) || !strings.Contains(l, `"tab":"changes"`) {
 		t.Fatalf("Changes tab click intent: %q", l)
@@ -1130,11 +1123,11 @@ func TestHistoryOversizedEnterEmitsShowOversized(t *testing.T) {
 }
 
 // TestMouseRightClickFileRowOpensItsMenu right-clicks the fixture's first
-// Changes row (absolute y=12: topH(4) + the 8-row tabs/tabs-gap/filter/
-// master prefix); esc closes the menu without emitting.
+// Changes row (absolute y=10: topH(4) + the 6-row tabs/filter/master
+// prefix); esc closes the menu without emitting.
 func TestMouseRightClickFileRowOpensItsMenu(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(2, 10, 12))
+	s.Type(sgrClick(2, 10, 10))
 	s.WaitForPaint("Discard Changes…")
 	s.Type(keyEsc)
 	s.WaitForGone("Discard Changes…")
@@ -1291,11 +1284,11 @@ func waitIntent(t *testing.T, s *testutil.Session, name string) string {
 }
 
 // TestRightClickCopyFilePathEmitsTheRowsPath right-clicks model.go (frame
-// row 13, see TestMouseClickCheckboxCellEmitsToggleFileWithPath), steps down
+// row 11, see TestMouseClickCheckboxCellEmitsToggleFileWithPath), steps down
 // past Discard and the three Ignore rows, and chooses Copy File Path.
 func TestRightClickCopyFilePathEmitsTheRowsPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(2, 12, 13))
+	s.Type(sgrClick(2, 12, 11))
 	s.WaitForPaint("Copy File Path")
 	s.Type(keyDown, keyDown, keyDown, keyDown, keyEnter)
 	l := waitIntent(t, s, "mission:menu-action")

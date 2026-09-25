@@ -79,17 +79,94 @@ exist for out-of-process callers only.
 
 1. Add the registry row in `registry-defs.ts` (pick the scope by who the intent
    belongs to: team convention / this human everywhere / this machine).
-2. `cd packages/rt-client && bun run build` — dist is what consumers copy, and
+2. For an `object` or `array` key, write its zod schema in `SCHEMAS`
+   (`packages/rt-client/src/settings/registry-schemas.ts`): the value the code
+   reading it accepts, not an ideal. `z.looseObject` unless a reader rejects
+   unknown properties (`z.strictObject`), `.optional()` on anything a reader
+   falls back on, the most important property first (a refusal names the
+   first failing path). Where readers disagree, follow the most permissive.
+   Readers take their type from it with `import type { Value } from
+   "./settings/registry-schemas.ts"` (`Value<"rt.roles">`), which erases at
+   build.
+3. Add the key's `EXAMPLES` entry in `settings/__tests__/schema-examples.ts`:
+   at least one `good` value, one `bad` value with the path its first issue
+   must name, and for a `merge: "deep"` key one partial `layer`. The registry
+   default must pass too. The example suite fails for a composite key with no
+   schema or no entry.
+4. `bun run cli.ts settings schema lock` regenerates `schema.lock.json`;
+   commit it with the schema. CI regenerates it and fails on any difference.
+5. `cd packages/rt-client && bun run build`: dist is what consumers copy, and
    the dist-freshness test fails otherwise.
-3. Deliver the new registry to every consumer — a node_modules copy never
-   updates itself. A `file:` consumer (today: console) re-copies on
-   `bun install`; the apps pinned to the published package (gitq,
-   board) only see the key after an rt-client version bump + publish +
-   install; deck additionally BUNDLES rt-client into its compiled binary —
-   rebuild + fresh-inode install + `codesign -f -s -` to pick up path or
-   registry changes.
-4. Read via `getSetting`, write via `setSetting`. Never construct store paths
+6. Deliver the new registry to every consumer: a node_modules copy never
+   updates itself. A `file:` consumer (console) re-copies on `bun install`;
+   the apps pinned to the published package (gitq, board) only see the key
+   after an rt-client version bump + publish + install; deck additionally
+   BUNDLES rt-client into its compiled binary, so it needs a rebuild +
+   fresh-inode install + `codesign -f -s -` to pick up path or registry
+   changes.
+7. Read via `getSetting`, write via `setSetting`. Never construct store paths
    by hand; never cache a path or a value at module load.
+
+## Schemas, the write gate and the lock
+
+zod is authoring-only: a devDependency of rt-client that nothing on the
+runtime path imports (a test greps `dist/index.js` for it). The committed
+lock, `packages/rt-client/src/settings/schema.lock.json`
+(`{ [key]: { storeVersion, schema } }`, JSON Schema from `z.toJSONSchema(schema,
+{ io: "input" })`), is a static import the registry attaches to each def as
+`def.schema`, so the lock and the running checks cannot disagree. A
+`merge: "deep"` object key also carries `def.layerSchema`: the same schema with
+`required` dropped at every object level outside array items, because one
+layer holds only the fields it sets. Every check, server or browser, runs
+through `@cfworker/json-schema`, and an issue is `{ path, message }` with the
+path formatted `[0].pattern` or `emoji.looking`.
+
+- **Writes are strict.** `validateWrite(def, value, { scope, repoIdentity?,
+  team? })` is the one gate, and `setSetting`, `rt settings set` and
+  settings-kit's `/set` all go through it: `validateValue` (type and path
+  guard), then the layer (the layer schema for a deep key, the full schema
+  otherwise), then the merged result against the full schema. The merged
+  check refuses only a write that makes a passing merge fail, so a layer
+  already broken elsewhere never blocks an unrelated edit. A team write
+  names one team and merges only that team's store. A global write of a
+  repo-scoped key checks the merge with no repo and once per repo that has a
+  section in any store.
+- **Reads are lenient.** `validateValue` alone is the resolver's skip rule
+  (`invalid`). A value that fails only its schema stays in effect and is
+  labeled `nonconforming`, with its issues, in `explain` and `list`; a
+  merged value that fails the full schema is reported as `mergedIssues`.
+- **`rt settings check`** lists every stored value (team, user and machine
+  stores, global and repo sections) that fails its type check or layer
+  schema, every merged value that fails the full schema, and the
+  unregistered keys found in stores. It is read-only, uses the registry of
+  the rt that runs it, takes `--json`, and exits 1 on any finding except an
+  unregistered key. A finding against a real store is fixed in the schema,
+  never in the store.
+- **Breaking changes.** `bun run cli.ts settings schema diff` classifies the
+  registry's schemas against a lock: `origin/main` by default,
+  `--against-ref <ref>` or `--against <file>` (one or the other), `--json`
+  for the envelope; it runs from source only. A change is breaking when it
+  can reject a value the previous schema accepted: a key removed; a property
+  made required; a `type` narrowed or replaced, or added where there was none; an `enum`/`const` value
+  removed, or one added where none was; an `anyOf` branch removed or
+  tightened, or `anyOf` added; a `oneOf` branch added or removed, or `oneOf`
+  added (dropping `oneOf` entirely is safe); a limit added or tightened;
+  `pattern`/`format` added or changed; `items` or `propertyNames` added or
+  tightened; `additionalProperties` tightened; `prefixItems` added or
+  changed, or dropped while `items` stays restrictive; a property added where
+  extras were checked by a schema; a property removed where the new extras
+  are not open; and any change to a keyword outside the known set.
+  Annotations (`title`, `description`, `default`, `labels`, `placeholder`
+  and the like) never count, except inside a `oneOf` branch, which is
+  compared as a whole.
+  A breaking change passes only when the key's `storeVersion` went up and
+  `breaking-schema-changes.json` (next to the registry) gives the key a
+  one-line reason; a removed key needs only the reason. CI runs the diff
+  against `main` on every PR, and release preflight's `schema lock` row runs
+  it against the lock at the previous release tag.
+- A typed optional property added to a loose object is safe for the
+  classifier but can collide with a stored extra of the same name and a
+  different type; `rt settings check` before release is what catches that.
 
 ## Porting an app's config (the ownership latch)
 

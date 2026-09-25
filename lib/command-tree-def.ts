@@ -1782,6 +1782,12 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs" },
         ],
       },
+      check: {
+        description: "Check every stored settings value against its schema and list unregistered keys",
+        module: "./commands/settings-keys.ts",
+        fn: "settingsCheck",
+        args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" }],
+      },
       linear: {
         description: "Linear API configuration",
         subcommands: {
@@ -1848,6 +1854,27 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Path", type: "text", optional: true, placeholder: "~/Documents/GitHub/repo-tools", hint: "Omit to show the current checkout" },
           SETUP_JSON_ARG,
         ],
+      },
+      schema: {
+        description: "The settings schema lock: regenerate it from the registry, or diff the registry against a committed lock",
+        subcommands: {
+          lock: {
+            description: "Regenerate packages/rt-client/src/settings/schema.lock.json from the zod schemas",
+            module: "./commands/settings-schema.ts",
+            fn: "settingsSchemaLock",
+            args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
+          },
+          diff: {
+            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 on an unbumped or unacknowledged breaking change",
+            module: "./commands/settings-schema.ts",
+            fn: "settingsSchemaDiff",
+            args: [
+              { name: "Against", flag: "--against", type: "text", placeholder: "path/to/lock.json", hint: "Diff against a lock file; a missing file counts as no lock" },
+              { name: "Against ref", flag: "--against-ref", type: "text", placeholder: "origin/main", hint: "Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
+            ],
+          },
+        },
       },
     },
   },

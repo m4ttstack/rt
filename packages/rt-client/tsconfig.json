@@ -13,6 +13,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "rewriteRelativeImportExtensions": true
