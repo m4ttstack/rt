@@ -48,7 +48,9 @@ shadows, no radii).
   blank slates (unborn repo, first load, nothing selected, non-contiguous).
 - `Mouse.png`: every mouse affordance by zone; hover always previews.
 - `DiffStates.png`: expand up / down / all handles, binary and oversized
-  messages.
+  messages, and the diff rows themselves: add/del tints with a stronger
+  gutter strip, the mark in its own column, a soft-wrapped line, hover
+  and selection, and markdown heading/strong/emph weights.
 - `EmptyState.png`: the clean-worktree state (no GitHub Desktop card
   clone): zeroed sidebar, disabled commit button, and a centered
   "No local changes" card in the diff pane with key hints.
