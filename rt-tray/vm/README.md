@@ -134,8 +134,10 @@ rt-tray/vm/
   run/guest/install-app.sh       guest: quarantine DMG, mount, copy to /Applications (admin) , launch as tester with env
   run/guest/ax.sh                guest: osascript helpers (find by AXIdentifier, click, type, wait, admin-auth, notification prompts)
   run/guest/drive-setup.sh       guest: screens 1–5 + FDA/Login Items/Notifications dances, screenshot hooks
-  run/guest/assert-installed.sh  guest: rt verify --json, tray.sock /version, daemon pid/label, symlink target
-  run/guest/trigger-update.sh    guest: loopback appcast server, POST /update/check, drive Sparkle, assert vN+1 + daemon restart
+  run/guest/assert-installed.sh  guest: rt verify --json, tray.sock /version, daemon pid/label, symlink target, served apps, every .mattstack route
+  run/guest/trigger-update.sh    guest: loopback appcast server, POST /update/check, drive Sparkle, assert vN+1 + daemon restart + served apps
+  run/guest/served-apps.sh       guest: sourced by both; deck's served set from the bundle's deps.lock, every .mattstack route
+  run/guest/jq/                  guest: jq programs (deps.lock catalog, launchctl print, served verdict); host tests in run/helpers/__tests__/
   run/host/capture.sh            host: screenshot the Tart window into the run dir
   run/host/winid.swift           host: CGWindowList lookup of the Tart window id
   run/helpers/appcast-server.ts  Bun static file server (compiled per run, copied into the guest)
@@ -181,6 +183,20 @@ Today, the first line's `screens` phase and both lines' `update` phase report `f
 
 Phases: preflight · clone · boot · stage · install · launch · screens · assert · update · teardown. Each is `pass|fail|skip` with a reason in `artifacts/<run>/phases.jsonl`; `report.md` is the human summary; `screenshots/` are numbered per screen (`00-first-launch`, `01-welcome`, `02-team-*`, `03-readiness-*`, `04-install-*`, `05-done`, `06-update-*`); `logs/` holds guest logs (`~/.mattstack/rt/logs`, unified log slice for mattstack/smd/backgroundtaskmanagementd, `launchctl print` grep, `rt verify --json`, tray `/version`). Exit 1 iff any phase failed; skips are reported, never counted green.
 
+## Served apps
+
+`assert-installed.sh` (assert phase) and `trigger-update.sh` (update phase, after Sparkle's relaunch) both source `run/guest/served-apps.sh`:
+
+- The expected set is every `deps.lock` helper row with a `serve` object, read from the installed bundle's `Contents/Resources/deps.lock` with the bundle's own jq. The harness names no app, so a new catalog row is asserted the moment it ships.
+- For each one, deck's `GET /api/v1/status` (port from `~/.mattstack/deck/api.json`) must show an rt-managed, healthy row with no `dev-link` issue, an `icon` (deck advertises one only when the bundle's identity at `Contents/Resources/apps/<name>/` resolves) and a `<name>.mattstack` route, and `launchctl print gui/<uid>/com.mattstack.deck.<name>` must show argv `[<bundle>/Contents/Helpers/<name>, ...serve.args]`, working directory `~/.mattstack/<name>` and a pid. deck must report `devMode: false`.
+- A serve row whose status is `pending` fails: the catalog names an app this bundle does not ship.
+- Every helper row without `serve` (a tool, such as the gitq CLI) must have no `com.mattstack.deck.<name>` job loaded.
+- Every `.mattstack` hostname in `~/.portless/routes.json` must answer over https, not only the first.
+- It polls (90s in the assert phase, 180s after the update relaunch) until nothing is bad, then reports the last pass. Evidence lands in `logs/assert-served/` and `logs/update-served/`: the catalog, deck's status, the route table and one `launchctl-<name>.txt` per job.
+- Headless runs skip it with a stated pass: no proxy is installed there, so deck has no routes.
+
+The release walkthrough (`rt:release`, `walkthrough.sh --scenario create`) runs it in its assert phase, so the `assert` phase going `pass` now includes it; add `--update-dir`/`--update-version` to run the update leg too. To rerun it in a guest kept with `--keep`, ssh in as `tester` and repeat the assert phase's own command from `run/walkthrough.sh`. The jq programs are tested on the host by `run/helpers/__tests__/{launchctl-print,catalog,served-verdict,served-apps-sh}.test.ts` (all in `check-vm-scripts.sh`; set `VM_TEST_JQ` to run them under the bundle's jq), and `scripts/lib/__tests__/vm-served-catalog.test.ts` pins `catalog.jq` to `parseDepsLock` in CI.
+
 ## What is not automated (and how the scripts treat it)
 
 - **"Background Items Added" banner**: not clicked, not asserted (it is a notification). The design (once `run/guest/drive-setup.sh` lands, T6) is: the Login Items row is asserted through `GET /services` / `rt setup status`; if SMAppService returns `.requiresApproval`, the driver opens Login Items and toggles the app (admin auth as a standard user).
@@ -224,4 +240,4 @@ VirtualBuddy (GUI, no CLI): duplicate the library VM with ⌘D (APFS clone), dra
 
 ## Offline check
 
-`bash check-vm-scripts.sh` runs every offline gate in this directory — `bash -n` on every script, the two unit-test suites, and every `--dry-run`/usage-only path — with no Tart and no network. It is what implementers and reviewers run on this branch; it does not (and cannot) exercise a real VM.
+`bash check-vm-scripts.sh` runs every offline gate in this directory (`bash -n` on every script, the host unit-test suites, and every `--dry-run`/usage-only path) with no Tart and no network. It is what implementers and reviewers run on this branch; it does not (and cannot) exercise a real VM.
