@@ -24,8 +24,8 @@ enum SplashTuning {
 
     static let dismissFadeDuration: Double = 0.25
 
-    // How long the splash is on screen, full stop: WindowModel dismisses on
-    // this alone and waits on nothing else.
+    // The shortest time the splash is on screen: the animation's own length.
+    // WindowModel holds it past this until deck is ready.
     // animationSettleDuration is a best-visual-estimate of when the drop-in
     // finishes, not something derived from the spring math -- if a future
     // eye-check says the animation actually settles earlier or later, this

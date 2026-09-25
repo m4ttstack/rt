@@ -112,14 +112,22 @@ final class WindowModel: ObservableObject {
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var splashVisible = false
     @Published private(set) var splashOpacity: Double = 1
+    @Published private(set) var deckWait: DeckWaitPhase = .waiting
+    @Published private(set) var splashAnimationDone = false
     @Published var badges: [String: BadgeReading] = [:]
 
     let store: WebViewStore
     weak var controller: MattstackWindowController?
 
+    private let backends: WindowBackends
     private let catalog: AppCatalog
     private var catalogLoadTask: Task<Void, Never>?
+    private var catalogRefreshTask: Task<Bool, Never>?
     private var navigationDelegates: [String: WindowNavigationDelegate] = [:]
+    private var iconFetchesInFlight: Set<String> = []
+    private var deckWaitTask: Task<Void, Never>?
+    private var deckWaitGeneration = 0
+    private var activeAppIsFallback = false
 
     /// Process-lifetime, not instance-lifetime: only one `WindowModel` is
     /// ever constructed per process in practice, but the gate is spelled at
@@ -128,11 +136,15 @@ final class WindowModel: ObservableObject {
     private static var hasShownSplash = false
     private var splashDismissed = false
 
-    init(store: WebViewStore? = nil) {
+    init(store: WebViewStore? = nil, backends: WindowBackends = .live()) {
         self.store = store ?? WebViewStore()
-        self.catalog = AppCatalog(fetcher: URLSessionAppListFetcher(),
-                                   cachePath: AppHome.current + "/.mattstack/rt/window-apps-cache.json")
-        fetchIcon(url: "https://deck.mattstack/favicon.svg", into: Self.deckApp.name)
+        self.backends = backends
+        self.catalog = backends.catalog
+        fetchIcon(url: backends.deckFaviconURL, into: Self.deckApp.name)
+    }
+
+    var splashContent: SplashContent {
+        SplashPresentation.content(animationDone: splashAnimationDone, phase: deckWait)
     }
 
     func app(named name: String) -> DiscoveryApp? {
@@ -156,14 +168,51 @@ final class WindowModel: ObservableObject {
             self.catalogFresh = result.fresh
             // An empty catalog (deck unreachable, no cache) still needs an
             // active app or the content area shows nothing at all; the deck
-            // pseudo-app always resolves via app(named:), and its own
-            // navigation finishing still satisfies the splash gate instead
-            // of holding it for the full 8s cap.
-            if self.activeApp.isEmpty { self.activeApp = result.apps.first?.name ?? Self.deckApp.name }
+            // pseudo-app always resolves via app(named:), and stands in only
+            // until a fresh catalog names a first app.
+            if self.activeApp.isEmpty {
+                self.activeApp = result.apps.first?.name ?? Self.deckApp.name
+                self.activeAppIsFallback = result.apps.isEmpty
+            }
             for app in result.apps { self.fetchIcon(url: app.icon, into: app.name) }
         }
         catalogLoadTask = task
         await task.value
+    }
+
+    /// While the catalog is a cache copy, every call fetches again; the first
+    /// fresh load replaces the tabs and fetches the icons the stale period
+    /// left missing. Concurrent callers share one fetch.
+    @discardableResult
+    func refreshCatalogIfStale() async -> Bool {
+        await ensureCatalogLoaded()
+        if catalogFresh { return true }
+        if let inFlight = catalogRefreshTask { return await inFlight.value }
+        let task = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            let result = await self.catalog.load()
+            guard result.fresh else { return false }
+            self.applyFreshCatalog(result.apps)
+            return true
+        }
+        catalogRefreshTask = task
+        let fresh = await task.value
+        if catalogRefreshTask == task { catalogRefreshTask = nil }
+        return fresh
+    }
+
+    private func applyFreshCatalog(_ fresh: [DiscoveryApp]) {
+        apps = fresh
+        catalogFresh = true
+        activeApp = CatalogRefresh.activeApp(current: activeApp, apps: fresh, deckName: Self.deckApp.name,
+                                             currentIsFallback: activeAppIsFallback)
+        activeAppIsFallback = fresh.isEmpty
+        TrayLog.info("window catalog refreshed", ["apps": fresh.map(\.name).joined(separator: ",")])
+        let deck = IconTarget(name: Self.deckApp.name, url: backends.deckFaviconURL)
+        for target in CatalogRefresh.iconTargets(apps: fresh, deck: deck, loaded: Set(icons.keys),
+                                                 inFlight: iconFetchesInFlight) {
+            fetchIcon(url: target.url, into: target.name)
+        }
     }
 
     func open(_ request: OpenRequest) async -> Bool {
@@ -180,6 +229,7 @@ final class WindowModel: ObservableObject {
 
     func select(_ name: String) {
         activeApp = name
+        activeAppIsFallback = false
     }
 
     /// Opens the oldest counted decision.
@@ -192,17 +242,10 @@ final class WindowModel: ObservableObject {
         BadgeBook.firstBadged(badges, order: apps.map(\.name))
     }
 
-    /// No-op on every call after the first per process: `show()` calls this
-    /// unconditionally on every window show, including re-shows.
-    ///
-    /// The splash lives for exactly as long as its own animation takes
-    /// (`SplashTuning.minimumVisibleDuration`, kept there so it stays in
-    /// lockstep with the animation's tunables) and then goes, whatever the
-    /// network is doing. It used to also wait on the active app's first
-    /// navigation, which made an unremarkable catalog fetch or page load read
-    /// as a stuck splash -- and waited on the wrong thing anyway, since a
-    /// finished navigation is not a drawn page. Content that is not ready yet
-    /// says so itself, in the content area.
+    /// The splash covers the whole window until its own animation has played
+    /// and deck is ready (/healthz answered and a fresh catalog loaded), or
+    /// until the deck wait gives up and the splash says why. It plays once
+    /// per process; re-shows of the window never replay it.
     func presentSplashIfNeeded() {
         guard !Self.hasShownSplash else { return }
         Self.hasShownSplash = true
@@ -211,8 +254,60 @@ final class WindowModel: ObservableObject {
         let visibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: visibleNanoseconds)
-            self?.dismissSplash()
+            self?.splashAnimationDone = true
+            self?.dismissSplashIfReady()
         }
+        startDeckWait()
+    }
+
+    func retryDeckWait() {
+        deckWait = .waiting
+        startDeckWait()
+    }
+
+    /// A Retry starts a new wait while the old one may still be sleeping, so
+    /// only the latest generation may publish its result.
+    private func startDeckWait() {
+        deckWaitTask?.cancel()
+        deckWaitGeneration += 1
+        let generation = deckWaitGeneration
+        let backends = backends
+        let deps = DeckWaitDeps(
+            probe: backends.deckProbe,
+            loadCatalog: { [weak self] in await self?.refreshCatalogIfStale() ?? false },
+            diagnoseAgent: backends.diagnoseDeckAgent,
+            now: { ProcessInfo.processInfo.systemUptime },
+            sleep: { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) })
+        let started = ProcessInfo.processInfo.systemUptime
+        deckWaitTask = Task { [weak self] in
+            let phase = await DeckWait.run(deadline: backends.deckWaitDeadline, deps: deps)
+            guard let self, generation == self.deckWaitGeneration, phase != .waiting else { return }
+            self.finishDeckWait(phase, seconds: ProcessInfo.processInfo.systemUptime - started)
+        }
+    }
+
+    private func finishDeckWait(_ phase: DeckWaitPhase, seconds: TimeInterval) {
+        deckWait = phase
+        switch phase {
+        case .ready:
+            TrayLog.info("window: deck ready", ["seconds": Int(seconds)])
+            reloadFailedTabs()
+        case .unreachable(let reason):
+            TrayLog.warn("window: deck unreachable", ["seconds": Int(seconds), "reason": reason])
+        case .waiting:
+            break
+        }
+        dismissSplashIfReady()
+    }
+
+    private func dismissSplashIfReady() {
+        if splashContent == .dismiss { dismissSplash() }
+    }
+
+    /// Tabs mount under the splash, so one can fail against an app that
+    /// was still starting before deck was ready.
+    private func reloadFailedTabs() {
+        for (name, failed) in loadFailures where failed { store.reload(name) }
     }
 
     /// Deterministic fade, not a conditional-removal `.transition`: a plain
@@ -281,15 +376,16 @@ final class WindowModel: ObservableObject {
         if view.isLoading { loadingApps.insert(appName) }
     }
 
-    /// Icons are fetched once per app at launch, which used to mean a single
-    /// bad moment cost the tab its icon for the life of the window: every app
-    /// came back with the same undecodable 150KB body one startup, and the
-    /// tabs wore letters until the next relaunch. So a failure is retried, and
-    /// what came back is logged well enough to name the culprit next time --
-    /// a byte count alone said only that it was not an image.
+    /// A failure is retried, and what came back is logged well enough to
+    /// name the culprit: a byte count alone said only that it was not an
+    /// image. A fresh catalog after a stale one asks again for any icon
+    /// still missing, so one name is never fetched twice at once.
     private func fetchIcon(url urlString: String?, into name: String) {
-        guard icons[name] == nil, let urlString, let url = URL(string: urlString) else { return }
+        guard icons[name] == nil, !iconFetchesInFlight.contains(name),
+              let urlString, let url = URL(string: urlString) else { return }
+        iconFetchesInFlight.insert(name)
         Task { [weak self] in
+            defer { self?.iconFetchesInFlight.remove(name) }
             for attempt in 1...Self.iconFetchAttempts {
                 if let image = await Self.loadIcon(url: url, app: name, attempt: attempt) {
                     self?.icons[name] = image
