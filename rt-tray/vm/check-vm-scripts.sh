@@ -207,8 +207,13 @@ t "assert-installed.sh checks every .mattstack route, not the first" bash -c \
 t "assert-installed.sh asserts the served apps the bundle's deps.lock names" bash -c \
   'grep -q "assert_served_apps assert-served" run/guest/assert-installed.sh \
    && grep -q "Contents/Resources/deps.lock" run/guest/served-apps.sh'
+t "assert-installed.sh polls the served set before fetching any route" bash -c '
+  served=$(grep -n "assert_served_apps assert-served" run/guest/assert-installed.sh | head -1 | cut -d: -f1)
+  route=$(grep -n "assert_mattstack_routes" run/guest/assert-installed.sh | head -1 | cut -d: -f1)
+  [ -n "$served" ] && [ -n "$route" ] && [ "$served" -lt "$route" ]'
+# grep exits 2 on a missing file, so only 1 (no match) passes.
 t "no served-app name is written into the guest assert" bash -c \
-  '! grep -qwE "board|chat|console|boxscore|gitq" run/guest/served-apps.sh run/guest/jq/catalog.jq run/guest/jq/served-verdict.jq run/guest/jq/launchctl-print.jq'
+  'grep -qwE "board|chat|console|boxscore|gitq" run/guest/served-apps.sh run/guest/jq/catalog.jq run/guest/jq/served-verdict.jq run/guest/jq/launchctl-print.jq; [ $? -eq 1 ]'
 
 
 rm -rf /tmp/vmcheck-tu
@@ -223,6 +228,11 @@ t "trigger-update.sh ax.sh mount guard actually aborts" bash -c 'out=$(env GUEST
 t "trigger-update.sh rejects an unknown third argument" bash -c 'out=$(GUEST_RUN=/tmp/vmcheck-ax bash run/guest/trigger-update.sh /tmp/vmcheck-tu/upd 1.2.3 --bogus 2>&1); rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "^usage: trigger-update.sh"'
 t "trigger-update.sh asserts served apps and every route after the relaunch" bash -c \
   'grep -q "assert_served_apps update-served" run/guest/trigger-update.sh && grep -q "assert_mattstack_routes trusted update" run/guest/trigger-update.sh'
+t "trigger-update.sh records the served jobs before the update and compares after" bash -c '
+  rec=$(grep -n "record_served_jobs update-before" run/guest/trigger-update.sh | head -1 | cut -d: -f1)
+  check=$(grep -n "POST http://localhost/update/check" run/guest/trigger-update.sh | head -1 | cut -d: -f1)
+  [ -n "$rec" ] && [ -n "$check" ] && [ "$rec" -lt "$check" ] \
+    && grep -qF "assert_served_apps update-served 180 \"\$LOGS/update-before/launchd.json\"" run/guest/trigger-update.sh'
 t "walkthrough hands --headless to the update leg" bash -c \
   'grep -q "UPD_HFLAG=--headless" run/walkthrough.sh && [ "$(grep -c UPD_HFLAG run/walkthrough.sh)" -ge 2 ]'
 

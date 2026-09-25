@@ -304,6 +304,9 @@ if [ "$HEADLESS" = 0 ]; then
     ""|0) bad "portless daemon not running (launchctl print system pid: ${proxy_pid:-not listed})";;
     *)    ok "portless daemon running (pid $proxy_pid)";;
   esac
+  # Polled first: a route is fetched once, so it waits until deck reports
+  # every catalog app healthy rather than failing on one still starting.
+  assert_served_apps assert-served 90
   # The end-to-end fact: every app domain resolving to loopback (the root
   # daemon rewrites /etc/hosts from routes.json) and answering TLS with a host
   # cert it mints on demand under the CA the installer trusted. Hostnames come
@@ -314,7 +317,6 @@ if [ "$HEADLESS" = 0 ]; then
   else
     assert_mattstack_routes trusted proxy
   fi
-  assert_served_apps assert-served 90
 
   # The remedy the row offers, exercised end to end: the tray's own escalator
   # runs the helper's trust verb, both dialogs get answered, and the row that
