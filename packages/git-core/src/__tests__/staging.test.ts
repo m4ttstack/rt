@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from "bun:test";
-import { rename, unlink } from "node:fs/promises";
+import { rename, symlink, unlink } from "node:fs/promises";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
 import { rawGit } from "../exec.ts";
@@ -427,6 +427,50 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
 
       const nameStatus = await sb.git(["diff", "--cached", "--name-status", "-M"]);
       expect(nameStatus).toMatch(/^R\d*\told\.txt\tnew\.txt$/m);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("10. a file replaced by a symlink diffs as its delete then its add, and stages whole", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "one\ntwo\n");
+      await sb.write("other.txt", "x\n");
+      await sb.commitAll("base");
+      await unlink(`${sb.dir}/f.txt`);
+      await symlink("other.txt", `${sb.dir}/f.txt`);
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("f.txt", { withSources: true });
+
+      expect(diff.kind).toBe("text");
+      expect(diff.typechange).toBe(true);
+      expect(diff.hunks.flatMap((h) => h.lines.map((l) => l.text))).toEqual([
+        "@@ -1,2 +0,0 @@", "-one", "-two",
+        "@@ -0,0 +1 @@", "+other.txt",
+      ]);
+      const starts = diff.hunks.flatMap((h) => h.lines.map((_, i) => h.unifiedDiffStart + i));
+      expect(new Set(starts).size).toBe(starts.length);
+      expect(diff.sources?.old).toBe("one\ntwo\n");
+      expect(diff.sources?.new).toBeUndefined();
+
+      await client.stageFileFully("f.txt");
+      const raw = await sb.git(["diff", "--cached", "--raw"]);
+      expect(raw).toMatch(/^:100644 120000 \S+ \S+ T\tf\.txt$/m);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("10a. an ordinary diff is not flagged as a typechange", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "a\n");
+      await sb.commitAll("base");
+      await sb.write("f.txt", "b\n");
+      const diff = await createGitClient(sb.dir).stagingDiff("f.txt");
+      expect(diff.typechange).toBeUndefined();
     } finally {
       await sb.cleanup();
     }

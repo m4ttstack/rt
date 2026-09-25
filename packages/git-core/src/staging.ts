@@ -1,7 +1,7 @@
 import type { ClientContext } from "./client.ts";
 import { rawGit } from "./exec.ts";
 import { classifyDiffText } from "./diff-classify.ts";
-import { DiffParser } from "./vendor/ghd/diff-parser.ts";
+import { parseFileDiff } from "./diff-hunks.ts";
 import type { DiffSelection } from "./vendor/ghd/diff-selection.ts";
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
 import { formatPatch, formatPatchToDiscardChanges } from "./vendor/ghd/patch-formatter.ts";
@@ -40,11 +40,9 @@ export async function getStagingDiff(ctx: ClientContext, path: string, opts: Dif
   if (kind !== "text") {
     return { path, kind, untracked, hunks: [] };
   }
-  // DiffParser tolerates (and ignores) the `diff --git` / `index` preamble,
-  // so the raw command output goes straight in.
-  const hunks = text.trim() === "" ? [] : new DiffParser().parse(text).hunks;
+  const { hunks, typechange } = parseFileDiff(text);
   const sources = opts.withSources ? await workingDiffSources(ctx, path, { untracked, renamed }) : undefined;
-  return { path, kind: "text", untracked, hunks, ...(sources ? { sources } : {}) };
+  return { path, kind: "text", untracked, hunks, ...(typechange ? { typechange: true as const } : {}), ...(sources ? { sources } : {}) };
 }
 
 export async function stageSelection(
