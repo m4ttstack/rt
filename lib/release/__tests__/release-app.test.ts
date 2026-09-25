@@ -325,6 +325,9 @@ describe("the pin-only gate", () => {
     expect(revertedPins(ROWS, moved("chat", "0.1.2"))).toEqual([{ name: "chat", from: "0.1.3", to: "0.1.2" }]);
     expect(revertedPins(ROWS, moved("board", "0.1.10"))).toEqual([]);
     expect(revertedPins(moved("board", "0.1.10"), ROWS)).toEqual([{ name: "board", from: "0.1.10", to: "0.1.7" }]);
+    const unversioned = ROWS.map((r) => (r.name === "chat" ? ({ ...r, version: undefined } as unknown as DepsRow) : r));
+    expect(revertedPins(ROWS, unversioned)).toEqual([]);
+    expect(revertedPins(unversioned, ROWS)).toEqual([]);
   });
 });
 

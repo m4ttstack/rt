@@ -66,7 +66,10 @@ in the notes.
    to the tag and verify. Show Matt the tag and the notes (step 6). After he approves,
    run that `resume` command, `rt release app <name> --json --yes-notes
    <notesHash>`, the same way (the flag takes only that hash); it commits, tags and waits on release.yml
-   (25-50 minutes).
+   (25-50 minutes). If that run stops at `awaiting-approval` again, the
+   notes changed after Matt approved (for example another pin merged) and
+   nothing was committed: show Matt the new notes, and run the new
+   `resume` only once he approves them.
 3. Read the final envelope's `status`:
    - `released`: go on to step 4.
    - `pending`: tagged, but not verified yet. Either release.yml is still
@@ -79,10 +82,6 @@ in the notes.
      killed mid-wait, since every step detects its own completion; a
      newest tag whose publish has not verified is re-verified before
      anything new starts.
-   - A `--yes-notes` refusal ("does not match these notes") means the tag
-     or the notes changed after Matt approved, for example another pin
-     merged. Nothing was committed; show Matt the new notes from that
-     envelope and, once he approves, run its new `resume`.
 4. Then finish with steps 11 and 12.
 
 Use the full process below for a deck fix, for a main carrying anything

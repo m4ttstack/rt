@@ -163,7 +163,8 @@ export function revertedPins(before: DepsRow[], after: DepsRow[]): RevertedPin[]
   const old = byName(before);
   return after.flatMap((r) => {
     const was = old.get(r.name)?.version;
-    return was !== undefined && compareVersions(r.version, was) < 0 ? [{ name: r.name, from: was, to: r.version }] : [];
+    if (typeof was !== "string" || typeof r.version !== "string") return [];
+    return compareVersions(r.version, was) < 0 ? [{ name: r.name, from: was, to: r.version }] : [];
   });
 }
 
@@ -696,15 +697,15 @@ async function assertFastPath(seams: ReleaseAppSeams, ctx: Pick<Ctx, "lastTag" |
   if (!files.includes(LOCK_PATH)) return;
   const oldLock = await git(seams, ["show", `${ctx.lastCommit}:${LOCK_PATH}`]);
   const newLock = await git(seams, ["show", `${ref}:${LOCK_PATH}`]);
+  const gate = await checkGate(seams, ctx.lastCommit, ref);
+  if (gate.path !== "fast") throw refuse(gate.reason);
+  const problems = pinOnlyLockProblems(oldLock, newLock);
+  if (problems.length) throw refuse(problems.join("; "));
   const reverted = revertedPins(parseLock(oldLock), parseLock(newLock));
   if (reverted.length) {
     const moves = reverted.map((p) => `${p.name} ${p.from} → ${p.to}`).join(", ");
     throw new StepFailure(step, `${where} moves pins backwards since ${ctx.lastTag} (${moves}): a revert, not a patch release; cut this release with the full /rt:release`, null);
   }
-  const gate = await checkGate(seams, ctx.lastCommit, ref);
-  if (gate.path !== "fast") throw refuse(gate.reason);
-  const problems = pinOnlyLockProblems(oldLock, newLock);
-  if (problems.length) throw refuse(problems.join("; "));
 }
 
 const appsHeadSha = async (seams: ReleaseAppSeams): Promise<string> =>
@@ -1018,13 +1019,14 @@ async function botPrOrigin(seams: ReleaseAppSeams, pr: BotPr): Promise<string[]>
 
 /** Never executes the binary: codesign reads the signature off disk. */
 async function verifyBotPr(seams: ReleaseAppSeams, ctx: Ctx, pr: BotPr): Promise<void> {
-  const refuse = (problem: string) =>
-    new StepFailure("pr", `PR #${pr.number} ${problem}; not merging (${pr.url})`, `inspect ${pr.url}; once it is fixed or closed, rt release app ${ctx.name}`);
-
   const origin = await botPrOrigin(seams, pr);
   if (origin.length) {
-    throw new StepFailure("pr", `PR #${pr.number} was not opened by the bundle workflow (${origin.join("; ")}); not merging (${pr.url})`, null);
+    throw new StepFailure("pr", `PR #${pr.number} is not the bundle workflow's own (${origin.join("; ")}); not merging (${pr.url})`, null);
   }
+  const runId = pr.headRefName.slice("bundle-ci/".length);
+  const refuse = (problem: string) =>
+    new StepFailure("pr", `PR #${pr.number} ${problem}; not merging (${pr.url})`,
+      `rerun its pr job (gh run rerun ${runId} --failed --repo ${RT_REPO}) or close it, then rt release app ${ctx.name}`);
 
   const files = JSON.parse(await gh(seams, ["pr", "view", String(pr.number), "--repo", RT_REPO, "--json", "files", "--jq", "[.files[].path]"])) as string[];
   const base = (await gh(seams, ["api", `repos/${RT_REPO}/compare/main...${pr.headRefOid}`, "--jq", ".merge_base_commit.sha"])).trim();
@@ -1208,13 +1210,11 @@ async function notesStep(seams: ReleaseAppSeams, ctx: Ctx, opts: ReleaseAppOptio
   const hash = notesHash(notes);
   ctx.notes = notes;
   ctx.notesHash = hash;
-  const approve = `rt release app ${ctx.name}${opts.json ? " --json" : ""} --yes-notes ${hash}`;
   if (opts.yesNotes !== null) {
     if (opts.yesNotes !== hash) {
       if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
-      throw new StepFailure("notes",
-        `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.tag}): only the hash a stopped run printed approves its notes, and these changed or were never shown. Nothing was committed; review these notes before approving them with the resume command`,
-        approve);
+      rec("notes", "stopped", `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.tag}): only the hash a stopped run printed approves its notes, and these changed or were never shown; these notes need approval, nothing committed`);
+      return "awaiting-approval";
     }
   } else {
     if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
@@ -1266,10 +1266,10 @@ async function verifyStep(seams: ReleaseAppSeams, ctx: Ctx, rec: Recorder): Prom
     rec("verify", "ok", `${ctx.tag} is published: run, notes, assets, state and releases/latest all verify`);
     return "ok";
   }
-  const run = ctx.verify.rows.find((r) => r.id === "run");
+  const runRow = ctx.verify.rows.find((r) => r.id === "run");
   // Until release.yml finishes, the release it creates is missing or a draft, so those rows fail for no reason of their own.
-  if (run?.status === "pending") {
-    rec("verify", "pending", `${run.label}: ${run.detail ?? run.status}`);
+  if (runRow?.status === "pending") {
+    rec("verify", "pending", `${runRow.label}: ${runRow.detail ?? runRow.status}`);
     return "pending";
   }
   const open = ctx.verify.rows.filter((r) => r.status !== "ok").map((r) => `${r.label}: ${r.detail ?? r.status}`).join("; ");

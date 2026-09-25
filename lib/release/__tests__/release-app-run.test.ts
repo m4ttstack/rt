@@ -631,6 +631,15 @@ describe("runReleaseApp: qualification", () => {
     expect(mutations(w.calls)).toEqual([]);
   });
 
+  test("a full-gate row moving down gets the gate's refusal, not the revert one", async () => {
+    const w = new World();
+    w.land(["rt-tray/deps.lock"], { lock: lockText({ ...BASE_VERSIONS, deck: "1.1.0" }) });
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "qualify", status: "failed" });
+    expect(lastStep(r).detail).toContain("full-gate row(s) changed: deck");
+    expect(lastStep(r).detail).not.toContain("revert");
+  });
+
   test("deck is refused because its pin keeps the full gate", async () => {
     const w = new World();
     const r = await runReleaseApp(w.seams(), opts({ name: "deck" }));
@@ -851,6 +860,7 @@ describe("runReleaseApp: the bot PR is verified before it merges", () => {
     const r = await runReleaseApp(w.seams(), opts());
     expect(lastStep(r)).toMatchObject({ id: "pr", status: "failed" });
     expect(lastStep(r).detail).toContain("sha256");
+    expect(r.resume).toMatch(/^rerun its pr job \(gh run rerun \d+ --failed --repo m4ttstack\/rt\) or close it, then rt release app board$/);
     expect(w.calls.some((c) => c.startsWith("gh pr merge"))).toBe(false);
   });
 
@@ -911,7 +921,7 @@ describe("runReleaseApp: the bot PR is verified before it merges", () => {
       w.prMutate = (pr) => edit(w, pr);
       const r = await runReleaseApp(w.seams(), opts());
       expect(lastStep(r)).toMatchObject({ id: "pr", status: "failed" });
-      expect(lastStep(r).detail).toContain("not opened by the bundle workflow");
+      expect(lastStep(r).detail).toContain("is not the bundle workflow's own");
       expect(lastStep(r).detail).toContain(want);
       expect(r.resume).toBeNull();
       expect(w.calls.some((c) => c.startsWith("gh pr merge"))).toBe(false);
@@ -976,15 +986,15 @@ describe("runReleaseApp: notes approval", () => {
     expect(second.notes).toBe(first.notes);
   });
 
-  test("only the hash of these exact notes approves them: the tag form and a stale hash are refused", async () => {
+  test("only the hash of these exact notes approves them: a stale or wrong one stops for approval of the new notes", async () => {
     for (const token of ["v2.13.2", "v2.13.9", "0123456789ab", hashFor([{ ...BOARD_SECTION, subjects: ["board: an older line"] }])]) {
       const w = new World();
       const r = await runReleaseApp(w.seams(), opts({ json: true, yesNotes: token }));
-      expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
+      expect(r.status).toBe("awaiting-approval");
+      expect(lastStep(r)).toMatchObject({ id: "notes", status: "stopped" });
       expect(lastStep(r).detail).toContain(`--yes-notes ${token} does not match`);
       expect(r.notes).toContain("### Board 0.1.8");
       expect(r.resume).toBe(`rt release app board --json --yes-notes ${r.notesHash}`);
-      expect(lastStep(r).detail).toContain("review these notes");
       expect(w.calls.some((c) => c.includes("repos/m4ttstack/rt/git/commits"))).toBe(false);
     }
   });
