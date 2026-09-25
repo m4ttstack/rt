@@ -775,10 +775,13 @@ export interface Commands {
 
   /** Creates an MR (a draft unless `draft: false`) and writes it back so the
       board sees it before the next sweep. Never retries. `url` is null when
-      GitLab created the MR but reading it back failed. */
+      GitLab created the MR but reading it back failed. `labels` apply at
+      creation (an empty array sends nothing); `squash` is one follow-up write, and a create that landed is
+      never reported failed over it: `squashApplied: false` plus
+      `squashError` means set it with mr:update instead of creating again. */
   "mr:create": {
-    payload: { repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean };
-    data: { iid: number; url: string | null };
+    payload: { repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean; labels?: string[]; squash?: boolean };
+    data: { iid: number; url: string | null; squashApplied?: boolean; squashError?: string };
   };
 
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };

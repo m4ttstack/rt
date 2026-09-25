@@ -5,7 +5,7 @@
  * and ephemeral repos alike.
  *
  *   mr:action            — merge / rebase / approve / unapprove / etc.
- *   mr:create            - create an MR (draft by default) and write it back
+ *   mr:create            - create an MR (draft by default, labels, squash) and write it back
  *   mr:fetch-job-detail  — unified detail fetch (returns trace or bridge)
  *   mr:fetch-job-trace   — raw job trace text
  *
@@ -42,6 +42,35 @@ export const RETRY_WRITEBACK_DELAY_MS = 5000;
 
 const RETURNED_PR_ACTIONS = new Set<ActionName>(["merge", "toggleDraft"]);
 const RETRY_ACTIONS       = new Set<ActionName>(["retryPipeline", "retryJob"]);
+
+/** GitLab's label params are comma-separated, so a comma inside one label would read as two. An empty array is a no-op, not an error. */
+function labelsError(v: unknown, field: string): string | undefined {
+  if (v === undefined) return undefined;
+  const bad = !Array.isArray(v) || v.some((l) => typeof l !== "string" || !l.trim() || l.includes(","));
+  return bad ? `invalid ${field}` : undefined;
+}
+
+function trimmedLabels(v: unknown[]): string[] {
+  return v.map((l) => String(l).trim());
+}
+
+/** glance types neither squash nor add/remove-labels, so they ride its raw REST door. */
+async function putMergeRequest(
+  provider: { restRequest: (method: string, path: string, body?: unknown, op?: string) => Promise<Response> },
+  projectPath: string,
+  iid: number,
+  body: Record<string, unknown>,
+  op: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await provider.restRequest("PUT", `/projects/${encodeURIComponent(projectPath)}/merge_requests/${iid}`, body, op);
+    if (res.ok) return { ok: true };
+    const detail = (await res.text().catch(() => "")).slice(0, 200);
+    return { ok: false, error: `GitLab returned ${res.status} ${res.statusText}${detail ? `: ${detail}` : ""}` };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
 
 export interface MRHandlerOverrides {
   getContext?:  (repoName: string) => Promise<{ provider: any; projectPath: string }>;
@@ -169,7 +198,7 @@ export function createMRHandlers(
     },
 
     "mr:create": async (payload) => {
-      const p = payload as { sourceBranch?: unknown; targetBranch?: unknown; title?: unknown; description?: unknown; draft?: unknown } | undefined;
+      const p = payload as { sourceBranch?: unknown; targetBranch?: unknown; title?: unknown; description?: unknown; draft?: unknown; labels?: unknown; squash?: unknown } | undefined;
       const nonBlank = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
       const sourceBranchInput = p?.sourceBranch, targetBranchInput = p?.targetBranch, titleInput = p?.title;
       if (!nonBlank(sourceBranchInput) || !nonBlank(targetBranchInput) || !nonBlank(titleInput)) {
@@ -182,31 +211,48 @@ export function createMRHandlers(
       const title = titleInput.trim();
       if (p?.description !== undefined && typeof p.description !== "string") return { ok: false, error: "invalid description" };
       if (p?.draft !== undefined && typeof p.draft !== "boolean") return { ok: false, error: "invalid draft" };
+      const labelsBad = labelsError(p?.labels, "labels");
+      if (labelsBad) return { ok: false, error: labelsBad };
+      if (p?.squash !== undefined && typeof p.squash !== "boolean") return { ok: false, error: "invalid squash" };
       if (sourceBranch === targetBranch) return { ok: false, error: "sourceBranch and targetBranch are the same" };
       const decoded = decodeIndexedRepo(payload);
       if (!decoded.ok) return { ok: false, error: decoded.error };
       const repoName = decoded.repo;
+      const labels = p && Array.isArray(p.labels) && p.labels.length > 0 ? trimmedLabels(p.labels) : undefined;
+      const squash = p && typeof p.squash === "boolean" ? p.squash : undefined;
 
       try {
         const { provider, projectPath } = await contextFor(repoName);
-        const pr: PullRequest = await provider.createPullRequest({
-          projectPath, title, sourceBranch, targetBranch,
-          draft: p?.draft !== false,
-          ...(typeof p?.description === "string" && { description: p.description }),
-        });
+        let iid: number;
+        let url: string | null;
         try {
-          writeback(repoName, projectPath, pr);
+          const pr: PullRequest = await provider.createPullRequest({
+            projectPath, title, sourceBranch, targetBranch,
+            draft: p?.draft !== false,
+            ...(typeof p?.description === "string" && { description: p.description }),
+            ...(labels && { labels }),
+          });
+          try {
+            writeback(repoName, projectPath, pr);
+          } catch (err) {
+            ctx.log.warn({ err, repo: repoName, iid: pr.iid }, "mr:create write-back failed");
+          }
+          iid = pr.iid;
+          url = pr.webUrl;
         } catch (err) {
-          ctx.log.warn({ err, repo: repoName, iid: pr.iid }, "mr:create write-back failed");
-        }
-        return { ok: true, data: { iid: pr.iid, url: pr.webUrl } };
-      } catch (err) {
-        // The MR exists once glance reports writeApplied; ok:false here would
-        // invite a second create.
-        if (err instanceof ReadBackFailedError && err.writeApplied) {
+          // The MR exists once glance reports writeApplied; ok:false here would
+          // invite a second create.
+          if (!(err instanceof ReadBackFailedError && err.writeApplied)) throw err;
           ctx.log.warn({ err, repo: repoName, iid: err.iid }, "mr:create landed but its read-back failed");
-          return { ok: true, data: { iid: err.iid, url: null } };
+          iid = err.iid;
+          url = null;
         }
+        if (squash === undefined) return { ok: true, data: { iid, url } };
+        const set = await putMergeRequest(provider, projectPath, iid, { squash }, "mr:create squash");
+        if (set.ok) return { ok: true, data: { iid, url, squashApplied: true } };
+        ctx.log.warn({ repo: repoName, iid, error: set.error }, "mr:create landed but its squash write failed");
+        return { ok: true, data: { iid, url, squashApplied: false, squashError: set.error } };
+      } catch (err) {
         return { ok: false, error: String(err) };
       }
     },

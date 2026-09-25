@@ -11,17 +11,29 @@ const fakeCtx = () => ({
 });
 const base = { repoName: REPO, sourceBranch: "feat", targetBranch: "main", title: "Add thing" };
 
-function harness(create: (input: any) => Promise<any>, writeback?: (repo: string, pp: string, pr: any) => void) {
+type RestCall = { method: string; path: string; body: unknown };
+
+function harness(
+  create: (input: any) => Promise<any>,
+  opts: { writeback?: (repo: string, pp: string, pr: any) => void; restReply?: () => Promise<Response> } = {},
+) {
   const inputs: any[] = [];
   const writebacks: any[] = [];
+  const rest: RestCall[] = [];
   const handlers = createMRHandlers(fakeCtx(), () => {}, {
     getContext: async () => ({
-      provider: { createPullRequest: async (input: any) => { inputs.push(input); return create(input); } },
+      provider: {
+        createPullRequest: async (input: any) => { inputs.push(input); return create(input); },
+        restRequest: async (method: string, path: string, body: unknown) => {
+          rest.push({ method, path, body });
+          return opts.restReply ? opts.restReply() : new Response("{}", { status: 200 });
+        },
+      },
       projectPath: "g/p",
     }),
-    writeback: writeback ?? ((repo, pp, pr) => writebacks.push({ repo, pp, iid: pr.iid })),
+    writeback: opts.writeback ?? ((repo, pp, pr) => writebacks.push({ repo, pp, iid: pr.iid })),
   });
-  return { handlers, inputs, writebacks };
+  return { handlers, inputs, writebacks, rest };
 }
 
 describe("mr:create", () => {
@@ -93,7 +105,7 @@ describe("mr:create", () => {
   });
 
   test("a write-back throw does not fail a created MR", async () => {
-    const { handlers } = harness(async () => ({ iid: 12, webUrl: null }), () => { throw new Error("store boom"); });
+    const { handlers } = harness(async () => ({ iid: 12, webUrl: null }), { writeback: () => { throw new Error("store boom"); } });
     const res = await handlers["mr:create"](base);
     expect(res).toEqual({ ok: true, data: { iid: 12, url: null } });
   });
@@ -103,5 +115,78 @@ describe("mr:create", () => {
     const res = await handlers["mr:create"](base);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain("409");
+  });
+
+  test("labels pass through to glance trimmed; squash lands as one PUT after the create", async () => {
+    const { handlers, inputs, rest } = harness(async () => ({ iid: 12, webUrl: "u" }));
+    const res = await handlers["mr:create"]({ ...base, labels: [" needs-review", "team-a "], squash: true });
+    expect(inputs[0]).toMatchObject({ labels: ["needs-review", "team-a"] });
+    expect(rest).toEqual([{ method: "PUT", path: "/projects/g%2Fp/merge_requests/12", body: { squash: true } }]);
+    expect(res).toEqual({ ok: true, data: { iid: 12, url: "u", squashApplied: true } });
+  });
+
+  test("squash: false is written too, and an omitted squash writes nothing", async () => {
+    const off = harness(async () => ({ iid: 12, webUrl: "u" }));
+    const res = await off.handlers["mr:create"]({ ...base, squash: false });
+    expect(off.rest).toEqual([{ method: "PUT", path: "/projects/g%2Fp/merge_requests/12", body: { squash: false } }]);
+    expect(res).toEqual({ ok: true, data: { iid: 12, url: "u", squashApplied: true } });
+
+    const none = harness(async () => ({ iid: 12, webUrl: "u" }));
+    const plain = await none.handlers["mr:create"](base);
+    expect(none.rest).toEqual([]);
+    expect(plain).toEqual({ ok: true, data: { iid: 12, url: "u" } });
+    expect(none.inputs[0]).not.toHaveProperty("labels");
+  });
+
+  test("a squash write that fails after the create landed is still ok, with squashApplied false and the reason", async () => {
+    const rejected = harness(async () => ({ iid: 12, webUrl: "u" }), {
+      restReply: async () => new Response("insufficient scope", { status: 403, statusText: "Forbidden" }),
+    });
+    const res = await rejected.handlers["mr:create"]({ ...base, squash: true });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data).toMatchObject({ iid: 12, url: "u", squashApplied: false });
+      expect(res.data.squashError).toContain("403");
+    }
+
+    const threw = harness(async () => ({ iid: 12, webUrl: "u" }), {
+      restReply: async () => { throw new Error("socket hang up"); },
+    });
+    const res2 = await threw.handlers["mr:create"]({ ...base, squash: true });
+    expect(res2.ok).toBe(true);
+    if (res2.ok) expect(res2.data.squashError).toContain("socket hang up");
+  });
+
+  test("the read-back-failure path still attempts the squash write with the iid it has", async () => {
+    const { handlers, rest } = harness(async () => {
+      throw new ReadBackFailedError("Created MR but failed to fetch it back", {
+        operation: "createPullRequest", projectPath: "g/p", iid: 12, writeApplied: true,
+      });
+    });
+    const res = await handlers["mr:create"]({ ...base, squash: true });
+    expect(rest).toEqual([{ method: "PUT", path: "/projects/g%2Fp/merge_requests/12", body: { squash: true } }]);
+    expect(res).toEqual({ ok: true, data: { iid: 12, url: null, squashApplied: true } });
+  });
+
+  test("a blank label, a label with a comma, or a non-array is refused before the provider is called", async () => {
+    const { handlers, inputs, rest } = harness(async () => { throw new Error("should not be called"); });
+    for (const labels of [["ok", " "], ["a,b"], "a", [5]]) {
+      expect(await handlers["mr:create"]({ ...base, labels })).toEqual({ ok: false, error: "invalid labels" });
+    }
+    expect(inputs).toEqual([]);
+    expect(rest).toEqual([]);
+  });
+
+  test("labels: [] is a no-op: the create goes through with no labels field", async () => {
+    const { handlers, inputs } = harness(async () => ({ iid: 12, webUrl: "u" }));
+    const res = await handlers["mr:create"]({ ...base, labels: [] });
+    expect(res).toEqual({ ok: true, data: { iid: 12, url: "u" } });
+    expect(inputs[0]).not.toHaveProperty("labels");
+  });
+
+  test("a non-boolean squash is refused before the provider is called", async () => {
+    const { handlers, inputs } = harness(async () => { throw new Error("should not be called"); });
+    expect(await handlers["mr:create"]({ ...base, squash: "true" })).toEqual({ ok: false, error: "invalid squash" });
+    expect(inputs).toEqual([]);
   });
 });

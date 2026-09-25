@@ -394,10 +394,10 @@ describe("mcpTools", () => {
       expect(res.error).toBe("no gitlabToken in secrets");
     });
 
-    test("mr_create schema requires the branches and title, offers repoName and mrUrl, and has no iid", () => {
+    test("mr_create schema requires the branches and title, offers repoName, mrUrl, labels and squash, and has no iid", () => {
       const schema = mcpTools().find((t) => t.name === "mr_create")!.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
       expect(schema.required).toEqual(["sourceBranch", "targetBranch", "title"]);
-      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["description", "draft", "mrUrl", "repoName", "sourceBranch", "targetBranch", "title"]);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["description", "draft", "labels", "mrUrl", "repoName", "sourceBranch", "squash", "targetBranch", "title"]);
     });
 
     test("mr_create sends mr:create, leaving draft to the daemon default when omitted", async () => {
@@ -422,6 +422,24 @@ describe("mcpTools", () => {
       const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" }, {} as NodeJS.ProcessEnv);
       expect(res.error).toContain("may still land");
       expect(res.error).toContain("mr_map");
+    });
+
+    test("mr_create forwards labels and squash", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { iid: 12, url: "u", squashApplied: true } }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T", labels: ["a", "b"], squash: true }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { iid: 12, url: "u", squashApplied: true } });
+      expect(calls[0]!.payload).toEqual({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T", labels: ["a", "b"], squash: true });
+    });
+
+    test("mr_create refuses a non-array labels and a string squash before calling the daemon", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { iid: 12, url: "u" } }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      const base = { repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" };
+      expect((await tool.handler({ ...base, labels: "a" }, {} as NodeJS.ProcessEnv)).error).toBe('"labels" must be an array of strings');
+      expect((await tool.handler({ ...base, labels: ["a", 5] }, {} as NodeJS.ProcessEnv)).error).toBe('"labels" must be an array of strings');
+      expect((await tool.handler({ ...base, squash: "true" }, {} as NodeJS.ProcessEnv)).error).toBe('"squash" must be a boolean');
+      expect(calls).toEqual([]);
     });
   });
 

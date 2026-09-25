@@ -84,6 +84,13 @@ function checkPositiveInts(input: Record<string, unknown>, names: string[]): str
   return undefined;
 }
 
+function checkStringArray(input: Record<string, unknown>, name: string): string | undefined {
+  const v = input[name];
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `"${name}" must be an array of strings`;
+  return undefined;
+}
+
 const SIGN_IN_HINT = "no signed-in chat session for this pane; run `rt chat sign-in` in bash first";
 
 /** No derived-handle fallback: a tool call with no session file is a hard error, unlike the CLI's resolveHandle. */
@@ -504,7 +511,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_create",
-      description: `GitLab only. Create a merge request from an already-pushed sourceBranch into targetBranch. Pass targetBranch explicitly (read the default branch from git); it is never guessed. draft defaults to true. Write the title, and optionally the description, yourself (e.g. from the branch's commits). Creates once and never retries. Returns iid and url (url is null when GitLab created the MR but reading it back failed). ${REPO_NAME_RULE}`,
+      description: `GitLab only. Create a merge request from an already-pushed sourceBranch into targetBranch. Pass targetBranch explicitly (read the default branch from git); it is never guessed. draft defaults to true. Write the title, and optionally the description, yourself (e.g. from the branch's commits). labels apply at creation; squash sets the MR's squash-on-merge flag right after it. Creates once and never retries. Returns iid, url (null when GitLab created the MR but reading it back failed) and, when squash was passed, squashApplied; squashApplied false with squashError means the MR exists, so set squash with mr_update rather than creating again. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -514,6 +521,8 @@ export function mcpTools(): McpToolDef[] {
           title: { type: "string" },
           description: { type: "string" },
           draft: { type: "boolean" },
+          labels: { type: "array", items: { type: "string" } },
+          squash: { type: "boolean" },
         },
         required: ["sourceBranch", "targetBranch", "title"],
         additionalProperties: false,
@@ -523,7 +532,8 @@ export function mcpTools(): McpToolDef[] {
           { name: "sourceBranch", type: "string" },
           { name: "targetBranch", type: "string" },
           { name: "title", type: "string" },
-        ]) ?? checkOptional(input, [{ name: "description", type: "string" }, { name: "draft", type: "boolean" }]);
+        ]) ?? checkOptional(input, [{ name: "description", type: "string" }, { name: "draft", type: "boolean" }, { name: "squash", type: "boolean" }])
+          ?? checkStringArray(input, "labels");
         if (bad) return err(bad);
         const target = await resolveRepoTarget(input);
         if (!target.ok) return err(target.error);
@@ -535,6 +545,8 @@ export function mcpTools(): McpToolDef[] {
         };
         if (input.description !== undefined) payload.description = input.description as string;
         if (input.draft !== undefined) payload.draft = input.draft as boolean;
+        if (input.labels !== undefined) payload.labels = input.labels as string[];
+        if (input.squash !== undefined) payload.squash = input.squash as boolean;
         const res = await rtCommand<Commands["mr:create"]["data"]>("mr:create", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return withLandingHint(fromResponse(res), "mr_map for an open MR on the source branch");
       },
