@@ -96,6 +96,24 @@ function withLandingHint(res: ToolResult, check: string): ToolResult {
   return err(`${res.error}; the write may still land, so check ${check} before retrying`);
 }
 
+type MrActionName = Commands["mr:action"]["payload"]["action"];
+
+const MR_TARGET_FIELDS: Array<{ name: string; type: FieldType }> = [
+  { name: "repoName", type: "string" },
+  { name: "iid", type: "number" },
+];
+
+/** mr:action replies a bare {ok:true}, so each tool names its own result body. */
+async function runMrAction(input: Record<string, unknown>, action: MrActionName, args: unknown[], body: unknown): Promise<ToolResult> {
+  const res = await rtCommand<Commands["mr:action"]["data"]>("mr:action", {
+    repoName: input.repoName as string,
+    iid: input.iid as number,
+    action,
+    args,
+  }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+  return res.ok ? ok(body) : err(explainError(res.error ?? "request failed"));
+}
+
 function requireJobEnv(env: NodeJS.ProcessEnv): { herd: string; job: string } | { error: string } {
   const herd = env.HERD_ID, job = env.HERD_JOB;
   if (!herd || !job) return { error: HERD_ENV_ERROR };
@@ -518,6 +536,97 @@ export function mcpTools(): McpToolDef[] {
         if (input.draft !== undefined) payload.draft = input.draft as boolean;
         const res = await rtCommand<Commands["mr:create"]["data"]>("mr:create", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return withLandingHint(fromResponse(res), "mr_map for an open MR on the source branch");
+      },
+    },
+    {
+      name: "mr_approve",
+      description: `GitLab only. Approve an MR as the token's user, or withdraw that approval with approved: false. Call it only once approving is decided (a review's Approve disposition, after its findings have posted). ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { repoName: { type: "string" }, iid: { type: "number" }, approved: { type: "boolean" } },
+        required: ["repoName", "iid"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "approved", type: "boolean" }]);
+        if (bad) return err(bad);
+        const approved = input.approved !== false;
+        return runMrAction(input, approved ? "approve" : "unapprove", [], { approved });
+      },
+    },
+    {
+      name: "mr_resolve_thread",
+      description: `GitLab only. Resolve an MR discussion thread, or reopen it with resolved: false. Post any reply first with mr_reply_thread; resolving does not post. Returns {discussionId, resolved}. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { repoName: { type: "string" }, iid: { type: "number" }, discussionId: { type: "string" }, resolved: { type: "boolean" } },
+        required: ["repoName", "iid", "discussionId"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [...MR_TARGET_FIELDS, { name: "discussionId", type: "string" }])
+          ?? checkOptional(input, [{ name: "resolved", type: "boolean" }]);
+        if (bad) return err(bad);
+        const discussionId = input.discussionId as string;
+        const resolved = input.resolved !== false;
+        const res = await rtCommand<Commands["discussions:resolve"]["data"]>("discussions:resolve", {
+          repoName: input.repoName as string,
+          iid: input.iid as number,
+          discussionId,
+          resolved,
+        }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+        return res.ok ? ok({ discussionId, resolved }) : err(explainError(res.error ?? "request failed"));
+      },
+    },
+    {
+      name: "mr_ready",
+      description: `GitLab only. Mark a draft MR ready for review, or back to draft with ready: false. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { repoName: { type: "string" }, iid: { type: "number" }, ready: { type: "boolean" } },
+        required: ["repoName", "iid"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, MR_TARGET_FIELDS) ?? checkOptional(input, [{ name: "ready", type: "boolean" }]);
+        if (bad) return err(bad);
+        const ready = input.ready !== false;
+        return runMrAction(input, "toggleDraft", [!ready], { ready });
+      },
+    },
+    {
+      name: "mr_retry",
+      description: `GitLab only. Retry one CI job (jobId) or a whole pipeline (pipelineId) on an MR; pass exactly one. iid names the MR whose state is refreshed afterward. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { repoName: { type: "string" }, iid: { type: "number" }, jobId: { type: "number" }, pipelineId: { type: "number" } },
+        required: ["repoName", "iid"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, MR_TARGET_FIELDS)
+          ?? checkOptional(input, [{ name: "jobId", type: "number" }, { name: "pipelineId", type: "number" }]);
+        if (bad) return err(bad);
+        const hasJob = input.jobId !== undefined;
+        if (hasJob === (input.pipelineId !== undefined)) return err('pass exactly one of "jobId" or "pipelineId"');
+        return hasJob
+          ? runMrAction(input, "retryJob", [input.jobId], { jobId: input.jobId })
+          : runMrAction(input, "retryPipeline", [input.pipelineId], { pipelineId: input.pipelineId });
+      },
+    },
+    {
+      name: "mr_rebase",
+      description: `GitLab only. Ask GitLab to rebase the MR's source branch onto its target server-side (no checkout). GitLab accepts the request and rebases asynchronously, so re-read the MR before assuming the rebase finished or succeeded. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { repoName: { type: "string" }, iid: { type: "number" } },
+        required: ["repoName", "iid"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, MR_TARGET_FIELDS);
+        if (bad) return err(bad);
+        return runMrAction(input, "rebase", [], { rebased: true });
       },
     },
     {

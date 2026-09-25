@@ -6,7 +6,7 @@ import { mcpTools } from "../tools.ts";
 import { normalizeGateQuestions } from "../../../packages/rt-client/src/gate-options.ts";
 import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -30,8 +30,8 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
-  test("roster has 18 tools", () => {
-    expect(mcpTools().length).toBe(18);
+  test("roster has 23 tools", () => {
+    expect(mcpTools().length).toBe(23);
   });
 
   test("every tool has a description and a closed object schema", () => {
@@ -297,6 +297,11 @@ describe("mcpTools", () => {
       { name: "mr_comment_inline", field: "repoName" },
       { name: "mr_comment", field: "repoName" },
       { name: "mr_create", field: "repoName" },
+      { name: "mr_approve", field: "repoName" },
+      { name: "mr_resolve_thread", field: "repoName" },
+      { name: "mr_ready", field: "repoName" },
+      { name: "mr_retry", field: "repoName" },
+      { name: "mr_rebase", field: "repoName" },
       { name: "mr_map", field: "repo" },
     ];
     for (const { name, field } of repoArgTools) {
@@ -400,6 +405,98 @@ describe("mcpTools", () => {
       const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" }, {} as NodeJS.ProcessEnv);
       expect(res.error).toContain("may still land");
       expect(res.error).toContain("mr_map");
+    });
+  });
+
+  describe("mr state tools over mr:action and discussions:resolve", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    function fakeDaemon(reply: (cmd: string) => unknown = () => ({ ok: true })) {
+      const calls: Array<{ cmd: string; payload: Record<string, unknown>; timeoutMs?: number }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>, opts?: { timeoutMs?: number }) => {
+          calls.push({ cmd, payload, timeoutMs: opts?.timeoutMs });
+          return reply(cmd);
+        },
+      }));
+      return calls;
+    }
+
+    const T = { repoName: "remote:x", iid: 7 };
+    const cases: Array<{ tool: string; input: Record<string, unknown>; action: string; args: unknown[]; body: unknown }> = [
+      { tool: "mr_approve", input: {}, action: "approve", args: [], body: { approved: true } },
+      { tool: "mr_approve", input: { approved: false }, action: "unapprove", args: [], body: { approved: false } },
+      { tool: "mr_ready", input: {}, action: "toggleDraft", args: [false], body: { ready: true } },
+      { tool: "mr_ready", input: { ready: false }, action: "toggleDraft", args: [true], body: { ready: false } },
+      { tool: "mr_retry", input: { jobId: 812 }, action: "retryJob", args: [812], body: { jobId: 812 } },
+      { tool: "mr_retry", input: { pipelineId: 555 }, action: "retryPipeline", args: [555], body: { pipelineId: 555 } },
+      { tool: "mr_rebase", input: {}, action: "rebase", args: [], body: { rebased: true } },
+    ];
+
+    for (const c of cases) {
+      test(`${c.tool} ${JSON.stringify(c.input)} sends mr:action ${c.action} ${JSON.stringify(c.args)}`, async () => {
+        const calls = fakeDaemon();
+        const tool = mcpTools().find((t) => t.name === c.tool)!;
+        const res = await tool.handler({ ...T, ...c.input }, {} as NodeJS.ProcessEnv);
+        expect(res).toEqual({ ok: true, body: c.body });
+        expect(calls).toEqual([{ cmd: "mr:action", payload: { ...T, action: c.action, args: c.args }, timeoutMs: 30_000 }]);
+      });
+    }
+
+    for (const [tool, field] of [["mr_approve", "approved"], ["mr_ready", "ready"], ["mr_resolve_thread", "resolved"]] as const) {
+      test(`${tool} refuses ${field}: "false" before calling the daemon`, async () => {
+        const calls = fakeDaemon();
+        const t = mcpTools().find((x) => x.name === tool)!;
+        const res = await t.handler({ ...T, discussionId: "d1", [field]: "false" }, {} as NodeJS.ProcessEnv);
+        expect(res.error).toBe(`"${field}" must be a boolean`);
+        expect(calls).toEqual([]);
+      });
+    }
+
+    test("mr_retry refuses both ids and neither id before calling the daemon", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_retry")!;
+      const both = await tool.handler({ ...T, jobId: 1, pipelineId: 2 }, {} as NodeJS.ProcessEnv);
+      const neither = await tool.handler({ ...T }, {} as NodeJS.ProcessEnv);
+      expect(both.error).toBe('pass exactly one of "jobId" or "pipelineId"');
+      expect(neither.error).toBe('pass exactly one of "jobId" or "pipelineId"');
+      expect(calls).toEqual([]);
+    });
+
+    test("mr_retry refuses a string jobId", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_retry")!;
+      const res = await tool.handler({ ...T, jobId: "812" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('"jobId" must be a number');
+      expect(calls).toEqual([]);
+    });
+
+    test("an mr:action daemon error is explained, not returned as a bare code", async () => {
+      fakeDaemon(() => ({ ok: false, error: "repo-unknown" }));
+      const tool = mcpTools().find((t) => t.name === "mr_approve")!;
+      const res = await tool.handler({ ...T }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).not.toBe("repo-unknown");
+      expect(res.error).toContain("unknown repo");
+    });
+
+    test("mr_resolve_thread resolves by default and returns a compact body, not the discussions list", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { discussions: [{ id: "d1" }], fetchedAt: 1 } }));
+      const tool = mcpTools().find((t) => t.name === "mr_resolve_thread")!;
+      const res = await tool.handler({ ...T, discussionId: "d1" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { discussionId: "d1", resolved: true } });
+      expect(calls).toEqual([{ cmd: "discussions:resolve", payload: { ...T, discussionId: "d1", resolved: true }, timeoutMs: 30_000 }]);
+    });
+
+    test("mr_resolve_thread resolved:false unresolves", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { discussions: [], fetchedAt: 1 } }));
+      const tool = mcpTools().find((t) => t.name === "mr_resolve_thread")!;
+      const res = await tool.handler({ ...T, discussionId: "d1", resolved: false }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { discussionId: "d1", resolved: false } });
+      expect(calls[0]!.payload.resolved).toBe(false);
     });
   });
 

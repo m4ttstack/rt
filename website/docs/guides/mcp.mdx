@@ -43,11 +43,18 @@ Chat tools require `rt chat sign-in` first. If no signed-in session exists, the 
 
 | Tool | What it does |
 | --- | --- |
-| `mr_reply_thread` | Reply to an existing MR/PR discussion thread. |
+| `mr_reply_thread` | Reply to an existing MR discussion thread (GitLab only). |
 | `mr_comment_inline` | Post a new positioned inline comment on an MR diff line (GitLab only). |
+| `mr_comment` | Post a new top-level note: resolvable by default, or a plain note with `resolvable: false` (GitLab only). |
+| `mr_resolve_thread` | Resolve a discussion thread, or reopen it with `resolved: false` (GitLab only). |
+| `mr_approve` | Approve an MR, or withdraw the approval with `approved: false` (GitLab only). |
+| `mr_ready` | Mark a draft MR ready, or back to draft with `ready: false` (GitLab only). |
+| `mr_retry` | Retry one CI job or a whole pipeline (GitLab only). |
+| `mr_rebase` | Request a server-side rebase of the MR's source branch (GitLab only). |
+| `mr_create` | Create an MR from a pushed branch, as a draft by default (GitLab only). |
 | `mr_map` | List open MRs joined to the local worktrees holding their branches. |
 
-`mr_reply_thread` and `mr_comment_inline` require the repo's serialized identity (e.g. `remote:gitlab.com%2Facme%2Facme-dev`), not a bare host/path. `mr_map` also accepts the short repo-label alias.
+Every `mr_*` write tool takes the repo's serialized identity as `repoName` (e.g. `remote:gitlab.com%2Facme%2Facme-dev`), not a bare host/path. `mr_map` also accepts the short repo-label alias. There is no merge tool.
 
 ### Herd
 
