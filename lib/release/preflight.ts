@@ -18,6 +18,7 @@ export interface DepsRow {
   url: string;
   repo?: string;
   subdir?: string;
+  serve?: unknown;
 }
 
 export type RowStatus = "ok" | "stale" | "error";
@@ -181,6 +182,11 @@ export function checkPicker(seams: PreflightSeams): CheckRow {
 /** The paths a pin-only release may touch besides the pins themselves. */
 const FAST_PATH_FILES = new Set(["rt-tray/deps.lock", "RELEASE_NOTES.md"]);
 
+/** Compared, never validated: any difference in what deck is told to run leaves the fast path. */
+function serveKey(row: DepsRow | undefined): string {
+  return JSON.stringify(row?.serve ?? null);
+}
+
 export async function checkGate(seams: PreflightSeams, tag: string): Promise<GateImplication> {
   try {
     const files = (await git(seams, ["diff", "--name-only", `${tag}..HEAD`])).split("\n").map((f) => f.trim()).filter(Boolean);
@@ -191,12 +197,15 @@ export async function checkGate(seams: PreflightSeams, tag: string): Promise<Gat
     if (!files.includes("rt-tray/deps.lock")) return { path: "full", reason: "no deps.lock change to fast-path" };
 
     const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
-    const oldVers = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r.version]));
-    const changed = readDepsRows(seams).filter((r) => oldVers.get(r.name) !== r.version).map((r) => r.name);
+    const oldRows = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r]));
+    const rows = readDepsRows(seams);
+    const changed = rows.filter((r) => oldRows.get(r.name)?.version !== r.version).map((r) => r.name);
     // A row absent from the old lock is a first-ever ship of that app, which is
     // beyond "pin-only" no matter how the row is served.
-    const added = changed.filter((name) => !oldVers.has(name));
+    const added = changed.filter((name) => !oldRows.has(name));
     if (added.length > 0) return { path: "full", reason: `new row(s) in deps.lock: ${added.join(", ")}` };
+    const reserved = rows.filter((r) => oldRows.has(r.name) && serveKey(oldRows.get(r.name)) !== serveKey(r)).map((r) => r.name);
+    if (reserved.length > 0) return { path: "full", reason: `serve changed on row(s): ${reserved.join(", ")}` };
     const gated = changed.filter((name) => !SERVE_ONLY_ROWS.has(name));
     if (gated.length > 0) return { path: "full", reason: `full-gate row(s) changed: ${gated.join(", ")}` };
     if (changed.length === 0) return { path: "full", reason: "deps.lock changed but no row version moved" };
