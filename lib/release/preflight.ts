@@ -59,6 +59,11 @@ export interface PreflightSeams {
 /** Rows deck merely serves; a pin-only diff limited to these keeps the fast path (user-ratified 2026-09-18). */
 const SERVE_ONLY_ROWS = new Set(["board", "chat", "console", "gitq", "boxscore"]);
 
+/** Whether moving this row's pin alone keeps a release on the fast path. */
+export function keepsFastPath(name: string): boolean {
+  return SERVE_ONLY_ROWS.has(name);
+}
+
 /** Numeric per-segment semver compare; non-numeric segments fall back to string order. */
 export function compareVersions(a: string, b: string): number {
   const as = a.split(".");
@@ -122,13 +127,13 @@ export function upstreamForToolRow(row: DepsRow): ToolUpstream | null {
   return null;
 }
 
-function readDepsRows(seams: PreflightSeams): DepsRow[] {
+function readDepsRows(seams: Pick<PreflightSeams, "repoRoot" | "readFile">): DepsRow[] {
   const raw = seams.readFile(join(seams.repoRoot, "rt-tray", "deps.lock"));
   if (!raw) throw new Error("rt-tray/deps.lock not readable — is this an rt checkout?");
   return (JSON.parse(raw) as { tools: DepsRow[] }).tools;
 }
 
-async function git(seams: PreflightSeams, args: string[]): Promise<string> {
+async function git(seams: Pick<PreflightSeams, "repoRoot" | "exec">, args: string[]): Promise<string> {
   const r = await seams.exec(["git", ...args] as [string, ...string[]], { cwd: seams.repoRoot });
   if (r.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${(r.stderr || r.stdout).trim()}`);
   return r.stdout;
@@ -188,9 +193,17 @@ function serveKey(row: DepsRow | undefined): string {
   return JSON.stringify(row?.serve ?? null);
 }
 
-export async function checkGate(seams: PreflightSeams, tag: string): Promise<GateImplication> {
+/**
+ * `ref` other than HEAD reads that ref's committed deps.lock; HEAD reads the
+ * working tree, which is what a release from this checkout would build.
+ */
+export async function checkGate(
+  seams: Pick<PreflightSeams, "repoRoot" | "exec" | "readFile">,
+  tag: string,
+  ref = "HEAD",
+): Promise<GateImplication> {
   try {
-    const files = (await git(seams, ["diff", "--name-only", `${tag}..HEAD`])).split("\n").map((f) => f.trim()).filter(Boolean);
+    const files = (await git(seams, ["diff", "--name-only", `${tag}..${ref}`])).split("\n").map((f) => f.trim()).filter(Boolean);
     if (files.length === 0) return { path: "full", reason: "no changes since the tag" };
 
     const outside = files.filter((f) => !FAST_PATH_FILES.has(f) && !f.startsWith("website/"));
@@ -199,7 +212,9 @@ export async function checkGate(seams: PreflightSeams, tag: string): Promise<Gat
 
     const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
     const oldRows = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r]));
-    const rows = readDepsRows(seams);
+    const rows = ref === "HEAD"
+      ? readDepsRows(seams)
+      : (JSON.parse(await git(seams, ["show", `${ref}:rt-tray/deps.lock`])) as { tools: DepsRow[] }).tools;
     const newNames = new Set(rows.map((r) => r.name));
     const removed = [...oldRows.keys()].filter((name) => !newNames.has(name));
     if (removed.length > 0) return { path: "full", reason: `row(s) removed from deps.lock: ${removed.join(", ")}` };

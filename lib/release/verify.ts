@@ -117,14 +117,14 @@ async function findRun(seams: VerifySeams, tag: string): Promise<FoundRun | null
   return run ? { id: run.id, url: run.html_url } : null;
 }
 
-interface PollResult {
+export interface PollResult {
   status: string;
   conclusion: string | null;
   attempts: number;
   pollErrors: number;
 }
 
-async function pollRunCompletion(seams: VerifySeams, runId: number, noWait: boolean): Promise<PollResult> {
+export async function pollRunCompletion(seams: VerifySeams, runId: number, noWait: boolean): Promise<PollResult> {
   let status = "unknown";
   let conclusion: string | null = null;
   let pollErrors = 0;

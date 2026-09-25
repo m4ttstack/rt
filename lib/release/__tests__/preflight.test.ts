@@ -6,6 +6,7 @@ import {
   upstreamForToolRow,
   checkGitState,
   checkGate,
+  keepsFastPath,
   checkAppPins,
   checkStandaloneRows,
   checkToolRows,
@@ -195,6 +196,30 @@ describe("checkGate", () => {
     const s = seams({ exec: gateExec(["rt-tray/deps.lock"], withBoxscore("0.1.0")), readFile: () => withBoxscore("0.1.1") });
     const g = await checkGate(s, "v2.10.2");
     expect(g.path).toBe("fast");
+  });
+
+  test("a named ref diffs against that ref and reads its committed deps.lock, not the working tree", async () => {
+    const calls: string[] = [];
+    const s = seams({
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        calls.push(cmd);
+        if (cmd === "git diff --name-only v2.10.2..origin/main") return ok("rt-tray/deps.lock\n");
+        if (cmd === "git show v2.10.2:rt-tray/deps.lock") return ok(lockAt("0.1.3", "1.0.5"));
+        if (cmd === "git show origin/main:rt-tray/deps.lock") return ok(lockAt("0.1.4", "1.0.5"));
+        return failExec();
+      },
+      readFile: () => lockAt("0.1.3", "1.0.4"),
+    });
+    const g = await checkGate(s, "v2.10.2", "origin/main");
+    expect(g.path).toBe("fast");
+    expect(g.reason).toContain("board");
+    expect(calls).toContain("git show origin/main:rt-tray/deps.lock");
+  });
+
+  test("keepsFastPath names exactly the serve-only rows", () => {
+    for (const name of ["board", "chat", "console", "gitq", "boxscore"]) expect(keepsFastPath(name)).toBe(true);
+    for (const name of ["deck", "fast-browser", "bun"]) expect(keepsFastPath(name)).toBe(false);
   });
 
   test("a row absent from the old lock forces the full gate even when serve-only", async () => {
