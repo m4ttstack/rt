@@ -129,14 +129,19 @@ public enum DevBuild {
         if let stagedPath {
             let staged = shellQuote(stagedPath)
             // mv onto an existing directory moves INTO it, so the aside path
-            // must be gone before the app is moved there.
+            // must be gone before the app is moved there. It is shared by
+            // every handoff, so the outgoing app leaves it before the reopen.
             lines += [
+                "parked=0",
                 "if [ ! -d \(staged) ]; then echo 'no staged build'",
                 "else",
                 "  rm -rf \(aside)",
                 "  if [ -e \(aside) ]; then echo 'stale aside copy could not be removed; not swapping'",
                 "  elif mv \(app) \(aside); then",
                 "    if mv \(staged) \(app); then swapped=1; echo swapped",
+            ]
+            lines += cache.map { parkLines($0, aside: aside) } ?? ["      rm -rf \(aside)"]
+            lines += [
                 "    else rm -rf \(app); mv \(aside) \(app); echo 'swap failed; previous app restored'; fi",
                 "  fi",
                 "fi",
@@ -158,32 +163,48 @@ public enum DevBuild {
         }
         // Runs last so filing and trimming the cache never delays the
         // relaunch, and nothing it does can undo the swap.
-        lines.append("if [ $swapped = 1 ]; then")
-        if let cache {
-            lines += cacheLines(cache, aside: aside)
+        if let cache, stagedPath != nil {
+            lines += fileLines(cache)
         }
-        lines += ["  rm -rf \(aside)", "fi", "exit 0"]
+        lines.append("exit 0")
         return lines.joined(separator: "\n")
+    }
+
+    private static func incomingPath(_ cache: CacheTarget) -> String {
+        shellQuote("\(cache.buildsDir)/.incoming-") + "$$"
+    }
+
+    /// A rename on the same volume, so it is as quick as the delete it
+    /// replaces; the per-handoff incoming dir is never shared.
+    private static func parkLines(_ cache: CacheTarget, aside: String) -> [String] {
+        let builds = shellQuote(cache.buildsDir)
+        let incoming = incomingPath(cache)
+        return [
+            "      if mkdir -p \(builds) && rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/\(cachedBundleName); then parked=1",
+            "      else echo 'could not cache the previous build; deleting it'; rm -rf \(incoming) \(aside); fi",
+        ]
     }
 
     /// Every recursive delete is re-checked against the builds dir in the
     /// shell as well, so a mangled path can only ever miss, never escape it.
-    private static func cacheLines(_ cache: CacheTarget, aside: String) -> [String] {
+    private static func fileLines(_ cache: CacheTarget) -> [String] {
         let builds = shellQuote(cache.buildsDir)
         let entry = shellQuote("\(cache.buildsDir)/\(cache.entryName)")
-        let incoming = shellQuote("\(cache.buildsDir)/.incoming-") + "$$"
+        let incoming = incomingPath(cache)
         let inside = "\(builds)/?*"
         return [
+            "if [ $parked = 1 ]; then",
             "  cached=0",
-            "  if mkdir -p \(builds) && rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/\(cachedBundleName); then",
-            "    date +%s > \(incoming)/cached-at",
-            "    case \(entry) in \(inside)) rm -rf \(entry) ;; esac",
-            "    if [ ! -e \(entry) ] && mv \(incoming) \(entry); then cached=1; echo \"cached the previous build at \"\(entry); fi",
-            "  fi",
+            "  date +%s > \(incoming)/cached-at",
+            "  case \(entry) in \(inside)) rm -rf \(entry) ;; esac",
+            "  if [ ! -e \(entry) ] && mv \(incoming) \(entry); then cached=1; echo \"cached the previous build at \"\(entry); fi",
             "  if [ $cached = 0 ]; then echo 'could not cache the previous build; deleting it'; rm -rf \(incoming); fi",
+            "fi",
+            "if [ $swapped = 1 ]; then",
             "  for d in \(builds)/*; do [ -d \"$d\" ] || continue; t=$(cat \"$d/cached-at\" 2>/dev/null); "
                 + "case $t in ''|*[!0-9]*) t=0 ;; esac; echo \"$t $d\"; done | sort -rn | tail -n +\(cacheKeep + 1) | "
                 + "while read -r t d; do case \"$d\" in \(inside)) rm -rf \"$d\"; echo \"evicted $d\" ;; esac; done",
+            "fi",
         ]
     }
 

@@ -33,6 +33,16 @@ private func recorder(_ dir: URL, _ name: String, log: URL, failing verb: String
     return path
 }
 
+/// A stand-in opener that records whether `path` exists at the moment the
+/// app is reopened.
+private func existenceProbe(_ dir: URL, watching path: String, log: URL) -> String {
+    let probe = dir.appendingPathComponent("probe-open").path
+    let body = "#!/bin/sh\nif [ -e '\(path)' ]; then echo present; else echo gone; fi >> '\(log.path)'\n"
+    try! body.write(toFile: probe, atomically: true, encoding: .utf8)
+    chmod(probe, 0o755)
+    return probe
+}
+
 private func runScript(_ script: String) -> Int32 {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -331,5 +341,21 @@ let devBuildChecks: [Check] = [
         let found = DevBuild.cachedIdentities(buildsDir: "/b", listDir: { $0 == "/b" ? ["one", ".incoming-9", "two", "junk"] : [] },
                                               readFile: { files[$0] })
         c.expectEqual(found, [sampleIdentity, other])
+    },
+    Check("the outgoing app leaves the shared aside path before the app reopens, so a second handoff cannot touch it") { c in
+        for cached in [false, true] {
+            let rig = Rig()
+            makeBundle(rig.app, marker: "old")
+            makeBundle(rig.staged, marker: "new")
+            let probeLog = rig.dir.appendingPathComponent("probe.log")
+            let script = DevBuild.handoffScript(
+                pid: deadPid(), appPath: rig.app.path, stagedPath: rig.staged.path, deckLabel: nil, uid: 501,
+                logPath: rig.restartLog.path,
+                openPath: existenceProbe(rig.dir, watching: rig.app.path + ".restart-old", log: probeLog),
+                cache: cached ? rig.cacheTarget() : nil)
+            c.expectEqual(runScript(script), 0)
+            c.expectEqual(read(probeLog), "gone\n", cached ? "with a cache target" : "without a cache target")
+            if cached { c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "old") }
+        }
     },
 ]
