@@ -18,6 +18,14 @@ case "$*" in
     printf '%s' "$FAKE_BOARD_PACKAGE" ;;
   "api repos/m4ttstack/apps/git/ref/tags/"*)
     echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  "api repos/m4ttstack/rt/actions/workflows/release.yml/runs?event=push&branch=v0.1.1&per_page=5")
+    printf '%s' '{"workflow_runs":[{"id":1,"html_url":"https://github.com/m4ttstack/rt/actions/runs/1"}]}' ;;
+  "run view 1 --repo m4ttstack/rt --json status,conclusion")
+    printf '%s' '{"status":"completed","conclusion":"success"}' ;;
+  "release view v0.1.1 --repo m4ttstack/rt --json body,assets,isDraft,isPrerelease,publishedAt")
+    printf '%s' "$FAKE_RELEASE_VIEW" ;;
+  "api repos/m4ttstack/rt/actions/workflows/bundle-apps.yml/runs?event=workflow_dispatch&per_page=20")
+    printf '%s' '{"workflow_runs":[]}' ;;
   *)
     echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
 esac
@@ -40,6 +48,8 @@ describe("rt release app --dry-run", () => {
   let checkout: string;
   let ghLog: string;
   let fakeBin: string;
+  let rtBare: string;
+  let appsBare: string;
 
   const git = (cwd: string, ...args: string[]) => {
     const r = Bun.spawnSync(["git", ...args], { cwd, env: { HOME: home, PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1" }, stderr: "pipe" });
@@ -51,13 +61,15 @@ describe("rt release app --dry-run", () => {
     ({ path: home, cleanup } = createTestHome());
 
     const appsSeed = join(home, "apps-seed");
-    const appsBare = join(home, "apps.git");
+    appsBare = join(home, "apps.git");
     mkdirSync(join(appsSeed, "apps", "board"), { recursive: true });
     git(appsSeed, "init", "-q", "-b", "main");
     writeFileSync(join(appsSeed, "apps", "board", "package.json"), `{\n  "name": "board",\n  "version": "0.1.7"\n}\n`);
     git(appsSeed, "add", "-A");
     git(appsSeed, "commit", "-q", "-m", "board 0.1.7: serve a setup page (#156)");
     git(appsSeed, "tag", "board-v0.1.7");
+    git(appsSeed, "tag", "chat-v0.1.3");
+    git(appsSeed, "tag", "deck-v1.1.1");
     writeFileSync(join(appsSeed, "apps", "board", "index.ts"), "export {};\n");
     git(appsSeed, "add", "-A");
     git(appsSeed, "commit", "-q", "-m", "board: fix the header (#160)");
@@ -65,7 +77,7 @@ describe("rt release app --dry-run", () => {
     appendFileSync(join(home, ".gitconfig"), `[url "file://${appsBare}"]\n\tinsteadOf = https://github.com/m4ttstack/apps.git\n[uploadpack]\n\tallowFilter = true\n`);
 
     const rtSeed = join(home, "rt-seed");
-    const rtBare = join(home, "rt.git");
+    rtBare = join(home, "rt.git");
     mkdirSync(join(rtSeed, "rt-tray"), { recursive: true });
     git(rtSeed, "init", "-q", "-b", "main");
     writeFileSync(join(rtSeed, "rt-tray", "deps.lock"), lock("0.1.6"));
@@ -94,6 +106,8 @@ describe("rt release app --dry-run", () => {
   test("resolves versions, tags and commands, and changes nothing", async () => {
     const pkg = `{\n  "name": "board",\n  "version": "0.1.7"\n}\n`;
     const bunDir = join(process.execPath, "..");
+    const refsBefore = [git(home, "ls-remote", rtBare), git(home, "ls-remote", appsBare)];
+    const assets = ["mattstack-0.1.1.dmg", "mattstack-0.1.1.zip", "appcast.xml", "SHA256SUMS"].map((name) => ({ name }));
     const result = await rt(["release", "app", "board", "--dry-run", "--json"], {
       home,
       cwd: checkout,
@@ -101,6 +115,7 @@ describe("rt release app --dry-run", () => {
         PATH: `${fakeBin}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
         FAKE_GH_LOG: ghLog,
         FAKE_BOARD_PACKAGE: JSON.stringify({ content: Buffer.from(pkg).toString("base64"), sha: "pkgsha" }),
+        FAKE_RELEASE_VIEW: JSON.stringify({ body: "v0.1.1 notes\n", assets, isDraft: false, isPrerelease: false, publishedAt: "2026-09-25T00:00:00Z" }),
       },
     });
 
@@ -122,9 +137,13 @@ describe("rt release app --dry-run", () => {
 
     expect(readFileSync(ghLog, "utf8").trim().split("\n")).toEqual([
       "api repos/m4ttstack/apps/contents/apps/board/package.json?ref=main",
+      "api repos/m4ttstack/rt/actions/workflows/release.yml/runs?event=push&branch=v0.1.1&per_page=5",
+      "run view 1 --repo m4ttstack/rt --json status,conclusion",
+      "release view v0.1.1 --repo m4ttstack/rt --json body,assets,isDraft,isPrerelease,publishedAt",
       "api repos/m4ttstack/apps/git/ref/tags/board-v0.1.8",
+      "api repos/m4ttstack/rt/actions/workflows/bundle-apps.yml/runs?event=workflow_dispatch&per_page=20",
     ]);
     expect(git(checkout, "tag", "--list", "v0.1.2")).toBe("");
-    expect(git(checkout, "rev-parse", "HEAD").trim()).toBe(git(checkout, "rev-parse", "origin/main").trim());
+    expect([git(home, "ls-remote", rtBare), git(home, "ls-remote", appsBare)]).toEqual(refsBefore);
   });
 });
