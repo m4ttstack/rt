@@ -321,56 +321,81 @@ describe("rt uninstall", () => {
   // ─── deck.managed-remove ────────────────────────────────────────────────
 
   describe("deck.managed-remove", () => {
-    const healthyFetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "ok", headers: {} } : { status: 404, body: "", headers: {} });
+    type FetchInit = Parameters<Probes["fetch"]>[1];
 
-    test("deck not running (no api.json) -> skipped, never execs", async () => {
-      const p = bareProbes(pathTool("deck"));
-      const { ctx } = makeCtx(p);
-      const result = await runUninstall(ctx, [{ id: "deck.managed-remove", title: "x", kind: "rt" }]);
-      expect(result.ok).toBe(true);
-      expect(p.calls.exec).toEqual([]);
-    });
-
-    test("healthy deck: runs `deck remove --managed board` then `… gitq` — exact argv", async () => {
+    function deckUp(answer: { status: number; body: string }): { p: ReturnType<typeof fakeProbes>; seen: { url: string; init: FetchInit }[] } {
+      const seen: { url: string; init: FetchInit }[] = [];
       const p = bareProbes({
         ...pathTool("deck"),
         files: { ...pathTool("deck").files, [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-        fetch: healthyFetch,
+        fetch: async (url, init) => {
+          if (url.endsWith("/healthz")) return { status: 200, body: "ok", headers: {} };
+          seen.push({ url, init });
+          return { status: answer.status, body: answer.body, headers: {} };
+        },
         exec: async () => ok(""),
       });
-      const { ctx } = makeCtx(p);
-      const result = await runUninstall(ctx, [{ id: "deck.managed-remove", title: "x", kind: "rt" }]);
-      expect(result.ok).toBe(true);
-      expect(p.calls.exec).toEqual([
-        ["/fake/bin/deck", "remove", "--managed", "board"],
-        ["/fake/bin/deck", "remove", "--managed", "gitq"],
-      ]);
-    });
+      return { p, seen };
+    }
 
-    test("deck answers 'not managed' for both -> honest skip-per-leg, action still done", async () => {
-      const p = bareProbes({
-        ...pathTool("deck"),
-        files: { ...pathTool("deck").files, [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-        fetch: healthyFetch,
-        exec: async () => ({ code: 1, stdout: "", stderr: "error: not managed by mattstack\n" }),
-      });
-      const { ctx } = makeCtx(p);
-      const result = await runUninstall(ctx, [{ id: "deck.managed-remove", title: "x", kind: "rt" }]);
-      expect(result.ok).toBe(true);
-    });
+    function lastStep(events: ApplyEvent[]): { state: string; detail?: string; remedy?: string } | undefined {
+      return events.filter((e) => e.event === "step").at(-1) as { state: string; detail?: string; remedy?: string } | undefined;
+    }
 
-    test("a genuine deck failure -> the action fails with a retry remedy", async () => {
-      const p = bareProbes({
-        ...pathTool("deck"),
-        files: { ...pathTool("deck").files, [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
-        fetch: healthyFetch,
-        exec: async () => ({ code: 1, stdout: "", stderr: "internal error\n" }),
-      });
+    const action: UninstallAction[] = [{ id: "deck.managed-remove", title: "x", kind: "rt" }];
+
+    test("deck not running (no api.json) -> skipped, no exec, no fetch", async () => {
+      const p = bareProbes(pathTool("deck"));
       const { ctx, events } = makeCtx(p);
-      const result = await runUninstall(ctx, [{ id: "deck.managed-remove", title: "x", kind: "rt" }]);
-      expect(result.ok).toBe(false);
-      const stepEvents = events.filter((e) => e.event === "step") as { state: string; remedy?: string }[];
-      expect(stepEvents.at(-1)?.remedy).toBe("Retry");
+      const result = await runUninstall(ctx, action);
+      expect(result.ok).toBe(true);
+      expect(lastStep(events)).toMatchObject({ state: "skipped", detail: "deck is not running; nothing to unmanage" });
+      expect(p.calls.exec).toEqual([]);
+      expect(p.calls.fetch).toEqual([]);
+    });
+
+    test("healthy deck: exactly one POST to the managed remove, naming no app, and no deck CLI exec", async () => {
+      const { p, seen } = deckUp({ status: 200, body: JSON.stringify({ ok: true, removed: ["board", "chat", "console"], failed: [] }) });
+      const { ctx, events } = makeCtx(p);
+      const result = await runUninstall(ctx, action);
+      expect(result.ok).toBe(true);
+      expect(seen.map((s) => [s.url, s.init?.method])).toEqual([["http://127.0.0.1:4100/api/v1/apps/managed/remove", "POST"]]);
+      expect(seen[0]!.init?.body).toBeUndefined();
+      expect(p.calls.exec).toEqual([]);
+      expect(lastStep(events)).toMatchObject({ state: "done", detail: "removed: board, chat, console" });
+    });
+
+    test("nothing registered -> done, says so", async () => {
+      const { p } = deckUp({ status: 200, body: JSON.stringify({ ok: true, removed: [], failed: [] }) });
+      const { ctx, events } = makeCtx(p);
+      expect((await runUninstall(ctx, action)).ok).toBe(true);
+      expect(lastStep(events)).toMatchObject({ state: "done", detail: "no mattstack apps in deck" });
+    });
+
+    test("partial teardown (ok:false) -> failed with Retry, names what was removed and what was kept", async () => {
+      const { p } = deckUp({ status: 200, body: JSON.stringify({ ok: false, removed: ["board"], failed: ["chat"] }) });
+      const { ctx, events } = makeCtx(p);
+      expect((await runUninstall(ctx, action)).ok).toBe(false);
+      expect(lastStep(events)).toMatchObject({ state: "failed", detail: "removed: board; teardown failed, record kept: chat", remedy: "Retry" });
+    });
+
+    for (const [label, answer, detail] of [
+      ["a 500", { status: 500, body: "{}" }, "deck answered 500 to the managed remove"],
+      ["no answer (status 0)", { status: 0, body: "" }, "deck did not answer the managed remove"],
+      ["a 200 that is not JSON", { status: 200, body: "<html>" }, "deck answered 200 to the managed remove"],
+      ["a 200 without the name arrays", { status: 200, body: JSON.stringify({ ok: true }) }, "deck answered 200 to the managed remove"],
+    ] as const) {
+      test(`${label} -> failed with Retry, never done`, async () => {
+        const { p } = deckUp(answer);
+        const { ctx, events } = makeCtx(p);
+        expect((await runUninstall(ctx, action)).ok).toBe(false);
+        expect(lastStep(events)).toMatchObject({ state: "failed", detail, remedy: "Retry" });
+      });
+    }
+
+    test("the action's title names mattstack's apps, not two of them", () => {
+      const actions = computeUninstallActions(bareProbes(pathTool("deck")), { keepData: true }, noEditorSeams);
+      expect(actions.find((a) => a.id === "deck.managed-remove")?.title).toBe("Remove mattstack's apps from deck");
     });
   });
 
