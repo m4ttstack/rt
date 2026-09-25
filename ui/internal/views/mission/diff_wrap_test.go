@@ -217,29 +217,68 @@ func TestScrollingUpIntoATallLineStartsAtItsBottom(t *testing.T) {
 }
 
 func TestAWheelTickSpillsPastTheTallLineOntoTheNext(t *testing.T) {
-	m, _, hi := tallFixture(t)
-	m.diffTop = hi - 2
+	m, lo, hi := tallFixture(t)
+	m.setCursorRowOff(hi - 2 - lo)
 	m.moveDiffCursor(2)
+	m.renderDiffLines(tallW, tallH)
 	if m.diffCursor != 1 || m.diffTop != hi {
 		t.Fatalf("two steps two rows from the end should land on the last row, got cursor %d top %d", m.diffCursor, m.diffTop)
 	}
-	m.diffTop = hi - 1
+	m.setCursorRowOff(hi - 1 - lo)
 	m.moveDiffCursor(2)
 	if m.diffCursor != 2 {
 		t.Fatalf("one step to the last row and one onto tail, got cursor %d top %d", m.diffCursor, m.diffTop)
 	}
 }
 
-// A click or a model push (staging the line) leaves diffCursor on the tall
-// line: the rows being read stay put rather than snapping to its top.
-func TestATallLineKeepsTheRowsBeingReadAcrossARender(t *testing.T) {
-	m, lo, hi := tallFixture(t)
-	mid := (lo + hi) / 2
-	m.diffTop = mid
+// pushLines stands in for a model push: a fresh Lines backing array, as
+// every decode makes, with the cursor line's stage state flipped.
+func pushLines(m *Mission, edit func([]DiffLine)) {
+	lines := append([]DiffLine(nil), m.model.Diff.Lines...)
+	lines[1].Selected = !lines[1].Selected
+	if edit != nil {
+		edit(lines)
+	}
+	m.model.Diff.Lines = lines
+}
+
+func TestStagingATallLineKeepsTheRowsBeingRead(t *testing.T) {
+	m, lo, _ := tallFixture(t)
+	m.moveDiffCursor(2)
+	pushLines(m, nil)
+	m.renderDiffLines(tallW, tallH)
+	if m.diffTop != lo+2 {
+		t.Fatalf("top %d after the push, want %d", m.diffTop, lo+2)
+	}
+}
+
+func TestADifferentTallLineUnderTheCursorOpensAtItsTop(t *testing.T) {
+	m, lo, _ := tallFixture(t)
+	m.moveDiffCursor(2)
+	pushLines(m, func(lines []DiffLine) { lines[1].Text = strings.Repeat("other ", 50) })
+	m.renderDiffLines(tallW, tallH)
+	if m.diffTop != lo {
+		t.Fatalf("a new line under the cursor opened at top %d, want its first row %d", m.diffTop, lo)
+	}
+}
+
+// The line above the tall one wraps too, so a resize moves where the tall
+// line starts.
+func TestAResizeKeepsThePlaceWithinATallLine(t *testing.T) {
+	m := wrapFixture()
+	m.model.Diff.Lines = []DiffLine{
+		{Kind: "context", OldNo: 1, NewNo: 1, SelIdx: -1, Text: strings.Repeat("ctx ", 20)},
+		{Kind: "add", NewNo: 2, Text: strings.Repeat("word ", 60)},
+		{Kind: "add", NewNo: 3, Text: "tail"},
+	}
 	m.diffCursor = 1
 	m.renderDiffLines(tallW, tallH)
-	if m.diffTop != mid {
-		t.Fatalf("top moved from %d to %d", mid, m.diffTop)
+	m.moveDiffCursor(2)
+	const wider = tallW + 10
+	m.renderDiffLines(wider, tallH)
+	ix := m.diffRows(wider - 1 - diffGutterWidth - diffMarkWidth)
+	if got := m.diffTop - ix.start[1]; got != 2 {
+		t.Fatalf("offset into the line after widening is %d rows, want 2", got)
 	}
 }
 

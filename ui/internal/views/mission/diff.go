@@ -115,8 +115,8 @@ func (m *Mission) moveDiffCursor(delta int) {
 	}
 	for ; delta != 0; delta -= step {
 		if lo, hi, ok := m.tallCursorSpan(); ok {
-			if next := min(max(m.diffTop, lo), hi) + step; next >= lo && next <= hi {
-				m.diffTop = next
+			if next := m.cursorRowOff(hi-lo) + step; next >= 0 && next <= hi-lo {
+				m.setCursorRowOff(next)
 				continue
 			}
 		}
@@ -125,13 +125,40 @@ func (m *Mission) moveDiffCursor(delta int) {
 			return
 		}
 		m.diffCursor = next
-		if lo, hi, ok := m.tallCursorSpan(); ok {
-			m.diffTop = lo
-			if step < 0 {
-				m.diffTop = hi
-			}
+		m.setCursorRowOff(0)
+		if lo, hi, ok := m.tallCursorSpan(); ok && step < 0 {
+			m.setCursorRowOff(hi - lo)
 		}
 	}
+}
+
+// cursorRowOff is how many rows into a tall cursor line the pane opens,
+// capped at maxOff. The offset belongs to the line it was set on, so a
+// different line landing under the cursor (a discard shifting the diff, a
+// same-path file in another commit) opens at its first row, and a resize
+// keeps the reader's place within the line rather than an absolute row.
+func (m *Mission) cursorRowOff(maxOff int) int {
+	lines := m.model.Diff.Lines
+	c := min(max(m.diffCursor, 0), len(lines)-1)
+	if c < 0 || !sameDiffLine(m.diffRowOffAt, lines[c]) {
+		return 0
+	}
+	return min(max(m.diffRowOff, 0), maxOff)
+}
+
+func (m *Mission) setCursorRowOff(off int) {
+	lines := m.model.Diff.Lines
+	c := min(max(m.diffCursor, 0), len(lines)-1)
+	if c < 0 {
+		return
+	}
+	m.diffRowOff, m.diffRowOffAt = off, lines[c]
+}
+
+// sameDiffLine matches one diff line across model pushes: staging it
+// changes Selected, never its text or position.
+func sameDiffLine(a, b DiffLine) bool {
+	return a.Kind == b.Kind && a.OldNo == b.OldNo && a.NewNo == b.NewNo && a.Text == b.Text
 }
 
 // tallCursorSpan is the diffTop range [lo, hi] that reads the cursor line
@@ -418,7 +445,7 @@ func (m *Mission) renderDiffLines(width, height int) string {
 	m.diffViewH = height
 	var top int
 	if lo, hi, ok := m.tallCursorSpan(); ok {
-		top = min(max(m.diffTop, lo), hi)
+		top = lo + m.cursorRowOff(hi-lo)
 	} else {
 		virtualH := max(height-extra, 1)
 		top, _ = picker.Viewport(cursorRow, m.diffTop, total-extra, virtualH, virtualH, 0)
