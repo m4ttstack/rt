@@ -60,9 +60,9 @@ Checkouts use `fetch-depth: 2`, enough for `HEAD^1`.
 
 `scope` (ubuntu, seconds): checkout, `setup-bun` pinned `1.4.2`, then
 `bun scripts/ci/test-scope.ts` (no install; the script imports nothing
-from `node_modules`) writes `mode` (`full`, `changed` or `skip`) and
-`dirs` (the unit suite's directory list) to `$GITHUB_OUTPUT`. Section 2
-has the rules.
+from `node_modules`) writes `mode` (`full`, `changed` or `skip`), `dirs`
+(the unit suite's directory list) and `always` (the guard files shard 1
+runs in `changed` mode) to `$GITHUB_OUTPUT`. Section 2 has the rules.
 
 `static` (ubuntu): checkout, `setup-bun` `1.4.2`, `setup-go` from
 `ui/go.mod`, `bun install --frozen-lockfile`, then, unchanged from today:
@@ -74,9 +74,11 @@ nothing and still grandfathers `release.yml`. The plan's first task runs
 each step on ubuntu before anything else is written. A step that turns
 out to need macOS goes into a fourth job, `static-macos`, that runs on
 every PR (never into `unit`, which skips on some PRs; `docs:check` on a
-docs-only PR is the case that rules that out). No such step is expected:
-no unit test or static script reaches the Go toolchain or a macOS-only
-call, and `ui/internal/tty` has a non-Darwin fallback.
+docs-only PR is the case that rules that out), and the `checks` job's
+`needs:` list and pass condition gain it. No such step is expected: no
+static step needs macOS (`docs:check` and `picker:check` import only the
+command tree, `fs` and `diff`; `ui/internal/tty` has a non-Darwin
+fallback), and no unit test runs Go.
 
 `unit` (macOS, `strategy.matrix.shard: [1, 2, 3]`, `fail-fast: false`,
 `if: needs.scope.outputs.mode != 'skip'`): checkout, `setup-bun` `1.4.2`,
@@ -128,10 +130,9 @@ Two derived sets the rules use:
   fixtures under `__tests__/fixtures/`, none of which `--changed` can see.
 - The invisible-to-`--changed` set: every changed file that is not `.ts`,
   plus these TypeScript files: `test-setup.ts` and its transitive imports
-  (a change to `packages/rt-client/src/test-isolation.ts` selected zero
-  tests in the spike), anything under a `fixtures/` or `__fixtures__/`
-  directory (tests spawn or read them; nothing imports them), and
-  `scripts/ci/**`. Shell scripts, JSON and YAML fixtures, `bunfig.toml`,
+  (in the spike, a change to a file imported only by the preload selected
+  zero tests), anything under a `fixtures/` or `__fixtures__/` directory
+  (tests spawn or read them; nothing imports them), and `scripts/ci/**`. Shell scripts, JSON and YAML fixtures, `bunfig.toml`,
   `package.json`, `bun.lock`, `test-timings.json` and `checks.yml` all
   land here through "not `.ts`"; the rule is written that way so a new
   kind of non-TS input is full by default, not missed by default.
@@ -140,10 +141,14 @@ Rules, in order; the first that matches wins:
 
 1. Not a `pull_request` event: `full`. Main is what releases cut from, and
    a scope rule that is wrong should fail there rather than ship.
-2. No changed file is in the read set, and every changed file is docs
-   (`docs/**`, `*.md`, `skills/**`) or Swift (under `rt-tray/`, outside
-   `rt-tray/Tests/stub-rt/**` and `rt-tray/vm/run/helpers/**`, which are
-   TypeScript test trees the unit suite runs): `skip`.
+2. No changed file is in the read set or under a `fixtures/` or
+   `__fixtures__/` directory (fixtures are consumed by walking the
+   directory, so a new file there is read without being named), and every
+   changed file is docs (`docs/**`, `*.md`) or Swift (under `rt-tray/`,
+   outside `rt-tray/Tests/stub-rt/**` and `rt-tray/vm/run/helpers/**`,
+   which are TypeScript test trees the unit suite runs): `skip`.
+   `skills/**` is not docs: the skills tests name every file in it, so a
+   skills-only PR is always `full`.
 3. Any changed file is in the invisible set: `full`.
 4. Otherwise (TypeScript the import graph can see): `changed`.
 
@@ -156,15 +161,17 @@ shard or a `--changed` run that selects nothing exits 0.
 What `changed` mode cannot see, and the always-run list. A test that
 depends on TypeScript without importing it (it spawns `cli.ts` or
 `rt-tray/Tests/stub-rt/stub.ts`, or reads a source file as text) is not
-selected when that source changes. The guards AGENTS.md names as
-enforcement are all of this kind (`lib/__tests__/no-ui-in-cli.test.ts`,
-`no-url-pathname`, `no-eager-tui`, `no-top-level-await`), so
-`test-scope.ts` carries them as an always-run list that shard 1 runs in
-`changed` mode; the script's test asserts every listed file exists. The
-spawn-based tests (about ten spawn `cli.ts`) are not in the list: they
-run on `full` PRs and on every main push, and a TypeScript-only PR that
-breaks one is caught there, after merge. That is the trade `--changed`
-makes and the reason main never runs `changed`.
+selected when that source changes. The source-scanner guards under
+`lib/__tests__/no-*.test.ts` (`no-ui-in-cli` and `no-eager-tui`, which
+AGENTS.md names as enforcement, plus `no-url-pathname`,
+`no-top-level-await`, `no-daemon-sync-exec` and any later one) are all of
+this kind, so `test-scope.ts` resolves that glob into an `always` output
+that shard 1 runs as its second `bun test` call in `changed` mode; the
+script's test asserts the glob resolves to at least the guards named
+here. The spawn-based tests (about ten spawn `cli.ts`) are not in the
+list: they run on `full` PRs and on every main push, and a
+TypeScript-only PR that breaks one is caught there, after merge. That is
+the trade `--changed` makes and the reason main never runs `changed`.
 
 The script has a unit test (`scripts/ci/__tests__/test-scope.test.ts`)
 that feeds it file lists and asserts the mode, one case per rule and one
