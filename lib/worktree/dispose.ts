@@ -14,8 +14,8 @@
  */
 
 import { existsSync } from "fs";
-import { branchExistsLocalAsync, gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
-import { patchIdenticalToMr } from "./containment.ts";
+import { gitOk, headSha, runGit } from "./git-async.ts";
+import { containmentOf } from "./containment.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "./registry.ts";
 import { hasFreshAttendantLease } from "./lease.ts";
 import { loadSyncConfig, matchRule } from "../sync-config.ts";
@@ -160,51 +160,6 @@ function joinedMr(
   return entry.mr as { iid?: number; state?: string | null; sha?: string | null };
 }
 
-/** Every tip dispose drops: HEAD, and the branch it deletes, which need not be checked out. */
-async function droppedTips(rec: TreeRecord): Promise<string[]> {
-  const tips = ["HEAD"];
-  if (rec.branch && (await branchExistsLocalAsync(rec.path, rec.branch))) tips.push(`refs/heads/${rec.branch}`);
-  return tips;
-}
-
-/**
- * A merged MR proves containment only for the commits it actually merged: a
- * reused branch name can resurface an older lifecycle's merged entry (the
- * cache is branch-keyed, and a by-branch API lookup returns the old MR until
- * a new one opens), and trusting it would dispose committed work the merge
- * never saw. The MR's source head sha settles it — squash/rebase merges
- * rewrite the TARGET, never the source branch, so a tip being an ancestor of
- * `mr.sha` means everything on it reached the MR that merged.
- * No sha (pre-field cache rows) or an unknown sha fails safe to the anchor.
- */
-export async function mergedMrCoversTips(rec: TreeRecord, mr: { state?: string | null; sha?: string | null }): Promise<boolean> {
-  if (mr.state !== "merged" || !mr.sha) return false;
-  for (const tip of await droppedTips(rec)) if (!(await isAncestorAsync(rec.path, tip, mr.sha))) return false;
-  return true;
-}
-
-/**
- * Guard 3: every tip dispose drops must be on origin/<branch>, on the default
- * branch, or inside (or patch-identical to) a merged MR's source head. The
- * default branch alone is enough because origin/<branch> outlives a forge's
- * delete-on-merge until a prune. Full refs, so a local branch named
- * `origin/main` can never vouch.
- */
-async function everyTipCovered(rec: TreeRecord, mr: { state?: string | null; sha?: string | null } | null): Promise<boolean> {
-  const defaultRef = await remoteDefaultRef(rec.path);
-  const anchors = [`refs/remotes/${defaultRef}`];
-  if (rec.branch && (await remoteRefExists(rec.path, rec.branch))) anchors.push(`refs/remotes/origin/${rec.branch}`);
-  const mergedSha = mr?.state === "merged" && mr.sha ? mr.sha : null;
-  if (mergedSha) anchors.push(mergedSha);
-  for (const tip of await droppedTips(rec)) {
-    let covered = false;
-    for (const anchor of anchors) if (!covered) covered = await isAncestorAsync(rec.path, tip, anchor);
-    if (!covered && mergedSha) covered = await patchIdenticalToMr(rec.path, mergedSha, defaultRef, undefined, tip);
-    if (!covered) return false;
-  }
-  return true;
-}
-
 /**
  * Guard the tree, then remove it: worktree, branch, registry entry, event.
  *
@@ -258,19 +213,12 @@ export async function disposeTree(
       discarded = discard;
     }
 
-    // 3. Containment. A merged MR is authoritative that the branch's work
-    //    reached the target: squash-merge and rebase-before-merge both leave
-    //    the local head diverged from whatever landed, so every local ancestry
-    //    or patch-id check against the TARGET reads "unpushed" for work that
-    //    demonstrably merged. But merged-state alone is trusted only for tips
-    //    the MR's source sha contains (see mergedMrCoversTips)... a reused
-    //    branch's stale merged entry must fall through to the anchor, which a
-    //    rebased-then-merged branch escapes only via patchIdenticalToMr.
+    // 3. Containment, by the same rule triage offers Dispose on (containmentOf).
     //    The dirty guard above still blocks uncommitted work, --force still
     //    overrides, and a disposed tree is recoverable from the trash for the
     //    retention window.
     const mr = joinedMr(deps, rec);
-    if (!(await everyTipCovered(rec, mr))) return refuse("unpushed");
+    if ((await containmentOf(rec.path, rec.branch, mr)) === "none") return refuse("unpushed");
 
     // 4. No pipeline run is still live in this worktree: a running run can go
     //    on writing to the filesystem disposal is about to remove. A scan

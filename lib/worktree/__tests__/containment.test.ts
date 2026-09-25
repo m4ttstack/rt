@@ -59,6 +59,27 @@ describe("containmentOf", () => {
     expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("patch-identical");
   });
 
+  test("a local branch named origin/main never vouches for HEAD", async () => {
+    sh("git checkout -q -b feat", repo);
+    commit(repo, "a.txt", "a\n");
+    sh("git branch origin/main feat", repo);
+    expect(await containmentOf(repo, "feat", null)).toBe("none");
+  });
+
+  test("a squash-merged HEAD whose branch never reached the remote is in the merged MR", async () => {
+    sh("git checkout -q -b feat", repo);
+    const mrSha = commit(repo, "a.txt", "a\n");
+    expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("in-merged-mr");
+  });
+
+  test("a branch holding a commit the merged MR lacks is none even when HEAD is in the MR", async () => {
+    sh("git checkout -q -b feat", repo);
+    const mrSha = commit(repo, "a.txt", "a\n");
+    commit(repo, "later.txt", "never merged\n");
+    sh(`git checkout -q --detach ${mrSha}`, repo);
+    expect(await containmentOf(repo, "feat", { state: "merged", sha: mrSha })).toBe("none");
+  });
+
   test("one extra local commit beyond the merged MR is none", async () => {
     sh("git checkout -q -b feat", repo);
     commit(repo, "a.txt", "a\n");

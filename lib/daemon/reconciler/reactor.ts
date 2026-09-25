@@ -28,7 +28,8 @@ import {
 } from "../../worktree/git-async.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
 import { branchOf } from "../../state/branch-cache.ts";
-import { classifyDirtyAsync, disposeTree, mergedMrCoversTips } from "../../worktree/dispose.ts";
+import { classifyDirtyAsync, disposeTree } from "../../worktree/dispose.ts";
+import { mergedMrCoversTips } from "../../worktree/containment.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
 import { hasLiveCwdInside, liveProcessCwds } from "./stale-claims.ts";
@@ -148,7 +149,7 @@ function recordHold(deps: ReactorDeps, rec: TreeRecord, reason: string): void {
  */
 async function orphanKillAllowed(rec: TreeRecord, mr: ReactorCacheEntry["mr"], killProcesses: boolean): Promise<boolean> {
   if (!killProcesses || !mr) return false;
-  if (!(await mergedMrCoversTips(rec, mr))) return false;
+  if (!(await mergedMrCoversTips(rec.path, rec.branch, mr))) return false;
   const { blockers } = await classifyDirtyAsync(rec.path);
   return blockers.length === 0;
 }

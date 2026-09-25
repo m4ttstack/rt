@@ -516,7 +516,7 @@ export interface TriageRow {
   mr: { iid: number; state: "opened" | "merged" | "closed"; title: string; at: string | null; url: string | null } | null;
   ticket: { identifier: string; title: string; stateName: string | null; url: string | null } | null;
   push: { kind: "pushed" | "in-main" | "remote-deleted" | "unpushed"; ahead?: number };
-  containment: "in-default" | "on-remote" | "patch-identical" | "none";
+  containment: "in-default" | "on-remote" | "in-merged-mr" | "patch-identical" | "none";
   dirt: { kind: "none" | "junk" | "lockfile" | "real"; files: string[] };
   group: "safe" | "look" | "only-copy" | "waiting" | "broken" | "kept";
   verdict: string;
