@@ -1,4 +1,4 @@
-import { beforeEach, describe, test, expect } from "bun:test";
+import { afterEach, beforeEach, describe, test, expect, spyOn } from "bun:test";
 import { join } from "path";
 import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
@@ -11,6 +11,7 @@ import { createRealProbes } from "../../setup/probes.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { readTeamLocal, updateTeamLocal } from "../team-local.ts";
 import type { AgeExecResult, AgeKeySeam } from "../../home/age-key.ts";
+import * as isolation from "../../../packages/rt-client/src/test-isolation.ts";
 
 const FAKE_PUBLIC_KEY = "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
 const FAKE_PRIVATE_KEY = "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ";
@@ -102,6 +103,21 @@ describe("scaffoldFiles", () => {
 
 describe("createTeam", () => {
   beforeEach(() => resetCltCacheForTests());
+
+  describe("in a test run whose home is the account's", () => {
+    let accountHomeSpy: ReturnType<typeof spyOn> | undefined;
+    afterEach(() => accountHomeSpy?.mockRestore());
+
+    test("refuses before creating the zone, so no team store is scaffolded", async () => {
+      accountHomeSpy = spyOn(isolation, "accountHome").mockReturnValue("/home/x");
+      const p = gitAwareFakeProbes("/home/x");
+      await expect(
+        createTeam(p, { name: "Acme", remote: "https://github.com/acme/mattstack-team-acme.git", others: false }, new FakeAgeKeySeam()),
+      ).rejects.toThrow(/run bun test from the repo root/);
+      expect(p.exists(join("/home/x", ".mattstack", "teams", "acme"))).toBe(false);
+      expect(p.calls.exec).toEqual([]);
+    });
+  });
 
   test("argv sequence is CLT probe → init → remote add → add → commit, never push", async () => {
     const p = gitAwareFakeProbes("/home/x");
