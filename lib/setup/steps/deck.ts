@@ -4,11 +4,12 @@
  * bundle's catalog, so this step registers no app itself.
  *
  * board ran under mattstack.app's own bootstrap as "mrs" before deck existed.
- * `deck adopt mrs --as board --json` is idempotent (exit 0 covers "just
- * adopted" and "already adopted"), and the record is then repointed at the
- * bundled board binary through deck's `/api/v1/apps/board` PATCH. A machine
- * that never ran that bootstrap answers "unknown app", the fresh-install
- * norm, so the leg skips and the step still completes.
+ * `deck adopt mrs --as board --json` exits 0 both when it renames that row and
+ * when board is already rt's, which deck's sweep makes true of every machine
+ * it has started on. Only a reply of `changed: true` is a real adoption, and
+ * only that repoints the record at the bundled board binary through deck's
+ * `/api/v1/apps/board` PATCH. A machine with neither row answers "unknown app"
+ * and the step still completes.
  *
  * The gate is `bundledToolPath`, not `resolveTool().chosen`: a PATH copy
  * would pass `.chosen` and hand deck a command outside its own bundle.
@@ -48,17 +49,27 @@ function matchFrozenError(text: string): (typeof FROZEN_ADOPT_ERRORS)[number] | 
   return FROZEN_ADOPT_ERRORS.find((needle) => text.includes(needle)) ?? null;
 }
 
-type AdoptResult = { kind: "adopted" } | { kind: "skip"; detail: string } | { kind: "failed"; outcome: StepOutcome };
+/** deck's registrar id for mattstack's rows. Deck refuses a structural change to a row from any caller but its registrar, and an unnamed caller is "user". */
+const MATTSTACK_REGISTRAR = "rt";
+
+type AdoptResult = { kind: "renamed" } | { kind: "skip"; detail: string } | { kind: "failed"; outcome: StepOutcome };
+
+function adoptChanged(stdout: string): boolean {
+  try {
+    return (JSON.parse(stdout) as { changed?: unknown }).changed === true;
+  } catch {
+    return false;
+  }
+}
 
 async function adoptBoard(ctx: ApplyContext, deckBin: string): Promise<AdoptResult> {
   const result = await ctx.p.exec([deckBin, "adopt", "mrs", "--as", "board", "--json"]);
-  if (result.code === 0) return { kind: "adopted" }; // adopted, or already adopted
+  if (result.code === 0) return adoptChanged(result.stdout) ? { kind: "renamed" } : { kind: "skip", detail: "board already adopted" };
 
   const frozen = matchFrozenError(`${result.stdout}\n${result.stderr}`);
 
-  // "unknown app" means deck has never heard of a legacy "mrs" — true of
-  // every fresh install, since none of them ran the pre-deck bootstrap.
-  // There is nothing to adopt, not a failed adopt.
+  // Deck holds neither "mrs" nor an rt-owned "board": there is nothing to
+  // adopt, which is not a failed adopt.
   if (frozen === "unknown app") return { kind: "skip", detail: "no legacy mrs to adopt" };
 
   if (frozen === "deck not running") {
@@ -69,7 +80,12 @@ async function adoptBoard(ctx: ApplyContext, deckBin: string): Promise<AdoptResu
   return { kind: "failed", outcome: { state: "failed", detail: frozen ?? (result.stderr.trim() || result.stdout.trim() || `deck adopt exited ${result.code}`), remedy: "Retry" } };
 }
 
-/** Idempotent: repointing at the same command/workingDirectory a second time is just another PATCH deck accepts. Skips honestly, never pointing the record at a binary that doesn't exist, when board isn't bundled yet. */
+/**
+ * Skips honestly, never pointing the record at a binary that doesn't exist,
+ * when board isn't bundled yet. A refused repoint is reported, not thrown: a
+ * re-run answers `changed: false` and would never retry it, and deck's sweep
+ * serves the bundled board whatever command the row stores.
+ */
 async function repointBoard(ctx: ApplyContext, port: number): Promise<string> {
   const boardBin = bundledToolPath(ctx.p, "board");
   if (boardBin === null) return "repoint skipped (board not bundled yet)";
@@ -77,10 +93,9 @@ async function repointBoard(ctx: ApplyContext, port: number): Promise<string> {
   const boardDir = join(ctx.p.home, ".mattstack", "board");
   ctx.p.mkdirp(boardDir);
   const body = JSON.stringify({ command: [boardBin], workingDirectory: boardDir });
-  const res = await ctx.p.fetch(`http://127.0.0.1:${port}/api/v1/apps/board`, { method: "PATCH", headers: { "content-type": "application/json" }, body });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`deck answered ${res.status} repointing board's record`);
-  }
+  const headers = { "content-type": "application/json", "x-local-caller": MATTSTACK_REGISTRAR };
+  const res = await ctx.p.fetch(`http://127.0.0.1:${port}/api/v1/apps/board`, { method: "PATCH", headers, body });
+  if (res.status < 200 || res.status >= 300) return `repoint failed (deck answered ${res.status})`;
   return "repointed";
 }
 

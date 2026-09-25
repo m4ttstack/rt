@@ -562,12 +562,19 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
   // ─── deck.managed ───────────────────────────────────────────────────────
 
   describe("deck.managed", () => {
-    const healthyFetch = (deckPort: number, boardPort = deckPort, patchOk = true): Probes["fetch"] =>
+    // Deck's registrar gate: a structural PATCH from any caller but the row's
+    // own registrar ("rt") answers 409 unless it is forced.
+    const healthyFetch = (deckPort: number, patchStatus = 200): Probes["fetch"] =>
       async (url, init) => {
-        if (url.endsWith("/healthz")) return { status: 200, body: "ok", headers: {} };
-        if (url.includes("/api/v1/apps/board") && init?.method === "PATCH") return { status: patchOk ? 200 : 500, body: "", headers: {} };
+        if (url === `http://127.0.0.1:${deckPort}/healthz`) return { status: 200, body: "ok", headers: {} };
+        if (url.includes("/api/v1/apps/board") && init?.method === "PATCH") {
+          if (init.headers?.["x-local-caller"] !== "rt") return { status: 409, body: JSON.stringify({ error: "managed" }), headers: {} };
+          return { status: patchStatus, body: "", headers: {} };
+        }
         return { status: 404, body: "", headers: {} };
       };
+
+    const adoptReply = (changed: boolean) => ok(JSON.stringify({ adopted: true, changed, app: { name: "board", previousName: "mrs", managedBy: "rt" } }));
 
     test("deck not bundled -> skipped", async () => {
       const p = fakeProbes({ home });
@@ -605,7 +612,7 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
         overrides: {
           files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
           fetch: healthyFetch(4100),
-          exec: async () => ok(""),
+          exec: async () => adoptReply(true),
         },
       });
       const { ctx, logs } = makeCtx(p);
@@ -626,7 +633,7 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
         overrides: {
           files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
           fetch: healthyFetch(4100),
-          exec: async () => ok(""),
+          exec: async () => adoptReply(true),
         },
       });
       const { ctx, logs } = makeCtx(p);
@@ -635,6 +642,37 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/board"))).toBe(false);
       expect(p.calls.exec).toHaveLength(1);
       expect(logs).toEqual([]);
+    });
+
+    test("board already rt's (deck's sweep created it): adopt answers changed:false, the step is done and never repoints", async () => {
+      const p = bundledProbes({
+        tools: ["board", "console", "chat"],
+        overrides: {
+          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
+          fetch: healthyFetch(4100),
+          exec: async () => adoptReply(false),
+        },
+      });
+      const { ctx, logs } = makeCtx(p);
+
+      expect(await deckManagedStep.run(ctx)).toEqual({ state: "done", detail: "deck ready; board already adopted" });
+      expect(p.calls.exec).toHaveLength(1);
+      expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/"))).toBe(false);
+      expect(logs).toEqual([]);
+    });
+
+    test("deck refuses the repoint: the step is still done and says so, so apply carries on", async () => {
+      const p = bundledProbes({
+        tools: ["board"],
+        overrides: {
+          files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
+          fetch: healthyFetch(4100, 500),
+          exec: async () => adoptReply(true),
+        },
+      });
+      const { ctx } = makeCtx(p);
+
+      expect(await deckManagedStep.run(ctx)).toEqual({ state: "done", detail: "deck ready; board adopted from legacy mrs, repoint failed (deck answered 500)" });
     });
 
     test("adopt fails with 'deck not running' -> failed, retryable precondition (not a rejection)", async () => {
@@ -686,22 +724,23 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       expect(p.calls.fetch.some((u) => u.includes("/api/v1/apps/"))).toBe(false);
     });
 
-    test("idempotent re-run: the second pass adopts and repoints again with the same outcome", async () => {
+    test("re-run after an adoption: deck answers changed:false the second time, so only the first pass repoints", async () => {
+      const replies = [adoptReply(true), adoptReply(false)];
       const p = bundledProbes({
         tools: ["board"],
         overrides: {
           files: { [join(home, ".mattstack", "deck", "api.json")]: JSON.stringify({ port: 4100 }) },
           fetch: healthyFetch(4100),
-          exec: async () => ok(""),
+          exec: async () => replies.shift()!,
         },
       });
       const { ctx: first } = makeCtx(p);
       const { ctx: second } = makeCtx(p);
-      const expected: StepOutcome = { state: "done", detail: "deck ready; board adopted from legacy mrs, repointed" };
 
-      expect(await deckManagedStep.run(first)).toEqual(expected);
-      expect(await deckManagedStep.run(second)).toEqual(expected);
+      expect(await deckManagedStep.run(first)).toEqual({ state: "done", detail: "deck ready; board adopted from legacy mrs, repointed" });
+      expect(await deckManagedStep.run(second)).toEqual({ state: "done", detail: "deck ready; board already adopted" });
       expect(p.calls.exec.every((argv) => argv[1] === "adopt" && argv[2] === "mrs")).toBe(true);
+      expect(p.calls.fetch.filter((u) => u.includes("/api/v1/apps/board"))).toHaveLength(1);
     });
   });
 
