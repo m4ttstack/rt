@@ -9,6 +9,10 @@ public enum DevBuild {
     public static let shaKey = "MSBuildSha"
     public static let diffHashKey = "MSBuildDiffHash"
     public static let cacheKeep = 4
+    /// No `.app` extension, so LaunchServices never registers a cached copy
+    /// under the dev bundle id. Must match `CACHED_BUNDLE_NAME` in
+    /// lib/release/dev-app-cache.ts.
+    public static let cachedBundleName = "bundle"
 
     /// What a bundle was built from. Written by `stageLocalDevApp`
     /// (lib/release/dev-app-cache.ts computes it), which also looks cached
@@ -62,7 +66,7 @@ public enum DevBuild {
     public static func cachedIdentities(buildsDir: String, listDir: (String) -> [String],
                                         readFile: (String) -> Data?) -> [BuildIdentity] {
         listDir(buildsDir).sorted().filter { !$0.hasPrefix(".") }.compactMap {
-            identity(atBundle: "\(buildsDir)/\($0)/mattstack-dev.app", readFile: readFile)
+            identity(atBundle: "\(buildsDir)/\($0)/\(cachedBundleName)", readFile: readFile)
         }
     }
 
@@ -171,7 +175,7 @@ public enum DevBuild {
         let inside = "\(builds)/?*"
         return [
             "  cached=0",
-            "  if mkdir -p \(builds) && rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/mattstack-dev.app; then",
+            "  if mkdir -p \(builds) && rm -rf \(incoming) && mkdir \(incoming) && mv \(aside) \(incoming)/\(cachedBundleName); then",
             "    date +%s > \(incoming)/cached-at",
             "    case \(entry) in \(inside)) rm -rf \(entry) ;; esac",
             "    if [ ! -e \(entry) ] && mv \(incoming) \(entry); then cached=1; echo \"cached the previous build at \"\(entry); fi",

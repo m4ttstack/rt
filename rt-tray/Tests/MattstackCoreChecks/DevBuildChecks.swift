@@ -95,7 +95,7 @@ private func identityPlist(_ id: DevBuild.BuildIdentity, stamp: String = "s") ->
 
 private func seedEntry(_ builds: URL, _ name: String, cachedAt: String?, marker m: String) {
     let entry = builds.appendingPathComponent(name)
-    makeBundle(entry.appendingPathComponent("mattstack-dev.app"), marker: m)
+    makeBundle(entry.appendingPathComponent("bundle"), marker: m)
     if let cachedAt { try! Data(cachedAt.utf8).write(to: entry.appendingPathComponent("cached-at")) }
 }
 
@@ -216,7 +216,7 @@ let devBuildChecks: [Check] = [
             cache: DevBuild.CacheTarget(buildsDir: base.appendingPathComponent("dev-app/builds").path, entryName: "tree-abc"))
         c.expectEqual(runScript(script), 0)
         c.expectEqual(marker(app), "new")
-        c.expectEqual(marker(base.appendingPathComponent("dev-app/builds/tree-abc/mattstack-dev.app")), "old")
+        c.expectEqual(marker(base.appendingPathComponent("dev-app/builds/tree-abc/bundle")), "old")
         c.expect(read(calls).hasPrefix("fake-open \(app.path)\n"))
     },
     Check("a bundle's build identity is read from its Info.plist, and only when all three keys are there") { c in
@@ -263,10 +263,12 @@ let devBuildChecks: [Check] = [
         makeBundle(rig.staged, marker: "new")
         try c.requireEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
         c.expectEqual(marker(rig.app), "new")
-        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/mattstack-dev.app")), "old")
+        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "old")
         c.expect(!read(rig.builds.appendingPathComponent("tree-abc/cached-at")).isEmpty, "the entry records when it was cached")
         c.expect(!FileManager.default.fileExists(atPath: rig.app.path + ".restart-old"), "the aside copy is gone")
         c.expectEqual(entries(rig.builds), ["tree-abc"], "no in-flight leftovers")
+        let appDirs = (FileManager.default.subpaths(atPath: rig.builds.path) ?? []).filter { $0.hasSuffix(".app") }
+        c.expectEqual(appDirs, [], "a cached bundle never carries .app, so LaunchServices never registers it")
         c.expectEqual(read(rig.calls), """
             fake-open \(rig.app.path)
             fake-helper kickstart -k gui/501/com.mattstack.deck.dev
@@ -281,8 +283,8 @@ let devBuildChecks: [Check] = [
         makeBundle(rig.staged, marker: "new")
         seedEntry(rig.builds, "tree-abc", cachedAt: "100", marker: "older copy")
         c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
-        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/mattstack-dev.app")), "old")
-        c.expect(!FileManager.default.fileExists(atPath: rig.builds.appendingPathComponent("tree-abc/mattstack-dev.app/mattstack-dev.app").path),
+        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "old")
+        c.expect(!FileManager.default.fileExists(atPath: rig.builds.appendingPathComponent("tree-abc/bundle/bundle").path),
                  "the new copy replaced the entry rather than nesting inside it")
     },
     Check("the cache keeps the four most recently cached builds and deletes nothing outside it") { c in
@@ -322,9 +324,9 @@ let devBuildChecks: [Check] = [
     Check("cached identities come from each entry's bundle, skipping in-flight dot entries") { c in
         let other = DevBuild.BuildIdentity(tree: "/trees/main", sha: String(repeating: "c", count: 40), diffHash: "clean")
         let files = [
-            "/b/one/mattstack-dev.app/Contents/Info.plist": identityPlist(sampleIdentity),
-            "/b/two/mattstack-dev.app/Contents/Info.plist": identityPlist(other),
-            "/b/.incoming-9/mattstack-dev.app/Contents/Info.plist": identityPlist(other),
+            "/b/one/bundle/Contents/Info.plist": identityPlist(sampleIdentity),
+            "/b/two/bundle/Contents/Info.plist": identityPlist(other),
+            "/b/.incoming-9/bundle/Contents/Info.plist": identityPlist(other),
         ]
         let found = DevBuild.cachedIdentities(buildsDir: "/b", listDir: { $0 == "/b" ? ["one", ".incoming-9", "two", "junk"] : [] },
                                               readFile: { files[$0] })

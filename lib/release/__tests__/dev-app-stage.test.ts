@@ -221,7 +221,7 @@ describe("stageLocalDevApp", () => {
     const entry = `${BUILDS}/tree-abc`;
     const { seams, calls, writes } = fakeSeams({
       cacheEntries: ["tree-abc"],
-      plists: { [`${entry}/mattstack-dev.app`]: { ...cleanKey, MSBuildStamp: "2026-09-20 08:00:00 abc1234 tree" } },
+      plists: { [`${entry}/bundle`]: { ...cleanKey, MSBuildStamp: "2026-09-20 08:00:00 abc1234 tree" } },
     });
     const result = await stageLocalDevApp(seams, "/src/tree");
     const paths = devAppStagePaths("/Users/t");
@@ -231,7 +231,7 @@ describe("stageLocalDevApp", () => {
       stagedPath: `${paths.stagedDir}/mattstack-dev.app`,
     });
     expect(calls.some((c) => c.startsWith("rsync") || c.includes("build.sh") || c.includes("fetch-deps"))).toBe(false);
-    const clone = calls.findIndex((c) => c.startsWith(`cp -cR ${entry}/mattstack-dev.app ${paths.root}/.incoming-`));
+    const clone = calls.findIndex((c) => c.startsWith(`cp -cR ${entry}/bundle ${paths.root}/.incoming-`));
     const install = calls.findIndex((c) => c.startsWith(`mv ${paths.root}/.incoming-`) && c.endsWith(` ${paths.stagedDir}`));
     expect(clone).toBeGreaterThan(-1);
     expect(install).toBeGreaterThan(clone);
@@ -242,20 +242,20 @@ describe("stageLocalDevApp", () => {
     const entry = `${BUILDS}/tree-abc`;
     const { seams, calls } = fakeSeams({
       cacheEntries: ["tree-abc"],
-      plists: { [`${entry}/mattstack-dev.app`]: { ...cleanKey, MSBuildStamp: "s" } },
+      plists: { [`${entry}/bundle`]: { ...cleanKey, MSBuildStamp: "s" } },
       failCmd: "cp -cR",
     });
     const result = await stageLocalDevApp(seams, "/src/tree");
     expect(result.outcome).toBe("cached");
     const paths = devAppStagePaths("/Users/t");
-    expect(calls.some((c) => c.startsWith(`ditto ${entry}/mattstack-dev.app ${paths.root}/.incoming-`))).toBe(true);
+    expect(calls.some((c) => c.startsWith(`ditto ${entry}/bundle ${paths.root}/.incoming-`))).toBe(true);
   });
 
   test("a cached build whose uncommitted state differs is not reused", async () => {
     const { seams, calls } = fakeSeams({
       dirty: true,
       cacheEntries: ["tree-abc"],
-      plists: { [`${BUILDS}/tree-abc/mattstack-dev.app`]: { ...cleanKey, MSBuildStamp: "s" } },
+      plists: { [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildStamp: "s" } },
     });
     const result = await stageLocalDevApp(seams, "/src/tree");
     expect(result.outcome).toBe("built");
@@ -268,7 +268,7 @@ describe("stageLocalDevApp", () => {
       cacheEntries: ["tree-abc"],
       plists: {
         [RUNNING_APP]: { ...cleanKey, MSBuildStamp: "running stamp" },
-        [`${BUILDS}/tree-abc/mattstack-dev.app`]: { ...cleanKey, MSBuildStamp: "s" },
+        [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildStamp: "s" },
       },
     });
     const result = await stageLocalDevApp(seams, "/src/tree");

@@ -10,6 +10,14 @@ import type { RunResult } from "../subprocess.ts";
 
 export const CLEAN_DIFF_HASH = "clean";
 
+/**
+ * A cached bundle's folder inside its entry. No `.app` extension, so
+ * LaunchServices never registers a cached copy under the dev bundle id; it
+ * only becomes `mattstack-dev.app` again when copied into staging. Must match
+ * `DevBuild.cachedBundleName` in the tray.
+ */
+export const CACHED_BUNDLE_NAME = "bundle";
+
 export const IDENTITY_KEYS = { tree: "MSBuildTree", sha: "MSBuildSha", diffHash: "MSBuildDiffHash" } as const;
 const STAMP_KEY = "MSBuildStamp";
 
@@ -88,7 +96,7 @@ export async function findCachedBuild(
 ): Promise<{ bundle: string; stamp: string | null } | null> {
   for (const name of seams.listDir(buildsDir)) {
     if (name.startsWith(".")) continue;
-    const bundle = `${buildsDir}/${name}/mattstack-dev.app`;
+    const bundle = `${buildsDir}/${name}/${CACHED_BUNDLE_NAME}`;
     const id = await readBundleIdentity(seams, bundle);
     if (id && sameBuild(id, want)) return { bundle, stamp: id.stamp };
   }

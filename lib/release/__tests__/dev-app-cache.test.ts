@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
+  CACHED_BUNDLE_NAME,
   CLEAN_DIFF_HASH,
   findCachedBuild,
   readBundleIdentity,
@@ -130,14 +134,40 @@ describe("bundle identity and the cache", () => {
     const seams = fakeSeams({
       dirs: { [builds]: [".incoming-1", "other", "match"] },
       plists: {
-        [`${builds}/.incoming-1/mattstack-dev.app`]: key,
-        [`${builds}/other/mattstack-dev.app`]: { ...key, MSBuildSha: "b".repeat(40) },
-        [`${builds}/match/mattstack-dev.app`]: { ...key, MSBuildStamp: "cached stamp" },
+        [`${builds}/.incoming-1/bundle`]: key,
+        [`${builds}/other/bundle`]: { ...key, MSBuildSha: "b".repeat(40) },
+        [`${builds}/match/bundle`]: { ...key, MSBuildStamp: "cached stamp" },
       },
     });
     const hit = await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH });
-    expect(hit).toEqual({ bundle: `${builds}/match/mattstack-dev.app`, stamp: "cached stamp" });
+    expect(hit).toEqual({ bundle: `${builds}/match/bundle`, stamp: "cached stamp" });
     expect(seams.calls.some((c) => c.includes(".incoming-1"))).toBe(false);
     expect(await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: "dirty" })).toBeNull();
+  });
+});
+
+describe.skipIf(process.platform !== "darwin")("a cached bundle's signature", () => {
+  test("survives being kept as a plain folder and cloned back to an .app", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dev-app-sig-"));
+    try {
+      const app = join(dir, "Probe.app");
+      mkdirSync(join(app, "Contents/MacOS"), { recursive: true });
+      copyFileSync("/usr/bin/true", join(app, "Contents/MacOS/Probe"));
+      writeFileSync(
+        join(app, "Contents/Info.plist"),
+        `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Probe</string><key>CFBundleIdentifier</key><string>test.dev-app-cache.probe</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`,
+      );
+      const run = (argv: string[]) => Bun.spawnSync(argv, { stdout: "ignore", stderr: "ignore" }).exitCode;
+      expect(run(["codesign", "--force", "--sign", "-", app])).toBe(0);
+      const kept = join(dir, "entry", CACHED_BUNDLE_NAME);
+      mkdirSync(join(dir, "entry"));
+      renameSync(app, kept);
+      const staged = join(dir, "incoming", "mattstack-dev.app");
+      mkdirSync(join(dir, "incoming"));
+      expect(run(["cp", "-cR", kept, staged])).toBe(0);
+      expect(run(["codesign", "--verify", "--strict", staged])).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
