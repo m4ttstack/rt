@@ -24,7 +24,7 @@ class CachedBundleRejected extends Error {}
 
 export type StageResult =
   | { outcome: "built" | "cached"; stamp: string; stagedPath: string }
-  | { outcome: "running"; stamp: string; stagedPath: null };
+  | { outcome: "running"; stamp: string; stagedPath: null; clearedStaged: boolean };
 
 export function devAppStagePaths(home: string) {
   const root = `${home}/.mattstack/rt/dev-app`;
@@ -63,8 +63,11 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   if (identity) {
     const running = await readBundleIdentity(seams, seams.runningApp);
     if (running && sameBuild(running, identity)) {
+      // A staged build left armed would have Restart swap away from the
+      // build that was just asked for.
+      const clearedStaged = seams.pathExists(paths.stagedDir) && (await retireStaged(seams, paths));
       seams.writeFile(paths.lastSourceFile, source);
-      return { outcome: "running", stamp: running.stamp ?? stamp, stagedPath: null };
+      return { outcome: "running", stamp: running.stamp ?? stamp, stagedPath: null, clearedStaged };
     }
     const cached = await findCachedBuild(seams, paths.buildsDir, identity);
     if (cached) {
@@ -155,6 +158,15 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   );
   seams.writeFile(paths.lastSourceFile, source);
   return { outcome: "built", stamp, stagedPath };
+}
+
+/** By rename, like `installStaged`, so a restart mid-way sees a whole bundle or none. */
+async function retireStaged(seams: StageSeams, paths: ReturnType<typeof devAppStagePaths>): Promise<boolean> {
+  const retired = `${paths.root}/.retired-${Date.now()}`;
+  await seams.exec(["mv", "-f", paths.stagedDir, retired]);
+  if (seams.pathExists(paths.stagedDir)) return false;
+  await seams.exec(["rm", "-rf", retired]);
+  return true;
 }
 
 async function installStaged(

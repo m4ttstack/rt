@@ -292,7 +292,7 @@ describe("stageLocalDevApp", () => {
       },
     });
     const result = await stageLocalDevApp(seams, "/src/tree");
-    expect(result).toEqual({ outcome: "running", stamp: "running stamp", stagedPath: null });
+    expect(result).toEqual({ outcome: "running", stamp: "running stamp", stagedPath: null, clearedStaged: false });
     expect(calls.some((c) => c.startsWith("rsync") || c.startsWith("cp ") || c.startsWith("mv ") || c.startsWith("ditto"))).toBe(
       false,
     );
@@ -393,5 +393,25 @@ describe("stageLocalDevApp", () => {
     const { seams, calls } = fakeSeams({ diffAfterCopy: "" });
     await stageLocalDevApp(seams, "/src/tree");
     expect(calls.find((c) => c.includes("rt-tray/build.sh dev"))).toContain("MS_BUILD_SHA=");
+  });
+
+  test("when the running app is already this build, a different staged build is retired so Restart stops offering it", async () => {
+    const { seams, calls } = fakeSeams({ plists: { [RUNNING_APP]: { ...cleanKey, MSBuildStamp: "running stamp" } } });
+    const paths = devAppStagePaths("/Users/t");
+    const exists = seams.pathExists;
+    let staged = true;
+    seams.pathExists = (p) => (p === paths.stagedDir ? staged : exists(p));
+    const exec = seams.exec;
+    seams.exec = (argv, o) => {
+      if (argv[0] === "mv" && argv[2] === paths.stagedDir) staged = false;
+      return exec(argv, o);
+    };
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result).toEqual({ outcome: "running", stamp: "running stamp", stagedPath: null, clearedStaged: true });
+    const retire = calls.findIndex((c) => c.startsWith(`mv -f ${paths.stagedDir} ${paths.root}/.retired-`));
+    expect(retire).toBeGreaterThan(-1);
+    expect(calls.findIndex((c) => c.startsWith(`rm -rf ${paths.root}/.retired-`))).toBeGreaterThan(retire);
+    expect(calls).not.toContain(`rm -rf ${paths.stagedDir}`);
+    expect(calls.some((c) => c.startsWith("rsync"))).toBe(false);
   });
 });

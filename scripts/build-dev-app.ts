@@ -120,7 +120,8 @@ if (parsed.local) {
       process.cwd(),
     );
     if (result.outcome === "running") {
-      console.log(`✓ already running this build (${result.stamp}); nothing to stage`);
+      const cleared = result.clearedStaged ? "; cleared the other build that was staged" : "";
+      console.log(`✓ already running this build (${result.stamp}); nothing to stage${cleared}`);
     } else {
       const from = result.outcome === "cached" ? " from the build cache, nothing rebuilt" : "";
       console.log(
