@@ -113,6 +113,9 @@ echo "FAILS=$fails"
   return { out, fails: Number(m[1]) };
 }
 const calls = (w: World) => (existsSync(w.calls) ? readFileSync(w.calls, "utf8") : "");
+// One verdict pass spawns a dozen jq and stub processes, which takes seconds
+// on a loaded host, so the polling cases outlive bun's 5s default.
+const POLL_TEST_MS = 60_000;
 
 describe("assert_served_apps", () => {
   test("a healthy bundle passes, and the bad count reaches the caller", () => {
@@ -138,15 +141,15 @@ describe("assert_served_apps", () => {
     const { fails } = run(w, "assert_served_apps served 30");
     expect(fails).toBe(0);
     expect(calls(w).match(/api\/v1\/status/g)?.length).toBe(3);
-  });
+  }, POLL_TEST_MS);
 
   test("a deck that never answers fails once the deadline passes, with one bad line", () => {
     const w = world({ statusFailures: 99 });
-    const { out, fails } = run(w, "assert_served_apps served 2");
+    const { out, fails } = run(w, "assert_served_apps served 5");
     expect(fails).toBe(1);
     expect(out).toContain("ASSERT FAIL deck /api/v1/status did not answer with an apps list");
     expect(calls(w).match(/api\/v1\/status/g)!.length).toBeGreaterThanOrEqual(2);
-  });
+  }, POLL_TEST_MS);
 
   test("a loaded gitq label fails even though no script names gitq", () => {
     const w = world();
