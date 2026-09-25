@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { realUninstallDeps, runUninstallCommand, type UninstallDeps } from "../uninstall.ts";
+import { realUninstallDeps, runUninstallCommand, UNINSTALL_FLAGS, type UninstallDeps } from "../uninstall.ts";
+import { TREE } from "../../lib/command-tree-def.ts";
 import type { UninstallAction } from "../../lib/setup/uninstall.ts";
 import type { ApplyEvent } from "../../lib/setup/contract.ts";
 import type { SecretsSeams } from "../../lib/secrets/store.ts";
@@ -175,6 +176,58 @@ describe("rt uninstall — the --delete-data consent gate", () => {
     const payload = JSON.parse(deps.lines[0]!) as { error: { code: string } };
     expect(payload.error.code).toBe("conflicting-data-flags");
     expect(deps.probes.calls.exec).toEqual([]);
+  });
+});
+
+describe("rt uninstall: takes no app name", () => {
+  const cases: { args: string[]; tty: boolean }[] = [
+    { args: ["gitq"], tty: false },
+    { args: ["gitq"], tty: true },
+    { args: ["--json", "gitq"], tty: false },
+    { args: ["--yes", "--json", "board"], tty: false },
+    { args: ["--dry-run", "--json", "chat"], tty: false },
+    { args: ["--keep_data"], tty: true },
+  ];
+
+  for (const { args, tty } of cases) {
+    test(`${args.join(" ")} (${tty ? "TTY" : "no TTY"}): exit 2, nothing prompted, nothing run`, async () => {
+      const deps = baseDeps({ isTTY: () => tty });
+
+      await runExpectingExit(() => runUninstallCommand(args, {}, deps));
+
+      expect(deps.exitCodes).toEqual([2]);
+      expect(deps.confirmCalls).toEqual([]);
+      expect(deps.lines).toHaveLength(1);
+      expect(deps.probes.calls).toEqual({ exec: [], fetch: [], tray: [], writes: {}, removed: [], symlinks: {}, modes: {}, renames: [] });
+    });
+  }
+
+  test("--json: the error envelope carries the code and the stray arguments", async () => {
+    const deps = baseDeps();
+
+    await runExpectingExit(() => runUninstallCommand(["--json", "gitq", "extra"], {}, deps));
+
+    const payload = JSON.parse(deps.lines[0]!) as { contract: number; error: { code: string; message: string; args: string[] } };
+    expect(payload.contract).toBe(1);
+    expect(payload.error.code).toBe("unexpected-args");
+    expect(payload.error.args).toEqual(["gitq", "extra"]);
+    expect(payload.error.message).toContain("run: deck remove <name> (add --force for a mattstack app");
+  });
+
+  test("human mode: one line naming the argument, the whole-product scope and the per-app command", async () => {
+    const deps = baseDeps();
+
+    await runExpectingExit(() => runUninstallCommand(["gitq"], {}, deps));
+
+    expect(deps.lines).toEqual([
+      'rt uninstall: unexpected argument "gitq". It takes no app name and removes all of mattstack; to remove one app from deck, run: deck remove <name> (add --force for a mattstack app; bundled apps return when deck restarts)',
+    ]);
+  });
+
+  test("the handler accepts exactly the flags the command-tree node declares, and the node declares no positional", () => {
+    const declared = TREE.uninstall!.args ?? [];
+    expect(declared.every((a) => typeof a.flag === "string")).toBe(true);
+    expect(declared.map((a) => a.flag).sort()).toEqual([...UNINSTALL_FLAGS].sort());
   });
 });
 

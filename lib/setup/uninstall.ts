@@ -13,10 +13,11 @@
 import { existsSync, readFileSync } from "fs";
 import { basename, isAbsolute, join } from "path";
 import { markDaemonUninstalled } from "../daemon-config.ts";
-import { processFlavor } from "../flavor.ts";
+import { otherFlavor, processFlavor } from "../flavor.ts";
 import { DEFAULT_EXPOSED, isOurLink, unlink } from "../deps/links.ts";
 import { appBundlePath, resolveTool } from "../deps/resolve.ts";
 import { detectEditors, type DetectedEditor } from "../editors.ts";
+import { DEV_TRAY_APP_BUNDLE, installedTrayAppPath, TRAY_APP_BUNDLE } from "../rt-paths.ts";
 import { detectShell, MARKER, removeShellIntegration, removeZshenvPrecedence, shellRcPath } from "../shell-integration.ts";
 import type { ApplyContext, StepOutcome } from "./apply.ts";
 import type { UninstallActionId, StepKind } from "./contract.ts";
@@ -67,11 +68,13 @@ function shellRcHasMarker(): boolean {
 export function computeUninstallActions(p: Probes, opts: { keepData: boolean }, seams: UninstallSeams = REAL_UNINSTALL_SEAMS): UninstallAction[] {
   const actions: UninstallAction[] = [];
 
-  actions.push({ id: "services.unregister", title: "Stop and remove the rt daemon and deck services", kind: "app" });
-
+  // Before services.unregister: that action unregisters deck's own agent, and
+  // the managed remove needs a live deck to tear its apps down.
   if (resolveTool(p, "deck").chosen !== null) {
-    actions.push({ id: "deck.managed-remove", title: "Remove board and gitq from deck", kind: "rt" });
+    actions.push({ id: "deck.managed-remove", title: "Remove mattstack's apps from deck", kind: "rt" });
   }
+
+  actions.push({ id: "services.unregister", title: "Stop and remove the rt daemon and deck services", kind: "app" });
 
   if (p.exists(PORTLESS_LAUNCHD_PLIST)) {
     actions.push({ id: "proxy.remove", title: "Remove the local HTTPS proxy (admin prompt)", kind: "privileged" });
@@ -128,36 +131,51 @@ async function servicesUnregisterRun(ctx: ApplyContext): Promise<ActionResult> {
   return { outcome };
 }
 
-/** deck's own vocabulary for "there was nothing here to unmanage" — matched as substrings since the real CLI wraps them in a sentence, mirroring deck.ts's own FROZEN_ADOPT_ERRORS pattern. */
-const DECK_NOTHING_TO_REMOVE = /not managed|not found|unknown app|no such app/i;
+/** Deck tears each app down in turn (launchd bootout, proxy route), so the bulk remove outlives the default probe timeout. */
+const DECK_MANAGED_REMOVE_TIMEOUT_MS = 120_000;
+
+function managedRemoveReply(body: string): { removed: string[]; failed: string[] } | null {
+  let parsed: { removed?: unknown; failed?: unknown };
+  try {
+    parsed = JSON.parse(body) as { removed?: unknown; failed?: unknown };
+  } catch {
+    return null;
+  }
+  const names = (v: unknown): string[] | null => (Array.isArray(v) && v.every((n) => typeof n === "string") ? (v as string[]) : null);
+  const removed = names(parsed.removed);
+  const failed = names(parsed.failed);
+  return removed !== null && failed !== null ? { removed, failed } : null;
+}
+
+/** Both flavors' decks read one registry, so while the other flavor's app is installed a managed remove would delete its rows and their dev links. */
+function otherFlavorApp(p: Pick<Probes, "exists">): string | null {
+  return installedTrayAppPath(otherFlavor(processFlavor()) === "dev" ? DEV_TRAY_APP_BUNDLE : TRAY_APP_BUNDLE, p.exists);
+}
 
 async function deckManagedRemoveRun(ctx: ApplyContext): Promise<ActionResult> {
-  const port = readDeckApiPort(ctx);
-  const healthy = port !== null && (await deckIsHealthy(ctx, port));
-  if (!healthy) return { outcome: { state: "skipped", detail: "deck is not running — nothing to unmanage" } };
-
-  const exec = resolveTool(ctx.p, "deck").exec;
-  if (!exec) return { outcome: { state: "skipped", detail: "deck not resolvable" } };
-
-  const notes: string[] = [];
-  let hardFailure = false;
-  for (const name of ["board", "gitq"] as const) {
-    const res = await ctx.p.exec([...exec, "remove", "--managed", name]);
-    if (res.code === 0) {
-      notes.push(`${name} removed`);
-      continue;
-    }
-    const combined = `${res.stdout}\n${res.stderr}`;
-    if (DECK_NOTHING_TO_REMOVE.test(combined)) {
-      notes.push(`${name}: nothing to remove`);
-      continue;
-    }
-    hardFailure = true;
-    notes.push(`${name}: deck remove --managed exited ${res.code}`);
+  const otherApp = otherFlavorApp(ctx.p);
+  if (otherApp !== null) {
+    const name = basename(otherApp);
+    return { outcome: { state: "skipped", detail: `kept for ${name}, which shares deck's registry` }, stayed: [`deck's mattstack apps (kept for ${name})`] };
   }
 
-  if (hardFailure) return { outcome: { state: "failed", detail: notes.join("; "), remedy: "Retry" } };
-  return { outcome: { state: "done", detail: notes.join("; ") } };
+  const port = readDeckApiPort(ctx);
+  const healthy = port !== null && (await deckIsHealthy(ctx, port));
+  if (!healthy) return { outcome: { state: "skipped", detail: "deck is not running; nothing to unmanage" } };
+
+  const res = await ctx.p.fetch(`http://127.0.0.1:${port}/api/v1/apps/managed/remove`, { method: "POST", timeoutMs: DECK_MANAGED_REMOVE_TIMEOUT_MS });
+  const reply = res.status === 200 ? managedRemoveReply(res.body) : null;
+  if (reply === null) {
+    const detail = res.status === 0 ? "deck did not answer the managed remove" : `deck answered ${res.status} to the managed remove`;
+    return { outcome: { state: "failed", detail, remedy: "Retry" } };
+  }
+
+  const removed = reply.removed.length > 0 ? `removed: ${reply.removed.join(", ")}` : "no mattstack apps in deck";
+  if (reply.failed.length > 0) {
+    const kept = reply.failed.join(", ");
+    return { outcome: { state: "failed", detail: `${removed}; teardown failed, record kept: ${kept}`, remedy: `Retry; if deck keeps ${kept} again, deck's board shows the issue to fix first` } };
+  }
+  return { outcome: { state: "done", detail: removed } };
 }
 
 async function proxyRemoveRun(ctx: ApplyContext): Promise<ActionResult> {

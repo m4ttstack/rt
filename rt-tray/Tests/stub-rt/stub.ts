@@ -224,8 +224,8 @@ const STEPS = [
 // so the app's confirmation sheet and its progress list can never disagree.
 function uninstallActions(): { id: string; title: string; kind: "rt" | "app" | "privileged" }[] {
   return [
+    { id: "deck.managed-remove", title: "Remove mattstack's apps from deck", kind: "rt" },
     { id: "services.unregister", title: "Stop and remove the rt daemon and deck services", kind: "app" },
-    { id: "deck.managed-remove", title: "Remove board and gitq from deck", kind: "rt" },
     { id: "proxy.remove", title: "Remove the local HTTPS proxy (admin prompt)", kind: "privileged" },
     { id: "path.unlink", title: "Remove ~/.local/bin links", kind: "rt" },
     { id: "shell.remove", title: "Remove the shell rc block", kind: "rt" },

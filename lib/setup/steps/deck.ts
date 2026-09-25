@@ -1,30 +1,22 @@
 /**
- * `deck.managed` — hands board and gitq to deck's process supervision.
+ * `deck.managed`: brings the pre-deck board row under its real name. Which
+ * apps deck serves is deck's own decision, made by its boot sweep from the
+ * bundle's catalog, so this step registers no app itself.
  *
- * board went through mattstack.app's own bootstrap under a legacy name
- * ("mrs") before deck existed, so it is ADOPTED into deck under its real
- * name rather than added fresh: `deck adopt mrs --as board --json` is
- * idempotent (exit 0 covers both "just adopted" and "already adopted"), and
- * the record is then repointed at board's real bundled binary — deck's own
- * `/api/v1/apps/board` PATCH, not another CLI call. A machine that never ran
- * the pre-deck bootstrap has no "mrs" at all (deck answers "unknown app") —
- * that is the fresh-install norm, not a failure, so the board leg skips
- * honestly and the step still completes. gitq has no legacy process to
- * adopt and no working `deck add` wiring yet (MAT-384 — the real CLI parses
- * neither `--managed-by` nor `--host`, and answers the frozen "name taken"
- * on a repeat, not `/already/`), so that leg only ever skips or logs,
- * never fails the run over a known stub.
+ * board ran under mattstack.app's own bootstrap as "mrs" before deck existed.
+ * `deck adopt mrs --as board --json` exits 0 both when it renames that row and
+ * when board is already rt's, which deck's sweep makes true of every machine
+ * it has started on. Only a reply of `changed: true` is a real adoption, and
+ * only that repoints the record at the bundled board binary through deck's
+ * `/api/v1/apps/board` PATCH. A machine with neither row answers "unknown app"
+ * and the step still completes.
  *
- * The gate for even attempting any of this — for BOTH tools — is whether
- * they are BUNDLED (`bundledToolPath`, not `resolveTool().chosen`: a PATH
- * copy would still pass `.chosen`, but deck would then be handed a command
- * outside its own bundle to supervise), the same check `need.ts`'s
- * `servicePlists` makes for deck itself.
+ * The gate is `bundledToolPath`, not `resolveTool().chosen`: a PATH copy
+ * would pass `.chosen` and hand deck a command outside its own bundle.
  */
 
 import { join } from "path";
 import { bundledToolPath } from "../../deps/resolve.ts";
-import { getSetting } from "../../settings/resolve.ts";
 import type { ApplyContext } from "../apply.ts";
 import type { StepDef, StepOutcome } from "../apply.ts";
 import { toFailedOutcome } from "./step-utils.ts";
@@ -57,17 +49,27 @@ function matchFrozenError(text: string): (typeof FROZEN_ADOPT_ERRORS)[number] | 
   return FROZEN_ADOPT_ERRORS.find((needle) => text.includes(needle)) ?? null;
 }
 
-type AdoptResult = { kind: "adopted" } | { kind: "skip"; detail: string } | { kind: "failed"; outcome: StepOutcome };
+/** deck's registrar id for mattstack's rows. Deck refuses a structural change to a row from any caller but its registrar, and an unnamed caller is "user". */
+const MATTSTACK_REGISTRAR = "rt";
+
+type AdoptResult = { kind: "renamed" } | { kind: "skip"; detail: string } | { kind: "failed"; outcome: StepOutcome };
+
+function adoptChanged(stdout: string): boolean {
+  try {
+    return (JSON.parse(stdout) as { changed?: unknown }).changed === true;
+  } catch {
+    return false;
+  }
+}
 
 async function adoptBoard(ctx: ApplyContext, deckBin: string): Promise<AdoptResult> {
   const result = await ctx.p.exec([deckBin, "adopt", "mrs", "--as", "board", "--json"]);
-  if (result.code === 0) return { kind: "adopted" }; // adopted, or already adopted
+  if (result.code === 0) return adoptChanged(result.stdout) ? { kind: "renamed" } : { kind: "skip", detail: "board already adopted" };
 
   const frozen = matchFrozenError(`${result.stdout}\n${result.stderr}`);
 
-  // "unknown app" means deck has never heard of a legacy "mrs" — true of
-  // every fresh install, since none of them ran the pre-deck bootstrap.
-  // There is nothing to adopt, not a failed adopt.
+  // Deck holds neither "mrs" nor an rt-owned "board": there is nothing to
+  // adopt, which is not a failed adopt.
   if (frozen === "unknown app") return { kind: "skip", detail: "no legacy mrs to adopt" };
 
   if (frozen === "deck not running") {
@@ -78,12 +80,12 @@ async function adoptBoard(ctx: ApplyContext, deckBin: string): Promise<AdoptResu
   return { kind: "failed", outcome: { state: "failed", detail: frozen ?? (result.stderr.trim() || result.stdout.trim() || `deck adopt exited ${result.code}`), remedy: "Retry" } };
 }
 
-function gitqHasRepos(): boolean {
-  const repos = (getSetting<{ repos?: unknown }>("gitq.board").value ?? {}).repos;
-  return Array.isArray(repos) && repos.length > 0;
-}
-
-/** Idempotent: repointing at the same command/workingDirectory a second time is just another PATCH deck accepts. Skips honestly, never pointing the record at a binary that doesn't exist, when board isn't bundled yet. */
+/**
+ * Skips honestly, never pointing the record at a binary that doesn't exist,
+ * when board isn't bundled yet. A refused repoint is reported, not thrown: a
+ * re-run answers `changed: false` and would never retry it, and deck's sweep
+ * serves the bundled board whatever command the row stores.
+ */
 async function repointBoard(ctx: ApplyContext, port: number): Promise<string> {
   const boardBin = bundledToolPath(ctx.p, "board");
   if (boardBin === null) return "repoint skipped (board not bundled yet)";
@@ -91,67 +93,10 @@ async function repointBoard(ctx: ApplyContext, port: number): Promise<string> {
   const boardDir = join(ctx.p.home, ".mattstack", "board");
   ctx.p.mkdirp(boardDir);
   const body = JSON.stringify({ command: [boardBin], workingDirectory: boardDir });
-  const res = await ctx.p.fetch(`http://127.0.0.1:${port}/api/v1/apps/board`, { method: "PATCH", headers: { "content-type": "application/json" }, body });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`deck answered ${res.status} repointing board's record`);
-  }
+  const headers = { "content-type": "application/json", "x-local-caller": MATTSTACK_REGISTRAR };
+  const res = await ctx.p.fetch(`http://127.0.0.1:${port}/api/v1/apps/board`, { method: "PATCH", headers, body });
+  if (res.status < 200 || res.status >= 300) return `repoint failed (deck answered ${res.status})`;
   return "repointed";
-}
-
-/**
- * deck's registrar id for everything mattstack ships. The stored value is
- * "rt"; deck renders it as "mattstack" via its own MANAGER_DISPLAY map, and
- * board already carries this exact id. Passing the display name instead
- * produces an unrecognized registrar whose 409 escape hatch tells the user to
- * run `mattstack uninstall <app>` — a command that does not exist.
- */
-const MATTSTACK_REGISTRAR = "rt";
-
-/**
- * Registers a bundled app and claims it for mattstack, in that order.
- *
- * Two calls, not one, because `deck add` never forwards a registrar: it parses
- * only `--port`/`--cmd`/`--dir` (MAT-384) and the API defaults the record to
- * `managedBy: "user"`. A user-owned record is invisible to
- * `deck remove --managed`, which scopes to `managedBy !== "user"` — so an app
- * registered by `add` alone silently survives uninstall. `adopt` is the only
- * verb that sets a registrar, and it is how board became managed.
- *
- * Never throws and never fails the run: a from-scratch install must not wedge
- * on a known-incomplete verb. Duplicate registration answers the frozen
- * "name taken", not a bare `/already/` match.
- */
-async function registerManagedApp(ctx: ApplyContext, deckBin: string, name: string, serveArgs: string[] = []): Promise<string> {
-  const bin = bundledToolPath(ctx.p, name);
-  if (bin === null) {
-    ctx.log("deck.managed", `${name}: not bundled — left unmanaged`);
-    return `${name} not registered: not bundled`;
-  }
-
-  // launchd refuses to spawn a job whose WorkingDirectory is missing
-  // (EX_CONFIG, retried forever), and deck writes the dir into the plist as is.
-  const dir = join(ctx.p.home, ".mattstack", name);
-  ctx.p.mkdirp(dir);
-  // deck splits --cmd on whitespace into argv. A helper whose DEFAULT argv is
-  // its CLI rather than its server needs the serving subcommand here, or deck
-  // supervises a command that prints usage and exits.
-  const cmd = [bin, ...serveArgs].join(" ");
-  const added = await ctx.p.exec([deckBin, "add", name, "--cmd", cmd, "--dir", dir]);
-  const already = matchFrozenError(`${added.stdout}\n${added.stderr}`) === "name taken";
-  if (added.code !== 0 && !already) {
-    const reason = added.stderr.trim() || added.stdout.trim() || `exit ${added.code}`;
-    ctx.log("deck.managed", `${name}: deck add failed — ${reason}`);
-    return `${name} not registered: ${reason}`;
-  }
-
-  // Idempotent: re-adopting an app this registrar already owns is exit 0.
-  const adopted = await ctx.p.exec([deckBin, "adopt", name, "--managed-by", MATTSTACK_REGISTRAR, "--json"]);
-  if (adopted.code !== 0) {
-    const reason = adopted.stderr.trim() || adopted.stdout.trim() || `exit ${adopted.code}`;
-    ctx.log("deck.managed", `${name}: registered but not adopted — ${reason}`);
-    return `${name} registered but left unmanaged: ${reason}`;
-  }
-  return already ? `${name} already registered (managed)` : `${name} registered (managed)`;
 }
 
 async function deckManagedRun(ctx: ApplyContext): Promise<StepOutcome> {
@@ -174,15 +119,8 @@ async function deckManagedRun(ctx: ApplyContext): Promise<StepOutcome> {
 
   const adopted = await adoptBoard(ctx, deckBin);
   if (adopted.kind === "failed") return adopted.outcome;
-
-  const boardDetail = adopted.kind === "skip" ? `board not adopted (${adopted.detail})` : `board adopted (${await repointBoard(ctx, port)})`;
-  // `gitq board` exits 1 on an empty repo list and deck's KeepAlive would
-  // loop it forever; it is registered once a machine has repos for it.
-  const gitqDetail = gitqHasRepos() ? await registerManagedApp(ctx, deckBin, "gitq", ["board"]) : "gitq not registered: no gitq.board repos yet";
-  const consoleDetail = await registerManagedApp(ctx, deckBin, "console");
-  const chatDetail = await registerManagedApp(ctx, deckBin, "chat");
-
-  return { state: "done", detail: `${boardDetail}; ${gitqDetail}; ${consoleDetail}; ${chatDetail}` };
+  if (adopted.kind === "skip") return { state: "done", detail: `deck ready; ${adopted.detail}` };
+  return { state: "done", detail: `deck ready; board adopted from legacy mrs, ${await repointBoard(ctx, port)}` };
 }
 
 async function deckManagedRunSafe(ctx: ApplyContext): Promise<StepOutcome> {

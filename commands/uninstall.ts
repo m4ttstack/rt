@@ -52,6 +52,19 @@ function dryRunPayload(actions: UninstallAction[], now: Date): { contract: 1; at
   return envelope({ actions: actions.map((a) => ({ id: a.id, title: a.title })) }, now);
 }
 
+export const UNINSTALL_FLAGS = ["--keep-data", "--delete-data", "--dry-run", "--yes", "--json"] as const;
+
+function rejectStrayArgs(args: string[]): void {
+  const stray = args.filter((a) => !(UNINSTALL_FLAGS as readonly string[]).includes(a));
+  if (stray.length === 0) return;
+  const named = stray.map((a) => `"${a}"`).join(", ");
+  throw new UserActionableError(
+    "unexpected-args",
+    `unexpected ${stray.length === 1 ? "argument" : "arguments"} ${named}. It takes no app name and removes all of mattstack; to remove one app from deck, run: deck remove <name> (add --force for a mattstack app; bundled apps return when deck restarts)`,
+    { args: stray },
+  );
+}
+
 export async function runUninstallCommand(args: string[], _ctx: CommandContext = {}, deps: UninstallDeps = realUninstallDeps()): Promise<void> {
   const json = args.includes("--json");
   const verb = "uninstall";
@@ -61,6 +74,8 @@ export async function runUninstallCommand(args: string[], _ctx: CommandContext =
   const dryRun = args.includes("--dry-run");
 
   try {
+    rejectStrayArgs(args);
+
     if (keepDataFlag && deleteData) {
       throw new UserActionableError("conflicting-data-flags", "--keep-data and --delete-data are mutually exclusive");
     }
