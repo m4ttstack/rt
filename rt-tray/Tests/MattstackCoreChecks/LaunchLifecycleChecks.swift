@@ -115,6 +115,16 @@ let launchLifecycleChecks: [Check] = [
         }
         c.expect(AnswerBudget.daemon.deadline <= 15 && AnswerBudget.deck.deadline <= 30)
     },
+    Check("daemon answer: only a ping naming this bundle's flavor counts") { c in
+        let prod = #"{"ok":true,"uptime":5,"pid":42,"flavor":"prod","version":"2.13.0","sourceRev":null,"startedAt":1}"#
+        let reply = try JSONDecoder().decode(DaemonFlavorPing.self, from: Data(prod.utf8))
+        c.expect(reply.answers(asFlavor: "prod"))
+        c.expect(!reply.answers(asFlavor: "dev"), "the other flavor's daemon still holding rt.sock")
+        let unnamed = try JSONDecoder().decode(DaemonFlavorPing.self, from: Data(#"{"ok":true,"pid":42}"#.utf8))
+        c.expect(!unnamed.answers(asFlavor: "prod"))
+        let failing = try JSONDecoder().decode(DaemonFlavorPing.self, from: Data(#"{"ok":false,"flavor":"prod"}"#.utf8))
+        c.expect(!failing.answers(asFlavor: "prod"))
+    },
     Check("launch settle: an agent that answers is never inspected or healed") { c in
         let tally = Tally(), log = EventLog()
         let report = await settle([probe("d", tally, answersOnCall: 2)], log)

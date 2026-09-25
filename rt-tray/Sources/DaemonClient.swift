@@ -20,6 +20,13 @@ class DaemonClient {
         return response.ok
     }
 
+    /// Socket only: the flat `ping` names the daemon's flavor, and the HTTP
+    /// route `query` prefers maps ping to /api/status, which does not.
+    func answers(asFlavor flavor: String) async -> Bool {
+        let reply: DaemonFlavorPing? = await querySocket("ping")
+        return reply?.answers(asFlavor: flavor) ?? false
+    }
+
     func queryTrayStatus() async -> DaemonStatus? {
         guard let response: TrayStatusResponse = await query("tray:status") else { return nil }
         guard response.ok, let data = response.data else { return nil }

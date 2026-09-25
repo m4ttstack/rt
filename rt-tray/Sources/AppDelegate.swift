@@ -22,6 +22,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private let notificationManager = NotificationManager()
     private let daemonLifecycle = DaemonLifecycle()
     private let spawnHealLatch = SpawnHealLatch()
+    /// Set when this app serves before its takeover has booted the other
+    /// flavor's agents out; until then their answers are not this app's.
+    private var launchTakeover: Task<String?, Never>?
 
     // ── Polling timers ──────────────────────────────────────────────────────
     private var statusTimer: Timer?
@@ -233,7 +236,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             }
 
             if let launch {
-                await settleAgentsAfterLaunch(launch.registration, launch.progress, version: launch.version)
+                if let takeover = launchTakeover, let failure = await takeover.value {
+                    TrayLog.warn("takeover failed; launch records wait for the next launch", ["failure": failure])
+                } else {
+                    await settleAgentsAfterLaunch(launch.registration, launch.progress, version: launch.version)
+                }
             } else {
                 for _ in 0..<8 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
@@ -251,9 +258,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         guard let registrar = servicesRegistrar else { return }
         let lifecycle = daemonLifecycle
         let client = daemonClient
+        let flavor = FlavorIdentity.flavorName(isDevBuild: BundleFlavor.isDevBuild)
         let probes = registrar.launchProbes(
             daemonLabel: lifecycle.label,
-            daemonAnswers: { await client.isReachable() },
+            daemonAnswers: { await client.answers(asFlavor: flavor) },
             healAgent: { label in
                 if label == lifecycle.label {
                     return await lifecycle.reregisterDaemon(origin: DaemonOrigin.spawnHeal)
@@ -281,9 +289,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private func takeOver() {
         FlavorLaunchState.takingOver = true
         guard FlavorLaunchState.otherTrayAlive != nil else {
+            let takeover = Task { @MainActor in await runTakeover() }
+            launchTakeover = takeover
             startNormalOperation()
             Task { @MainActor in
-                if let failure = await runTakeover() { reportTakeoverFailure(failure, fatal: false) }
+                if let failure = await takeover.value { reportTakeoverFailure(failure, fatal: false) }
             }
             return
         }

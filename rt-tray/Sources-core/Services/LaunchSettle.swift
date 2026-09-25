@@ -31,6 +31,15 @@ public enum AgentAnswerWait {
     }
 }
 
+/// Both flavors' daemons serve the same rt.sock and :9401, so until a
+/// takeover has booted the other one out, its answer is not this one's.
+public struct DaemonFlavorPing: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let flavor: String?
+
+    public func answers(asFlavor expected: String) -> Bool { ok && flavor == expected }
+}
+
 public struct LaunchAgentProbe: Sendable {
     public let label: String
     public let budget: AnswerBudget
