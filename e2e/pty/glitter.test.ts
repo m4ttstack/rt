@@ -27,7 +27,13 @@ const PAINT_TIMEOUT = 15_000;
 beforeAll(() => {
   // The board is half of the binary under test; a run against a stale or
   // missing helper would gate nothing.
-  execFileSync("bun", ["run", "ui:build"], { cwd: REPO_ROOT, stdio: "pipe" });
+  // HOME is the run's throwaway dir, so the module cache lands in it and
+  // must stay deletable.
+  execFileSync("bun", ["run", "ui:build"], {
+    cwd: REPO_ROOT,
+    stdio: "pipe",
+    env: { ...process.env, GOFLAGS: [process.env.GOFLAGS, "-modcacherw"].filter(Boolean).join(" ") },
+  });
   if (!existsSync(RT_UI_BIN)) throw new Error(`ui:build produced no binary at ${RT_UI_BIN}`);
 });
 
