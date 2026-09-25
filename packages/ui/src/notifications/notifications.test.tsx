@@ -1,5 +1,5 @@
 import { StrictMode, useEffect, useState, type ReactNode } from 'react';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import {
@@ -143,25 +143,32 @@ test('notifications.info renders blue color and the info icon', async () => {
 
 describe('TimedRingProgress', () => {
   test('fills over its duration and calls onFinish exactly once', async () => {
-    const onFinish = vi.fn();
-    renderWithProviders(
-      <TimedRingProgress
-        duration={400}
-        onFinish={onFinish}
-        icon={<span>x</span>}
-      />
-    );
+    // The ring drives its countdown off `setTimeout` (react-interval-hook's
+    // self-correcting timer, which also reads `Date.now()`), never rAF, so
+    // faking timers covers it; vi.useFakeTimers() fakes Date by default too.
+    vi.useFakeTimers();
+    try {
+      const onFinish = vi.fn();
+      renderWithProviders(
+        <TimedRingProgress
+          duration={400}
+          onFinish={onFinish}
+          icon={<span>x</span>}
+        />
+      );
 
-    // The center icon renders inside the ring.
-    expect(screen.getByText('x')).toBeTruthy();
+      // The center icon renders inside the ring.
+      expect(screen.getByText('x')).toBeTruthy();
 
-    await waitFor(() => expect(onFinish).toHaveBeenCalledTimes(1), {
-      timeout: 3000,
-    });
+      await act(() => vi.advanceTimersByTimeAsync(400));
+      expect(onFinish).toHaveBeenCalledTimes(1);
 
-    // Confirm it doesn't keep firing once stopped.
-    await new Promise(resolve => setTimeout(resolve, 300));
-    expect(onFinish).toHaveBeenCalledTimes(1);
+      // Confirm it doesn't keep firing once stopped.
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      expect(onFinish).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('calls onFinish exactly once under StrictMode for a fast countdown', async () => {
