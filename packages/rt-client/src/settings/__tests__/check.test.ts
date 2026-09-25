@@ -66,6 +66,30 @@ describe("settings/check", () => {
     });
   });
 
+  test("reports invalid and nonconforming values written to the user store", () => {
+    withSchema("rt.worktrees", WORKTREES, () => {
+      writeUser({ "rt.notifications": "nope", "rt.worktrees": { onDeck: "two" } });
+      const findings = checkStores().findings;
+
+      const invalid = findings.find((f) => f.key === "rt.notifications")!;
+      expect(invalid.kind).toBe("invalid");
+      expect(invalid.scope).toBe("user");
+      expect(invalid.file).toBe(userSettingsPath());
+
+      const nonconforming = findings.find((f) => f.key === "rt.worktrees" && f.kind === "nonconforming")!;
+      expect(nonconforming.scope).toBe("user");
+    });
+  });
+
+  test("walks the user store's own repo sections too", () => {
+    withSchema("rt.worktrees", WORKTREES, () => {
+      writeUser({ repos: { [IDENTITY]: { "rt.worktrees": { onDeck: "two" } } } });
+      const f = checkStores().findings.find((x) => x.key === "rt.worktrees" && x.kind === "nonconforming")!;
+      expect(f.scope).toBe("user");
+      expect(f.repo).toBe(IDENTITY);
+    });
+  });
+
   test("clean stores report nothing failing", () => {
     writeMachine({ "rt.repoRoots": ["~/Documents/GitHub"] });
     expect(checkStores().failing).toBe(0);
