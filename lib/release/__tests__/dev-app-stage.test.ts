@@ -13,7 +13,12 @@ type SourceDeps = "full" | "partial" | "none";
 const FULL_SHA = "abc1234".padEnd(40, "0");
 const RUNNING_APP = "/Apps/mattstack-dev.app";
 const BUILDS = "/Users/t/.mattstack/rt/dev-app/builds";
-const cleanKey = { MSBuildTree: "/src/tree", MSBuildSha: FULL_SHA, MSBuildDiffHash: CLEAN_DIFF_HASH };
+const cleanKey = {
+  MSBuildTree: "/src/tree",
+  MSBuildSha: FULL_SHA,
+  MSBuildDiffHash: CLEAN_DIFF_HASH,
+  MSBuildVersion: "v2.11.0",
+};
 
 function fakeSeams(
   opts: {
@@ -203,7 +208,9 @@ describe("stageLocalDevApp", () => {
     const { seams, calls } = fakeSeams();
     await stageLocalDevApp(seams, "/src/tree");
     const build = calls.find((c) => c.includes("rt-tray/build.sh dev"))!;
-    expect(build).toContain(` MS_BUILD_TREE=/src/tree MS_BUILD_SHA=${FULL_SHA} MS_BUILD_DIFF_HASH=${CLEAN_DIFF_HASH} `);
+    expect(build).toContain(
+      ` MS_BUILD_TREE=/src/tree MS_BUILD_SHA=${FULL_SHA} MS_BUILD_DIFF_HASH=${CLEAN_DIFF_HASH} MS_BUILD_VERSION=v2.11.0 `,
+    );
   });
 
   test("build.sh bakes every identity variable the stage passes into a dev bundle's Info.plist", () => {
@@ -212,6 +219,7 @@ describe("stageLocalDevApp", () => {
       ["MS_BUILD_TREE", "MSBuildTree"],
       ["MS_BUILD_SHA", "MSBuildSha"],
       ["MS_BUILD_DIFF_HASH", "MSBuildDiffHash"],
+      ["MS_BUILD_VERSION", "MSBuildVersion"],
     ]) {
       expect(script).toContain(`plutil -replace ${key} -string "$${env}" "$INFO"`);
     }
@@ -284,5 +292,15 @@ describe("stageLocalDevApp", () => {
     expect(result.outcome).toBe("built");
     const build = calls.find((c) => c.includes("rt-tray/build.sh dev"))!;
     expect(build).not.toContain("MS_BUILD_SHA");
+  });
+
+  test("a cached build made before HEAD was tagged is not reused, since it carries the old version", async () => {
+    const { seams, calls } = fakeSeams({
+      cacheEntries: ["tree-abc"],
+      plists: { [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildVersion: "v2.10.0", MSBuildStamp: "s" } },
+    });
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result.outcome).toBe("built");
+    expect(calls.some((c) => c.startsWith("cp -cR"))).toBe(false);
   });
 });

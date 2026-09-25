@@ -97,10 +97,11 @@ private struct Rig {
 }
 
 private let sampleIdentity = DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "a", count: 40),
-                                                    diffHash: "clean")
+                                                    diffHash: "clean", version: "v2.11.0")
 
 private func identityPlist(_ id: DevBuild.BuildIdentity, stamp: String = "s") -> Data {
-    plist(["MSBuildStamp": stamp, "MSBuildTree": id.tree, "MSBuildSha": id.sha, "MSBuildDiffHash": id.diffHash])
+    plist(["MSBuildStamp": stamp, "MSBuildTree": id.tree, "MSBuildSha": id.sha, "MSBuildDiffHash": id.diffHash,
+           "MSBuildVersion": id.version])
 }
 
 private func seedEntry(_ builds: URL, _ name: String, cachedAt: String?, marker m: String) {
@@ -234,15 +235,19 @@ let devBuildChecks: [Check] = [
             "/A.app/Contents/Info.plist": identityPlist(sampleIdentity),
             "/B.app/Contents/Info.plist": plist(["MSBuildStamp": "s", "MSBuildTree": "/t", "MSBuildSha": "abc"]),
             "/C.app/Contents/Info.plist": plist(["MSBuildStamp": "s", "MSBuildTree": "/t", "MSBuildSha": "",
+                                                 "MSBuildDiffHash": "clean", "MSBuildVersion": "v1"]),
+            "/E.app/Contents/Info.plist": plist(["MSBuildStamp": "s", "MSBuildTree": "/t", "MSBuildSha": "abc",
                                                  "MSBuildDiffHash": "clean"]),
         ]
         c.expectEqual(DevBuild.identity(atBundle: "/A.app", readFile: { files[$0] }), sampleIdentity)
         c.expectEqual(DevBuild.identity(atBundle: "/B.app", readFile: { files[$0] }), nil)
         c.expectEqual(DevBuild.identity(atBundle: "/C.app", readFile: { files[$0] }), nil)
         c.expectEqual(DevBuild.identity(atBundle: "/D.app", readFile: { files[$0] }), nil)
+        c.expectEqual(DevBuild.identity(atBundle: "/E.app", readFile: { files[$0] }), nil, "the version is part of the identity")
     },
     Check("a cache entry name is path-safe, stable per identity, and distinct across tree, sha and diff") { c in
-        let odd = DevBuild.BuildIdentity(tree: "/trees/../it's a \"tree\"/.hidden", sha: sampleIdentity.sha, diffHash: "x")
+        let odd = DevBuild.BuildIdentity(tree: "/trees/../it's a \"tree\"/.hidden", sha: sampleIdentity.sha, diffHash: "x",
+                                         version: "v1")
         for id in [sampleIdentity, odd] {
             let name = DevBuild.cacheEntryName(for: id)
             c.expect(!name.isEmpty && !name.hasPrefix("."), "\(name) must not be hidden or empty")
@@ -253,9 +258,10 @@ let devBuildChecks: [Check] = [
         c.expectEqual(name, DevBuild.cacheEntryName(for: sampleIdentity))
         c.expect(name.hasPrefix("smaug-aaaaaaaaaaaa-"), "names lead with the tree and short sha: \(name)")
         var others = [DevBuild.BuildIdentity]()
-        others.append(.init(tree: "/other/smaug", sha: sampleIdentity.sha, diffHash: "clean"))
-        others.append(.init(tree: sampleIdentity.tree, sha: String(repeating: "b", count: 40), diffHash: "clean"))
-        others.append(.init(tree: sampleIdentity.tree, sha: sampleIdentity.sha, diffHash: "0f0f"))
+        others.append(.init(tree: "/other/smaug", sha: sampleIdentity.sha, diffHash: "clean", version: "v2.11.0"))
+        others.append(.init(tree: sampleIdentity.tree, sha: String(repeating: "b", count: 40), diffHash: "clean", version: "v2.11.0"))
+        others.append(.init(tree: sampleIdentity.tree, sha: sampleIdentity.sha, diffHash: "0f0f", version: "v2.11.0"))
+        others.append(.init(tree: sampleIdentity.tree, sha: sampleIdentity.sha, diffHash: "clean", version: "v2.12.0"))
         for other in others { c.expect(DevBuild.cacheEntryName(for: other) != name, "\(other) collides") }
     },
     Check("a cache target only ever points at a plain child of an absolute builds dir") { c in
@@ -332,7 +338,8 @@ let devBuildChecks: [Check] = [
         c.expectEqual(entries(rig.builds), [])
     },
     Check("cached identities come from each entry's bundle, skipping in-flight dot entries") { c in
-        let other = DevBuild.BuildIdentity(tree: "/trees/main", sha: String(repeating: "c", count: 40), diffHash: "clean")
+        let other = DevBuild.BuildIdentity(tree: "/trees/main", sha: String(repeating: "c", count: 40), diffHash: "clean",
+                                           version: "v1")
         let files = [
             "/b/one/bundle/Contents/Info.plist": identityPlist(sampleIdentity),
             "/b/two/bundle/Contents/Info.plist": identityPlist(other),

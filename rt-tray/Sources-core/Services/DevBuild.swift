@@ -8,6 +8,7 @@ public enum DevBuild {
     public static let treeKey = "MSBuildTree"
     public static let shaKey = "MSBuildSha"
     public static let diffHashKey = "MSBuildDiffHash"
+    public static let versionKey = "MSBuildVersion"
     public static let cacheKeep = 4
     /// No `.app` extension, so LaunchServices never registers a cached copy
     /// under the dev bundle id. Must match `CACHED_BUNDLE_NAME` in
@@ -21,10 +22,12 @@ public enum DevBuild {
         public let tree: String
         public let sha: String
         public let diffHash: String
-        public init(tree: String, sha: String, diffHash: String) {
+        public let version: String
+        public init(tree: String, sha: String, diffHash: String, version: String) {
             self.tree = tree
             self.sha = sha
             self.diffHash = diffHash
+            self.version = version
         }
     }
 
@@ -48,8 +51,9 @@ public enum DevBuild {
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let tree = plist[treeKey] as? String, !tree.isEmpty,
               let sha = plist[shaKey] as? String, !sha.isEmpty,
-              let diffHash = plist[diffHashKey] as? String, !diffHash.isEmpty else { return nil }
-        return BuildIdentity(tree: tree, sha: sha, diffHash: diffHash)
+              let diffHash = plist[diffHashKey] as? String, !diffHash.isEmpty,
+              let version = plist[versionKey] as? String, !version.isEmpty else { return nil }
+        return BuildIdentity(tree: tree, sha: sha, diffHash: diffHash, version: version)
     }
 
     /// Readable (tree name, short sha) plus a hash of the full identity, so
@@ -59,7 +63,7 @@ public enum DevBuild {
         let base = (id.tree as NSString).lastPathComponent
         let safe = String(base.map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") ? $0 : "_" })
         let short = String(id.sha.prefix(12).map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
-        let digest = fnv1a64("\(id.tree)\n\(id.sha)\n\(id.diffHash)")
+        let digest = fnv1a64("\(id.tree)\n\(id.sha)\n\(id.diffHash)\n\(id.version)")
         return "\(safe.isEmpty ? "tree" : safe)-\(short)-\(String(format: "%016llx", digest))"
     }
 

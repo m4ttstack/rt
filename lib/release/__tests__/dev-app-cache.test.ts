@@ -51,15 +51,15 @@ function fakeSeams(f: Fake = {}): CacheSeams & { calls: string[] } {
 }
 
 describe("treeIdentity", () => {
-  test("a clean tree is its path, full HEAD sha, and the fixed clean hash", async () => {
-    const id = await treeIdentity(fakeSeams(), "/src/tree");
-    expect(id).toEqual({ tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH });
+  test("a clean tree is its path, full HEAD sha, the fixed clean hash, and the version it builds as", async () => {
+    const id = await treeIdentity(fakeSeams(), "/src/tree", "v2.11.0");
+    expect(id).toEqual({ tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH, version: "v2.11.0" });
   });
 
   test("the tracked diff against HEAD changes the hash, and the same diff hashes the same", async () => {
-    const a = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+1\n" }), "/src/tree");
-    const b = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+2\n" }), "/src/tree");
-    const again = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+1\n" }), "/src/tree");
+    const a = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+1\n" }), "/src/tree", "v2.11.0");
+    const b = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+2\n" }), "/src/tree", "v2.11.0");
+    const again = await treeIdentity(fakeSeams({ diff: "diff --git a/x b/x\n+1\n" }), "/src/tree", "v2.11.0");
     expect(a!.diffHash).not.toBe(CLEAN_DIFF_HASH);
     expect(a!.diffHash).not.toBe(b!.diffHash);
     expect(a!.diffHash).toBe(again!.diffHash);
@@ -67,22 +67,24 @@ describe("treeIdentity", () => {
 
   test("the diff is taken against HEAD with binary content and no external or textconv drivers", async () => {
     const seams = fakeSeams();
-    await treeIdentity(seams, "/src/tree");
+    await treeIdentity(seams, "/src/tree", "v2.11.0");
     const diff = seams.calls.find((c) => c.startsWith("git diff HEAD"))!;
     for (const flag of ["--binary", "--no-color", "--no-ext-diff", "--no-textconv"]) expect(diff).toContain(flag);
   });
 
   test("untracked files count by path and content, whatever order git lists them in", async () => {
     const files = { "/src/tree/new.ts": "one", "/src/tree/b.ts": "two" };
-    const base = await treeIdentity(fakeSeams({ untracked: ["new.ts", "b.ts"], files }), "/src/tree");
-    const reordered = await treeIdentity(fakeSeams({ untracked: ["b.ts", "new.ts"], files }), "/src/tree");
+    const base = await treeIdentity(fakeSeams({ untracked: ["new.ts", "b.ts"], files }), "/src/tree", "v2.11.0");
+    const reordered = await treeIdentity(fakeSeams({ untracked: ["b.ts", "new.ts"], files }), "/src/tree", "v2.11.0");
     const edited = await treeIdentity(
       fakeSeams({ untracked: ["new.ts", "b.ts"], files: { ...files, "/src/tree/new.ts": "changed" } }),
       "/src/tree",
+      "v2.11.0",
     );
     const renamed = await treeIdentity(
       fakeSeams({ untracked: ["renamed.ts", "b.ts"], files: { "/src/tree/renamed.ts": "one", "/src/tree/b.ts": "two" } }),
       "/src/tree",
+      "v2.11.0",
     );
     expect(base!.diffHash).not.toBe(CLEAN_DIFF_HASH);
     expect(reordered!.diffHash).toBe(base!.diffHash);
@@ -91,19 +93,25 @@ describe("treeIdentity", () => {
   });
 
   test("an unreadable untracked entry still counts, so it never passes for a clean tree", async () => {
-    const id = await treeIdentity(fakeSeams({ untracked: ["nested-repo/"] }), "/src/tree");
+    const id = await treeIdentity(fakeSeams({ untracked: ["nested-repo/"] }), "/src/tree", "v2.11.0");
     expect(id!.diffHash).not.toBe(CLEAN_DIFF_HASH);
   });
 
   test("any git failure means no identity rather than a guessed one", async () => {
     for (const failCmd of ["git rev-parse HEAD", "git diff HEAD", "git ls-files"]) {
-      expect(await treeIdentity(fakeSeams({ failCmd }), "/src/tree")).toBeNull();
+      expect(await treeIdentity(fakeSeams({ failCmd }), "/src/tree", "v2.11.0")).toBeNull();
     }
   });
 });
 
 describe("bundle identity and the cache", () => {
-  const key = { MSBuildTree: "/src/tree", MSBuildSha: SHA, MSBuildDiffHash: CLEAN_DIFF_HASH, MSBuildStamp: "s1" };
+  const key = {
+    MSBuildTree: "/src/tree",
+    MSBuildSha: SHA,
+    MSBuildDiffHash: CLEAN_DIFF_HASH,
+    MSBuildVersion: "v2.11.0",
+    MSBuildStamp: "s1",
+  };
 
   test("a bundle's identity and stamp are read from its Info.plist", async () => {
     const seams = fakeSeams({ plists: { "/A.app": key } });
@@ -111,6 +119,7 @@ describe("bundle identity and the cache", () => {
       tree: "/src/tree",
       sha: SHA,
       diffHash: CLEAN_DIFF_HASH,
+      version: "v2.11.0",
       stamp: "s1",
     });
   });
@@ -118,15 +127,18 @@ describe("bundle identity and the cache", () => {
   test("a bundle missing any identity key has no identity", async () => {
     const { MSBuildDiffHash: _, ...partial } = key;
     expect(await readBundleIdentity(fakeSeams({ plists: { "/A.app": partial } }), "/A.app")).toBeNull();
+    const { MSBuildVersion: __, ...noVersion } = key;
+    expect(await readBundleIdentity(fakeSeams({ plists: { "/A.app": noVersion } }), "/A.app")).toBeNull();
     expect(await readBundleIdentity(fakeSeams(), "/Missing.app")).toBeNull();
   });
 
-  test("two builds are the same only when tree, sha and diff hash all match", () => {
-    const a = { tree: "/t", sha: SHA, diffHash: "h" };
+  test("two builds are the same only when tree, sha, diff hash and version all match", () => {
+    const a = { tree: "/t", sha: SHA, diffHash: "h", version: "v1" };
     expect(sameBuild(a, { ...a })).toBe(true);
     expect(sameBuild(a, { ...a, tree: "/u" })).toBe(false);
     expect(sameBuild(a, { ...a, sha: "b".repeat(40) })).toBe(false);
     expect(sameBuild(a, { ...a, diffHash: "g" })).toBe(false);
+    expect(sameBuild(a, { ...a, version: "v2" })).toBe(false);
   });
 
   test("the cache lookup finds the entry whose bundle matches and skips in-flight dot entries", async () => {
@@ -139,10 +151,10 @@ describe("bundle identity and the cache", () => {
         [`${builds}/match/bundle`]: { ...key, MSBuildStamp: "cached stamp" },
       },
     });
-    const hit = await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH });
+    const hit = await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: CLEAN_DIFF_HASH, version: "v2.11.0" });
     expect(hit).toEqual({ bundle: `${builds}/match/bundle`, stamp: "cached stamp" });
     expect(seams.calls.some((c) => c.includes(".incoming-1"))).toBe(false);
-    expect(await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: "dirty" })).toBeNull();
+    expect(await findCachedBuild(seams, builds, { tree: "/src/tree", sha: SHA, diffHash: "dirty", version: "v2.11.0" })).toBeNull();
   });
 });
 

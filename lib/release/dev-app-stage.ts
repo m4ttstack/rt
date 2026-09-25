@@ -52,7 +52,7 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   const stamp = `${stampTime(seams.now())} ${sha}${dirty ? "+dirty" : ""} ${tree}`;
   const paths = devAppStagePaths(seams.home);
 
-  const identity = await treeIdentity(seams, source);
+  const identity = await treeIdentity(seams, source, version);
   if (identity) {
     const running = await readBundleIdentity(seams, seams.runningApp);
     if (running && sameBuild(running, identity)) {
@@ -95,7 +95,12 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
   }
 
   const identityEnv = identity
-    ? [`MS_BUILD_TREE=${identity.tree}`, `MS_BUILD_SHA=${identity.sha}`, `MS_BUILD_DIFF_HASH=${identity.diffHash}`]
+    ? [
+        `MS_BUILD_TREE=${identity.tree}`,
+        `MS_BUILD_SHA=${identity.sha}`,
+        `MS_BUILD_DIFF_HASH=${identity.diffHash}`,
+        `MS_BUILD_VERSION=${identity.version}`,
+      ]
     : [];
   const build = await seams.exec(
     ["env", `MS_BUILD_STAMP=${stamp}`, ...identityEnv, `RT_VERSION=${version}`, "rt-tray/build.sh", "dev"],

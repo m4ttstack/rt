@@ -61,11 +61,11 @@ let rebuildSourcesChecks: [Check] = [
         let bare = tree("bare", kind: "ephemeral", active: nil)
         let sources = RebuildSources.parse(payload([head, bare]), repoName: rtRepo)
         c.expectEqual(sources.first?.headSha, String(repeating: "a", count: 40))
-        let cached = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "a", count: 40), diffHash: "0f0f"),
-                      DevBuild.BuildIdentity(tree: "/trees/bare", sha: String(repeating: "a", count: 40), diffHash: "clean")]
+        let cached = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "a", count: 40), diffHash: "0f0f", version: "v1"),
+                      DevBuild.BuildIdentity(tree: "/trees/bare", sha: String(repeating: "a", count: 40), diffHash: "clean", version: "v1")]
         c.expect(RebuildSources.isCached(sources[0], in: cached), "sha match is enough for the label")
         c.expect(!RebuildSources.isCached(sources[1], in: cached), "a tree with no known head sha is never marked")
-        let moved = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "b", count: 40), diffHash: "clean")]
+        let moved = [DevBuild.BuildIdentity(tree: "/trees/smaug", sha: String(repeating: "b", count: 40), diffHash: "clean", version: "v1")]
         c.expect(!RebuildSources.isCached(sources[0], in: moved), "a build of an older commit is not this tree's head")
     },
 ]
