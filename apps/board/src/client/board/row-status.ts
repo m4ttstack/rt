@@ -26,6 +26,7 @@ import {
   NUDGE_RETRYABLE,
   RESPOND_ACTIVE,
 } from './format.ts';
+import { parseGateCtx } from './gate-ctx.ts';
 
 type Tone = 'bad' | 'warn' | 'work' | 'go' | 'quiet' | 'clear';
 
@@ -183,13 +184,28 @@ function verdictWord(
   return fallback;
 }
 
+/** A respond gate asks one question per thread, labelled with the thread's
+    file:line, so its first label is a path, not a question. */
+function openGateWord(gate: BoardMRWithReview['gates'][number]): string {
+  const ctx = parseGateCtx(gate.context);
+  if (ctx?.shape === 'plan@1') {
+    const n = ctx.threads.total;
+    return `${n === 1 ? 'one thread' : `${n} threads`} to decide`;
+  }
+  if (ctx?.shape === 'post@1') {
+    const n = ctx.replies;
+    return `${n === 1 ? 'one reply' : `${n} replies`} to post`;
+  }
+  return lowerFirst(gate.questions[0]?.label ?? gate.label);
+}
+
 function gateLines(mr: BoardMRWithReview): Candidate[] {
   const out: Candidate[] = [];
   for (const gate of mr.gates) {
     if (gate.status === 'open' || gate.status === 'parked') {
       out.push({
         tone: 'warn',
-        word: lowerFirst(gate.questions[0]?.label ?? gate.label),
+        word: openGateWord(gate),
         detail: gate.status === 'parked' ? 'parked' : undefined,
         verbs: [{ kind: 'answer', label: 'answer', gateId: gate.gateId }],
       });

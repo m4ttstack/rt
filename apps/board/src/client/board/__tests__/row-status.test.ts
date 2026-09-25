@@ -573,6 +573,36 @@ describe('rowStatus: gates', () => {
     ]);
   });
 
+  test('a respond gate counts its threads instead of reading a thread path', () => {
+    const thread = (n: number) => ({
+      id: `thread-${n}`,
+      label: `src/features/quiet-mode/flows/port-v2-handler.ts:${n}`,
+      multi: false,
+      options: [],
+    });
+    const word = (over: Record<string, unknown>) =>
+      rowStatus(mr({ gates: [gate(over)] as never }), NOW, NONE, ME).line.word;
+    expect(
+      word({
+        kind: 'respond-plan',
+        questions: [thread(1), thread(2)],
+        context:
+          '{"gate-ctx":"plan@1","reviewer":"pat","threads":{"total":2,"blocking":1}}',
+      })
+    ).toBe('2 threads to decide');
+    expect(
+      word({
+        kind: 'respond-post',
+        questions: [thread(1)],
+        context:
+          '{"gate-ctx":"post@1","reviewer":"pat","replies":1,"fixes":[]}',
+      })
+    ).toBe('one reply to post');
+    expect(word({ kind: 'respond-plan', questions: [thread(1)] })).toBe(
+      'src/features/quiet-mode/flows/port-v2-handler.ts:1'
+    );
+  });
+
   test('a parked gate says so in the detail', () => {
     const [line] = candidateLines(
       mr({ gates: [gate({ status: 'parked' })] as never }),

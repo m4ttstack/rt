@@ -127,7 +127,9 @@ export function StatusLine({
   const detail = line.detail ? clauseOf(line.detail) : null;
   return (
     <div className="tui-status" data-tone={line.tone}>
-      <span className="tui-status-word">{line.word}</span>
+      <span className="tui-status-word" title={line.word}>
+        {line.word}
+      </span>
       {line.spin && <span className="tui-status-ring" aria-hidden />}
       {line.tone === 'clear' && (
         <span className="tui-status-sun" aria-hidden>

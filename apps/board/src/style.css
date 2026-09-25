@@ -712,10 +712,10 @@ body {
 }
 .tui-status-word {
   font-weight: 600;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tui-status[data-tone='bad'] .tui-status-word {
   color: var(--text-bad);
@@ -1061,9 +1061,12 @@ body {
 /* Phone width: the branch and behind-target are unreadable at this width
    anyway; the reaction stage yields to the logo; the pill tightens. */
 @media (max-width: 480px) {
+  /* The +N active count reads only through its title, which a phone cannot
+     hover; it yields before the status word does. */
   .tui-branch,
   .tui-behind,
-  .tui-mark[data-slack-stage] {
+  .tui-mark[data-slack-stage],
+  .tui-status-more {
     display: none;
   }
   .tui-row-2 {
