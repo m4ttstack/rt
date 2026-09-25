@@ -3,14 +3,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
+import { restoreHome } from "./home-env.ts";
 
 describe("backup-sources", () => {
   let home: string;
-  let origHome: string;
+  let origHome: string | undefined;
 
   beforeEach(() => {
+    origHome = process.env.HOME;
     home = mkdtempSync(join(tmpdir(), "bs-test-"));
-    origHome = process.env.HOME!;
     process.env.HOME = home;
 
     // Set up the mattstack directory structure with real DBs
@@ -39,7 +40,7 @@ describe("backup-sources", () => {
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreHome(origHome);
     rmSync(home, { recursive: true, force: true });
   });
 

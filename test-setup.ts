@@ -8,12 +8,13 @@
  * fake HOME per-test keep doing so on top of this; e2e fixtures pass their
  * own explicit HOME when spawning the binary, so this never reaches them.
  */
-import { afterAll } from "bun:test";
+import { afterAll, afterEach, beforeEach } from "bun:test";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
+import { homeProblem } from "./lib/__tests__/home-env.ts";
 
 // Before the HOME repoint, while HOME still names the real home: strips
 // ambient live-daemon pointers (RT_DAEMON_SOCK is set in herdr panes and
@@ -64,6 +65,34 @@ afterAll(() => {
     detached: true,
     stdio: "ignore",
   }).unref();
+});
+
+// A HOME left unset, "undefined" or relative sends every later HOME-derived
+// path into the cwd (the repo checkout) or, via os.homedir(), the real home.
+// This afterEach runs after the test's own afterEach hooks, so it fails the
+// test that broke HOME. bun skips the remaining afterEach hooks once one
+// throws, and an afterAll can break HOME too, so the beforeEach twin repairs
+// what slipped past before the test runs. It must not throw: bun would then
+// skip the file's beforeEach but still run its afterEach, which restores a
+// HOME it never saved and fails every later test in the describe. It leaves
+// the problem for this afterEach to report instead.
+let brokenBeforeTest: string | null = null;
+function repairHome(): string | null {
+  const problem = homeProblem(process.env.HOME);
+  if (problem) process.env.HOME = home;
+  return problem;
+}
+beforeEach(() => {
+  brokenBeforeTest = repairHome();
+});
+afterEach(() => {
+  const inherited = brokenBeforeTest;
+  brokenBeforeTest = null;
+  const problem = repairHome();
+  if (problem) throw new Error(`After this test: ${problem}. Restore it with restoreHome() from lib/__tests__/home-env.ts`);
+  if (inherited) {
+    throw new Error(`HOME was already broken when this test started (an afterAll, or an afterEach that threw, earlier): ${inherited}`);
+  }
 });
 
 function removeTree(path: string): void {
