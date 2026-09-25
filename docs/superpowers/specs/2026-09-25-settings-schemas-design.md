@@ -41,14 +41,18 @@ key's shape. It also carries the settings-kit wire additions spec 2 needs.
 
 ### Schemas in the registry
 
-- `SettingDef` gains `schema?: z.ZodType` (zod v4). Every def with type `object` or
-  `array` must have one; a registry test fails otherwise.
+- Every def with type `object` or `array` has a schema, authored in zod v4 in
+  `registry-schemas.ts`; a registry test fails otherwise. At runtime `SettingDef`
+  carries `schema?: JsonSchema` and `layerSchema?: JsonSchema`, attached at startup
+  from the committed lock file (a static JSON import, so nothing reads the disk).
+  zod is consulted only at authoring time: tests, lock generation and types.
 - `SettingDef` gains `storeVersion?: number`, default 1. Spec 3 gives it meaning
   (above 1, the key's store name carries it, `key@2`); this spec only records it in
   the lock file.
 - The schema describes the value a reader receives: the fully resolved value (after
   deep merge, for `merge: "deep"` keys). The code that reads a composite key uses
-  `z.infer<typeof schema>` as its type, so the type and the check cannot drift.
+  `z.infer<typeof schema>` as its type through a type-only import (erased at build,
+  so no zod at runtime), so the type and the check cannot drift.
 - Schemas allow unknown extra properties (`z.looseObject`) unless a key genuinely
   rejects them, which it states with `z.strictObject`. They describe what readers
   accept, not an ideal.
@@ -58,8 +62,11 @@ key's shape. It also carries the settings-kit wire additions spec 2 needs.
     "remote URL" / "identity");
   - `placeholder` on a property (for example `board.slack`'s emoji fallbacks);
   - `title` and `description` on properties where the property name is not enough.
-- zod becomes a dependency of `@mattstack/rt-client`, chosen for `z.infer` plus its
+- zod is a devDependency of `@mattstack/rt-client`, chosen for `z.infer` plus its
   built-in `z.toJSONSchema`, which spares a second hand-written JSON Schema per key.
+  It never loads at runtime: the registry sits on rt's startup path
+  (`rt --version`, the daemon) and a zod import costs 18 to 41 ms against a 60 ms
+  budget. A test greps the built `dist/` for `zod` and fails if it appears.
 
 ### Deep-merge keys: layers are partial
 
@@ -71,9 +78,9 @@ key's shape. It also carries the settings-kit wire additions spec 2 needs.
   values. Array items stay whole, because deep merge replaces arrays atomically.
 - The layer schema is derived from the key's JSON Schema, not from zod (zod v4 has
   no deep-partial): drop `required` at every object level except inside `items` and
-  `prefixItems`. Server and browser check layers with the same JSON Schema
-  validator (`@cfworker/json-schema`); zod's `safeParse` is used only for full-schema
-  checks (replace-merge layers and merged results).
+  `prefixItems`. Server and browser check every value, layer or full, with the same
+  JSON Schema validator (`@cfworker/json-schema`) against the lock's schemas, so the
+  two never disagree and messages are the same everywhere.
 - A write also checks the **merged result** (that layer plus every other layer, as
   the resolver would merge it) against the full schema, and is refused only if the
   merged result fails where it passed before the write, so a broken layer elsewhere
@@ -161,9 +168,11 @@ key's shape. It also carries the settings-kit wire additions spec 2 needs.
 
 ### Schema lock file and drift check
 
-- `packages/rt-client/settings-schema.lock.json` is generated from the registry:
-  `{ [key]: { storeVersion, schema } }` (JSON Schema, `io: "input"`), sorted,
-  committed. `rt settings schema lock` regenerates it.
+- `packages/rt-client/src/settings/schema.lock.json` is generated from the zod
+  schemas: `{ [key]: { storeVersion, schema } }` (JSON Schema, `io: "input"`),
+  sorted, committed. `rt settings schema lock` regenerates it. It is also the
+  runtime source of every def's `schema`, so the lock and the running code cannot
+  disagree.
 - A classifier compares two lock files key by key. It understands this keyword set:
   `type`, `properties`, `required`, `additionalProperties`, `propertyNames`, `items`,
   `prefixItems`, `enum`, `const`, `anyOf`, `oneOf`, `minimum`, `maximum`,

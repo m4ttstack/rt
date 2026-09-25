@@ -2,38 +2,40 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every composite settings key (type `object` or `array`, 55 of 103) gets a zod schema in the registry; every write is checked against it, reads only label; the schema, per-layer issues and repo resolution reach settings-kit's wire; a committed lock file plus a CI classifier blocks breaking schema changes.
+**Goal:** Every composite settings key (type `object` or `array`, 55 of 103) gets a schema; every write is checked against it, reads only label; the schema, per-layer issues and repo resolution reach settings-kit's wire; a committed lock file plus a CI classifier blocks breaking schema changes.
 
-**Architecture:** Schemas live beside the registry defs in `packages/rt-client` (zod v4 for authoring, `z.toJSONSchema` with `io: "input"` for the wire and the lock file). `validateValue` stays the resolver's skip rule; a new `checkSchema` labels and a new `validateWrite` gates every write (layer schema, then merged result). settings-kit gains `issues[]`, `repos[]`, `?repo=`, `GET /repos`, `checkValue`, and `recognize(schema)` replaces the hand-kept `SHAPES` table. A lock file generated from the registry is diffed in CI and at release preflight.
+**Architecture:** Schemas are authored in zod v4 in `packages/rt-client/src/settings/registry-schemas.ts` and converted (`z.toJSONSchema`, `io: "input"`) into the committed `schema.lock.json`. At runtime the registry attaches each def's JSON Schema (and a derived layer schema for deep-merge keys) from that lock through a static JSON import; every check, server or browser, runs `@cfworker/json-schema` over it. zod never loads at runtime (rt's startup budget). `validateValue` stays the resolver's skip rule; `checkSchema` labels; `validateWrite` gates every write (layer schema, then merged result). settings-kit gains `issues[]`, `repos[]`, `?repo=`, `GET /repos`, `checkValue`, and `recognize(schema)` replaces the hand-kept `SHAPES` table. The lock is diffed in CI and at release preflight.
 
-**Tech Stack:** Bun 1.4.2, TypeScript, zod ^4.6.5, @cfworker/json-schema ^4.1.1, jsonc-parser, bun:test.
+**Tech Stack:** Bun 1.4.2, TypeScript, @cfworker/json-schema ^4.1.1 (runtime), zod ^4.6.5 (dev only), jsonc-parser, bun:test.
 
-**Spec:** `docs/superpowers/specs/2026-09-25-settings-schemas-design.md` (commit f7b8a6452). Read it first; every task below argues from it.
+**Spec:** `docs/superpowers/specs/2026-09-25-settings-schemas-design.md` (as amended on this branch). Read it first; every task below argues from it.
 
 ## Global Constraints
 
-- Every def with `type: "object"` or `"array"` must carry `schema`; a registry test fails otherwise (spec: "Schemas in the registry").
+- Every def with `type: "object"` or `"array"` has a zod schema in `registry-schemas.ts` and a JSON Schema in the lock; a registry test fails otherwise.
 - Schemas allow unknown extra properties (`z.looseObject`) unless a key genuinely rejects them (`z.strictObject`); they describe what readers accept.
 - `validateValue` keeps its current behavior exactly (type check plus path guard). Reads never skip a value that fails only the schema.
 - JSON Schema is always produced with `z.toJSONSchema(schema, { io: "input" })`.
-- Layer checks (deep-merge keys) use the derived layer JSON Schema with `@cfworker/json-schema` on both server and browser; full-schema checks on the server use zod `safeParse`.
-- Issue shape everywhere: `{ path: (string | number)[]; message: string }`; the first failing path is formatted `[0].pattern` / `emoji.looking` by `formatIssuePath`.
-- Public export names that consumers already import from `@mattstack/settings-kit/shapes` keep their names: `SHAPES`, `ENUMS`, `NOTIFICATION_EVENTS`, `DEFAULT_SLACK_EMOJI`, `matchesShape`, `getLeaf`, `setLeaf`, `parseScalar`, `addToList`, `filterDefs`, `isSet`, `formatValue`, `rowKind`, `summarize`, `targetScope`.
+- zod is a devDependency only. `packages/rt-client/src/index.ts` and anything it imports at runtime never import `registry-schemas.ts` or `schema-lock.ts` except with `import type`; a test greps `dist/index.js` for `zod`.
+- All runtime checks (layer, full, browser) use `@cfworker/json-schema`. Messages are normalized to `expected <type>, got <type>` / `required property "<name>" is missing`; the raw cfworker wording never reaches a test or a user.
+- Issue shape everywhere: `{ path: (string | number)[]; message: string }`; the first failing path is formatted `[0].pattern` / `emoji.looking` by `formatIssuePath`. Only the deepest cfworker units become issues; a `required` unit's path ends with the missing property name.
+- Public export names consumers already import from `@mattstack/settings-kit/shapes` keep their names: `SHAPES`, `ENUMS`, `NOTIFICATION_EVENTS`, `DEFAULT_SLACK_EMOJI`, `matchesShape`, `getLeaf`, `setLeaf`, `parseScalar`, `addToList`, `filterDefs`, `isSet`, `formatValue`, `rowKind`, `summarize`, `targetScope`.
 - Commit trailer on every commit, verbatim: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-- Gate for every task, run bare (never piped through `tail`, `head` or `grep`; a pipe hides the exit code): `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test <the task's test files>`, plus `cd packages/rt-client && bun run build` after any rt-client source change (the dist-freshness test fails otherwise; see AGENTS.md).
-- CI runs the full suite; locally run only the test files each task names (memory: CI runs the full suite).
-- No real repo identities, team names or employer names in code, tests, fixtures or docs. Use `gitlab.example.com/acme/app`, team `acme`, the way `resolve.test.ts` does. `scripts/repo-purity.sh` is the gate.
-- No em or en dashes in new text.
+- Gate for every task, run bare (never piped through `tail`, `head` or `grep`; a pipe hides the exit code): `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test <the task's test files>`, plus `cd packages/rt-client && bun run build && cd ../..` after any rt-client source change (the dist-freshness test fails otherwise; see AGENTS.md).
+- CI runs the full suite; locally run only the test files each task names.
+- No real repo identities, team names or employer names in code, tests, fixtures or docs. Use `gitlab.example.com/acme/app` and team `acme`. `scripts/repo-purity.sh` is the gate.
+- No em or en dashes in new text (including replacement text pasted from existing code: rewrite the sentence).
 - Comments state constraints the code cannot show; no narration, no task numbers, no review history in source.
 - Repo is a worktree: run every command from `/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/bilbo`; never `cd` to the main checkout.
+- Editing any file under `skills/` requires loading `superpowers:writing-skills` first.
 
 ## Review Focus
 
-1. A team store written by an older rt whose object carries an extra property of the wrong type (`{ "enabled": "yes" }` for `rt.homeSnapshot`) must resolve as before and be labeled `nonconforming`, never skipped. Pinned in Task 6.
-2. `rt settings set rt.homeSnapshot '{"enabled":false}' --scope machine` (a partial deep layer) must succeed. Pinned in Task 2.
-3. Every registry `default` must pass its own schema, and `[]` / `{}` must pass wherever a reader accepts an empty value. Pinned in Task 5.
-4. A secret key's issues must never carry a value onto the wire. Pinned in Task 7.
-5. A global write of a repo-scoped key must not be refused by a broken value that only exists in one repo section (the merged check refuses only when the merge fails where it passed before). Pinned in Task 2.
+1. A team store written by an older rt whose object carries a property of the wrong type (`{ "enabled": "yes" }` for `rt.homeSnapshot`) must resolve as before and be labeled `nonconforming`, never skipped. Pinned in Task 7.
+2. `rt settings set rt.homeSnapshot '{"enabled":false}' --scope machine` (a partial deep layer) must succeed. Pinned in Task 3.
+3. Every registry `default` must pass its own schema, and `[]` / `{}` must pass wherever a reader accepts an empty value. Pinned in Task 6.
+4. A secret key's issues must never carry a value onto the wire, including the path-guard reason that quotes the literal it rejected. Pinned in Task 8.
+5. A global write of a repo-scoped key must not be refused by a broken value that only exists in one repo section. Pinned in Task 3.
 
 ---
 
@@ -41,66 +43,65 @@
 
 **rt-client (`packages/rt-client`)**
 
-- `package.json`: add `zod` and `@cfworker/json-schema` to `dependencies`; bump version in Task 11.
-- `src/settings/registry-machinery.ts` (modify): `SettingDef` gains `schema?`, `storeVersion?`; re-exports nothing new.
-- `src/settings/schema.ts` (create): JSON Schema conversion, layer derivation, `checkSchema`, `formatIssuePath`, `SchemaIssue`.
-- `src/settings/registry-schemas.ts` (create): `SCHEMAS`, one zod schema per composite key, with `.meta()` display metadata.
-- `src/settings/registry-defs.ts` (modify): each composite def gets `schema: SCHEMAS["<key>"]`.
+- `package.json`: `dependencies` gains `@cfworker/json-schema`; `devDependencies` gains `zod`. Root `package.json` `devDependencies` gains `zod` too (the compiled `rt` bundles `commands/settings-schema.ts` lazily and needs it resolvable). `tsconfig.json` gains `"resolveJsonModule": true`.
+- `src/settings/registry-machinery.ts` (modify): `SettingDef` gains `schema?`, `layerSchema?`, `storeVersion?`; the registry attaches schemas from the lock at module init.
+- `src/settings/schema.ts` (create, runtime, no zod): `JsonSchema`, `SchemaIssue`, `layerJsonSchema`, `validateJson` (cached validators, normalized issues), `checkSchema`, `formatIssuePath`, `firstIssueText`, `hasSchema`.
+- `src/settings/registry-schemas.ts` (create, dev): `SCHEMAS`, one zod schema per composite key, with `.meta()` display metadata; `export type Value<K>`.
+- `src/settings/schema-lock.ts` (create, dev): `toJsonSchema`, `buildLock`, `classifyLockDiff`, `checkLockAgainst`, `LOCK_PATH`.
+- `src/settings/schema.lock.json` (create, committed, generated).
+- `src/settings/breaking-schema-changes.json` (create): `{}`.
 - `src/settings/validate-write.ts` (create): `validateWrite`.
-- `src/settings/resolve.ts` (modify): `nonconforming` on explain rows, `mergedIssues` on resolutions and listed settings, `mergedValueWith`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`.
+- `src/settings/resolve.ts` (modify): `nonconforming` on explain rows, `mergedIssues`, `mergedValueWith`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`.
 - `src/settings/write.ts` (modify): `setSetting` calls `validateWrite`.
-- `src/settings/check.ts` (create): `checkStores` for `rt settings check`.
-- `src/settings/schema-lock.ts` (create): `buildLock`, `classifyLockDiff`, `readBreakingChanges`.
-- `settings-schema.lock.json` (create, committed, generated).
-- `src/settings/breaking-schema-changes.json` (create): `{}` initially.
-- `src/index.ts` (modify): export the new functions and types.
-- Tests: `src/settings/__tests__/schema.test.ts`, `validate-write.test.ts`, `schema-examples.test.ts`, `check.test.ts`, `schema-lock.test.ts`; existing `registry.test.ts`, `resolve.test.ts`, `write.test.ts` gain cases; `test/index-surface.test.ts` gains the new exports.
+- `src/settings/check.ts` (create): `checkStores`.
+- `src/index.ts` (modify): runtime exports only.
+- Tests: `src/settings/__tests__/schema.test.ts`, `schema-lock.test.ts`, `validate-write.test.ts`, `schema-examples.ts` + `schema-examples.test.ts`, `check.test.ts`; existing `registry.test.ts`, `resolve.test.ts`, `write.test.ts` gain cases; `test/index-surface.test.ts` and a new `test/no-zod-in-dist.test.ts`.
 
 **settings-kit (`packages/settings-kit`)**
 
-- `package.json`: add `@cfworker/json-schema` to `dependencies`; peer `@mattstack/rt-client` floor moves to the version Task 11 sets; bump version in Task 11.
-- `src/server.ts` (modify): wire fields, `?repo=`, `repo` in bodies, `GET /repos`, `unregistered`, `validateWrite`.
-- `src/shapes.ts` (modify): `recognize`, `checkValue`, `SHAPES` shrinks to `external`.
-- Tests: `src/__tests__/server.test.ts`, `shapes.test.ts` gain cases.
+- `package.json`: `dependencies` gains `@cfworker/json-schema`; peer `@mattstack/rt-client` floor moves to the version Task 13 sets.
+- `src/server.ts`, `src/shapes.ts` (modify); tests `src/__tests__/server.test.ts`, `shapes.test.ts`, new `shapes-legacy-fixture.ts`.
 
-**rt CLI**
+**rt CLI and release**
 
 - `commands/settings-keys.ts` (modify): render `nonconforming`, add `settingsCheck`.
 - `commands/settings-schema.ts` (create): `settingsSchemaLock`, `settingsSchemaDiff`.
-- `lib/module-registry.ts` (modify): register `./commands/settings-schema.ts`.
-- `lib/command-tree-def.ts` (modify): `settings check`, `settings schema lock`, `settings schema diff`.
-- `lib/release/preflight.ts` (modify): a `schema lock` row.
-- `.github/workflows/checks.yml` (modify): lock-in-sync and classifier steps.
-- Docs: `bun run docs:gen` output, `docs/settings-architecture.md`, `packages/settings-kit/README.md`, `packages/rt-client/README.md`.
+- `lib/settings/schema.ts`, `lib/settings/schema-lock.ts` (create): one-line re-export barrels like the existing `lib/settings/*.ts`.
+- `lib/module-registry.ts`, `lib/command-tree-def.ts`, `lib/release/preflight.ts`, `.github/workflows/checks.yml` (modify).
+- Docs: generated command reference (`bun run docs:gen`), `docs/settings-architecture.md`, `packages/settings-kit/README.md`, `packages/rt-client/README.md`, `skills/rt-release/SKILL.md`.
+
+**Composite keys (55), by task**
+
+- Task 4 (`rt.*`, 25): `rt.roles`, `rt.intercepts`, `rt.worktrees`, `rt.ignoredMrs`, `rt.repoIdentityOverrides`, `rt.repoRoots`, `rt.notifications`, `rt.notify.eventBridges`, `rt.cron`, `rt.repoTracking`, `rt.runaway`, `rt.workspacePrefs`, `rt.homeSnapshot`, `rt.teamSnapshot`, `rt.sync`, `rt.branchNaming`, `rt.variations`, `rt.presets`, `rt.dopplerTemplate`, `rt.worktreeApp`, `rt.sdmEnrichment`, `rt.gitStatus`, `rt.hooks`, `rt.trustedBrowserOrigins`, `rt.integrations`.
+- Task 5 (9): `mattstack.integrations`, `mattstack.tracking`, `mattstack.roster`, `setup.waived`, `claude.marketplaces`, `claude.plugins`, `deck.apps`, `deck.access`, `deck.platform`.
+- Task 6 (21): `board.projects`, `board.members`, `board.botUsernames`, `board.ticketPrefixes`, `board.slack`, `board.tabs`, `board.workspaces`, `board.hiddenMembers`, `board.triage`, `board.reReview`, `board.cwds`, `boxscore.projects`, `boxscore.linearDoneStates`, `boxscore.sizeBand`, `boxscore.excludeFilePatterns`, `boxscore.ignoredMrs`, `boxscore.botPatterns`, `boxscore.hiddenMembers`, `gitq.workSlots`, `gitq.forges`, `gitq.board`.
 
 ---
 
-### Task 1: Schema fields, conversion, layer derivation and `checkSchema`
+### Task 1: Runtime schema module and def fields
 
 **Files:**
-- Modify: `packages/rt-client/package.json`
+- Modify: `packages/rt-client/package.json`, root `package.json`, `packages/rt-client/tsconfig.json`
 - Modify: `packages/rt-client/src/settings/registry-machinery.ts:30-43`
 - Create: `packages/rt-client/src/settings/schema.ts`
 - Test: `packages/rt-client/src/settings/__tests__/schema.test.ts`
 
 **Interfaces:**
-- Consumes: `SettingDef` from `registry-machinery.ts`.
 - Produces:
-  - `SettingDef.schema?: z.ZodType`, `SettingDef.storeVersion?: number`
-  - `type SchemaIssue = { path: (string | number)[]; message: string }`
-  - `toJsonSchema(schema: z.ZodType): Record<string, unknown>`
-  - `layerJsonSchema(json: Record<string, unknown>): Record<string, unknown>`
-  - `checkSchema(def: SettingDef, value: unknown, opts: { layer: boolean }): SchemaIssue[]` (empty array means ok; a def with no schema always returns `[]`)
-  - `formatIssuePath(path: (string | number)[]): string`
-  - `firstIssueText(issues: SchemaIssue[]): string` (`"<path>: <message>"`)
+  - `SettingDef.schema?: JsonSchema`, `SettingDef.layerSchema?: JsonSchema`, `SettingDef.storeVersion?: number`
+  - `type JsonSchema = Record<string, unknown>`; `type SchemaIssue = { path: (string | number)[]; message: string }`
+  - `layerJsonSchema(json: JsonSchema): JsonSchema`
+  - `validateJson(json: JsonSchema, value: unknown): SchemaIssue[]` (validators cached per schema object)
+  - `checkSchema(def: SettingDef, value: unknown, opts: { layer: boolean }): SchemaIssue[]` (`[]` when the def has no schema)
+  - `formatIssuePath(path): string`, `firstIssueText(issues): string`, `hasSchema(def)`
 
 - [ ] **Step 1: Add the dependencies**
 
-Run:
 ```bash
-cd packages/rt-client && bun add zod@^4.6.5 @cfworker/json-schema@^4.1.1 && cd ../..
+cd packages/rt-client && bun add @cfworker/json-schema@^4.1.1 && bun add -d zod@^4.6.5 && cd ../.. && bun add -d zod@^4.6.5
 ```
-Expected: `packages/rt-client/package.json` `dependencies` now lists both; root `bun.lock` updated. Commit nothing yet.
+
+Then add `"resolveJsonModule": true` to `packages/rt-client/tsconfig.json` `compilerOptions`. Expected: both package.json files updated, `bun.lock` updated.
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -108,65 +109,77 @@ Create `packages/rt-client/src/settings/__tests__/schema.test.ts`:
 
 ```ts
 /**
- * settings/schema.ts: JSON Schema conversion, the derived layer schema for
- * deep-merge keys, and checkSchema's issue list. Pure, no file IO.
+ * settings/schema.ts: the runtime check over a def's JSON Schema, the
+ * derived layer schema for deep-merge keys, and issue formatting. No zod
+ * here: this module is what rt loads at startup.
  */
 
 import { describe, expect, test } from "bun:test";
-import { z } from "zod";
 import type { SettingDef } from "../registry-machinery.ts";
-import { checkSchema, firstIssueText, formatIssuePath, layerJsonSchema, toJsonSchema } from "../schema.ts";
+import { checkSchema, firstIssueText, formatIssuePath, layerJsonSchema, validateJson } from "../schema.ts";
 
-const rule = z.looseObject({
-  pattern: z.string(),
-  category: z.string(),
-  url: z.string().optional(),
-  owner: z.literal("human").optional(),
-});
+const ruleSchema = {
+  type: "object",
+  properties: { pattern: { type: "string" }, category: { type: "string" }, url: { type: "string" }, owner: { const: "human" } },
+  required: ["pattern", "category"],
+};
+const listSchema = { type: "array", items: ruleSchema };
+const deepSchema = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    debounceSec: { type: "number" },
+    nested: { type: "object", properties: { a: { type: "string" } }, required: ["a"] },
+  },
+  required: ["enabled", "debounceSec"],
+};
 
 function def(over: Partial<SettingDef> & Pick<SettingDef, "key" | "type" | "merge">): SettingDef {
   return { scopes: ["user"], description: "test", ...over };
 }
-
-const listDef = def({ key: "t.list", type: "array", merge: "replace", schema: z.array(rule) });
-const deepDef = def({
-  key: "t.deep",
-  type: "object",
-  merge: "deep",
-  schema: z.looseObject({ enabled: z.boolean(), debounceSec: z.number(), nested: z.looseObject({ a: z.string() }).optional() }),
-});
-
-describe("toJsonSchema", () => {
-  test("uses input mode: a defaulted property is optional and loose objects allow extras", () => {
-    const json = toJsonSchema(z.looseObject({ a: z.string().default("x"), b: z.number() }));
-    expect(json.required).toEqual(["b"]);
-    expect(json.additionalProperties).not.toBe(false);
-  });
-
-  test("strict objects forbid extras", () => {
-    const json = toJsonSchema(z.strictObject({ a: z.string() }));
-    expect(json.additionalProperties).toBe(false);
-  });
-
-  test("carries .meta() through as annotations", () => {
-    const json = toJsonSchema(z.record(z.string(), z.string()).meta({ labels: { key: "remote URL", value: "identity" } }));
-    expect(json.labels).toEqual({ key: "remote URL", value: "identity" });
-  });
-});
+const listDef = def({ key: "t.list", type: "array", merge: "replace", schema: listSchema });
+const deepDef = def({ key: "t.deep", type: "object", merge: "deep", schema: deepSchema, layerSchema: layerJsonSchema(deepSchema) });
 
 describe("layerJsonSchema", () => {
-  test("drops required at every object level but keeps it inside array items", () => {
-    const json = toJsonSchema(
-      z.looseObject({
-        a: z.string(),
-        b: z.looseObject({ c: z.number() }),
-        items: z.array(z.looseObject({ d: z.string() })),
-      }),
-    );
-    const layer = layerJsonSchema(json);
+  test("drops required at every object level but keeps it inside array items, even nested", () => {
+    const json = {
+      type: "object",
+      properties: {
+        a: { type: "string" },
+        b: { type: "object", properties: { c: { type: "number" } }, required: ["c"] },
+        items: { type: "array", items: { type: "object", properties: { d: { type: "string" }, e: { type: "object", properties: { f: { type: "string" } }, required: ["f"] } }, required: ["d"] } },
+      },
+      required: ["a"],
+    };
+    const layer = layerJsonSchema(json) as any;
     expect(layer.required).toBeUndefined();
-    expect((layer.properties as any).b.required).toBeUndefined();
-    expect((layer.properties as any).items.items.required).toEqual(["d"]);
+    expect(layer.properties.b.required).toBeUndefined();
+    expect(layer.properties.items.items.required).toEqual(["d"]);
+    expect(layer.properties.items.items.properties.e.required).toEqual(["f"]);
+  });
+});
+
+describe("validateJson", () => {
+  test("reports the deepest failing path with a normalized message", () => {
+    const issues = validateJson(listSchema, [{ pattern: 1, category: "gate" }]);
+    expect(issues[0]!.path).toEqual([0, "pattern"]);
+    expect(issues[0]!.message).toBe("expected string, got number");
+  });
+
+  test("a missing required property is reported at the property, not the parent", () => {
+    const issues = validateJson(listSchema, [{ category: "gate" }]);
+    expect(issues[0]!.path).toEqual([0, "pattern"]);
+    expect(issues[0]!.message).toBe('required property "pattern" is missing');
+  });
+
+  test("a const mismatch names the expected value", () => {
+    const issues = validateJson(listSchema, [{ pattern: "x", category: "gate", owner: "herd" }]);
+    expect(issues[0]!.path).toEqual([0, "owner"]);
+    expect(issues[0]!.message).toContain("human");
+  });
+
+  test("a conforming value with extras passes", () => {
+    expect(validateJson(listSchema, [{ pattern: "gate/*", category: "gate", extra: true }])).toEqual([]);
   });
 });
 
@@ -175,31 +188,20 @@ describe("checkSchema", () => {
     expect(checkSchema(def({ key: "t.plain", type: "object", merge: "replace" }), { anything: 1 }, { layer: false })).toEqual([]);
   });
 
-  test("full check reports the first failing path in declaration order", () => {
-    const issues = checkSchema(listDef, [{ pattern: 1, category: "gate" }], { layer: false });
-    expect(issues.length).toBeGreaterThan(0);
-    expect(issues[0]!.path).toEqual([0, "pattern"]);
-    expect(issues[0]!.message.toLowerCase()).toContain("expected string");
-  });
-
-  test("full check passes a conforming value with extras", () => {
-    expect(checkSchema(listDef, [{ pattern: "gate/*", category: "gate", extra: true }], { layer: false })).toEqual([]);
-  });
-
   test("layer check accepts a partial deep layer and still types what is present", () => {
     expect(checkSchema(deepDef, { enabled: false }, { layer: true })).toEqual([]);
-    const issues = checkSchema(deepDef, { enabled: "yes" }, { layer: true });
-    expect(issues[0]!.path).toEqual(["enabled"]);
+    expect(checkSchema(deepDef, { enabled: "yes" }, { layer: true })[0]!.path).toEqual(["enabled"]);
   });
 
   test("layer check keeps array items whole", () => {
-    const d = def({ key: "t.deepList", type: "object", merge: "deep", schema: z.looseObject({ rules: z.array(rule) }) });
-    const issues = checkSchema(d, { rules: [{ category: "gate" }] }, { layer: true });
-    expect(issues[0]!.path).toEqual(["rules", 0, "pattern"]);
+    const d = def({ key: "t.deepList", type: "object", merge: "deep", schema: { type: "object", properties: { rules: listSchema }, required: ["rules"] } });
+    d.layerSchema = layerJsonSchema(d.schema!);
+    expect(checkSchema(d, { rules: [{ category: "gate" }] }, { layer: true })[0]!.path).toEqual(["rules", 0, "pattern"]);
   });
 
-  test("full check rejects a partial layer of a deep key", () => {
+  test("full check rejects a partial layer of a deep key; a replace key ignores the layer flag", () => {
     expect(checkSchema(deepDef, { enabled: false }, { layer: false }).length).toBeGreaterThan(0);
+    expect(checkSchema(listDef, [{ category: "gate" }], { layer: true }).length).toBeGreaterThan(0);
   });
 });
 
@@ -211,7 +213,7 @@ describe("formatIssuePath and firstIssueText", () => {
   });
 
   test("firstIssueText joins path and message", () => {
-    expect(firstIssueText([{ path: [0, "pattern"], message: "expected string" }])).toBe("[0].pattern: expected string");
+    expect(firstIssueText([{ path: [0, "pattern"], message: "expected string, got number" }])).toBe("[0].pattern: expected string, got number");
     expect(firstIssueText([])).toBe("");
   });
 });
@@ -224,51 +226,42 @@ Expected: FAIL, `Cannot find module "../schema.ts"`.
 
 - [ ] **Step 4: Add the def fields**
 
-In `packages/rt-client/src/settings/registry-machinery.ts`, add at the top:
+In `registry-machinery.ts`, extend `SettingDef` after `pathGuardFields?: string[];`:
 
 ```ts
-import type { z } from "zod";
-```
-
-and extend `SettingDef` (after `pathGuardFields?: string[];`):
-
-```ts
-  /** The value a reader receives (merged, for deep keys). Required for object/array keys. */
-  schema?: z.ZodType;
-  /** Bumped only on a breaking schema change; the lock file and spec 3 read it. Default 1. */
+  /** JSON Schema of the value a reader receives (merged, for deep keys); attached from the lock. */
+  schema?: JsonSchema;
+  /** For deep-merge keys: `schema` with every object property optional, so one layer can be partial. */
+  layerSchema?: JsonSchema;
+  /** Bumped only on a breaking schema change; the lock file records it. Default 1. */
   storeVersion?: number;
 ```
 
-- [ ] **Step 5: Write `schema.ts`**
+with `import type { JsonSchema } from "./schema.ts";` at the top (a type import; `schema.ts` imports only the `SettingDef` type back, so there is no runtime cycle).
 
-Create `packages/rt-client/src/settings/schema.ts`:
+- [ ] **Step 5: Write `schema.ts`**
 
 ```ts
 /**
- * Schema checks for composite settings. The full schema describes the value
- * a reader receives; a deep-merge layer is checked against the derived layer
- * schema (every object property optional, array items whole) so a store that
- * sets one field is not refused. Layer checks run through the same JSON
- * Schema validator the browser uses, so the two never disagree.
+ * Runtime schema checks for composite settings, over the JSON Schema the
+ * registry attaches from the lock. The full schema describes the value a
+ * reader receives; a deep-merge layer is checked against the derived layer
+ * schema (object properties optional, array items whole) so a store that
+ * sets one field is not refused. The same validator runs in the browser.
  */
 
 import { Validator, type OutputUnit } from "@cfworker/json-schema";
-import { z } from "zod";
 import type { SettingDef } from "./registry-machinery.ts";
+
+export type JsonSchema = Record<string, unknown>;
 
 export interface SchemaIssue {
   path: (string | number)[];
   message: string;
 }
 
-export type JsonSchema = Record<string, unknown>;
-
-export function hasSchema(def: SettingDef): def is SettingDef & { schema: z.ZodType } {
+export function hasSchema(def: SettingDef): def is SettingDef & { schema: JsonSchema } {
   return def.schema !== undefined;
-}
-
-export function toJsonSchema(schema: z.ZodType): JsonSchema {
-  return z.toJSONSchema(schema, { io: "input" }) as JsonSchema;
 }
 
 /** Drops `required` at every object level except inside `items`/`prefixItems`. */
@@ -284,54 +277,63 @@ function relax(node: unknown, insideArray: boolean): unknown {
     if (k === "required" && !insideArray) continue;
     if (k === "items" || k === "prefixItems") out[k] = relax(v, true);
     else if (k === "properties" || k === "$defs" || k === "definitions") {
-      out[k] = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([pk, pv]) => [pk, relax(pv, false)]));
+      out[k] = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([pk, pv]) => [pk, relax(pv, insideArray)]));
     } else out[k] = relax(v, insideArray);
   }
   return out;
 }
 
-const jsonCache = new WeakMap<z.ZodType, { full: JsonSchema; layer: JsonSchema }>();
+const validators = new WeakMap<JsonSchema, Validator>();
 
-export function jsonSchemasFor(schema: z.ZodType): { full: JsonSchema; layer: JsonSchema } {
-  let hit = jsonCache.get(schema);
-  if (!hit) {
-    const full = toJsonSchema(schema);
-    hit = { full, layer: layerJsonSchema(full) };
-    jsonCache.set(schema, hit);
+function validatorFor(json: JsonSchema): Validator {
+  let v = validators.get(json);
+  if (!v) {
+    v = new Validator(json as never, "2020-12", false);
+    validators.set(json, v);
   }
-  return hit;
-}
-
-export function checkSchema(def: SettingDef, value: unknown, opts: { layer: boolean }): SchemaIssue[] {
-  if (!hasSchema(def)) return [];
-  if (opts.layer && def.merge === "deep" && def.type === "object") {
-    return validateJson(jsonSchemasFor(def.schema).layer, value);
-  }
-  const result = def.schema.safeParse(value);
-  if (result.success) return [];
-  return result.error.issues.map((i) => ({ path: i.path.map(normalizeSegment), message: i.message }));
+  return v;
 }
 
 /** Browser and server share this: a JSON Schema check with rt's issue shape. */
 export function validateJson(json: JsonSchema, value: unknown): SchemaIssue[] {
-  const v = new Validator(json as never, "2020-12", false);
-  const out = v.validate(value);
-  if (out.valid) return [];
-  return out.errors.map(toIssue);
+  const out = validatorFor(json).validate(value);
+  return out.valid ? [] : toIssues(out.errors);
 }
 
-function toIssue(unit: OutputUnit): SchemaIssue {
-  const path = unit.instanceLocation
+const SUMMARY_KEYWORDS = new Set(["properties", "items", "additionalProperties", "prefixItems", "allOf", "anyOf", "oneOf", "propertyNames"]);
+
+/** cfworker reports outer-first with a summary unit per container; only the deepest units are issues. */
+function toIssues(units: OutputUnit[]): SchemaIssue[] {
+  const leaves = units.filter(
+    (u) => !SUMMARY_KEYWORDS.has(u.keyword) && !units.some((o) => o !== u && o.instanceLocation.startsWith(`${u.instanceLocation}/`)),
+  );
+  return leaves.map((u) => {
+    const path = pointerToPath(u.instanceLocation);
+    if (u.keyword === "required") {
+      const name = /required property "([^"]+)"/.exec(u.error)?.[1];
+      return { path: name ? [...path, name] : path, message: `required property "${name ?? "?"}" is missing` };
+    }
+    if (u.keyword === "type") {
+      const m = /type "([^"]+)" is invalid\. Expected "([^"]+)"/.exec(u.error);
+      return { path, message: m ? `expected ${m[2]}, got ${m[1]}` : u.error };
+    }
+    return { path, message: u.error };
+  });
+}
+
+function pointerToPath(pointer: string): (string | number)[] {
+  return pointer
     .replace(/^#\/?/, "")
     .split("/")
     .filter((s) => s !== "")
     .map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"))
     .map((s) => (/^\d+$/.test(s) ? Number(s) : s));
-  return { path, message: unit.error };
 }
 
-function normalizeSegment(s: PropertyKey): string | number {
-  return typeof s === "number" ? s : String(s);
+export function checkSchema(def: SettingDef, value: unknown, opts: { layer: boolean }): SchemaIssue[] {
+  if (!hasSchema(def)) return [];
+  const json = opts.layer && def.merge === "deep" && def.type === "object" ? (def.layerSchema ?? layerJsonSchema(def.schema)) : def.schema;
+  return validateJson(json, value);
 }
 
 export function formatIssuePath(path: (string | number)[]): string {
@@ -345,197 +347,382 @@ export function firstIssueText(issues: SchemaIssue[]): string {
 }
 ```
 
-If `@cfworker/json-schema`'s `Validator` constructor signature differs from `(schema, draft, shortCircuit)` in 4.1.1, read `node_modules/@cfworker/json-schema/dist/validator.d.ts` and match it; do not guess.
+If cfworker's `required` or `type` wording in 4.1.1 differs from the two regexes, read `node_modules/@cfworker/json-schema/dist/validate.js` for the exact strings and match them; the normalized messages in the tests are the contract.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/schema.test.ts`
-Expected: PASS. If the "expected string" assertion fails because zod's message differs, print the message and adjust the assertion to the substring zod 4.6 actually emits (`expected string`), never the code.
+Expected: PASS.
 
-- [ ] **Step 7: Export and gate**
+- [ ] **Step 7: Export, barrel, gate**
 
-In `packages/rt-client/src/index.ts`, after line 172 add:
+In `packages/rt-client/src/index.ts`, after line 172:
 
 ```ts
-export { checkSchema, toJsonSchema, layerJsonSchema, jsonSchemasFor, validateJson, formatIssuePath, firstIssueText, hasSchema } from "./settings/schema.ts";
+export { checkSchema, validateJson, layerJsonSchema, formatIssuePath, firstIssueText, hasSchema } from "./settings/schema.ts";
 export type { SchemaIssue, JsonSchema } from "./settings/schema.ts";
 ```
 
+Create `lib/settings/schema.ts` with the one-line re-export the other `lib/settings/*.ts` files use, pointing at `../../packages/rt-client/src/settings/schema.ts`.
+
 Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages/rt-client/src/settings/__tests__/schema.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts && cd packages/rt-client && bun run build && cd ../..`
-Expected: all pass, build clean.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/rt-client/package.json bun.lock packages/rt-client/src/settings/registry-machinery.ts packages/rt-client/src/settings/schema.ts packages/rt-client/src/settings/__tests__/schema.test.ts packages/rt-client/src/index.ts
-git commit -m "feat(settings): schema fields, JSON Schema conversion and checkSchema
+git add package.json bun.lock packages/rt-client/package.json packages/rt-client/tsconfig.json packages/rt-client/src/settings/registry-machinery.ts packages/rt-client/src/settings/schema.ts packages/rt-client/src/settings/__tests__/schema.test.ts packages/rt-client/src/index.ts lib/settings/schema.ts
+git commit -m "feat(settings): runtime JSON Schema checks and schema fields on SettingDef
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 2: `validateWrite` and the merged-result check
+### Task 2: Authoring pipeline: zod schemas, the lock file, attach at startup, `rt settings schema lock`
 
 **Files:**
-- Create: `packages/rt-client/src/settings/validate-write.ts`
-- Modify: `packages/rt-client/src/settings/resolve.ts` (add `mergedValueWith`)
-- Modify: `packages/rt-client/src/settings/write.ts:143-148`
-- Test: `packages/rt-client/src/settings/__tests__/validate-write.test.ts`, `write.test.ts`
+- Create: `packages/rt-client/src/settings/registry-schemas.ts`, `schema-lock.ts`, `schema.lock.json`, `breaking-schema-changes.json`
+- Modify: `packages/rt-client/src/settings/registry-machinery.ts` (attach from the lock)
+- Create: `commands/settings-schema.ts`, `lib/settings/schema-lock.ts`
+- Modify: `lib/module-registry.ts`, `lib/command-tree-def.ts`
+- Test: `packages/rt-client/src/settings/__tests__/schema-lock.test.ts`, `registry.test.ts`, `packages/rt-client/test/no-zod-in-dist.test.ts`, `commands/__tests__/settings-schema.test.ts`
 
 **Interfaces:**
-- Consumes: `checkSchema`, `firstIssueText` (Task 1); `validateValue`; store fixtures as in `write.test.ts`.
 - Produces:
-  - `mergedValueWith(def, override: { scope: SettingScope; repoIdentity?: string; value: unknown }, opts: { repoIdentity?: string | null }): unknown` in `resolve.ts`: the merged value the resolver would produce if that store held `value`.
-  - `validateWrite(def, value, opts: { scope: SettingScope; repoIdentity?: string; team?: string }): { ok: true } | { ok: false; reason: string; issues: SchemaIssue[] }`.
-  - `setSetting` refuses with `validateWrite`'s reason.
+  - `SCHEMAS: Record<string, z.ZodType>` (empty object typed `satisfies Record<string, z.ZodType>` until Task 4) and `export type Value<K extends keyof typeof SCHEMAS> = z.infer<(typeof SCHEMAS)[K]>`
+  - `toJsonSchema(schema: z.ZodType): JsonSchema`
+  - `buildLock(): Lock` with `type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>`, keys sorted; `storeVersion` read from the def
+  - `LOCK_PATH` (absolute path of `schema.lock.json`)
+  - registry-machinery: `REGISTRY` entries get `schema` and (deep object keys) `layerSchema` from the lock at module init; `allDefs()`/`getDef()` return those
+  - CLI `rt settings schema lock` regenerates the file
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `packages/rt-client/src/settings/__tests__/validate-write.test.ts`:
+`schema-lock.test.ts` (the `buildLock` part; the classifier tests come in Task 11):
 
 ```ts
-/**
- * settings/validate-write.ts: the one write gate. Type check and path guard
- * as before, then the layer schema, then the merged result. HOME is
- * re-pointed per test (the write.test.ts pattern).
- */
-
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { dirname, join } from "path";
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
 import { z } from "zod";
-import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "../paths.ts";
-import { getDef, type SettingDef } from "../registry-machinery.ts";
-import { validateWrite } from "../validate-write.ts";
+import { buildLock, LOCK_PATH, toJsonSchema } from "../schema-lock.ts";
 
-const IDENTITY = "gitlab.example.com/acme/app";
-const TEAM = "acme";
-
-describe("settings/validateWrite", () => {
-  const origHome = process.env.HOME;
-  let home: string;
-
-  beforeEach(() => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "rt-settings-vw-")));
-    process.env.HOME = home;
+describe("toJsonSchema", () => {
+  test("uses input mode: a defaulted property is optional and loose objects allow extras", () => {
+    const json = toJsonSchema(z.looseObject({ a: z.string().default("x"), b: z.number() }));
+    expect(json.required).toEqual(["b"]);
+    expect(json.additionalProperties).not.toBe(false);
   });
-  afterEach(() => {
-    process.env.HOME = origHome;
-    rmSync(home, { recursive: true, force: true });
+  test("strict objects forbid extras", () => {
+    expect(toJsonSchema(z.strictObject({ a: z.string() })).additionalProperties).toBe(false);
   });
-
-  function write(file: string, obj: unknown): void {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify(obj, null, 2));
-  }
-
-  /** A temporary schema on a live def, restored afterwards (registry defs are shared objects). */
-  function withSchema(key: string, schema: z.ZodType, fn: () => void): void {
-    const def = getDef(key) as SettingDef;
-    const prev = def.schema;
-    def.schema = schema;
-    try { fn(); } finally { def.schema = prev; }
-  }
-
-  test("type check still comes first", () => {
-    const def = getDef("rt.homeSnapshot")!;
-    const r = validateWrite(def, "nope", { scope: "machine" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain("expected object");
+  test("carries .meta() through as annotations", () => {
+    const json = toJsonSchema(z.record(z.string(), z.string()).meta({ labels: { key: "remote URL", value: "identity" } }));
+    expect(json.labels).toEqual({ key: "remote URL", value: "identity" });
   });
+});
 
-  test("a partial deep layer at machine scope is allowed", () => {
-    withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
-      expect(validateWrite(getDef("rt.homeSnapshot")!, { enabled: false }, { scope: "machine" })).toEqual({ ok: true });
-    });
-  });
-
-  test("a wrongly typed field in a layer is refused with its path", () => {
-    withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
-      const r = validateWrite(getDef("rt.homeSnapshot")!, { enabled: "yes" }, { scope: "machine" });
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.reason).toContain("enabled:");
-    });
-  });
-
-  test("a replace key is checked against the full schema", () => {
-    withSchema("rt.repoRoots", z.array(z.string()), () => {
-      const r = validateWrite(getDef("rt.repoRoots")!, [1], { scope: "machine" });
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.reason).toContain("[0]:");
-    });
-  });
-
-  test("the merged result is refused only when it fails where it passed before", () => {
-    // rt.gitStatus: default {sweep, sweepIntervalSec, fetchIntervalSec}, scopes user+machine, deep.
-    withSchema("rt.gitStatus", z.looseObject({ sweep: z.boolean(), sweepIntervalSec: z.number().min(1), fetchIntervalSec: z.number() }), () => {
-      const def = getDef("rt.gitStatus")!;
-      // Merge passes today; a machine layer that breaks it is refused.
-      const bad = validateWrite(def, { sweepIntervalSec: 0 }, { scope: "machine" });
-      expect(bad.ok).toBe(false);
-      // Merge already broken by the user layer: an unrelated machine edit still lands.
-      write(userSettingsPath(), { "rt.gitStatus": { sweepIntervalSec: 0 } });
-      expect(validateWrite(def, { sweep: false }, { scope: "machine" })).toEqual({ ok: true });
-    });
-  });
-
-  test("a global write of a repo-scoped key checks every repo section's merge", () => {
-    withSchema("rt.worktrees", z.looseObject({ onDeck: z.number().min(0), name: z.string().optional() }), () => {
-      const def = getDef("rt.worktrees")!;
-      write(teamSettingsPath(TEAM), { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 2 } } } });
-      // Global user layer that is fine alone and fine merged with the repo section.
-      expect(validateWrite(def, { name: "x" }, { scope: "user" })).toEqual({ ok: true });
-      // The repo section merge would still pass, so a global change that only that repo overrides is fine.
-      expect(validateWrite(def, { onDeck: 1 }, { scope: "user" })).toEqual({ ok: true });
-    });
-  });
-
-  test("a repo section write checks that repo's merge", () => {
-    withSchema("rt.worktrees", z.looseObject({ onDeck: z.number().min(0) }), () => {
-      const def = getDef("rt.worktrees")!;
-      write(machineSettingsPath(), {});
-      const r = validateWrite(def, { onDeck: -1 }, { scope: "user", repoIdentity: IDENTITY });
-      expect(r.ok).toBe(false);
-    });
+describe("buildLock", () => {
+  test("is sorted and matches the committed lock byte for byte", () => {
+    const built = buildLock();
+    expect(Object.keys(built)).toEqual([...Object.keys(built)].sort());
+    expect(JSON.parse(readFileSync(LOCK_PATH, "utf8"))).toEqual(built);
   });
 });
 ```
 
-Add to `packages/rt-client/src/settings/__tests__/write.test.ts`, inside the outer `describe`, a new block:
+Add to `registry.test.ts`'s `allDefs` block:
 
 ```ts
-  describe("schema gate", () => {
-    test("setSetting refuses a value the schema rejects and names the path", () => {
-      const def = getDef("rt.repoRoots")!;
-      const prev = def.schema;
-      def.schema = z.array(z.string());
-      try {
-        expect(() => setSetting("rt.repoRoots", [1], "machine")).toThrow(/\[0\]:/);
-      } finally {
-        def.schema = prev;
+    test("every def with a lock entry carries its schema and storeVersion from the lock", () => {
+      const lock = JSON.parse(readFileSync(new URL("../schema.lock.json", import.meta.url), "utf8")) as Record<string, { storeVersion: number; schema: unknown }>;
+      for (const def of allDefs()) {
+        const entry = lock[def.key];
+        if (!entry) { expect(def.schema).toBeUndefined(); continue; }
+        expect(def.schema).toEqual(entry.schema);
+        expect(def.storeVersion ?? 1).toBe(entry.storeVersion);
+        if (def.merge === "deep" && def.type === "object") expect(def.layerSchema).toBeDefined();
       }
     });
-  });
 ```
 
-with `import { z } from "zod";` and `import { getDef } from "../registry-machinery.ts";` added to that file's imports.
+Create `packages/rt-client/test/no-zod-in-dist.test.ts`:
 
-- [ ] **Step 2: Run the tests to verify they fail**
+```ts
+/**
+ * zod authors the schemas at dev time only. The registry sits on rt's startup
+ * path, so the runtime bundle must never pull it in.
+ */
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+describe("dist/index.js", () => {
+  test("does not import zod", () => {
+    const js = readFileSync(join(import.meta.dir, "..", "dist", "index.js"), "utf8");
+    expect(js).not.toMatch(/from\s+["']zod["']|require\(["']zod["']\)/);
+  });
+});
+```
+
+`commands/__tests__/settings-schema.test.ts`: `settingsSchemaLock([])` rewrites `LOCK_PATH` to `JSON.stringify(buildLock(), null, 2) + "\n"` and prints the path (spy `console.log`); run it against a temp copy by passing `["--out", tmpFile]` so the test never touches the committed file.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test/no-zod-in-dist.test.ts commands/__tests__/settings-schema.test.ts`
+Expected: FAIL, modules missing.
+
+- [ ] **Step 3: Create the dev modules**
+
+`registry-schemas.ts`:
+
+```ts
+/**
+ * One zod schema per composite settings key: the value a reader receives.
+ * Authoring only: the lock file generated from this is what runs. Objects
+ * are loose unless a reader rejects unknown properties. Display metadata
+ * (labels, placeholders) rides on .meta() into the JSON Schema.
+ */
+
+import { z } from "zod";
+
+export const SCHEMAS = {} satisfies Record<string, z.ZodType>;
+
+export type Value<K extends keyof typeof SCHEMAS> = z.infer<(typeof SCHEMAS)[K]>;
+```
+
+`schema-lock.ts` (dev):
+
+```ts
+/**
+ * The schema lock: every composite key's storeVersion and JSON Schema,
+ * generated from the zod schemas and committed. It is both the CI record a
+ * breaking change is diffed against and the runtime source of every def's
+ * schema, so the two cannot disagree.
+ */
+
+import { fileURLToPath } from "url";
+import { z } from "zod";
+import { REGISTRY } from "./registry-defs.ts";
+import { SCHEMAS } from "./registry-schemas.ts";
+import type { JsonSchema } from "./schema.ts";
+
+export type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>;
+
+export const LOCK_PATH = fileURLToPath(new URL("./schema.lock.json", import.meta.url));
+
+export function toJsonSchema(schema: z.ZodType): JsonSchema {
+  return z.toJSONSchema(schema, { io: "input" }) as JsonSchema;
+}
+
+export function buildLock(): Lock {
+  const versions = new Map(REGISTRY.map((d) => [d.key, d.storeVersion ?? 1]));
+  const out: Lock = {};
+  for (const [key, schema] of Object.entries(SCHEMAS) as [string, z.ZodType][]) {
+    out[key] = { storeVersion: versions.get(key) ?? 1, schema: toJsonSchema(schema) };
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+```
+
+`registry-machinery.ts`: import the lock statically and attach:
+
+```ts
+import LOCK from "./schema.lock.json" with { type: "json" };
+import { layerJsonSchema, type JsonSchema } from "./schema.ts";
+
+type LockFile = Record<string, { storeVersion: number; schema: JsonSchema }>;
+
+function attachSchemas(defs: readonly SettingDef[]): SettingDef[] {
+  const lock = LOCK as LockFile;
+  return defs.map((def) => {
+    const entry = lock[def.key];
+    if (!entry) return def;
+    const withSchema: SettingDef = { ...def, schema: entry.schema, storeVersion: entry.storeVersion };
+    if (def.merge === "deep" && def.type === "object") withSchema.layerSchema = layerJsonSchema(entry.schema);
+    return withSchema;
+  });
+}
+
+const DEFS: readonly SettingDef[] = attachSchemas(REGISTRY);
+const BY_KEY: Map<string, SettingDef> = new Map(DEFS.map((def) => [def.key, def]));
+```
+
+and make `allDefs()` return `[...DEFS]`. `schema.ts` must import only the `SettingDef` type from `registry-machinery.ts` (it does), so the module graph stays acyclic at runtime. Change the `import type { JsonSchema }` from Task 1 into this value import of `layerJsonSchema` plus the type.
+
+Create `schema.lock.json` as `{}` for now, `breaking-schema-changes.json` as `{}`.
+
+`commands/settings-schema.ts`:
+
+```ts
+/**
+ * rt settings schema lock|diff: the lock file that pins every composite
+ * key's JSON Schema. Dev-time verbs; they load zod, which the rest of rt
+ * never does.
+ */
+
+import { writeFileSync } from "fs";
+import { buildLock, LOCK_PATH } from "../lib/settings/schema-lock.ts";
+
+function flagValue(args: string[], flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+export async function settingsSchemaLock(args: string[]): Promise<void> {
+  const out = flagValue(args, "--out") ?? LOCK_PATH;
+  writeFileSync(out, `${JSON.stringify(buildLock(), null, 2)}\n`);
+  console.log(out);
+}
+```
+
+(`settingsSchemaDiff` comes in Task 11.) Create `lib/settings/schema-lock.ts` as the one-line barrel. Register `"./commands/settings-schema.ts": () => import("../commands/settings-schema.ts")` in `lib/module-registry.ts`. Add under `settings` in `lib/command-tree-def.ts`:
+
+```ts
+      schema: {
+        description: "The settings schema lock: regenerate it from the registry, or diff the registry against a committed lock",
+        subcommands: {
+          lock: {
+            description: "Regenerate packages/rt-client/src/settings/schema.lock.json from the zod schemas",
+            module: "./commands/settings-schema.ts",
+            fn: "settingsSchemaLock",
+            args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
+          },
+        },
+      },
+```
+
+Run `bun run cli.ts settings schema lock` (it writes `{}` for now, formatted).
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run: `cd packages/rt-client && bun run build && cd ../.. && bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test/no-zod-in-dist.test.ts packages/rt-client/test/dist-freshness.test.ts commands/__tests__/settings-schema.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && bun scripts/bench-startup.ts`
+Expected: PASS; the startup bench stays under its threshold (it must, since nothing on the startup path imports zod).
+
+- [ ] **Step 5: Gate and commit**
+
+Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit`
+
+```bash
+git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/schema-lock.ts packages/rt-client/src/settings/schema.lock.json packages/rt-client/src/settings/breaking-schema-changes.json packages/rt-client/src/settings/registry-machinery.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test/no-zod-in-dist.test.ts commands/settings-schema.ts commands/__tests__/settings-schema.test.ts lib/settings/schema-lock.ts lib/module-registry.ts lib/command-tree-def.ts docs
+git commit -m "feat(settings): zod authoring pipeline, schema lock file attached at startup, rt settings schema lock
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 3: `validateWrite` and the merged-result check
+
+**Files:**
+- Create: `packages/rt-client/src/settings/validate-write.ts`
+- Modify: `packages/rt-client/src/settings/resolve.ts` (add `mergedValueWith`, `listStoreRepoIdentities`)
+- Modify: `packages/rt-client/src/settings/write.ts:144-149`
+- Test: `packages/rt-client/src/settings/__tests__/validate-write.test.ts`, `write.test.ts`
+
+**Interfaces:**
+- Consumes: `checkSchema`, `firstIssueText`, `layerJsonSchema` (Task 1); `validateValue`; the private `readStores`, `resolveDef`, `StoreBundle` in `resolve.ts`.
+- Produces:
+  - `mergedValueWith(def, override: { scope: SettingScope; repoIdentity?: string; value: unknown }, opts?: ResolveOpts): unknown`
+  - `listStoreRepoIdentities(): string[]`
+  - `validateWrite(def, value, opts: { scope: SettingScope; repoIdentity?: string; team?: string }): WriteVerdict` with `type WriteVerdict = { ok: true } | { ok: false; reason: string; issues: SchemaIssue[] }`
+  - `setSetting` refuses with `validateWrite`'s reason.
+
+Tests attach schemas to live defs for one assertion with this helper (defs are shared objects, the `withTeamLocked` pattern in `resolve.test.ts`):
+
+```ts
+import { layerJsonSchema } from "../schema.ts";
+function withSchema(key: string, schema: Record<string, unknown>, fn: () => void): void {
+  const def = getDef(key) as SettingDef;
+  const prev = { schema: def.schema, layer: def.layerSchema };
+  def.schema = schema;
+  def.layerSchema = def.merge === "deep" && def.type === "object" ? layerJsonSchema(schema) : undefined;
+  try { fn(); } finally { def.schema = prev.schema; def.layerSchema = prev.layer; }
+}
+```
+
+Put it in `packages/rt-client/src/settings/__tests__/with-schema.ts` and import it from every test that needs it (Tasks 3, 7, 10).
+
+- [ ] **Step 1: Write the failing tests**
+
+`validate-write.test.ts` (HOME re-pointed per test as in `write.test.ts`; fixtures `write(file, obj)` plus `writeUser`, `writeMachine`, `writeTeam(name, obj)` wrappers defined locally):
+
+```ts
+const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
+const GIT_STATUS = { type: "object", properties: { sweep: { type: "boolean" }, sweepIntervalSec: { type: "number", minimum: 1 }, fetchIntervalSec: { type: "number" } }, required: ["sweep", "sweepIntervalSec", "fetchIntervalSec"] };
+const WORKTREES = { type: "object", properties: { onDeck: { type: "number", minimum: 0 }, name: { type: "string" } }, required: ["onDeck"] };
+
+test("type check still comes first", () => {
+  const r = validateWrite(getDef("rt.homeSnapshot")!, "nope", { scope: "machine" });
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toContain("expected object");
+});
+
+test("a partial deep layer at machine scope is allowed", () => {
+  withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+    expect(validateWrite(getDef("rt.homeSnapshot")!, { enabled: false }, { scope: "machine" })).toEqual({ ok: true });
+  });
+});
+
+test("a wrongly typed field in a layer is refused with its path", () => {
+  withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+    const r = validateWrite(getDef("rt.homeSnapshot")!, { enabled: "yes" }, { scope: "machine" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("enabled: expected boolean, got string");
+  });
+});
+
+test("a replace key is checked against the full schema", () => {
+  withSchema("rt.repoRoots", { type: "array", items: { type: "string" } }, () => {
+    const r = validateWrite(getDef("rt.repoRoots")!, [1], { scope: "machine" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("[0]: expected string, got number");
+  });
+});
+
+test("the merged result is refused only when it fails where it passed before", () => {
+  withSchema("rt.gitStatus", GIT_STATUS, () => {
+    const def = getDef("rt.gitStatus")!;
+    const bad = validateWrite(def, { sweepIntervalSec: 0 }, { scope: "machine" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.reason).toContain("merged value would fail");
+    writeUser({ "rt.gitStatus": { sweepIntervalSec: 0 } });
+    expect(validateWrite(def, { sweep: false }, { scope: "machine" })).toEqual({ ok: true });
+  });
+});
+
+test("a global write of a repo-scoped key checks every repo section's merge", () => {
+  withSchema("rt.worktrees", WORKTREES, () => {
+    const def = getDef("rt.worktrees")!;
+    writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: 2 } } } });
+    expect(validateWrite(def, { name: "x" }, { scope: "user" })).toEqual({ ok: true });
+    writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: -1 } } } });
+    // The repo section already fails; an unrelated global edit still lands.
+    expect(validateWrite(def, { name: "y" }, { scope: "user" })).toEqual({ ok: true });
+  });
+});
+
+test("a repo section write checks that repo's merge", () => {
+  withSchema("rt.worktrees", WORKTREES, () => {
+    const r = validateWrite(getDef("rt.worktrees")!, { onDeck: -1 }, { scope: "user", repoIdentity: IDENTITY });
+    expect(r.ok).toBe(false);
+  });
+});
+```
+
+Add to `write.test.ts` a `schema gate` block: with `withSchema("rt.repoRoots", { type: "array", items: { type: "string" } }, ...)`, `setSetting("rt.repoRoots", [1], "machine")` throws matching `/\[0\]: expected string/`.
+
+- [ ] **Step 2: Run to verify they fail**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/write.test.ts`
-Expected: FAIL, `Cannot find module "../validate-write.ts"` and the write test's `toThrow` unmet.
+Expected: FAIL, module missing / no throw.
 
-- [ ] **Step 3: Add `mergedValueWith` to `resolve.ts`**
-
-Append to `packages/rt-client/src/settings/resolve.ts` (it can see `readStores`, `resolveDef`, `collectSlots` in-module):
+- [ ] **Step 3: Add `mergedValueWith` and `listStoreRepoIdentities` to `resolve.ts`**
 
 ```ts
 /**
  * The merged value the resolver would produce if `override.scope` (and its
- * repo section, when given) held `override.value`. Used by the write gate to
- * refuse a write that breaks the merge; reads never call it.
+ * repo section, when given) held `override.value`. The write gate uses it
+ * to refuse a write that breaks the merge; reads never call it.
  */
 export function mergedValueWith(
   def: SettingDef,
@@ -543,11 +730,7 @@ export function mergedValueWith(
   opts: ResolveOpts = {},
 ): unknown {
   const stores = readStores();
-  const patched: StoreBundle = {
-    user: cloneStore(stores.user),
-    machine: cloneStore(stores.machine),
-    teams: stores.teams.map(cloneStore),
-  };
+  const patched: StoreBundle = { user: cloneStore(stores.user), machine: cloneStore(stores.machine), teams: stores.teams.map(cloneStore) };
   const targets = override.scope === "team" ? patched.teams : [override.scope === "user" ? patched.user : patched.machine];
   for (const store of targets) {
     if (override.repoIdentity !== undefined) {
@@ -562,13 +745,19 @@ export function mergedValueWith(
 function cloneStore(store: StoreFile): StoreFile {
   return { ...store, global: { ...store.global }, repos: Object.fromEntries(Object.entries(store.repos).map(([k, v]) => [k, { ...v }])) };
 }
+
+/** Every repo identity that has a `repos.<id>` section in any store. */
+export function listStoreRepoIdentities(): string[] {
+  const stores = readStores();
+  const ids = new Set<string>();
+  for (const store of [stores.user, stores.machine, ...stores.teams]) for (const id of Object.keys(store.repos)) ids.add(id);
+  return [...ids].sort();
+}
 ```
 
-If `StoreBundle` is not already a named type in `resolve.ts`, name the existing `{ user, machine, teams }` shape `StoreBundle` where `readStores` is declared and use it here. A team write with no `opts.team` patches every team store; that matches `setSetting`'s single-team assumption today (one team is cloned) and the check only tightens if several exist.
+A team write with no `opts.team` patches every team store, matching `setSetting`'s single-team assumption.
 
 - [ ] **Step 4: Write `validate-write.ts`**
-
-Create `packages/rt-client/src/settings/validate-write.ts`:
 
 ```ts
 /**
@@ -584,11 +773,7 @@ import { getSetting, listStoreRepoIdentities, mergedValueWith } from "./resolve.
 
 export type WriteVerdict = { ok: true } | { ok: false; reason: string; issues: SchemaIssue[] };
 
-export function validateWrite(
-  def: SettingDef,
-  value: unknown,
-  opts: { scope: SettingScope; repoIdentity?: string; team?: string },
-): WriteVerdict {
+export function validateWrite(def: SettingDef, value: unknown, opts: { scope: SettingScope; repoIdentity?: string; team?: string }): WriteVerdict {
   const guarded: SettingDef = opts.scope === "machine" ? { ...def, pathGuardFields: undefined } : def;
   const typed = validateValue(guarded, value);
   if (!typed.ok) return { ok: false, reason: typed.reason, issues: [] };
@@ -600,12 +785,11 @@ export function validateWrite(
   const contexts: (string | null)[] =
     opts.repoIdentity !== undefined ? [opts.repoIdentity] : def.repoScoped ? [null, ...listStoreRepoIdentities()] : [null];
   for (const repoIdentity of contexts) {
-    const before = mergedNow(def, repoIdentity);
     const after = mergedValueWith(def, { scope: opts.scope, repoIdentity: opts.repoIdentity, value }, { repoIdentity, expand: false });
     const afterIssues = checkSchema(def, after, { layer: false });
     if (afterIssues.length === 0) continue;
-    const beforeIssues = before === undefined ? [] : checkSchema(def, before, { layer: false });
-    if (beforeIssues.length === 0) {
+    const before = mergedNow(def, repoIdentity);
+    if (before === undefined || checkSchema(def, before, { layer: false }).length === 0) {
       const where = repoIdentity ? ` for ${repoIdentity}` : "";
       return { ok: false, reason: `merged value${where} would fail: ${firstIssueText(afterIssues)}`, issues: afterIssues };
     }
@@ -622,54 +806,28 @@ function mergedNow(def: SettingDef, repoIdentity: string | null): unknown {
 }
 ```
 
-`listStoreRepoIdentities` is added in Task 6; for this task add the minimal version to `resolve.ts` now:
-
-```ts
-/** Every repo identity that has a `repos.<id>` section in any store. */
-export function listStoreRepoIdentities(): string[] {
-  const stores = readStores();
-  const ids = new Set<string>();
-  for (const store of [stores.user, stores.machine, ...stores.teams]) for (const id of Object.keys(store.repos)) ids.add(id);
-  return [...ids].sort();
-}
-```
-
 - [ ] **Step 5: Wire `setSetting`**
 
-In `packages/rt-client/src/settings/write.ts`, replace lines 143-148 (the `guardedDef`/`validateValue` block) with:
+In `write.ts`, replace the block at lines 144-149 (the `guardedDef` constant, the `validateValue` call and its `refuse`) with:
 
 ```ts
   const verdict = validateWrite(def, value, { scope, repoIdentity: opts.repoIdentity, team: opts.team });
   if (!verdict.ok) {
-    const hint = verdict.issues.length === 0 ? " — use ${team:<name>} or ${repoRoot} instead" : "";
+    const hint = verdict.issues.length === 0 ? "; use ${team:<name>} or ${repoRoot} instead" : "";
     refuse(`refusing to set "${key}": ${verdict.reason}${hint}`);
   }
 ```
 
-and import `validateWrite` from `./validate-write.ts`; drop the now-unused `validateValue` import if nothing else in the file uses it. Keep the existing refusal order (unknown key, unmigrated, scope, repoIdentity) above it.
+Import `validateWrite` from `./validate-write.ts`; remove the `validateValue` import if unused.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 6: Run to verify they pass, gate, commit**
 
-Run: `bun test packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts`
-Expected: PASS.
+Run: `bun test packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
 
-- [ ] **Step 7: Export and gate**
-
-In `packages/rt-client/src/index.ts` add:
-
-```ts
-export { validateWrite } from "./settings/validate-write.ts";
-export type { WriteVerdict } from "./settings/validate-write.ts";
-export { mergedValueWith, listStoreRepoIdentities } from "./settings/resolve.ts";
-```
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages/rt-client/src/settings packages/rt-client/test/index-surface.test.ts && cd packages/rt-client && bun run build && cd ../..`
-Expected: all pass.
-
-- [ ] **Step 8: Commit**
+Add to `index.ts`: `export { validateWrite } from "./settings/validate-write.ts"; export type { WriteVerdict } from "./settings/validate-write.ts";` and `mergedValueWith, listStoreRepoIdentities` to the `resolve.ts` export list.
 
 ```bash
-git add packages/rt-client/src/settings/validate-write.ts packages/rt-client/src/settings/resolve.ts packages/rt-client/src/settings/write.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/index.ts
+git add packages/rt-client/src/settings/validate-write.ts packages/rt-client/src/settings/resolve.ts packages/rt-client/src/settings/write.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/with-schema.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/index.ts
 git commit -m "feat(settings): validateWrite gates every write on the layer schema and the merged result
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -677,36 +835,33 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Schemas for the `rt.*` composite keys
+### Task 4: Schemas for the `rt.*` composite keys
 
 **Files:**
-- Create: `packages/rt-client/src/settings/registry-schemas.ts`
-- Modify: `packages/rt-client/src/settings/registry-defs.ts` (add `schema:` to each `rt.*` composite def)
-- Test: `packages/rt-client/src/settings/__tests__/schema-examples.test.ts`
+- Modify: `packages/rt-client/src/settings/registry-schemas.ts`, `schema.lock.json` (regenerated)
+- Create: `packages/rt-client/src/settings/__tests__/schema-examples.ts`, `schema-examples.test.ts`
 
 **Interfaces:**
-- Consumes: `z` from zod; `checkSchema` (Task 1).
-- Produces: `SCHEMAS: Record<string, z.ZodType>` with an entry for each key below; `EXAMPLES` table the test loops over (Task 4 and 5 extend both).
+- Consumes: `SCHEMAS`, `buildLock`, `rt settings schema lock` (Task 2); `checkSchema` (Task 1).
+- Produces: a `SCHEMAS` entry per key in the Task 4 list; `EXAMPLES` (good, bad with path, layer) per key.
 
-The 25 keys this task covers: `rt.roles`, `rt.intercepts`, `rt.worktrees`, `rt.ignoredMrs`, `rt.repoIdentityOverrides`, `rt.repoRoots`, `rt.notifications`, `rt.notify.eventBridges`, `rt.cron`, `rt.repoTracking`, `rt.runaway`, `rt.workspacePrefs`, `rt.homeSnapshot`, `rt.teamSnapshot`, `rt.sync`, `rt.branchNaming`, `rt.variations`, `rt.presets`, `rt.dopplerTemplate`, `rt.worktreeApp`, `rt.sdmEnrichment`, `rt.gitStatus`, `rt.hooks`, `rt.trustedBrowserOrigins`, `rt.integrations`.
+**Procedure for every schema (Tasks 4 to 6):**
 
-**How to write one schema (the same procedure for every key in Tasks 3 to 5):**
-
-1. Find the readers: `git grep -n '"<key>"' -- lib commands packages extensions` (the def's `description` often names the fields too). Read every reader's property access and type guards.
-2. Write the zod schema for the value a reader receives: `z.looseObject({...})` for objects (extras allowed), `z.array(...)` for lists, `z.record(z.string(), ...)` for maps. Use `z.strictObject` only when a reader rejects unknown properties. Enums become `z.enum([...])`. A property a reader treats as optional is `.optional()`; one with a fallback in the reader stays `.optional()` (the reader's fallback is not a schema default).
-3. Where two readers disagree, follow the more permissive and note the disagreement in the PR body, not in code.
-4. Declare properties in importance order (`pattern` before `title`): the first failing path in a refusal is the first declared.
-5. Add the key to `EXAMPLES` with at least one `good` value (the registry default or a realistic invented value), one `bad` value with the expected first path, and for a deep key one partial `layer` value.
+1. Find the readers: `git grep -n "<key>" -- lib commands packages extensions` (quote both `'rt.roles'` and `"rt.roles"` spellings: use `git grep -n "rt\.roles" -- lib commands packages extensions`). Suite keys' readers are in the apps repo: `git -C /Users/matt/Documents/GitHub/mattstack-apps grep -n "deck\.apps" -- apps/deck` (read-only, scoped to that app's directory; never edit anything there).
+2. Write the zod schema for the value a reader receives: `z.looseObject({...})` for objects, `z.array(...)` for lists, `z.record(z.string(), ...)` for maps, `z.strictObject` only when a reader rejects unknown properties, `z.enum([...])` for closed sets. A property a reader treats as optional or falls back on is `.optional()`.
+3. Where readers disagree, follow the more permissive and note it in the PR body.
+4. Declare properties in importance order (`pattern` before `title`).
+5. Add the `EXAMPLES` entry: at least one `good` (the registry default or an invented realistic value), one `bad` with its expected first path, and for a deep key one partial `layer`.
+6. Regenerate the lock: `bun run cli.ts settings schema lock`, then `cd packages/rt-client && bun run build && cd ../..`.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/rt-client/src/settings/__tests__/schema-examples.test.ts`:
+`schema-examples.test.ts`:
 
 ```ts
 /**
  * One good, one bad and (deep keys) one partial-layer example per composite
- * key, run through checkSchema. The completeness assertions land once every
- * namespace has its schemas.
+ * key, run through the runtime check. Completeness widens as namespaces land.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -714,16 +869,16 @@ import { allDefs, getDef } from "../registry-machinery.ts";
 import { checkSchema } from "../schema.ts";
 import { EXAMPLES } from "./schema-examples.ts";
 
+export const COVERED_PREFIXES = ["rt."];
+
 describe("schema examples", () => {
   for (const [key, ex] of Object.entries(EXAMPLES)) {
     describe(key, () => {
       test("has a schema", () => {
-        expect(getDef(key)?.schema, `${key} needs schema:`).toBeDefined();
+        expect(getDef(key)?.schema, `${key} needs a schema (add it to registry-schemas.ts and regenerate the lock)`).toBeDefined();
       });
       for (const [i, good] of ex.good.entries()) {
-        test(`good #${i} passes`, () => {
-          expect(checkSchema(getDef(key)!, good, { layer: false })).toEqual([]);
-        });
+        test(`good #${i} passes`, () => { expect(checkSchema(getDef(key)!, good, { layer: false })).toEqual([]); });
       }
       for (const [i, bad] of ex.bad.entries()) {
         test(`bad #${i} fails at ${JSON.stringify(bad.path)}`, () => {
@@ -733,9 +888,7 @@ describe("schema examples", () => {
         });
       }
       for (const [i, layer] of (ex.layer ?? []).entries()) {
-        test(`layer #${i} passes the layer schema`, () => {
-          expect(checkSchema(getDef(key)!, layer, { layer: true })).toEqual([]);
-        });
+        test(`layer #${i} passes the layer schema`, () => { expect(checkSchema(getDef(key)!, layer, { layer: true })).toEqual([]); });
       }
       test("the registry default, when present, passes", () => {
         const def = getDef(key)!;
@@ -745,24 +898,18 @@ describe("schema examples", () => {
     });
   }
 
-  test("every rt.* composite key has an example", () => {
-    const missing = allDefs()
-      .filter((d) => d.key.startsWith("rt.") && (d.type === "object" || d.type === "array"))
-      .map((d) => d.key)
-      .filter((k) => !(k in EXAMPLES));
-    expect(missing).toEqual([]);
+  test("every composite key in a covered namespace has a schema and an example", () => {
+    const covered = allDefs().filter((d) => (d.type === "object" || d.type === "array") && COVERED_PREFIXES.some((p) => d.key.startsWith(p)));
+    expect(covered.filter((d) => !d.schema).map((d) => d.key)).toEqual([]);
+    expect(covered.map((d) => d.key).filter((k) => !(k in EXAMPLES))).toEqual([]);
   });
 });
 ```
 
-Create `packages/rt-client/src/settings/__tests__/schema-examples.ts` with the table. Entries this task must fill in full; the five below are complete and the rest follow the same shape after reading each key's readers:
+`schema-examples.ts` (five complete entries; the other 20 `rt.*` keys follow the same shape after reading their readers):
 
 ```ts
-export interface Example {
-  good: unknown[];
-  bad: { value: unknown; path: (string | number)[] }[];
-  layer?: unknown[];
-}
+export interface Example { good: unknown[]; bad: { value: unknown; path: (string | number)[] }[]; layer?: unknown[] }
 
 export const EXAMPLES: Record<string, Example> = {
   "rt.notify.eventBridges": {
@@ -780,10 +927,7 @@ export const EXAMPLES: Record<string, Example> = {
     good: [{}, { "git@gitlab.example.com:acme/app.git": "gitlab.example.com/acme/app" }],
     bad: [{ value: { "git@gitlab.example.com:acme/app.git": 1 }, path: ["git@gitlab.example.com:acme/app.git"] }],
   },
-  "rt.repoRoots": {
-    good: [[], ["~/Documents/GitHub"]],
-    bad: [{ value: [1], path: [0] }],
-  },
+  "rt.repoRoots": { good: [[], ["~/Documents/GitHub"]], bad: [{ value: [1], path: [0] }] },
   "rt.homeSnapshot": {
     good: [{ enabled: true, debounceSec: 20, pushDelaySec: 60, janitorThresholdHours: 6, janitorIntervalMin: 30 }],
     bad: [{ value: { enabled: "yes", debounceSec: 20, pushDelaySec: 60, janitorThresholdHours: 6, janitorIntervalMin: 30 }, path: ["enabled"] }],
@@ -794,38 +938,22 @@ export const EXAMPLES: Record<string, Example> = {
     bad: [{ value: { sweep: true, sweepIntervalSec: "300", fetchIntervalSec: 900 }, path: ["sweepIntervalSec"] }],
     layer: [{ sweep: false }],
   },
-  // ... one entry per remaining rt.* composite key, same shape.
 };
 ```
 
-Fixture values must be invented (`example.com`, `acme`), never copied from a real store.
-
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run to verify it fails**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts`
-Expected: FAIL, `has a schema` fails for every key.
+Expected: FAIL, `has a schema` and completeness.
 
 - [ ] **Step 3: Write the schemas**
 
-Create `packages/rt-client/src/settings/registry-schemas.ts`. The five keys above are complete; write the other 20 by the procedure:
+In `registry-schemas.ts` (the five below are complete; write the other 20 by the procedure):
 
 ```ts
-/**
- * One zod schema per composite settings key: the value a reader receives.
- * Objects are loose unless a reader rejects unknown properties. Display
- * metadata (labels, placeholders) rides on .meta() into the JSON Schema.
- */
-
-import { z } from "zod";
 import { NOTIFICATION_EVENT_KEYS } from "./notification-events.ts";
 
-const snapshot = {
-  enabled: z.boolean(),
-  debounceSec: z.number(),
-  pushDelaySec: z.number(),
-  janitorThresholdHours: z.number(),
-  janitorIntervalMin: z.number(),
-};
+const snapshot = { enabled: z.boolean(), debounceSec: z.number(), pushDelaySec: z.number(), janitorThresholdHours: z.number(), janitorIntervalMin: z.number() };
 
 export const SCHEMAS = {
   "rt.notify.eventBridges": z.array(
@@ -840,42 +968,31 @@ export const SCHEMAS = {
       surface: z.string().optional(),
     }),
   ),
-  "rt.repoIdentityOverrides": z
-    .record(z.string(), z.string())
-    .meta({ labels: { key: "remote URL", value: "identity" } }),
+  "rt.repoIdentityOverrides": z.record(z.string(), z.string()).meta({ labels: { key: "remote URL", value: "identity" } }),
   "rt.repoRoots": z.array(z.string()),
   "rt.homeSnapshot": z.looseObject(snapshot),
   "rt.teamSnapshot": z.looseObject({ ...snapshot, pullIntervalSec: z.number() }),
   "rt.gitStatus": z.looseObject({ sweep: z.boolean(), sweepIntervalSec: z.number(), fetchIntervalSec: z.number() }),
   "rt.notifications": z.looseObject(Object.fromEntries(NOTIFICATION_EVENT_KEYS.map((k) => [k, z.boolean().optional()]))),
   "rt.trustedBrowserOrigins": z.array(z.string()),
-  "rt.worktreeApp": z.looseObject({
-    enabled: z.boolean().optional(),
-    killProcesses: z.boolean().optional(),
-    claudeHook: z.enum(["installed", "declined"]).optional(),
-  }),
-  // rt.roles, rt.intercepts, rt.worktrees, rt.ignoredMrs, rt.cron, rt.repoTracking,
-  // rt.runaway, rt.workspacePrefs, rt.sync, rt.branchNaming, rt.variations, rt.presets,
-  // rt.dopplerTemplate, rt.sdmEnrichment, rt.hooks, rt.integrations: read each key's
-  // readers (procedure in the plan) and declare them here in the same style.
+  "rt.worktreeApp": z.looseObject({ enabled: z.boolean().optional(), killProcesses: z.boolean().optional(), claudeHook: z.enum(["installed", "declined"]).optional() }),
+  // the remaining rt.* keys, each from its readers
 } satisfies Record<string, z.ZodType>;
 ```
 
-Check `NOTIFICATION_EVENT_KEYS` is the exported name in `notification-events.ts` (index.ts exports it as such); if the module exports a differently named list, use that name.
+Then regenerate the lock and rebuild (procedure step 6).
 
-Then in `registry-defs.ts` import `SCHEMAS` and add `schema: SCHEMAS["<key>"],` to each of the 25 `rt.*` composite defs.
+- [ ] **Step 4: Run to verify they pass**
 
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/settings/__tests__/write.test.ts`
-Expected: PASS. A failure in `resolve.test.ts` or `write.test.ts` means a fixture there writes a value the new schema rejects: since reads only label, resolve tests must still pass; a write test fixture that now fails the schema is a real finding, so make the fixture conform and say so in the PR body.
+Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/settings/__tests__/write.test.ts lib/__tests__/notification-shape-parity.test.ts lib/worktree/__tests__ lib/setup/__tests__ commands/__tests__/hooks.test.ts lib/__tests__/notifier.test.ts lib/__tests__/repo-tracking.test.ts lib/__tests__/run-presets.test.ts lib/__tests__/variations.test.ts lib/team/__tests__`
+Expected: PASS. Any test file in that list that does not exist is dropped from the command; any that fails because a fixture writes a value the new schema rejects is a real finding: make the fixture conform and say so in the PR body (rt's own writers now pass through `validateWrite`).
 
 - [ ] **Step 5: Gate and commit**
 
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages/rt-client/test/dist-freshness.test.ts`
 
 ```bash
-git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/registry-defs.ts packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts
+git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/schema.lock.json packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts
 git commit -m "feat(settings): schemas for the rt.* composite keys
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -883,42 +1000,36 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Schemas for `mattstack.*`, `setup.*`, `claude.*` and `deck.*` keys
+### Task 5: Schemas for `mattstack.*`, `setup.*`, `claude.*` and `deck.*` keys
 
-**Files:**
-- Modify: `packages/rt-client/src/settings/registry-schemas.ts`, `registry-defs.ts`
-- Modify: `packages/rt-client/src/settings/__tests__/schema-examples.ts`, `schema-examples.test.ts`
+**Files:** as Task 4 (`registry-schemas.ts`, `schema.lock.json`, `schema-examples.ts`, `schema-examples.test.ts`).
 
-**Interfaces:**
-- Consumes: Task 3's `SCHEMAS`, `EXAMPLES` and procedure.
-- Produces: entries for `mattstack.integrations`, `mattstack.tracking`, `mattstack.roster`, `setup.waived`, `claude.marketplaces`, `claude.plugins`, `deck.apps`, `deck.access`, `deck.platform`.
+- [ ] **Step 1: Extend coverage**
 
-Readers for the suite keys live in the apps repo. Read them in place, read-only and scoped: `git -C /Users/matt/Documents/GitHub/mattstack-apps grep -n '"deck.apps"' -- apps/deck/src` and the same for each key (`apps/deck`, `apps/board`, `apps/boxscore`); `mattstack.*` and `claude.*` readers are in this repo (`lib/team`, `lib/setup`, `lib/skills`). Do not edit anything in the apps repo.
-
-- [ ] **Step 1: Extend the completeness test**
-
-In `schema-examples.test.ts`, change the `every rt.* composite key has an example` test's filter to `["rt.", "mattstack.", "setup.", "claude.", "deck."].some((p) => d.key.startsWith(p))` and rename it `every rt, mattstack, setup, claude and deck composite key has an example`.
+In `schema-examples.test.ts`, set `COVERED_PREFIXES = ["rt.", "mattstack.", "setup.", "claude.", "deck."]`.
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts`
-Expected: FAIL, the completeness test lists the nine keys.
+Expected: FAIL, completeness lists the nine keys.
 
 - [ ] **Step 3: Write the nine schemas and examples**
 
-Follow Task 3's procedure. `setup.waived` is `z.array(z.string())`. `mattstack.roster` is an array of member objects (read `lib/team` for the fields); `deck.apps` is a map of app name to app record (read `apps/deck/src` for `port`, `dir`, `kind` and the rest), written as `z.record(z.string(), z.looseObject({...}))`. Add `schema:` to each def and an `EXAMPLES` entry with good, bad and (deep keys) layer values.
+Follow the procedure. Known facts:
+- `setup.waived` is `z.array(z.string())`.
+- `deck.apps`'s reader is `apps/deck/core/settings.ts` in the apps repo (`AppEntry`: `published?`, `passwordHash?`, `passwordVersion?`, `override?: PortOverride`, `publicFollowsOverride?`), a map of app name to entry: `z.record(z.string(), z.looseObject({ published: z.boolean().optional(), passwordHash: z.string().optional(), passwordVersion: z.number().optional(), override: z.looseObject({ ...the PortOverride fields }).optional(), publicFollowsOverride: z.boolean().optional() }))`. Read `PortOverride` there for its fields. Because `override` is nested, settings-kit recognizes this key as `json`, not `objectMap`; that is expected.
+- `deck.access`, `deck.platform`: readers under `apps/deck/core` and `apps/deck/src/api/platform-settings.ts`.
+- `mattstack.roster`, `mattstack.integrations`, `mattstack.tracking`: readers under `lib/team`, `lib/setup`, `lib/repo-tracking.ts`.
+- `claude.marketplaces`, `claude.plugins`: readers under `lib/setup`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Regenerate the lock and rebuild.
 
-Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts`
-Expected: PASS.
+- [ ] **Step 4: Run to verify they pass, gate, commit**
 
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts lib/team/__tests__ lib/setup/__tests__ lib/__tests__/repo-tracking.test.ts packages/rt-client/test/dist-freshness.test.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
 
 ```bash
-git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/registry-defs.ts packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts
+git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/schema.lock.json packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts
 git commit -m "feat(settings): schemas for the mattstack, setup, claude and deck keys
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -926,19 +1037,17 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Schemas for `board.*`, `boxscore.*`, `gitq.*` keys, display metadata, and registry completeness
+### Task 6: Schemas for `board.*`, `boxscore.*`, `gitq.*` keys, display metadata, registry completeness
 
-**Files:**
-- Modify: `packages/rt-client/src/settings/registry-schemas.ts`, `registry-defs.ts`
-- Modify: `packages/rt-client/src/settings/__tests__/schema-examples.ts`, `schema-examples.test.ts`, `registry.test.ts`
+**Files:** as Task 4, plus `registry.test.ts`, and a frozen copy of today's `SHAPES`: create `packages/settings-kit/src/__tests__/shapes-legacy-fixture.ts`.
 
-**Interfaces:**
-- Consumes: Task 3's procedure; settings-kit's current `SHAPES` (`packages/settings-kit/src/shapes.ts`) as the source of `labels`, `fallbacks` and leaf field lists to preserve.
-- Produces: entries for the 21 keys: `board.projects`, `board.members`, `board.botUsernames`, `board.ticketPrefixes`, `board.slack`, `board.tabs`, `board.workspaces`, `board.hiddenMembers`, `board.triage`, `board.reReview`, `board.cwds`, `boxscore.projects`, `boxscore.linearDoneStates`, `boxscore.sizeBand`, `boxscore.excludeFilePatterns`, `boxscore.ignoredMrs`, `boxscore.botPatterns`, `boxscore.hiddenMembers`, `gitq.workSlots`, `gitq.forges`, `gitq.board`. Metadata convention: `.meta({ placeholder: "eyes" })` on a property; `.meta({ labels: { key, value } })` on a record; `.meta({ title, description })` where the property name is not enough.
+- [ ] **Step 1: Freeze today's SHAPES**
 
-- [ ] **Step 1: Make completeness cover every composite key**
+Before touching settings-kit, copy the current `SHAPES` object from `packages/settings-kit/src/shapes.ts` (every entry: `kind`, `fields`, `labels`, `fallbacks`, `app`) verbatim into `shapes-legacy-fixture.ts` as `export const LEGACY_SHAPES = { ... } as const;` (import the `LeafType` type and `NOTIFICATION_EVENTS` / `DEFAULT_SLACK_EMOJI` from `../shapes.ts` so the object evaluates identically). Task 9 asserts `recognize` against it.
 
-In `schema-examples.test.ts`, replace the namespace-filtered completeness test with:
+- [ ] **Step 2: Make completeness total**
+
+In `schema-examples.test.ts`, replace the covered-namespace test with:
 
 ```ts
   test("every composite key has a schema and an example", () => {
@@ -946,13 +1055,9 @@ In `schema-examples.test.ts`, replace the namespace-filtered completeness test w
     expect(composite.filter((d) => !d.schema).map((d) => d.key)).toEqual([]);
     expect(composite.map((d) => d.key).filter((k) => !(k in EXAMPLES))).toEqual([]);
   });
-
-  test("every schema converts to JSON Schema", () => {
-    for (const d of allDefs()) if (d.schema) expect(() => toJsonSchema(d.schema!)).not.toThrow();
-  });
 ```
 
-with `toJsonSchema` imported from `../schema.ts`. Add to `registry.test.ts`'s `allDefs` block:
+Add to `registry.test.ts`:
 
 ```ts
     test("every object or array def carries a schema", () => {
@@ -963,14 +1068,14 @@ with `toJsonSchema` imported from `../schema.ts`. Add to `registry.test.ts`'s `a
     });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 3: Run to verify it fails**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts`
 Expected: FAIL naming the 21 keys.
 
-- [ ] **Step 3: Write the schemas with metadata**
+- [ ] **Step 4: Write the schemas with metadata**
 
-Examples that must appear exactly (the rest follow the same style):
+Field lists and metadata for the keys `LEGACY_SHAPES` covers must reproduce it: the same leaf paths, the same `labels`, the same `fallbacks` as `placeholder`. Exact entries:
 
 ```ts
   "board.slack": z.looseObject({
@@ -979,13 +1084,11 @@ Examples that must appear exactly (the rest follow the same style):
     multiHeader: z.string().optional(),
     multiItem: z.string().optional(),
     autoResolveIntervalMinutes: z.number().optional(),
-    emoji: z
-      .looseObject({
-        looking: z.string().optional().meta({ placeholder: "eyes" }),
-        commented: z.string().optional().meta({ placeholder: "speech_balloon" }),
-        approved: z.string().optional().meta({ placeholder: "white_check_mark" }),
-      })
-      .optional(),
+    emoji: z.looseObject({
+      looking: z.string().optional().meta({ placeholder: "eyes" }),
+      commented: z.string().optional().meta({ placeholder: "speech_balloon" }),
+      approved: z.string().optional().meta({ placeholder: "white_check_mark" }),
+    }).optional(),
   }),
   "board.triage": z.looseObject({
     enabled: z.boolean().optional(),
@@ -993,36 +1096,36 @@ Examples that must appear exactly (the rest follow the same style):
     dailyAttemptBudget: z.number().optional(),
     notify: z.enum(["rt", "badge-only"]).optional(),
     tier: z.enum(["api", "checkout"]).optional(),
-    fixClasses: z
-      .looseObject({
-        retryFlake: z.boolean().optional(),
-        inheritedNoteDraft: z.boolean().optional(),
-        cleanApiRebase: z.boolean().optional(),
-        mechanicalLint: z.boolean().optional(),
-        codeFix: z.boolean().optional(),
-      })
-      .optional(),
+    fixClasses: z.looseObject({
+      retryFlake: z.boolean().optional(), inheritedNoteDraft: z.boolean().optional(), cleanApiRebase: z.boolean().optional(),
+      mechanicalLint: z.boolean().optional(), codeFix: z.boolean().optional(),
+    }).optional(),
   }),
+  "board.workspaces": z.looseObject({ reviews: z.string().optional(), responds: z.string().optional(), doctors: z.string().optional() }),
+  "board.cwds": z.looseObject({ review: z.string().optional(), respond: z.string().optional(), doctor: z.string().optional() }),
+  "board.reReview": z.looseObject({ enabled: z.boolean().optional() }),
   "board.projects": z.array(z.string()),
+  "board.botUsernames": z.array(z.string()),
+  "board.ticketPrefixes": z.array(z.string()),
+  "boxscore.projects": z.array(z.string()),
+  "boxscore.linearDoneStates": z.array(z.string()),
+  "boxscore.excludeFilePatterns": z.array(z.string()),
+  "boxscore.ignoredMrs": z.array(z.string()),
+  "boxscore.botPatterns": z.array(z.string()),
   "boxscore.sizeBand": z.looseObject({ tooSmall: z.number().optional(), tooLarge: z.number().optional() }),
   "gitq.workSlots": z.looseObject({ workSlotLocation: z.string().optional(), maxWorkSlots: z.number().optional() }),
 ```
 
-`board.members`, `board.tabs`, `board.hiddenMembers` (the `external` keys) still need schemas describing the value board writes; read `apps/board/src` for their shapes.
+`board.members`, `board.tabs`, `board.hiddenMembers`, `boxscore.hiddenMembers`, `gitq.forges`, `gitq.board`: read `apps/board/src`, `apps/boxscore`, and the gitq repo's `src/core` (read-only, scoped) for their shapes.
 
-The placeholders come from `DEFAULT_SLACK_EMOJI` in settings-kit; keep the literal strings here (rt-client cannot import settings-kit) and Task 8 adds a parity test in settings-kit.
+Regenerate the lock and rebuild.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 5: Run to verify they pass, gate, commit**
 
-Run: `bun test packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/settings/__tests__/write.test.ts lib/__tests__/notification-shape-parity.test.ts`
-Expected: PASS.
-
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Run: `bun test packages/rt-client/src/settings/__tests__ packages/rt-client/test/dist-freshness.test.ts lib/__tests__/notification-shape-parity.test.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
 
 ```bash
-git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/registry-defs.ts packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts
+git add packages/rt-client/src/settings/registry-schemas.ts packages/rt-client/src/settings/schema.lock.json packages/rt-client/src/settings/__tests__/schema-examples.ts packages/rt-client/src/settings/__tests__/schema-examples.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/settings-kit/src/__tests__/shapes-legacy-fixture.ts
 git commit -m "feat(settings): schemas for board, boxscore and gitq keys; every composite key now has one
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -1030,34 +1133,33 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Lenient read labeling, list/explain rendering, and store helpers
+### Task 7: Lenient read labeling, list/explain rendering, store helpers
 
 **Files:**
-- Modify: `packages/rt-client/src/settings/resolve.ts` (`ExplainRow`, `ListedSetting`, `Resolution`, `resolveDef`, `listSettings`; add `listUnregisteredSettings`, `repoSectionsFor`)
-- Modify: `commands/settings-keys.ts:428-447` and `:485-495`
+- Modify: `packages/rt-client/src/settings/resolve.ts`
+- Modify: `commands/settings-keys.ts:428-447`, `:485-495`
 - Test: `packages/rt-client/src/settings/__tests__/resolve.test.ts`, `commands/__tests__/settings-keys-render.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `checkSchema`, `SchemaIssue` (Task 1); schemas (Tasks 3 to 5).
 - Produces:
-  - `ExplainRow.nonconforming?: SchemaIssue[]` (a present, applied row whose layer fails its schema)
+  - `ExplainRow.nonconforming?: SchemaIssue[]`
   - `Resolution.mergedIssues: SchemaIssue[]`; `ListedSetting.nonconforming?: { scope: Scope; file: string | null; issues: SchemaIssue[] }[]`; `ListedSetting.mergedIssues?: SchemaIssue[]`
-  - `listUnregisteredSettings(opts?: ResolveOpts): { key: string; scope: Scope; file: string }[]`
+  - `listUnregisteredSettings(opts?: ResolveOpts): { key: string; scope: Scope; file: string }[]` (walks every repo section as well as the global sections, so no `repoIdentity` is needed to see repo leftovers; `scope` is the rung the key sat in)
   - `repoSectionsFor(key: string): { identity: string; scopes: SettingScope[] }[]`
+
+`resolve.test.ts` has only `write(file, obj)`; add `writeUser`, `writeMachine`, `writeTeam(name, obj)` wrappers beside it, and change its `IDENTITY` constant to `gitlab.example.com/acme/app` (update the assertions that embed it).
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `resolve.test.ts` (inside the top-level `describe`, using its `writeUser`/`writeMachine`/`writeTeam` helpers and the `withSchema` helper copied from Task 2's test):
+Add to `resolve.test.ts` (using `withSchema` from `./with-schema.ts` and `SNAPSHOT` as in Task 3):
 
 ```ts
   describe("schema labeling (lenient reads)", () => {
     test("a nonconforming layer stays in effect and is labeled, never skipped", () => {
-      withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
         writeMachine({ "rt.homeSnapshot": { enabled: "yes" } });
-        const resolved = getSetting<{ enabled: unknown }>("rt.homeSnapshot");
-        expect(resolved.value.enabled).toBe("yes");
-        const rows = explainSetting("rt.homeSnapshot");
-        const machine = rows.find((r) => r.scope === "machine")!;
+        expect(getSetting<{ enabled: unknown }>("rt.homeSnapshot").value.enabled).toBe("yes");
+        const machine = explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!;
         expect(machine.invalid).toBeUndefined();
         expect(machine.nonconforming?.[0]?.path).toEqual(["enabled"]);
       });
@@ -1065,19 +1167,18 @@ Add to `resolve.test.ts` (inside the top-level `describe`, using its `writeUser`
 
     test("a type-invalid layer is still skipped and labeled invalid", () => {
       writeMachine({ "rt.homeSnapshot": "nope" });
-      const rows = explainSetting("rt.homeSnapshot");
-      expect(rows.find((r) => r.scope === "machine")!.invalid).toContain("expected object");
+      expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.invalid).toContain("expected object");
     });
 
     test("a partial deep layer is not labeled", () => {
-      withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
         writeMachine({ "rt.homeSnapshot": { enabled: false } });
         expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.nonconforming).toBeUndefined();
       });
     });
 
     test("listSettings carries nonconforming layers and merged issues", () => {
-      withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
         writeMachine({ "rt.homeSnapshot": { enabled: "yes" } });
         const row = listSettings().find((s) => s.key === "rt.homeSnapshot")!;
         expect(row.nonconforming?.[0]?.scope).toBe("machine");
@@ -1087,10 +1188,11 @@ Add to `resolve.test.ts` (inside the top-level `describe`, using its `writeUser`
   });
 
   describe("store helpers", () => {
-    test("listUnregisteredSettings names unknown keys with scope and file", () => {
-      writeMachine({ "board.rtRepos": [] });
+    test("listUnregisteredSettings names unknown keys in global and repo sections", () => {
+      writeMachine({ "board.rtRepos": [], repos: { [IDENTITY]: { "board.oldKey": 1 } } });
       const found = listUnregisteredSettings();
       expect(found.find((f) => f.key === "board.rtRepos")?.scope).toBe("machine");
+      expect(found.find((f) => f.key === "board.oldKey")?.scope).toBe("machine.repo");
     });
 
     test("repoSectionsFor reports which stores set a key per repo", () => {
@@ -1101,9 +1203,7 @@ Add to `resolve.test.ts` (inside the top-level `describe`, using its `writeUser`
   });
 ```
 
-Import `z`, `listUnregisteredSettings`, `repoSectionsFor` at the top of the file; `IDENTITY` in that file must be `gitlab.example.com/acme/app` (change the constant if it is not).
-
-Create `commands/__tests__/settings-keys-render.test.ts`:
+`commands/__tests__/settings-keys-render.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -1113,50 +1213,30 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 describe("settings-keys rendering", () => {
   test("explain shows a nonconforming layer with its first issue", () => {
-    const line = strip(renderExplainRow({
-      scope: "machine", file: "/tmp/settings.local.jsonc", present: true, value: { enabled: "yes" },
-      nonconforming: [{ path: ["enabled"], message: "expected boolean" }],
-    }));
-    expect(line).toContain("[nonconforming: enabled: expected boolean]");
+    const line = strip(renderExplainRow({ scope: "machine", file: "/tmp/settings.local.jsonc", present: true, value: { enabled: "yes" }, nonconforming: [{ path: ["enabled"], message: "expected boolean, got string" }] }));
+    expect(line).toContain("[nonconforming: enabled: expected boolean, got string]");
   });
 
   test("list labels nonconforming layers and merged issues", () => {
     const line = strip(renderListRow({
       key: "rt.homeSnapshot", value: { enabled: "yes" }, provenance: [{ scope: "machine", file: "/tmp/x" }], migrated: true,
-      nonconforming: [{ scope: "machine", file: "/tmp/x", issues: [{ path: ["enabled"], message: "expected boolean" }] }],
-      mergedIssues: [{ path: ["enabled"], message: "expected boolean" }],
+      nonconforming: [{ scope: "machine", file: "/tmp/x", issues: [{ path: ["enabled"], message: "expected boolean, got string" }] }],
+      mergedIssues: [{ path: ["enabled"], message: "expected boolean, got string" }],
     }));
-    expect(line).toContain("nonconforming[machine]: enabled: expected boolean");
-    expect(line).toContain("merged: enabled: expected boolean");
+    expect(line).toContain("nonconforming[machine]: enabled: expected boolean, got string");
+    expect(line).toContain("merged: enabled: expected boolean, got string");
   });
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run to verify they fail**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/resolve.test.ts commands/__tests__/settings-keys-render.test.ts`
-Expected: FAIL on the new cases (missing exports and labels).
+Expected: FAIL on the new cases.
 
-- [ ] **Step 3: Implement labeling in `resolve.ts`**
+- [ ] **Step 3: Implement in `resolve.ts`**
 
-Types:
-
-```ts
-export interface ExplainRow {
-  // existing fields ...
-  /** The layer fails its schema; it still applies (reads never skip on the schema). */
-  nonconforming?: SchemaIssue[];
-}
-
-export interface ListedSetting {
-  // existing fields ...
-  nonconforming?: { scope: Scope; file: string | null; issues: SchemaIssue[] }[];
-  /** The merged value fails the full schema. */
-  mergedIssues?: SchemaIssue[];
-}
-```
-
-In `resolveDef`, after the `validateForScope` check passes (before `rows.push(row); applied.push(...)`):
+Types: add `nonconforming?: SchemaIssue[]` to `ExplainRow`; `nonconforming?` and `mergedIssues?` to `ListedSetting` (shapes above); `mergedIssues: SchemaIssue[]` to `Resolution`. In `resolveDef`, after the `validateForScope` check passes and before `rows.push(row); applied.push(...)`:
 
 ```ts
     if (slot.scope !== "default") {
@@ -1172,21 +1252,27 @@ After `mergeApplied`:
   return { value: merged.value, provenance: merged.provenance, invalid, rows, mergedIssues };
 ```
 
-(add `mergedIssues: SchemaIssue[]` to `Resolution`). In `listSettings`, after the `invalid` assignment:
+In `listSettings`, after the `invalid` assignment:
 
 ```ts
-    const nonconforming = resolution.rows
-      .filter((r) => r.nonconforming)
-      .map((r) => ({ scope: r.scope, file: r.file, issues: r.nonconforming! }));
+    const nonconforming = resolution.rows.filter((r) => r.nonconforming).map((r) => ({ scope: r.scope, file: r.file, issues: r.nonconforming! }));
     if (nonconforming.length > 0) listed.nonconforming = nonconforming;
     if (resolution.mergedIssues.length > 0) listed.mergedIssues = resolution.mergedIssues;
 ```
 
-Add the helpers:
+Helpers:
 
 ```ts
-export function listUnregisteredSettings(opts: ResolveOpts = {}): { key: string; scope: Scope; file: string }[] {
-  return listUnregistered(readStores(), opts).map((s) => ({ key: s.key, scope: s.provenance[0]!.scope, file: s.provenance[0]!.file! }));
+export function listUnregisteredSettings(): { key: string; scope: Scope; file: string }[] {
+  const stores = readStores();
+  const out: { key: string; scope: Scope; file: string }[] = [];
+  const scan = (scope: Scope, file: string, section: Record<string, unknown> | undefined) => {
+    for (const key of Object.keys(section ?? {})) if (!getDef(key) && !isRetiredKey(key)) out.push({ key, scope, file });
+  };
+  for (const store of stores.teams) { scan("team", store.file, store.global); for (const s of Object.values(store.repos)) scan("team.repo", store.file, s); }
+  scan("user", stores.user.file, stores.user.global); for (const s of Object.values(stores.user.repos)) scan("user.repo", stores.user.file, s);
+  scan("machine", stores.machine.file, stores.machine.global); for (const s of Object.values(stores.machine.repos)) scan("machine.repo", stores.machine.file, s);
+  return out.sort((a, b) => a.key.localeCompare(b.key) || a.scope.localeCompare(b.scope));
 }
 
 export function repoSectionsFor(key: string): { identity: string; scopes: SettingScope[] }[] {
@@ -1207,7 +1293,7 @@ export function repoSectionsFor(key: string): { identity: string; scopes: Settin
 }
 ```
 
-`listUnregistered` runs `emitSettingsWarning` per key; that is the existing behavior for `listSettings` and stays.
+`listUnregisteredSettings` does not warn (the existing `listUnregistered` keeps its warning path for `listSettings`).
 
 - [ ] **Step 4: Render in the CLI**
 
@@ -1226,26 +1312,21 @@ In `renderExplainRow`, before the final `return`:
   }
 ```
 
-Import `firstIssueText` from `../lib/settings/registry.ts` if that barrel re-exports it, else from `../../packages/rt-client/src/settings/schema.ts` the way `lib/settings/*.ts` barrels do (check `lib/settings/registry.ts`'s one-line re-export and add `schema.ts` to it as `lib/settings/schema.ts` in the same style).
+Import `firstIssueText` from `../lib/settings/schema.ts`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Run to verify they pass, plus the e2e settings file**
 
-Run: `bun test packages/rt-client/src/settings/__tests__/resolve.test.ts commands/__tests__/settings-keys-render.test.ts packages/rt-client/src/settings packages/rt-client/test/settings-warn-sink.test.ts`
-Expected: PASS.
+Run: `bun test packages/rt-client/src/settings/__tests__/resolve.test.ts commands/__tests__/settings-keys-render.test.ts packages/rt-client/src/settings packages/rt-client/test/settings-warn-sink.test.ts && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts`
+Expected: PASS (the e2e file asserts prefixes and substrings; the new labels are appended after the value). If it fails on an exact string, fix the rendering, never the e2e assertion.
 
-- [ ] **Step 6: Run the e2e settings file once**
+- [ ] **Step 6: Export, gate, commit**
 
-Run: `bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts`
-Expected: PASS (it asserts substrings, and the new labels only appear on nonconforming values). If it fails on an exact string, the label placement above is wrong; fix the rendering, never the e2e assertion.
-
-- [ ] **Step 7: Export, gate, commit**
-
-In `packages/rt-client/src/index.ts` add `listUnregisteredSettings, repoSectionsFor` to the `./settings/resolve.ts` export list.
+Add `listUnregisteredSettings, repoSectionsFor` to `index.ts`'s `resolve.ts` export list.
 
 Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
 
 ```bash
-git add packages/rt-client/src/settings/resolve.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/index.ts commands/settings-keys.ts commands/__tests__/settings-keys-render.test.ts lib/settings
+git add packages/rt-client/src/settings/resolve.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/index.ts commands/settings-keys.ts commands/__tests__/settings-keys-render.test.ts
 git commit -m "feat(settings): label nonconforming layers on read, never skip them
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -1253,40 +1334,39 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: settings-kit server: wire fields, repo resolution, `/repos`, `validateWrite`
+### Task 8: settings-kit server: wire fields, repo resolution, `/repos`, `validateWrite`, secret-safe issues
 
 **Files:**
 - Modify: `packages/settings-kit/src/server.ts`
 - Test: `packages/settings-kit/src/__tests__/server.test.ts`
 
 **Interfaces:**
-- Consumes: `checkSchema`, `jsonSchemasFor`, `validateWrite`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, `ExplainRow.nonconforming` (Tasks 1, 2, 6).
+- Consumes: `checkSchema`, `validateWrite`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, `hasSchema` and the `nonconforming` row field from rt-client.
 - Produces:
   - `SettingDefWire` gains `schema?: JsonSchema`, `layerSchema?: JsonSchema`, `storeVersion: number`, `issues?: WireIssue[]`, `mergedIssues?: SchemaIssue[]`, `repos?: { identity: string; scopes: string[] }[]`
   - `type WireIssue = { scope: string; file: string | null; repo?: string; kind: string; path: (string | number)[]; message: string; [extra: string]: unknown }`
   - `ExplainRowWire` gains `nonconforming?: SchemaIssue[]`
-  - `/defs` response gains `unregistered: { key: string; scope: string; file: string }[]`; `/defs` and `/explain/:key` accept `?repo=`; `/set` and `/unset` accept `repo`; `GET {base}/repos` → `{ repos: { identity: string; label: string }[] }`
-  - `RtSettingsApi` gains `validateWrite`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, and optional `listRepos?: () => Promise<{ identity: string; label: string }[]>`
+  - `/defs` response gains `unregistered`; `/defs` and `/explain/:key` accept `?repo=`; `/set` and `/unset` accept `repo` and pass `repoIdentity` to the follow-up `explainSetting`; `GET {base}/repos`
+  - `RtSettingsApi` gains `validateWrite`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, optional `listRepos?`
+  - Secret defs: every issue's `message` is replaced by `"refused"` (invalid) or `"does not match the schema"` (nonconforming); paths are kept.
 
 - [ ] **Step 1: Write the failing tests**
 
-Extend the fake `DEFS` in `server.test.ts` so `board.slack` carries a zod schema and `rt.roles` is `repoScoped: true` with a deep schema; extend `RT` with:
+Extend the fake `DEFS`: give `board.slack` `schema` and `layerSchema` (JSON literals), `merge: "deep"`; make `rt.roles` `{ type: "object", scopes: ["team", "user", "machine"], merge: "deep", repoScoped: true, schema: {...} }`. Extend `RT`:
 
 ```ts
-  validateWrite: (_def: FakeDef, value: unknown) =>
-    value === "invalid" ? { ok: false, reason: "value is invalid", issues: [] } : { ok: true },
+  validateWrite: (_def: FakeDef, value: unknown) => (value === "invalid" ? { ok: false, reason: "value is invalid", issues: [{ path: [], message: "value is invalid" }] } : { ok: true }),
   listUnregisteredSettings: () => [{ key: "board.rtRepos", scope: "machine", file: "/home/user/local/settings.local.jsonc" }],
   repoSectionsFor: (key: string) => (key === "rt.roles" ? [{ identity: "gitlab.example.com/acme/app", scopes: ["team"] }] : []),
   listStoreRepoIdentities: () => ["gitlab.example.com/acme/app"],
 ```
 
-and make `explainSetting` accept `(key, opts)` and, when `opts?.repoIdentity` is set for `rt.roles`, return a row `{ scope: "team.repo", file: "/home/team/settings.team.jsonc", present: true, value: { dev: { port: 3000 } } }` after the user row. Then add:
+Make the fake `explainSetting(key, opts)`: for `board.title` the user row carries `nonconforming: [{ path: [], message: "bad" }]`; for `rt.secretThing` the user row carries `invalid: 'field "x" looks like a path literal ("/Users/someone/secret")'`; for `rt.roles` with `opts?.repoIdentity` set, append `{ scope: "team.repo", file: "/home/team/settings.team.jsonc", present: true, value: { dev: { port: 3000 } } }`. Add:
 
 ```ts
 describe("schema on the wire", () => {
   test("/defs carries schema, layerSchema, storeVersion, issues and unregistered", async () => {
-    const res = await handle(get("/api/settings/defs"));
-    const body = await res!.json();
+    const body = await (await handle(get("/api/settings/defs")))!.json();
     const slack = body.defs.find((d: any) => d.key === "board.slack");
     expect(slack.schema.type).toBe("object");
     expect(slack.layerSchema.required).toBeUndefined();
@@ -1294,19 +1374,19 @@ describe("schema on the wire", () => {
     expect(body.unregistered).toEqual([{ key: "board.rtRepos", scope: "machine", file: "/home/user/local/settings.local.jsonc" }]);
   });
 
-  test("a nonconforming explain row becomes an issue on /defs and on the explain row", async () => {
-    // make the fake explain return nonconforming for board.title's user row
-    const res = await handle(get("/api/settings/explain/board.title"));
-    const body = await res!.json();
-    expect(body.rows[0].nonconforming).toEqual([{ path: [], message: "bad" }]);
+  test("a nonconforming explain row is an issue on /defs and on the explain row", async () => {
+    const explain = await (await handle(get("/api/settings/explain/board.title")))!.json();
+    expect(explain.rows[0].nonconforming).toEqual([{ path: [], message: "bad" }]);
     const defs = await (await handle(get("/api/settings/defs")))!.json();
     expect(defs.defs.find((d: any) => d.key === "board.title").issues[0]).toMatchObject({ scope: "user", kind: "nonconforming", path: [], message: "bad" });
   });
 
-  test("a secret key's issues never carry a value", async () => {
+  test("a secret key's issues never carry a value, even a path-guard reason that quotes one", async () => {
     const defs = await (await handle(get("/api/settings/defs")))!.json();
     const secret = defs.defs.find((d: any) => d.key === "rt.secretThing");
-    for (const issue of secret.issues ?? []) expect(JSON.stringify(issue)).not.toContain("rt.secretThing-user-value");
+    expect(secret.issues).toEqual([{ scope: "user", file: "/home/user/settings.user.jsonc", kind: "invalid", path: [], message: "refused" }]);
+    const explain = await (await handle(get("/api/settings/explain/rt.secretThing")))!.json();
+    expect(explain.rows[0].invalid).toBe("refused");
   });
 
   test("?repo= resolves repo rungs and repos[] lists sections", async () => {
@@ -1321,43 +1401,39 @@ describe("schema on the wire", () => {
     expect(body.repos).toEqual([{ identity: "gitlab.example.com/acme/app", label: "acme/app" }]);
   });
 
-  test("/set forwards repo and uses validateWrite", async () => {
-    await handle(post("/api/settings/set", { key: "rt.roles", scope: "team", repo: "gitlab.example.com/acme/app", value: { dev: { port: 1 } } }), { allowComposite: true });
+  test("/set forwards repo, uses validateWrite, and explains for the repo afterwards", async () => {
+    const res = await handle(post("/api/settings/set", { key: "rt.roles", scope: "team", repo: "gitlab.example.com/acme/app", value: { dev: { port: 1 } } }), { allowComposite: true });
     expect(setCalls.at(-1)).toEqual(["rt.roles", { dev: { port: 1 } }, "team", { repoIdentity: "gitlab.example.com/acme/app" }]);
+    expect((await res!.json()).rows.some((r: any) => r.scope === "team.repo")).toBe(true);
     const bad = await handle(post("/api/settings/set", { key: "board.title", scope: "user", value: "invalid" }));
     expect(bad!.status).toBe(400);
-    expect((await bad!.json()).error).toBe("value is invalid");
+    expect(await bad!.json()).toEqual({ error: "value is invalid", issues: [{ path: [], message: "value is invalid" }] });
   });
 });
 ```
 
-For the nonconforming case, have the fake `explainSetting` return `nonconforming: [{ path: [], message: "bad" }]` on `board.title`'s user row.
+The existing `allowComposite: 'shaped'` block (lines 278-340) asserts `rt.repoRoots` is writable and the exact `"value does not match rt.repoRoots's shape"` error. Rewrite it now to the new gate: a composite fake def is writable under `"shaped"` when it has a `schema` and is not `external` (give `rt.repoRoots` `schema: { type: "array", items: { type: "string" } }`); a bad value is refused by the fake `validateWrite` with `"value is invalid"`; `board.members` (external) stays refused with the exact error `"board.members" has no editable shape`.
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bun test packages/settings-kit/src/__tests__/server.test.ts`
-Expected: FAIL on the new block.
+Expected: FAIL on the new block and the rewritten `shaped` block.
 
 - [ ] **Step 3: Implement in `server.ts`**
 
-- Import `checkSchema, jsonSchemasFor, validateWrite, listUnregisteredSettings, repoSectionsFor, listStoreRepoIdentities, hasSchema` and types `SchemaIssue, JsonSchema` from `@mattstack/rt-client`; add them to `RtSettingsApi` (and optional `listRepos`).
-- `SettingDefWire`: add the fields from Interfaces. In `defToWire`, add `storeVersion: def.storeVersion ?? 1` and, when `hasSchema(def)`, `schema: jsonSchemasFor(def.schema).full` and for deep object keys `layerSchema: jsonSchemasFor(def.schema).layer`.
-- `sanitizeRows`: copy `row.nonconforming` through (issues carry no values).
-- New `issuesFromRows(def, rows, repo?)`: for each row, `invalid` → `{ scope, file, repo?, kind: "invalid", path: [], message: row.invalid }`; `nonconforming` → one entry per issue with `kind: "nonconforming"`. Never include `row.value`.
-- `/defs`: read `url.searchParams.get("repo")`; call `rt.explainSetting(d.key, { repoIdentity: repo ?? null })`; set `issues` (when any), `mergedIssues` (from `checkSchema(def, effective.value, { layer: false })` when the effective value is present and the def has a schema and is not secret), and `repos: rt.repoSectionsFor(d.key)` for `repoScoped` defs. Add `unregistered: rt.listUnregisteredSettings({ repoIdentity: repo ?? null })` to the body.
+- Import the new rt-client functions and types; extend `RtSettingsApi` and the `rt` default object.
+- `defToWire`: `storeVersion: def.storeVersion ?? 1`; when `hasSchema(def)`: `schema: def.schema`, and for deep object keys `layerSchema: def.layerSchema`.
+- `sanitizeRows`: copy `nonconforming` through; for a secret def replace `invalid` with `"refused"` and every nonconforming message with `"does not match the schema"`.
+- `issuesFromRows(def, rows, repo?)`: `invalid` → `{ scope, file, repo?, kind: "invalid", path: [], message }`; `nonconforming` → one entry per issue, `kind: "nonconforming"`; secret defs get the fixed messages above. Never copy `row.value`.
+- `compositeAllowed(def, mode)`: `mode === true`, or `mode === "shaped"` and `hasSchema(def)` and `SHAPES[def.key]?.kind !== "external"`.
+- `/defs`: `repo` from `url.searchParams`; rows from `rt.explainSetting(d.key, { repoIdentity: repo ?? null })`; set `issues`, `mergedIssues` (from `checkSchema(def, effective.value, { layer: false })` when the def has a schema, is not secret, and the effective value is present), `repos: rt.repoSectionsFor(d.key)` for `repoScoped` defs; body gains `unregistered: rt.listUnregisteredSettings()`.
 - `/explain/:key`: same `?repo=`.
-- `GET {base}/repos`: identities from `rt.listStoreRepoIdentities()` merged with `await rt.listRepos?.()` (ignore a rejection), label = the part after the first `/` (`acme/app`), sorted by identity.
-- `/set` and `/unset`: read `body.repo` (string) and pass `{ team, repoIdentity: repo }` (omit undefined keys so the existing `toEqual([..., {}])` assertions hold). Replace the `rt.validateValue` call in `/set` with `rt.validateWrite(def, value, { scope, repoIdentity: repo, team })`; on failure answer `{ error: verdict.reason, issues: verdict.issues }` with 400. Keep the `matchesShape` gate for now (Task 8 replaces it).
-- Add `${base}/repos` to the route guard at the top of the handler.
+- `GET {base}/repos`: identities from `rt.listStoreRepoIdentities()` merged with `await rt.listRepos?.()` (a rejection is ignored), label = identity after the first `/`, sorted by identity; add the route to the top guard.
+- `/set` and `/unset`: read `body.repo`; build `opts` with only the defined keys among `team` and `repoIdentity`; `/set` replaces the `validateValue` call with `rt.validateWrite(def, value, { scope, repoIdentity: repo, team })`, answering `{ error, issues }` 400 on failure; drop the `matchesShape` gate; the follow-up `explainSetting` gets `{ repoIdentity: repo ?? null }`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes, gate, commit**
 
-Run: `bun test packages/settings-kit`
-Expected: PASS (the effective/move tests untouched).
-
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit`
+Run: `bun test packages/settings-kit && sh scripts/repo-purity.sh && bunx tsc --noEmit`
 
 ```bash
 git add packages/settings-kit/src/server.ts packages/settings-kit/src/__tests__/server.test.ts
@@ -1368,68 +1444,70 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 8: settings-kit shapes: `recognize`, `checkValue`, `SHAPES` shrinks to `external`
+### Task 9: settings-kit shapes: `recognize`, `checkValue`, `SHAPES` shrinks to `external`
 
 **Files:**
 - Modify: `packages/settings-kit/package.json` (add `@cfworker/json-schema@^4.1.1` to `dependencies`)
 - Modify: `packages/settings-kit/src/shapes.ts`
-- Modify: `packages/settings-kit/src/server.ts` (the `compositeAllowed` and `matchesShape` gates)
-- Test: `packages/settings-kit/src/__tests__/shapes.test.ts`
+- Modify: `lib/__tests__/notification-shape-parity.test.ts`
+- Test: `packages/settings-kit/src/__tests__/shapes.test.ts` (uses `shapes-legacy-fixture.ts` from Task 6)
 
 **Interfaces:**
-- Consumes: `SettingDefWire.schema` / `layerSchema` (Task 7); `validateJson` semantics (Task 1) reimplemented here without importing rt-client into the browser bundle.
 - Produces:
   - `type Recognized = { kind: "stringList" } | { kind: "stringMap"; labels: [string, string] } | { kind: "leaves"; fields: Record<string, LeafType>; placeholders: Record<string, string> } | { kind: "objectList"; itemFields: Record<string, LeafType>; required: string[] } | { kind: "objectMap"; entryFields: Record<string, LeafType>; required: string[]; labels: [string, string] } | { kind: "json" }`
   - `recognize(schema: JsonSchema | undefined): Recognized`
-  - `checkValue(schema: JsonSchema, value: unknown): SchemaIssue[]`
-  - `SHAPES` keeps only the three `external` entries; `rowKind`, `summarize`, `matchesShape`, `targetScope` read the def's schema through `recognize`. `RowKind` adds `"objectList" | "objectMap" | "json"`.
+  - `checkValue(schema: JsonSchema, value: unknown): SchemaIssue[]` (same normalization as rt-client's `validateJson`; duplicated here rather than imported, because `shapes.ts` builds for the browser without rt-client)
+  - `matchesSchema(def: SettingDefWire, value: unknown): boolean`
+  - `SHAPES` keeps only the three `external` entries; `RowKind` adds `"objectList" | "objectMap" | "json"`; `rowKind`, `summarize`, `targetScope` read the def's `schema` through `recognize`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Replace the `SHAPES` describe in `shapes.test.ts` with:
+In `shapes.test.ts`, replace the `SHAPES` describe and the `matchesShape` describe with:
 
 ```ts
+import { allDefs } from "@mattstack/rt-client";
+import { LEGACY_SHAPES } from "./shapes-legacy-fixture.ts";
+
+const byKey = new Map(allDefs().map((d) => [d.key, d]));
+const schemaOf = (key: string) => byKey.get(key)!.schema!;
+
 describe("recognize", () => {
-  const byKey = new Map(allDefs().map((d) => [d.key, d]));
-  const json = (key: string) => toJsonSchema(byKey.get(key)!.schema!);
-
-  test("maps every previously shaped key to its old kind", () => {
-    const expected: Record<string, string> = {
-      "board.projects": "stringList", "rt.repoRoots": "stringList", "setup.waived": "stringList",
-      "rt.repoIdentityOverrides": "stringMap",
-      "board.slack": "leaves", "board.triage": "leaves", "rt.homeSnapshot": "leaves", "rt.notifications": "leaves",
-      "gitq.workSlots": "leaves", "boxscore.sizeBand": "leaves",
-    };
-    for (const [key, kind] of Object.entries(expected)) expect(`${key}: ${recognize(json(key)).kind}`).toBe(`${key}: ${kind}`);
-  });
-
-  test("keeps labels and placeholders from the schema", () => {
-    const map = recognize(json("rt.repoIdentityOverrides"));
-    expect(map).toMatchObject({ kind: "stringMap", labels: ["remote URL", "identity"] });
-    const slack = recognize(json("board.slack"));
-    expect(slack).toMatchObject({ kind: "leaves", placeholders: { "emoji.looking": "eyes" } });
+  test("reproduces every legacy shape: kind, fields, labels and fallbacks", () => {
+    for (const [key, legacy] of Object.entries(LEGACY_SHAPES)) {
+      if (legacy.kind === "external") continue;
+      const r = recognize(schemaOf(key));
+      expect(`${key}: ${r.kind}`).toBe(`${key}: ${legacy.kind}`);
+      if (legacy.kind === "leaves" && r.kind === "leaves") {
+        expect(r.fields).toEqual(legacy.fields);
+        expect(r.placeholders).toEqual(legacy.fallbacks ?? {});
+      }
+      if (legacy.kind === "stringMap" && r.kind === "stringMap") expect(r.labels).toEqual(legacy.labels);
+    }
   });
 
   test("an array of flat objects is an objectList with its required names", () => {
-    const r = recognize(json("rt.notify.eventBridges"));
+    const r = recognize(schemaOf("rt.notify.eventBridges"));
     expect(r.kind).toBe("objectList");
     if (r.kind === "objectList") expect(r.required).toEqual(["pattern", "category", "title", "message"]);
   });
 
   test("a map of flat objects is an objectMap", () => {
-    expect(recognize(json("deck.apps")).kind).toBe("objectMap");
+    const r = recognize({ type: "object", propertyNames: { type: "string" }, additionalProperties: { type: "object", properties: { port: { type: "number" }, dir: { type: "string" } }, required: ["port"] } });
+    expect(r).toMatchObject({ kind: "objectMap", required: ["port"] });
   });
 
   test("anything deeper is json", () => {
     expect(recognize({ type: "object", properties: { a: { type: "object", properties: { b: { type: "array", items: { type: "object" } } } } } }).kind).toBe("json");
+    expect(recognize(schemaOf("deck.apps")).kind).toBe("json");
     expect(recognize(undefined).kind).toBe("json");
   });
 });
 
 describe("checkValue", () => {
-  test("agrees with the server's issue shape", () => {
+  test("matches the server's issue shape and messages", () => {
     const issues = checkValue({ type: "array", items: { type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] } }, [{ pattern: 1 }]);
-    expect(issues[0]!.path).toEqual([0, "pattern"]);
+    expect(issues).toEqual([{ path: [0, "pattern"], message: "expected string, got number" }]);
+    expect(checkValue({ type: "object", properties: { a: { type: "string" } }, required: ["a"] }, {})).toEqual([{ path: ["a"], message: 'required property "a" is missing' }]);
   });
 });
 
@@ -1438,26 +1516,18 @@ describe("SHAPES", () => {
     for (const shape of Object.values(SHAPES)) expect(shape.kind).toBe("external");
   });
 });
-
-describe("placeholder parity", () => {
-  test("board.slack placeholders equal DEFAULT_SLACK_EMOJI", () => {
-    const r = recognize(toJsonSchema(allDefs().find((d) => d.key === "board.slack")!.schema!));
-    if (r.kind !== "leaves") throw new Error("board.slack is leaves");
-    expect(r.placeholders).toEqual({ "emoji.looking": DEFAULT_SLACK_EMOJI.looking, "emoji.commented": DEFAULT_SLACK_EMOJI.commented, "emoji.approved": DEFAULT_SLACK_EMOJI.approved });
-  });
-});
 ```
 
-Update the `rowKind`/`summarize` tests in that file to build defs with `schema:` (a JSON Schema literal) instead of relying on `SHAPES`; `toJsonSchema` is imported from `@mattstack/rt-client` (test-only).
+Update the `rowKind`/`summarize`/`targetScope` tests in that file to build defs with `schema:` JSON literals instead of relying on `SHAPES`. Rewrite `lib/__tests__/notification-shape-parity.test.ts` to compare `Object.keys(recognize(getDef("rt.notifications")!.schema!).fields)` (kind `leaves`) against rt's `NOTIFICATION_TYPES`, keeping its purpose.
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `bun test packages/settings-kit/src/__tests__/shapes.test.ts`
+Run: `bun test packages/settings-kit/src/__tests__/shapes.test.ts lib/__tests__/notification-shape-parity.test.ts`
 Expected: FAIL, `recognize`/`checkValue` missing.
 
 - [ ] **Step 3: Implement**
 
-In `shapes.ts`:
+Add `@cfworker/json-schema` (`cd packages/settings-kit && bun add @cfworker/json-schema@^4.1.1 && cd ../..`). In `shapes.ts`:
 
 ```ts
 import { Validator, type OutputUnit } from "@cfworker/json-schema";
@@ -1465,40 +1535,61 @@ import { Validator, type OutputUnit } from "@cfworker/json-schema";
 export type JsonSchema = Record<string, unknown>;
 export interface SchemaIssue { path: (string | number)[]; message: string }
 
-const leafOf = (s: JsonSchema): LeafType | null => {
+export type Recognized =
+  | { kind: "stringList" }
+  | { kind: "stringMap"; labels: [string, string] }
+  | { kind: "leaves"; fields: Record<string, LeafType>; placeholders: Record<string, string> }
+  | { kind: "objectList"; itemFields: Record<string, LeafType>; required: string[] }
+  | { kind: "objectMap"; entryFields: Record<string, LeafType>; required: string[]; labels: [string, string] }
+  | { kind: "json" };
+
+function leafOf(s: JsonSchema): LeafType | null {
   if (Array.isArray(s.enum) && s.enum.every((e) => typeof e === "string")) return { enum: s.enum as string[] };
   if (s.type === "string" || s.type === "number" || s.type === "boolean") return s.type;
-  if (Array.isArray(s.type)) { const t = s.type.filter((x) => x !== "null"); if (t.length === 1) return leafOf({ ...s, type: t[0] }); }
+  if (Array.isArray(s.type)) {
+    const t = (s.type as string[]).filter((x) => x !== "null");
+    if (t.length === 1) return leafOf({ ...s, type: t[0] });
+  }
   return null;
-};
+}
 
-const flatFields = (props: Record<string, JsonSchema> | undefined): Record<string, LeafType> | null => {
+function flatFields(props: Record<string, JsonSchema> | undefined): Record<string, LeafType> | null {
   if (!props) return null;
   const out: Record<string, LeafType> = {};
-  for (const [k, v] of Object.entries(props)) { const leaf = leafOf(v); if (!leaf) return null; out[k] = leaf; }
-  return out;
-};
-
-/** Dotted leaf paths one level deep (emoji.looking), the way leaves rows render. */
-const leafPaths = (props: Record<string, JsonSchema>, prefix = ""): { fields: Record<string, LeafType>; placeholders: Record<string, string> } | null => {
-  const fields: Record<string, LeafType> = {}; const placeholders: Record<string, string> = {};
   for (const [k, v] of Object.entries(props)) {
     const leaf = leafOf(v);
-    if (leaf) { fields[prefix + k] = leaf; if (typeof v.placeholder === "string") placeholders[prefix + k] = v.placeholder; continue; }
+    if (!leaf) return null;
+    out[k] = leaf;
+  }
+  return out;
+}
+
+/** Dotted leaf paths one level deep (emoji.looking), the way leaves rows render. */
+function leafPaths(props: Record<string, JsonSchema>, prefix = ""): { fields: Record<string, LeafType>; placeholders: Record<string, string> } | null {
+  const fields: Record<string, LeafType> = {};
+  const placeholders: Record<string, string> = {};
+  for (const [k, v] of Object.entries(props)) {
+    const leaf = leafOf(v);
+    if (leaf) {
+      fields[prefix + k] = leaf;
+      if (typeof v.placeholder === "string") placeholders[prefix + k] = v.placeholder;
+      continue;
+    }
     if (v.type === "object" && v.properties && prefix === "") {
       const nested = leafPaths(v.properties as Record<string, JsonSchema>, `${k}.`);
       if (!nested) return null;
-      Object.assign(fields, nested.fields); Object.assign(placeholders, nested.placeholders);
+      Object.assign(fields, nested.fields);
+      Object.assign(placeholders, nested.placeholders);
       continue;
     }
     return null;
   }
   return { fields, placeholders };
-};
+}
 
 export function recognize(schema: JsonSchema | undefined): Recognized {
   if (!schema) return { kind: "json" };
-  const labels = (schema.labels as { key?: string; value?: string } | undefined);
+  const labels = schema.labels as { key?: string; value?: string } | undefined;
   const labelPair: [string, string] = [labels?.key ?? "key", labels?.value ?? "value"];
   if (schema.type === "array") {
     const items = schema.items as JsonSchema | undefined;
@@ -1511,7 +1602,8 @@ export function recognize(schema: JsonSchema | undefined): Recognized {
   }
   if (schema.type === "object") {
     const add = schema.additionalProperties as JsonSchema | boolean | undefined;
-    if (!schema.properties && add && typeof add === "object") {
+    const props = schema.properties as Record<string, JsonSchema> | undefined;
+    if ((!props || Object.keys(props).length === 0) && add && typeof add === "object" && Object.keys(add).length > 0) {
       if (add.type === "string") return { kind: "stringMap", labels: labelPair };
       if (add.type === "object") {
         const fields = flatFields(add.properties as Record<string, JsonSchema> | undefined);
@@ -1519,38 +1611,25 @@ export function recognize(schema: JsonSchema | undefined): Recognized {
       }
       return { kind: "json" };
     }
-    const leaves = leafPaths((schema.properties as Record<string, JsonSchema>) ?? {});
+    const leaves = leafPaths(props ?? {});
     if (leaves) return { kind: "leaves", ...leaves };
   }
   return { kind: "json" };
 }
-
-export function checkValue(schema: JsonSchema, value: unknown): SchemaIssue[] {
-  const out = new Validator(schema as never, "2020-12", false).validate(value);
-  return out.valid ? [] : out.errors.map((u: OutputUnit) => ({
-    path: u.instanceLocation.replace(/^#\/?/, "").split("/").filter(Boolean).map((s) => (/^\d+$/.test(s) ? Number(s) : s.replace(/~1/g, "/").replace(/~0/g, "~"))),
-    message: u.error,
-  }));
-}
 ```
 
-zod's record emits `propertyNames` too; `recognize` ignores it. If `z.toJSONSchema` emits a record as `additionalProperties: {...}` under a different key in 4.6 (check one converted record in a scratch script), match what it emits.
+zod emits a loose object's `additionalProperties` as `{}` and a record's as the value schema; the `Object.keys(add).length > 0` test is what tells the two apart. Confirm against one converted loose object and one record from the lock (`schema.lock.json`) before relying on it; if 4.6 emits differently, match what the lock holds.
 
-Then: `SHAPES` keeps `board.tabs`, `board.members`, `board.hiddenMembers` only; `rowKind(def)` returns `"external"` for a SHAPES key, `"readonly"` for secret/unwritable, `recognize(def.schema).kind` for composite defs, `"enum"`/`"scalar"` as before; `summarize` switches on `recognize(def.schema)` (objectList and objectMap count items and entries; `json` falls back to the array/object count or `"unset"`); `matchesShape(shape, value)` stays for `CompositeShape` callers, and a new `matchesSchema(def, value)` returns `checkValue(def.layerSchema ?? def.schema, value).length === 0`. In `server.ts`, `compositeAllowed` admits a composite def when `hasSchema(def)` and `SHAPES[def.key]?.kind !== "external"`; drop the `matchesShape` gate (validateWrite covers it).
+`checkValue`: copy `validateJson`, `toIssues` and `pointerToPath` from rt-client's `schema.ts` (same normalization; a comment on why it is duplicated is warranted: the browser bundle cannot import rt-client). Keep a per-schema `WeakMap` validator cache.
 
-Add `@cfworker/json-schema` to settings-kit's `dependencies` (`cd packages/settings-kit && bun add @cfworker/json-schema@^4.1.1 && cd ../..`).
+Then: `SHAPES` keeps the three external entries; `rowKind` returns `"external"` for a SHAPES key, `"readonly"` for secret/unwritable, `recognize(def.schema).kind` for composite defs, then `"enum"`/`"scalar"`; `summarize` switches on `recognize(def.schema)` (`objectList` counts items with `nouns(def.key)`, `objectMap` counts entries, `json` uses the array/object count or `"unset"`); add `matchesSchema(def, value)` as `checkValue(def.layerSchema ?? def.schema!, value).length === 0` (false when the def has no schema); `matchesShape` stays exported unchanged for `external` callers.
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes, gate, commit**
 
-Run: `bun test packages/settings-kit`
-Expected: PASS.
-
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit`
+Run: `bun test packages/settings-kit lib/__tests__/notification-shape-parity.test.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
 
 ```bash
-git add packages/settings-kit/package.json bun.lock packages/settings-kit/src/shapes.ts packages/settings-kit/src/server.ts packages/settings-kit/src/__tests__/shapes.test.ts
+git add packages/settings-kit/package.json bun.lock packages/settings-kit/src/shapes.ts packages/settings-kit/src/__tests__/shapes.test.ts lib/__tests__/notification-shape-parity.test.ts
 git commit -m "feat(settings-kit): recognize editors from the schema, checkValue in the browser, SHAPES keeps only external keys
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -1558,38 +1637,30 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 9: `rt settings check`
+### Task 10: `rt settings check`
 
 **Files:**
 - Create: `packages/rt-client/src/settings/check.ts`
-- Modify: `commands/settings-keys.ts` (add `settingsCheck`), `lib/command-tree-def.ts` (`settings.check` node), `packages/rt-client/src/index.ts`
+- Modify: `commands/settings-keys.ts` (add `settingsCheck`), `lib/command-tree-def.ts` (`settings.check`), `packages/rt-client/src/index.ts`
 - Test: `packages/rt-client/src/settings/__tests__/check.test.ts`, `commands/__tests__/settings-check.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `readStore`, `listTeams`, paths, `checkSchema`, `validateValue`, `getSetting`, `listUnregisteredSettings`, `listStoreRepoIdentities`.
-- Produces: `checkStores(): CheckReport` where
+- Produces: `checkStores(): CheckReport` with
 
 ```ts
-export interface CheckFinding {
-  key: string;
-  scope: SettingScope;
-  file: string;
-  repo?: string;
-  kind: "invalid" | "nonconforming" | "merged" | "unregistered";
-  issues: SchemaIssue[];
-}
+export interface CheckFinding { key: string; scope: SettingScope; file: string; repo?: string; kind: "invalid" | "nonconforming" | "merged" | "unregistered"; issues: SchemaIssue[] }
 export interface CheckReport { findings: CheckFinding[]; failing: number }
 ```
 
-`failing` counts `invalid`, `nonconforming` and `merged` findings (unregistered keys are listed, not failures).
+`failing` counts `invalid`, `nonconforming` and `merged` findings; unregistered keys are listed, not failures. A `merged` finding has `file: "(merged)"` and `scope: "user"` as placeholders and prints without a scope.
 
 - [ ] **Step 1: Write the failing tests**
 
-`check.test.ts` (HOME re-pointed per test as in `resolve.test.ts`):
+`check.test.ts` (HOME per test; `withSchema` and the `write*` wrappers):
 
 ```ts
   test("reports a nonconforming layer, a type-invalid layer, a merged failure and an unregistered key", () => {
-    withSchema("rt.homeSnapshot", z.looseObject({ enabled: z.boolean(), debounceSec: z.number() }), () => {
+    withSchema("rt.homeSnapshot", SNAPSHOT, () => {
       writeMachine({ "rt.homeSnapshot": { enabled: "yes" }, "rt.repoRoots": "nope", "board.rtRepos": [] });
       const report = checkStores();
       const kinds = report.findings.map((f) => `${f.key}:${f.kind}`);
@@ -1602,7 +1673,7 @@ export interface CheckReport { findings: CheckFinding[]; failing: number }
   });
 
   test("walks repo sections and reports the repo", () => {
-    withSchema("rt.worktrees", z.looseObject({ onDeck: z.number() }), () => {
+    withSchema("rt.worktrees", WORKTREES, () => {
       writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.worktrees": { onDeck: "two" } } } });
       const f = checkStores().findings.find((x) => x.key === "rt.worktrees" && x.kind === "nonconforming")!;
       expect(f.repo).toBe(IDENTITY);
@@ -1616,24 +1687,26 @@ export interface CheckReport { findings: CheckFinding[]; failing: number }
   });
 ```
 
-`commands/__tests__/settings-check.test.ts`: call `settingsCheck(["--json"])` with `console.log` spied and `process.exitCode` observed: with a seeded nonconforming machine store it prints `{ ok: false, findings: [...] }` and sets `process.exitCode = 1`; with clean stores `{ ok: true, findings: [] }` and exit code stays 0. Use the same HOME fixture pattern; restore `process.exitCode` in `afterEach`.
+`commands/__tests__/settings-check.test.ts`: `settingsCheck(["--json"])` with `console.log` spied prints `{ ok: false, findings: [...] }` and sets `process.exitCode = 1` on a seeded nonconforming store, `{ ok: true, findings: [] }` and leaves the exit code alone on clean stores. Restore `process.exitCode` in `afterEach`.
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/check.test.ts commands/__tests__/settings-check.test.ts`
 Expected: FAIL, modules missing.
 
-- [ ] **Step 3: Implement `check.ts`**
+- [ ] **Step 3: Implement**
+
+`check.ts`:
 
 ```ts
 /**
  * rt settings check: every stored value against its type check and layer
  * schema, every merged value against the full schema, plus unregistered
- * keys. Read-only; uses this rt's registry.
+ * keys. Read-only; it uses this rt's registry.
  */
 
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
-import { getDef, validateValue, type SettingScope } from "./registry-machinery.ts";
+import { allDefs, getDef, validateValue, type SettingScope } from "./registry-machinery.ts";
 import { checkSchema, hasSchema, type SchemaIssue } from "./schema.ts";
 import { getSetting, listStoreRepoIdentities, listUnregisteredSettings } from "./resolve.ts";
 import { listTeams, readStore, type StoreFile } from "./stores.ts";
@@ -1653,7 +1726,8 @@ export function checkStores(): CheckReport {
     checkSection(scope, store.file, store.global, undefined, findings);
     for (const [repo, section] of Object.entries(store.repos)) checkSection(scope, store.file, section, repo, findings);
   }
-  for (const def of allComposite()) {
+  for (const def of allDefs()) {
+    if (!hasSchema(def)) continue;
     for (const repo of [null, ...(def.repoScoped ? listStoreRepoIdentities() : [])]) {
       let value: unknown;
       try { value = getSetting(def.key, { repoIdentity: repo, expand: false }).value; } catch { continue; }
@@ -1679,15 +1753,9 @@ function checkSection(scope: SettingScope, file: string, section: Record<string,
     if (issues.length > 0) out.push({ ...at, kind: "nonconforming", issues });
   }
 }
-
-function allComposite() {
-  return allDefs().filter((d) => d.type === "object" || d.type === "array");
-}
 ```
 
-(import `allDefs` too). The merged finding's `scope`/`file` are placeholders for "the merge"; the CLI prints `merged` findings without a scope.
-
-`settingsCheck(args)` in `commands/settings-keys.ts`: `--json` prints `{ ok: report.failing === 0, findings }`; human output prints one line per finding (`key  scope[/repo]  kind: <first issue>`, using `firstIssueText`), then `N failing, M unregistered`; sets `process.exitCode = 1` when `failing > 0`. Add the tree node under `settings`:
+`settingsCheck(args)` in `commands/settings-keys.ts`: `--json` prints `{ ok: report.failing === 0, findings }`; human output prints one line per finding (`key  scope[/repo]  kind: <first issue>` via `firstIssueText`, `merged` lines without a scope), then `<failing> failing, <unregistered> unregistered`; `process.exitCode = 1` when `failing > 0`. Tree node under `settings`:
 
 ```ts
       check: {
@@ -1698,16 +1766,11 @@ function allComposite() {
       },
 ```
 
-Export `checkStores` and the two types from `index.ts`.
+Export `checkStores`, `CheckFinding`, `CheckReport` from `index.ts`.
 
-- [ ] **Step 4: Run to verify it passes, regenerate docs, conformance**
+- [ ] **Step 4: Run to verify it passes, docs, conformance, gate, commit**
 
-Run: `bun test packages/rt-client/src/settings/__tests__/check.test.ts commands/__tests__/settings-check.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check`
-Expected: PASS; `docs:gen` updates the command reference (commit those files).
-
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Run: `bun test packages/rt-client/src/settings/__tests__/check.test.ts commands/__tests__/settings-check.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
 
 ```bash
 git add packages/rt-client/src/settings/check.ts packages/rt-client/src/settings/__tests__/check.test.ts packages/rt-client/src/index.ts commands/settings-keys.ts commands/__tests__/settings-check.test.ts lib/command-tree-def.ts docs
@@ -1718,31 +1781,28 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 10: Schema lock file, classifier, `rt settings schema lock|diff`, CI and preflight
+### Task 11: Classifier, `rt settings schema diff`, CI and preflight gates
 
 **Files:**
-- Create: `packages/rt-client/src/settings/schema-lock.ts`, `packages/rt-client/settings-schema.lock.json`, `packages/rt-client/src/settings/breaking-schema-changes.json`, `commands/settings-schema.ts`
-- Modify: `lib/module-registry.ts`, `lib/command-tree-def.ts`, `lib/release/preflight.ts`, `.github/workflows/checks.yml`
+- Modify: `packages/rt-client/src/settings/schema-lock.ts` (add `classifyLockDiff`, `checkLockAgainst`, `readBreakingChanges`)
+- Modify: `commands/settings-schema.ts` (add `settingsSchemaDiff`), `lib/command-tree-def.ts`, `lib/release/preflight.ts`, `.github/workflows/checks.yml`
 - Test: `packages/rt-client/src/settings/__tests__/schema-lock.test.ts`, `commands/__tests__/settings-schema.test.ts`, `commands/__tests__/release-preflight.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `buildLock(): Lock` where `type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>` (composite keys only, sorted by key)
-  - `classifyLockDiff(prev: Lock, next: Lock): Change[]` where `type Change = { key: string; kind: "safe" | "breaking"; detail: string }`
-  - `readBreakingChanges(): Record<string, string>` from `breaking-schema-changes.json`
-  - `checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<string, string>): { ok: boolean; problems: string[] }`: every breaking key must have `next.storeVersion > prev.storeVersion` and an acknowledgement; a key never in `prev` is always ok.
-  - CLI: `rt settings schema lock` writes the lock file; `rt settings schema diff [--against <lockfile>] [--json]` prints changes and exits 1 on an unacknowledged breaking change (default `--against` is `git show main:packages/rt-client/settings-schema.lock.json`, read through `git` from the repo root).
+  - `classifyLockDiff(prev: Lock, next: Lock): Change[]` with `type Change = { key: string; kind: "safe" | "breaking"; detail: string }`
+  - `checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<string, string>): { ok: boolean; problems: string[] }`
+  - `readBreakingChanges(): Record<string, string>` (a static JSON import of `breaking-schema-changes.json`, so it works from `dist/` and from the compiled binary)
+  - An absent lock at a ref reads as `{}` (every key is then "added", safe); this is what makes the first PR and the first release pass.
+  - CLI `rt settings schema diff [--against <file> | --against-ref <git ref>] [--json]`: default `--against-ref origin/main`; a ref with no lock file counts as `{}`.
+  - Preflight row `{ id: "schema-lock", label: "schema lock", ... }`.
 
 - [ ] **Step 1: Write the failing tests**
 
-`schema-lock.test.ts`:
+Add to `schema-lock.test.ts`:
 
 ```ts
-import { describe, expect, test } from "bun:test";
-import { buildLock, checkLockAgainst, classifyLockDiff } from "../schema-lock.ts";
-
-const obj = (props: Record<string, unknown>, required: string[] = [], extra: Record<string, unknown> = {}) =>
-  ({ type: "object", properties: props, required, ...extra });
+const obj = (props: Record<string, unknown>, required: string[] = [], extra: Record<string, unknown> = {}) => ({ type: "object", properties: props, required, ...extra });
 const lock = (schema: Record<string, unknown>, storeVersion = 1) => ({ "t.k": { storeVersion, schema } });
 
 describe("classifyLockDiff", () => {
@@ -1781,59 +1841,37 @@ describe("classifyLockDiff", () => {
 });
 
 describe("checkLockAgainst", () => {
-  test("a breaking change needs a storeVersion bump and an acknowledgement", () => {
+  test("a breaking change needs a storeVersion bump and an acknowledgement; an absent previous lock is all safe", () => {
     const prev = lock({ type: "string" });
     expect(checkLockAgainst(prev, lock({ type: "number" }), {}).ok).toBe(false);
     expect(checkLockAgainst(prev, lock({ type: "number" }, 2), {}).ok).toBe(false);
     expect(checkLockAgainst(prev, lock({ type: "number" }, 2), { "t.k": "renamed the value" }).ok).toBe(true);
-  });
-});
-
-describe("buildLock", () => {
-  test("covers every composite key, sorted, at storeVersion 1 by default", () => {
-    const l = buildLock();
-    const keys = Object.keys(l);
-    expect(keys).toEqual([...keys].sort());
-    expect(l["rt.notify.eventBridges"]!.storeVersion).toBe(1);
-    expect(l["rt.notify.eventBridges"]!.schema.type).toBe("array");
+    expect(checkLockAgainst({}, lock({ type: "number" }), {}).ok).toBe(true);
   });
 });
 ```
 
-`commands/__tests__/settings-schema.test.ts`: `settingsSchemaLock([])` writes the lock file equal to `buildLock()`; `settingsSchemaDiff(["--against", <temp file with a mutated lock>, "--json"])` prints `{ ok: false, changes: [...] }` and sets exit code 1 for a breaking change, `{ ok: true }` for a safe one.
+`commands/__tests__/settings-schema.test.ts`: `settingsSchemaDiff(["--against", <temp lock with t.k type changed>, "--json"])` prints `{ ok: false, changes, problems }` and sets exit code 1; `["--against", <temp empty {}>, "--json"]` prints `{ ok: true, ... }`; `["--against", <missing path>, "--json"]` treats it as `{}` and is ok.
 
-`release-preflight.test.ts`: extend the existing seams so the `schema lock` row reads `ok` when the committed lock equals `buildLock()` and the diff against the previous tag has no unacknowledged breaking change, `stale` otherwise (follow the file's existing row pattern; the row id is `schema-lock`).
+`commands/__tests__/release-preflight.test.ts`: the existing `fakeSeams` must serve the committed lock through `readFile` and answer `git show <prevTag>:packages/rt-client/src/settings/schema.lock.json` with the same content (row `ok`), with a mutated content (row `stale`, detail naming the key), and with a non-zero exit (row `ok`, detail "no lock at <tag>"). Keep the existing "exits clean" test green by adding the lock answers to its seams.
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts`
-Expected: FAIL, modules missing.
+Expected: FAIL.
 
-- [ ] **Step 3: Implement `schema-lock.ts`**
+- [ ] **Step 3: Implement the classifier**
+
+In `schema-lock.ts` (dev module; add `import BREAKING from "./breaking-schema-changes.json" with { type: "json" };`):
 
 ```ts
-/**
- * The schema lock: every composite key's storeVersion and JSON Schema,
- * generated from the registry and committed, so a breaking shape change
- * is caught in CI and at release preflight rather than in a user's store.
- */
-
-import { allDefs } from "./registry-machinery.ts";
-import { toJsonSchema, type JsonSchema } from "./schema.ts";
-
-export type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>;
 export interface Change { key: string; kind: "safe" | "breaking"; detail: string }
 
 const ANNOTATIONS = new Set(["title", "description", "default", "$schema", "$id", "examples", "labels", "placeholder", "deprecated", "readOnly", "writeOnly"]);
 const KNOWN = new Set(["type", "properties", "required", "additionalProperties", "propertyNames", "items", "prefixItems", "enum", "const", "anyOf", "oneOf", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "format"]);
 
-export function buildLock(): Lock {
-  const out: Lock = {};
-  for (const def of allDefs()) {
-    if (!def.schema) continue;
-    out[def.key] = { storeVersion: def.storeVersion ?? 1, schema: toJsonSchema(def.schema) };
-  }
-  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+export function readBreakingChanges(): Record<string, string> {
+  return BREAKING as Record<string, string>;
 }
 
 export function classifyLockDiff(prev: Lock, next: Lock): Change[] {
@@ -1858,8 +1896,7 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
   const a = norm(a0), b = norm(b0);
   const out: NodeChange[] = [];
   const where = at || "(root)";
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => !ANNOTATIONS.has(k)));
-  for (const k of keys) {
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)].filter((x) => !ANNOTATIONS.has(x)))) {
     const av = a[k], bv = b[k];
     const same = JSON.stringify(av) === JSON.stringify(bv);
     if (!KNOWN.has(k)) { if (!same) out.push({ kind: "breaking", detail: `${where}: ${k} changed` }); continue; }
@@ -1897,7 +1934,7 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
         else out.push({ kind: "breaking", detail: `${where}: ${k} changed` });
         break;
       case "prefixItems": out.push({ kind: "breaking", detail: `${where}: prefixItems changed` }); break;
-      case "anyOf": case "oneOf": out.push({ kind: branchSuperset(bv, av) ? "safe" : "breaking", detail: `${where}: ${k} changed` }); break;
+      case "anyOf": case "oneOf": out.push({ kind: superset(bv, av) ? "safe" : "breaking", detail: `${where}: ${k} changed` }); break;
       case "minimum": case "exclusiveMinimum": case "minLength": case "minItems":
         out.push({ kind: bv === undefined || (av !== undefined && (bv as number) <= (av as number)) ? "safe" : "breaking", detail: `${where}: ${k} ${av} -> ${bv}` }); break;
       case "maximum": case "exclusiveMaximum": case "maxLength": case "maxItems":
@@ -1911,7 +1948,6 @@ function diffNode(a0: JsonSchema, b0: JsonSchema, at: string): NodeChange[] {
 const asList = (t: unknown): string[] => (t === undefined ? [] : Array.isArray(t) ? (t as string[]) : [t as string]);
 function widens(a: unknown, b: unknown): boolean { const A = asList(a), B = asList(b); return B.length === 0 || A.every((t) => B.includes(t)); }
 function superset(b: unknown, a: unknown): boolean { return Array.isArray(a) && Array.isArray(b) && a.every((x) => b.some((y) => JSON.stringify(x) === JSON.stringify(y))); }
-function branchSuperset(b: unknown, a: unknown): boolean { return superset(b, a); }
 
 export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<string, string>): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
@@ -1925,101 +1961,103 @@ export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<st
 }
 ```
 
-Add `readBreakingChanges()` reading `breaking-schema-changes.json` next to the module (`JSON.parse(readFileSync(new URL("./breaking-schema-changes.json", import.meta.url), "utf8"))`) and `LOCK_PATH` resolved to `packages/rt-client/settings-schema.lock.json`. Create `breaking-schema-changes.json` as `{}`.
+`settingsSchemaDiff(args)` in `commands/settings-schema.ts`: read the previous lock from `--against <path>` (missing file → `{}`) or `--against-ref <ref>` (default `origin/main`; `git show <ref>:packages/rt-client/src/settings/schema.lock.json` from the repo root via `spawnSync`; non-zero exit → `{}`); `next = buildLock()`; print each change and each problem; `--json` prints `{ ok, changes, problems }`; `process.exitCode = 1` when not ok. Tree: add `diff` under `settings.schema` with `--against`, `--against-ref`, `--json` args (descriptions as in Task 2's style).
 
-`commands/settings-schema.ts`: `settingsSchemaLock(args)` writes `JSON.stringify(buildLock(), null, 2) + "\n"` to `LOCK_PATH` and prints the path; `settingsSchemaDiff(args)` reads `--against <path>` (default: `git show main:packages/rt-client/settings-schema.lock.json` via `spawnSync` from the repo root, or `--against-ref <ref>`), runs `classifyLockDiff` and `checkLockAgainst(prev, buildLock(), readBreakingChanges())`, prints each change (`safe`/`breaking` with detail) and the problems, `--json` envelope `{ ok, changes, problems }`, `process.exitCode = 1` when not ok. Register the module in `lib/module-registry.ts` and add under `settings`:
+Preflight: in `lib/release/preflight.ts` add the `schema-lock` row next to the `picker:check` row, following the file's `git(seams, [...])` seam: `ok` when `readFile(LOCK_PATH)` equals `JSON.stringify(buildLock(), null, 2) + "\n"` and `checkLockAgainst(prevLock, buildLock(), readBreakingChanges()).ok` where `prevLock` is `git show <lastTag>:packages/rt-client/src/settings/schema.lock.json` parsed, or `{}` when that command exits non-zero (detail `no lock at <tag>`); `stale` with the problems joined otherwise; `error` when the committed lock is unreadable. Import through `../settings/schema-lock.ts` (the lib barrel).
 
-```ts
-      schema: {
-        description: "The schema lock: generate it, or diff the registry against a committed lock",
-        subcommands: {
-          lock: { description: "Regenerate packages/rt-client/settings-schema.lock.json from the registry", module: "./commands/settings-schema.ts", fn: "settingsSchemaLock" },
-          diff: {
-            description: "Classify schema changes against a lock (default: main's) and fail on an unacknowledged breaking change",
-            module: "./commands/settings-schema.ts",
-            fn: "settingsSchemaDiff",
-            args: [
-              { name: "Against", flag: "--against", type: "text", placeholder: "path/to/lock.json", hint: "A lock file to compare with (default: main's committed lock)" },
-              { name: "Against ref", flag: "--against-ref", type: "text", placeholder: "v2.13.0", hint: "A git ref whose committed lock to compare with" },
-              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
-            ],
-          },
-        },
-      },
-```
-
-Preflight: in `lib/release/preflight.ts` add a row `{ id: "schema-lock", label: "schema lock", ... }`: `ok` when the committed lock equals `buildLock()` and `checkLockAgainst(lockAt(previousTag), buildLock(), readBreakingChanges()).ok`; `stale` with the problems otherwise; `error` when the lock cannot be read. Read the previous tag's lock through the file's existing git seam (follow how other rows shell out).
-
-CI: in `.github/workflows/checks.yml`, after "Unit tests":
+CI, in `.github/workflows/checks.yml` after "Unit tests":
 
 ```yaml
       # A schema change that would invalidate stored settings must bump
-      # storeVersion and be acknowledged; the lock file is the record.
+      # storeVersion and be acknowledged; the committed lock is the record.
       - name: Settings schema lock is in sync
-        run: bun run cli.ts settings schema lock && git diff --exit-code -- packages/rt-client/settings-schema.lock.json
+        run: bun run cli.ts settings schema lock && git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json
       - name: Settings schema changes are classified
         run: git fetch --no-tags --depth=1 origin main && bun run cli.ts settings schema diff --against-ref origin/main
 ```
 
-Generate the lock: `bun run cli.ts settings schema lock`, and commit it.
+- [ ] **Step 4: Run to verify it passes, docs, conformance, gate, commit**
 
-- [ ] **Step 4: Run to verify it passes**
-
-Run: `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && bun run cli.ts settings schema diff --against packages/rt-client/settings-schema.lock.json`
-Expected: PASS; the last command prints no changes and exits 0.
-
-- [ ] **Step 5: Gate and commit**
-
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Run: `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && bun run cli.ts settings schema diff --against packages/rt-client/src/settings/schema.lock.json && sh scripts/repo-purity.sh && bunx tsc --noEmit && cd packages/rt-client && bun run build && cd ../..`
+Expected: PASS; the diff against itself prints no changes and exits 0.
 
 ```bash
-git add packages/rt-client/src/settings/schema-lock.ts packages/rt-client/settings-schema.lock.json packages/rt-client/src/settings/breaking-schema-changes.json packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/index.ts commands/settings-schema.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/module-registry.ts lib/command-tree-def.ts lib/release/preflight.ts .github/workflows/checks.yml docs
-git commit -m "feat(settings): schema lock file, breaking-change classifier, CI and preflight gates
+git add packages/rt-client/src/settings/schema-lock.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/settings-schema.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/command-tree-def.ts lib/release/preflight.ts .github/workflows/checks.yml docs
+git commit -m "feat(settings): breaking-change classifier, rt settings schema diff, CI and preflight gates
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 11: Docs, versions, the real-store audit and the PR
+### Task 12: Readers use the inferred types
 
 **Files:**
-- Modify: `docs/settings-architecture.md` (the "Adding a key" checklist gains: write the schema, add an example, regenerate the lock), `packages/rt-client/README.md` (a "Settings schemas" section), `packages/settings-kit/README.md` ("Shapes" becomes "Schemas and editors": `recognize`, `checkValue`, the new wire fields, `?repo=`, `/repos`, `unregistered`)
+- Modify: every rt-side reader of a `rt.*` composite key that declares its own interface for the value (find them with `git grep -n "getSetting<" -- lib commands extensions` and `git grep -n "rt\.notify\.eventBridges\|rt\.roles\|..." -- lib commands`); known ones: `lib/notify-bridge.ts` (`EventBridgeRule`).
+- Test: the existing tests of each touched file.
+
+**Interfaces:**
+- Consumes: `Value<K>` from `registry-schemas.ts`, imported as a type only: `import type { Value } from "../packages/rt-client/src/settings/registry-schemas.ts";` (through a `lib/settings/registry-schemas.ts` barrel that is itself `export type { Value } from ...`). A type-only import is erased under `verbatimModuleSyntax`, so zod stays off the runtime path; `no-zod-in-dist.test.ts` and `bun scripts/bench-startup.ts` prove it.
+- Produces: each touched reader's hand-written value type replaced by `Value<"<key>">` (or a named alias of it), with no behavior change. Readers in the apps repo are out of scope here (spec 2).
+
+- [ ] **Step 1: Enumerate**
+
+Run the greps above; list every file that declares an interface or type for one of the 25 `rt.*` composite values. Record the list in the PR body.
+
+- [ ] **Step 2: Replace, one file at a time**
+
+For each: replace the hand-written type with the inferred one, run that file's test file (`bun test <its __tests__ file>`), and `bunx tsc --noEmit`. Where the inferred type is wider than the hand-written one (an `.optional()` the reader assumed present), keep the reader's narrowing at the use site rather than tightening the schema.
+
+- [ ] **Step 3: Gate and commit**
+
+Run: `bun test packages/rt-client/test/no-zod-in-dist.test.ts lib && bun scripts/bench-startup.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
+
+```bash
+git add lib commands extensions lib/settings/registry-schemas.ts
+git commit -m "refactor(settings): rt readers take their value types from the schemas
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13: Docs, versions, the real-store audit and the PR
+
+**Files:**
+- Modify: `docs/settings-architecture.md` ("Adding a key" gains: write the zod schema, add an example, `rt settings schema lock`, rebuild), `packages/rt-client/README.md` (a "Settings schemas" section: the lock, `checkSchema`, `validateWrite`, `rt settings check`), `packages/settings-kit/README.md` ("Shapes" becomes "Schemas and editors": `recognize`, `checkValue`, the wire fields, `?repo=`, `/repos`, `unregistered`), `skills/rt-release/SKILL.md` (the preflight list gains the `schema lock` row; load `superpowers:writing-skills` first)
 - Modify: `packages/rt-client/package.json` version `0.31.1` → `0.32.0`; `packages/settings-kit/package.json` version `0.3.0` → `0.4.0` and `peerDependencies["@mattstack/rt-client"]` → `">=0.32.0 <1"`
-- Modify: `packages/rt-client/test/index-surface.test.ts` (assert the new exports exist)
+- Modify: `packages/rt-client/test/index-surface.test.ts`
 
 - [ ] **Step 1: Extend the surface test**
 
-Add to the settings registry surface test: `checkSchema`, `validateWrite`, `checkStores`, `buildLock`, `classifyLockDiff`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities` are functions.
-
-- [ ] **Step 2: Run to verify it fails, then it passes once exports are present**
+Assert `checkSchema`, `validateJson`, `validateWrite`, `checkStores`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, `mergedValueWith` are functions on the index, and that `buildLock` and `classifyLockDiff` are **not** (they live in the dev module).
 
 Run: `bun test packages/rt-client/test/index-surface.test.ts`
-Expected: PASS (every export landed in earlier tasks); if any is missing, add it to `index.ts`.
+Expected: PASS once the exports match; fix `index.ts` otherwise.
 
-- [ ] **Step 3: Write the docs and bump the versions**
+- [ ] **Step 2: Docs and versions**
 
-Follow the file list above. The settings-kit README's server section lists the four routes today; make it six (`/repos`, and the `?repo=` and `unregistered` additions). Announce the rt-client version bump to the other sessions per AGENTS.md before merging (it is a shared resource).
+Write the docs in the file list. Announce the rt-client version bump to the other sessions per AGENTS.md before merging.
 
-- [ ] **Step 4: The real-store audit (read-only, on Matt's machine)**
+- [ ] **Step 3: The real-store audit (read-only, on Matt's machine)**
 
 Run: `bun run cli.ts settings check`
-Expected: exit 0. Any finding is a schema that is stricter than a real value; fix the schema (Tasks 3 to 5's procedure), never the store, re-run, and note each such fix in the PR body. Then run `bun run cli.ts settings schema lock` and confirm `git diff --exit-code -- packages/rt-client/settings-schema.lock.json` is clean (commit the lock if a schema changed).
+Expected: exit 0. A finding is a schema stricter than a real value: fix the schema by the procedure, never the store, regenerate the lock, rebuild, re-run, and note each such fix in the PR body.
 
-- [ ] **Step 5: Full local gate for this branch**
+- [ ] **Step 4: Full local gate for the branch**
 
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages commands/__tests__/settings-keys-render.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/notification-shape-parity.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:check && bun run picker:check && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts && cd packages/rt-client && bun run build && cd ../settings-kit && bun run build && cd ../..`
+Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages commands/__tests__/settings-keys-render.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/notification-shape-parity.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:check && bun run picker:check && bun scripts/bench-startup.ts && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts && cd packages/rt-client && bun run build && cd ../settings-kit && bun run build && cd ../..`
 Expected: all green. CI runs the rest.
 
-- [ ] **Step 6: Commit and open the PR**
+- [ ] **Step 5: Commit and open the PR**
 
 ```bash
-git add docs/settings-architecture.md packages/rt-client/README.md packages/settings-kit/README.md packages/rt-client/package.json packages/settings-kit/package.json packages/rt-client/test/index-surface.test.ts packages/rt-client/settings-schema.lock.json
+git add docs/settings-architecture.md packages/rt-client/README.md packages/settings-kit/README.md skills/rt-release/SKILL.md packages/rt-client/package.json packages/settings-kit/package.json packages/rt-client/test/index-surface.test.ts packages/rt-client/src/settings/schema.lock.json
 git commit -m "docs(settings): schemas, check, lock; rt-client 0.32.0, settings-kit 0.4.0
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 git push -u origin settings-schemas
-gh pr create -R m4ttstack/rt --base main --head settings-schemas --title "settings: schemas, validateWrite, rt settings check, schema lock" --body-file <(printf '%s\n' "Implements docs/superpowers/specs/2026-09-25-settings-schemas-design.md." "" "Every composite key has a zod schema; writes are gated by validateWrite (layer schema plus merged result); reads only label. settings-kit carries schema, issues, repos and repo resolution; recognize() replaces SHAPES. A committed schema lock plus classifier gates CI and release preflight." "" "Schemas follow the most permissive reader; disagreements and real-store audit fixes are listed below." "" "🤖 Generated with [Claude Code](https://claude.com/claude-code)")
+gh pr create -R m4ttstack/rt --base main --head settings-schemas --title "settings: schemas, validateWrite, rt settings check, schema lock" --body-file <(printf '%s\n' "Implements docs/superpowers/specs/2026-09-25-settings-schemas-design.md." "" "Every composite key has a zod-authored schema; the committed lock is the runtime source of each def's JSON Schema, so zod never loads at startup. Writes are gated by validateWrite (layer schema plus merged result); reads only label. settings-kit carries schema, issues, repos and repo resolution; recognize() replaces SHAPES. The lock plus classifier gates CI and release preflight." "" "Schemas follow the most permissive reader; reader disagreements, fixture changes and real-store audit fixes are listed below." "" "🤖 Generated with [Claude Code](https://claude.com/claude-code)")
 ```
 
 Then wait for CodeRabbit and CI per the repo rule (an Opus reviewer if CodeRabbit is rate-limited). Do not merge without Matt's confirmation. Publishing `@mattstack/rt-client` and `@mattstack/settings-kit` is release-class, from `main` only, after the merge (AGENTS.md); the apps repo bumps its catalog pins in spec 2's plan.
@@ -2028,6 +2066,6 @@ Then wait for CodeRabbit and CI per the repo rule (an Opus reviewer if CodeRabbi
 
 ## Self-review notes
 
-- Spec coverage: schemas and fields (Tasks 1, 3, 4, 5); deep-merge layer rule and merged check (Tasks 1, 2); strict write / lenient read (Tasks 2, 6); JSON Schema `io: "input"` (Task 1); settings-kit wire, `?repo=`, `/repos`, `unregistered`, `checkValue`, `recognize`, `SHAPES` shrink (Tasks 7, 8); `rt settings check` (Task 9); lock file, classifier, CI, pre-release (Task 10); writer audit for rt's own writers is covered by `setSetting` now calling `validateWrite` (every rt writer goes through it) plus the real-store audit (Task 11); app writers are tested in the apps repo (spec 2).
-- Type consistency: `SchemaIssue`, `checkSchema(def, value, { layer })`, `validateWrite(def, value, { scope, repoIdentity?, team? })`, `WriteVerdict`, `CheckFinding`, `Lock`, `Change` are used with the same shapes in every task.
-- Review Focus 1 to 5 each pin a test (Tasks 6, 2, 5, 7, 2).
+- Spec coverage: schemas, fields and the lock as runtime source (Tasks 1, 2, 4, 5, 6); deep-merge layer rule and merged check (Tasks 1, 3); strict write / lenient read (Tasks 3, 7); `io: "input"` (Task 2); settings-kit wire, `?repo=`, `/repos`, `unregistered`, `checkValue`, `recognize`, `SHAPES` shrink (Tasks 8, 9); `rt settings check` (Task 10); lock, classifier, CI, pre-release (Tasks 2, 11); reader typing (Task 12); rt's own writers all pass through `setSetting` and so through `validateWrite`, and the real-store audit runs in Task 13; app writers are tested in the apps repo (spec 2).
+- Type consistency: `SchemaIssue`, `JsonSchema`, `checkSchema(def, value, { layer })`, `validateWrite(def, value, { scope, repoIdentity?, team? })`, `WriteVerdict`, `CheckFinding`, `Lock`, `Change`, `Recognized` keep the same shapes across tasks.
+- Review Focus 1 to 5 pin tests in Tasks 7, 3, 6, 8, 3.
