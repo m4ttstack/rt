@@ -38,11 +38,12 @@ import {
   type Provenance,
   type Resolved,
 } from "../lib/settings/resolve.ts";
-import { setSetting, unsetSetting } from "../lib/settings/write.ts";
+import { pruneStoreName, setSetting, unsetSetting } from "../lib/settings/write.ts";
 import { currentStoreName } from "../lib/settings/migrate.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
 import { firstIssueText, formatIssuePath } from "../lib/settings/schema.ts";
 import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
+import { planStoreMigrations, type MigrationPlan, type OlderName } from "../lib/settings/migrate-stores.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
 // ─── arg parsing (commands/events.ts conventions) ────────────────────────────
@@ -549,4 +550,141 @@ export async function settingsCheck(args: string[]): Promise<void> {
   }
 
   if (report.failing > 0) process.exitCode = 1;
+}
+
+// ─── migrate ────────────────────────────────────────────────────────────────
+
+export interface MigrateDeps {
+  confirm?: (message: string) => Promise<boolean>;
+  interactive?: boolean;
+}
+
+const whereOf = (x: { scope: string; repo?: string; file: string }) => `${[x.scope, x.repo].filter(Boolean).join("/")}  ${dim}${x.file}${reset}`;
+const isSecret = (key: string) => getDef(key)?.secret === true;
+const shown = (key: string, value: unknown) => (isSecret(key) ? "(secret)" : formatValueInline(value));
+/** A secret def's value never rides in --json either... `shown` only covers its own text rendering. */
+const redacted = (key: string, value: unknown) => (isSecret(key) ? "(secret)" : value);
+const redactOlder = <T extends OlderName>(o: T): T => ({ ...o, olderValue: redacted(o.key, o.olderValue), currentValue: redacted(o.key, o.currentValue) });
+
+function renderOlder(o: OlderName): string {
+  const color = o.label === "diverged" ? red : dim;
+  const values = o.label === "diverged" ? `\n      ${o.storeName}: ${shown(o.key, o.olderValue)}\n      current: ${shown(o.key, o.currentValue)}` : "";
+  return `  ${bold}${o.key}${reset}  ${whereOf(o)}  ${color}${o.storeName}: ${o.label}${reset}${values}`;
+}
+
+/**
+ * rt settings migrate [--write | --prune [--team] [--force <key>]... [--yes]] [--json]
+ * Dry run by default. --write is additive (current names from migrated
+ * values, baselines recorded by the ordinary write path); --prune deletes
+ * leftover and stale older names through pruneStoreName after confirmation.
+ */
+export async function settingsMigrate(args: string[], deps: MigrateDeps = {}): Promise<void> {
+  const json = args.includes("--json");
+  const write = args.includes("--write");
+  const prune = args.includes("--prune");
+  if (write && prune) {
+    console.error("rt settings: run --write and --prune separately (write first; prune once every reader of the store knows the new names)");
+    process.exitCode = 1;
+    return;
+  }
+  const plan = planStoreMigrations();
+  if (write) return migrateWrite(plan, json);
+  if (prune) {
+    const forced = new Set(args.flatMap((a, i) => (a === "--force" && args[i + 1] !== undefined ? [args[i + 1]!] : [])));
+    const interactive = deps.interactive ?? (process.stdin.isTTY === true && !json && !process.env.RT_BATCH);
+    const ask = deps.confirm ?? (async (message: string) => (await import("../lib/ui/prompts.ts")).confirm({ message, destructive: true }));
+    return migratePrune(plan, { json, team: args.includes("--team"), yes: args.includes("--yes"), forced, interactive, ask });
+  }
+  if (json) {
+    console.log(JSON.stringify({
+      ok: plan.failures.length === 0,
+      writes: plan.writes.map((w) => ({ ...w, value: redacted(w.key, w.value) })),
+      failures: plan.failures,
+      older: plan.older.map((o) => redactOlder(o)),
+    }));
+  } else {
+    console.log("");
+    for (const w of plan.writes) console.log(`  ${bold}${w.key}${reset}  ${whereOf(w)}  would write ${w.storeName} from ${w.fromName}: ${shown(w.key, w.value)}`);
+    for (const f of plan.failures) console.log(`  ${bold}${f.key}${reset}  ${whereOf(f)}  ${red}cannot migrate ${f.fromName}${reset}: ${f.message}`);
+    for (const o of plan.older) console.log(renderOlder(o));
+    if (plan.writes.length + plan.failures.length + plan.older.length === 0) console.log("  every stored key is under its current store name");
+    console.log("");
+  }
+  if (plan.failures.length > 0) process.exitCode = 1;
+}
+
+function migrateWrite(plan: MigrationPlan, json: boolean): void {
+  const written: MigrationPlan["writes"] = [];
+  const errors: { key: string; file: string; repo?: string; error: string }[] = [];
+  for (const w of plan.writes) {
+    try {
+      setSetting(w.key, w.value, w.scope, { ...(w.repo ? { repoIdentity: w.repo } : {}), ...(w.team ? { team: w.team } : {}) });
+      written.push(w);
+    } catch (err) {
+      errors.push({ key: w.key, file: w.file, ...(w.repo ? { repo: w.repo } : {}), error: (err as Error).message });
+    }
+  }
+  const ok = errors.length === 0 && plan.failures.length === 0;
+  if (json) {
+    console.log(JSON.stringify({ ok, written: written.map((w) => ({ ...w, value: redacted(w.key, w.value) })), errors, failures: plan.failures }));
+  } else {
+    console.log("");
+    for (const w of written) console.log(`  ${bold}${w.key}${reset}  ${whereOf(w)}  wrote ${w.storeName} from ${w.fromName}`);
+    for (const e of errors) console.log(`  ${bold}${e.key}${reset}  ${red}${e.error}${reset}`);
+    for (const f of plan.failures) console.log(`  ${bold}${f.key}${reset}  ${whereOf(f)}  ${red}cannot migrate ${f.fromName}${reset}: ${f.message}`);
+    if (written.length + errors.length + plan.failures.length === 0) console.log("  nothing to write");
+    console.log("");
+  }
+  if (!ok) process.exitCode = 1;
+}
+
+async function migratePrune(
+  plan: MigrationPlan,
+  o: { json: boolean; team: boolean; yes: boolean; forced: Set<string>; interactive: boolean; ask: (message: string) => Promise<boolean> },
+): Promise<void> {
+  const refused: (OlderName & { reason: string })[] = [];
+  const pruned: OlderName[] = [];
+  const byFile = new Map<string, OlderName[]>();
+  for (const n of plan.older) {
+    if (n.scope === "team" && !o.team) refused.push({ ...n, reason: "team store: pass --team to prune it" });
+    else if (n.label === "diverged" && !o.forced.has(n.key)) refused.push({ ...n, reason: `diverged: pass --force ${n.key} to delete it` });
+    else byFile.set(n.file, [...(byFile.get(n.file) ?? []), n]);
+  }
+  for (const [file, names] of byFile) {
+    const scope = names[0]!.scope;
+    if (!o.json) {
+      console.log(`\n  ${bold}${scope} store${reset}  ${dim}${file}${reset}`);
+      for (const n of names) console.log(`    ${n.storeName}${n.repo ? `  (${n.repo})` : ""}  ${n.label}`);
+      const versions = [...new Map(names.map((n) => [n.key, n.storeVersion])).entries()].map(([k, v]) => `${k} (storeVersion ${v})`);
+      console.log(`    every reader of this store must know: ${versions.join(", ")}`);
+    }
+    const noun = names.length === 1 ? "name" : "names";
+    const approved = o.yes || (o.interactive && (await o.ask(`Delete ${names.length} older store ${noun} from the ${scope} store (${file})?`)));
+    if (!approved) {
+      const reason = o.interactive ? "not confirmed" : "confirmation needed: run on a terminal, or pass --yes";
+      for (const n of names) refused.push({ ...n, reason });
+      continue;
+    }
+    for (const n of names) {
+      try {
+        // The authored value comes back only from pruneStoreName itself
+        // (readSection's migrated `value` is not what a diverged edit needs
+        // to be recovered from), so the deletion runs before this prints.
+        const result = pruneStoreName(n.key, n.storeName, n.scope, { ...(n.repo ? { repoIdentity: n.repo } : {}), ...(n.team ? { team: n.team } : {}), force: n.label === "diverged" });
+        if (n.label === "diverged" && !o.json) console.log(`  deleting diverged ${n.storeName}; its value was: ${shown(n.key, result.authored)}`);
+        pruned.push(n);
+      } catch (err) {
+        refused.push({ ...n, reason: (err as Error).message });
+      }
+    }
+  }
+  if (o.json) {
+    console.log(JSON.stringify({ ok: refused.length === 0, pruned: pruned.map((n) => redactOlder(n)), refused: refused.map((r) => redactOlder(r)) }));
+  } else {
+    console.log("");
+    for (const r of refused) console.log(`  ${bold}${r.key}${reset}  ${whereOf(r)}  ${r.storeName}: ${red}${r.reason}${reset}`);
+    console.log(`  pruned ${pruned.length}, refused ${refused.length}`);
+    console.log("");
+  }
+  if (refused.length > 0) process.exitCode = 1;
 }

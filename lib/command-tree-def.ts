@@ -1788,6 +1788,19 @@ export const TREE: Record<string, CommandNode> = {
         fn: "settingsCheck",
         args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" }],
       },
+      migrate: {
+        description: "Carry stored settings to each key's current store name; a dry run unless --write or --prune",
+        module: "./commands/settings-keys.ts",
+        fn: "settingsMigrate",
+        args: [
+          { name: "Write", flag: "--write", type: "boolean", default: false, hint: "Write each key's current store name from its migrated value where it is absent (additive)" },
+          { name: "Prune", flag: "--prune", type: "boolean", default: false, hint: "Delete older store names labeled leftover or stale, after confirmation" },
+          { name: "Team", flag: "--team", type: "boolean", default: false, hint: "Let --prune touch the team store" },
+          { name: "Force", flag: "--force", type: "text", placeholder: "rt.roles", hint: "Let --prune delete this key's diverged older names (repeatable)" },
+          { name: "Yes", flag: "--yes", type: "boolean", default: false, hint: "Confirm --prune without a prompt (non-interactive runs)" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
+        ],
+      },
       linear: {
         description: "Linear API configuration",
         subcommands: {

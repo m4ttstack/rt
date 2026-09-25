@@ -180,6 +180,8 @@ export { checkSchema, validateJson, layerJsonSchema, formatIssuePath, firstIssue
 export type { SchemaIssue, JsonSchema } from "./settings/schema.ts";
 export { checkStores } from "./settings/check.ts";
 export type { CheckFinding, CheckReport } from "./settings/check.ts";
+export { storeSections, planStoreMigrations } from "./settings/migrate-stores.ts";
+export type { StoreSection, MigrationPlan, MigrationWrite, MigrationFailure, OlderName } from "./settings/migrate-stores.ts";
 export { REGISTRY } from "./settings/registry-defs.ts";
 export { NOTIFICATION_EVENT_KEYS, NOTIFICATION_DEFAULTS } from "./settings/notification-events.ts";
 
