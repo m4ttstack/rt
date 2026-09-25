@@ -41,8 +41,8 @@
 **Files:**
 - Modify: `packages/rt-client/src/commands.ts` (the `Commands` entry after `"mr:comment-inline"`, and `COMMAND_NAMES` after `"mr:comment-inline"`)
 - Modify: `lib/daemon/handlers/discussions.ts` (header list, seams, handler map type, new handler)
-- Modify: `lib/daemon/__tests__/rt-client-commands.test.ts` (`WAVE_3_COMMAND_NAMES`)
 - Create: `lib/daemon/__tests__/discussions-comment.test.ts`
+- Test (unchanged; its "every COMMAND_NAMES entry resolves to a daemon handler" test covers the new verb): `lib/daemon/__tests__/rt-client-commands.test.ts`
 
 **Interfaces:**
 - Produces: `Commands["mr:comment"]` with payload `{ repoName: string; iid: number; body: string; resolvable?: boolean }` and data `{ noteId: number; discussionId: string | null; resolvable: boolean; url: string; mrUrl: string }`.
@@ -205,7 +205,7 @@ Expected: FAIL. `CommentMutator` is not exported and `h["mr:comment"]` is undefi
   };
 ```
 
-In `COMMAND_NAMES`, add `"mr:comment",` directly after `"mr:comment-inline",`. In `lib/daemon/__tests__/rt-client-commands.test.ts`, add `"mr:comment",` to `WAVE_3_COMMAND_NAMES`, keeping it alphabetical (after `"mr:action",`).
+In `COMMAND_NAMES`, add `"mr:comment",` directly after `"mr:comment-inline",`. Leave `WAVE_3_COMMAND_NAMES` alone: it is a historical pin.
 
 - [ ] **Step 5: Implement the handler** in `lib/daemon/handlers/discussions.ts`.
 
@@ -220,6 +220,16 @@ After the `CommentInlineMutator` type, add:
 ```ts
 /** The subset of NoteMutator mr:comment needs; test seam. */
 export type CommentMutator = Pick<NoteMutator, "createDiscussion" | "createNote">;
+```
+
+Replace the `DiscussionHandlerSeams` doc comment (it says the seams serve only `mr:comment-inline`) with:
+
+```ts
+/**
+ * Injectable plumbing for `mr:comment-inline` and `mr:comment`. Every field
+ * defaults to the real daemon plumbing (same as `discussions:reply` uses
+ * inline); tests override only what a case needs.
+ */
 ```
 
 In `DiscussionHandlerSeams`, after `mutator?`, add:
@@ -311,7 +321,7 @@ Expected: no errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/rt-client/src/commands.ts lib/daemon/handlers/discussions.ts lib/daemon/__tests__/discussions-comment.test.ts lib/daemon/__tests__/rt-client-commands.test.ts
+git add packages/rt-client/src/commands.ts lib/daemon/handlers/discussions.ts lib/daemon/__tests__/discussions-comment.test.ts
 git commit -m "daemon: add mr:comment for top-level MR notes (RT-315)"
 ```
 
@@ -322,8 +332,8 @@ git commit -m "daemon: add mr:comment for top-level MR notes (RT-315)"
 **Files:**
 - Modify: `packages/rt-client/src/commands.ts` (`Commands` entry after `"mr:action"`, `COMMAND_NAMES` after `"mr:action"`)
 - Modify: `lib/daemon/handlers/mr.ts` (header list, handler map type, new handler)
-- Modify: `lib/daemon/__tests__/rt-client-commands.test.ts`
 - Create: `lib/daemon/__tests__/mr-create.test.ts`
+- Test (unchanged; covers the new verb through `COMMAND_NAMES`): `lib/daemon/__tests__/rt-client-commands.test.ts`
 
 **Interfaces:**
 - Produces: `Commands["mr:create"]` with payload `{ repoName: string; sourceBranch: string; targetBranch: string; title: string; description?: string; draft?: boolean }` and data `{ iid: number; url: string | null }`.
@@ -445,7 +455,7 @@ Expected: FAIL. `handlers["mr:create"]` is not a function.
   };
 ```
 
-Add `"mr:create",` to `COMMAND_NAMES` after `"mr:action",`, and to `WAVE_3_COMMAND_NAMES` in `lib/daemon/__tests__/rt-client-commands.test.ts` after `"mr:comment",`.
+Add `"mr:create",` to `COMMAND_NAMES` after `"mr:action",`.
 
 - [ ] **Step 4: Implement the handler** in `lib/daemon/handlers/mr.ts`.
 
@@ -517,7 +527,7 @@ Expected: no errors. If `description` spreads as `false` in the input type, repl
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/rt-client/src/commands.ts lib/daemon/handlers/mr.ts lib/daemon/__tests__/mr-create.test.ts lib/daemon/__tests__/rt-client-commands.test.ts
+git add packages/rt-client/src/commands.ts lib/daemon/handlers/mr.ts lib/daemon/__tests__/mr-create.test.ts
 git commit -m "daemon: add mr:create (RT-315)"
 ```
 
@@ -1122,7 +1132,7 @@ Expected: both clean.
 - [ ] **Step 3: Pre-merge API smoke against the harness GitLab project.** The project is `m4tthew-dev/glance-test-repo` (project id `79691134`, `repos[0]` in `/Users/matt/Documents/GitHub/glance/harness_credentials.json`). Post as the `owner` user (`users[0]`) and never print a token. Push two throwaway branches off its default branch through a scratch clone in the scratchpad. Open one MR by hand (the target for the comments). Leave the second branch for `mr:create`. Write `/private/tmp/claude-501/-Users-matt-Documents-GitHub-repo-tools/bbd9c65a-7ece-4bd6-bf72-dfed5168c0dd/scratchpad/rt315-smoke.ts`:
 
 ```ts
-import { GitLabProvider } from "@mattstack/glance";
+import { GitLabProvider } from "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/galadriel/node_modules/@mattstack/glance/src/index.ts";
 import { createDiscussionHandlers } from "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/galadriel/lib/daemon/handlers/discussions.ts";
 import { createMRHandlers } from "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/galadriel/lib/daemon/handlers/mr.ts";
 
@@ -1153,7 +1163,7 @@ const m = createMRHandlers(ctx, () => {}, {
 console.log("create", await m["mr:create"]({ repoName, sourceBranch: process.argv[3]!, targetBranch: process.argv[4]!, title: "rt315 smoke create" }));
 ```
 
-Run it from the worktree root, so `@mattstack/glance` resolves: `bun /private/tmp/claude-501/-Users-matt-Documents-GitHub-repo-tools/bbd9c65a-7ece-4bd6-bf72-dfed5168c0dd/scratchpad/rt315-smoke.ts <iid> <second branch> <default branch>`. Expected:
+`GitLabProvider` is imported by absolute path, not by the bare `@mattstack/glance` specifier. Bun resolves bare specifiers from the importing file's directory, so from the scratchpad it would auto-install a second copy of glance, and `instanceof ReadBackFailedError` would fail across the two copies. The handlers' module-scope loggers bind to `$HOME`, and the script needs nothing from it, so run it under a scratch HOME: `env HOME=/private/tmp/claude-501/-Users-matt-Documents-GitHub-repo-tools/bbd9c65a-7ece-4bd6-bf72-dfed5168c0dd/scratchpad/smoke-home bun /private/tmp/claude-501/-Users-matt-Documents-GitHub-repo-tools/bbd9c65a-7ece-4bd6-bf72-dfed5168c0dd/scratchpad/rt315-smoke.ts <iid> <second branch> <default branch>` (create `smoke-home` first). Expected:
 - `resolvable` returns `resolvable: true` and a discussionId.
 - `plain` returns `resolvable: false` and a null discussionId.
 - Both `url` values open the exact notes in a browser.
@@ -1230,7 +1240,7 @@ posting mechanics belong to the forge CLI and the adapter.
 
 - [ ] **Step 1: RED baseline.** Run fresh agents on ship's generic path (GitLab origin), on a watch-ci exit-1 triage report with one INFRA job (`id 812`), and on a mark-ready Yes. Record the commands.
 
-- [ ] **Step 2: Edit ship §2 generic path.** The create sentence becomes:
+- [ ] **Step 2: Edit ship §2 generic path.** The paragraph's lead sentence, "the forge CLI is read from the origin remote (`git remote get-url origin`): a GitLab host means `glab`, a GitHub host means `gh`, anything else is a `clarify` gate.", becomes: "the forge is read from the origin remote (`git remote get-url origin`): a GitLab host means rt's MR tools (`mr_create`, `mr_ready`), a GitHub host means `gh`, anything else is a `clarify` gate." Otherwise the paragraph would say "GitLab means `glab`" and then name `mr_create`, and §3's "the forge-host rule above" points at this sentence. The create sentence becomes:
 
 ```markdown
 Push with `git push -u origin <branch>`, then create the MR/PR against the
@@ -1269,11 +1279,13 @@ Ship §3's "Yes:" line becomes: "Yes: the `mr_ready` tool on GitLab, `gh pr read
 
 ### Task 9: Release gate, publish, acceptance, close
 
-- [ ] **Step 1: Release gate (Matt's decision).** mattstack-skills `main` is what teammates' installs pull, and a skill naming a tool their rt lacks strands the pane. Before merging Tasks 6 and 7, ask Matt through `mattstack:wrap-up` to choose: cut an rt release now (`rt:release`), or accept the skew until the next release.
+- [ ] **Step 1: Release gate (Matt's decision).** mattstack-skills `main` is what teammates' installs pull, and a skill naming a tool their rt lacks strands the pane. Before merging Tasks 6 and 7, ask Matt through `mattstack:wrap-up` to choose between two options:
+  - (Recommended, the spec's default) cut an rt release now (`rt:release`) and merge the skills after it.
+  - Merge now and accept the skew until the next release. Say in the question that this departs from the spec's rollout default and that teammates' panes naming a missing tool will stall until they update rt.
 
 - [ ] **Step 2: PRs and merge.** Open one mattstack-skills PR (Tasks 6 and 7) and one mattstack-apps PR (Task 8). Wait for CodeRabbit and green CI, address findings, and merge on Matt's confirmation.
 
-- [ ] **Step 3: Sync the caches.** From the canonical checkouts on `main`, run `rt skills sync --pack mattstack`, then `rt skills check` to find the stale compiled packs and `rt skills sync --pack <pack>` for each one. Pack commits carry no mattstack ticket id. In mattstack-apps, check `git branch --show-current` is `main`, then `git pull --ff-only` (board wrapper skills are symlinked). Read every affected compiled verb in full (not grep) to confirm the new text landed and no `{{` remains. Restart the sessions sync reports.
+- [ ] **Step 3: Sync the caches.** From the canonical checkouts on `main`, run `rt skills sync --pack mattstack`, then `rt skills check` to find the stale compiled packs and `rt skills sync --pack <pack>` for each one. Pack commits carry no mattstack ticket id. In mattstack-apps, check `git branch --show-current` is `main`, then `git pull --ff-only` (the doctor skill deploys from that checkout). Read every affected compiled verb in full (not grep) to confirm the new text landed and no `{{` remains. Restart the sessions sync reports.
 
 - [ ] **Step 4: Acceptance run (RT-315).** Launch a board review on a GitLab MR (the harness test project, never an employer MR) and answer its post gate on the board, with no pane interaction. Expected:
   - The inline thread, the summary (resolvable when it carries an unanchored finding) and the approve all land.

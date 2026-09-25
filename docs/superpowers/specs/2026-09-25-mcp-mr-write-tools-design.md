@@ -80,8 +80,9 @@ Two new verbs. Everything else reuses verbs that already exist.
 
 - **`mr:comment`** in `lib/daemon/handlers/discussions.ts`, next to
   `mr:comment-inline`. It reuses the `DiscussionHandlerSeams` (`repoContext`,
-  `gitlabToken`, `mutator`, `refresh`), with `CommentInlineMutator` widened to
-  include `createDiscussion` and `createNote`. It validates a non-blank body,
+  `gitlabToken`, `refresh`) plus a sibling `commentMutator` seam beside
+  `mutator`, typed `CommentMutator` (`createDiscussion`, `createNote`), so the
+  inline tests' three-method stubs keep type-checking. It validates a non-blank body,
   posts once, then awaits a discussions refresh whose failure is logged at
   `warn` and never turns a landed post into `ok: false`. This is the same
   rule `mr:comment-inline` follows, for the same reason: a failure there
@@ -94,9 +95,11 @@ Two new verbs. Everything else reuses verbs that already exist.
   `ReadBackFailedError` with `writeApplied` after the MR exists; that case
   returns `ok` with the error's `iid` and a null `url`, never `ok: false`,
   which would invite a duplicate create.
-- Both are added to rt-client's `Commands`, `COMMAND_NAMES`, and
-  `lib/daemon/__tests__/rt-client-commands.test.ts`. `packages/rt-client`
-  gets a `bun run build`, and `dist-freshness` guards that.
+- Both are added to rt-client's `Commands` and `COMMAND_NAMES`; the
+  "every COMMAND_NAMES entry resolves to a daemon handler" test in
+  `lib/daemon/__tests__/rt-client-commands.test.ts` covers them from there.
+  `packages/rt-client` gets a `bun run build`, and `dist-freshness` guards
+  that.
 
 Shared tool behavior:
 
@@ -145,8 +148,8 @@ GitHub until phase 2. Edits go through `mattstack:editing-skills` and
 
 - `apps/board/skills/doctor/SKILL.md`. The generic path ("retry obviously-flaky
   pipelines", "attempt a mechanical rebase") and the API tier's allowed
-  mutations name `mr_retry` and `mr_rebase`. Board wrapper skills are
-  symlinked, so deploying them is a merge plus a pull in mattstack-apps.
+  mutations name `mr_retry` and `mr_rebase`. Deploying it is a merge plus a
+  pull in the mattstack-apps checkout.
 
 Team-pack domain skills (a `slot-doctor-api` filler, for example) are not
 edited here. Pack authors adopt the tools on their own schedule. Compiled
@@ -195,9 +198,11 @@ from the installed plugin.
    `dist`, restart the daemon. New Claude sessions spawn the MCP server with
    the new tools.
 3. **Skills PRs** (mattstack-skills, mattstack-apps). These merge after step
-   2 on the dev machine. The mattstack-skills plugin publishes to teammates
-   only in or after an rt release that carries the tools, because a skill
-   naming a missing tool strands the pane.
+   2 on the dev machine. By default the mattstack-skills plugin publishes to
+   teammates only in or after an rt release that carries the tools, because
+   a skill naming a missing tool strands the pane. Merging earlier and
+   accepting that skew until the next release is Matt's explicit call, never
+   a default.
 4. **Acceptance run** (above), then RT-315 closes.
 
 ## Phase 2: GitHub
