@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
+import { machineSettingsPath } from "../../rt-paths.ts";
 import { setSetting } from "../../settings/write.ts";
 import { parseCronConfig, loadCronConfig, startCron, type CronTrigger } from "../cron.ts";
 
@@ -59,7 +60,8 @@ describe("loadCronConfig through the settings resolver", () => {
   });
 
   test("an invalid stored value degrades to no triggers and warns", () => {
-    setSetting("rt.cron", { triggers: [{ name: "t" }] }, "machine");
+    mkdirSync(dirname(machineSettingsPath()), { recursive: true });
+    writeFileSync(machineSettingsPath(), JSON.stringify({ "rt.cron": { triggers: [{ name: "t" }] } }));
 
     const warnings: string[] = [];
     const cfg = loadCronConfig({ info: () => {}, warn: (m) => warnings.push(m) });
