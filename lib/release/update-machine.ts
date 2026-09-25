@@ -170,9 +170,19 @@ function revMatches(sourceRev: string, target: string): boolean {
   return sourceRev.startsWith(target) || target.startsWith(sourceRev);
 }
 
+/** GitHub's compare status for base...head: "ahead" or "identical" means head contains base. */
+async function compareContains(seams: UpdateMachineSeams, base: string, head: string): Promise<{ status: string } | { error: string }> {
+  const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/compare/${base}...${head}`, "--jq", ".status"]);
+  if (r.exitCode === 0) return { status: r.stdout.trim() };
+  const hint = /HTTP 404/.test(r.stderr) ? " (commit not on GitHub; is the shared checkout on an unpushed commit?)" : "";
+  return { error: `${execTail(r)}${hint}` };
+}
+
 /** The dev daemon runs whatever the shared checkout holds, and main keeps
  *  moving during a release, so a later main that contains the released
- *  commit is as current as the tag itself. */
+ *  commit is as current as the tag itself. The checkout can also sit on
+ *  another lane's pushed branch, which may contain the release without
+ *  being merged, so the rev must also be on main. */
 async function daemonRevCheck(
   seams: UpdateMachineSeams,
   sourceRev: string,
@@ -180,11 +190,17 @@ async function daemonRevCheck(
 ): Promise<{ ok: true; exact: boolean } | { ok: false; reason: string }> {
   if (revMatches(sourceRev, sha)) return { ok: true, exact: true };
   if (!/^[0-9a-f]{4,40}$/.test(sourceRev)) return { ok: false, reason: `daemon reports source rev "${sourceRev}", which is not a commit sha` };
-  const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/compare/${sha}...${sourceRev}`, "--jq", ".status"]);
-  if (r.exitCode !== 0) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with ${sha.slice(0, 12)}: ${execTail(r)}` };
-  const status = r.stdout.trim();
-  if (status === "ahead" || status === "identical") return { ok: true, exact: false };
-  return { ok: false, reason: `daemon reports source rev ${sourceRev}, which does not contain ${sha.slice(0, 12)} (${status || "no status"})` };
+  const release = await compareContains(seams, sha, sourceRev);
+  if ("error" in release) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with ${sha.slice(0, 12)}: ${release.error}` };
+  if (release.status !== "ahead" && release.status !== "identical") {
+    return { ok: false, reason: `daemon reports source rev ${sourceRev}, which does not contain ${sha.slice(0, 12)} (${release.status || "no status"})` };
+  }
+  const main = await compareContains(seams, sourceRev, "main");
+  if ("error" in main) return { ok: false, reason: `could not compare daemon source rev ${sourceRev} with main: ${main.error}` };
+  if (main.status !== "ahead" && main.status !== "identical") {
+    return { ok: false, reason: `daemon source rev ${sourceRev} contains ${sha.slice(0, 12)} but is not on main (${main.status || "no status"})` };
+  }
+  return { ok: true, exact: false };
 }
 
 function deckPinFromDepsLock(raw: string | null): string | null {

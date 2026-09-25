@@ -50,6 +50,8 @@ interface Options {
   daemonSourceRev?: string | null;
   /** What GitHub's compare API reports for <released sha>...<daemon rev>; omitted means the call is unhandled and fails. */
   compareStatus?: string;
+  /** What compare reports for <daemon rev>...main; defaults to "ahead" (main contains the rev). */
+  mainStatus?: string;
   deckVersion?: string;
   prodVersion?: string;
   devPidsBefore?: number[];
@@ -127,6 +129,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       }
       if (cmd.startsWith("gh api repos/m4ttstack/rt/releases/latest")) return ok(`${TAG}\n`);
       if (cmd.startsWith("gh api repos/m4ttstack/rt/commits/")) return ok(`${RELEASED_SHA}\n`);
+      if (cmd.startsWith("gh api repos/m4ttstack/rt/compare/") && cmd.includes("...main ")) return ok(`${opts.mainStatus ?? "ahead"}\n`);
       if (cmd.startsWith("gh api repos/m4ttstack/rt/compare/") && opts.compareStatus) return ok(`${opts.compareStatus}\n`);
       if (cmd.startsWith("shasum")) return ok(`${opts.shaMismatch ? "deadbeef" : "cafefeed"}  /work/mattstack-2.11.0.dmg\n`);
       if (cmd.startsWith("hdiutil attach")) {
@@ -629,19 +632,50 @@ describe("rt release update-machine", () => {
     test("a daemon on a commit that does not contain the release fails, naming why", async () => {
       for (const compareStatus of ["behind", "diverged"]) {
         const { seams } = fakeSeams({ daemonSourceRev: "acf3442fa", compareStatus });
-        const leg = (await runUpdateMachine(seams, { yes: true })).legs.find((l) => l.id === "daemon")!;
+        const report = await runUpdateMachine(seams, { yes: true });
+        const leg = report.legs.find((l) => l.id === "daemon")!;
         expect(leg.status).toBe("error");
         expect(leg.detail).toContain("does not contain");
         expect(leg.detail).toContain(compareStatus);
+        expect(report.legs.find((l) => l.id === "verify")!.status).toBe("error");
+      }
+    });
+
+    test("a daemon on a lane branch that contains the release but is not on main fails", async () => {
+      const { seams } = fakeSeams({ daemonSourceRev: "acf3442fa", compareStatus: "ahead", mainStatus: "diverged" });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "daemon")!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("not on main");
+      expect(report.legs.find((l) => l.id === "verify")!.status).toBe("error");
+    });
+
+    test("a source rev that is not a sha is refused before any compare call", async () => {
+      for (const rev of ["v2.12.0-dirty", "../x"]) {
+        const { seams, calls } = fakeSeams({ daemonSourceRev: rev, compareStatus: "ahead" });
+        const leg = (await runUpdateMachine(seams, { yes: true })).legs.find((l) => l.id === "daemon")!;
+        expect(leg.status).toBe("error");
+        expect(leg.detail).toContain("not a commit sha");
+        expect(calls.some((c) => c.startsWith("gh api repos/m4ttstack/rt/compare/"))).toBe(false);
       }
     });
 
     test("a failed compare call fails closed instead of passing an unknown rev", async () => {
       const { seams } = fakeSeams({ daemonSourceRev: "acf3442fa" });
       seams.exec = wrapExecFailing(seams.exec, "/compare/");
+      const report = await runUpdateMachine(seams, { yes: true });
+      expect(report.legs.find((l) => l.id === "daemon")!.status).toBe("error");
+      expect(report.legs.find((l) => l.id === "daemon")!.detail).toContain("could not compare");
+      expect(report.legs.find((l) => l.id === "verify")!.status).toBe("error");
+    });
+
+    test("a daemon on a commit GitHub has never seen names the likely cause", async () => {
+      const { seams } = fakeSeams({ daemonSourceRev: "acf3442fa" });
+      const inner = seams.exec;
+      seams.exec = (argv, opts) =>
+        argv.join(" ").includes("/compare/") ? Promise.resolve({ stdout: "", stderr: "gh: Not Found (HTTP 404)", exitCode: 1 }) : inner(argv, opts);
       const leg = (await runUpdateMachine(seams, { yes: true })).legs.find((l) => l.id === "daemon")!;
-      expect(leg.status).toBe("error");
-      expect(leg.detail).toContain("could not compare");
+      expect(leg.detail).toContain("not on GitHub");
     });
 
     test("verify leg also reads sourceRev via the mutual-prefix rule", async () => {
@@ -808,13 +842,13 @@ describe("rt release update-machine", () => {
   });
 
   test("verify leg reports every mismatch it finds", async () => {
-    const { seams } = fakeSeams({ prodVersion: "2.10.0", deckVersion: "3.0.0", daemonSourceRev: "deadbeef" });
+    const { seams } = fakeSeams({ prodVersion: "2.10.0", deckVersion: "3.0.0", daemonSourceRev: "deadbeef", compareStatus: "behind" });
     const report = await runUpdateMachine(seams, { verifyOnly: true });
     const leg = report.legs[0]!;
     expect(leg.status).toBe("error");
     expect(leg.detail).toContain("prod app is 2.10.0");
     expect(leg.detail).toContain("deck --version is 3.0.0");
-    expect(leg.detail).toContain("source rev deadbeef");
+    expect(leg.detail).toContain("deadbeef, which does not contain");
   });
 
   test("a --tag override skips the latest-release resolution", async () => {
