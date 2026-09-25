@@ -34,6 +34,38 @@ that catalog actually changed — an unchanged one is a no-op that pushes nothin
 This supersedes the local `.claude/commands/release.md` command; that file can be
 left as-is or reduced to a pointer here.
 
+## Fast path: one served-app fix
+
+When the release exists to ship a fix in ONE served app (board, chat,
+console, boxscore) and nothing but pins has landed on main since the last
+tag, the whole release is one verb, `rt release app <name>` (bare
+`rt release app` on a terminal picks the app; from source,
+`bun run cli.ts release app <name>`). It replaces steps 1-10, preflight
+included: it runs preflight's gate before its first write, bumps the app's
+version straight onto apps main, dispatches `bundle-apps.yml`, checks the
+bot deps.lock PR (only that row, sha256 of the published asset, codesign
+identity), merges it on green CI without waiting on CodeRabbit, writes the
+notes, tags the next patch and runs `rt release verify`. It tags without
+the step 8 rehearsal: its gate admits only serve-only pins, notes and
+`website/`, so the tag runs the pipeline the last tag already ran.
+
+1. `rt release app <name> --dry-run` and read the plan: versions, both tags,
+   the commands.
+2. Run it. On a terminal it asks y/N on the notes itself. From an agent,
+   run `rt release app <name> --json` in the background (a full run spends
+   30-60 minutes waiting on the bundle run, CI and release.yml) and read
+   its output when it exits: it stops at the notes with them in the
+   envelope. Show Matt the tag and the notes (step 6); after he approves,
+   run `rt release app <name> --json --yes-notes` the same way.
+3. A failure names the step and the resume command. Rerunning the same
+   command resumes, even after a run killed mid-wait, since every step
+   detects its own completion.
+4. Then finish with steps 11 and 12.
+
+Use the full process below for a deck fix and for a main carrying anything
+outside the pin allowlist (the verb refuses both, naming why), and for a
+release that ships more than one app's fix.
+
 ## Process
 
 1. **Verify state: run `rt release preflight`.** One read-only command
@@ -68,7 +100,8 @@ left as-is or reduced to a pointer here.
    subdir moved since its pin gets a release cut from the same main this
    tag builds against. Nothing in that pipeline is tag-triggered, so
    never hand-push an app tag; a hand-pushed tag builds nothing. The
-   pipeline: bump `apps/<app>/package.json` on apps main via PR, then
+   pipeline: bump `apps/<app>/package.json` on apps main (a bare version
+   bump is a direct commit to apps main, no PR), then
 
    ```
    gh workflow run bundle-apps.yml --repo m4ttstack/rt -f apps=<comma-list>
