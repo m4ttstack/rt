@@ -1,9 +1,12 @@
 /**
  * Composite value shapes and the pure helpers every settings UI shares.
  * Headless and import-free at runtime, so a browser bundle and the server's
- * write gate load the same declarations.
+ * write gate load the same declarations. `recognize` derives the editor kind
+ * from a def's JSON Schema; `SHAPES` now only carries the keys an owning
+ * app's own editor handles (`external`), never a schema-derivable kind.
  */
 import type { SettingDefWire } from "./server.ts";
+import { Validator, type OutputUnit } from "@cfworker/json-schema";
 
 export type LeafType = "string" | "number" | "boolean" | { enum: readonly string[] };
 
@@ -14,7 +17,179 @@ export type CompositeShape =
   | { kind: "leaves"; fields: Record<string, LeafType>; fallbacks?: Record<string, string> }
   | { kind: "external"; app: string };
 
-export type RowKind = "scalar" | "enum" | CompositeShape["kind"] | "readonly";
+export type RowKind = "scalar" | "enum" | "readonly" | CompositeShape["kind"] | "objectList" | "objectMap" | "json";
+
+export type JsonSchema = Record<string, unknown>;
+
+export interface SchemaIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+export type Recognized =
+  | { kind: "stringList" }
+  | { kind: "stringMap"; labels: [string, string] }
+  | { kind: "leaves"; fields: Record<string, LeafType>; placeholders: Record<string, string> }
+  | { kind: "objectList"; itemFields: Record<string, LeafType>; required: string[] }
+  | { kind: "objectMap"; entryFields: Record<string, LeafType>; required: string[]; labels: [string, string] }
+  | { kind: "json" };
+
+function leafOf(s: JsonSchema): LeafType | null {
+  if (Array.isArray(s.enum) && s.enum.every((e) => typeof e === "string")) return { enum: s.enum as string[] };
+  if (s.type === "string" || s.type === "number" || s.type === "boolean") return s.type;
+  if (Array.isArray(s.type)) {
+    const t = (s.type as string[]).filter((x) => x !== "null");
+    if (t.length === 1) return leafOf({ ...s, type: t[0] });
+  }
+  return null;
+}
+
+function flatFields(props: Record<string, JsonSchema> | undefined): Record<string, LeafType> | null {
+  if (!props) return null;
+  const out: Record<string, LeafType> = {};
+  for (const [k, v] of Object.entries(props)) {
+    const leaf = leafOf(v);
+    if (!leaf) return null;
+    out[k] = leaf;
+  }
+  return out;
+}
+
+/** Dotted leaf paths one level deep (emoji.looking), the way leaves rows render. */
+function leafPaths(props: Record<string, JsonSchema>, prefix = ""): { fields: Record<string, LeafType>; placeholders: Record<string, string> } | null {
+  const fields: Record<string, LeafType> = {};
+  const placeholders: Record<string, string> = {};
+  for (const [k, v] of Object.entries(props)) {
+    const leaf = leafOf(v);
+    if (leaf) {
+      fields[prefix + k] = leaf;
+      if (typeof v.placeholder === "string") placeholders[prefix + k] = v.placeholder;
+      continue;
+    }
+    if (v.type === "object" && v.properties && prefix === "") {
+      const nested = leafPaths(v.properties as Record<string, JsonSchema>, `${k}.`);
+      if (!nested) return null;
+      Object.assign(fields, nested.fields);
+      Object.assign(placeholders, nested.placeholders);
+      continue;
+    }
+    return null;
+  }
+  return { fields, placeholders };
+}
+
+/** The one place a def's editor kind is derived: every RowKind/summarize
+    caller reads a schema through this rather than re-inspecting it. */
+export function recognize(schema: JsonSchema | undefined): Recognized {
+  if (!schema) return { kind: "json" };
+  const labels = schema.labels as { key?: string; value?: string } | undefined;
+  const labelPair: [string, string] = [labels?.key ?? "key", labels?.value ?? "value"];
+  if (schema.type === "array") {
+    const items = schema.items as JsonSchema | undefined;
+    if (items?.type === "string") return { kind: "stringList" };
+    if (items?.type === "object") {
+      const fields = flatFields(items.properties as Record<string, JsonSchema> | undefined);
+      if (fields) return { kind: "objectList", itemFields: fields, required: (items.required as string[]) ?? [] };
+    }
+    return { kind: "json" };
+  }
+  if (schema.type === "object") {
+    const add = schema.additionalProperties as JsonSchema | boolean | undefined;
+    const props = schema.properties as Record<string, JsonSchema> | undefined;
+    if ((!props || Object.keys(props).length === 0) && add && typeof add === "object" && Object.keys(add).length > 0) {
+      if (add.type === "string") return { kind: "stringMap", labels: labelPair };
+      if (add.type === "object") {
+        const fields = flatFields(add.properties as Record<string, JsonSchema> | undefined);
+        if (fields) return { kind: "objectMap", entryFields: fields, required: (add.required as string[]) ?? [], labels: labelPair };
+      }
+      return { kind: "json" };
+    }
+    const leaves = leafPaths(props ?? {});
+    if (leaves) return { kind: "leaves", ...leaves };
+  }
+  return { kind: "json" };
+}
+
+// Duplicated from rt-client's settings/schema.ts rather than imported: this
+// module builds into the browser bundle, which never pulls in rt-client. The
+// two copies are pinned together by a parity test over shared fixtures.
+const validators = new WeakMap<JsonSchema, Validator>();
+
+function validatorFor(json: JsonSchema): Validator {
+  let v = validators.get(json);
+  if (!v) {
+    v = new Validator(json as never, "2020-12", false);
+    validators.set(json, v);
+  }
+  return v;
+}
+
+export function checkValue(json: JsonSchema, value: unknown): SchemaIssue[] {
+  const out = validatorFor(json).validate(value);
+  return out.valid ? [] : toIssues(out.errors);
+}
+
+const SUMMARY_KEYWORDS = new Set(["properties", "items", "additionalProperties", "prefixItems", "allOf", "anyOf", "oneOf", "propertyNames"]);
+
+/** cfworker reports outer-first with a summary unit per container; only the deepest units are issues. */
+function toIssues(units: OutputUnit[]): SchemaIssue[] {
+  const leaves = units.filter(
+    (u) => !SUMMARY_KEYWORDS.has(u.keyword) && !units.some((o) => o !== u && o.instanceLocation.startsWith(`${u.instanceLocation}/`)),
+  );
+  return leaves.map((u) => {
+    const path = pointerToPath(u.instanceLocation);
+    if (u.keyword === "required") {
+      const name = /required property "([^"]+)"/.exec(u.error)?.[1];
+      return { path: name ? [...path, name] : path, message: `required property "${name ?? "?"}" is missing` };
+    }
+    if (u.keyword === "type") {
+      const m = /type "([^"]+)" is invalid\. Expected "([^"]+)"/.exec(u.error);
+      return { path, message: m ? `expected ${m[2]}, got ${m[1]}` : u.error };
+    }
+    // An `additionalProperties: false` extra surfaces as a unit whose keyword is the
+    // literal "false" (the boolean subschema), located at the extra property itself.
+    if (u.keyword === "false") {
+      return { path, message: `unexpected property "${String(path.at(-1) ?? "")}"` };
+    }
+    if (u.keyword === "minimum" || u.keyword === "maximum" || u.keyword === "exclusiveMinimum" || u.keyword === "exclusiveMaximum") {
+      const bound = /(-?\d+(?:\.\d+)?)\.?$/.exec(u.error)?.[1] ?? "?";
+      const op = u.keyword === "minimum" ? ">=" : u.keyword === "maximum" ? "<=" : u.keyword === "exclusiveMinimum" ? ">" : "<";
+      return { path, message: `must be ${op} ${bound}` };
+    }
+    if (u.keyword === "enum") {
+      // cfworker: `Instance does not match any of ["a","b"].`
+      const raw = /(\[.*\])/.exec(u.error)?.[1];
+      let list = "";
+      try { list = raw ? (JSON.parse(raw) as unknown[]).map(String).join(", ") : ""; } catch { list = raw ?? ""; }
+      return { path, message: `expected one of ${list}` };
+    }
+    if (u.keyword === "const") {
+      // cfworker: `Instance does not match "human".`
+      const want = /does not match (.+?)\.?$/.exec(u.error)?.[1]?.replace(/^"|"$/g, "") ?? "";
+      return { path, message: `expected "${want}"` };
+    }
+    return { path, message: u.error };
+  });
+}
+
+// cfworker builds instanceLocation with encodeURI over the escaped pointer, so
+// each segment is URI-decoded before the ~1/~0 unescape.
+function pointerToPath(pointer: string): (string | number)[] {
+  return pointer
+    .replace(/^#\/?/, "")
+    .split("/")
+    .filter((s) => s !== "")
+    .map((s) => decodeURIComponent(s).replace(/~1/g, "/").replace(/~0/g, "~"))
+    .map((s) => (/^\d+$/.test(s) ? Number(s) : s));
+}
+
+/** True only when the value passes the def's own schema (its layer schema
+    when it has one). False, never thrown, for a def with no schema at all. */
+export function matchesSchema(def: SettingDefWire, value: unknown): boolean {
+  const schema = def.layerSchema ?? def.schema;
+  if (!schema) return false;
+  return checkValue(schema, value).length === 0;
+}
 
 /** Mirrors NOTIFICATION_TYPES in rt's lib/notifier.ts; a parity test in
     lib/__tests__ fails when the two drift. */
@@ -28,69 +203,14 @@ export const NOTIFICATION_EVENTS = [
 /** board's slack-emoji.ts DEFAULT_SLACK_EMOJI; board asserts parity. */
 export const DEFAULT_SLACK_EMOJI = { looking: "eyes", commented: "speech_balloon", approved: "white_check_mark" } as const;
 
-const SNAPSHOT_FIELDS = {
-  enabled: "boolean", debounceSec: "number", pushDelaySec: "number",
-  janitorThresholdHours: "number", janitorIntervalMin: "number",
-} as const satisfies Record<string, LeafType>;
-
-const STRING_LIST = { kind: "stringList" } as const;
 const BOARD_EDITOR = { kind: "external", app: "board" } as const;
 
+/** Every other composite key's editor kind now comes from `recognize(def.schema)`.
+    Only a key whose value board's own UI owns end to end stays here. */
 export const SHAPES: Record<string, CompositeShape> = {
-  "board.projects": STRING_LIST,
-  "board.botUsernames": STRING_LIST,
-  "board.ticketPrefixes": STRING_LIST,
-  "board.workspaces": { kind: "leaves", fields: { reviews: "string", responds: "string", doctors: "string" } },
-  "board.cwds": { kind: "leaves", fields: { review: "string", respond: "string", doctor: "string" } },
-  "board.slack": {
-    kind: "leaves",
-    fields: {
-      channel: "string", singleTemplate: "string", multiHeader: "string", multiItem: "string",
-      autoResolveIntervalMinutes: "number",
-      "emoji.looking": "string", "emoji.commented": "string", "emoji.approved": "string",
-    },
-    fallbacks: {
-      "emoji.looking": DEFAULT_SLACK_EMOJI.looking,
-      "emoji.commented": DEFAULT_SLACK_EMOJI.commented,
-      "emoji.approved": DEFAULT_SLACK_EMOJI.approved,
-    },
-  },
-  "board.triage": {
-    kind: "leaves",
-    fields: {
-      enabled: "boolean", cooldownMinutes: "number", dailyAttemptBudget: "number",
-      notify: { enum: ["rt", "badge-only"] }, tier: { enum: ["api", "checkout"] },
-      "fixClasses.retryFlake": "boolean", "fixClasses.inheritedNoteDraft": "boolean",
-      "fixClasses.cleanApiRebase": "boolean", "fixClasses.mechanicalLint": "boolean",
-      "fixClasses.codeFix": "boolean",
-    },
-  },
-  "board.reReview": { kind: "leaves", fields: { enabled: "boolean" } },
   "board.tabs": BOARD_EDITOR,
   "board.members": BOARD_EDITOR,
   "board.hiddenMembers": BOARD_EDITOR,
-  "rt.homeSnapshot": { kind: "leaves", fields: { ...SNAPSHOT_FIELDS } },
-  "rt.teamSnapshot": { kind: "leaves", fields: { ...SNAPSHOT_FIELDS, pullIntervalSec: "number" } },
-  "rt.gitStatus": { kind: "leaves", fields: { sweep: "boolean", sweepIntervalSec: "number", fetchIntervalSec: "number" } },
-  "rt.worktreeApp": {
-    kind: "leaves",
-    fields: { enabled: "boolean", killProcesses: "boolean", claudeHook: { enum: ["installed", "declined"] } },
-  },
-  "rt.notifications": {
-    kind: "leaves",
-    fields: Object.fromEntries(NOTIFICATION_EVENTS.map((k) => [k, "boolean" as const])),
-  },
-  "rt.repoRoots": STRING_LIST,
-  "rt.trustedBrowserOrigins": STRING_LIST,
-  "setup.waived": STRING_LIST,
-  "rt.repoIdentityOverrides": { kind: "stringMap", labels: ["remote URL", "identity"] },
-  "boxscore.projects": STRING_LIST,
-  "boxscore.linearDoneStates": STRING_LIST,
-  "boxscore.excludeFilePatterns": STRING_LIST,
-  "boxscore.ignoredMrs": STRING_LIST,
-  "boxscore.botPatterns": STRING_LIST,
-  "boxscore.sizeBand": { kind: "leaves", fields: { tooSmall: "number", tooLarge: "number" } },
-  "gitq.workSlots": { kind: "leaves", fields: { workSlotLocation: "string", maxWorkSlots: "number" } },
 };
 
 export const ENUMS: Record<string, readonly string[]> = {
@@ -198,10 +318,9 @@ export function formatValue(value: unknown): string {
 }
 
 export function rowKind(def: SettingDefWire): RowKind {
-  const shape = SHAPES[def.key];
-  if (shape?.kind === "external") return "external";
+  if (SHAPES[def.key]?.kind === "external") return "external";
   if (def.secret || !def.writable) return "readonly";
-  if (def.type === "object" || def.type === "array") return shape?.kind ?? "readonly";
+  if (def.type === "object" || def.type === "array") return recognize(def.schema).kind;
   if (ENUMS[def.key]) return "enum";
   return "scalar";
 }
@@ -218,28 +337,31 @@ function count(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-/** The one-line collapsed form of a composite row. */
+/** The one-line collapsed form of a composite row. An `external` key (no
+    schema-derivable kind of its own) falls through to the same generic count
+    `json` uses below. */
 export function summarize(def: SettingDefWire): string {
-  const shape = SHAPES[def.key];
   const v = def.effective.value;
-  if (!shape || shape.kind === "external") {
-    if (Array.isArray(v)) return count(v.length, ...nouns(def.key));
-    if (isRecord(v)) return count(Object.keys(v).length, "field", "fields");
-    return "unset";
-  }
-  switch (shape.kind) {
+  const r = recognize(def.schema);
+  switch (r.kind) {
     case "stringList":
       return count(Array.isArray(v) ? v.length : 0, ...nouns(def.key));
-    case "pairList":
-      return count(Array.isArray(v) ? v.length : 0, "entry", "entries");
     case "stringMap":
       return count(isRecord(v) ? Object.keys(v).length : 0, "entry", "entries");
     case "leaves": {
-      const paths = Object.keys(shape.fields);
+      const paths = Object.keys(r.fields);
       const source = def.merge === "deep" && def.type === "object" ? def.effective.authored : v;
       const set = paths.filter((p) => getLeaf(source, p) !== undefined).length;
       return `${set} of ${paths.length} set`;
     }
+    case "objectList":
+      return count(Array.isArray(v) ? v.length : 0, ...nouns(def.key));
+    case "objectMap":
+      return count(isRecord(v) ? Object.keys(v).length : 0, "entry", "entries");
+    case "json":
+      if (Array.isArray(v)) return count(v.length, ...nouns(def.key));
+      if (isRecord(v)) return count(Object.keys(v).length, "field", "fields");
+      return "unset";
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "@mattstack/settings-kit",
   "version": "0.3.0",
-  "description": "Embeddable mattstack settings surface: a framework-neutral server handler over @mattstack/rt-client plus headless React hooks \u2014 callers bring their own UI.",
+  "description": "Embeddable mattstack settings surface: a framework-neutral server handler over @mattstack/rt-client plus headless React hooks (callers bring their own UI).",
   "type": "module",
   "exports": {
     "./server": {
@@ -43,5 +43,8 @@
   "devDependencies": {
     "@types/react": "^18.3.0",
     "react": "^18.3.0"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1"
   }
 }
