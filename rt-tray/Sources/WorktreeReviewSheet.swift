@@ -36,6 +36,7 @@ struct WorktreeReviewSheet: View {
 
 
     private var loaded: Bool { if case .loaded = load { return true } else { return false } }
+    private var rowBusy: Bool { controller.busy.contains(row.id) || controller.bulkProgress != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -55,12 +56,13 @@ struct WorktreeReviewSheet: View {
                 Spacer(minLength: 8)
                 Button("Keep") { onStart("keep"); controller.keep(row); onClose() }
                     .buttonStyle(TriageButtonStyle())
+                    .disabled(rowBusy)
                 Button("Commit and push") { onStart("push-branch"); controller.pushBranch(row, commitDirty: true); onClose() }
                     .buttonStyle(TriageButtonStyle())
-                    .disabled(!loaded)
+                    .disabled(!loaded || rowBusy)
                 Button("Discard and dispose") { onStart("dispose"); controller.dispose(row, discard: "all"); onClose() }
                     .buttonStyle(TriageButtonStyle(primary: true))
-                    .disabled(!loaded)
+                    .disabled(!loaded || rowBusy)
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
@@ -77,7 +79,7 @@ struct WorktreeReviewSheet: View {
             Text("Loading changes…")
                 .font(.system(size: 13)).foregroundStyle(WT.textTertiary)
                 .padding(20)
-                .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         case .failed:
             HStack(spacing: 12) {
                 Text("Couldn't load the changes.").font(.system(size: 13)).foregroundStyle(WT.textSecondary)
@@ -85,7 +87,7 @@ struct WorktreeReviewSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-            .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         case .loaded(let files, _) where files.isEmpty:
             Text("No uncommitted changes left to show.")
                 .font(.system(size: 13)).foregroundStyle(WT.textSecondary)
@@ -106,7 +108,6 @@ struct WorktreeReviewSheet: View {
     }
 
     /// Flat rows, so the live `LazyVStack` only builds the lines on screen.
-    /// Only a file's diff body sits on the neutral fill; headers stay on the card.
     private func fileList(_ files: [ParsedDiffFile], truncatedFiles: Bool, lazy: Bool) -> some View {
         DiffStack(lazy: lazy) {
             ForEach(files) { f in

@@ -2,19 +2,19 @@ import AppKit
 import SwiftUI
 import MattstackCore
 
-/// Review opens in its own resizable window rather than a sheet, so a long
-/// diff is not capped by the Worktrees window's size. One window serves every
-/// row: reviewing another row retargets it and keeps the user's frame.
+/// One window serves every row: reviewing another row retargets it and keeps
+/// the user's frame.
 @MainActor
-final class WorktreeReviewWindow {
+final class WorktreeReviewWindow: NSObject, NSWindowDelegate {
     static let shared = WorktreeReviewWindow()
     private var window: NSWindow?
     private var host: NSHostingController<AnyView>?
 
     func show(_ row: TriageRow, controller: WorktreePanelController, onStart: @escaping (String) -> Void) {
-        // `.id` resets the review's loaded diff when the same window is retargeted.
+        // A fresh identity per show, never `row.id`: reviewing the same row
+        // again must reload its diff, or Discard would act on files it never showed.
         let root = AnyView(WorktreeReviewSheet(row: row, controller: controller, onStart: onStart,
-                                               onClose: { [weak self] in self?.close() }).id(row.id))
+                                               onClose: { [weak self] in self?.close() }).id(UUID()))
         let w = window ?? make()
         host?.rootView = root
         w.title = "Review \(row.tree)"
@@ -23,6 +23,10 @@ final class WorktreeReviewWindow {
     }
 
     func close() { window?.close() }
+
+    func windowWillClose(_ notification: Notification) {
+        host?.rootView = AnyView(EmptyView())
+    }
 
     private func make() -> NSWindow {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 760),
@@ -38,6 +42,7 @@ final class WorktreeReviewWindow {
         w.center()
         w.setFrameAutosaveName("rt-worktree-review")
         w.isReleasedWhenClosed = false
+        w.delegate = self
         window = w
         self.host = host
         return w

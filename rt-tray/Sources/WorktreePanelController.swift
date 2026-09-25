@@ -61,9 +61,7 @@ final class WorktreePanelController: ObservableObject {
     private var statusGeneration = 0
     private var hasLoaded = false
     private var queryGate = TriageQueryGate()
-    /// A finished action keeps its row busy until a query started after it
-    /// lands; clearing on the daemon's reply leaves a disposed row sitting at
-    /// rest for the seconds the triage query takes.
+    /// A finished action keeps its row busy until a query started after it lands.
     private var settling = TriageSettleLedger<() -> Void>()
     private let fixture: TriageData?
 
@@ -90,7 +88,7 @@ final class WorktreePanelController: ObservableObject {
     /// left to a poll that began before it. `settled` runs in the same update
     /// that applies this query's rows (or a newer query's), or once it fails.
     func refresh(userInitiated: Bool = false, force: Bool = false, settled: (() -> Void)? = nil) {
-        guard fixture == nil, let ticket = queryGate.begin(force: userInitiated || force) else { settled?(); return }
+        guard fixture == nil, let ticket = queryGate.begin(force: userInitiated || force || settled != nil) else { settled?(); return }
         if let settled { settling.wait(ticket, settled) }
         Task {
             let p = await client.queryTriage()

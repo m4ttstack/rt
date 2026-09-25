@@ -3,7 +3,7 @@ import SwiftUI
 import MattstackCore
 
 /// `rt-tray --render-worktree-snapshots <fixtures-dir> <out-dir>` renders the
-/// Worktrees panel, the Review window (collapsed and expanded) and the interaction states from fixture
+/// Worktrees panel, the Review window (collapsed, expanded) and the interaction states from fixture
 /// JSON, light and dark, then returns true so the caller exits before any
 /// window, status item, socket or daemon work exists. DEBUG builds only.
 enum WorktreeSnapshot {

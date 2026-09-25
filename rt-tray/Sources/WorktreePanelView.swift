@@ -146,7 +146,7 @@ struct WorktreePanelView: View {
         .background(WT.window)
         .environment(\.triageSnapshot, isSnapshot)
         .onAppear { controller.startPolling() }
-        .onDisappear { controller.stopPolling(); WorktreeReviewWindow.shared.close() }
+        .onDisappear { controller.stopPolling() }
         .alert(confirmingDisposeAnyway.map(TriageConfirm.disposeAnywayTitle) ?? "",
                isPresented: Binding(get: { confirmingDisposeAnyway != nil },
                                     set: { if !$0 { confirmingDisposeAnyway = nil } }),
@@ -199,7 +199,9 @@ struct WorktreePanelView: View {
             TriageBulkButton(safe: progress.1, progress: progress) {}
         } else if let safe = controller.counts?.safe, safe > 0 {
             TriageBulkButton(safe: safe, progress: nil) {
-                for row in controller.rows where row.group == "safe" { inFlight[row.id] = "dispose" }
+                for row in controller.rows where row.group == "safe" && !controller.busy.contains(row.id) {
+                    inFlight[row.id] = "dispose"
+                }
                 controller.cleanUpSafe()
             }
         }
