@@ -17,7 +17,8 @@
 - `validateValue` keeps its current behavior exactly (type check plus path guard). Reads never skip a value that fails only the schema.
 - JSON Schema is always produced with `z.toJSONSchema(schema, { io: "input" })`.
 - zod is a devDependency only. `packages/rt-client/src/index.ts` and anything it imports at runtime never import `registry-schemas.ts` or `schema-lock.ts` except with `import type`; a test greps `dist/index.js` for `zod`.
-- All runtime checks (layer, full, browser) use `@cfworker/json-schema`. Messages are normalized to `expected <type>, got <type>` / `required property "<name>" is missing`; the raw cfworker wording never reaches a test or a user.
+- All runtime checks (layer, full, browser) use `@cfworker/json-schema`. Messages are normalized: `expected <type>, got <type>`, `required property "<name>" is missing`, `unexpected property "<name>"`, `must be >= N` / `must be <= N` (and `> N` / `< N` for the exclusive forms), `expected one of <a>, <b>`, `expected "<const>"`; any other keyword falls back to cfworker's text. Tests assert only the normalized forms.
+- Only the deepest failing units become issues, so a missing required property beside a mistyped sibling shows once the type error is fixed; that is accepted.
 - Issue shape everywhere: `{ path: (string | number)[]; message: string }`; the first failing path is formatted `[0].pattern` / `emoji.looking` by `formatIssuePath`. Only the deepest cfworker units become issues; a `required` unit's path ends with the missing property name.
 - Public export names consumers already import from `@mattstack/settings-kit/shapes` keep their names: `SHAPES`, `ENUMS`, `NOTIFICATION_EVENTS`, `DEFAULT_SLACK_EMOJI`, `matchesShape`, `getLeaf`, `setLeaf`, `parseScalar`, `addToList`, `filterDefs`, `isSet`, `formatValue`, `rowKind`, `summarize`, `targetScope`.
 - Commit trailer on every commit, verbatim: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
@@ -175,7 +176,14 @@ describe("validateJson", () => {
   test("a const mismatch names the expected value", () => {
     const issues = validateJson(listSchema, [{ pattern: "x", category: "gate", owner: "herd" }]);
     expect(issues[0]!.path).toEqual([0, "owner"]);
-    expect(issues[0]!.message).toContain("human");
+    expect(issues[0]!.message).toBe('expected "human"');
+  });
+
+  test("limits, enums and unexpected properties read as plain rules", () => {
+    expect(validateJson({ type: "number", minimum: 1 }, 0)[0]!.message).toBe("must be >= 1");
+    expect(validateJson({ enum: ["a", "b"] }, "c")[0]!.message).toBe("expected one of a, b");
+    const extra = validateJson({ type: "object", properties: { a: { type: "string" } }, additionalProperties: false }, { a: "x", b: 1 });
+    expect(extra[0]).toEqual({ path: ["b"], message: 'unexpected property "b"' });
   });
 
   test("a conforming value with extras passes", () => {
@@ -317,6 +325,23 @@ function toIssues(units: OutputUnit[]): SchemaIssue[] {
       const m = /type "([^"]+)" is invalid\. Expected "([^"]+)"/.exec(u.error);
       return { path, message: m ? `expected ${m[2]}, got ${m[1]}` : u.error };
     }
+    if (u.keyword === "additionalProperties") {
+      // cfworker reports the extra property at its own location with a boolean-schema message.
+      return { path, message: `unexpected property "${String(path.at(-1) ?? "")}"` };
+    }
+    if (u.keyword === "minimum" || u.keyword === "maximum" || u.keyword === "exclusiveMinimum" || u.keyword === "exclusiveMaximum") {
+      const bound = /(-?\d+(?:\.\d+)?)\.?$/.exec(u.error)?.[1] ?? "?";
+      const op = u.keyword === "minimum" ? ">=" : u.keyword === "maximum" ? "<=" : u.keyword === "exclusiveMinimum" ? ">" : "<";
+      return { path, message: `must be ${op} ${bound}` };
+    }
+    if (u.keyword === "enum") {
+      const list = /\[(.*)\]/.exec(u.error)?.[1]?.replace(/"/g, "") ?? "";
+      return { path, message: `expected one of ${list}` };
+    }
+    if (u.keyword === "const") {
+      const want = /(?:const|value) (.+?)\.?$/.exec(u.error)?.[1]?.replace(/^"|"$/g, "") ?? "";
+      return { path, message: `expected "${want}"` };
+    }
     return { path, message: u.error };
   });
 }
@@ -347,7 +372,7 @@ export function firstIssueText(issues: SchemaIssue[]): string {
 }
 ```
 
-If cfworker's `required` or `type` wording in 4.1.1 differs from the two regexes, read `node_modules/@cfworker/json-schema/dist/validate.js` for the exact strings and match them; the normalized messages in the tests are the contract.
+The regexes over cfworker's wording are the fragile part: read `node_modules/@cfworker/json-schema/dist/validate.js` for the exact strings each keyword emits in 4.1.1 (`required`, `type`, the four bounds, `enum`, `const`, the boolean-schema text for an `additionalProperties: false` extra) and match them; the normalized messages in the tests are the contract. When a bound or const value cannot be parsed from the text, resolve the failing keyword in the schema through the unit's `keywordLocation` and print the value from there.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
@@ -395,6 +420,16 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `LOCK_PATH` (absolute path of `schema.lock.json`)
   - registry-machinery: `REGISTRY` entries get `schema` and (deep object keys) `layerSchema` from the lock at module init; `allDefs()`/`getDef()` return those
   - CLI `rt settings schema lock` regenerates the file
+
+- [ ] **Step 0: Record the startup baseline**
+
+The bench times the compiled binary, and `dist/rt` is gitignored and absent in a fresh worktree, so build it first, on the current commit (before this task's changes):
+
+```bash
+bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv && bun scripts/bench-startup.ts
+```
+
+Note the median it prints in the PR body as the baseline. Every later bench in this plan rebuilds `dist/rt` the same way first; a bench against a stale binary measures the wrong code.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -560,7 +595,8 @@ Create `schema.lock.json` as `{}` for now, `breaking-schema-changes.json` as `{}
  * never does.
  */
 
-import { writeFileSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { buildLock, LOCK_PATH } from "../lib/settings/schema-lock.ts";
 
 function flagValue(args: string[], flag: string): string | undefined {
@@ -570,6 +606,11 @@ function flagValue(args: string[], flag: string): string | undefined {
 
 export async function settingsSchemaLock(args: string[]): Promise<void> {
   const out = flagValue(args, "--out") ?? LOCK_PATH;
+  // A compiled rt resolves LOCK_PATH inside its own bundle, where nothing can be written.
+  if (out === LOCK_PATH && !existsSync(dirname(LOCK_PATH))) {
+    console.error("rt settings schema lock: run from source (bun run cli.ts settings schema lock); the compiled binary has no checkout to write into");
+    process.exit(1);
+  }
   writeFileSync(out, `${JSON.stringify(buildLock(), null, 2)}\n`);
   console.log(out);
 }
@@ -595,8 +636,8 @@ Run `bun run cli.ts settings schema lock` (it writes `{}` for now, formatted).
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd packages/rt-client && bun run build && cd ../.. && bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test/no-zod-in-dist.test.ts packages/rt-client/test/dist-freshness.test.ts commands/__tests__/settings-schema.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && bun scripts/bench-startup.ts`
-Expected: PASS; the startup bench stays under its threshold (it must, since nothing on the startup path imports zod).
+Run: `cd packages/rt-client && bun run build && cd ../.. && bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test/no-zod-in-dist.test.ts packages/rt-client/test/dist-freshness.test.ts commands/__tests__/settings-schema.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:gen && bun run docs:check && bun run picker:check && bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv && bun scripts/bench-startup.ts`
+Expected: PASS; the startup bench stays under its threshold and close to the Step 0 baseline (nothing on the startup path imports zod; `@cfworker/json-schema` and the lock's JSON are the only additions).
 
 - [ ] **Step 5: Gate and commit**
 
@@ -648,6 +689,7 @@ Put it in `packages/rt-client/src/settings/__tests__/with-schema.ts` and import 
 
 ```ts
 const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
+const ROLES = { type: "object", properties: { a: { type: "string" }, b: { type: "number" } }, required: ["a"] };
 const GIT_STATUS = { type: "object", properties: { sweep: { type: "boolean" }, sweepIntervalSec: { type: "number", minimum: 1 }, fetchIntervalSec: { type: "number" } }, required: ["sweep", "sweepIntervalSec", "fetchIntervalSec"] };
 const WORKTREES = { type: "object", properties: { onDeck: { type: "number", minimum: 0 }, name: { type: "string" } }, required: ["onDeck"] };
 
@@ -679,14 +721,27 @@ test("a replace key is checked against the full schema", () => {
   });
 });
 
-test("the merged result is refused only when it fails where it passed before", () => {
+test("a limit inside a layer is refused by the layer check itself", () => {
   withSchema("rt.gitStatus", GIT_STATUS, () => {
-    const def = getDef("rt.gitStatus")!;
-    const bad = validateWrite(def, { sweepIntervalSec: 0 }, { scope: "machine" });
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) expect(bad.reason).toContain("merged value would fail");
-    writeUser({ "rt.gitStatus": { sweepIntervalSec: 0 } });
-    expect(validateWrite(def, { sweep: false }, { scope: "machine" })).toEqual({ ok: true });
+    const r = validateWrite(getDef("rt.gitStatus")!, { sweepIntervalSec: 0 }, { scope: "machine" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("sweepIntervalSec: must be >= 1");
+  });
+});
+
+test("the merged result is refused only when it fails where it passed before", () => {
+  // rt.roles: deep, no registry default, allowed in every store; the layer schema
+  // makes `a` optional, so a layer of `{ b }` passes on its own.
+  withSchema("rt.roles", ROLES, () => {
+    const def = getDef("rt.roles")!;
+    const first = validateWrite(def, { b: 1 }, { scope: "machine" });
+    expect(first.ok).toBe(false);
+    if (!first.ok) expect(first.reason).toBe('merged value would fail: a: required property "a" is missing');
+    writeUser({ "rt.roles": { a: "x" } });
+    expect(validateWrite(def, { b: 1 }, { scope: "machine" })).toEqual({ ok: true });
+    writeUser({ "rt.roles": { b: 2 } });
+    // The merge already fails on the user layer; an unrelated machine edit still lands.
+    expect(validateWrite(def, { b: 3 }, { scope: "machine" })).toEqual({ ok: true });
   });
 });
 
@@ -1348,7 +1403,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `ExplainRowWire` gains `nonconforming?: SchemaIssue[]`
   - `/defs` response gains `unregistered`; `/defs` and `/explain/:key` accept `?repo=`; `/set` and `/unset` accept `repo` and pass `repoIdentity` to the follow-up `explainSetting`; `GET {base}/repos`
   - `RtSettingsApi` gains `validateWrite`, `listUnregisteredSettings`, `repoSectionsFor`, `listStoreRepoIdentities`, optional `listRepos?`
-  - Secret defs: every issue's `message` is replaced by `"refused"` (invalid) or `"does not match the schema"` (nonconforming); paths are kept.
+  - Secret defs: every issue's `message` is replaced by `"refused"` (invalid) or `"does not match the schema"` (nonconforming); paths are kept. The same replacement applies to `effective.invalid` (set in `effectiveFromRows` before its secret early-return) and to `rows[].invalid`, on `/defs`, `/explain`, `/set` and `/unset`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1385,8 +1440,11 @@ describe("schema on the wire", () => {
     const defs = await (await handle(get("/api/settings/defs")))!.json();
     const secret = defs.defs.find((d: any) => d.key === "rt.secretThing");
     expect(secret.issues).toEqual([{ scope: "user", file: "/home/user/settings.user.jsonc", kind: "invalid", path: [], message: "refused" }]);
+    expect(secret.effective.invalid).toBe("refused");
     const explain = await (await handle(get("/api/settings/explain/rt.secretThing")))!.json();
     expect(explain.rows[0].invalid).toBe("refused");
+    expect(explain.def.effective.invalid).toBe("refused");
+    expect(JSON.stringify(explain)).not.toContain("/Users/someone/secret");
   });
 
   test("?repo= resolves repo rungs and repos[] lists sections", async () => {
@@ -1424,6 +1482,7 @@ Expected: FAIL on the new block and the rewritten `shaped` block.
 - Import the new rt-client functions and types; extend `RtSettingsApi` and the `rt` default object.
 - `defToWire`: `storeVersion: def.storeVersion ?? 1`; when `hasSchema(def)`: `schema: def.schema`, and for deep object keys `layerSchema: def.layerSchema`.
 - `sanitizeRows`: copy `nonconforming` through; for a secret def replace `invalid` with `"refused"` and every nonconforming message with `"does not match the schema"`.
+- `effectiveFromRows`: for a secret def, set `wire.invalid = "refused"` instead of `top.invalid` (the path-guard reason quotes the literal it rejected).
 - `issuesFromRows(def, rows, repo?)`: `invalid` → `{ scope, file, repo?, kind: "invalid", path: [], message }`; `nonconforming` → one entry per issue, `kind: "nonconforming"`; secret defs get the fixed messages above. Never copy `row.value`.
 - `compositeAllowed(def, mode)`: `mode === true`, or `mode === "shaped"` and `hasSchema(def)` and `SHAPES[def.key]?.kind !== "external"`.
 - `/defs`: `repo` from `url.searchParams`; rows from `rt.explainSetting(d.key, { repoIdentity: repo ?? null })`; set `issues`, `mergedIssues` (from `checkSchema(def, effective.value, { layer: false })` when the def has a schema, is not secret, and the effective value is present), `repos: rt.repoSectionsFor(d.key)` for `repoScoped` defs; body gains `unregistered: rt.listUnregisteredSettings()`.
@@ -1784,7 +1843,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 11: Classifier, `rt settings schema diff`, CI and preflight gates
 
 **Files:**
-- Modify: `packages/rt-client/src/settings/schema-lock.ts` (add `classifyLockDiff`, `checkLockAgainst`, `readBreakingChanges`)
+- Create: `packages/rt-client/src/settings/schema-diff.ts` (`Lock`, `Change`, `classifyLockDiff`, `checkLockAgainst`; zod-free) and `lib/settings/schema-diff.ts` (barrel)
+- Modify: `packages/rt-client/src/settings/schema-lock.ts` (re-export the two functions and the `Lock` type from `schema-diff.ts`, add `readBreakingChanges`)
 - Modify: `commands/settings-schema.ts` (add `settingsSchemaDiff`), `lib/command-tree-def.ts`, `lib/release/preflight.ts`, `.github/workflows/checks.yml`
 - Test: `packages/rt-client/src/settings/__tests__/schema-lock.test.ts`, `commands/__tests__/settings-schema.test.ts`, `commands/__tests__/release-preflight.test.ts`
 
@@ -1853,7 +1913,7 @@ describe("checkLockAgainst", () => {
 
 `commands/__tests__/settings-schema.test.ts`: `settingsSchemaDiff(["--against", <temp lock with t.k type changed>, "--json"])` prints `{ ok: false, changes, problems }` and sets exit code 1; `["--against", <temp empty {}>, "--json"]` prints `{ ok: true, ... }`; `["--against", <missing path>, "--json"]` treats it as `{}` and is ok.
 
-`commands/__tests__/release-preflight.test.ts`: the existing `fakeSeams` must serve the committed lock through `readFile` and answer `git show <prevTag>:packages/rt-client/src/settings/schema.lock.json` with the same content (row `ok`), with a mutated content (row `stale`, detail naming the key), and with a non-zero exit (row `ok`, detail "no lock at <tag>"). Keep the existing "exits clean" test green by adding the lock answers to its seams.
+`commands/__tests__/release-preflight.test.ts`: the existing `fakeSeams` must serve the committed lock through `readFile(join(repoRoot, "packages/rt-client/src/settings/schema.lock.json"))` and answer `git show <prevTag>:packages/rt-client/src/settings/schema.lock.json` with the same content (row `ok`), with a content whose entry for one key has a narrowed type and no `storeVersion` bump (row `stale`, detail naming the key), and with a non-zero exit (row `ok`, detail `no lock at <tag>`). Keep the existing "exits clean" test green by adding the lock answers to its seams.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -1862,9 +1922,11 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement the classifier**
 
-In `schema-lock.ts` (dev module; add `import BREAKING from "./breaking-schema-changes.json" with { type: "json" };`):
+In the new `schema-diff.ts` (no zod import), with `schema-lock.ts` now importing its `Lock` type from here and adding `export { classifyLockDiff, checkLockAgainst, type Change } from "./schema-diff.ts";` plus `import BREAKING from "./breaking-schema-changes.json" with { type: "json" };` for `readBreakingChanges`:
 
 ```ts
+import type { JsonSchema } from "./schema.ts";
+export type Lock = Record<string, { storeVersion: number; schema: JsonSchema }>;
 export interface Change { key: string; kind: "safe" | "breaking"; detail: string }
 
 const ANNOTATIONS = new Set(["title", "description", "default", "$schema", "$id", "examples", "labels", "placeholder", "deprecated", "readOnly", "writeOnly"]);
@@ -1963,7 +2025,7 @@ export function checkLockAgainst(prev: Lock, next: Lock, acknowledged: Record<st
 
 `settingsSchemaDiff(args)` in `commands/settings-schema.ts`: read the previous lock from `--against <path>` (missing file → `{}`) or `--against-ref <ref>` (default `origin/main`; `git show <ref>:packages/rt-client/src/settings/schema.lock.json` from the repo root via `spawnSync`; non-zero exit → `{}`); `next = buildLock()`; print each change and each problem; `--json` prints `{ ok, changes, problems }`; `process.exitCode = 1` when not ok. Tree: add `diff` under `settings.schema` with `--against`, `--against-ref`, `--json` args (descriptions as in Task 2's style).
 
-Preflight: in `lib/release/preflight.ts` add the `schema-lock` row next to the `picker:check` row, following the file's `git(seams, [...])` seam: `ok` when `readFile(LOCK_PATH)` equals `JSON.stringify(buildLock(), null, 2) + "\n"` and `checkLockAgainst(prevLock, buildLock(), readBreakingChanges()).ok` where `prevLock` is `git show <lastTag>:packages/rt-client/src/settings/schema.lock.json` parsed, or `{}` when that command exits non-zero (detail `no lock at <tag>`); `stale` with the problems joined otherwise; `error` when the committed lock is unreadable. Import through `../settings/schema-lock.ts` (the lib barrel).
+Preflight: in `lib/release/preflight.ts` add the `schema-lock` row next to the `picker:check` row, following the file's `git(seams, [...])` seam. Preflight runs from the installed compiled `rt` (step 1 of `skills/rt-release/SKILL.md`), where `import.meta.url` resolves inside the bundle and the binary's own registry is not the checkout's, so the row never calls `buildLock()` or reads `LOCK_PATH`: it reads the committed lock at `join(seams.repoRoot, "packages/rt-client/src/settings/schema.lock.json")` through `seams.readFile` (CI's lock-in-sync step is what guarantees that file equals the registry), parses `git show <lastTag>:packages/rt-client/src/settings/schema.lock.json` as `prevLock` (or `{}` with detail `no lock at <tag>` when git exits non-zero), and runs `checkLockAgainst(prevLock, committedLock, breaking)` with `breaking` read from `join(seams.repoRoot, "packages/rt-client/src/settings/breaking-schema-changes.json")` the same way. Row: `ok`, or `stale` with the problems joined, or `error` when the committed lock is unreadable. The classifier lives in the zod-free `schema-diff.ts` (below) and preflight imports it through a `lib/settings/schema-diff.ts` barrel, so `lib/release/preflight.ts` stays free of zod.
 
 CI, in `.github/workflows/checks.yml` after "Unit tests":
 
@@ -1982,7 +2044,7 @@ Run: `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts com
 Expected: PASS; the diff against itself prints no changes and exits 0.
 
 ```bash
-git add packages/rt-client/src/settings/schema-lock.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/settings-schema.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/command-tree-def.ts lib/release/preflight.ts .github/workflows/checks.yml docs
+git add packages/rt-client/src/settings/schema-diff.ts packages/rt-client/src/settings/schema-lock.ts packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/settings-schema.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/settings/schema-diff.ts lib/command-tree-def.ts lib/release/preflight.ts .github/workflows/checks.yml docs
 git commit -m "feat(settings): breaking-change classifier, rt settings schema diff, CI and preflight gates
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -2010,7 +2072,7 @@ For each: replace the hand-written type with the inferred one, run that file's t
 
 - [ ] **Step 3: Gate and commit**
 
-Run: `bun test packages/rt-client/test/no-zod-in-dist.test.ts lib && bun scripts/bench-startup.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
+Run: `bun test packages/rt-client/test/no-zod-in-dist.test.ts lib && bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv && bun scripts/bench-startup.ts && sh scripts/repo-purity.sh && bunx tsc --noEmit`
 
 ```bash
 git add lib commands extensions lib/settings/registry-schemas.ts
@@ -2046,8 +2108,8 @@ Expected: exit 0. A finding is a schema stricter than a real value: fix the sche
 
 - [ ] **Step 4: Full local gate for the branch**
 
-Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages commands/__tests__/settings-keys-render.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/notification-shape-parity.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:check && bun run picker:check && bun scripts/bench-startup.ts && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts && cd packages/rt-client && bun run build && cd ../settings-kit && bun run build && cd ../..`
-Expected: all green. CI runs the rest.
+Run: `sh scripts/repo-purity.sh && bunx tsc --noEmit && bun test packages commands/__tests__/settings-keys-render.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts lib/__tests__/notification-shape-parity.test.ts lib/__tests__/no-eager-tui.test.ts && bun run docs:check && bun run picker:check && bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv && bun scripts/bench-startup.ts && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts && cd packages/rt-client && bun run build && cd ../settings-kit && bun run build && cd ../..`
+Expected: all green, and the bench median within a few ms of Task 2's baseline (record both numbers in the PR body). CI runs the rest.
 
 - [ ] **Step 5: Commit and open the PR**
 
