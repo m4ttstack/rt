@@ -3,7 +3,7 @@ Run `rt state backup` to trigger an immediate backup cycle outside the daemon's 
 ```bash
 rt state backup              # full encrypted backup
 rt state backup --local      # local-only VACUUM INTO, no encryption
-rt state backup status       # last cycle outcome per source
+rt state backup status       # recipients, push state, latest backup per app
 ```
 
 `--local` is useful for a quick pre-change snapshot when you do not need the encryption and push pipeline.
