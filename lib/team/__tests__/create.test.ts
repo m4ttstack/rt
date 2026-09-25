@@ -113,7 +113,7 @@ describe("createTeam", () => {
       const p = gitAwareFakeProbes("/home/x");
       await expect(
         createTeam(p, { name: "Acme", remote: "https://github.com/acme/mattstack-team-acme.git", others: false }, new FakeAgeKeySeam()),
-      ).rejects.toThrow(/run bun test from the repo root/);
+      ).rejects.toThrow(/Run bun test from the repo root/);
       expect(p.exists(join("/home/x", ".mattstack", "teams", "acme"))).toBe(false);
       expect(p.calls.exec).toEqual([]);
     });

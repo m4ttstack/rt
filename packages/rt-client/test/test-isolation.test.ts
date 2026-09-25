@@ -92,7 +92,7 @@ describe("realStoreRefusal", () => {
     ]) {
       const refusal = realStoreRefusal(target, account, account);
       expect(refusal).toContain(target);
-      expect(refusal).toMatch(/run bun test from the repo root/);
+      expect(refusal).toMatch(/Run bun test from the repo root/);
     }
   });
 

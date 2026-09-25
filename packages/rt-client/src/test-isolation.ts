@@ -7,8 +7,10 @@
  * sockets rtCommand refuses to dispatch at (transport.ts).
  *
  * The preload only runs when bun finds bunfig.toml in the cwd, so a test run
- * started anywhere else keeps the real HOME. assertNotRealStoreInTest is the
- * backstop for that case: every settings-store writer calls it first.
+ * started anywhere else keeps the real HOME; a test that unsets HOME, or a
+ * Bun.spawn child given no env, reaches it even with the preload loaded.
+ * assertNotRealStoreInTest is the backstop: every settings-store writer
+ * calls it first.
  */
 import { spawnSync } from "child_process";
 import { homedir, userInfo } from "os";
@@ -58,8 +60,9 @@ export function realStoreRefusal(target: string, account: string, home: string |
   if (path !== guarded && !path.startsWith(`${guarded}${sep}`)) return null;
   const homeNote = home === undefined ? "HOME is unset" : `HOME is ${home}`;
   return (
-    `rt: refusing to write ${path} during a test run: it is this account's real settings under ${guarded} (${homeNote}). ` +
-    "run bun test from the repo root so the bunfig.toml test preload points HOME at a scratch dir."
+    `rt: refusing to write ${path} during a test run: it is under this account's real ${guarded} (${homeNote}). ` +
+    "Run bun test from the repo root so the bunfig.toml test preload points HOME at a scratch dir. " +
+    "If the preload was loaded, look for a test that unsets HOME or a Bun.spawn with no env."
   );
 }
 
@@ -87,7 +90,7 @@ function lookupPasswdHome(): string | null {
   const uid = process.getuid?.();
   if (uid === undefined) return null;
   const [cmd, ...args] = process.platform === "darwin" ? ["/usr/bin/id", "-P"] : ["getent", "passwd", String(uid)];
-  const result = spawnSync(cmd as string, args, { encoding: "utf8", timeout: 5000 });
+  const result = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 });
   return result.status === 0 ? parsePasswdHome(result.stdout) : null;
 }
 

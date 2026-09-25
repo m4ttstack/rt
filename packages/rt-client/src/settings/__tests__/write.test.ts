@@ -588,13 +588,13 @@ describe("settings/write: test-run guard", () => {
 
   test("refuses a user write when HOME is the account's home, and creates nothing", () => {
     actAsAccountHome(home);
-    expect(() => setSetting("rt.apiPort", 50489, "user")).toThrow(/run bun test from the repo root/);
+    expect(() => setSetting("rt.apiPort", 50489, "user")).toThrow(/Run bun test from the repo root/);
     expect(existsSync(join(home, ".mattstack"))).toBe(false);
   });
 
   test("refuses a machine write the same way", () => {
     actAsAccountHome(home);
-    expect(() => setSetting("rt.worktrees", { onDeck: 3 }, "machine")).toThrow(/run bun test from the repo root/);
+    expect(() => setSetting("rt.worktrees", { onDeck: 3 }, "machine")).toThrow(/Run bun test from the repo root/);
     expect(existsSync(join(home, ".mattstack"))).toBe(false);
   });
 
@@ -603,7 +603,7 @@ describe("settings/write: test-run guard", () => {
     mkdirSync(dirname(store), { recursive: true });
     writeFileSync(store, "// acme team store\n{}\n");
     actAsAccountHome(home);
-    expect(() => setSetting("rt.roles", { reviewer: {} }, "team")).toThrow(/run bun test from the repo root/);
+    expect(() => setSetting("rt.roles", { reviewer: {} }, "team")).toThrow(/Run bun test from the repo root/);
     expect(readFileSync(store, "utf8")).toBe("// acme team store\n{}\n");
   });
 
@@ -612,7 +612,7 @@ describe("settings/write: test-run guard", () => {
     mkdirSync(dirname(store), { recursive: true });
     writeFileSync(store, `{ "rt.apiPort": 9401 }\n`);
     actAsAccountHome(home);
-    expect(() => unsetSetting("rt.apiPort", "user")).toThrow(/run bun test from the repo root/);
+    expect(() => unsetSetting("rt.apiPort", "user")).toThrow(/Run bun test from the repo root/);
     expect(readFileSync(store, "utf8")).toBe(`{ "rt.apiPort": 9401 }\n`);
   });
 
@@ -648,7 +648,7 @@ describe("settings/write: test-run guard", () => {
       env: { PATH: process.env.PATH, HOME: account, NODE_ENV: "test" },
       encoding: "utf8",
     });
-    expect(child.stdout).toMatch(/run bun test from the repo root/);
+    expect(child.stdout).toMatch(/Run bun test from the repo root/);
     expect(existsSync(join(account, ".mattstack"))).toBe(false);
   });
 
