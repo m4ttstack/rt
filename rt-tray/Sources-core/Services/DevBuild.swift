@@ -186,8 +186,7 @@ public enum DevBuild {
     /// into in the build cache, so a later rebuild of the same tree state is
     /// a copy rather than a build, then removes it from the staging dir. With
     /// no cache target (an unkeyed build) it is only removed.
-    public static func discardScript(stagedPath: String, logPath: String? = nil, cache: CacheTarget? = nil,
-                                     plutilPath: String = "/usr/bin/plutil") -> String {
+    public static func discardScript(stagedPath: String, logPath: String? = nil, cache: CacheTarget? = nil) -> String {
         let staged = shellQuote(stagedPath)
         var lines: [String] = []
         if let logPath {
@@ -208,7 +207,7 @@ public enum DevBuild {
                 "else echo 'could not cache the staged build; deleting it'; rm -rf \(incoming); fi",
             ]
             lines += fileLines(cache, what: "the staged build")
-            lines += tidyLines(cache, plutilPath: plutilPath)
+            lines += tidyLines(cache, plutilPath: nil)
         }
         lines += ["rm -rf \(staged)", "exit 0"]
         return lines.joined(separator: "\n")
@@ -252,28 +251,35 @@ public enum DevBuild {
         ]
     }
 
-    private static func tidyLines(_ cache: CacheTarget, plutilPath: String) -> [String] {
+    /// With no plutil, builds of gone worktrees are left to the trim: that
+    /// check stats each build's tree, and a tree under ~/Documents would
+    /// raise a privacy prompt against a tray that is still running.
+    private static func tidyLines(_ cache: CacheTarget, plutilPath: String?) -> [String] {
         let builds = shellQuote(cache.buildsDir)
         let entry = shellQuote("\(cache.buildsDir)/\(cache.entryName)")
         let inside = "\(builds)/?*"
-        let plutil = shellQuote(plutilPath)
-        return [
+        var lines = [
             // A handoff killed mid-filing leaves its incoming dir; ten
             // minutes is far past any live handoff's filing step.
             "  find \(builds) -mindepth 1 -maxdepth 1 -type d -name '.incoming-*' ! -name \".incoming-$$\" -mmin +10 | "
                 + "while read -r d; do case \"$d\" in \(builds)/.incoming-?*) rm -rf \"$d\"; echo \"swept $d\" ;; esac; done",
+        ]
+        if let plutilPath {
+            let plutil = shellQuote(plutilPath)
             // Before the trim, so dropped builds never push live ones out.
             // An unreadable plist, a missing key or a relative path keeps the
             // entry; the trim still ages it out.
-            "  for d in \(builds)/*; do [ -d \"$d\" ] && [ \"$d\" != \(entry) ] || continue; "
+            lines.append("  for d in \(builds)/*; do [ -d \"$d\" ] && [ \"$d\" != \(entry) ] || continue; "
                 + "t=$(\(plutil) -extract \(treeKey) raw -o - \"$d/\(cachedBundleName)/Contents/Info.plist\" 2>/dev/null) || continue; "
                 + "case $t in /?*) [ -e \"$t\" ] && continue ;; *) continue ;; esac; "
                 + "case \"$d\" in \(inside)) rm -rf \"$d\"; if [ -e \"$d\" ]; then echo \"could not drop $d\"; "
-                + "else echo \"dropped $d: its worktree $t is gone\"; fi ;; esac; done",
+                + "else echo \"dropped $d: its worktree $t is gone\"; fi ;; esac; done")
+        }
+        lines.append(
             "  for d in \(builds)/*; do [ -d \"$d\" ] || continue; t=$(cat \"$d/cached-at\" 2>/dev/null); "
                 + "case $t in ''|*[!0-9]*) t=0 ;; esac; echo \"$t $d\"; done | sort -rn | tail -n +\(cacheKeep + 1) | "
-                + "while read -r t d; do case \"$d\" in \(inside)) rm -rf \"$d\"; echo \"evicted $d\" ;; esac; done",
-        ]
+                + "while read -r t d; do case \"$d\" in \(inside)) rm -rf \"$d\"; echo \"evicted $d\" ;; esac; done")
+        return lines
     }
 
     static func shellQuote(_ s: String) -> String {

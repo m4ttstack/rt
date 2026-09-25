@@ -106,20 +106,33 @@ final class DevBuildWatcher {
     }
 
     func discardStaged() {
+        guard BundleFlavor.isDevBuild else { return }
+        // Taken out of staging before its identity is read, so a build a
+        // terminal stages meanwhile is never filed under this one's key.
+        let taken = root + "/discarding-\(UUID().uuidString)"
+        do {
+            try FileManager.default.moveItem(atPath: stagedApp, toPath: taken)
+        } catch {
+            TrayLog.error("dev discard could not take the staged build", ["err": String(describing: error)])
+            check()
+            return
+        }
         let logs = NSHomeDirectory() + "/.mattstack/rt/logs"
         try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
-        let cache = DevBuild.identity(atBundle: stagedApp, readFile: Self.read).flatMap {
+        let cache = DevBuild.identity(atBundle: taken, readFile: Self.read).flatMap {
             DevBuild.CacheTarget(buildsDir: buildsDir, entryName: DevBuild.cacheEntryName(for: $0))
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
-        proc.arguments = ["-c", DevBuild.discardScript(stagedPath: stagedApp, logPath: logs + "/dev-app-restart.log",
+        proc.arguments = ["-c", DevBuild.discardScript(stagedPath: taken, logPath: logs + "/dev-app-restart.log",
                                                        cache: cache)]
         proc.terminationHandler = { _ in Task { @MainActor in DevBuildWatcher.shared.check() } }
         do {
             try proc.run()
         } catch {
             TrayLog.error("dev discard failed to start", ["err": String(describing: error)])
+            try? FileManager.default.removeItem(atPath: taken)
+            check()
         }
     }
 
