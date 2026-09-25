@@ -81,6 +81,7 @@ if (parsed.local) {
             return null;
           }
         },
+        log: (line) => console.log(line),
         writeFile: (path, content) => {
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, content);

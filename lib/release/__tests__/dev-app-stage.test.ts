@@ -33,6 +33,7 @@ function fakeSeams(
   const calls: string[] = [];
   const cwds: (string | undefined)[] = [];
   const writes: Record<string, string> = {};
+  const logs: string[] = [];
   const sourceDeps = opts.sourceDeps ?? "full";
   const scratchDeps = new Set<string>();
   const plists = opts.plists ?? {};
@@ -51,6 +52,9 @@ function fakeSeams(
       scratchDeps.has(p),
     writeFile: (p, content) => {
       writes[p] = content;
+    },
+    log: (line) => {
+      logs.push(line);
     },
     exec: (argv, execOpts) => {
       const cmd = argv.join(" ");
@@ -77,7 +81,7 @@ function fakeSeams(
       return ok();
     },
   };
-  return { seams, calls, cwds, writes };
+  return { seams, calls, cwds, writes, logs };
 }
 
 describe("stageLocalDevApp", () => {
@@ -302,5 +306,36 @@ describe("stageLocalDevApp", () => {
     const result = await stageLocalDevApp(seams, "/src/tree");
     expect(result.outcome).toBe("built");
     expect(calls.some((c) => c.startsWith("cp -cR"))).toBe(false);
+  });
+
+  test("a cached bundle is only staged once its signature verifies", async () => {
+    const { seams, calls } = fakeSeams({
+      cacheEntries: ["tree-abc"],
+      plists: { [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildStamp: "s" } },
+    });
+    const paths = devAppStagePaths("/Users/t");
+    await stageLocalDevApp(seams, "/src/tree");
+    const verify = calls.findIndex((c) => /^codesign --verify --strict .*\/\.incoming-\d+\/mattstack-dev\.app$/.test(c));
+    const clone = calls.findIndex((c) => c.startsWith("cp -cR"));
+    const install = calls.findIndex((c) => c.startsWith(`mv ${paths.root}/.incoming-`) && c.endsWith(` ${paths.stagedDir}`));
+    expect(verify).toBeGreaterThan(clone);
+    expect(install).toBeGreaterThan(verify);
+  });
+
+  test("a cached bundle whose signature fails is dropped and the tree is built instead, saying why", async () => {
+    const { seams, calls, logs } = fakeSeams({
+      cacheEntries: ["tree-abc"],
+      plists: { [`${BUILDS}/tree-abc/bundle`]: { ...cleanKey, MSBuildStamp: "s" } },
+      failCmd: "codesign --verify",
+    });
+    const paths = devAppStagePaths("/Users/t");
+    const result = await stageLocalDevApp(seams, "/src/tree");
+    expect(result.outcome).toBe("built");
+    const verify = calls.findIndex((c) => c.startsWith("codesign --verify"));
+    const cleanup = calls.findIndex((c, i) => i > verify && c.startsWith(`rm -rf ${paths.root}/.incoming-`));
+    const build = calls.findIndex((c) => c.includes("rt-tray/build.sh dev"));
+    expect(cleanup).toBeGreaterThan(verify);
+    expect(build).toBeGreaterThan(cleanup);
+    expect(logs.some((l) => l.includes("signature") && l.includes(`${BUILDS}/tree-abc/bundle`))).toBe(true);
   });
 });

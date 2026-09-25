@@ -16,7 +16,11 @@ export interface StageSeams extends CacheSeams {
   /** A fresh, empty directory for the working-tree copy. */
   scratchDir(): string;
   writeFile(path: string, content: string): void;
+  /** A progress line for the terminal or the tray's build log. */
+  log(line: string): void;
 }
+
+class CachedBundleRejected extends Error {}
 
 export type StageResult =
   | { outcome: "built" | "cached"; stamp: string; stagedPath: string }
@@ -61,16 +65,26 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     }
     const cached = await findCachedBuild(seams, paths.buildsDir, identity);
     if (cached) {
-      // The cached bundle is signed with its own Info.plist, so it keeps its
-      // original stamp rather than being restamped.
-      const stagedPath = await installStaged(seams, paths, async (dest) => {
-        const clone = await seams.exec(["cp", "-cR", cached.bundle, dest]);
-        if (clone.exitCode === 0) return clone;
-        await seams.exec(["rm", "-rf", dest]);
-        return seams.exec(["ditto", cached.bundle, dest]);
-      });
-      seams.writeFile(paths.lastSourceFile, source);
-      return { outcome: "cached", stamp: cached.stamp ?? stamp, stagedPath };
+      try {
+        // The cached bundle is signed with its own Info.plist, so it keeps its
+        // original stamp rather than being restamped.
+        const stagedPath = await installStaged(seams, paths, async (dest) => {
+          let copy = await seams.exec(["cp", "-cR", cached.bundle, dest]);
+          if (copy.exitCode !== 0) {
+            await seams.exec(["rm", "-rf", dest]);
+            copy = await seams.exec(["ditto", cached.bundle, dest]);
+          }
+          if (copy.exitCode !== 0) return copy;
+          const verify = await seams.exec(["codesign", "--verify", "--strict", dest]);
+          if (verify.exitCode !== 0) throw new CachedBundleRejected(tail(verify));
+          return verify;
+        });
+        seams.writeFile(paths.lastSourceFile, source);
+        return { outcome: "cached", stamp: cached.stamp ?? stamp, stagedPath };
+      } catch (err) {
+        if (!(err instanceof CachedBundleRejected)) throw err;
+        seams.log(`cached build ${cached.bundle} failed its signature check, building instead: ${err.message}`);
+      }
     }
   }
 
@@ -132,7 +146,13 @@ async function installStaged(
     [`mkdir -p ${incoming}`, () => seams.exec(["mkdir", "-p", incoming])],
     [`copying the bundle into ${incoming}`, () => copyInto(dest)],
   ] as [string, () => Promise<RunResult>][]) {
-    const r = await step();
+    let r: RunResult;
+    try {
+      r = await step();
+    } catch (err) {
+      await seams.exec(["rm", "-rf", incoming]);
+      throw err;
+    }
     if (r.exitCode !== 0) {
       await seams.exec(["rm", "-rf", incoming]);
       throw new UserActionableError("dev-app-stage-failed", `${label} failed: ${tail(r)}`);
