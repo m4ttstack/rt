@@ -19,7 +19,7 @@ import {
   teamsDir,
   userSettingsPath,
 } from "../paths.ts";
-import { getDef, type SettingDef } from "../registry-machinery.ts";
+import { getDef, type SettingDef, type SettingScope } from "../registry-machinery.ts";
 import {
   expandVariables,
   explainSetting,
@@ -80,6 +80,25 @@ describe("settings/resolve", () => {
     } finally {
       if (prev === undefined) delete def.teamLocked;
       else def.teamLocked = prev;
+    }
+  }
+
+  /**
+   * `rt.homeSnapshot` is registered `scopes: ["machine"]` only, so a team-store
+   * write to it is normally refused for the store, before the schema check
+   * ever runs. Widening `scopes` for one assertion (same live-def-mutation
+   * technique as `withTeamLocked`) isolates the schema-labeling behavior from
+   * that unrelated store guard, so the nonconforming-vs-invalid distinction can
+   * be pinned against the team rung too, not only the machine rung.
+   */
+  function withScope(key: string, scope: SettingScope, fn: () => void): void {
+    const def = getDef(key) as SettingDef;
+    const prev = def.scopes;
+    def.scopes = [...prev, scope];
+    try {
+      fn();
+    } finally {
+      def.scopes = prev;
     }
   }
 
@@ -669,9 +688,22 @@ describe("settings/resolve", () => {
       });
     });
 
+    test("a team store written by an older rt is labeled nonconforming too, not invalid", () => {
+      withSchema("rt.homeSnapshot", SNAPSHOT, () => {
+        withScope("rt.homeSnapshot", "team", () => {
+          writeTeam(TEAM, { "rt.homeSnapshot": { enabled: "yes" } });
+          expect(getSetting<{ enabled: unknown }>("rt.homeSnapshot").value.enabled).toBe("yes");
+          const team = explainSetting("rt.homeSnapshot").find((r) => r.scope === "team")!;
+          expect(team.invalid).toBeUndefined();
+          expect(team.nonconforming?.[0]?.path).toEqual(["enabled"]);
+        });
+      });
+    });
+
     test("a type-invalid layer is still skipped and labeled invalid", () => {
       writeMachine({ "rt.homeSnapshot": "nope" });
       expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.invalid).toContain("expected object");
+      expect(getSetting("rt.homeSnapshot").value).toEqual(getDef("rt.homeSnapshot")?.default);
     });
 
     test("a partial deep layer is not labeled", () => {

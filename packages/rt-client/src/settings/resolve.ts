@@ -280,8 +280,8 @@ export function listStoreRepoIdentities(): string[] {
 }
 
 /**
- * Every key found in a store file that the registry has never heard of —
- * global sections AND every repo section, so a stale repo-scoped key surfaces
+ * Every key found in a store file that the registry has never heard of, in
+ * global sections and every repo section, so a stale repo-scoped key surfaces
  * with no `repoIdentity` needed to see it. `scope` is the rung the key sat in
  * (`machine.repo`, not `machine`, for a key found inside `repos.<id>`).
  */
