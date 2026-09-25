@@ -113,10 +113,11 @@ assert_system_linkage() { # name path
 
 unpack() { # name archive-file archive-kind extract-path dest
   local name="$1" file="$2" kind="$3" extract="$4" dest="$5" tmp
-  # Skills are cleared for every archive kind, not just the tar branch that
-  # can write them: a tool migrating from tar.gz to raw would otherwise keep a
-  # stale tree that the post-unpack stamp then re-blesses under the new sha.
-  rm -rf "$dest" "$dest-skills"
+  # Skills and identity are cleared for every archive kind, not just the tar
+  # branch that can write them: a tool migrating from tar.gz to raw would
+  # otherwise keep a stale tree that the post-unpack stamp then re-blesses
+  # under the new sha.
+  rm -rf "$dest" "$dest-skills" "$dest-identity"
   mkdir -p "$(dirname "$dest")"
   case "$kind" in
     raw)
@@ -137,6 +138,9 @@ unpack() { # name archive-file archive-kind extract-path dest
       fi
       if [ -d "$tmp/skills" ]; then
         cp -R "$tmp/skills" "$dest-skills"
+      fi
+      if [ -d "$tmp/identity" ]; then
+        cp -R "$tmp/identity" "$dest-identity"
       fi
       rm -rf "$tmp" ;;
     go-src)
@@ -277,6 +281,9 @@ while IFS= read -r line; do
     if [ -f "$dest-skills.sha256" ] && [ "$(cat "$dest-skills.sha256")" = "$sha" ] && [ ! -d "$dest-skills" ]; then
       already=false
     fi
+    if [ -f "$dest-identity.sha256" ] && [ "$(cat "$dest-identity.sha256")" = "$sha" ] && [ ! -d "$dest-identity" ]; then
+      already=false
+    fi
   fi
   if $already; then
     echo "  = $name $version already unpacked (archive ${sha:0:12} verified) -> ${dest#$ROOT/}"
@@ -290,6 +297,11 @@ while IFS= read -r line; do
     echo "$sha" > "$dest-skills.sha256"
   else
     rm -f "$dest-skills.sha256"
+  fi
+  if [ -d "$dest-identity" ]; then
+    echo "$sha" > "$dest-identity.sha256"
+  else
+    rm -f "$dest-identity.sha256"
   fi
   echo "  + $name $version -> ${dest#$ROOT/}"
 done < "$TSV"
