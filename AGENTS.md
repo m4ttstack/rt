@@ -369,6 +369,21 @@ socket setup, `test-setup.ts` or `e2e/socket-path.ts` must be in that filter or
 the gate never runs (macOS caps a unix socket path at 104 bytes, and the gate
 is what catches a path that grew past it).
 
+### Run `bun test` from the repo root
+
+bun reads `bunfig.toml` only from the cwd, never a parent, so a run started
+anywhere else (a subdirectory, `packages/rt-client`, an absolute test path
+from another directory) skips `test-setup.ts` and keeps the real HOME. Two
+more ways a run reaches the real home with the preload loaded: a test that
+leaves HOME unset, since paths then fall back to bun's `os.homedir()`, which
+is frozen at the HOME the process started with; and a child started by
+`Bun.spawn`/`Bun.spawnSync` without `env`, which gets that startup
+environment, real HOME included (pass `childEnv()` from `lib/subprocess.ts`).
+`setSetting`/`unsetSetting`, `rt team create`/`join` and the home-repo init
+seam refuse a test-run write into the account's real `~/.mattstack` settings
+stores (`packages/rt-client/src/test-isolation.ts`); nothing guards the rest
+of `~/.mattstack` (state db, logs, runtime files) the same way.
+
 ### Module registry
 
 When adding a new command module referenced by `cli.ts` (any file with a `module:` entry in the command tree), you **must** also register it in `lib/module-registry.ts`. `bun build --compile` cannot resolve dynamic `import()` with runtime-constructed paths, so the compiled binary relies entirely on this registry to discover and bundle every command module. Running from source (`bun run cli.ts`) works fine without the registry entry because the dynamic import fallback succeeds, so you won't catch this locally -- it only breaks in the distributed binary.

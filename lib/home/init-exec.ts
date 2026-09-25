@@ -10,6 +10,7 @@
 import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { InitStep } from "./init-plan.ts";
+import { assertNotRealStoreInTest } from "../../packages/rt-client/src/test-isolation.ts";
 
 export interface ExecResult {
   code: number;
@@ -150,6 +151,7 @@ export async function executeInitPlan(steps: InitStep[], exec: ExecSeam, log: St
 
 /** The real seam: Bun.spawn-based capture, real fs writes under `home`. */
 export function createRealExecSeam(home: string): ExecSeam {
+  assertNotRealStoreInTest(join(home, "user", "settings.user.jsonc"));
   return {
     async run(cmd, opts) {
       const proc = Bun.spawn(cmd, {

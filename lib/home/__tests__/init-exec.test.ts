@@ -1,9 +1,10 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createRealExecSeam, executeInitPlan, type ExecResult, type ExecSeam } from "../init-exec.ts";
 import { buildInitPlan, STATE_DIR_NAMES, type InitStep } from "../init-plan.ts";
+import * as isolation from "../../../packages/rt-client/src/test-isolation.ts";
 
 const REPO_URL = "https://github.com/m4ttheweric/mattstack-home";
 
@@ -297,6 +298,18 @@ describe("executeInitPlan", () => {
 });
 
 describe("createRealExecSeam", () => {
+  test("in a test run, refuses a home that is the account's real ~/.mattstack, which holds the user and machine stores", () => {
+    const account = realpathSync(mkdtempSync(join(tmpdir(), "rt-home-exec-account-")));
+    const spy = spyOn(isolation, "accountHome").mockReturnValue(account);
+    try {
+      expect(() => createRealExecSeam(join(account, ".mattstack"))).toThrow(/Run bun test from the repo root/);
+      expect(existsSync(join(account, ".mattstack"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      rmSync(account, { recursive: true, force: true });
+    }
+  });
+
   test("run() defaults cwd to home; mkdirp/writeFile/exists/writeSymlink resolve relative to home", async () => {
     const home = mkdtempSync(join(tmpdir(), "rt-home-exec-test-"));
     try {

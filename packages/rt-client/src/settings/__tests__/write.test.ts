@@ -7,12 +7,14 @@
  * resolves HOME at call time — so tests must never share a tree.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { machineSettingsPath, teamLocalPath, teamSettingsPath, teamsDir, userSettingsPath } from "../paths.ts";
 import { setSetting, unsetSetting } from "../write.ts";
+import * as isolation from "../../test-isolation.ts";
 
 const IDENTITY = "gitlab.com/acme/acme-dev";
 const TEAM = "acme";
@@ -559,4 +561,98 @@ describe("settings/unset", () => {
     seedUser(`{ "rt.roles": 1, "rt.roles": 2 }\n`);
     expect(() => unsetSetting("rt.roles", "user")).toThrow(/malformed store/);
   });
+});
+
+// ─── refusing test-run writes into the account's real stores ───────────────
+
+describe("settings/write: test-run guard", () => {
+  const origHome = process.env.HOME;
+  let home: string;
+  let accountHomeSpy: ReturnType<typeof spyOn> | undefined;
+
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "rt-settings-guard-")));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    accountHomeSpy?.mockRestore();
+    accountHomeSpy = undefined;
+    process.env.HOME = origHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  function actAsAccountHome(dir: string): void {
+    accountHomeSpy = spyOn(isolation, "accountHome").mockReturnValue(dir);
+  }
+
+  test("refuses a user write when HOME is the account's home, and creates nothing", () => {
+    actAsAccountHome(home);
+    expect(() => setSetting("rt.apiPort", 50489, "user")).toThrow(/Run bun test from the repo root/);
+    expect(existsSync(join(home, ".mattstack"))).toBe(false);
+  });
+
+  test("refuses a machine write the same way", () => {
+    actAsAccountHome(home);
+    expect(() => setSetting("rt.worktrees", { onDeck: 3 }, "machine")).toThrow(/Run bun test from the repo root/);
+    expect(existsSync(join(home, ".mattstack"))).toBe(false);
+  });
+
+  test("refuses a team write and leaves the team store untouched", () => {
+    const store = teamSettingsPath(TEAM);
+    mkdirSync(dirname(store), { recursive: true });
+    writeFileSync(store, "// acme team store\n{}\n");
+    actAsAccountHome(home);
+    expect(() => setSetting("rt.roles", { reviewer: {} }, "team")).toThrow(/Run bun test from the repo root/);
+    expect(readFileSync(store, "utf8")).toBe("// acme team store\n{}\n");
+  });
+
+  test("refuses an unset against a real store and leaves it untouched", () => {
+    const store = userSettingsPath();
+    mkdirSync(dirname(store), { recursive: true });
+    writeFileSync(store, `{ "rt.apiPort": 9401 }\n`);
+    actAsAccountHome(home);
+    expect(() => unsetSetting("rt.apiPort", "user")).toThrow(/Run bun test from the repo root/);
+    expect(readFileSync(store, "utf8")).toBe(`{ "rt.apiPort": 9401 }\n`);
+  });
+
+  test("writes normally when HOME is a scratch dir apart from the account home", () => {
+    const account = realpathSync(mkdtempSync(join(tmpdir(), "rt-settings-account-")));
+    try {
+      actAsAccountHome(account);
+      setSetting("rt.apiPort", 50489, "user");
+      expect(readUser()).toContain("50489");
+      expect(existsSync(join(account, ".mattstack"))).toBe(false);
+    } finally {
+      rmSync(account, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses the write a test makes after deleting HOME, when paths fall back to the frozen startup home", () => {
+    const script = join(home, "delete-home-then-write.ts");
+    writeFileSync(
+      script,
+      [
+        `import { spyOn } from "bun:test";`,
+        `import * as isolation from ${JSON.stringify(join(import.meta.dir, "..", "..", "test-isolation.ts"))};`,
+        `import { setSetting } from ${JSON.stringify(join(import.meta.dir, "..", "write.ts"))};`,
+        `spyOn(isolation, "accountHome").mockReturnValue(process.env.HOME!);`,
+        `delete process.env.HOME;`,
+        `try { setSetting("rt.apiPort", 50489, "user"); console.log("WROTE"); } catch (err) { console.log(String(err)); }`,
+      ].join("\n"),
+    );
+    const account = join(home, "account");
+    mkdirSync(account);
+    const child = spawnSync(process.execPath, [script], {
+      cwd: account,
+      env: { PATH: process.env.PATH, HOME: account, NODE_ENV: "test" },
+      encoding: "utf8",
+    });
+    expect(child.stdout).toMatch(/Run bun test from the repo root/);
+    expect(existsSync(join(account, ".mattstack"))).toBe(false);
+  });
+
+  function readUser(): string {
+    return readFileSync(userSettingsPath(), "utf8");
+  }
 });

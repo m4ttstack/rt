@@ -16,6 +16,7 @@ const ALLOWLIST = new Set<string>([
   "lib/git.ts",                     // R050 / Phase 5.4 (via repo.ts)
   "lib/herdr-launch.ts",            // launchFallback's Bun.spawnSync (reachable via handlers/pane.ts's shellQuote import)
   "lib/rt-render.ts",              // R050 / Phase 5.4 (daemon carries the TUI)
+  "packages/rt-client/src/test-isolation.ts", // test-run only: the id -P spawn is gated by testRunSignal, never runs in a served daemon
 ]);
 
 const SYNC_EXEC = [
