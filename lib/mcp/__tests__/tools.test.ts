@@ -1,10 +1,12 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { mcpTools } from "../tools.ts";
 import { normalizeGateQuestions } from "../../../packages/rt-client/src/gate-options.ts";
 import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
+import { REPO_INDEX_NS } from "../../repo-index.ts";
+import { closeStateDb, setKvValue } from "../../state/index.ts";
 
 const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
@@ -281,13 +283,13 @@ describe("mcpTools", () => {
     expect(res.error).toBe('"line" is required');
   });
 
-  test("mr_comment_inline schema requires the position fields and forbids extras", () => {
+  test("mr_comment_inline schema requires the position fields, offers mrUrl and forbids extras", () => {
     const tool = mcpTools().find((t) => t.name === "mr_comment_inline")!;
     const schema = tool.inputSchema as { required?: string[]; additionalProperties?: boolean; properties?: Record<string, unknown> };
-    expect(schema.required).toEqual(["repoName", "iid", "body", "path", "line"]);
+    expect(schema.required).toEqual(["body", "path", "line"]);
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties ?? {}).sort()).toEqual(
-      ["repoName", "iid", "body", "path", "line", "oldPath", "oldLine"].sort(),
+      ["repoName", "iid", "mrUrl", "body", "path", "line", "oldPath", "oldLine"].sort(),
     );
   });
 
@@ -339,10 +341,10 @@ describe("mcpTools", () => {
 
     const COMMENT_DATA = { noteId: 1, discussionId: "d1", resolvable: true, url: "u#note_1", mrUrl: "u" };
 
-    test("mr_comment schema requires repoName, iid, body and allows only resolvable beside them", () => {
+    test("mr_comment schema requires only body and offers the target props and resolvable", () => {
       const schema = mcpTools().find((t) => t.name === "mr_comment")!.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
-      expect(schema.required).toEqual(["repoName", "iid", "body"]);
-      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["body", "iid", "repoName", "resolvable"]);
+      expect(schema.required).toEqual(["body"]);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["body", "iid", "mrUrl", "repoName", "resolvable"]);
     });
 
     test("mr_comment sends mr:comment with the write timeout and returns the daemon's data", async () => {
@@ -392,10 +394,10 @@ describe("mcpTools", () => {
       expect(res.error).toBe("no gitlabToken in secrets");
     });
 
-    test("mr_create schema requires the branches and title and has no iid", () => {
+    test("mr_create schema requires the branches and title, offers repoName and mrUrl, and has no iid", () => {
       const schema = mcpTools().find((t) => t.name === "mr_create")!.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
-      expect(schema.required).toEqual(["repoName", "sourceBranch", "targetBranch", "title"]);
-      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["description", "draft", "repoName", "sourceBranch", "targetBranch", "title"]);
+      expect(schema.required).toEqual(["sourceBranch", "targetBranch", "title"]);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["description", "draft", "mrUrl", "repoName", "sourceBranch", "targetBranch", "title"]);
     });
 
     test("mr_create sends mr:create, leaving draft to the daemon default when omitted", async () => {
@@ -530,6 +532,113 @@ describe("mcpTools", () => {
       const res = await tool.handler({ ...T, discussionId: "d1", resolved: false }, {} as NodeJS.ProcessEnv);
       expect(res).toEqual({ ok: true, body: { discussionId: "d1", resolved: false } });
       expect(calls[0]!.payload.resolved).toBe(false);
+    });
+  });
+
+  describe("mr target resolution wiring", () => {
+    const APP = "remote:gitlab.example.com%2Facme%2Fapp";
+    const SUB = "remote:gitlab.example.com%2Facme%2Fplatform%2Fapp";
+    const origHome = process.env.HOME;
+    let home: string;
+
+    beforeEach(() => {
+      home = realpathSync(mkdtempSync(join(tmpdir(), "rt-mcp-target-")));
+      process.env.HOME = home;
+      closeStateDb();
+    });
+
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+      process.env.HOME = origHome;
+      closeStateDb();
+      rmSync(home, { recursive: true, force: true });
+    });
+
+    function fakeDaemon(reply: (cmd: string) => unknown = () => ({ ok: true })) {
+      const calls: Array<{ cmd: string; payload: Record<string, unknown>; timeoutMs?: number }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>, opts?: { timeoutMs?: number }) => {
+          calls.push({ cmd, payload, timeoutMs: opts?.timeoutMs });
+          return reply(cmd);
+        },
+      }));
+      return calls;
+    }
+
+    test("a repo label resolves to the registered identity before the daemon call", async () => {
+      setKvValue(REPO_INDEX_NS, APP, "/repos/app");
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_approve")!;
+      const res = await tool.handler({ repoName: "app", iid: 7 }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { approved: true } });
+      expect(calls).toEqual([{ cmd: "mr:action", payload: { repoName: APP, iid: 7, action: "approve", args: [] }, timeoutMs: 30_000 }]);
+    });
+
+    test("mrUrl alone targets a registered repo and supplies iid", async () => {
+      setKvValue(REPO_INDEX_NS, APP, "/repos/app");
+      const calls = fakeDaemon(() => ({ ok: true, data: { noteId: 1, discussionId: "d1", resolvable: true, url: "u", mrUrl: "m" } }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ mrUrl: "https://gitlab.example.com/acme/app/-/merge_requests/7/diffs#note_1", body: "hi" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(true);
+      expect(calls[0]!.payload).toEqual({ repoName: APP, iid: 7, body: "hi" });
+    });
+
+    test("mr_create takes the repo from mrUrl and sends no iid", async () => {
+      setKvValue(REPO_INDEX_NS, APP, "/repos/app");
+      const calls = fakeDaemon(() => ({ ok: true, data: { iid: 12, url: "u" } }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      await tool.handler({ mrUrl: "https://gitlab.example.com/acme/app/-/merge_requests/7", sourceBranch: "feat", targetBranch: "main", title: "T" }, {} as NodeJS.ProcessEnv);
+      expect(calls[0]!.payload).toEqual({ repoName: APP, sourceBranch: "feat", targetBranch: "main", title: "T" });
+    });
+
+    test("an mrUrl for a repo rt has not registered is refused with no daemon call", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_ready")!;
+      const res = await tool.handler({ mrUrl: "https://gitlab.example.com/acme/app/-/merge_requests/7" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("not registered with rt");
+      expect(res.error).toContain(APP);
+      expect(calls).toEqual([]);
+    });
+
+    test("repoName and mrUrl that disagree are refused with no daemon call", async () => {
+      setKvValue(REPO_INDEX_NS, APP, "/repos/app");
+      setKvValue(REPO_INDEX_NS, SUB, "/repos/sub");
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_rebase")!;
+      const res = await tool.handler({ repoName: SUB, mrUrl: "https://gitlab.example.com/acme/app/-/merge_requests/7" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe(`repoName resolves to ${SUB} but mrUrl names ${APP}; pass one of them, or make them agree`);
+      expect(calls).toEqual([]);
+    });
+
+    test("a tool given neither repoName nor mrUrl is refused with no daemon call", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_rebase")!;
+      const res = await tool.handler({}, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('pass "repoName" or "mrUrl"');
+      expect(calls).toEqual([]);
+    });
+
+    test("non-target input errors come before any resolution", async () => {
+      const calls = fakeDaemon();
+      const tool = mcpTools().find((t) => t.name === "mr_reply_thread")!;
+      const res = await tool.handler({ mrUrl: "https://gitlab.example.com/acme/app/-/merge_requests/7", discussionId: "d1" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('"body" is required');
+      expect(calls).toEqual([]);
+    });
+
+    test("every MR-level write tool offers repoName, iid and mrUrl with none required; mr_create offers repoName and mrUrl", () => {
+      for (const name of ["mr_reply_thread", "mr_comment_inline", "mr_comment", "mr_approve", "mr_resolve_thread", "mr_ready", "mr_retry", "mr_rebase"]) {
+        const schema = mcpTools().find((t) => t.name === name)!.inputSchema as { properties: Record<string, unknown>; required?: string[] };
+        expect(Object.keys(schema.properties), name).toEqual(expect.arrayContaining(["repoName", "iid", "mrUrl"]));
+        expect(schema.required ?? [], name).not.toContain("repoName");
+        expect(schema.required ?? [], name).not.toContain("iid");
+      }
+      const create = mcpTools().find((t) => t.name === "mr_create")!.inputSchema as { properties: Record<string, unknown>; required?: string[] };
+      expect(Object.keys(create.properties)).toEqual(expect.arrayContaining(["repoName", "mrUrl"]));
+      expect(create.properties.iid).toBeUndefined();
+      expect(create.required).not.toContain("repoName");
     });
   });
 
