@@ -20,6 +20,7 @@ import { RT_DIR } from "../lib/daemon-config.ts";
 import { getRepoIdentity } from "../lib/repo.ts";
 import { loadRepoIndex } from "../lib/repo-index.ts";
 import { currentRepoIdentity, repoLabel, resolveRepoArg } from "../lib/repo-arg.ts";
+import { changeMarker } from "../lib/repo-label.ts";
 import { loadWorktreeRepoConfig, inspectReadyGate } from "../lib/worktree/config.ts";
 import { explainError } from "../lib/explain-error.ts";
 import type { MergeCleanupGap } from "../lib/worktree/merge-cleanup-gap.ts";
@@ -647,6 +648,31 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
     console.log(
       `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${label}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}${heldPart}`,
     );
+  }
+  console.log("");
+}
+
+// ─── triage ──────────────────────────────────────────────────────────────────
+
+export async function worktreeTriage(args: string[], _ctx: unknown): Promise<void> {
+  const parsed = parseListArgs(args);
+  const repoName = parsed.repoName ? await resolveRepoArg(parsed.repoName, (m) => failText(parsed.json, m)) : undefined;
+  const res = await daemonQuery("worktree:triage", repoName ? { repoName } : undefined);
+  const ok = requireQueryResult(parsed.json, res);
+  if (parsed.json) { console.log(JSON.stringify(ok.data, null, 2)); return; }
+  const { rows, banners, counts } = ok.data as {
+    rows: Array<Record<string, any>>;
+    banners: Array<{ repo: string; reason: string }>;
+    counts: { needsDecision: number };
+  };
+  const header = counts.needsDecision === 1 ? "1 worktree needs a decision" : `${counts.needsDecision} worktrees need a decision`;
+  console.log(`\n  ${bold}${header}${reset}\n`);
+  for (const b of banners ?? []) {
+    console.log(`  ${dim}${repoLabel(b.repo)}: merge cleanup is off (${b.reason})${reset}`);
+  }
+  for (const r of rows) {
+    const mr = r.mr ? `  ${dim}${changeMarker(r.repo)}${r.mr.iid} ${r.mr.state}${reset}` : "";
+    console.log(`  ${bold}${repoLabel(r.repo)}/${r.tree}${reset}  ${dim}${r.group}${reset}${mr}  ${r.verdict}`);
   }
   console.log("");
 }

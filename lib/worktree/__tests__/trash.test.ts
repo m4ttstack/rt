@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { basename, dirname, join } from "path";
 import {
@@ -10,6 +10,7 @@ import {
   reapTrashDir,
   reapTrashInRoots,
   retainedTrashRoot,
+  retentionAvailable,
   retireTree,
   stripTrashDir,
   trashPathFor,
@@ -176,6 +177,28 @@ describe("worktree trash", () => {
       expect(dirname(result.trashPath)).toBe(root);
       expect(basename(result.trashPath).startsWith(TRASH_PREFIX)).toBe(true);
       expect(existsSync(tree)).toBe(false);
+    });
+
+    test("requireRetention never falls back: an unusable retention root leaves the tree in place", async () => {
+      const tree = makeTree(root, "hotel");
+      writeFileSync(join(root, ".trash"), "");
+
+      const result = await retireTree(tree, "hotel", repo, { requireRetention: true });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected refusal");
+      expect(result.noRetention).toBe(true);
+      expect(readFileSync(join(tree, "file.txt"), "utf8")).toBe("content\n");
+      expect(readdirSync(root).filter((e) => e.startsWith(TRASH_PREFIX))).toEqual([]);
+    });
+
+    test("retentionAvailable reads the store's usability without creating a missing tree's pool root", async () => {
+      const tree = makeTree(root, "hotel");
+      expect(await retentionAvailable(tree)).toBe(true);
+      const blockedTree = makeTree(join(root, "b"), "india");
+      writeFileSync(join(root, "b", ".trash"), "");
+      expect(await retentionAvailable(blockedTree)).toBe(false);
+      expect(await retentionAvailable(join(root, "no-root", "juliet"))).toBe(false);
+      expect(existsSync(join(root, "no-root"))).toBe(false);
     });
 
     test("a tree that cannot be renamed at all reports the failure", async () => {

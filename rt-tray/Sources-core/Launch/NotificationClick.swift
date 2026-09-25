@@ -11,6 +11,7 @@ public enum NotificationClick {
     /// banner returns to the pane that is driving the work, and the URL
     /// moves to the Open action button.
     public static let gatePaneCategory = "gate_pane"
+    public static let worktreeTriageCategory = "worktree_triage"
     /// An invitee replied on the switchboard: the banner offers the confirm
     /// that runs `rt team members sync` for that team.
     public static let memberJoinedCategory = "member_joined"
@@ -18,6 +19,7 @@ public enum NotificationClick {
     public enum Route: Equatable, Sendable {
         case showKeyboardConflict
         case showProcessPanel
+        case showWorktreePanel
         case openURL(String)
         case focusPane(String)
         case confirmMembersSync(team: String, handle: String)
@@ -31,7 +33,7 @@ public enum NotificationClick {
         public var suppressesActivationShow: Bool {
             switch self {
             case .focusPane, .confirmMembersSync, .none: return true
-            case .showKeyboardConflict, .showProcessPanel, .openURL: return false
+            case .showKeyboardConflict, .showProcessPanel, .showWorktreePanel, .openURL: return false
             }
         }
     }
@@ -50,6 +52,7 @@ public enum NotificationClick {
     public static func bannerRoute(category: String, url: String?, paneId: String?, team: String? = nil, handle: String? = nil) -> Route {
         if category == keyboardConflictCategory { return .showKeyboardConflict }
         if category == readyHeldCategory { return .showProcessPanel }
+        if category == worktreeTriageCategory { return .showWorktreePanel }
         if category == gatePaneCategory { return focusPaneRoute(url: url, paneId: paneId) }
         if category == memberJoinedCategory { return memberJoinedRoute(team: team, handle: handle) }
         return openRoute(url: url, paneId: paneId)

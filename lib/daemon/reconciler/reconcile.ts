@@ -48,8 +48,23 @@ type PassResult = { trees: TreeRecord[] } | { conflict: true };
  * outage cannot prune live claim state.
  */
 function isHeldByUnreadableMount(treePath: string): boolean {
-  const root = dirname(treePath);
-  return !existsSync(root) && !existsSync(dirname(root));
+  return dirAndParentMissing(dirname(treePath));
+}
+
+/** The vanished-mount shape: a directory and its parent both unreadable. */
+export function dirAndParentMissing(dir: string): boolean {
+  return !existsSync(dir) && !existsSync(dirname(dir));
+}
+
+/**
+ * Whether `git worktree prune` (repo-wide) is safe to run: a `creating` row
+ * has no git worktree yet, so it never counts against readability; any other
+ * row whose parent dir can't be listed right now is a transient mount blip,
+ * not evidence its worktree was removed, and a prune would register that
+ * removal in git.
+ */
+export function poolRootsReadable(trees: TreeRecord[]): boolean {
+  return trees.every((t) => t.state === "creating" || existsSync(dirname(t.path)));
 }
 
 /** Attempts before a contended pass gives up and leaves the work to the next tick. */
@@ -197,14 +212,7 @@ export const reconcileRepoRegistry = reconcileRepo;
 async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<PassResult> {
   const { repoName, repoPath, emit, log } = deps;
 
-  // A `creating` row has no git worktree yet, so it never counts against
-  // readability; any other row whose parent dir can't be listed right now is
-  // a transient mount blip, not evidence its worktree was removed, so the
-  // sweep that would otherwise register that removal is skipped this pass.
-  const rootsReadable = loadRegistry(repoName).every(
-    (t) => t.state === "creating" || existsSync(dirname(t.path)),
-  );
-  if (rootsReadable) {
+  if (poolRootsReadable(loadRegistry(repoName))) {
     await runGit(repoPath, ["worktree", "prune"]);
   } else {
     log.info({ repo: repoName }, "reconcile: a pool root is unreadable this pass; skipping git worktree prune");

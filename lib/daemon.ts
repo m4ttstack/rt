@@ -133,6 +133,8 @@ import {
 } from "./daemon/supervision-state.ts";
 import { safeInterval, safeTimeout, scheduleSweep } from "./daemon/safe-timers.ts";
 import { BOOT_DELAY_MS as CD_CACHE_BOOT_DELAY_MS, REFRESH_MS as CD_CACHE_REFRESH_MS, refreshCdCache } from "./daemon/cd-cache-refresh.ts";
+import { maybeSendTriageSummary, localDay, TRIAGE_CATEGORY } from "./daemon/triage-summary.ts";
+import { getKvValue, setKvValue } from "./state/kv-blob.ts";
 import { pruneRuns } from "./runs/prune.ts";
 import { pruneLogs } from "./log-janitor.ts";
 import { getSetting } from "./settings/resolve.ts";
@@ -1059,6 +1061,21 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           "cd-cache-refresh",
           () => refreshCdCache(loggerHandle.childLogger("cd-cache")),
           { bootDelayMs: CD_CACHE_BOOT_DELAY_MS, intervalMs: CD_CACHE_REFRESH_MS },
+          log,
+        ));
+        sweepHandles.push(scheduleSweep(
+          "worktree-triage-summary",
+          async () => { await maybeSendTriageSummary({
+            now: () => new Date(),
+            counts: async () => {
+              const res = await handleCommand("worktree:triage", {});
+              return res.ok ? res.data.counts : { needsDecision: 0, safe: 0 };
+            },
+            notify: (title, message) => notifyEnabled(TRIAGE_CATEGORY, title, message, undefined, undefined, `worktree-triage-${localDay(new Date())}`),
+            loadLastSent: () => getKvValue<string | null>("worktree-triage", "last-summary-day", null),
+            saveLastSent: (day) => setKvValue("worktree-triage", "last-summary-day", day),
+          }); },
+          { bootDelayMs: 60_000, intervalMs: 15 * 60_000 },
           log,
         ));
 

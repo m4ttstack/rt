@@ -9,16 +9,19 @@
  *
  * `force` overrides guards 2-6 and never guard 1: "main" and "unmanaged" trees
  * are categorically not rt's to delete, no matter what the caller asks for.
+ * `acceptDirty` skips guard 2 alone; the dirt travels into the trash with the tree.
+ * `requireRetention` refuses "no-trash" rather than ever fall back to an unretained reap.
  */
 
 import { existsSync } from "fs";
 import { gitOk, headSha, isAncestorAsync, remoteDefaultRef, remoteRefExists, runGit } from "./git-async.ts";
+import { patchIdenticalToMr } from "./containment.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "./registry.ts";
 import { hasFreshAttendantLease } from "./lease.ts";
 import { loadSyncConfig, matchRule } from "../sync-config.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
 import { killWorktreeProcesses } from "../daemon/worktree-process-kill.ts";
-import { RETENTION_MS, reapTrashDir, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
+import { RETENTION_MS, reapTrashDir, retentionAvailable, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
 import type { RunningRunScan } from "../runs/store.ts";
 
 /** Merge-reactor disposals ignore claims younger than this (stale-event protection). */
@@ -191,7 +194,7 @@ async function remoteAnchorRefusal(rec: TreeRecord): Promise<string | null> {
 export async function disposeTree(
   deps: DisposeDeps,
   rec: TreeRecord,
-  opts: { force?: boolean; auto?: boolean },
+  opts: { force?: boolean; auto?: boolean; acceptDirty?: boolean; requireRetention?: boolean },
 ): Promise<DisposeOutcome> {
   const { repoName, repoPath, emit, log } = deps;
   const force = opts.force === true;
@@ -228,24 +231,31 @@ export async function disposeTree(
 
   if (!force) {
     // 2. Clean modulo declared generated drift.
-    const { discard, blockers } = await classifyDirtyAsync(rec.path);
-    if (blockers.length > 0) return refuse("dirty");
-    discarded = discard;
+    if (opts.acceptDirty !== true) {
+      const { discard, blockers } = await classifyDirtyAsync(rec.path);
+      if (blockers.length > 0) return refuse("dirty");
+      discarded = discard;
+    }
 
     // 3. Containment. A merged MR is authoritative that the branch's work
     //    reached the target: squash-merge and rebase-before-merge both leave
     //    the local head diverged from whatever landed, so every local ancestry
     //    or patch-id check against the TARGET reads "unpushed" for work that
     //    demonstrably merged. But merged-state alone is trusted only when the
-    //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead) —
-    //    a reused branch's stale merged entry must fall through to the anchor.
+    //    MR's source sha contains this tree's HEAD (see mergedMrCoversHead)...
+    //    a reused branch's stale merged entry must fall through to the anchor,
+    //    which a rebased-then-merged branch escapes only via the
+    //    patch-identical check below (see patchIdenticalToMr).
     //    The dirty guard above still blocks uncommitted work, --force still
     //    overrides, and a disposed tree is recoverable from the trash for the
     //    retention window.
     const mr = joinedMr(deps, rec);
     if (!mr || !(await mergedMrCoversHead(rec, mr))) {
       const anchorRefusal = await remoteAnchorRefusal(rec);
-      if (anchorRefusal) return refuse(anchorRefusal);
+      const rebasedIntoMr = anchorRefusal !== null && mr?.state === "merged" && mr.sha
+        ? await patchIdenticalToMr(rec.path, mr.sha, await remoteDefaultRef(rec.path))
+        : false;
+      if (anchorRefusal && !rebasedIntoMr) return refuse(anchorRefusal);
     }
 
     // 4. No pipeline run is still live in this worktree: a running run can go
@@ -272,6 +282,8 @@ export async function disposeTree(
     }
   }
 
+  if (opts.requireRetention === true && !(await retentionAvailable(rec.path))) return refuse("no-trash");
+
   if (deps.killProcesses) {
     const { terminated } = await killWorktreeProcesses(rec.path, { callerPids: deps.callerPids });
     if (terminated.length > 0) {
@@ -288,12 +300,13 @@ export async function disposeTree(
 
   // One atomic rename, not a recursive unlink: see trash.ts. Everything below
   // is fast, so the verb returns in seconds however large the tree was.
-  const trashed = await retireTree(rec.path, rec.name, repoPath);
+  const trashed = await retireTree(rec.path, rec.name, repoPath, { requireRetention: opts.requireRetention === true });
   if (!trashed.ok) {
     log.warn(
       { repo: repoName, tree: rec.name, path: rec.path, err: trashed.err },
       "worktree trash rename failed during dispose",
     );
+    if (trashed.noRetention) return refuse("no-trash");
     // A directory that is already gone is the expected failure and disposal
     // continues (the registry row is the thing left to clean up). A tree still
     // at rec.path means the rename genuinely failed — held directory,

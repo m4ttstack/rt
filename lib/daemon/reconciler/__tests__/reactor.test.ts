@@ -430,4 +430,16 @@ describe("held trees say why (RT-267)", () => {
     expect(find(rec.path)?.state).toBe("disposable");
     expect(find(rec.path)?.heldReason).toBeUndefined();
   });
+
+  test("a merged tree rebased before merge disposes instead of refusing as unpushed", async () => {
+    const rec = ephemeralTree(repo, repoName, "xray", "feat-xray");
+    const local = headOf(rec.path);
+    execSync(`git -C ${repo} checkout -q -b forge-xray origin/main`, { shell: "/bin/zsh" });
+    execSync(`git -C ${repo} -c user.email=t@t -c user.name=t cherry-pick ${local}`, { shell: "/bin/zsh" });
+    const mrSha = execSync(`git -C ${repo} rev-parse HEAD`, { encoding: "utf8" }).trim();
+    execSync(`git -C ${repo} checkout -q main`, { shell: "/bin/zsh" });
+    execSync(`git -C ${rec.path} push -q -f origin :feat-xray`, { shell: "/bin/zsh" });
+    await detect({ "feat-xray": { repoName, mr: { iid: 92, state: "merged", sha: mrSha } } });
+    expect(find(rec.path)).toBeUndefined();
+  });
 });

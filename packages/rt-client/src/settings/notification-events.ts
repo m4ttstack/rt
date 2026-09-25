@@ -12,6 +12,7 @@ export const NOTIFICATION_EVENT_KEYS = [
   "pipeline_failed", "pipeline_passed", "mr_approved", "mr_merged", "mr_closed", "mr_ready",
   "merge_conflicts", "needs_rebase", "merge_error", "new_comment", "stale_port", "runaway_process",
   "evidence_batch_ready", "evidence_failed", "chat_mention", "credential_health", "member_joined",
+  "worktree_triage",
 ] as const;
 
 export const NOTIFICATION_DEFAULTS: Readonly<Record<(typeof NOTIFICATION_EVENT_KEYS)[number], boolean>> = Object.freeze(

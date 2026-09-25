@@ -2,6 +2,8 @@ import { canon } from "../fs-canon.ts";
 import { legacyRepoFile } from "../legacy-repo-data.ts";
 import { deleteKvValue, getKvValue, hasKvValue, importLegacyJsonFile, listKvValues, setKvValue, setKvValueCritical } from "../state/index.ts";
 
+export interface KeepRecord { keptAt: string; headSha: string; dirtHash: string; mrState: string | null }
+
 export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
 export const GOLDEN_NAME = "golden";
 /**
@@ -50,6 +52,7 @@ export interface TreeRecord {
   // chooseCreateMode is the only reader: it is what "fit to clone from" means.
   treeMayBeInconsistent?: boolean;
   missCount?: number; // consecutive reconcile passes the path was absent from git ground truth (S063 hold)
+  kept?: KeepRecord;
 }
 
 const WORKTREE_REGISTRY_NS = "worktree-registry";

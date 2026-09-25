@@ -9,8 +9,9 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
-import { repoLabel, worktreeAwaitReady, worktreeDispose, worktreeFreshen, worktreeList, worktreeProvision } from "../worktree.ts";
+import { repoLabel, worktreeAwaitReady, worktreeDispose, worktreeFreshen, worktreeList, worktreeProvision, worktreeTriage } from "../worktree.ts";
 import { getRepoIdentity } from "../../lib/repo.ts";
+import { changeMarker, changeNoun, repoHost } from "../../lib/repo-label.ts";
 import { closeStateDb } from "../../lib/state/index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../lib/settings/identity.ts";
 import type { DaemonResponse } from "../../lib/daemon-client.ts";
@@ -379,6 +380,32 @@ describe("worktree CLI identity plumbing", () => {
     expect(values).toContain("/l");
     expect(values).not.toContain("/h");
   });
+
+  test("triage prints one line per row with its group and verdict, and --json passes the payload through", async () => {
+    const row = {
+      tree: "olive", path: "/x", branch: "b", mr: { iid: 47, state: "merged", title: "sync button", at: null }, ticket: null,
+      push: { kind: "in-main" }, containment: "in-default", dirt: { kind: "junk", files: [".visual/a.png"] }, group: "safe",
+      verdict: "Every commit is in main. Only generated files are left.", actions: ["dispose"], fingerprint: { headSha: "h", dirtHash: "d", mrState: "merged" },
+    };
+    const data = {
+      rows: [
+        { ...row, repo: `remote:${encodeURIComponent("github.com/acme/app")}` },
+        { ...row, repo: `remote:${encodeURIComponent("gitlab.com/acme/kit")}`, tree: "rowan", mr: { ...row.mr, iid: 12 } },
+      ],
+      banners: [], counts: { needsDecision: 1, safe: 1, waiting: 0, kept: 0 },
+    };
+    installFakeDaemon({ ok: true, data });
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => { lines.push(a.join(" ")); };
+    try { await worktreeTriage([], {}); await worktreeTriage(["--json"], {}); } finally { console.log = orig; }
+    const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+    expect(plain.some((l) => l.includes("olive") && l.includes("safe") && l.includes("Every commit is in main."))).toBe(true);
+    expect(plain.some((l) => l.includes("1 worktree needs a decision"))).toBe(true);
+    expect(plain.some((l) => l.includes("app/olive") && l.includes("#47 merged"))).toBe(true);
+    expect(plain.some((l) => l.includes("kit/rowan") && l.includes("!12 merged"))).toBe(true);
+    expect(JSON.parse(plain[plain.length - 1]!).counts.needsDecision).toBe(1);
+  });
 });
 
 describe("repoLabel", () => {
@@ -388,6 +415,16 @@ describe("repoLabel", () => {
 
   test("decodes a path identity to its basename", () => {
     expect(repoLabel(`path:${encodeURIComponent("/Users/matt/repo-tools")}`)).toBe("repo-tools");
+  });
+
+  test("the change marker and noun follow the identity's host, never a raw prefix", () => {
+    const gh = `remote:${encodeURIComponent("github.com/m4ttstack/rt")}`;
+    const gl = `remote:${encodeURIComponent("gitlab.com/m4ttstack/app-kit")}`;
+    const local = `path:${encodeURIComponent("/Users/matt/scratch")}`;
+    expect([repoHost(gh), changeMarker(gh), changeNoun(gh)]).toEqual(["github.com", "#", "PR"]);
+    expect([repoHost(gl), changeMarker(gl), changeNoun(gl)]).toEqual(["gitlab.com", "!", "MR"]);
+    expect([repoHost(local), changeMarker(local), changeNoun(local)]).toEqual([null, "!", "MR"]);
+    expect(repoHost("github.com/m4ttstack/rt")).toBeNull();
   });
 
   test("a value that isn't a serialized identity passes through unchanged", () => {

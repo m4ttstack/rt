@@ -13,6 +13,7 @@ import {
 } from "../../rt-paths.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../settings/identity.ts";
 import {
+  DEFAULT_JUNK_GLOBS,
   loadWorktreeRepoConfig,
   resolveImplicitInstall,
   resolveReadySteps,
@@ -72,6 +73,7 @@ describe("worktree config", () => {
         branchFormat: "<ticket>-<slug>",
         ready: [],
         staleClaimDays: 7,
+        junk: DEFAULT_JUNK_GLOBS,
       });
     });
 
@@ -84,6 +86,18 @@ describe("worktree config", () => {
       expect(sanitizeStaleClaimDays(-1)).toBe(7);
       expect(sanitizeStaleClaimDays(2.5)).toBe(7);
       expect(sanitizeStaleClaimDays("14")).toBe(7);
+    });
+
+    test("junk defaults to the build-output globs and accepts a declared list", async () => {
+      const repoPath = tmpRepoPath("rtcfg-junk-");
+      expect((await loadWorktreeRepoConfig("myrepo", repoPath)).junk).toEqual(DEFAULT_JUNK_GLOBS);
+
+      const identity = "gitlab.com/acme/junk-repo";
+      const declaredRepoPath = tmpRepoWithRemote("rtcfg-junk-declared-", "git@gitlab.com:acme/junk-repo.git");
+      writeStore(machineSettingsPath(), {
+        repos: { [identity]: { "rt.worktrees": { junk: ["dist/**"] } } },
+      });
+      expect((await loadWorktreeRepoConfig("junk-repo", declaredRepoPath)).junk).toEqual(["dist/**"]);
     });
   });
 
@@ -104,6 +118,7 @@ describe("worktree config", () => {
           { run: "pnpm genTypes", when: "changed:db/schema/**" },
         ],
         staleClaimDays: 3,
+        junk: ["custom/**"],
       };
       writeStore(machineSettingsPath(), { repos: { [IDENTITY]: { "rt.worktrees": declared } } });
 
@@ -146,7 +161,8 @@ describe("worktree config", () => {
         root: "/machine/wt-root", // machine-only field
         branchFormat: "<ticket>", // machine-only field
         ready: [{ run: "pnpm install", when: "changed:pnpm-lock.yaml" }], // team-only field
-        staleClaimDays: 7, // nobody declared it — reader default
+        staleClaimDays: 7, // nobody declared it, reader default
+        junk: DEFAULT_JUNK_GLOBS, // nobody declared it, reader default
       });
     });
 
@@ -227,6 +243,7 @@ describe("worktree config", () => {
         branchFormat: "<ticket>-<slug>",
         ready: [],
         staleClaimDays: 7,
+        junk: DEFAULT_JUNK_GLOBS,
       });
     });
   });
@@ -370,6 +387,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "node scripts/gen-types.js", when: "changed:db/schema/**" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual([
@@ -387,6 +405,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [
           { run: "pnpm install --side-effects-cache", when: "changed:pnpm-lock.yaml" },
           { run: "pnpm genTypes", when: "changed:db/schema/**" },
@@ -404,6 +423,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "pnpm lint" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual([
@@ -419,6 +439,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "echo hi" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual(cfg.ready);
@@ -433,6 +454,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "SKIP_GEN_TYPES=1 pnpm install --side-effects-cache" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual(cfg.ready);
@@ -447,6 +469,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "env FOO=bar pnpm install" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual(cfg.ready);
@@ -461,6 +484,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "env -i PATH=/usr/bin pnpm install" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual(cfg.ready);
@@ -475,6 +499,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "pnpm installer" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual([
@@ -492,6 +517,7 @@ describe("worktree config", () => {
         staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
+        junk: DEFAULT_JUNK_GLOBS,
         ready: [{ run: "SKIP_X=1 pnpm lint" }],
       };
       expect(resolveReadySteps(cfg, repoPath)).toEqual([

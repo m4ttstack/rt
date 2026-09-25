@@ -13,6 +13,7 @@ import { createHooksHandlers }     from "./handlers/hooks.ts";
 import { createStatusHandlers }    from "./handlers/status.ts";
 import { createMRHandlers }        from "./handlers/mr.ts";
 import { createWorktreeHandlers, type WorktreeHandlerOpts } from "./handlers/worktree.ts";
+import { createWorktreeTriageHandlers } from "./handlers/worktree-triage.ts";
 import { createDiscussionHandlers } from "./handlers/discussions.ts";
 import { createSystemProcessHandlers } from "./handlers/system-processes.ts";
 import { createSdmHandlers } from "./handlers/sdm.ts";
@@ -42,6 +43,7 @@ import { findRun, findRunningRunByWorktree, findRunsBySession } from "../runs/st
 import { presenceForSession } from "../state/presence-store.ts";
 import { resolveInbox } from "../claude-registry.ts";
 import { probeInboxReachability } from "./inbox.ts";
+import { herdJobTreeHold } from "./reconciler/job-release.ts";
 import { herdrRequest } from "../herdr/client.ts";
 import { defaultHerdrRunner } from "../agent-herdr.ts";
 import { resolveGateSubject } from "./gate-subject.ts";
@@ -159,6 +161,15 @@ export function buildRoutedHandlers(opts: {
     bg: opts.bgService, bgClaims: opts.bgClaims, lifecycle: opts.herdLifecycle,
   });
   const worktreeHandlers = createWorktreeHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log }, opts.worktree);
+  const worktreeTriageHandlers = createWorktreeTriageHandlers(
+    { repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log },
+    {
+      findRunningRunByWorktree: opts.worktree.findRunningRunByWorktree,
+      jobTreeHold: (rec) => herdJobTreeHold(opts.herdStore, rec),
+      kick: opts.worktree.kick,
+      emit: opts.worktree.emit,
+    },
+  );
   const runWorktree = (runId: string): string | null =>
     findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null;
   const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, {
@@ -229,6 +240,7 @@ export function buildRoutedHandlers(opts: {
     }),
     ...createMRHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log }, broadcast),
     ...worktreeHandlers,
+    ...worktreeTriageHandlers,
     ...createDiscussionHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache }, broadcast),
     ...createSystemProcessHandlers(systemProcessScanner, { portCacheRef: ctx.portCacheRef, cache: ctx.cache }),
     ...createSdmHandlers({ log: ctx.log }),

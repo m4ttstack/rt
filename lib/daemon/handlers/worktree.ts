@@ -164,7 +164,7 @@ async function localBranchNames(repoPath: string): Promise<Set<string>> {
  * bare legacy name would otherwise start a fresh registry under a key
  * nothing else reads, silently reintroducing legacy-keyed rows post-migration.
  */
-function targetRepos(ctx: Pick<HandlerContext, "repoIndex">, repoName?: string): Array<[string, string]> {
+export function targetRepos(ctx: Pick<HandlerContext, "repoIndex">, repoName?: string): Array<[string, string]> {
   const index = ctx.repoIndex();
   if (repoName) {
     const decoded = decodeRepo({ repoName });
@@ -175,9 +175,9 @@ function targetRepos(ctx: Pick<HandlerContext, "repoIndex">, repoName?: string):
   return Object.entries(index);
 }
 
-function disposeDeps(
-  ctx: Pick<HandlerContext, "cache" | "log">,
-  opts: WorktreeHandlerOpts,
+export function disposeDeps(
+  ctx: { cache: Pick<HandlerContext["cache"], "entries">; log: HandlerContext["log"] },
+  opts: Pick<WorktreeHandlerOpts, "emit" | "findRunningRunByWorktree">,
   repoName: string,
   repoPath: string,
   callerPids?: number[],
