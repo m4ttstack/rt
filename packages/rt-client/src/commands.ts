@@ -796,6 +796,17 @@ export interface Commands {
     data: { iid: number; url: string; applied: string[] };
   };
 
+  /** Uploads one local image or video to the target project (GitLab
+      POST /projects/:id/uploads, multipart) and returns the absolute url and
+      the markdown that embeds it in that project's MRs. Works before an MR
+      exists. The daemon refuses a path outside its allowed roots, a
+      directory, a file over 50 MB, or bytes that do not match the
+      extension. Uploads once; an orphaned upload is harmless. */
+  "mr:upload": {
+    payload: { repoName: string; path: string };
+    data: { url: string; markdown: string };
+  };
+
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };
   "mr:fetch-job-trace": { payload: { repoName: string; iid: number; jobId: number }; data: string };
 
@@ -1032,6 +1043,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "mr:action",
   "mr:create",
   "mr:update",
+  "mr:upload",
   "mr:fetch-job-detail",
   "mr:fetch-job-trace",
   "endpoint:claim",

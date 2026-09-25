@@ -15,6 +15,7 @@ import { createMRHandlers }        from "./handlers/mr.ts";
 import { createWorktreeHandlers, type WorktreeHandlerOpts } from "./handlers/worktree.ts";
 import { createWorktreeTriageHandlers } from "./handlers/worktree-triage.ts";
 import { createDiscussionHandlers } from "./handlers/discussions.ts";
+import { createMrUploadHandlers } from "./handlers/mr-upload.ts";
 import { createSystemProcessHandlers } from "./handlers/system-processes.ts";
 import { createSdmHandlers } from "./handlers/sdm.ts";
 import { createRunsHandlers } from "./handlers/runs.ts";
@@ -242,6 +243,7 @@ export function buildRoutedHandlers(opts: {
     ...worktreeHandlers,
     ...worktreeTriageHandlers,
     ...createDiscussionHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache }, broadcast),
+    ...createMrUploadHandlers({ repoIndex: ctx.repoIndex, log: ctx.log }),
     ...createSystemProcessHandlers(systemProcessScanner, { portCacheRef: ctx.portCacheRef, cache: ctx.cache }),
     ...createSdmHandlers({ log: ctx.log }),
     ...createRunsHandlers({ log: ctx.log }, emitEvent),
