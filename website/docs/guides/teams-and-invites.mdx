@@ -15,7 +15,7 @@ rt team create my-team --remote git@github.com:org/mattstack-team-my-team.git
 
 This scaffolds a team zone under `~/.mattstack/teams/my-team/` and points it at the given remote. If you do not have a repo ready, `--create-repo <owner>` has `gh` create one for you. `--others` marks the team as having members beyond yourself.
 
-After creating, push the zone to the remote:
+`rt team create` never pushes. Setup's Install step pushes the zone, or you can push it yourself:
 
 ```bash
 rt team publish
@@ -27,7 +27,7 @@ rt team publish
 rt team invite --handle alice
 ```
 
-This mints an opaque invite code and prints a link: `https://mattstack.dev/join#<code>`. The code lives in the URL fragment and never reaches a server.
+This mints an opaque invite code and prints a link: `https://mattstack.dev/join#<code>`. The code lives in the URL fragment, so it never reaches the join page's server.
 
 The bare 77-character code is also printed as a fallback for chat clients that mangle links. Either form works.
 
@@ -35,10 +35,10 @@ The bare 77-character code is also printed as a fallback for chat clients that m
 
 The joiner opens the invite link (or pastes the code into Setup's "Join a team" field). The setup checklist runs a forge-auth preflight against the team repo:
 
-- If the joiner's GitHub account cannot see the repo, a warning appears naming the problem and suggesting they ask the owner or org admin for access. The warning does not block proceeding, but the `access.team-repo` checklist row will block the Install step until access is resolved.
+- If the joiner's forge account (GitHub or GitLab) cannot see the repo, a warning appears naming the problem and suggesting they ask the owner or org admin for access. The warning does not block proceeding, but the `access.team-repo` checklist row will block the Install step until access is resolved.
 - If access is confirmed, setup continues normally.
 
-When the team declares a switchboard, `rt team join` confirms its URL for the joiner, so the `account.switchboard` row reads ready and Install is reachable without a terminal.
+When the team declares a switchboard, `rt team join` confirms its URL for the joiner, so the `account.switchboard` row reads ready and Install is reachable without a terminal. If this Mac already confirmed a different switchboard URL, join leaves it alone and warns; the row then offers **Confirm** with the team's URL prefilled.
 
 ## When an invitee replies
 
@@ -65,17 +65,19 @@ A TTY prompt at invite time also offers to toggle membership management.
 
 ## Team packs
 
-Team skill packs are installed during setup but are **not enabled** by default. The daemon's snapshot engine converges the pack cache on every pull that moves HEAD: it runs `claude plugin update` (preserving the disabled state), never `install` (which would re-enable). A pack added to the team after a member joined installs on the next converging pull, ending disabled.
+Team skill packs are installed during setup but are **not enabled** by default. The daemon's snapshot engine converges the pack cache on every pull that moves HEAD: for a pack that is already installed it runs `claude plugin update` (preserving the disabled state), never `install` (which would re-enable). A pack added to the team after a member joined is installed and immediately disabled on the next converging pull.
 
 `rt setup status` shows a row per team-served pack with its installed version, served version, and the command to enable it.
 
-## Skills sync
+## Pulling now
 
 ```bash
-rt skills sync
+rt team pull
 ```
 
-Pulls the team's remote and re-links any updated skill packs, so local skills converge with the team's latest published versions without waiting for the daemon's periodic pull.
+Asks the daemon to pull the team clone immediately instead of waiting for its periodic pull. When the pull moves HEAD, the pack cache converges exactly as above.
+
+`rt skills sync` is a different tool, for a pack's author: it pulls the pack and engine checkouts, recompiles and pushes a new version when the compiled skills have drifted, and updates the installed plugins.
 
 ## Quick reference
 
@@ -89,5 +91,5 @@ Pulls the team's remote and re-links any updated skill packs, so local skills co
 | `rt team members sync` | Collect reply keys from members |
 | `rt team members remove <handle>` | Revoke access and re-encrypt |
 | `rt team status` | Show team summary |
-| `rt team pull` | Pull the clone via the daemon |
-| `rt skills sync` | Converge local skills with the team |
+| `rt team pull` | Pull the clone via the daemon, converging packs if HEAD moved |
+| `rt skills sync` | Pack authors: recompile, push, and update a pack's plugins |

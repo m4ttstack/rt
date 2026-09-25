@@ -13,19 +13,21 @@ Gates are primarily agent-facing: a herd worker opens one when it needs a decisi
 
 1. **Open.** `rt gate open` or `rt gate ask` mints a gate, stores it in the daemon, and emits `gate/opened`. If another open gate already exists on the same subject and kind, it is superseded (closed automatically).
 2. **Park** (optional). `rt gate park <id>` marks the gate paused without closing it. A parked gate can still be answered.
-3. **Answer.** `rt gate answer <id>` records the answer. The daemon pushes a notification to the gated pane so it can proceed. A second answer to the same gate is rejected cleanly, and the rejection carries the winning answer.
+3. **Answer.** `rt gate answer <id>` records the answer and releases anyone blocked in `rt gate wait`; a form-presented gate's pane also gets a push (see [Delivery](#delivery)). A second answer to the same gate is rejected cleanly, and the rejection carries the winning answer.
 4. **Close.** `rt gate close <id>` closes a gate without an answer. Waiters are released with a "closed" status.
 5. **Wait.** `rt gate wait <id>` blocks until the gate is answered or closed. Works across daemon restarts.
 
 ## Asking a question with `rt gate ask`
 
-`rt gate ask` is the high-level interface. It resolves the subject automatically, determines the presentation mode (form for attended panes, wait for unattended), and nudges the operator.
+`rt gate ask` is the high-level interface. It resolves the subject automatically, determines the presentation mode, and nudges the operator. The presentation is a form only when the asking session has a pane and every question has at most 4 options; otherwise it is wait, and an over-cap question is reported back as `formCapExceeded`.
 
 ```bash
 rt gate ask \
   --questions '[{"id":"q1","label":"Which approach?","multi":false,"options":["Refactor first","Ship as-is"]}]' \
   --context "We found dead code in the auth path; removing it simplifies the fix but adds scope."
 ```
+
+A gate owned by a human (anything not raised from a herd run) must carry `--context`; `rt gate ask` refuses one without it, except for the `milestone` and `pane-attention` kinds.
 
 ### Subject resolution
 
@@ -64,20 +66,20 @@ Each question can carry its own `context` field for material specific to that ch
 
 ```bash
 rt gate list --open          # see what is waiting
-rt gate answer <id>          # answer one (picker when omitted)
+rt gate answer <id> --answers '{"q1":"refactor"}' --by human   # answer one
 ```
 
 Answer values must match an option's value verbatim. Free-text feedback rides a per-answer `note` field. For multi-select questions, the answer is an array of values.
 
 ### Herd ownership
 
-When a gate was opened by a herd worker, only the owning shepherd's session can answer it. Pass `--override` to escalate as a human past the automated owner.
+When a gate was opened by a herd worker, only the owning shepherd's session (or the gated pane itself) can answer it. Pass `--override` to escalate as a human past the automated owner.
 
 ## Delivery
 
-When a gate is answered, the daemon pushes a notification to the gated pane. The notification tells the pane to re-read the registry; it does not carry the answer itself. The pane then calls `rt gate wait` (or `rt herd answer`) to read the recorded answer.
+When a gate that carries a nudge session (every form-presented gate does) is answered from another surface, the daemon pushes a notification to the gated pane. The notification tells the pane to re-read the registry; it does not carry the answer itself. The pane then calls `rt gate wait` (or `rt herd answer`) to read the recorded answer. A gate with no nudge session (a wait-presented `rt gate ask` gate, for one) gets no push: its `rt gate wait` simply returns.
 
-If the gated pane has exited, the daemon retries delivery with bounded retries (up to 20 attempts). Gates whose owner has exited are escalated automatically after their TTL expires.
+If the gated pane has exited, the daemon retries delivery with bounded retries (up to 20 attempts). An unanswered herd-owned gate is escalated to the human once its TTL passes, or as soon as the owning shepherd's subscription is gone.
 
 ## Subscriptions
 
