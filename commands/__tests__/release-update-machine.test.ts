@@ -13,6 +13,7 @@ const ATTACH_PLIST =
 
 function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSeams {
   let devPid = "111";
+  let appPid = 5000;
   return {
     repoRoot: "/repo",
     appsCheckoutPath: "/apps",
@@ -30,8 +31,10 @@ function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSe
         return ok(JSON.stringify({ ok: true, state: "running", data: { identity: { flavor: "dev", version: "2.11.0", sourceRev: SHA.slice(0, 9) } } }));
       }
       if (cmd === "git branch --show-current") return ok("main\n");
-      if (cmd === "deck list --json") return ok("[]");
-      if (cmd === "deck --version") return ok("3.4.0\n");
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck list") return ok(`${"board".padEnd(24)} ${"11006".padEnd(6)} ${"up".padEnd(5)} rt\n`);
+      // Every read after the restart snapshot sees a new pid, so board reads as cycled.
+      if (cmd.startsWith("launchctl print")) return ok(`\tstate = running\n\tpid = ${++appPid}\n`);
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck --version") return ok("3.4.0\n");
       if (cmd.startsWith("kill")) {
         devPid = "";
         return ok("");
