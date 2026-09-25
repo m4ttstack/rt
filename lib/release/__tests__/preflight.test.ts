@@ -244,6 +244,41 @@ describe("checkGate", () => {
     const g = await checkGate(s, "v2.10.2");
     expect(g.path).toBe("fast");
   });
+
+  const catalogLock = (boardVer: string, extra: object[]) => JSON.stringify({
+    schema: 1, arch: "arm64", tools: [
+      { ...APP_ROW, version: boardVer, url: `https://github.com/m4ttstack/apps/releases/download/board-v${boardVer}/board-darwin-arm64.tgz`, status: "bundled", serve: { port: 11006, args: [] } },
+      ...extra,
+    ],
+  });
+  const CHAT_SERVED = {
+    name: "chat", version: "0.1.2", repo: "m4ttstack/apps", subdir: "apps/chat", status: "bundled", serve: { port: 11002, args: [] },
+    url: "https://github.com/m4ttstack/apps/releases/download/chat-v0.1.2/chat-darwin-arm64.tgz",
+  };
+
+  test("a row deleted beside a serve-only pin bump forces the full gate", async () => {
+    const s = seams({
+      exec: gateExec(["rt-tray/deps.lock"], catalogLock("0.1.5", [CHAT_SERVED])),
+      readFile: () => catalogLock("0.1.6", []),
+    });
+    const g = await checkGate(s, "v2.10.2");
+    expect(g.path).toBe("full");
+    expect(g.reason).toBe("row(s) removed from deps.lock: chat");
+  });
+
+  test("a pending row flipping to bundled forces the full gate even with serve unchanged", async () => {
+    const boxscore = (status: string, v: string) => ({
+      name: "boxscore", version: v, repo: "m4ttstack/apps", subdir: "apps/boxscore", status, serve: { port: 11005, args: [] },
+      url: v ? `https://github.com/m4ttstack/apps/releases/download/boxscore-v${v}/boxscore-darwin-arm64.tgz` : "",
+    });
+    const s = seams({
+      exec: gateExec(["rt-tray/deps.lock"], catalogLock("0.1.5", [boxscore("pending", "")])),
+      readFile: () => catalogLock("0.1.5", [boxscore("bundled", "0.1.0")]),
+    });
+    const g = await checkGate(s, "v2.10.2");
+    expect(g.path).toBe("full");
+    expect(g.reason).toBe("status changed on row(s): boxscore");
+  });
 });
 
 describe("checkAppPins", () => {

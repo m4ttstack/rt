@@ -18,6 +18,7 @@ export interface DepsRow {
   url: string;
   repo?: string;
   subdir?: string;
+  status?: string;
   serve?: unknown;
 }
 
@@ -199,11 +200,16 @@ export async function checkGate(seams: PreflightSeams, tag: string): Promise<Gat
     const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
     const oldRows = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r]));
     const rows = readDepsRows(seams);
+    const newNames = new Set(rows.map((r) => r.name));
+    const removed = [...oldRows.keys()].filter((name) => !newNames.has(name));
+    if (removed.length > 0) return { path: "full", reason: `row(s) removed from deps.lock: ${removed.join(", ")}` };
     const changed = rows.filter((r) => oldRows.get(r.name)?.version !== r.version).map((r) => r.name);
-    // A row absent from the old lock is a first-ever ship of that app, which is
-    // beyond "pin-only" no matter how the row is served.
+    // A row absent from the old lock, or one leaving pending, is a first-ever
+    // ship of that app, which is beyond "pin-only" no matter how it is served.
     const added = changed.filter((name) => !oldRows.has(name));
     if (added.length > 0) return { path: "full", reason: `new row(s) in deps.lock: ${added.join(", ")}` };
+    const restatused = rows.filter((r) => oldRows.has(r.name) && oldRows.get(r.name)!.status !== r.status).map((r) => r.name);
+    if (restatused.length > 0) return { path: "full", reason: `status changed on row(s): ${restatused.join(", ")}` };
     const reserved = rows.filter((r) => oldRows.has(r.name) && serveKey(oldRows.get(r.name)) !== serveKey(r)).map((r) => r.name);
     if (reserved.length > 0) return { path: "full", reason: `serve changed on row(s): ${reserved.join(", ")}` };
     const gated = changed.filter((name) => !SERVE_ONLY_ROWS.has(name));

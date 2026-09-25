@@ -265,7 +265,11 @@ Two declarations drive it, each owned by the party that knows it:
   The bundle ships the lock at `Contents/Resources/deps.lock`, where deck
   reads it, and `update-lock.ts` never touches `serve`, so a new app's
   `serve` is added by hand on its pending stub row, before its first
-  bundle-apps run.
+  bundle-apps run. Relax a `serve` rule only after a release whose
+  parser already accepts the relaxed form has shipped: after a Sparkle
+  update a still-running daemon re-reads the replaced bundle's lock with
+  its old parser, and a lock it rejects sends every bundled tool lookup
+  back to PATH until the daemon restarts.
 - `bundle: { build, artifact }` in the app's `mattstack.deck.json` is the
   compile recipe, run verbatim at the app's root: the repo root for
   single-repo rows, `subdir` for monorepo rows. A dispatched app whose
