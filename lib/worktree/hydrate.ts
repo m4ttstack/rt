@@ -184,3 +184,4 @@ async function runHydrate(
   log.info({ repo: repoName, tree: name, path, golden: golden.name }, "worktree hydrated from golden");
   return { ok: true, tree: updated };
 }
+
