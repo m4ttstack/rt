@@ -20,6 +20,7 @@
         "@types/bun": "latest",
         "@xterm/headless": "^6.0.0",
         "node-pty": "^1.1.0",
+        "zod": "^4.6.5",
       },
       "peerDependencies": {
         "typescript": "^5",
@@ -40,10 +41,12 @@
       "name": "@mattstack/rt-client",
       "version": "0.31.1",
       "dependencies": {
+        "@cfworker/json-schema": "^4.1.1",
         "jsonc-parser": "^3.3.1",
       },
       "devDependencies": {
         "typescript": "^5.9.2",
+        "zod": "^4.6.5",
       },
       "peerDependencies": {
         "@mattstack/glance": ">=0.24.0",
@@ -66,6 +69,8 @@
     },
   },
   "packages": {
+    "@cfworker/json-schema": ["@cfworker/json-schema@4.1.1", "", {}, "sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og=="],
+
     "@gitbeaker/core": ["@gitbeaker/core@43.8.0", "", { "dependencies": { "@gitbeaker/requester-utils": "^43.8.0", "qs": "^6.14.0", "xcase": "^2.0.1" } }, "sha512-H+LfKuf4dExBinb79c+CXViRBvTVQNf5BYLNSizm2SiqdED5JruhKX88payefleY0szp7G/mySlFSXPyGRH1dQ=="],
 
     "@gitbeaker/requester-utils": ["@gitbeaker/requester-utils@43.8.0", "", { "dependencies": { "picomatch-browser": "^2.2.6", "qs": "^6.14.0", "rate-limiter-flexible": "^8.0.1", "xcase": "^2.0.1" } }, "sha512-d/SiJdxijc+aH5ZBQOw83XLxNSXqsBZNm5k3nPu1EHxGxK0fajXmxdMl0/vNXbKRggnIquFCxURkrQSEzfjqxQ=="],

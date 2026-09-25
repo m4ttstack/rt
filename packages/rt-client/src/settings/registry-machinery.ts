@@ -24,6 +24,7 @@
  */
 
 import { REGISTRY } from "./registry-defs.ts";
+import type { JsonSchema } from "./schema.ts";
 
 export type SettingScope = "user" | "team" | "machine";
 
@@ -39,6 +40,12 @@ export interface SettingDef {
   migrated?: boolean;
   legacyFile?: string;
   pathGuardFields?: string[];
+  /** JSON Schema of the value a reader receives (merged, for deep keys); attached from the lock. */
+  schema?: JsonSchema;
+  /** For deep-merge keys: `schema` with every object property optional, so one layer can be partial. */
+  layerSchema?: JsonSchema;
+  /** Bumped only on a breaking schema change; the lock file records it. Default 1. */
+  storeVersion?: number;
   description: string;
 }
 
