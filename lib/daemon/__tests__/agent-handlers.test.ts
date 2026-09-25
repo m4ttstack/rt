@@ -452,16 +452,41 @@ test("agent:resume keeps inbound accept for a record holding a reserved handle, 
   expect(paneRun).not.toContain("'--name'");
 });
 
-test("agent:start names a labeled agent's pane after its label before running it", async () => {
+test("agent:start names a labeled agent's pane after its label", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
-  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "review !42" });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "-review !42" });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
-  const renameAt = calls.findIndex((c) => c[0] === "pane" && c[1] === "rename");
-  const runAt = calls.findIndex((c) => c[0] === "pane" && c[1] === "run");
-  expect(calls[renameAt]).toEqual(["pane", "rename", res.data.paneId!, "review !42"]);
-  expect(renameAt).toBeLessThan(runAt);
+  expect(calls).toContainEqual(["pane", "rename", res.data.paneId!, "--", "-review !42"]);
+});
+
+test("agent:start still launches when the pane rename fails", async () => {
+  const calls: string[][] = [];
+  const base = okRunner(calls);
+  const failingRename: HerdrRunner = async (args) => {
+    if (args[0] === "pane" && args[1] === "rename") {
+      calls.push(args);
+      return { stdout: JSON.stringify({ error: { code: "pane_not_found", message: "gone" } }), exitCode: 0 };
+    }
+    return base(args);
+  };
+  const h = fresh({ runner: failingRename });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "L" });
+  expect(res.ok).toBe(true);
+  expect(calls.some((c) => c[0] === "pane" && c[1] === "run")).toBe(true);
+});
+
+test("agent:start still launches when the pane rename throws", async () => {
+  const calls: string[][] = [];
+  const base = okRunner(calls);
+  const throwingRename: HerdrRunner = async (args) => {
+    if (args[0] === "pane" && args[1] === "rename") throw new Error("socket gone");
+    return base(args);
+  };
+  const h = fresh({ runner: throwingRename });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", label: "L" });
+  expect(res.ok).toBe(true);
 });
 
 test("agent:start leaves an unlabeled agent's pane unnamed so Claude's own title shows", async () => {

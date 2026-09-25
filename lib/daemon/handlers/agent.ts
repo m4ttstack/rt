@@ -257,6 +257,15 @@ function isCommandNotFoundShape(message: string): boolean {
   return /\(127\)/.test(message) || /not found at/i.test(message);
 }
 
+async function renamePane(runner: HerdrRunner, paneId: string, label: string, log: Logger): Promise<void> {
+  try {
+    const r = await runner(["pane", "rename", paneId, "--", label]);
+    if (r.exitCode !== 0 || r.stdout.includes('"error"')) log.warn({ paneId, out: r.stdout.slice(0, 400) }, "agent: pane rename failed; pane keeps its terminal title");
+  } catch (err) {
+    log.warn({ err, paneId }, "agent: pane rename failed; pane keeps its terminal title");
+  }
+}
+
 /** Paint budget for the folder-trust check on a freshly launched pane. */
 const TRUST_PAINT_MS = 3_000;
 
@@ -339,10 +348,7 @@ export function createAgentHandlers(opts: {
         ? (opts.herdrRunnerForSocket ?? ((socket: string) => defaultHerdrRunner({ ...process.env, HERDR_SOCKET_PATH: socket })))(extra.herdrSocket)
         : (opts.herdrRunner ?? defaultHerdrRunner());
       const out = await launchInWorkspace(
-        {
-          workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv),
-          ...(rec.label !== undefined && { paneLabel: rec.label }),
-        },
+        { workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv) },
         runner,
       );
       if (out.focusedExisting) {
@@ -356,6 +362,11 @@ export function createAgentHandlers(opts: {
       rec.paneId = out.paneId;
       rec.tabId = out.tabId;
       rec.workspaceId = out.workspaceId;
+      // herdr and Flock show a pane's own name over its terminal title. Best
+      // effort: the pane is already running, and a thrown rename would roll
+      // back the record while leaving its labeled tab behind to dedup every
+      // retry. herdr reports a failed rename in its JSON, exit code 0.
+      if (rec.label) await renamePane(runner, out.paneId, rec.label, log);
       // Every claude pane the daemon opens gets the folder-trust check, not
       // just the ones herd:spawn opens: a plain `rt agent start` into a fresh
       // directory sat on the dialog until a human cleared it (RT-156). The
