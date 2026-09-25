@@ -26,7 +26,7 @@
 - Wire names pinned with spec 2 (console): a diverged issue is `{ scope, file, repo?, kind: "diverged", path: [], message, storeName, olderValue, currentValue }` with `storeName` the OLDER name and no values for a secret def; explain rows carry `storeName`, `storedVersion`, `value` (migrated) and `authored` (as stored) on every present store row (never on the `default` row); `POST {base}/prune` takes `{ key, scope, repo?, storeName, force?, team? }` and answers like `/unset`.
 - No floors, no reader discovery: nothing in this plan records or enforces which rt-client versions read a store.
 - Commit trailer on every commit, verbatim: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-- Gate for every task, each command run bare (never piped through `tail`, `head` or `grep`; a pipe hides the exit code): `sh scripts/repo-purity.sh`, then `bunx tsc --noEmit`, then `bun test <the task's own test files>`, then (after any change under `packages/rt-client/src`) `bun --cwd packages/rt-client run build`, because `packages/rt-client/test/dist-freshness.test.ts` fails on a stale `dist/` (AGENTS.md).
+- Gate for every task, each command run bare (never piped through `tail`, `head` or `grep`; a pipe hides the exit code): `sh scripts/repo-purity.sh`, then `bunx tsc --noEmit`, then `bun test <the task's own test files>`, then (after any change under `packages/rt-client/src`) `bun run --cwd packages/rt-client build`, because `packages/rt-client/test/dist-freshness.test.ts` fails on a stale `dist/` (AGENTS.md).
 - CI runs the full suite; locally run only the test files each task names, from the repo root (bun reads `bunfig.toml` only from the cwd; AGENTS.md).
 - Never run a built `rt` binary (or `dist/rt`) outside an isolated HOME (`env -i HOME=<temp> ...`). `bun run cli.ts settings check` from source against real stores is read-only and happens only in Task 12.
 - A new command-tree node needs `bun run docs:gen` then `bun run docs:check` and `bun run picker:check` green; a new command module needs a `lib/module-registry.ts` entry (this plan adds none: every verb lands in an existing module).
@@ -591,7 +591,7 @@ Expected: PASS.
 
 - [ ] **Step 8: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate.test.ts packages/rt-client/src/settings/__tests__/registry.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0 (`packages/rt-client/test` holds `no-zod-in-dist.test.ts` and `dist-freshness.test.ts`; run the build before them if dist-freshness fails, then rerun).
 
 - [ ] **Step 9: Commit**
@@ -889,7 +889,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate-section.test.ts packages/rt-client/src/settings/__tests__/migrate.test.ts`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate-section.test.ts packages/rt-client/src/settings/__tests__/migrate.test.ts`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 6: Commit**
@@ -1070,9 +1070,9 @@ describe("settings/resolve over versioned store names", () => {
     });
   });
 
-  test("repoSectionsFor counts a section holding only an older name", () => {
+  test("repoSectionsFor counts a section holding only the versioned current name", () => {
     withMigration("rt.roles", ROLES_BUMP, () => {
-      writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.roles": { web: { hook: "./dev.sh" } } } } });
+      writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.roles@2": { web: { devHook: "./dev.sh" } } } } });
       expect(repoSectionsFor("rt.roles")).toContainEqual({ identity: IDENTITY, scopes: ["team"] });
     });
   });
@@ -1261,7 +1261,7 @@ Expected: PASS. If an existing `resolve.test.ts` assertion compares a whole pres
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/resolve-migrations.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/check.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/resolve-migrations.test.ts packages/rt-client/src/settings/__tests__/resolve.test.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/src/settings/__tests__/check.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 8: Commit**
@@ -1337,8 +1337,9 @@ const ROLES_BUMP = {
   schema: { type: "object", additionalProperties: { type: "object", properties: { devHook: { type: "string" } } } },
 };
 
-const OLD_LINE = `  "${EB}": [{ "pattern": "gate/opened/*", "category": "gate", "title": "Gate", "message": "{question}" }]`;
-const OLD_TEXT = `// my notes\n{\n${OLD_LINE}\n}\n`;
+const OLD_LINE = `  "${EB}": [{ "pattern": "gate/opened/*", "category": "gate", "title": "Gate", "message": "{question}" }],`;
+// A property follows the old name: jsonc-parser's modify reformats the line of whatever property it appends after.
+const OLD_TEXT = `// my notes\n{\n${OLD_LINE}\n  "rt.notifications": {}\n}\n`;
 
 describe("settings/write over versioned store names", () => {
   const origHome = process.env.HOME;
@@ -1678,7 +1679,7 @@ Expected: PASS. The existing `write.test.ts` must pass unchanged: a key at store
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/write-migrations.test.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/write-migrations.test.ts packages/rt-client/src/settings/__tests__/write.test.ts packages/rt-client/src/settings/__tests__/validate-write.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 8: Commit**
@@ -2103,7 +2104,7 @@ Expected: PASS (plan 1's `check.test.ts` unchanged and green).
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/check-migrations.test.ts packages/rt-client/src/settings/__tests__/check.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-keys-render.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/check-migrations.test.ts packages/rt-client/src/settings/__tests__/check.test.ts commands/__tests__/settings-check.test.ts commands/__tests__/settings-keys-render.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 8: Commit**
@@ -2402,7 +2403,7 @@ describe("rt settings migrate", () => {
       expect(process.exitCode).toBe(1);
       process.exitCode = 0;
       await settingsMigrate(["--prune", "--yes", "--force", EB], noPrompt);
-      expect(printed()).toContain(`deleting diverged ${EB}; its value was: ${JSON.stringify(EB_V2)}`);
+      expect(printed()).toContain(`deleting diverged ${EB}; its value was: ${JSON.stringify(renameProperty(EB_V1, ["[]"], "pattern", "match"))}`);
       expect(read(userSettingsPath())).toEqual({ [`${EB}@2`]: EB_V2_EDITED });
     });
   });
@@ -2766,7 +2767,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate-stores.test.ts packages/rt-client/src/settings/__tests__/migrations-acceptance.test.ts commands/__tests__/settings-migrate.test.ts lib/__tests__/picker-conformance.test.ts lib/__tests__/no-eager-tui.test.ts packages/rt-client/test`, `bun run docs:check`, `bun run picker:check`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/migrate-stores.test.ts packages/rt-client/src/settings/__tests__/migrations-acceptance.test.ts commands/__tests__/settings-migrate.test.ts lib/__tests__/picker-conformance.test.ts lib/__tests__/no-eager-tui.test.ts packages/rt-client/test`, `bun run docs:check`, `bun run picker:check`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 8: Commit**
@@ -2793,7 +2794,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `issues[]` gains, per diverged older name, `{ scope, file, repo?, kind: "diverged", path: [], message, storeName, olderValue, currentValue }` (`storeName` is the older name; `olderValue` its value migrated; `currentValue` the row's value); a secret def's diverged issue carries neither value. `stale` and `leftover` are never issues.
   - `POST {base}/prune` with `{ key, scope, repo?, storeName, force?, team? }`: same local-only and JSON gates as `/set`; 404 unknown key; 400 secret key, missing `storeName`, a name not in the store, or any `pruneStoreName` refusal (its message verbatim); 200 `{ rows, effective }` from a fresh explain, like `/unset`.
   - `RtSettingsApi` gains `pruneStoreName`.
-  - `useSettingsScope(...)` gains `prune: (key: string, scope: string, storeName: string, force?: boolean) => Promise<string | null>`.
+  - `useSettingsScope(...)` gains `prune: (key: string, scope: string, storeName: string, opts?: { force?: boolean; repo?: string; team?: string }) => Promise<string | null>`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3010,20 +3011,20 @@ In `packages/settings-kit/src/react.ts`, add to `SettingsScopeState`:
   /** Remove one older store name of a key (spec 3's Remove the older name),
       then refetch so its issue clears. Resolves null on success, else the
       server's refusal message verbatim. */
-  prune: (key: string, scope: string, storeName: string, force?: boolean) => Promise<string | null>;
+  prune: (key: string, scope: string, storeName: string, opts?: { force?: boolean; repo?: string; team?: string }) => Promise<string | null>;
 ```
 
 and after `unset` in `useSettingsScope`:
 
 ```ts
   const prune = useCallback(
-    async (key: string, scope: string, storeName: string, force = false): Promise<string | null> => {
+    async (key: string, scope: string, storeName: string, opts: { force?: boolean; repo?: string; team?: string } = {}): Promise<string | null> => {
       setSaving(key);
       try {
         const res = await fetch(`${base}/prune`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key, scope, storeName, force }),
+          body: JSON.stringify({ key, scope, storeName, force: opts.force === true, ...(opts.repo ? { repo: opts.repo } : {}), ...(opts.team ? { team: opts.team } : {}) }),
         });
         const body = (await res.json().catch(() => null)) as { effective?: EffectiveWire; error?: string } | null;
         if (!res.ok || !body?.effective) return body?.error ?? `remove failed: ${res.status}`;
@@ -3048,7 +3049,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/settings-kit`, `bun --cwd packages/settings-kit run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/settings-kit`, `bun run --cwd packages/settings-kit build`.
 Expected: all exit 0.
 
 - [ ] **Step 8: Commit**
@@ -3368,7 +3369,7 @@ and replace the loop body of `buildLock` with:
 
 - [ ] **Step 5: The CLI and the release preflight**
 
-In `commands/settings-schema.ts`: change the signature to `settingsSchemaDiff(args: string[], deps: { repoRoot?: string; shippedLock?: Lock | null } = {})`; add
+In `commands/settings-schema.ts`: add `shippedLock?: Lock | null` to `settingsSchemaDiff`'s existing `deps` type, keeping every field plan 1 gave it (its git seam `git?: Git` included; plan 1's own code and tests pass `deps.git`); add
 
 ```ts
 function latestReleaseTag(repoRoot: string): string | null {
@@ -3385,14 +3386,14 @@ and, after `prev` is resolved and checked, replace the `checkLockAgainst(...)` l
   let shipped: Lock | null = null;
   if (deps.shippedLock !== undefined) shipped = deps.shippedLock;
   else if (shippedRef !== null) {
-    const atRef = lockAtRef(shippedRef, repoRoot);
+    const atRef = lockAtRef(shippedRef, repoRoot, deps.git ?? realGit);
     if (atRef instanceof Error) return fail(atRef.message);
     shipped = atRef;
   }
   const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges(), { shipped, mode: "ci" });
 ```
 
-and add `shipped: shippedRef` to the `--json` body: `console.log(JSON.stringify({ ok, shipped: shippedRef, changes, problems }, null, 2));`.
+(`lockAtRef` takes plan 1's git seam as its third argument; use whatever name plan 1's module gives its real implementation, shown here as `realGit`, exactly as its existing `--against-ref` call does). Add `shipped: shippedRef` to the `--json` body: `console.log(JSON.stringify({ ok, shipped: shippedRef, changes, problems }, null, 2));`.
 
 In `lib/command-tree-def.ts`, add to `settings.schema.diff.args`, before `JSON`:
 
@@ -3435,7 +3436,7 @@ Expected: PASS, including plan 1's `buildLock ... matches the committed lock byt
 
 - [ ] **Step 7: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts packages/rt-client/test`, `bun run cli.ts settings schema lock`, `git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json`, `bun run docs:check`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/schema-lock.test.ts commands/__tests__/settings-schema.test.ts commands/__tests__/release-preflight.test.ts packages/rt-client/test`, `bun run cli.ts settings schema lock`, `git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json`, `bun run docs:check`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0 (the lock regenerates byte for byte).
 
 - [ ] **Step 8: Commit**
@@ -3780,7 +3781,7 @@ Expected: PASS. If the registry-wide sample test names a key, the generator is m
 
 - [ ] **Step 6: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/sample-values.test.ts packages/rt-client/src/settings/__tests__/migration-proof.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/sample-values.test.ts packages/rt-client/src/settings/__tests__/migration-proof.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0 (`no-zod-in-dist` stays green: neither module is imported by `index.ts`).
 
 - [ ] **Step 7: Commit**
@@ -3831,7 +3832,7 @@ const FIXTURES: [Record<string, unknown>, string][] = [
   [{ type: "object", properties: { a: { type: "number" } }, additionalProperties: false }, "z.strictObject({ a: z.number().optional() })"],
   [{ type: "string", const: "human" }, 'z.literal("human")'],
   [{ type: "string", enum: ["a", "b"] }, 'z.enum(["a","b"])'],
-  [{ anyOf: [{ type: "number" }, { type: "null" }] }, "z.union([z.number(), z.null()])"],
+  [{ anyOf: [{ type: "string" }, { type: "object", properties: { a: { type: "string" } }, required: ["a"], additionalProperties: {} }] }, "z.union([z.string(), z.looseObject({ a: z.string() })])"],
   [{ type: "number", exclusiveMinimum: 0 }, "z.number().gt(0)"],
   [{ type: "array", items: { type: "string" }, minItems: 1 }, "z.array(z.string()).min(1)"],
   [{ type: "string", minLength: 1 }, "z.string().min(1)"],
@@ -3959,7 +3960,7 @@ Expected: PASS. If the committed-lock test names keys, print `zodSource` and the
 
 - [ ] **Step 5: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/zod-source.test.ts packages/rt-client/test`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/zod-source.test.ts packages/rt-client/test`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 6: Commit**
@@ -4402,7 +4403,7 @@ Expected: PASS.
 
 - [ ] **Step 6: Gate**
 
-Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/schema-draft.test.ts commands/__tests__/settings-schema.test.ts lib/__tests__/no-eager-tui.test.ts packages/rt-client/test`, `bun run docs:check`, `bun --cwd packages/rt-client run build`.
+Run, each bare: `sh scripts/repo-purity.sh`, `bunx tsc --noEmit`, `bun test packages/rt-client/src/settings/__tests__/schema-draft.test.ts commands/__tests__/settings-schema.test.ts lib/__tests__/no-eager-tui.test.ts packages/rt-client/test`, `bun run docs:check`, `bun run --cwd packages/rt-client build`.
 Expected: all exit 0.
 
 - [ ] **Step 7: Commit**
@@ -4634,7 +4635,7 @@ olderValue, currentValue }` (no values for a secret key). `POST
 {base}/prune` with `{ key, scope, repo?, storeName, force?, team? }`
 removes one older name and answers `{ rows, effective }`; it refuses a
 diverged name unless `force`. `useSettingsScope(...).prune(key, scope,
-storeName, force?)` calls it.
+storeName, { force?, repo?, team? })` calls it.
 ```
 
 - [ ] **Step 6: Versions**
@@ -4662,8 +4663,8 @@ Run, each bare:
 - `bun run picker:check`
 - `bun run cli.ts settings schema lock`
 - `git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json`
-- `bun --cwd packages/rt-client run build`
-- `bun --cwd packages/settings-kit run build`
+- `bun run --cwd packages/rt-client build`
+- `bun run --cwd packages/settings-kit build`
 - `bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/settings.test.ts`
 - `bun build --compile ./cli.ts --outfile dist/rt --no-compile-autoload-bunfig --no-compile-autoload-dotenv`
 - `mkdir -p /private/tmp/rt-bench-home`
