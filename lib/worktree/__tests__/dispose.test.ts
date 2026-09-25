@@ -259,13 +259,15 @@ describe("classifyDirtyAsync", () => {
 describe("disposeTree", () => {
   const repoName = "acme";
   let repo: string;
+  let bare: string;
   let events: Array<{ type: string; data: unknown }>;
 
   beforeEach(() => {
     process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtdispose-home-")));
     closeStateDb();
     repo = makeRepo();
-    seedIdentity(addBareOrigin(repo));
+    bare = addBareOrigin(repo);
+    seedIdentity(bare);
     events = [];
   });
 
@@ -460,6 +462,72 @@ describe("disposeTree", () => {
     });
     const result = await disposeTree(deps, rec, { auto: true });
     expect(result).toMatchObject({ disposed: false, refusal: "unpushed" });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  /** Push feature-a at one commit, then advance origin/main past it and pull that into the tree. */
+  function treePastItsPushedBranch(): { path: string; mergedSha: string } {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "in the MR\n");
+    const mergedSha = execSync(`git -C ${path} rev-parse HEAD`, { encoding: "utf8" }).trim();
+    execSync(`git -C ${path} push origin feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    execSync(`git -C ${repo} merge --ff-only feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    commitIn(repo, "later-on-main.txt", "landed after the merge\n");
+    execSync(`git -C ${repo} push origin main && git -C ${repo} fetch origin`, { shell: "/bin/zsh", stdio: "pipe" });
+    execSync(`git -C ${path} merge --ff-only origin/main`, { shell: "/bin/zsh", stdio: "pipe" });
+    return { path, mergedSha };
+  }
+
+  test("a tree that pulled main past its merged branch disposes despite a stale origin/<branch>", async () => {
+    const { path, mergedSha } = treePastItsPushedBranch();
+    execSync(`git -C ${bare} branch -D feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    expect(await remoteRefExists(path, "feature-a")).toBe(true);
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mergedSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toMatchObject({ disposed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a stale origin/<branch> never vouches for local-only commits past main", async () => {
+    const { path, mergedSha } = treePastItsPushedBranch();
+    commitIn(path, "local.txt", "never pushed\n");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: mergedSha, state: "merged" }, repoName } },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("main vouching for HEAD never lets dispose delete a branch holding unpushed commits", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "pushed\n");
+    execSync(`git -C ${path} push origin feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    commitIn(path, "local.txt", "never pushed\n");
+    commitIn(repo, "later-on-main.txt", "main moved on\n");
+    execSync(`git -C ${repo} push origin main && git -C ${repo} fetch origin`, { shell: "/bin/zsh", stdio: "pipe" });
+    execSync(`git -C ${path} checkout --detach origin/main`, { shell: "/bin/zsh", stdio: "pipe" });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(await branchExistsLocalAsync(repo, "feature-a")).toBe(true);
+  });
+
+  test("a local branch named origin/main never vouches for unpushed commits", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "local.txt", "never pushed\n");
+    execSync(`git -C ${repo} branch origin/main feature-a`, { shell: "/bin/zsh", stdio: "pipe" });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
     expect(existsSync(path)).toBe(true);
   });
 
