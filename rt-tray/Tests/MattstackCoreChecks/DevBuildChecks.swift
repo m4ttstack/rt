@@ -54,6 +54,23 @@ private func runScript(_ script: String) -> Int32 {
     return p.terminationStatus
 }
 
+/// A stand-in for plutil that answers `-extract MSBuildTree raw` from a
+/// `tree-path` file beside the Info.plist, and fails like plutil does when
+/// there is none.
+private func fakePlutil(_ dir: URL) -> String {
+    let path = dir.appendingPathComponent("fake-plutil").path
+    let body = """
+        #!/bin/sh
+        [ "$1 $2 $3" = "-extract MSBuildTree raw" ] || exit 2
+        for last; do :; done
+        cat "$(dirname "$last")/tree-path" 2>/dev/null || exit 1
+
+        """
+    try! body.write(toFile: path, atomically: true, encoding: .utf8)
+    chmod(path, 0o755)
+    return path
+}
+
 /// A pid that has already exited, so the handoff's wait returns at once.
 private func deadPid() -> Int32 {
     let p = Process()
@@ -88,7 +105,7 @@ private struct Rig {
             openPath: recorder(dir, "fake-open", log: calls),
             launchctlPath: recorder(dir, "fake-helper", log: calls),
             deckCLIPath: recorder(dir, "fake-deck", log: calls, failing: deckFailing),
-            cache: cache)
+            cache: cache, plutilPath: fakePlutil(dir))
     }
 
     func cacheTarget(_ entry: String = "tree-abc") -> DevBuild.CacheTarget {
@@ -104,10 +121,15 @@ private func identityPlist(_ id: DevBuild.BuildIdentity, stamp: String = "s") ->
            "MSBuildVersion": id.version])
 }
 
-private func seedEntry(_ builds: URL, _ name: String, cachedAt: String?, marker m: String) {
+private func tagTree(_ bundle: URL, _ tree: String) {
+    try! Data(tree.utf8).write(to: bundle.appendingPathComponent("Contents/tree-path"))
+}
+
+private func seedEntry(_ builds: URL, _ name: String, cachedAt: String?, marker m: String, tree: String? = nil) {
     let entry = builds.appendingPathComponent(name)
     makeBundle(entry.appendingPathComponent("bundle"), marker: m)
     if let cachedAt { try! Data(cachedAt.utf8).write(to: entry.appendingPathComponent("cached-at")) }
+    if let tree { tagTree(entry.appendingPathComponent("bundle"), tree) }
 }
 
 private func entries(_ builds: URL) -> [String] {
@@ -397,5 +419,61 @@ let devBuildChecks: [Check] = [
         c.expectEqual(read(probeLog), "gone\n")
         c.expectEqual(entries(rig.builds).filter { !$0.hasPrefix(".") }, [], "nothing is cached across volumes")
         c.expect(read(rig.restartLog).contains("another volume"), "the handoff says why it did not cache")
+    },
+    Check("a cached build whose worktree is gone is dropped; live, untagged and just-filed builds are kept") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let gone = rig.dir.appendingPathComponent("gone-tree").path
+        let live = rig.dir.appendingPathComponent("live-tree")
+        try FileManager.default.createDirectory(at: live, withIntermediateDirectories: true)
+        tagTree(rig.app, gone)
+        seedEntry(rig.builds, "dead", cachedAt: "300", marker: "x", tree: gone)
+        seedEntry(rig.builds, "live", cachedAt: "200", marker: "x", tree: live.path)
+        seedEntry(rig.builds, "relative", cachedAt: "150", marker: "x", tree: "gone-tree")
+        seedEntry(rig.builds, "untagged", cachedAt: "100", marker: "x")
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
+        c.expectEqual(marker(rig.app), "new")
+        c.expectEqual(entries(rig.builds), ["live", "relative", "tree-abc", "untagged"])
+        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "old")
+        c.expect(read(rig.restartLog).contains("dropped \(rig.builds.path)/dead"), "the drop is logged")
+        c.expectEqual(read(rig.calls), """
+            fake-open \(rig.app.path)
+            fake-helper kickstart -k gui/501/com.mattstack.deck.dev
+            fake-deck list --json
+            fake-deck restart --managed
+
+            """)
+    },
+    Check("builds of gone worktrees are dropped before the keep-four count, so they never push out live ones") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        let gone = rig.dir.appendingPathComponent("gone-tree").path
+        seedEntry(rig.builds, "l100", cachedAt: "100", marker: "x")
+        seedEntry(rig.builds, "l200", cachedAt: "200", marker: "x")
+        seedEntry(rig.builds, "l300", cachedAt: "300", marker: "x")
+        seedEntry(rig.builds, "d500", cachedAt: "500", marker: "x", tree: gone)
+        seedEntry(rig.builds, "d600", cachedAt: "600", marker: "x", tree: gone)
+        c.expectEqual(runScript(rig.script(pid: deadPid(), staged: rig.staged.path, cache: rig.cacheTarget())), 0)
+        c.expectEqual(entries(rig.builds), ["l100", "l200", "l300", "tree-abc"])
+    },
+    Check("the default plist reader finds a gone worktree in a real Info.plist") { c in
+        let rig = Rig()
+        makeBundle(rig.app, marker: "old")
+        makeBundle(rig.staged, marker: "new")
+        seedEntry(rig.builds, "dead", cachedAt: "200", marker: "x")
+        seedEntry(rig.builds, "live", cachedAt: "100", marker: "x")
+        let gone = DevBuild.BuildIdentity(tree: rig.dir.appendingPathComponent("gone tree").path, sha: sampleIdentity.sha,
+                                          diffHash: "clean", version: "v1")
+        let live = DevBuild.BuildIdentity(tree: rig.dir.path, sha: sampleIdentity.sha, diffHash: "clean", version: "v1")
+        try identityPlist(gone).write(to: rig.builds.appendingPathComponent("dead/bundle/Contents/Info.plist"))
+        try identityPlist(live).write(to: rig.builds.appendingPathComponent("live/bundle/Contents/Info.plist"))
+        let script = DevBuild.handoffScript(
+            pid: deadPid(), appPath: rig.app.path, stagedPath: rig.staged.path, deckLabel: nil, uid: 501,
+            logPath: rig.restartLog.path, openPath: recorder(rig.dir, "fake-open", log: rig.calls),
+            cache: rig.cacheTarget())
+        c.expectEqual(runScript(script), 0)
+        c.expectEqual(entries(rig.builds), ["live", "tree-abc"])
     },
 ]
