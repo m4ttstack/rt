@@ -6,7 +6,7 @@ import { mcpTools } from "../tools.ts";
 import { normalizeGateQuestions } from "../../../packages/rt-client/src/gate-options.ts";
 import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -30,8 +30,8 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
-  test("roster has 16 tools", () => {
-    expect(mcpTools().length).toBe(16);
+  test("roster has 18 tools", () => {
+    expect(mcpTools().length).toBe(18);
   });
 
   test("every tool has a description and a closed object schema", () => {
@@ -295,6 +295,8 @@ describe("mcpTools", () => {
     const repoArgTools: Array<{ name: string; field: string }> = [
       { name: "mr_reply_thread", field: "repoName" },
       { name: "mr_comment_inline", field: "repoName" },
+      { name: "mr_comment", field: "repoName" },
+      { name: "mr_create", field: "repoName" },
       { name: "mr_map", field: "repo" },
     ];
     for (const { name, field } of repoArgTools) {
@@ -304,6 +306,101 @@ describe("mcpTools", () => {
       const text = `${tool.description} ${fieldDescription}`.toLowerCase();
       expect(text).toContain("serialized identity");
     }
+  });
+
+  describe("mr write tools: mr_comment, mr_create", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    function fakeDaemon(reply: (cmd: string, payload: Record<string, unknown>) => unknown) {
+      const calls: Array<{ cmd: string; payload: Record<string, unknown>; timeoutMs?: number }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>, opts?: { timeoutMs?: number }) => {
+          calls.push({ cmd, payload, timeoutMs: opts?.timeoutMs });
+          return reply(cmd, payload);
+        },
+      }));
+      return calls;
+    }
+
+    const COMMENT_DATA = { noteId: 1, discussionId: "d1", resolvable: true, url: "u#note_1", mrUrl: "u" };
+
+    test("mr_comment schema requires repoName, iid, body and allows only resolvable beside them", () => {
+      const schema = mcpTools().find((t) => t.name === "mr_comment")!.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
+      expect(schema.required).toEqual(["repoName", "iid", "body"]);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["body", "iid", "repoName", "resolvable"]);
+    });
+
+    test("mr_comment sends mr:comment with the write timeout and returns the daemon's data", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: COMMENT_DATA }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, body: "hi" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: COMMENT_DATA });
+      expect(calls).toEqual([{ cmd: "mr:comment", payload: { repoName: "remote:x", iid: 7, body: "hi" }, timeoutMs: 30_000 }]);
+    });
+
+    test("mr_comment forwards resolvable:false", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: COMMENT_DATA }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      await tool.handler({ repoName: "remote:x", iid: 7, body: "hi", resolvable: false }, {} as NodeJS.ProcessEnv);
+      expect(calls[0]!.payload.resolvable).toBe(false);
+    });
+
+    test("mr_comment refuses a string resolvable before calling the daemon", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: COMMENT_DATA }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, body: "hi", resolvable: "false" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: false, body: undefined, error: '"resolvable" must be a boolean' });
+      expect(calls).toEqual([]);
+    });
+
+    test("a timed-out mr_comment says the note may still land and where to check", async () => {
+      fakeDaemon(() => ({ ok: false, error: "rt daemon unreachable at /x.sock: The operation timed out." }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, body: "hi" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("may still land");
+      expect(res.error).toContain("discussions");
+    });
+
+    test("a daemon error that is not a timeout passes through without the landing hint", async () => {
+      fakeDaemon(() => ({ ok: false, error: "no gitlabToken in secrets" }));
+      const tool = mcpTools().find((t) => t.name === "mr_comment")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, body: "hi" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe("no gitlabToken in secrets");
+    });
+
+    test("mr_create schema requires the branches and title and has no iid", () => {
+      const schema = mcpTools().find((t) => t.name === "mr_create")!.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
+      expect(schema.required).toEqual(["repoName", "sourceBranch", "targetBranch", "title"]);
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["description", "draft", "repoName", "sourceBranch", "targetBranch", "title"]);
+    });
+
+    test("mr_create sends mr:create, leaving draft to the daemon default when omitted", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { iid: 12, url: "u" } }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { iid: 12, url: "u" } });
+      expect(calls).toEqual([{ cmd: "mr:create", payload: { repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" }, timeoutMs: 30_000 }]);
+    });
+
+    test("mr_create refuses a string draft before calling the daemon", async () => {
+      const calls = fakeDaemon(() => ({ ok: true, data: { iid: 12, url: "u" } }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T", draft: "true" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('"draft" must be a boolean');
+      expect(calls).toEqual([]);
+    });
+
+    test("a timed-out mr_create says the MR may still land and to check mr_map", async () => {
+      fakeDaemon(() => ({ ok: false, error: "rt daemon unreachable at /x.sock: The operation timed out." }));
+      const tool = mcpTools().find((t) => t.name === "mr_create")!;
+      const res = await tool.handler({ repoName: "remote:x", sourceBranch: "feat", targetBranch: "main", title: "T" }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toContain("may still land");
+      expect(res.error).toContain("mr_map");
+    });
   });
 
   describe("mr_map", () => {

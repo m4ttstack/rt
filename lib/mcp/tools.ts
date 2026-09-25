@@ -62,6 +62,15 @@ function checkRequired(input: Record<string, unknown>, fields: Array<{ name: str
   return undefined;
 }
 
+/** Optional fields get the same check: a string "false" must never read as true. */
+function checkOptional(input: Record<string, unknown>, fields: Array<{ name: string; type: "string" | "number" | "boolean" }>): string | undefined {
+  for (const f of fields) {
+    const v = input[f.name];
+    if (v !== undefined && typeof v !== f.type) return `"${f.name}" must be a ${f.type}`;
+  }
+  return undefined;
+}
+
 const SIGN_IN_HINT = "no signed-in chat session for this pane; run `rt chat sign-in` in bash first";
 
 /** No derived-handle fallback: a tool call with no session file is a hard error, unlike the CLI's resolveHandle. */
@@ -73,12 +82,19 @@ function requireChatHandle(env: NodeJS.ProcessEnv): { handle: string } | { error
 
 const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside a herd worker pane";
 
-/** Matches lib/daemon-client.ts's DISCUSSIONS_TIMEOUT_MS: a GitLab post is
+/** Matches lib/daemon-client.ts's DISCUSSIONS_TIMEOUT_MS: a GitLab write is
     slower than rtCommand's 15s default, and a client-side abort here would
-    still leave the daemon posting, so a retry would duplicate the comment.
-    Shared by both mr write tools (mr_reply_thread, mr_comment_inline) for
-    the same reason. */
+    still leave the daemon writing, so a retry would duplicate the write.
+    Shared by every mr write tool for that reason. */
 const MR_WRITE_TIMEOUT_MS = 30_000;
+
+const REPO_NAME_RULE = "repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.";
+
+/** A timed-out create or post may still land daemon-side (see MR_WRITE_TIMEOUT_MS). */
+function withLandingHint(res: ToolResult, check: string): ToolResult {
+  if (res.ok || !/timed out/i.test(res.error ?? "")) return res;
+  return err(`${res.error}; the write may still land, so check ${check} before retrying`);
+}
 
 function requireJobEnv(env: NodeJS.ProcessEnv): { herd: string; job: string } | { error: string } {
   const herd = env.HERD_ID, job = env.HERD_JOB;
@@ -370,7 +386,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_reply_thread",
-      description: "Reply to an existing merge or pull request discussion thread on the given repo and IID. repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.",
+      description: `Reply to an existing merge or pull request discussion thread on the given repo and IID. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -401,7 +417,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_comment_inline",
-      description: "GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread. repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.",
+      description: `GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -435,6 +451,73 @@ export function mcpTools(): McpToolDef[] {
         if (input.oldPath !== undefined) payload.oldPath = input.oldPath as string;
         if (input.oldLine !== undefined) payload.oldLine = input.oldLine as number;
         return fromResponse(await rtCommand<Commands["mr:comment-inline"]["data"]>("mr:comment-inline", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS }));
+      },
+    },
+    {
+      name: "mr_comment",
+      description: `GitLab only. Post a NEW top-level note on an MR: a review's summary, or anything with no diff line to anchor to. resolvable (default true) opens a discussion a human can resolve; false posts a plain note, for a summary that carries nothing to resolve. Posts once and never retries. Returns noteId, discussionId (null for a plain note), resolvable as GitLab reports it, url (the note) and mrUrl. Use mr_comment_inline for a diff line and mr_reply_thread for an existing thread. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          repoName: { type: "string" },
+          iid: { type: "number" },
+          body: { type: "string" },
+          resolvable: { type: "boolean" },
+        },
+        required: ["repoName", "iid", "body"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [
+          { name: "repoName", type: "string" },
+          { name: "iid", type: "number" },
+          { name: "body", type: "string" },
+        ]) ?? checkOptional(input, [{ name: "resolvable", type: "boolean" }]);
+        if (bad) return err(bad);
+        const payload: Commands["mr:comment"]["payload"] = {
+          repoName: input.repoName as string,
+          iid: input.iid as number,
+          body: input.body as string,
+        };
+        if (input.resolvable !== undefined) payload.resolvable = input.resolvable as boolean;
+        const res = await rtCommand<Commands["mr:comment"]["data"]>("mr:comment", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+        return withLandingHint(fromResponse(res), "the MR's discussions");
+      },
+    },
+    {
+      name: "mr_create",
+      description: `GitLab only. Create a merge request from an already-pushed sourceBranch into targetBranch. Pass targetBranch explicitly (read the default branch from git); it is never guessed. draft defaults to true. Write the title, and optionally the description, yourself (e.g. from the branch's commits). Creates once and never retries. Returns iid and url (url is null when GitLab created the MR but reading it back failed). ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          repoName: { type: "string" },
+          sourceBranch: { type: "string" },
+          targetBranch: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          draft: { type: "boolean" },
+        },
+        required: ["repoName", "sourceBranch", "targetBranch", "title"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [
+          { name: "repoName", type: "string" },
+          { name: "sourceBranch", type: "string" },
+          { name: "targetBranch", type: "string" },
+          { name: "title", type: "string" },
+        ]) ?? checkOptional(input, [{ name: "description", type: "string" }, { name: "draft", type: "boolean" }]);
+        if (bad) return err(bad);
+        const payload: Commands["mr:create"]["payload"] = {
+          repoName: input.repoName as string,
+          sourceBranch: input.sourceBranch as string,
+          targetBranch: input.targetBranch as string,
+          title: input.title as string,
+        };
+        if (input.description !== undefined) payload.description = input.description as string;
+        if (input.draft !== undefined) payload.draft = input.draft as boolean;
+        const res = await rtCommand<Commands["mr:create"]["data"]>("mr:create", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS });
+        return withLandingHint(fromResponse(res), "mr_map for an open MR on the source branch");
       },
     },
     {
