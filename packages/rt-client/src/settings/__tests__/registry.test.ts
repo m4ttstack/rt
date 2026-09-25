@@ -6,9 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
-import { allDefs, getDef, isMigrated, validateValue, type SettingDef } from "../registry-machinery.ts";
+import { allDefs, getDef, isMigrated, isRetiredKey, validateValue, type SettingDef } from "../registry-machinery.ts";
 import type { JsonSchema } from "../schema.ts";
 import { SCHEMAS } from "../registry-schemas.ts";
+import { chainProblem } from "../migrate.ts";
+import { MIGRATION_STEPS, RENAMES } from "../migrations/index.ts";
 
 describe("settings/registry", () => {
   describe("getDef", () => {
@@ -532,5 +534,27 @@ describe("settings/registry", () => {
 
       expect(result.ok).toBe(false);
     });
+  });
+});
+
+describe("migrations in the registry", () => {
+  test("every def's migration chain is unbroken up to its storeVersion", () => {
+    expect(allDefs().map(chainProblem).filter((p) => p !== null)).toEqual([]);
+  });
+
+  test("no registered key can be mistaken for a versioned store name or store metadata", () => {
+    expect(allDefs().map((d) => d.key).filter((k) => k.includes("@") || k.startsWith("$"))).toEqual([]);
+  });
+
+  test("every migration step belongs to a registered key or a key one was renamed from", () => {
+    const owners = new Set([...allDefs().map((d) => d.key), ...Object.values(RENAMES).flat()]);
+    expect(MIGRATION_STEPS.map((s) => s.key).filter((k) => !owners.has(k))).toEqual([]);
+  });
+
+  test("a renamed key is neither registered nor retired", () => {
+    for (const old of Object.values(RENAMES).flat()) {
+      expect(getDef(old)).toBeUndefined();
+      expect(isRetiredKey(old)).toBe(false);
+    }
   });
 });
