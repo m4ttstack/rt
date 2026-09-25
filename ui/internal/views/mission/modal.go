@@ -722,7 +722,7 @@ func modalGroupBoundary(ms *modalState, i int) bool {
 // group -- "recent", "other", a repo's own Group value -- renders as-is.
 func modalGroupHeaderText(zone zoneID, group string) string {
 	if zone == zoneBranch && group == "guarded" {
-		return "guarded · checked out in another worktree"
+		return theme.GlyphPadlock + " checked out in another worktree"
 	}
 	return group
 }

@@ -1340,7 +1340,7 @@ func TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	branchOut := m.View().Content
-	for _, want := range []string{"other", "default branch", "guarded · checked out in another worktree"} {
+	for _, want := range []string{"other", "default branch", theme.GlyphPadlock + " checked out in another worktree"} {
 		if !strings.Contains(ansi.Strip(branchOut), want) {
 			t.Fatalf("branch modal missing group header %q:\n%s", want, branchOut)
 		}
@@ -1383,7 +1383,7 @@ func TestModalWorktreeStaysFlatWithNoGroupHeaders(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	out := ansi.Strip(m.View().Content)
-	if strings.Contains(out, "guarded · checked out") {
+	if strings.Contains(out, "checked out in another worktree") {
 		t.Fatalf("worktree modal must never show a group header:\n%s", out)
 	}
 }
