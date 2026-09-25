@@ -100,9 +100,9 @@ describe("R052: installCliLogging routes lib/state/busy.ts's warnings onto the c
   test("a busy write inside this process lands in cli.<date>.log, not the daemon surface", () => {
     const processEvents = ["exit", "uncaughtException", "unhandledRejection"] as const;
     const listenersBefore = new Map(processEvents.map((e) => [e, process.rawListeners(e)]));
-    installCliLogging(["rt", "some-command"]);
 
     try {
+      installCliLogging(["rt", "some-command"]);
       persistOrWarn("mymodule", () => {
         const e = new Error("database is locked");
         (e as { code?: string }).code = "SQLITE_BUSY";

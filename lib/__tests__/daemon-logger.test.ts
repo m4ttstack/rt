@@ -101,9 +101,22 @@ describe("lazyChildLogger", () => {
   // these read the singleton's real (HOME-isolated by test-setup.ts) log dir
   // rather than a per-test tmpdir like the suite above. The singleton fixes
   // its log dir at first call, so one warmed by an earlier file under another
-  // HOME would write where readSingletonLog() never looks.
-  beforeEach(() => __test__.resetDaemonLoggerCache());
-  afterEach(() => __test__.resetDaemonLoggerCache());
+  // HOME would write where readSingletonLog() never looks. Each fresh
+  // singleton also re-reads its level from RT_LOG_LEVEL and rt.logLevel, so
+  // the env var is pinned to "info" to outrank both.
+  let savedLogLevel: string | undefined;
+
+  beforeEach(() => {
+    savedLogLevel = process.env.RT_LOG_LEVEL;
+    process.env.RT_LOG_LEVEL = "info";
+    __test__.resetDaemonLoggerCache();
+  });
+
+  afterEach(() => {
+    __test__.resetDaemonLoggerCache();
+    if (savedLogLevel === undefined) delete process.env.RT_LOG_LEVEL;
+    else process.env.RT_LOG_LEVEL = savedLogLevel;
+  });
 
   function readSingletonLog(): string {
     const dir = logsDir();
@@ -122,6 +135,7 @@ describe("lazyChildLogger", () => {
     expect(__test__.pendingQueueLength(log)).toBe(2);
 
     await flush(await getDaemonLogger());
+    expect(__test__.pendingQueueLength(log)).toBe(0);
 
     const content = readSingletonLog();
     expect(content).toContain('"module":"lazy-order-test"');
@@ -135,6 +149,7 @@ describe("lazyChildLogger", () => {
     const log = lazyChildLogger("lazy-warm-test");
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     log.info("lazy-warm-line");
+    expect(__test__.pendingQueueLength(log)).toBe(0);
     await new Promise((r) => setImmediate(r));
     const content = readSingletonLog();
     expect(content).toContain('"module":"lazy-warm-test"');
