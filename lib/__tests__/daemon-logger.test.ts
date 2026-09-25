@@ -99,7 +99,12 @@ describe("daemon-logger", () => {
 describe("lazyChildLogger", () => {
   // lazyChildLogger binds to the production getDaemonLogger() singleton, so
   // these read the singleton's real (HOME-isolated by test-setup.ts) log dir
-  // rather than a per-test tmpdir like the suite above.
+  // rather than a per-test tmpdir like the suite above. The singleton fixes
+  // its log dir at first call, so one warmed by an earlier file under another
+  // HOME would write where readSingletonLog() never looks.
+  beforeEach(() => __test__.resetDaemonLoggerCache());
+  afterEach(() => __test__.resetDaemonLoggerCache());
+
   function readSingletonLog(): string {
     const dir = logsDir();
     if (!existsSync(dir)) return "";
@@ -114,8 +119,9 @@ describe("lazyChildLogger", () => {
     // Fires synchronously, before getDaemonLogger()'s internal await settles.
     log.info("lazy-first");
     log.warn("lazy-second");
+    expect(__test__.pendingQueueLength(log)).toBe(2);
 
-    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    await flush(await getDaemonLogger());
 
     const content = readSingletonLog();
     expect(content).toContain('"module":"lazy-order-test"');
@@ -125,7 +131,7 @@ describe("lazyChildLogger", () => {
   });
 
   it("passes calls straight through once the singleton is already warm", async () => {
-    // The singleton is warm from the previous test in this file.
+    await getDaemonLogger();
     const log = lazyChildLogger("lazy-warm-test");
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     log.info("lazy-warm-line");
@@ -287,31 +293,46 @@ describe("lazyChildLogger — Proxy guard", () => {
 });
 
 describe("installCrashHandlers (boot-phase gating)", () => {
+  // process.emit reaches every listener, so any crash handler another file
+  // left installed would also fire (and call process.exit) during these tests.
+  const CRASH_EVENTS = ["unhandledRejection", "uncaughtException"] as const;
+  let savedListeners: Map<string, Function[]>;
+  let origExit: typeof process.exit;
+  let origStderrWrite: typeof process.stderr.write;
+
+  beforeEach(() => {
+    origExit = process.exit;
+    origStderrWrite = process.stderr.write;
+    savedListeners = new Map(CRASH_EVENTS.map((e) => [e, process.rawListeners(e)]));
+    for (const e of CRASH_EVENTS) process.removeAllListeners(e);
+  });
+
+  afterEach(() => {
+    process.exit = origExit;
+    process.stderr.write = origStderrWrite;
+    for (const e of CRASH_EVENTS) {
+      process.removeAllListeners(e);
+      for (const listener of savedListeners.get(e)!) process.on(e, listener as (...args: any[]) => void);
+    }
+  });
+
   it("unhandledRejection exits(1) while booting, only logs once ready", () => {
     const exits: number[] = [];
-    const origExit = process.exit;
-    const origStderrWrite = process.stderr.write.bind(process.stderr);
     // @ts-expect-error test stub (captures the exit code instead of terminating)
     process.exit = (code?: number) => { exits.push(code ?? 0); };
     const fatal = mock(() => {});
     const error = mock(() => {});
     const logger = { fatal, error } as unknown as Logger;
     let booting = true;
-    try {
-      installCrashHandlers({ logger } as DaemonLoggerHandle, { booting: () => booting });
-      process.emit("unhandledRejection", new Error("boot boom"), Promise.resolve());
-      expect(fatal).toHaveBeenCalledTimes(1);
-      expect(exits).toEqual([1]);
 
-      booting = false;
-      process.emit("unhandledRejection", new Error("steady boom"), Promise.resolve());
-      expect(error).toHaveBeenCalledTimes(1);
-      expect(exits).toEqual([1]); // no second exit
-    } finally {
-      process.exit = origExit;
-      process.stderr.write = origStderrWrite;
-      process.removeAllListeners("unhandledRejection");
-      process.removeAllListeners("uncaughtException");
-    }
+    installCrashHandlers({ logger } as DaemonLoggerHandle, { booting: () => booting });
+    process.emit("unhandledRejection", new Error("boot boom"), Promise.resolve());
+    expect(fatal).toHaveBeenCalledTimes(1);
+    expect(exits).toEqual([1]);
+
+    booting = false;
+    process.emit("unhandledRejection", new Error("steady boom"), Promise.resolve());
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(exits).toEqual([1]); // no second exit
   });
 });
