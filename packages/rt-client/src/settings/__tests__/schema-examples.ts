@@ -122,7 +122,7 @@ export const EXAMPLES: Record<string, Example> = {
     layer: [{ pullIntervalSec: 120 }],
   },
   "rt.sync": {
-    good: [{}, { autoResolve: [{ glob: "pnpm-lock.yaml", strategy: "theirs", postResolve: ["pnpm install"] }, { glob: ["**/generated/**", "**/*.snap"], strategy: "ours" }] }],
+    good: [{}, { autoResolve: [{ glob: "pnpm-lock.yaml", strategy: "theirs", postResolve: ["pnpm install"] }, { glob: ["**/generated/**", "**/*.snap"], strategy: "ours" }] }, { autoResolve: [{ glob: "**/*.snap" }] }],
     bad: [
       { value: { autoResolve: [{ glob: "pnpm-lock.yaml", strategy: "mine" }] }, path: ["autoResolve", 0, "strategy"] },
       { value: { autoResolve: [{ strategy: "theirs" }] }, path: ["autoResolve", 0, "glob"] },

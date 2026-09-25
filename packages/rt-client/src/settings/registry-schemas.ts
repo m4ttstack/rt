@@ -98,7 +98,7 @@ export const SCHEMAS = {
     autoResolve: z.array(
       z.looseObject({
         glob: z.union([z.string(), z.array(z.string())]),
-        strategy: z.enum(["theirs", "ours"]),
+        strategy: z.enum(["theirs", "ours"]).optional(),
         postResolve: z.array(z.string()).optional(),
       }),
     ).optional(),
