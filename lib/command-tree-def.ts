@@ -1629,7 +1629,7 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   release: {
-    description: "Release-cycle checks for the rt repo itself",
+    description: "Release-cycle verbs for the rt repo itself",
     subcommands: {
       preflight: {
         description: "Read-only report of every vendored layer's pin freshness, git/tag state, and the gate the pending diff implies",
@@ -1659,6 +1659,18 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Verify only", flag: "--verify-only", type: "boolean", default: false, hint: "Run only the final verification sweep" },
           { name: "Yes", flag: "--yes", type: "boolean", default: false, hint: "Skip every confirmation prompt" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the leg report as JSON" },
+        ],
+      },
+      app: {
+        description: "Patch-release one served app end to end: bump it, bundle it, merge its pin, write the notes, tag, and verify the publish",
+        module: "./commands/release.ts",
+        fn: "releaseApp",
+        omitBehavior: "picker",
+        args: [
+          { name: "Name", type: "text", placeholder: "board", hint: "Served app to release (board, chat, console, boxscore); omit on a terminal to pick one" },
+          { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Resolve and print the whole plan without changing anything" },
+          { name: "Yes notes", flag: "--yes-notes", type: "boolean", default: false, hint: "Accept the generated release notes without a prompt" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the release report as JSON (stops at the notes unless --yes-notes)" },
         ],
       },
     },

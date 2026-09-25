@@ -4,6 +4,7 @@
  *   rt release preflight [--json]
  *   rt release verify [tag] [--json] [--no-wait]
  *   rt release update-machine [--tag <tag>] [--plan] [--verify-only] [--yes] [--json]
+ *   rt release app <name> [--dry-run] [--json] [--yes-notes]
  *
  * Read-only report of the release's mechanical checks (the rt:release skill's
  * steps 1-2c): git/tag state, picker conformance, pin freshness for every
@@ -19,8 +20,11 @@
  *
  * update-machine runs the skill's step 12: bring this machine's prod app,
  * dev bundle, daemon, and served suite up to a released tag.
+ *
+ * `app` is the fast path for a single served-app fix: bump, bundle, merge the
+ * pin, notes, tag and verify in one resumable run (lib/release/release-app.ts).
  */
-import { readFileSync, mkdtempSync, rmSync } from "fs";
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir, homedir } from "os";
 import { join } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
@@ -30,6 +34,15 @@ import { runCapture } from "../lib/subprocess.ts";
 import { runPreflight, type CheckRow, type PreflightSeams } from "../lib/release/preflight.ts";
 import { runVerify, type VerifyRow, type VerifySeams } from "../lib/release/verify.ts";
 import { runUpdateMachine, CHAT_ROOM, type LegResult, type UpdateMachineOptions, type UpdateMachineSeams } from "../lib/release/update-machine.ts";
+import {
+  eligibleApps,
+  runReleaseApp,
+  type ReleaseAppOptions,
+  type ReleaseAppReport,
+  type ReleaseAppSeams,
+} from "../lib/release/release-app.ts";
+import type { DepsRow } from "../lib/release/preflight.ts";
+import type { SelectOption } from "../lib/pick-wrappers.ts";
 import { conformanceViolations } from "../scripts/lib/picker-conformance.ts";
 import { TREE } from "../lib/command-tree-def.ts";
 import { flagValue } from "../lib/cli-args.ts";
@@ -194,4 +207,116 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
   const summary = report.ok ? "clean" : report.haltedAfter ? `halted after ${report.haltedAfter} failed` : "problems above";
   console.log(`tag ${report.tag}: ${summary}`);
   if (failed) process.exitCode = 1;
+}
+
+async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams & { cleanup(): void }> {
+  const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
+  let workDir: string | null = null;
+  return {
+    repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
+    exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 60_000, ...opts }),
+    fetchJson,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    isTTY: interactive(),
+    workDir: () => (workDir ??= mkdtempSync(join(tmpdir(), "rt-release-app-"))),
+    readFile: (path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return null;
+      }
+    },
+    writeFile: (path, text) => writeFileSync(path, text),
+    download: async (url, destPath) => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
+      if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+      await Bun.write(destPath, res);
+    },
+    sha256File: async (path) => new Bun.CryptoHasher("sha256").update(await Bun.file(path).arrayBuffer()).digest("hex"),
+    confirm: (message) => confirm({ message }),
+    // --json owns stdout for the envelope, so progress goes to stderr there.
+    log: (line) => void (json ? process.stderr : process.stdout).write(`${line}\n`),
+    cleanup: () => {
+      if (!workDir) return;
+      try {
+        rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
+      }
+    },
+  };
+}
+
+export interface ReleaseAppCommandDeps {
+  seams?: ReleaseAppSeams;
+  pickApp?: (options: SelectOption[]) => Promise<string | null>;
+  run?: (seams: ReleaseAppSeams, opts: ReleaseAppOptions) => Promise<ReleaseAppReport>;
+}
+
+const RELEASE_APP_USAGE = "usage: rt release app <name> [--dry-run] [--json] [--yes-notes]";
+
+async function pickReleaseApp(options: SelectOption[]): Promise<string | null> {
+  const { filterableSelect } = await import("../lib/pick-wrappers.ts");
+  return filterableSelect({ message: "Release which app?", options, breadcrumb: ["rt", "release", "app"] });
+}
+
+/** The eligible apps as this checkout's deps.lock pins them; empty when it is not an rt checkout. */
+function releaseAppOptions(seams: ReleaseAppSeams): SelectOption[] {
+  const raw = seams.readFile(join(seams.repoRoot, "rt-tray", "deps.lock"));
+  if (!raw) return [];
+  try {
+    return eligibleApps((JSON.parse(raw) as { tools: DepsRow[] }).tools).map((r) => ({ value: r.name, label: r.name, hint: r.version }));
+  } catch {
+    return [];
+  }
+}
+
+function releaseAppSummary(report: ReleaseAppReport): string {
+  switch (report.status) {
+    case "released":
+      return `released ${report.tag} with ${report.app} ${report.appVersion}`;
+    case "planned":
+      return `dry run: nothing changed; rerun without --dry-run to release ${report.app} ${report.appVersion} as ${report.tag}`;
+    case "awaiting-approval":
+      return `the notes need approval; to accept them: ${report.resume}`;
+    case "declined":
+      return `declined; nothing committed or tagged. To regenerate and ask again: ${report.resume}`;
+    case "failed": {
+      const step = report.steps.at(-1)?.label ?? "qualify";
+      return report.resume ? `stopped at ${step}; resume: ${report.resume}` : `stopped at ${step}; this needs a decision, not a rerun`;
+    }
+  }
+}
+
+export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps: ReleaseAppCommandDeps = {}): Promise<void> {
+  const json = args.includes("--json");
+  const realSeams = deps.seams ? null : await createRealReleaseAppSeams(json);
+  const seams = deps.seams ?? realSeams!;
+  const usage = () => exitUserError(new UserActionableError("usage", RELEASE_APP_USAGE), json, "release app");
+
+  try {
+    let name = args.find((a) => !a.startsWith("--"));
+    if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+      const options = releaseAppOptions(seams);
+      if (options.length) {
+        const picked = await (deps.pickApp ?? pickReleaseApp)(options);
+        if (!picked) return;
+        name = picked;
+      }
+    }
+    if (!name || !/^[a-z0-9][a-z0-9-]*$/.test(name)) usage();
+
+    const report = await (deps.run ?? runReleaseApp)(seams, {
+      name: name!,
+      dryRun: args.includes("--dry-run"),
+      json,
+      yesNotes: args.includes("--yes-notes"),
+    });
+    if (json) console.log(JSON.stringify(envelope(report)));
+    else console.log(releaseAppSummary(report));
+    if (report.status === "failed" || report.status === "declined") process.exitCode = 1;
+  } finally {
+    realSeams?.cleanup();
+  }
 }
