@@ -13,6 +13,8 @@ interface RunResult {
 interface RunOpts {
   home?: string;
   env?: Record<string, string>;
+  /** Defaults to the test HOME. */
+  cwd?: string;
 }
 
 export function createTestHome(): { path: string; cleanup: () => void } {
@@ -62,7 +64,7 @@ async function run(
     env,
     stdout: "pipe",
     stderr: "pipe",
-    cwd: home,
+    cwd: opts.cwd ?? home,
   });
 
   const [stdout, stderr] = await Promise.all([
