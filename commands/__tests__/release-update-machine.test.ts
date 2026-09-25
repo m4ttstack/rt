@@ -30,8 +30,8 @@ function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSe
         return ok(JSON.stringify({ ok: true, state: "running", data: { identity: { flavor: "dev", version: "2.11.0", sourceRev: SHA.slice(0, 9) } } }));
       }
       if (cmd === "git branch --show-current") return ok("main\n");
-      if (cmd === "deck list --json") return ok("[]");
-      if (cmd === "deck --version") return ok("3.4.0\n");
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck list") return ok("");
+      if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck --version") return ok("3.4.0\n");
       if (cmd.startsWith("kill")) {
         devPid = "";
         return ok("");

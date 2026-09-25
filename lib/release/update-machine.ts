@@ -66,6 +66,11 @@ const DEV_APP_PATH = "/Applications/mattstack-dev.app";
 const DEV_APP_ANCHOR = `${DEV_APP_PATH}/Contents/MacOS/`;
 const DEV_DECK_LABEL = "com.mattstack.deck.dev";
 
+/** The deck serving this Mac is the bundle's own; a `deck` on PATH can be a stale hand install. */
+function bundleDeck(devNotRunning: boolean): string {
+  return `${devNotRunning ? PROD_APP_PATH : DEV_APP_PATH}/Contents/Helpers/deck`;
+}
+
 const PROD_APP_LABEL = "prod app update";
 const DEV_BUNDLE_LABEL = "dev bundle rebuild";
 const DAEMON_LABEL = "daemon restart";
@@ -272,15 +277,28 @@ async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPat
   return null;
 }
 
-async function managedAppNames(seams: UpdateMachineSeams): Promise<{ apps: string[] } | { error: string }> {
-  const r = await seams.exec(["deck", "list", "--json"]);
-  if (r.exitCode !== 0) return { error: `deck list --json failed: ${execTail(r)}` };
-  try {
-    const rows = JSON.parse(r.stdout) as { name: string; managed: boolean }[];
-    return { apps: rows.filter((row) => row.managed).map((row) => row.name) };
-  } catch (err) {
-    return { error: `deck list --json returned unparseable output: ${String((err as Error).message ?? err)}` };
+/** deck has no JSON list; its table row is `name port health owner`, with
+ *  optional ` !source` issue and ` [public:...]` suffixes after the owner. */
+const DECK_LIST_ROW = /^(\S+)\s+(?:\d+|-)\s+(?:up|DOWN|-)\s+(\S+)(?:\s.*)?$/;
+
+/** The same set `deck restart --managed` kicks: owned by neither the user nor the platform. */
+const UNMANAGED_DECK_OWNERS = new Set(["user", "deck", "local", "unregistered"]);
+
+export function parseManagedDeckApps(raw: string): { apps: string[] } | { error: string } {
+  const apps: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    const m = DECK_LIST_ROW.exec(line.trimEnd());
+    if (!m) return { error: `deck list printed a line that is not an app row: ${line.trim().slice(0, 200)}` };
+    if (!UNMANAGED_DECK_OWNERS.has(m[2]!)) apps.push(m[1]!);
   }
+  return { apps };
+}
+
+async function managedAppNames(seams: UpdateMachineSeams, deck: string): Promise<{ apps: string[] } | { error: string }> {
+  const r = await seams.exec([deck, "list"]);
+  if (r.exitCode !== 0) return { error: `deck list failed: ${execTail(r)}` };
+  return parseManagedDeckApps(r.stdout);
 }
 
 async function managedAppPid(seams: UpdateMachineSeams, app: string): Promise<number | null> {
@@ -477,9 +495,9 @@ export async function runDevAppRebuild(seams: UpdateMachineSeams, ref: string): 
   // ~/Documents). Retry only while the restarted deck is not answering:
   // restart --managed also fails when one app fails, and retrying that would
   // re-kill every healthy app each time.
-  const deckCli = `${DEV_APP_PATH}/Contents/Helpers/deck`;
+  const deckCli = bundleDeck(false);
   for (let attempt = 0; attempt < 30; attempt++) {
-    if ((await seams.exec([deckCli, "list", "--json"])).exitCode === 0) break;
+    if ((await seams.exec([deckCli, "list"])).exitCode === 0) break;
     await seams.sleep(1000);
   }
   const managed: [string, ...string[]] = [deckCli, "restart", "--managed"];
@@ -511,7 +529,7 @@ async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pro
   return okLeg("daemon", DAEMON_LABEL, `daemon restarted and reports ${ctx.tag} (${sourceRev})`);
 }
 
-async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: LegResult; witness: RestartWitness | null }> {
+async function runServedSuiteLeg(seams: UpdateMachineSeams, deck: string): Promise<{ result: LegResult; witness: RestartWitness | null }> {
   const branch = (await seams.exec(["git", "branch", "--show-current"], { cwd: seams.appsCheckoutPath })).stdout.trim();
   if (branch !== "main") {
     return {
@@ -527,14 +545,14 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
   const pull = await seams.exec(["git", "pull"], { cwd: seams.appsCheckoutPath });
   if (pull.exitCode !== 0) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `git pull failed: ${execTail(pull)}`), witness: null };
 
-  const namesResult = await managedAppNames(seams);
+  const namesResult = await managedAppNames(seams, deck);
   if ("error" in namesResult) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, namesResult.error), witness: null };
   const apps = namesResult.apps;
 
   const baselinePids = await snapshotPids(seams, apps);
   const witness: RestartWitness = { marker: seams.clock(), baselinePids };
 
-  const restartAll = await seams.exec(["deck", "restart", "--managed"]);
+  const restartAll = await seams.exec([deck, "restart", "--managed"]);
   if (restartAll.exitCode !== 0) {
     return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart --managed failed: ${execTail(restartAll)}`), witness };
   }
@@ -542,7 +560,7 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
   let stragglers = await waitForFreshApps(seams, apps, witness, 5, 500);
   if (stragglers.length > 0) {
     for (const app of stragglers) {
-      const r = await seams.exec(["deck", "restart", app]);
+      const r = await seams.exec([deck, "restart", app]);
       if (r.exitCode !== 0) {
         return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart ${app} failed: ${execTail(r)}`), witness };
       }
@@ -586,7 +604,8 @@ async function runVerifyLeg(
     else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
   }
 
-  const deckVersion = (await seams.exec(["deck", "--version"])).stdout.trim();
+  const deck = bundleDeck(devNotRunning);
+  const deckVersion = (await seams.exec([deck, "--version"])).stdout.trim();
   const depsLockRaw = seams.readFile(`${seams.repoRoot}/rt-tray/deps.lock`);
   const pin = deckPinFromDepsLock(depsLockRaw);
   if (!pin) {
@@ -597,7 +616,7 @@ async function runVerifyLeg(
 
   let staleNote = "";
   if (witness) {
-    const namesResult = await managedAppNames(seams);
+    const namesResult = await managedAppNames(seams, deck);
     if ("error" in namesResult) {
       problems.push(namesResult.error);
     } else {
@@ -703,7 +722,7 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
 
   let witness: RestartWitness | null = null;
   await runGatedLeg("served-suite", SERVED_SUITE_LABEL, async () => {
-    const { result, witness: w } = await runServedSuiteLeg(seams);
+    const { result, witness: w } = await runServedSuiteLeg(seams, bundleDeck(devNotRunning));
     witness = w;
     return result;
   });
