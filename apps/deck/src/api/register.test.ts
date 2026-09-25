@@ -1133,6 +1133,7 @@ test('kickstartLabelFor: deck restarts under the label launchd reports running, 
     deckOwner: {
       helperOwned: async () => true,
       runningLabel: async () => `${PLATFORM_LABEL}.dev`,
+      selfLabel: async () => null,
     },
   };
 
@@ -1161,6 +1162,7 @@ test('kickstartLabelFor: an app, or deck with nothing reported running, keeps it
     deckOwner: {
       helperOwned: async () => true,
       runningLabel: async () => null,
+      selfLabel: async () => null,
     },
   };
   const helperRunning = {
@@ -1168,6 +1170,7 @@ test('kickstartLabelFor: an app, or deck with nothing reported running, keeps it
     deckOwner: {
       helperOwned: async () => true,
       runningLabel: async () => `${PLATFORM_LABEL}.dev`,
+      selfLabel: async () => null,
     },
   };
 
@@ -1214,6 +1217,7 @@ test('restartLabelFor: deck with no self record still restarts under its running
     deckOwner: {
       helperOwned: async () => true,
       runningLabel: async () => `${PLATFORM_LABEL}.dev`,
+      selfLabel: async () => null,
     },
   };
 

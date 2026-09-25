@@ -329,7 +329,7 @@ export function cachedDelivery(row: FacilityGateRow): GateRow['delivery'] {
   return undefined;
 }
 
-type GateHost = {
+export type GateHost = {
   review?: { status: ReviewStatus };
   respond?: { status: RespondStatus };
   doctor?: { status: DoctorStatus };

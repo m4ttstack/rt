@@ -27,7 +27,7 @@ import {
   type SyncIssue,
 } from '../registry/records.ts';
 import { commandKeysFor, readLinkedManifest } from '../registry/serve-shape.ts';
-import { isPlatformManagedBy } from '../services/manager.ts';
+import { isPlatformManagedBy, PLATFORM_NAME } from '../services/manager.ts';
 import { getPlatformSettings } from './platform-settings.ts';
 
 export interface BuildStatusOpts {
@@ -44,6 +44,14 @@ export interface BuildStatusOpts {
   readyFetch?: typeof fetch;
   /** Drift flags from the edge reconcile loop; tests inject, production reads edgeDrift(). */
   edgeDrift?: () => { tunnelGone: boolean };
+  /** The launchd job running this process and its pid; null when no deck
+      job runs as this pid. Production reads deckOwner; tests inject. */
+  selfService?: () => Promise<RunningDeck | null>;
+}
+
+export interface RunningDeck {
+  label: string;
+  pid: number;
 }
 
 export interface StatusService {
@@ -159,6 +167,19 @@ export function serviceJson(
   };
 }
 
+/** The app bundle's helper has no plist in ~/Library/LaunchAgents, so deck's
+    row takes its service from the running process instead of the agents. */
+function runningDeckJson(deck: RunningDeck): StatusService {
+  return {
+    label: deck.label,
+    short: PLATFORM_NAME,
+    pid: deck.pid,
+    lastExitStatus: null,
+    unmanaged: null,
+    stderr: [],
+  };
+}
+
 export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const [routes, services] = [readRoutes(), await readServices()];
   const apps = joinApps(routes, services, opts.requestHost);
@@ -177,21 +198,22 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const appRows: StatusRow[] = await Promise.all(
     apps.map(async (a, i) => {
       const health = healths[i]!;
-      // A healthy route whose managed service is stopped means something else
-      // holds the port — name that unmanaged process instead of crying wolf.
-      const unmanaged =
-        health.ok && a.service && a.service.pid === null
-          ? await listenerFor(a.port)
-          : null;
-      const settings = getAppSettings(a.name);
-      const follows = settings.publicFollowsOverride ?? false;
-      const record = recordsByName.get(a.name);
       // Also matches CANARY_PORT: during a freshness check the board's route
       // points at its canary listener, and it is still the board's own row.
       const self =
         a.port === opts.port ||
         a.port === opts.canaryPort ||
         (platformRecord !== undefined && a.port === platformRecord.port);
+      const runningDeck = self ? ((await opts.selfService?.()) ?? null) : null;
+      // A healthy route whose managed service is stopped means something else
+      // holds the port — name that unmanaged process instead of crying wolf.
+      const unmanaged =
+        !runningDeck && health.ok && a.service && a.service.pid === null
+          ? await listenerFor(a.port)
+          : null;
+      const settings = getAppSettings(a.name);
+      const follows = settings.publicFollowsOverride ?? false;
+      const record = recordsByName.get(a.name);
       // Ownership decides the displayed TLD: a managed record (managedBy set
       // to anything but "user") is a mattstack product and surfaces as
       // name.mattstack; user-added apps surface as name.localhost. Through a
@@ -208,7 +230,13 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         url: `https://${a.name}.${displayTld}`,
         publicUrl: a.publicUrl,
         health,
-        service: a.service ? serviceJson(a.service, health, unmanaged) : null,
+        // A hand agent running deck keeps its plist's exit status and stderr.
+        service:
+          runningDeck && a.service?.label !== runningDeck.label
+            ? runningDeckJson(runningDeck)
+            : a.service
+              ? serviceJson(a.service, health, unmanaged)
+              : null,
         published: settings.published,
         hasPassword: !!settings.passwordHash,
         isTunnel: false,

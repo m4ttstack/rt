@@ -105,6 +105,9 @@ export interface DeckOwner {
   helperOwned(): Promise<boolean>;
   /** The launchd label of the deck serving right now; null when launchd reports none. */
   runningLabel(): Promise<string | null>;
+  /** The launchd label running this very process; null when no deck job's
+      pid is this one, as for a hand-started `deck serve`. */
+  selfLabel(): Promise<string | null>;
 }
 
 /** The label launchd runs `pid` under, the dev helper's or the bare one the
@@ -125,6 +128,49 @@ export async function runningDeckLabel(
   return firstRunning;
 }
 
+/** Unlike runningDeckLabel, never another deck's label: a hand-started
+    deck showing the helper's label would restart the helper instead. */
+export async function selfDeckLabel(
+  probe: Probe,
+  pid: number,
+  userId: number = uid()
+): Promise<string | null> {
+  for (const label of HELPER_LABELS) {
+    const job = await printJob(probe, label, userId);
+    if (job?.pid === pid) return label;
+  }
+  return null;
+}
+
+export const SELF_LABEL_RETRY_MS = 60_000;
+
+/** A process's launchd job never changes, so a found label is kept for the
+    life of the process; a miss is asked again at most every
+    SELF_LABEL_RETRY_MS, since launchd may not report the pid yet at boot. */
+export function selfLabelCache(
+  owner: DeckOwner | undefined,
+  now: () => number = Date.now
+): () => Promise<string | null> {
+  let found: string | null = null;
+  let retryAt = 0;
+  let asking: Promise<string | null> | null = null;
+  return async () => {
+    if (found || !owner) return found;
+    if (!asking && now() < retryAt) return null;
+    asking ??= owner
+      .selfLabel()
+      .then(label => {
+        found = label;
+        if (!label) retryAt = now() + SELF_LABEL_RETRY_MS;
+        return label;
+      })
+      .finally(() => {
+        asking = null;
+      });
+    return asking;
+  };
+}
+
 export function liveDeckOwner(
   bundleRoot: string | null,
   pid: number | null,
@@ -133,6 +179,7 @@ export function liveDeckOwner(
   return {
     helperOwned: () => bundleHelperOwnsDeck(probe, bundleRoot),
     runningLabel: () => runningDeckLabel(probe, pid),
+    selfLabel: async () => (pid === null ? null : selfDeckLabel(probe, pid)),
   };
 }
 

@@ -115,19 +115,18 @@ import { upsertEnvKeys } from './env-file.ts';
 import faviconSvg from './favicon.svg' with { type: 'text' };
 import { focusPane } from './focus-pane.ts';
 import { answerGate } from './gates/answer.ts';
-import { boardBadge } from './gates/badge.ts';
 import {
   answeredWinner,
   attachGates,
   GateCache,
   isRowAnswerable,
 } from './gates/cache.ts';
+import { decisionBadge, decisionGates } from './gates/decision.ts';
 import {
   executeSweepAction,
   type ExecuteSweepActionIo,
 } from './gates/execute-sweep-action.ts';
 import {
-  buildQueueExtras,
   GateResync,
   ingestRelayFrame,
   installBoardBridgeRule,
@@ -963,21 +962,16 @@ const httpServer = Bun.serve({
     switch (pathname) {
       case '/healthz':
         return new Response('ok');
-      case '/api/badge': {
-        const visible = config.members.filter(m => !m.hidden);
-        const mrs = cache.peek()?.mrs ?? [];
-        const mrGates = attachGates(
-          visibleMrsFor(mrs, visible),
-          gateCache,
-          runMrs.links(gateCache.rows())
-        ).flatMap(mr => mr.gates);
+      case '/api/badge':
         return Response.json(
-          boardBadge(
-            [...mrGates, ...buildQueueExtras(gateCache.rows())],
+          decisionBadge(
+            cache.peek()?.mrs ?? [],
+            config.members.filter(m => !m.hidden),
+            gateCache,
+            runMrs,
             Date.now()
           )
         );
-      }
       case '/events': {
         // One-way nudge channel: browsers re-pull /data.json on any message.
         let ctrl: ReadableStreamDefaultController<Uint8Array>;
@@ -1178,25 +1172,20 @@ const httpServer = Bun.serve({
         const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
         const reconciler = await fetchReconcilerView();
-        const runLinks = runMrs.links(gateCache.rows());
+        const decision = decisionGates(
+          attachDoctors(
+            attachResponds(attachReviews(snapshot.mrs, reviews), responds),
+            doctors
+          ),
+          visible,
+          gateCache,
+          runMrs
+        );
         const mrsWithGates = attachStandDown(
           attachPeerState(
             attachNotes(
               attachDrafts(
-                attachSlack(
-                  attachGates(
-                    attachDoctors(
-                      attachResponds(
-                        attachReviews(visibleMrs, reviews),
-                        responds
-                      ),
-                      doctors
-                    ),
-                    gateCache,
-                    runLinks
-                  ),
-                  slackRefs
-                ),
+                attachSlack(decision.mrs, slackRefs),
                 heldDraftsByMr(readDrafts())
               ),
               readNotes()
@@ -1211,7 +1200,6 @@ const httpServer = Bun.serve({
           mrsWithGates,
           reconciler.executors
         );
-        const queueExtras = buildQueueExtras(gateCache.rows());
         return new Response(
           JSON.stringify({
             title: config.title,
@@ -1233,7 +1221,7 @@ const httpServer = Bun.serve({
                     .length,
             })),
             mrs: mrsWithOrphans,
-            queueExtras,
+            queueExtras: decision.queueExtras,
             orphans,
             // Enrolled peer usernames from the relay, when peering knows them.
             // Absent means unknown, and the pickers fall back to the roster.

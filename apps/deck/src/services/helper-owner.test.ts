@@ -17,6 +17,10 @@ import {
   prepareHelperBoot,
   retireHandAgent,
   runningDeckLabel,
+  SELF_LABEL_RETRY_MS,
+  selfDeckLabel,
+  selfLabelCache,
+  type DeckOwner,
   type Probe,
 } from './helper-owner.ts';
 
@@ -124,6 +128,78 @@ describe('runningDeckLabel', () => {
     const probe = probeOf({ 'com.mattstack.deck.dev': devHelper() });
 
     expect(await runningDeckLabel(probe, 900, 501)).toBeNull();
+  });
+});
+
+describe('selfDeckLabel', () => {
+  const devHelper = (pid: number) =>
+    SMAPP_DEV.replace(
+      '\tstate = running\n',
+      `\tstate = running\n\tpid = ${pid}\n`
+    );
+
+  test('the job launchd runs as this pid is its label', async () => {
+    const probe = probeOf({ 'com.mattstack.deck.dev': devHelper(900) });
+
+    expect(await selfDeckLabel(probe, 900, 501)).toBe('com.mattstack.deck.dev');
+  });
+
+  test('a deck no launchd job runs as has no label, even while the helper and a hand agent run', async () => {
+    const probe = probeOf({
+      'com.mattstack.deck.dev': devHelper(900),
+      'com.mattstack.deck': handAgent('/u/Library', 4242),
+    });
+
+    expect(await selfDeckLabel(probe, 555, 501)).toBeNull();
+  });
+});
+
+describe('selfLabelCache', () => {
+  function ownerOf(labels: Array<string | null>) {
+    let asks = 0;
+    const owner: DeckOwner = {
+      helperOwned: async () => true,
+      runningLabel: async () => null,
+      selfLabel: async () => labels[Math.min(asks++, labels.length - 1)]!,
+    };
+    return { owner, asks: () => asks };
+  }
+
+  test('a hit is asked once for the life of the process', async () => {
+    let now = 0;
+    const { owner, asks } = ownerOf(['com.mattstack.deck.dev']);
+    const selfLabel = selfLabelCache(owner, () => now);
+
+    expect(await selfLabel()).toBe('com.mattstack.deck.dev');
+    now += SELF_LABEL_RETRY_MS * 10;
+    expect(await selfLabel()).toBe('com.mattstack.deck.dev');
+    expect(asks()).toBe(1);
+  });
+
+  test('a miss is asked again only once the retry window has passed', async () => {
+    let now = 0;
+    const { owner, asks } = ownerOf([null, 'com.mattstack.deck']);
+    const selfLabel = selfLabelCache(owner, () => now);
+
+    expect(await selfLabel()).toBeNull();
+    now += SELF_LABEL_RETRY_MS - 1;
+    expect(await selfLabel()).toBeNull();
+    expect(asks()).toBe(1);
+    now += 1;
+    expect(await selfLabel()).toBe('com.mattstack.deck');
+    expect(asks()).toBe(2);
+  });
+
+  test('requests that arrive together share one ask', async () => {
+    const { owner, asks } = ownerOf(['com.mattstack.deck.dev']);
+    const selfLabel = selfLabelCache(owner, () => 0);
+
+    await Promise.all([selfLabel(), selfLabel(), selfLabel()]);
+    expect(asks()).toBe(1);
+  });
+
+  test('no owner is no label', async () => {
+    expect(await selfLabelCache(undefined, () => 0)()).toBeNull();
   });
 });
 

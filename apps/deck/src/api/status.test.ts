@@ -170,6 +170,117 @@ test("the catalog report joins the platform record's own launchd issue, one issu
   ]);
 });
 
+function plistXml(label: string, extra: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>${label}</string>${extra}</dict></plist>`;
+}
+
+/** Runs `body` against a scratch LaunchAgents dir holding `plists` (label to
+    extra plist keys) and a seamed `launchctl list` of `pids`. */
+async function withAgents(
+  plists: Record<string, string>,
+  pids: string,
+  body: () => Promise<void>
+): Promise<void> {
+  const saved = {
+    LOCAL_AGENTS_DIR: process.env.LOCAL_AGENTS_DIR,
+    LOCAL_LAUNCHCTL_PIDS: process.env.LOCAL_LAUNCHCTL_PIDS,
+  };
+  const agents = mkdtempSync(join(tmpdir(), 'status-agents-'));
+  for (const [label, extra] of Object.entries(plists))
+    writeFileSync(join(agents, `${label}.plist`), plistXml(label, extra));
+  process.env.LOCAL_AGENTS_DIR = agents;
+  process.env.LOCAL_LAUNCHCTL_PIDS = pids;
+  try {
+    await body();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("deck's own row shows the launchd job running it and its pid; no other row does", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'deck.localhost', port: 7940, pid: 0 },
+      { hostname: 'myapp.localhost', port: 19999, pid: 0 },
+    ])
+  );
+
+  await withAgents({}, '', async () => {
+    const status = await buildStatus({
+      ...opts,
+      selfService: async () => ({ label: 'com.mattstack.deck.dev', pid: 4242 }),
+    });
+
+    expect(status.apps.find(a => a.name === 'deck')!.service).toEqual({
+      label: 'com.mattstack.deck.dev',
+      short: 'deck',
+      pid: 4242,
+      lastExitStatus: null,
+      unmanaged: null,
+      stderr: [],
+    });
+    expect(status.apps.find(a => a.name === 'myapp')!.service).toBeNull();
+  });
+});
+
+test("with no launchd job running deck, its row borrows no service, not even one whose label contains 'deck'", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port: 7940, pid: 0 }])
+  );
+
+  await withAgents(
+    {
+      'com.mattstack.deck.board':
+        '<key>WorkingDirectory</key><string>/apps/board</string>',
+    },
+    'com.mattstack.deck.board=777',
+    async () => {
+      const status = await buildStatus({
+        ...opts,
+        selfService: async () => null,
+      });
+      expect(status.apps.find(a => a.name === 'deck')!.service).toBeNull();
+    }
+  );
+});
+
+test("a hand agent running deck keeps its own launchd reading on deck's row", async () => {
+  const port = 19998;
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port, pid: 0 }])
+  );
+  const stderrPath = join(dir, 'hand-deck.err.log');
+  writeFileSync(stderrPath, 'bind failed\n');
+
+  await withAgents(
+    {
+      'com.mattstack.deck': `<key>StandardErrorPath</key><string>${stderrPath}</string>`,
+    },
+    'com.mattstack.deck=4242',
+    async () => {
+      const status = await buildStatus({
+        ...opts,
+        port,
+        selfService: async () => ({ label: 'com.mattstack.deck', pid: 4242 }),
+      });
+      expect(status.apps.find(a => a.name === 'deck')!.service).toMatchObject({
+        label: 'com.mattstack.deck',
+        short: 'deck',
+        pid: 4242,
+        stderr: ['bind failed'],
+      });
+    }
+  );
+});
+
 test('a pre-rename self-record (managedBy local) still marks its row self', async () => {
   // Local -> Deck rename: an upgrading machine's self-row may still carry
   // the pre-rename managedBy id until `deck setup` next runs and migrates

@@ -508,6 +508,7 @@ test('with no self record on a machine the mattstack app owns, the refusal never
     deckOwner: {
       helperOwned: async () => true,
       runningLabel: async () => 'com.mattstack.deck.dev',
+      selfLabel: async () => null,
     },
   });
   const error = String((r.body as { error?: unknown }).error);

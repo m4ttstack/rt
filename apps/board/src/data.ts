@@ -363,10 +363,10 @@ export function hasChangesRequested(mr: BoardMR): boolean {
     what lets a codeowner-tagged stranger -- never a roster member -- reach a
     codeowners tab; without it every tagged row from outside the roster would
     be dropped here before a tab ever saw it. */
-export function visibleMrsFor(
-  mrs: BoardMR[],
+export function visibleMrsFor<T extends BoardMR>(
+  mrs: T[],
   visibleMembers: Member[]
-): BoardMR[] {
+): T[] {
   const visibleNames = new Set(visibleMembers.map(m => m.username));
   return mrs.filter(
     mr =>
