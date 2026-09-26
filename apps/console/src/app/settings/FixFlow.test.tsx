@@ -373,6 +373,46 @@ describe('Fix in the explain modal', () => {
     }
   });
 
+  it('a reported issue stays on its card through edits elsewhere and a move', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    openFix(
+      bridges({
+        effective: { scope: 'user', file: USER_FILE, value },
+        issues: [
+          {
+            scope: 'user',
+            file: USER_FILE,
+            kind: 'nonconforming',
+            path: [0, 'url'],
+            message: 'expected string, got number',
+          },
+        ],
+      }),
+      [
+        { scope: 'default', file: null, present: false },
+        { scope: 'user', file: USER_FILE, present: true, value },
+      ]
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const url = (i: number) =>
+      within(within(layer).getByTestId(`item-${i}`)).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-1');
+    await userEvent.type(
+      within(within(layer).getByTestId('item-1')).getByRole('textbox', {
+        name: 'title',
+      }),
+      'x'
+    );
+    expect(url(0)).toHaveAttribute('aria-invalid', 'true');
+    expect(within(layer).getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.click(
+      within(layer).getByRole('button', { name: 'move item 1 down' })
+    );
+    expect(url(1)).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('a reported issue no longer attaches to a layer written in the modal', async () => {
     const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
     openFix(

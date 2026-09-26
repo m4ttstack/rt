@@ -85,12 +85,20 @@ export function DraftEditor({
   // instead of keeping card ids, key order and per-field local state seeded
   // from the value they had at mount.
   const [formGeneration, setFormGeneration] = useState(0);
+  // The stored index of each top-level entry, so a reported issue follows
+  // its card; lost once the draft is rewritten outside the cards.
+  const [origin, setOrigin] = useState<number[] | null>(() =>
+    Array.isArray(start) ? start.map((_, i) => i) : null
+  );
 
   const parsed: Parsed =
     mode === 'json' ? parse(text) : { ok: true, value: draft };
   const checked = parsed.ok && schema ? checkValue(schema, parsed.value) : [];
   const issues = parsed.ok
-    ? [...checked, ...standingIssues(reported, start, parsed.value, checked)]
+    ? [
+        ...checked,
+        ...standingIssues(reported, start, parsed.value, checked, origin),
+      ]
     : checked;
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -104,6 +112,7 @@ export function DraftEditor({
   const fits = parsed.ok && form !== null && canDraw(form, parsed.value);
 
   const toJson = () => {
+    setOrigin(null);
     setText(pretty(draft));
     setMode('json');
   };
@@ -162,6 +171,7 @@ export function DraftEditor({
                 size="compact-xs"
                 variant="subtle"
                 onClick={() => {
+                  setOrigin(null);
                   setDraft(structuredClone(replaceWith.value));
                   setText(pretty(replaceWith.value));
                   setFormGeneration(g => g + 1);
@@ -208,6 +218,7 @@ export function DraftEditor({
           issues={issues}
           footerEnd={footerEnd}
           issueTestId="draft-issue"
+          onOrder={origin ? setOrigin : undefined}
         />
       )}
       {mode === 'form' && form?.kind === 'objectMap' && (
