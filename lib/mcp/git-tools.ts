@@ -201,17 +201,50 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<
   if (!Number.isInteger(behind) || behind < 0 || !Number.isInteger(ahead) || ahead < 0) {
     return { ok: false, error: `git rev-list --left-right --count returned an unreadable count: ${detail(counts)}` };
   }
-  if (behind === 0 || ahead === 0) return { ok: true, diverged: false };
+  if (behind === 0) return { ok: true, diverged: false };
+  // rt sync force-pushes a branch that is only behind without fast-forwarding it.
+  if (ahead === 0) return { ok: false, error: `origin/${branch} has commits this tree lacks; run git_pull first` };
 
-  // `git cherry` marks a commit the default branch already carries (baked in
-  // by a rebase onto it) as unpushed, since it has no patch-equivalent on
-  // origin/<branch> either; excluding `^origin/<default>` is what `rt sync`
-  // itself does (commands/git/reset.ts:236-241) to avoid that false positive.
-  const unpushedCmd = await git(["rev-list", "--cherry-pick", "--right-only", "--no-merges", `origin/${branch}...HEAD`, `^origin/${defaultBranch}`], cwd);
+  const remoteRef = `origin/${branch}`;
+  const defaultRef = `origin/${defaultBranch}`;
+  // Commits reachable from the default branch are never unpushed work, the
+  // same exclusion rt sync's reset applies.
+  const unpushedCmd = await git(["rev-list", "--cherry-pick", "--right-only", "--no-merges", `${remoteRef}...HEAD`, `^${defaultRef}`], cwd);
   if (unpushedCmd.code !== 0) return { ok: false, error: `git rev-list --cherry-pick failed: ${detail(unpushedCmd)}` };
-  const unpushed = unpushedCmd.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const unpushed = lines(unpushedCmd.stdout);
   if (unpushed.length > 0) return { ok: false, error: `refusing to reset ${branch} to origin: local commits with no equivalent on origin would be lost: ${unpushed.join(", ")}` };
+
+  const newer = await localIsNewerRewrite(cwd, git, remoteRef, defaultRef);
+  if ("error" in newer) return { ok: false, error: newer.error };
+  if (newer.localNewer) {
+    const remoteOnlyCmd = await git(["rev-list", "--cherry-pick", "--left-only", "--no-merges", `${remoteRef}...HEAD`, `^${defaultRef}`], cwd);
+    if (remoteOnlyCmd.code !== 0) return { ok: false, error: `git rev-list --cherry-pick --left-only failed: ${detail(remoteOnlyCmd)}` };
+    const remoteOnly = lines(remoteOnlyCmd.stdout);
+    if (remoteOnly.length > 0) return { ok: false, error: `${remoteRef} has commits this tree lacks; rt sync would keep the local rewrite and force-push over them: ${remoteOnly.join(", ")}` };
+  }
   return { ok: true, diverged: true };
+}
+
+function lines(s: string): string[] {
+  return s.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+}
+
+// rt sync's reset keeps the local side, and force-pushes it, when the local
+// fork point from the default branch is strictly newer than origin's; any
+// commit only origin has is then dropped. Unlike rt sync, a failed probe
+// here refuses instead of falling through.
+async function localIsNewerRewrite(cwd: string, git: GitRunner, remoteRef: string, defaultRef: string): Promise<{ localNewer: boolean } | { error: string }> {
+  const localBase = await git(["merge-base", "HEAD", defaultRef], cwd);
+  if (localBase.code !== 0) return { error: `git merge-base HEAD ${defaultRef} failed: ${detail(localBase)}` };
+  const remoteBase = await git(["merge-base", remoteRef, defaultRef], cwd);
+  if (remoteBase.code !== 0) return { error: `git merge-base ${remoteRef} ${defaultRef} failed: ${detail(remoteBase)}` };
+  const local = localBase.stdout.trim();
+  const remote = remoteBase.stdout.trim();
+  if (local === remote) return { localNewer: false };
+  const anc = await git(["merge-base", "--is-ancestor", remote, local], cwd);
+  if (anc.code === 0) return { localNewer: true };
+  if (anc.code === 1) return { localNewer: false };
+  return { error: `git merge-base --is-ancestor failed: ${detail(anc)}` };
 }
 
 const SYNC_TIMEOUT_MS = 300_000;
@@ -263,7 +296,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
     },
     {
       name: "branch_sync",
-      description: "Bring the tree's branch current in one call, the rt sync flow: fetch; if the branch diverged from origin only because GitLab rebased it (every local commit has a patch-equivalent on origin), reset to origin; rebase onto the default branch; push with --force-with-lease. Refuses when a local commit has no equivalent on origin (unpushed work), naming the commits. A rebase conflict returns status conflict with rt sync's bundle and leaves the rebase paused.",
+      description: "Bring the tree's branch current in one call, the rt sync flow: fetch; if the branch diverged from origin only because GitLab rebased it (every local commit has a patch-equivalent on origin), reset to origin; rebase onto the default branch; push with --force-with-lease. Refuses when a local commit has no equivalent on origin (unpushed work) or when origin has commits the push would drop (a branch only behind origin: run git_pull first), naming the commits. A rebase conflict returns status conflict with rt sync's bundle and leaves the rebase paused.",
       inputSchema: { type: "object", properties: { ...TREE_PROP }, required: ["tree"], additionalProperties: false },
       handler: guarded(async (path) => {
         const pre = await branchSyncPreflight(path, deps.git);

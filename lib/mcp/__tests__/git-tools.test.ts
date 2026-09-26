@@ -225,9 +225,49 @@ describe("branchSyncPreflight", () => {
     const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
     expect(r).toEqual({ ok: true, diverged: false });
   });
+  const COUNT = "rev-list --left-right --count origin/feat/x...HEAD";
+  const RIGHT_ONLY = "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop";
+  const LEFT_ONLY = "rev-list --cherry-pick --left-only --no-merges origin/feat/x...HEAD ^origin/develop";
+  const LOCAL_BASE = "merge-base HEAD origin/develop";
+  const REMOTE_BASE = "merge-base origin/feat/x origin/develop";
+  const localNewer: Script = {
+    [COUNT]: { stdout: "2\t4\n" },
+    [RIGHT_ONLY]: {},
+    [LOCAL_BASE]: { stdout: "newbase\n" },
+    [REMOTE_BASE]: { stdout: "oldbase\n" },
+    "merge-base --is-ancestor oldbase newbase": {},
+  };
   test("diverged with every local commit patch-equivalent on origin passes (the GitLab-rebased case)", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": {} }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "3\t2\n" }, [RIGHT_ONLY]: {}, [LOCAL_BASE]: { stdout: "b1\n" }, [REMOTE_BASE]: { stdout: "b1\n" } }));
     expect(r).toEqual({ ok: true, diverged: true });
+  });
+  test("behind origin with nothing local refuses and points at git_pull", async () => {
+    const calls: string[] = [];
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "2\t0\n" } }, calls));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toBe("origin/feat/x has commits this tree lacks; run git_pull first");
+  });
+  test("a local-newer rewrite with a commit only origin has refuses and names it", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...localNewer, [LEFT_ONLY]: { stdout: "abc1234\n" } }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain("origin/feat/x has commits this tree lacks");
+    expect((r as { error: string }).error).toContain("abc1234");
+  });
+  test("a local-newer rewrite with nothing only on origin passes", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...localNewer, [LEFT_ONLY]: {} }));
+    expect(r).toEqual({ ok: true, diverged: true });
+  });
+  test("a GitLab-rebased branch (remote base not older) with a remote-only suggestion commit passes without the remote-only check", async () => {
+    const calls: string[] = [];
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "4\t2\n" }, [RIGHT_ONLY]: {}, [LOCAL_BASE]: { stdout: "oldbase\n" }, [REMOTE_BASE]: { stdout: "newbase\n" }, "merge-base --is-ancestor newbase oldbase": { code: 1 } }, calls));
+    expect(r).toEqual({ ok: true, diverged: true });
+    expect(calls).not.toContain(LEFT_ONLY);
+  });
+  test("a failing local-newer probe refuses", async () => {
+    for (const broken of [{ [LOCAL_BASE]: { code: 128, stderr: "fatal: bad" } }, { [REMOTE_BASE]: { code: 1 } }, { "merge-base --is-ancestor oldbase newbase": { code: 128 } }, { [LEFT_ONLY]: { code: 128 } }]) {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...localNewer, [LEFT_ONLY]: {}, ...broken }));
+      expect(r.ok, Object.keys(broken)[0]).toBe(false);
+    }
   });
   test("diverged with an unpushed local commit refuses and names it", async () => {
     const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { stdout: "0123456\n" } }));
@@ -235,7 +275,7 @@ describe("branchSyncPreflight", () => {
     expect((r as { error: string }).error).toContain("0123456");
   });
   test("a local rebase onto a newer default does not read the rebase-carried commits as unpushed work", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "2\t4\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": {} }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...localNewer, [LEFT_ONLY]: {} }));
     expect(r).toEqual({ ok: true, diverged: true });
   });
   test("no remote branch yet passes; a detached HEAD refuses", async () => {
