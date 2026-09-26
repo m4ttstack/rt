@@ -31,11 +31,10 @@ import type { CommandContext } from "../lib/command-tree.ts";
 import { envelope } from "../lib/setup/contract.ts";
 import { UserActionableError, exitUserError } from "../lib/setup/errors.ts";
 import { runCapture } from "../lib/subprocess.ts";
-import { runPreflight, type CheckRow, type PreflightSeams } from "../lib/release/preflight.ts";
+import { runPreflight, keepsFastPath, type CheckRow, type PreflightSeams } from "../lib/release/preflight.ts";
 import { runVerify, type VerifyRow, type VerifySeams } from "../lib/release/verify.ts";
 import { runUpdateMachine, CHAT_ROOM, type LegResult, type UpdateMachineOptions, type UpdateMachineSeams } from "../lib/release/update-machine.ts";
 import {
-  eligibleApps,
   runReleaseApp,
   type ReleaseAppOptions,
   type ReleaseAppReport,
@@ -209,9 +208,8 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
   if (failed) process.exitCode = 1;
 }
 
-async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams & { cleanup(): void }> {
+async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams> {
   const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
-  let workDir: string | null = null;
   return {
     repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
     exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 60_000, ...opts }),
@@ -219,7 +217,6 @@ async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     isTTY: interactive(),
-    workDir: () => (workDir ??= mkdtempSync(join(tmpdir(), "rt-release-app-"))),
     readFile: (path) => {
       try {
         return readFileSync(path, "utf8");
@@ -228,23 +225,9 @@ async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams
       }
     },
     writeFile: (path, text) => writeFileSync(path, text),
-    download: async (url, destPath) => {
-      const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
-      if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-      await Bun.write(destPath, res);
-    },
-    sha256File: async (path) => new Bun.CryptoHasher("sha256").update(await Bun.file(path).arrayBuffer()).digest("hex"),
     confirm: (message) => confirm({ message }),
     // --json owns stdout for the envelope, so progress goes to stderr there.
     log: (line) => void (json ? process.stderr : process.stdout).write(`${line}\n`),
-    cleanup: () => {
-      if (!workDir) return;
-      try {
-        rmSync(workDir, { recursive: true, force: true });
-      } catch {
-        // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
-      }
-    },
   };
 }
 
@@ -261,12 +244,15 @@ async function pickReleaseApp(options: SelectOption[]): Promise<string | null> {
   return filterableSelect({ message: "Release which app?", options, breadcrumb: ["rt", "release", "app"] });
 }
 
-/** The eligible apps as this checkout's deps.lock pins them; empty when it is not an rt checkout. */
+/** The served apps this checkout's deps.lock builds from a tree, plus gitq; empty when it is not an rt checkout. */
 function releaseAppOptions(seams: ReleaseAppSeams): SelectOption[] {
   const raw = seams.readFile(join(seams.repoRoot, "rt-tray", "deps.lock"));
   if (!raw) return [];
   try {
-    return eligibleApps((JSON.parse(raw) as { tools: DepsRow[] }).tools).map((r) => ({ value: r.name, label: r.name, hint: r.version }));
+    const rows = (JSON.parse(raw) as { tools: DepsRow[] }).tools;
+    return rows
+      .filter((r) => ((r.source === "tree" && r.serve !== undefined) || r.name === "gitq") && keepsFastPath(r.name))
+      .map((r) => ({ value: r.name, label: r.name, ...(r.version ? { hint: r.version } : {}) }));
   } catch {
     return [];
   }
@@ -275,15 +261,15 @@ function releaseAppOptions(seams: ReleaseAppSeams): SelectOption[] {
 function releaseAppSummary(report: ReleaseAppReport): string {
   switch (report.status) {
     case "released":
-      return `released ${report.tag} with ${report.app} ${report.appVersion}`;
+      return `released ${report.nextTag}`;
     case "planned":
-      return `dry run: nothing changed; rerun without --dry-run to release ${report.app} ${report.appVersion} as ${report.tag}`;
+      return `dry run: nothing changed; rerun without --dry-run to release ${report.app} as ${report.nextTag}`;
     case "awaiting-approval":
       return `the notes need approval; to accept them: ${report.resume}`;
     case "declined":
-      return `declined; nothing committed or tagged. To regenerate and ask again: ${report.resume}`;
+      return report.resume ? `declined; nothing committed or tagged. To regenerate and ask again: ${report.resume}` : `declined; nothing committed or tagged`;
     case "pending":
-      return `${report.tag} is tagged but its publish has not verified yet; recheck with: ${report.resume}`;
+      return `${report.nextTag} is tagged but its publish has not verified yet; recheck with: ${report.resume}`;
     case "failed": {
       const step = report.steps.at(-1)?.label ?? "qualify";
       return report.resume ? `stopped at ${step}; resume: ${report.resume}` : `stopped at ${step}; this needs a decision, not a rerun`;
@@ -293,40 +279,35 @@ function releaseAppSummary(report: ReleaseAppReport): string {
 
 export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps: ReleaseAppCommandDeps = {}): Promise<void> {
   const json = args.includes("--json");
-  const realSeams = deps.seams ? null : await createRealReleaseAppSeams(json);
-  const seams = deps.seams ?? realSeams!;
+  const seams = deps.seams ?? (await createRealReleaseAppSeams(json));
   const usage = () => exitUserError(new UserActionableError("usage", RELEASE_APP_USAGE), json, "release app");
 
+  let yesNotes: string | null;
   try {
-    let yesNotes: string | null;
-    try {
-      yesNotes = flagValue(args, "--yes-notes") ?? null;
-    } catch {
-      return usage();
-    }
-    if (yesNotes !== null && !/^[0-9a-f]{12}$/.test(yesNotes)) return usage();
-    const yesAt = args.indexOf("--yes-notes");
-    let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
-    if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
-      const options = releaseAppOptions(seams);
-      if (options.length) {
-        const picked = await (deps.pickApp ?? pickReleaseApp)(options);
-        if (!picked) return;
-        name = picked;
-      }
-    }
-    if (!name || !/^[a-z0-9][a-z0-9-]*$/.test(name)) usage();
-
-    const report = await (deps.run ?? runReleaseApp)(seams, {
-      name: name!,
-      dryRun: args.includes("--dry-run"),
-      json,
-      yesNotes,
-    });
-    if (json) console.log(JSON.stringify(envelope(report)));
-    else console.log(releaseAppSummary(report));
-    if (report.status === "failed" || report.status === "declined" || report.status === "pending") process.exitCode = 1;
-  } finally {
-    realSeams?.cleanup();
+    yesNotes = flagValue(args, "--yes-notes") ?? null;
+  } catch {
+    return usage();
   }
+  if (yesNotes !== null && !/^[0-9a-f]{12}$/.test(yesNotes)) return usage();
+  const yesAt = args.indexOf("--yes-notes");
+  let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
+  if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+    const options = releaseAppOptions(seams);
+    if (options.length) {
+      const picked = await (deps.pickApp ?? pickReleaseApp)(options);
+      if (!picked) return;
+      name = picked;
+    }
+  }
+  if (!name || !/^[a-z0-9][a-z0-9-]*$/.test(name)) usage();
+
+  const report = await (deps.run ?? runReleaseApp)(seams, {
+    name: name!,
+    dryRun: args.includes("--dry-run"),
+    json,
+    yesNotes,
+  });
+  if (json) console.log(JSON.stringify(envelope(report)));
+  else console.log(releaseAppSummary(report));
+  if (report.status === "failed" || report.status === "declined" || report.status === "pending") process.exitCode = 1;
 }

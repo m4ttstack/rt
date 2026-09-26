@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { releaseApp } from "../release.ts";
-import { appAssetUrl, type ReleaseAppOptions, type ReleaseAppReport, type ReleaseAppSeams } from "../../lib/release/release-app.ts";
+import type { ReleaseAppOptions, ReleaseAppReport, ReleaseAppSeams } from "../../lib/release/release-app.ts";
 import type { SelectOption } from "../../lib/pick-wrappers.ts";
 
 const LOCK = JSON.stringify({
   schema: 1, arch: "arm64", tools: [
     { name: "jq", version: "1.8.2", url: "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64" },
-    { name: "deck", version: "1.1.1", repo: "m4ttstack/apps", subdir: "apps/deck", url: appAssetUrl("deck", "1.1.1") },
-    { name: "board", version: "0.1.7", repo: "m4ttstack/apps", subdir: "apps/board", url: appAssetUrl("board", "0.1.7") },
-    { name: "chat", version: "0.1.3", repo: "m4ttstack/apps", subdir: "apps/chat", url: appAssetUrl("chat", "0.1.3") },
+    { name: "deck", version: "", source: "tree" },
+    { name: "board", version: "", source: "tree", serve: { port: 11006, args: [] } },
+    { name: "chat", version: "", source: "tree", serve: { port: 11002, args: [] } },
+    { name: "console", version: "", source: "tree", serve: { port: 11001, args: [] } },
+    { name: "boxscore", version: "", source: "tree", serve: { port: 11005, args: [] } },
+    { name: "gitq", version: "0.2.1", repo: "m4ttstack/gitq", url: "https://github.com/m4ttstack/gitq/releases/download/v0.2.1/gitq-darwin-arm64" },
   ],
 });
 
@@ -20,11 +23,8 @@ function seams(): ReleaseAppSeams {
     now: () => 0,
     sleep: async () => {},
     isTTY: false,
-    workDir: () => "/work",
     readFile: (path) => (path === "/repo/rt-tray/deps.lock" ? LOCK : null),
     writeFile: () => {},
-    download: async () => {},
-    sha256File: async () => "",
     confirm: async () => false,
     log: () => {},
   };
@@ -32,8 +32,8 @@ function seams(): ReleaseAppSeams {
 
 function report(status: ReleaseAppReport["status"], extra: Partial<ReleaseAppReport> = {}): ReleaseAppReport {
   return {
-    app: "board", status, lastTag: "v2.13.1", tag: "v2.13.2", appVersion: "0.1.8", appTag: "board-v0.1.8",
-    steps: [], notes: null, notesHash: null, heldApps: [], verify: null, resume: null, ...extra,
+    app: "board", status, lastTag: "v2.13.1", nextTag: "v2.13.2",
+    steps: [], notes: null, notesHash: null, resume: null, ...extra,
   };
 }
 
@@ -84,15 +84,17 @@ afterEach(() => {
   else process.env.RT_BATCH = savedBatch;
 });
 
-// Apps rows carry no per-app pin in deps.lock any more (they moved to
-// source: "tree"), so eligibleApps is always empty and the omitted-name
-// picker never has anything to offer; it falls through to the usage error.
 describe("rt release app: the omitted-name picker", () => {
-  test("no eligible apps means no picker, even on a TTY", async () => {
+  test("the served tree apps plus gitq are offered, deck excluded", async () => {
     const h = await invoke([], { tty: true, pick: "chat" });
-    expect(h.picks).toEqual([]);
-    expect(h.runs).toEqual([]);
-    expect(h.exitCalled).toBe(2);
+    expect(h.picks).toEqual([[
+      { value: "board", label: "board" },
+      { value: "chat", label: "chat" },
+      { value: "console", label: "console" },
+      { value: "boxscore", label: "boxscore" },
+      { value: "gitq", label: "gitq", hint: "0.2.1" },
+    ]]);
+    expect(h.runs).toEqual([{ name: "chat", dryRun: false, json: false, yesNotes: null }]);
   });
 
   test("off a TTY it is the usage error, never a picker", async () => {
@@ -168,19 +170,19 @@ describe("rt release app: flags and output", () => {
   test("a failed step exits 1 and names the step and the resume command", async () => {
     const h = await invoke(["board"], {
       result: report("failed", {
-        steps: [{ id: "pr", label: "deps.lock PR", status: "failed", detail: "CI failed" }],
+        steps: [{ id: "tag", label: "tag", status: "failed", detail: "push rejected" }],
         resume: "rt release app board",
       }),
     });
     expect(h.exitCode).toBe(1);
-    expect(h.logs.join("\n")).toContain("stopped at deps.lock PR");
+    expect(h.logs.join("\n")).toContain("stopped at tag");
     expect(h.logs.join("\n")).toContain("resume: rt release app board");
   });
 
-  test("a released report prints the tag and exits 0", async () => {
+  test("a released report prints the next tag and exits 0", async () => {
     const h = await invoke(["board"]);
     expect(h.exitCode).toBe(0);
-    expect(h.logs.join("\n")).toContain("released v2.13.2 with board 0.1.8");
+    expect(h.logs.join("\n")).toContain("released v2.13.2");
   });
 
   test("a name that is not a plain app name is a usage error", async () => {

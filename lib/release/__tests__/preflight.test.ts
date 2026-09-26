@@ -196,6 +196,9 @@ describe("checkGate by path", () => {
     for (const name of ["board", "boxscore", "chat", "console", "gitq"]) expect(keepsFastPath(name)).toBe(true);
     for (const name of ["deck", "fast-browser", "bun"]) expect(keepsFastPath(name)).toBe(false);
   });
+  test("a served app plus the release notes is fast", async () => {
+    expect((await gate(["apps/board/x.ts", "RELEASE_NOTES.md"])).path).toBe("fast");
+  });
 });
 
 test("movedServedApps names each served app directory in the diff once", () => {
