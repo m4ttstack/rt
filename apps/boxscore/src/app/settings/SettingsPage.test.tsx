@@ -5,6 +5,8 @@ import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { SettingDefWire } from '@mattstack/settings-kit/react';
 import { SettingsPage } from './SettingsPage';
 
+const STRING_LIST = { type: 'array', items: { type: 'string' } };
+
 const { useSettingsScope, useSettingKey } = vi.hoisted(() => ({
   useSettingsScope: vi.fn(),
   useSettingKey: vi.fn(),
@@ -85,6 +87,7 @@ const ROSTER_DEF = def({
 const PROJECTS_DEF = def({
   key: 'boxscore.projects',
   description: 'GitLab projects boxscore scores, as full paths.',
+  schema: STRING_LIST,
   effective: {
     scope: 'team',
     value: ['acme/acme-web'],
@@ -96,6 +99,7 @@ const IGNORED_MRS_READONLY = def({
   key: 'boxscore.ignoredMrs',
   writable: false,
   description: 'MRs excluded from all metrics.',
+  schema: STRING_LIST,
   effective: { scope: 'team', value: ['!123'], file: 'team.jsonc' },
 });
 

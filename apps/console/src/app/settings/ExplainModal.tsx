@@ -5,6 +5,7 @@ import {
   Anchor,
   Badge,
   Box,
+  Button,
   Group,
   Modal,
   Skeleton,
@@ -14,33 +15,51 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
-import {
-  useSettingKey,
-  useSettingsScope,
-  type ExplainRowWire,
-  type SettingDefWire,
-  type SettingsScopeState,
+import type {
+  ExplainRowWire,
+  SettingDefWire,
 } from '@mattstack/settings-kit/react';
 import { rowKind } from '@mattstack/settings-kit/shapes';
 
 import { analyzeChain, shortValue } from '../config/chain';
 import { useAgentModels } from '../config/useSettings';
 import { useEditorHref } from '../editorHref';
+import { DivergedPanel } from './DivergedPanel';
+import { DraftEditor } from './DraftEditor';
+import { editorKind, formOf } from './formShape';
+import { isDiverged, issueText } from './issues';
+import { JsonBlock } from './JsonBlock';
 import { ScalarControl } from './ScalarControl';
 import { ScopeBadge } from './ScopeBadge';
 import { SettingRow } from './SettingRow';
+import {
+  useConsoleSettings,
+  useKeyExplain,
+  useSettingsRepo,
+  type ConsoleStore,
+} from './useConsoleSettings';
 import { useRowSave, type RowStore } from './useRowSave';
-import { isStoreScope, type StoreScope } from './view';
+import {
+  APPROVAL_KEY,
+  EDITOR_KINDS,
+  isRung,
+  layerLabel,
+  repoLabel,
+  rungBase,
+  type LayerScope,
+} from './view';
 
 export type ExplainStore = Pick<
-  SettingsScopeState,
-  'defs' | 'loading' | 'error' | 'set' | 'unset' | 'move'
+  ConsoleStore,
+  'defs' | 'loading' | 'error' | 'set' | 'unset' | 'move' | 'prune'
 >;
 
 const MODAL_WIDTH = 760;
 const ESCAPE_OWNERS =
   'input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"]';
-const SCOPE_COL = 88;
+// Wide enough for the longest rung label ("machine · repo") without
+// truncating: a repo picked always adds a "· repo" suffix to a badge.
+const SCOPE_COL = 132;
 
 type Role = 'winner' | 'overridden' | 'contributor' | 'inert';
 type Provider = 'claude' | 'codex';
@@ -98,17 +117,37 @@ function LayerLine({
   busy,
   onSet,
   onRemove,
+  startEditing = false,
+  replaceWith,
 }: {
   def: SettingDefWire;
   row: ExplainRowWire;
   role: Role;
   busy: boolean;
-  onSet: (scope: StoreScope, value: unknown) => Promise<boolean>;
-  onRemove: (scope: StoreScope) => Promise<boolean>;
+  onSet: (scope: string, value: unknown) => Promise<boolean>;
+  onRemove: (scope: string) => Promise<boolean>;
+  startEditing?: boolean;
+  replaceWith?: { label: string; value: unknown };
 }) {
   const { text } = useSchemeColors();
   const editorHref = useEditorHref();
-  const [editing, setEditing] = useState(false);
+  const scope = row.scope;
+  const store = rungBase(scope);
+  const label = store ? layerLabel(scope as LayerScope) : null;
+  const allowed = store !== null && def.scopes.includes(store);
+  const writable = allowed && def.writable && !def.secret;
+  const kind = rowKind(def);
+  const edit = editorKind(def);
+  const composite = def.type === 'object' || def.type === 'array';
+  // console never edits this key here: it is revoked from /settings, not
+  // set through a free-text control.
+  const editable =
+    def.key !== APPROVAL_KEY &&
+    writable &&
+    (composite ? EDITOR_KINDS.has(edit) : kind === 'scalar' || kind === 'enum');
+  // Fix seeds editing open only when the row is editable; a row with no
+  // console control keeps Remove as its only remedy.
+  const [editing, setEditing] = useState(startEditing && editable);
   const [saved, setSaved] = useState(false);
   // Close on the re-read, not the write, so the old value never flashes.
   useEffect(() => {
@@ -116,23 +155,18 @@ function LayerLine({
     setSaved(false);
     setEditing(false);
   }, [row]); // eslint-disable-line react-hooks/exhaustive-deps
-  const scope = row.scope;
-  const store = isStoreScope(scope) ? scope : null;
-  const allowed = store !== null && def.scopes.includes(store);
-  const writable = allowed && def.writable && !def.secret;
-  const kind = rowKind(def);
-  const editable = writable && (kind === 'scalar' || kind === 'enum');
 
   let value: ReactNode;
-  if (editing && store)
+  if (editing && store && !composite)
     value = (
       <Suggested settingKey={def.key}>
         {suggestions => (
           <ScalarControl
             def={layerDef(def, row)}
+            writeScope={scope}
             suggestions={suggestions}
             onSave={v =>
-              void (v === undefined ? onRemove(store) : onSet(store, v)).then(
+              void (v === undefined ? onRemove(scope) : onSet(scope, v)).then(
                 ok => ok && setSaved(true)
               )
             }
@@ -151,6 +185,17 @@ function LayerLine({
       <Text fz={12} c={text.muted}>
         present, never shown here
       </Text>
+    );
+  else if (composite)
+    // A struck-through block is unreadable, so an overridden composite gets
+    // only the muted colour, on the wrapper rather than inside JsonBlock.
+    value = (
+      <Box
+        c={role === 'overridden' ? text.muted : undefined}
+        data-testid={`layer-value-${scope}`}
+      >
+        <JsonBlock value={row.value} maxHeight={240} />
+      </Box>
     );
   else
     value = (
@@ -175,7 +220,7 @@ function LayerLine({
       <Group gap={12} wrap="nowrap" mih={28}>
         <Box w={SCOPE_COL} style={{ flex: 'none' }}>
           {store ? (
-            <ScopeBadge scope={store} />
+            <ScopeBadge scope={scope as LayerScope} />
           ) : (
             <Text fz={12} fw={500} c={text.muted}>
               {scope}
@@ -213,7 +258,7 @@ function LayerLine({
           style={{ flex: 'none' }}
         >
           {editable && store && (
-            <Tooltip label={editing ? 'Cancel' : `Set at ${store}`}>
+            <Tooltip label={editing ? 'Cancel' : `Set at ${label}`}>
               <ActionIcon
                 variant="subtle"
                 color="gray"
@@ -221,8 +266,8 @@ function LayerLine({
                 disabled={busy}
                 aria-label={
                   editing
-                    ? `cancel editing ${def.key} at ${store}`
-                    : `set ${def.key} at ${store}`
+                    ? `cancel editing ${def.key} at ${label}`
+                    : `set ${def.key} at ${label}`
                 }
                 onClick={() => setEditing(e => !e)}
               >
@@ -231,14 +276,14 @@ function LayerLine({
             </Tooltip>
           )}
           {writable && store && row.present && (
-            <Tooltip label={`Remove from ${store}`}>
+            <Tooltip label={`Remove from ${label}`}>
               <ActionIcon
                 variant="subtle"
                 color="gray"
                 c={text.muted}
                 disabled={busy}
-                aria-label={`remove ${def.key} from ${store}`}
-                onClick={() => void onRemove(store)}
+                aria-label={`remove ${def.key} from ${label}`}
+                onClick={() => void onRemove(scope)}
               >
                 <Icons.trash size={14} />
               </ActionIcon>
@@ -252,6 +297,11 @@ function LayerLine({
             {row.invalid}
           </Text>
         )}
+        {row.nonconforming?.map((issue, i) => (
+          <Text key={i} fz={12} ff="monospace" c="var(--tk-text-warn-small)">
+            {issueText(issue)}
+          </Text>
+        ))}
         {store && !allowed && (
           <Text fz={12} c={text.muted}>
             {`not allowed at this layer (allowed: ${def.scopes.join(', ')})`}
@@ -274,6 +324,77 @@ function LayerLine({
           </Anchor>
         )}
       </Stack>
+      {editing && composite && store && (
+        <Box pt={10} pl={SCOPE_COL + 12}>
+          <DraftEditor
+            def={def}
+            form={formOf(def)}
+            initial={row.present ? row.value : undefined}
+            targetLabel={isRung(scope) ? `${store} · repo` : store}
+            saving={busy}
+            replaceWith={replaceWith}
+            onCancel={() => setEditing(false)}
+            onSave={v =>
+              onSet(scope, v).then(ok => {
+                if (ok) setSaved(true);
+                return ok;
+              })
+            }
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function RepoSection({
+  settingKey,
+  identity,
+  onPick,
+}: {
+  settingKey: string;
+  identity: string;
+  onPick?: (repo: string) => void;
+}) {
+  const { text } = useSchemeColors();
+  const { rows, loading } = useKeyExplain(settingKey, identity);
+  const set = rows.filter(r => r.present && isRung(r.scope));
+  return (
+    <Box
+      py={10}
+      data-testid={`repo-${identity}`}
+      style={{ borderBottom: '1px solid var(--tk-border-soft)' }}
+    >
+      <Group gap={12} wrap="nowrap" justify="space-between">
+        <Text fz={13} ff="monospace">
+          {repoLabel(identity)}
+        </Text>
+        {onPick && (
+          <Button
+            size="compact-xs"
+            variant="default"
+            aria-label={`Show ${repoLabel(identity)}`}
+            onClick={() => onPick(identity)}
+          >
+            Show
+          </Button>
+        )}
+      </Group>
+      {loading ? (
+        <Skeleton h={28} mt={8} />
+      ) : (
+        set.map(r => (
+          <Stack key={r.scope} gap={4} pt={8}>
+            <ScopeBadge scope={r.scope as LayerScope} />
+            <JsonBlock value={r.value} />
+          </Stack>
+        ))
+      )}
+      {!loading && set.length === 0 && (
+        <Text fz={12} c={text.muted} pt={6}>
+          no repo section sets it now
+        </Text>
+      )}
     </Box>
   );
 }
@@ -281,30 +402,49 @@ function LayerLine({
 function ExplainBody({
   def: storeDef,
   store,
+  fix,
   onRead,
   onChanged,
+  onPickRepo,
 }: {
   def: SettingDefWire;
-  store: RowStore;
+  store: RowStore & Pick<ConsoleStore, 'prune'>;
+  fix?: string | null;
   onRead: (at: Date) => void;
   onChanged?: () => void;
+  onPickRepo?: (repo: string) => void;
 }) {
   const { text } = useSchemeColors();
-  const explained = useSettingKey(storeDef.key);
+  const repo = useSettingsRepo();
+  const explained = useKeyExplain(storeDef.key, repo);
+  const [pruneError, setPruneError] = useState<string | null>(null);
   const { refresh, rows, loading } = explained;
   // A settled explain read is fresher than a store loaded when the page
   // mounted; while a re-read runs, the store already holds the write.
-  const def = !loading && explained.def ? explained.def : storeDef;
+  // settings-kit 0.5.0's /explain route never sets `repos`, `issues` or
+  // `mergedIssues` (those come from /defs only), so they are carried over
+  // from storeDef regardless of freshness -- otherwise the diverged panel
+  // and the modal's own issue lines never render on real data.
+  const def =
+    !loading && explained.def
+      ? {
+          ...explained.def,
+          repos: explained.def.repos ?? storeDef.repos,
+          issues: explained.def.issues ?? storeDef.issues,
+          mergedIssues: explained.def.mergedIssues ?? storeDef.mergedIssues,
+        }
+      : storeDef;
   useEffect(() => {
     if (!loading && rows.length > 0) onRead(new Date());
   }, [loading, rows, onRead]);
 
   // A failed move can still have written its target, so every settled write
-  // re-reads the stack.
-  const tracked: RowStore = {
+  // re-reads the stack; prune goes through the same path as any other write.
+  const tracked: RowStore & Pick<ConsoleStore, 'prune'> = {
     set: async (...a) => after(await store.set(...a)),
     unset: async (...a) => after(await store.unset(...a)),
     move: async (...a) => after(await store.move(...a)),
+    prune: async (...a) => after(await store.prune(...a)),
   };
   function after(err: string | null) {
     refresh();
@@ -319,6 +459,15 @@ function ExplainBody({
       return verdict.contributors.includes(row) ? 'contributor' : 'inert';
     if (verdict.winner === row) return 'winner';
     return verdict.overridden.includes(row) ? 'overridden' : 'inert';
+  };
+  const diverged = def.secret ? [] : (def.issues ?? []).filter(isDiverged);
+  const replaceWithFor = (row: ExplainRowWire) => {
+    const issue = diverged.find(d =>
+      d.scope !== row.scope ? false : isRung(row.scope) ? d.repo === repo : true
+    );
+    return issue
+      ? { label: 'Use the older value', value: issue.olderValue }
+      : undefined;
   };
 
   return (
@@ -393,6 +542,8 @@ function ExplainBody({
             busy={layers.status === 'saving'}
             onSet={(scope, v) => layers.setAt(scope, v)}
             onRemove={scope => layers.clear(scope)}
+            startEditing={r.scope === fix && r.present}
+            replaceWith={replaceWithFor(r)}
           />
         ))
       )}
@@ -401,6 +552,51 @@ function ExplainBody({
           {layers.error}
         </Text>
       )}
+      {diverged.map((issue, i) => (
+        <DivergedPanel
+          key={i}
+          issue={issue}
+          onPrune={() => {
+            setPruneError(null);
+            const base = rungBase(issue.scope)!;
+            const op = issue.repo
+              ? tracked.prune(def.key, base, issue.storeName, issue.repo)
+              : tracked.prune(def.key, base, issue.storeName);
+            void op.then(err => err && setPruneError(err));
+          }}
+        />
+      ))}
+      {pruneError && (
+        <Text fz={12} ff="monospace" c="var(--tk-text-bad-small)" pt={8}>
+          {pruneError}
+        </Text>
+      )}
+      {def.repoScoped && repo === null && (def.repos?.length ?? 0) > 0 && (
+        <>
+          <Group
+            gap={8}
+            pt={22}
+            pb={6}
+            wrap="nowrap"
+            style={{ borderBottom: '1px solid var(--tk-line-2)' }}
+          >
+            <Text fz={12} fw={500} tt="uppercase" lts={0.6} c={text.muted}>
+              Repos
+            </Text>
+            <Text fz={12} c={text.muted}>
+              · sections that override every repo's value for one repo
+            </Text>
+          </Group>
+          {def.repos!.map(r => (
+            <RepoSection
+              key={r.identity}
+              settingKey={def.key}
+              identity={r.identity}
+              onPick={onPickRepo}
+            />
+          ))}
+        </>
+      )}
     </Stack>
   );
 }
@@ -408,13 +604,17 @@ function ExplainBody({
 function Resolved({
   settingKey,
   store,
+  fix,
   onRead,
   onChanged,
+  onPickRepo,
 }: {
   settingKey: string;
   store: ExplainStore;
+  fix?: string | null;
   onRead: (at: Date) => void;
   onChanged?: () => void;
+  onPickRepo?: (repo: string) => void;
 }) {
   const { text } = useSchemeColors();
   const def = store.defs.find(d => d.key === settingKey);
@@ -424,8 +624,10 @@ function Resolved({
         key={def.key}
         def={def}
         store={store}
+        fix={fix}
         onRead={onRead}
         onChanged={onChanged}
+        onPickRepo={onPickRepo}
       />
     );
   if (store.error)
@@ -452,10 +654,11 @@ function Resolved({
 /** Loads just this key, for pages with no settings store of their own. */
 function OwnStore(props: {
   settingKey: string;
+  fix?: string | null;
   onRead: (at: Date) => void;
   onChanged?: () => void;
 }) {
-  const store = useSettingsScope(props.settingKey);
+  const store = useConsoleSettings(null, props.settingKey);
   return <Resolved {...props} store={store} />;
 }
 
@@ -477,13 +680,17 @@ function useLastKey(key: string | null): string | null {
 export function ExplainModal({
   settingKey,
   store,
+  fix,
   onClose,
   onChanged,
+  onPickRepo,
 }: {
   settingKey: string | null;
   store?: ExplainStore;
+  fix?: string | null;
   onClose: () => void;
   onChanged?: () => void;
+  onPickRepo?: (repo: string) => void;
 }) {
   const { text, bg } = useSchemeColors();
   const key = useLastKey(settingKey);
@@ -535,11 +742,18 @@ export function ExplainModal({
           <Resolved
             settingKey={key}
             store={store}
+            fix={fix}
+            onRead={setReadAt}
+            onChanged={onChanged}
+            onPickRepo={onPickRepo}
+          />
+        ) : (
+          <OwnStore
+            settingKey={key}
+            fix={fix}
             onRead={setReadAt}
             onChanged={onChanged}
           />
-        ) : (
-          <OwnStore settingKey={key} onRead={setReadAt} onChanged={onChanged} />
         ))}
     </Modal>
   );

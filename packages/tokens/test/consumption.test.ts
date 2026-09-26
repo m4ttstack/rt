@@ -212,6 +212,18 @@ const TK_APP_LAUNCHER_NAMES = new Set([
   '--tk-text-accent-vivid',
 ]);
 
+// Read by packages/ui/src/lazy/codemirror/highlightStyle.ts and
+// CodeMirror.Base.tsx, so these are never a real defined-but-unreferenced
+// failure and stay out of this waiver set.
+const TK_CODEMIRROR_NAMES = new Set([
+  '--tk-text-accent',
+  '--tk-text-bad-vivid',
+  '--tk-text-warn-vivid',
+  '--tk-text-purple',
+  '--tk-text-cyan',
+  '--tk-text-gold',
+]);
+
 const TK_ON_FILL_NAMES = RAMP_HUES.map(h => `--tk-on-fill-${h}`);
 const TK_ON_FILL_WAIVER =
   "app-kit's variantColorResolver builds this name at runtime from the intent, so no static reference to any single hue exists; the filled label is genuinely wired.";
@@ -219,7 +231,10 @@ const TK_ON_FILL_WAIVER =
 const WAIVED_TOKYO: Record<string, string> = {
   ...Object.fromEntries(
     TK_RAMP_NAMES.filter(
-      name => !TK_TEXT_SLOT_NAMES.has(name) && !TK_APP_LAUNCHER_NAMES.has(name)
+      name =>
+        !TK_TEXT_SLOT_NAMES.has(name) &&
+        !TK_APP_LAUNCHER_NAMES.has(name) &&
+        !TK_CODEMIRROR_NAMES.has(name)
     ).map(name => [name, TK_RAMP_WAIVER])
   ),
   ...Object.fromEntries(

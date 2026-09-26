@@ -7,4 +7,6 @@ export { CodeMirror } from './codemirror/CodeMirror';
 export type {
   CodeMirrorProps,
   CodeMirrorLanguage,
+  JsonPathIssue,
+  JsonSchemaCheck,
 } from './codemirror/CodeMirror';

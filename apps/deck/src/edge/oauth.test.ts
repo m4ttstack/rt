@@ -21,6 +21,20 @@ function userStorePath(): string {
   return join(process.env.HOME!, '.mattstack', 'user', 'settings.user.jsonc');
 }
 
+/** Writes a value straight into the user store, past rt-client's write
+    gate, for tests that need a malformed value on disk. */
+function seedUserStore(key: string, value: unknown): void {
+  const path = userStorePath();
+  mkdirSync(dirname(path), { recursive: true });
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  writeFileSync(path, JSON.stringify({ ...current, [key]: value }, null, 2));
+}
+
 const dir = mkdtempSync(join(tmpdir(), 'local-oauth-'));
 const ACCESS_PATH = join(dir, 'access.json');
 // These are process-wide, and `bun test` runs every file in one process, so
@@ -198,7 +212,7 @@ test("a store entry that doesn't match the OAuth shape is skipped, never rewritt
       apps: { a: { mode: 'domains', domains: ['file.example.com'] } },
     })
   );
-  setSetting('deck.access', { a: { tier: 'public' } }, 'user');
+  seedUserStore('deck.access', { a: { tier: 'public' } });
   reloadOAuth();
   expect(getOAuth('a')).toEqual({
     mode: 'domains',
@@ -273,11 +287,7 @@ test('store key present: a malformed store entry for another app survives a writ
   // "a" is malformed (isOAuth rejects it): the loader skips it on READ, but
   // the WRITE overlay reads the raw store fresh, so it must never be erased
   // by a write that only touches "b".
-  setSetting(
-    'deck.access',
-    { a: { tier: 'public' }, b: { mode: 'off' } },
-    'user'
-  );
+  seedUserStore('deck.access', { a: { tier: 'public' }, b: { mode: 'off' } });
   reloadOAuth();
 
   setOAuth('b', { mode: 'emails', emails: ['b@x.dev'] });
@@ -309,7 +319,7 @@ test('store key absent: a file-write failure reverts the in-memory cache instead
 });
 
 test('a resolver throw on the ownership probe degrades to unowned rather than crashing the write', () => {
-  setSetting('deck.access', { poison: '${repoRoot}' }, 'user');
+  seedUserStore('deck.access', { poison: '${repoRoot}' });
   reloadOAuth(); // load()'s own fallback already tolerates this; unaffected by the probe fix
 
   expect(() =>
@@ -378,15 +388,11 @@ test('store key absent: renameOAuth moves the rule in the file and never touches
 });
 
 test('store key present: renameOAuth drops the old key and writes the new one, other entries untouched', () => {
-  setSetting(
-    'deck.access',
-    {
-      mrs: { mode: 'domains', domains: ['corp.com'] },
-      other: { mode: 'off' },
-      malformed: { tier: 'public' },
-    },
-    'user'
-  );
+  seedUserStore('deck.access', {
+    mrs: { mode: 'domains', domains: ['corp.com'] },
+    other: { mode: 'off' },
+    malformed: { tier: 'public' },
+  });
   reloadOAuth();
 
   renameOAuth('mrs', 'board');

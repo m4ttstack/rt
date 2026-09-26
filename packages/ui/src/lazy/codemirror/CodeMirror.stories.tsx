@@ -33,6 +33,49 @@ export const JsonReadOnly: Story = {
   ),
 };
 
+// Literal copy of the `rt.notify.eventBridges` schema (apps/console/src/app/
+// settings/testSchemas.ts) -- the kit must not import console code, so this
+// is inlined rather than shared.
+const EVENT_BRIDGE_SCHEMA = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string' },
+      category: { type: 'string' },
+      title: { type: 'string' },
+      message: { type: 'string' },
+      subjectPrefix: { type: 'string' },
+      url: { type: 'string' },
+      owner: { type: 'string', const: 'human' },
+      surface: { type: 'string' },
+    },
+    required: ['pattern', 'category', 'title', 'message'],
+    additionalProperties: {},
+  },
+};
+
+function checkEventBridgePattern(value: unknown) {
+  const item = Array.isArray(value)
+    ? (value[0] as Record<string, unknown> | undefined)
+    : undefined;
+  return item && typeof item.pattern !== 'string'
+    ? [{ path: [0, 'pattern'], message: 'expected string, got number' }]
+    : [];
+}
+
+export const JsonWithSchema: Story = {
+  render: () => (
+    <CodeMirror
+      language="json"
+      height="200px"
+      value={'[\n  {\n    "pattern": 1\n  }\n]'}
+      jsonSchema={EVENT_BRIDGE_SCHEMA}
+      jsonCheck={checkEventBridgePattern}
+    />
+  ),
+};
+
 export const EmptyWithPlaceholder: Story = {
   render: () => (
     <CodeMirror placeholder="Type some JavaScript..." language="javascript" />

@@ -9,11 +9,11 @@ import {
   ActionIcon,
   Box,
   Button,
-  Code,
   Group,
   NumberInput,
   Pill,
   Select,
+  Skeleton,
   Stack,
   Switch,
   Text,
@@ -22,19 +22,16 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
-import {
-  useSettingKey,
-  type ExplainRowWire,
-  type SettingDefWire,
+import type {
+  ExplainRowWire,
+  SettingDefWire,
 } from '@mattstack/settings-kit/react';
 import {
   addToList,
   getLeaf,
-  matchesShape,
-  SHAPES,
+  matchesSchema,
+  recognize,
   summarize,
-  targetScope,
-  type CompositeShape,
   type LeafType,
   type RowKind,
 } from '@mattstack/settings-kit/shapes';
@@ -45,23 +42,28 @@ import {
   numberWidth,
   SWITCH_SIZE,
 } from './controlStyles';
+import { DraftEditor } from './DraftEditor';
 import { ExpandToggle } from './ExpandToggle';
+import { editorKind, formOf, type FormShape } from './formShape';
+import { JsonBlock } from './JsonBlock';
 import { ScopeBadge } from './ScopeBadge';
 import { unitOf } from './units';
+import { useKeyExplain, useSettingsRepo } from './useConsoleSettings';
 import type { useRowSave } from './useRowSave';
-import { fieldSource, isStoreScope, leafWrite } from './view';
+import {
+  EDITOR_KINDS,
+  fieldSource,
+  leafWrite,
+  rungBase,
+  rungOf,
+  targetLabel,
+  type LayerScope,
+} from './view';
 
 type Row = ReturnType<typeof useRowSave>;
 const INLINE_MAX_ITEMS = 3;
 const INLINE_MAX_CHARS = 16;
 const LEAVES_FIRST = 5;
-
-const PREVIEW_STYLE = {
-  background: 'var(--tk-inset)',
-  fontSize: 12,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-} as const;
 
 function blurOnEnter(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key === 'Enter') e.currentTarget.blur();
@@ -109,7 +111,15 @@ function strings(v: unknown): string[] {
     : [];
 }
 
-function StringListBody({ def, row }: { def: SettingDefWire; row: Row }) {
+function StringListBody({
+  def,
+  row,
+  onEditJson,
+}: {
+  def: SettingDefWire;
+  row: Row;
+  onEditJson: () => void;
+}) {
   const list = strings(def.effective.value);
   const saving = row.status === 'saving';
   const [draft, setDraft] = useState('');
@@ -150,6 +160,11 @@ function StringListBody({ def, row }: { def: SettingDefWire; row: Row }) {
           }}
         />
       </Box>
+      <Group py={6}>
+        <Button size="compact-xs" variant="subtle" onClick={onEditJson}>
+          Edit as JSON
+        </Button>
+      </Group>
     </Body>
   );
 }
@@ -287,10 +302,12 @@ function StringMapBody({
   def,
   row,
   labels,
+  onEditJson,
 }: {
   def: SettingDefWire;
   row: Row;
   labels: readonly [string, string];
+  onEditJson: () => void;
 }) {
   const map = (def.effective.value ?? {}) as Record<string, string>;
   const saving = row.status === 'saving';
@@ -370,6 +387,11 @@ function StringMapBody({
         >
           <Icons.plus size={14} />
         </UnstyledButton>
+      </Group>
+      <Group py={6}>
+        <Button size="compact-xs" variant="subtle" onClick={onEditJson}>
+          Edit as JSON
+        </Button>
       </Group>
     </Body>
   );
@@ -474,6 +496,7 @@ function LeavesBody({
   def,
   row,
   shape,
+  onEditJson,
 }: {
   def: SettingDefWire;
   row: Row;
@@ -481,14 +504,16 @@ function LeavesBody({
     fields: Record<string, LeafType>;
     fallbacks?: Record<string, string>;
   };
+  onEditJson: () => void;
 }) {
   const { text } = useSchemeColors();
-  const explained = useSettingKey(def.key);
+  const repo = useSettingsRepo();
+  const explained = useKeyExplain(def.key, repo);
   const [all, setAll] = useState(false);
   const [resets, setResets] = useState(0);
   const paths = Object.keys(shape.fields);
   const shown = all ? paths : paths.slice(0, LEAVES_FIRST);
-  const target = targetScope(def);
+  const target = rungOf(row.target.scope, row.target.repo ?? null);
 
   // leafWrite rebuilds the target layer's own object from these rows, so they
   // must postdate the def's current scope and value and our last write, or a
@@ -530,8 +555,8 @@ function LeavesBody({
               </Text>
             }
             source={
-              isStoreScope(source) ? (
-                <ScopeBadge scope={source} />
+              rungBase(source) !== null ? (
+                <ScopeBadge scope={source as LayerScope} />
               ) : source ? (
                 <Text fz={12} c={text.muted}>
                   {source}
@@ -583,6 +608,11 @@ function LeavesBody({
           {explained.error}
         </Text>
       )}
+      <Group py={6}>
+        <Button size="compact-xs" variant="subtle" onClick={onEditJson}>
+          Edit as JSON
+        </Button>
+      </Group>
     </Body>
   );
 }
@@ -597,9 +627,7 @@ function ReadonlyBody({ def }: { def: SettingDefWire }) {
           •••
         </Text>
       ) : (
-        <Code block style={PREVIEW_STYLE}>
-          {JSON.stringify(value, null, 2)}
-        </Code>
+        <JsonBlock value={value} />
       )}
       {def.effective.file && (
         <Text fz={12} ff="monospace" c={text.muted} pt={8}>
@@ -624,13 +652,13 @@ function ShapeLock({
       <Text fz={12} fw={500} c="var(--tk-text-bad-small)">
         unexpected shape
       </Text>
-      {(loading || isStoreScope(at)) && (
+      {(loading || rungBase(at) !== null) && (
         <Button
           size="compact-xs"
           variant="default"
           disabled={loading}
           onClick={() => {
-            if (isStoreScope(at)) void row.clear(at);
+            if (rungBase(at) !== null) void row.clear(at!);
           }}
         >
           Clear
@@ -640,26 +668,18 @@ function ShapeLock({
   );
 }
 
-/** A deep key's merged value can fail its shape because of any layer, so
+/** A deep key's merged value can fail its schema because of any layer, so
     Clear targets the strongest layer whose own value fails, not the winner. */
-function DeepShapeLock({
-  def,
-  row,
-  shape,
-}: {
-  def: SettingDefWire;
-  row: Row;
-  shape: CompositeShape;
-}) {
-  const { rows, loading } = useSettingKey(def.key);
+function DeepShapeLock({ def, row }: { def: SettingDefWire; row: Row }) {
+  const { rows, loading } = useKeyExplain(def.key, useSettingsRepo());
   const bad = [...rows]
     .reverse()
     .find(
       r =>
         r.present &&
-        isStoreScope(r.scope) &&
+        rungBase(r.scope) !== null &&
         r.value !== undefined &&
-        !matchesShape(shape, r.value)
+        !matchesSchema(def, r.value)
     );
   return (
     <ShapeLock
@@ -679,6 +699,90 @@ function UnsetSummary() {
   );
 }
 
+/** A form map counts its entries from the row's own authored layer where a
+    deep-merge key provides one (the summary names what this layer sets, not
+    the merged view), `effective.value` otherwise; settings-kit's own
+    `summarize` for every row that isn't a form map, a widened `json` key
+    included. */
+export function rowSummary(def: SettingDefWire): string {
+  if (editorKind(def) !== 'objectMap') return summarize(def);
+  const v = def.effective.authored ?? def.effective.value;
+  const n =
+    typeof v === 'object' && v !== null && !Array.isArray(v)
+      ? Object.keys(v).length
+      : 0;
+  return `${n} ${n === 1 ? 'entry' : 'entries'}`;
+}
+
+/** A form or JSON draft over the target layer's own value. A deep key's
+    draft starts from that layer's authored value, never the merged view, so
+    defaults and other layers are never copied into it; a replace key starts
+    from the value in effect, as the list editors do. */
+function DraftBody({
+  def,
+  row,
+  form,
+  startIn,
+  onDone,
+}: {
+  def: SettingDefWire;
+  row: Row;
+  form: FormShape | null;
+  startIn?: 'form' | 'json';
+  onDone?: () => void;
+}) {
+  const repo = useSettingsRepo();
+  const explained = useKeyExplain(def.key, repo);
+  const [resets, setResets] = useState(0);
+  const at = rungOf(row.target.scope, row.target.repo ?? null);
+  const deep = def.merge === 'deep';
+  if (deep && explained.rows.length === 0)
+    return (
+      <Body>
+        {explained.error ? (
+          <Text fz={12} ff="monospace" c="var(--tk-text-bad-small)">
+            {explained.error}
+          </Text>
+        ) : (
+          <Skeleton h={48} />
+        )}
+      </Body>
+    );
+  const initial = deep
+    ? explained.rows.find(r => r.scope === at && r.present)?.value
+    : def.effective.value;
+  return (
+    <Body>
+      <DraftEditor
+        key={`${resets}:${JSON.stringify(initial) ?? ''}`}
+        def={def}
+        form={form}
+        initial={initial}
+        startIn={startIn}
+        targetLabel={targetLabel(row.target)}
+        saving={row.status === 'saving'}
+        onCancel={() => {
+          setResets(n => n + 1);
+          onDone?.();
+        }}
+        onSave={async value => {
+          const empty =
+            deep &&
+            typeof value === 'object' &&
+            value !== null &&
+            Object.keys(value).length === 0;
+          const ok = await (empty ? row.clear(at) : row.save(value));
+          if (ok) {
+            explained.refresh();
+            onDone?.();
+          }
+          return ok;
+        }}
+      />
+    </Body>
+  );
+}
+
 /** Composite rows: the control column holds an inline editor or a summary
     toggle, and the body expands under the row. */
 export function compositeParts(
@@ -686,9 +790,12 @@ export function compositeParts(
   kind: RowKind,
   row: Row,
   open: boolean,
-  onToggle: () => void
+  onToggle: () => void,
+  asJson: boolean,
+  onDoneJson: () => void,
+  onEditJson: () => void
 ): { control: ReactNode; body: ReactNode } {
-  const shape = SHAPES[def.key];
+  const shape = recognize(def.schema);
   const value = def.effective.value;
   const toggle = (
     <ExpandToggle label={summarize(def)} open={open} onToggle={onToggle} />
@@ -698,21 +805,59 @@ export function compositeParts(
       ? { control: <UnsetSummary />, body: null }
       : { control: toggle, body: open ? <ReadonlyBody def={def} /> : null };
 
-  // Secret and unwritable keys can still carry a SHAPES entry; they must
-  // reach neither an editor nor the Clear escape hatch.
-  if (kind === 'readonly' || !shape) return readonly;
+  const toggleOf = (o: boolean) => (
+    <ExpandToggle
+      label={value === undefined ? 'unset' : rowSummary(def)}
+      open={o}
+      onToggle={onToggle}
+    />
+  );
+  const invalidLock = () => <ShapeLock at={def.effective.scope} row={row} />;
+  const edit = editorKind(def);
+  const form = formOf(def);
+  // An invalid winning layer's effective.value is undefined; an editor
+  // seeded from that would discard the layer's real, unseen stored value on
+  // save. The guard runs before asJson (the row menu's forced JSON entry)
+  // and the ordinary json/objectList/objectMap bodies alike.
+  if ((asJson && EDITOR_KINDS.has(edit)) || edit === 'json') {
+    if (def.effective.invalid !== undefined)
+      return { control: invalidLock(), body: null };
+    return {
+      control: toggleOf(open),
+      body: open ? (
+        <DraftBody
+          def={def}
+          row={row}
+          form={form}
+          startIn="json"
+          onDone={onDoneJson}
+        />
+      ) : null,
+    };
+  }
+
+  if ((edit === 'objectList' || edit === 'objectMap') && form) {
+    if (def.effective.invalid !== undefined)
+      return { control: invalidLock(), body: null };
+    return {
+      control: toggleOf(open),
+      body: open ? <DraftBody def={def} row={row} form={form} /> : null,
+    };
+  }
+
+  if (kind !== 'stringList' && kind !== 'stringMap' && kind !== 'leaves')
+    return readonly;
 
   // An invalid winning layer arrives with no value; an editor seeded from
   // nothing would discard whatever that layer stores on its first edit.
   if (
-    shape.kind !== 'external' &&
-    (def.effective.invalid !== undefined ||
-      (value !== undefined && !matchesShape(shape, value)))
+    def.effective.invalid !== undefined ||
+    (value !== undefined && !matchesSchema(def, value))
   ) {
     return {
       control:
         def.merge === 'deep' && def.effective.invalid === undefined ? (
-          <DeepShapeLock def={def} row={row} shape={shape} />
+          <DeepShapeLock def={def} row={row} />
         ) : (
           <ShapeLock at={def.effective.scope} row={row} />
         ),
@@ -732,20 +877,34 @@ export function compositeParts(
       };
     return {
       control: toggle,
-      body: open ? <StringListBody def={def} row={row} /> : null,
+      body: open ? (
+        <StringListBody def={def} row={row} onEditJson={onEditJson} />
+      ) : null,
     };
   }
-  if (kind === 'stringMap' && shape.kind === 'stringMap')
+  if (shape.kind === 'stringMap')
     return {
       control: toggle,
       body: open ? (
-        <StringMapBody def={def} row={row} labels={shape.labels} />
+        <StringMapBody
+          def={def}
+          row={row}
+          labels={shape.labels}
+          onEditJson={onEditJson}
+        />
       ) : null,
     };
-  if (kind === 'leaves' && shape.kind === 'leaves')
+  if (shape.kind === 'leaves')
     return {
       control: toggle,
-      body: open ? <LeavesBody def={def} row={row} shape={shape} /> : null,
+      body: open ? (
+        <LeavesBody
+          def={def}
+          row={row}
+          shape={{ fields: shape.fields, fallbacks: shape.placeholders }}
+          onEditJson={onEditJson}
+        />
+      ) : null,
     };
   return readonly;
 }

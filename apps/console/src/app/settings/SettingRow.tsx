@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActionIcon,
   Box,
+  Button,
   Collapse,
   Group,
   Highlight,
@@ -20,13 +21,20 @@ import {
 } from '@mattstack/settings-kit/shapes';
 
 import { compositeParts } from './CompositeControls';
+import { IssueLines } from './IssueLines';
+import type { WireIssue } from './issues';
+import { RepoReach } from './RepoReach';
 import { RowMenu } from './RowMenu';
 import { ScalarControl } from './ScalarControl';
 import { ScopeBadge } from './ScopeBadge';
 import { useRowSave, type RowStore } from './useRowSave';
 import {
+  APPROVAL_KEY,
   badgeScope,
   firstSentence,
+  isEditable,
+  rungBase,
+  rungOf,
   sourceText,
   splitKey,
   type StoreScope,
@@ -60,6 +68,7 @@ export function SettingRow({
   query,
   suggestions,
   onExplain,
+  onFix,
   fullDescription = false,
 }: {
   def: SettingDefWire;
@@ -68,22 +77,53 @@ export function SettingRow({
   query: string;
   suggestions?: string[];
   onExplain?: (key: string) => void;
+  onFix?: (key: string, issue: WireIssue | null) => void;
   fullDescription?: boolean;
 }) {
   const { text } = useSchemeColors();
   const row = useRowSave(store, def);
   const [open, setOpen] = useState(false);
+  const [asJson, setAsJson] = useState(false);
+  // A collapsed row starts fresh: a JSON draft forced open from the row
+  // menu must not resurface JSON mode on the next ordinary expand.
+  useEffect(() => {
+    if (!open) setAsJson(false);
+  }, [open]);
   const kind = rowKind(def);
   const [ns, name] = splitKey(def.key);
   const badge = badgeScope(def, subhead);
   const plain = sourceText(def);
+  const isComposite = def.type === 'object' || def.type === 'array';
 
   let control: ReactNode;
   let body: ReactNode = null;
-  if (kind === 'scalar' || kind === 'enum') {
+  if (def.key === APPROVAL_KEY) {
+    const hash =
+      typeof def.effective.value === 'string' ? def.effective.value : null;
+    const at = rungBase(def.effective.scope) ? def.effective.scope : null;
+    control = (
+      <Group gap={8} wrap="nowrap">
+        {hash && (
+          <Text fz={12} ff="monospace" c={text.muted}>
+            {hash.slice(0, 12)}
+          </Text>
+        )}
+        {hash && at && def.writable && (
+          <Button
+            size="compact-xs"
+            variant="default"
+            onClick={() => void row.clear(at)}
+          >
+            Revoke
+          </Button>
+        )}
+      </Group>
+    );
+  } else if (kind === 'scalar' || kind === 'enum') {
     control = (
       <ScalarControl
         def={def}
+        writeScope={rungOf(row.target.scope, row.target.repo ?? null)}
         onSave={v => void row.save(v)}
         suggestions={suggestions}
       />
@@ -119,8 +159,15 @@ export function SettingRow({
         </Text>
       );
   } else {
-    const composite = compositeParts(def, kind, row, open, () =>
-      setOpen(o => !o)
+    const composite = compositeParts(
+      def,
+      kind,
+      row,
+      open,
+      () => setOpen(o => !o),
+      asJson,
+      () => setAsJson(false),
+      () => setAsJson(true)
     );
     control = composite.control;
     body = composite.body;
@@ -147,17 +194,33 @@ export function SettingRow({
                 {plain}
               </Text>
             ) : null}
+            <RepoReach def={def} />
           </Group>
-          <Marked
-            text={
-              fullDescription ? def.description : firstSentence(def.description)
-            }
-            query={query}
-            fz={12}
-            lh="15px"
-            c={text.muted}
-            lineClamp={fullDescription ? undefined : 1}
-          />
+          {def.key === APPROVAL_KEY ? (
+            <Text fz={12} lh="15px" c={text.muted} data-testid="approval-note">
+              {"approves the team's worktree "}
+              <Text span inherit ff="monospace">
+                ready
+              </Text>
+              {' commands by their hash; approve with '}
+              <Text span inherit ff="monospace">
+                rt worktree ready-approve
+              </Text>
+            </Text>
+          ) : (
+            <Marked
+              text={
+                fullDescription
+                  ? def.description
+                  : firstSentence(def.description)
+              }
+              query={query}
+              fz={12}
+              lh="15px"
+              c={text.muted}
+              lineClamp={fullDescription ? undefined : 1}
+            />
+          )}
         </Stack>
         <Group w={260} gap={8} wrap="nowrap" style={{ flex: 'none' }}>
           {control}
@@ -176,7 +239,21 @@ export function SettingRow({
           )}
         </Group>
         <Group gap={4} wrap="nowrap" style={{ flex: 'none' }}>
-          <RowMenu def={def} row={row} />
+          <RowMenu
+            def={def}
+            row={row}
+            onEditJson={
+              isComposite &&
+              isEditable(def) &&
+              def.writable &&
+              def.effective.invalid === undefined
+                ? () => {
+                    setAsJson(true);
+                    setOpen(true);
+                  }
+                : undefined
+            }
+          />
           {onExplain && (
             <ActionIcon
               variant="subtle"
@@ -190,20 +267,21 @@ export function SettingRow({
           )}
         </Group>
       </Group>
-      {(row.error || def.effective.invalid) && (
+      {(row.error || (def.effective.invalid && def.issues === undefined)) && (
         <Stack gap={4} pb={12}>
           {row.error && (
             <Text fz={12} ff="monospace" c="var(--tk-text-bad-small)">
               {row.error}
             </Text>
           )}
-          {def.effective.invalid && (
+          {def.effective.invalid && def.issues === undefined && (
             <Text fz={12} ff="monospace" c="var(--tk-text-bad-small)">
               stored value rejected: {def.effective.invalid}
             </Text>
           )}
         </Stack>
       )}
+      <IssueLines def={def} onFix={onFix && (issue => onFix(def.key, issue))} />
       {body && <Collapse expanded={open}>{body}</Collapse>}
     </Box>
   );

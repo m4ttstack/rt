@@ -1,10 +1,15 @@
 import { createRef } from 'react';
+import { highlightingFor } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { tags } from '@lezer/highlight';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+import {
+  renderWithProviders,
+  setPrefersColorScheme,
+} from '@mattstack/app-kit/test-utils';
 import { CodeMirror } from './CodeMirror';
 import type { CodeMirrorRef } from './CodeMirror.Base';
 
@@ -237,4 +242,235 @@ test('an Extension `theme` prop replaces the auto scheme theme entirely', async 
 
   expect(ownRules).toContain('ui-custom-marker-font');
   expect(ownRules).not.toContain('var(--ui-bg-4)');
+});
+
+test('jsonCheck underlines schema issues, and a changed checker re-lints', async () => {
+  const { forEachDiagnostic, forceLinting } = await import('@codemirror/lint');
+  const ref = createRef<CodeMirrorRef>();
+  const check = (value: unknown) =>
+    Array.isArray(value) && typeof value[0] === 'number'
+      ? [{ path: [0], message: 'expected string, got number' }]
+      : [];
+  const { rerender } = renderWithProviders(
+    <CodeMirror
+      ref={ref}
+      value="[1]"
+      language="json"
+      jsonSchema={{ type: 'array', items: { type: 'string' } }}
+      jsonCheck={check}
+    />
+  );
+  await waitFor(() => expect(ref.current?.view).toBeTruthy());
+  const view = ref.current!.view!;
+  forceLinting(view);
+  await waitFor(() => {
+    const found: string[] = [];
+    forEachDiagnostic(view.state, d => found.push(d.message));
+    expect(found).toEqual(['expected string, got number']);
+  });
+
+  const otherCheck = () => [{ path: [0], message: 'a different issue' }];
+  rerender(
+    <CodeMirror
+      ref={ref}
+      value="[1]"
+      language="json"
+      jsonSchema={{ type: 'array', items: { type: 'string' } }}
+      jsonCheck={otherCheck}
+    />
+  );
+  // The linter only re-runs on a real document change (or its own idle
+  // delay) -- a rerender alone doesn't touch CodeMirror's EditorState, so
+  // this edit is what proves the new checker (read through a ref, not
+  // rebuilt into the extension) takes effect on the next lint.
+  view.dispatch({ changes: { from: 1, to: 2, insert: '2' } });
+  forceLinting(view);
+  await waitFor(() => {
+    const found: string[] = [];
+    forEachDiagnostic(view.state, d => found.push(d.message));
+    expect(found).toEqual(['a different issue']);
+  });
+});
+
+test('JSON property names, strings, numbers and booleans read through kit role tokens, not the red-string CodeMirror default', async () => {
+  const ref = createRef<CodeMirrorRef>();
+  renderWithProviders(
+    <CodeMirror
+      ref={ref}
+      value={'{"name": "value", "count": 1, "flag": true}'}
+      language="json"
+    />
+  );
+  await waitFor(() => expect(ref.current?.view).toBeTruthy());
+  const view = ref.current!.view!;
+
+  const propertyClass = highlightingFor(view.state, [tags.propertyName]);
+  const stringClass = highlightingFor(view.state, [tags.string]);
+  expect(propertyClass).toBeTruthy();
+  expect(stringClass).toBeTruthy();
+
+  // Proves the classes aren't merely defined but actually painted onto the
+  // rendered tokens.
+  expect(
+    view.dom.querySelector(`.${propertyClass!.split(' ')[0]}`)
+  ).toBeTruthy();
+  expect(view.dom.querySelector(`.${stringClass!.split(' ')[0]}`)).toBeTruthy();
+
+  const styleText = Array.from(document.querySelectorAll('style'))
+    .map(tag => tag.textContent ?? '')
+    .join('\n');
+  expect(styleText).toContain('var(--tk-text-accent)');
+  expect(styleText).toContain('var(--tk-text-cyan)');
+  expect(styleText).toContain('var(--tk-text-gold)');
+  expect(styleText).toContain('var(--tk-text-purple)');
+});
+
+// Finds the CSS rule for the first class in a (possibly multi-class)
+// highlighter class string, from every <style> tag CodeMirror has injected
+// -- `highlightingFor` alone isn't proof of THIS style: CodeMirror's
+// fallback `defaultHighlightStyle` (installed by `basicSetup` with
+// `{fallback: true}`) answers the same query when no non-fallback
+// highlighter is configured, so the class alone doesn't distinguish "the
+// kit's role-token style is wired in" from "only the CodeMirror default is".
+function ruleFor(cls: string): string {
+  const className = cls.split(' ')[0]!;
+  const styleText = Array.from(document.querySelectorAll('style'))
+    .map(tag => tag.textContent ?? '')
+    .join('\n');
+  return (
+    styleText.match(new RegExp(`\\.${className}\\s*\\{[^}]*\\}`))?.[0] ?? ''
+  );
+}
+
+test('the kit highlight style (not the CodeMirror default) is installed for both the light and dark theme compartment configuration', async () => {
+  const lightRef = createRef<CodeMirrorRef>();
+  const { unmount } = renderWithProviders(
+    <CodeMirror ref={lightRef} value="[1]" language="json" />
+  );
+  await waitFor(() => expect(lightRef.current?.view).toBeTruthy());
+  const lightView = lightRef.current!.view!;
+  const lightClass = highlightingFor(lightView.state, [tags.string]);
+  expect(lightClass).toBeTruthy();
+  expect(ruleFor(lightClass!)).toContain('var(--tk-text-cyan)');
+  expect(lightView.state.facet(EditorView.darkTheme)).toBe(false);
+  unmount();
+
+  setPrefersColorScheme('dark');
+  try {
+    const darkRef = createRef<CodeMirrorRef>();
+    renderWithProviders(
+      <CodeMirror ref={darkRef} value="[1]" language="json" />
+    );
+    await waitFor(() => expect(darkRef.current?.view).toBeTruthy());
+    const darkView = darkRef.current!.view!;
+    const darkClass = highlightingFor(darkView.state, [tags.string]);
+    expect(darkClass).toBeTruthy();
+    // Same static role-token style, but reinstalled alongside the dark chrome
+    // -- proves the highlight extension lives in the reconfigured theme
+    // compartment rather than a fixed top-level extension.
+    expect(ruleFor(darkClass!)).toContain('var(--tk-text-cyan)');
+    expect(darkView.state.facet(EditorView.darkTheme)).toBe(true);
+  } finally {
+    // The simulated dark preference must not outlive this test; later tests
+    // in this file assume the light default.
+    setPrefersColorScheme('light');
+  }
+});
+
+test('the lint underline and gutter marker use the bad/warn role tokens instead of a raw-hex data URI', async () => {
+  renderWithProviders(<CodeMirror value="x" />);
+
+  await waitFor(() => {
+    expect(screen.getByTestId('codemirror-editor').textContent).toContain('x');
+  });
+
+  const styleText = Array.from(document.querySelectorAll('style'))
+    .map(tag => tag.textContent ?? '')
+    .join('\n');
+  expect(styleText).toContain('var(--tk-text-bad-vivid)');
+  expect(styleText).toContain('var(--tk-text-warn-vivid)');
+});
+
+test('the active line and selection washes are a subtle token tint, not a heavy fixed color', async () => {
+  renderWithProviders(<CodeMirror value="x" />);
+
+  await waitFor(() => {
+    expect(screen.getByTestId('codemirror-editor').textContent).toContain('x');
+  });
+
+  const styleText = Array.from(document.querySelectorAll('style'))
+    .map(tag => tag.textContent ?? '')
+    .join('\n');
+  expect(styleText).toContain(
+    'color-mix(in srgb, var(--mantine-color-text) var(--tk-wash), transparent)'
+  );
+  expect(styleText).toContain(
+    'color-mix(in srgb, var(--tk-fill-accent) var(--tk-wash), transparent)'
+  );
+});
+
+test('the kit highlight style also colors javascript, the other language the kit offers', async () => {
+  const ref = createRef<CodeMirrorRef>();
+  renderWithProviders(
+    <CodeMirror
+      ref={ref}
+      value={'// a comment\nconst x = 1;'}
+      language="javascript"
+    />
+  );
+  await waitFor(() => expect(ref.current?.view).toBeTruthy());
+  const view = ref.current!.view!;
+
+  const keywordClass = highlightingFor(view.state, [tags.keyword]);
+  expect(keywordClass).toBeTruthy();
+  expect(
+    view.dom.querySelector(`.${keywordClass!.split(' ')[0]}`)
+  ).toBeTruthy();
+  expect(ruleFor(keywordClass!)).toContain('var(--tk-text-purple)');
+});
+
+test('a zero-width diagnostic renders a lint point styled from the bad-hue role token, not a raw colour', async () => {
+  const { forceLinting } = await import('@codemirror/lint');
+  const ref = createRef<CodeMirrorRef>();
+  // A value position that gets "]" instead of a value: the lezer JSON
+  // grammar's own error-recovery node lands here at zero width (see
+  // jsonSchema.test.ts's "anchors a parse error at the real break"), which
+  // @codemirror/lint renders as a `cm-lintPoint`, not a `cm-lintRange` mark.
+  renderWithProviders(
+    <CodeMirror
+      ref={ref}
+      value={'{"a": ]'}
+      language="json"
+      jsonCheck={() => []}
+    />
+  );
+  await waitFor(() => expect(ref.current?.view).toBeTruthy());
+  const view = ref.current!.view!;
+  forceLinting(view);
+  await waitFor(() => {
+    expect(view.dom.querySelector('.cm-lintPoint-error')).toBeTruthy();
+  });
+
+  const styleText = Array.from(document.querySelectorAll('style'))
+    .map(tag => tag.textContent ?? '')
+    .join('\n');
+  expect(styleText).toMatch(
+    /\.cm-lintPoint-error:after\s*\{[^}]*var\(--tk-text-bad-vivid\)/
+  );
+  expect(styleText).toMatch(
+    /\.cm-lintPoint-warning:after\s*\{[^}]*var\(--tk-text-warn-vivid\)/
+  );
+});
+
+test('without jsonCheck there is no linting at all', async () => {
+  const { diagnosticCount, forceLinting } = await import('@codemirror/lint');
+  const ref = createRef<CodeMirrorRef>();
+  renderWithProviders(<CodeMirror ref={ref} value="[1" language="json" />);
+  await waitFor(() => expect(ref.current?.view).toBeTruthy());
+  const view = ref.current!.view!;
+  // Waits past the linter's 250ms delay before asserting -- otherwise this
+  // would pass vacuously (the count is 0 before the linter has ever run).
+  forceLinting(view);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  expect(diagnosticCount(view.state)).toBe(0);
 });

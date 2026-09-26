@@ -5,8 +5,8 @@ import type {
 import {
   getLeaf,
   matchesShape as matchesKitShape,
+  recognize,
   setLeaf,
-  SHAPES,
   type CompositeShape as KitShape,
 } from '@mattstack/settings-kit/shapes';
 
@@ -65,24 +65,28 @@ const BOARD_EDITORS: Record<string, CompositeShape> = {
   'board.hiddenMembers': { kind: 'roster' },
 };
 
-/** The board's composite keys: settings-kit's declarations, with the three
-    keys whose editors live here mapped back to their board kinds. rt
-    validates only the top-level type, so these shapes are what keep a
-    written value readable by `parseConfig`. */
-export const COMPOSITE_SHAPES: Record<string, CompositeShape> =
-  Object.fromEntries(
-    Object.entries(SHAPES)
-      .filter(([key]) => key.startsWith('board.'))
-      .map(([key, shape]) => [
-        key,
-        BOARD_EDITORS[key] ?? (shape as CompositeShape),
-      ])
-  );
+/** A board composite row's editor: board's own for the keys settings-kit
+    marks `external`, else the widget matching the kind settings-kit
+    recognizes from the def's schema. Board has widgets for string lists and
+    leaves only; any other kind has no editor here. */
+export function shapeOf(
+  def: Pick<ConfigDef, 'key' | 'schema'>
+): CompositeShape | undefined {
+  const own = BOARD_EDITORS[def.key];
+  if (own) return own;
+  const r = recognize(def.schema);
+  if (r.kind === 'stringList') return { kind: 'stringList' };
+  // A bare `{ type: 'object' }` recognizes as leaves with no fields: there is
+  // nothing to draw.
+  if (r.kind === 'leaves' && Object.keys(r.fields).length > 0)
+    return { kind: 'leaves', fields: r.fields, fallbacks: r.placeholders };
+  return undefined;
+}
 
 export type RowKind = 'scalar' | CompositeShape['kind'] | 'readonly';
 
 export function rowKind(def: ConfigDef): RowKind {
-  const shape = COMPOSITE_SHAPES[def.key];
+  const shape = shapeOf(def);
   if (shape?.kind === 'roster') return 'roster';
   if (shape?.kind === 'tabs') return 'tabs';
   if (def.secret || !def.writable) return 'readonly';
