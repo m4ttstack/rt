@@ -267,6 +267,9 @@ the same Bash permission rules):
 
 Like every `BASE_PERMISSIONS` rule, these reach a machine when Install
 runs.
+
+Left to the classifier on purpose:
+
 - Project tooling (`pnpm` checks, the pack's scripts), `git commit`,
   `git add`.
 - GitHub (`gh`) flows (RT-321).
@@ -316,8 +319,10 @@ runs.
   outside the kept list, and no `export` or `unset RT_RUN_DB`.
 - **Auto-mode run.** One real `work` run and one shepherdr herd on the
   harness repo, including an EnterWorktree and ExitWorktree. Pass means
-  every rt, forge and git-write call went through a tool, and the
-  relocation dialog never waited on the person.
+  every rt, forge and git-write call went through a tool, the relocation
+  dialog never waited on the person, and the `Monitor`-wrapped
+  `rt chat tail` skipped the classifier under its allow rule (the spec
+  assumes `Monitor` is judged by the Bash rules; this run is the check).
 
 ## Not in this spec
 
