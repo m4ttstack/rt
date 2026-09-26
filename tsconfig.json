@@ -41,6 +41,10 @@
     "packages/tokens",
     "packages/tokyo",
     "packages/tui-kit",
-    "packages/ui"
+    "packages/ui",
+    "storybook-static",
+    "rt-tray/deps",
+    "rt-tray/*.app",
+    "eslint.config.mjs"
   ]
 }
