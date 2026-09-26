@@ -274,6 +274,41 @@ Left to the classifier on purpose:
   `git add`.
 - GitHub (`gh`) flows (RT-321).
 
+## Pack authoring
+
+A team writing its own skills or fills has no way today to learn the tools
+exist: the roster lives only in `lib/mcp/tools.ts` and one hand-written
+row on the rt.cool MCP page. Three layers fix that.
+
+1. **A generated list.** A hidden verb `rt mcp tools --json` prints every
+   tool's name, description and input schema straight from `mcpTools()`.
+   Two things read it, so neither can drift from the code:
+   - the rt.cool MCP reference page, generated;
+   - a `mcp-tools` reference in mattstack-skills.
+   `creating-a-pack` and `extending-a-pack` point authors at that
+   reference: before writing a shell command, check whether a tool covers
+   it.
+2. **A lint in `rt skills check`.** `check` already runs on every compile
+   and sync, so it reaches team packs with no CI of ours. It flags skill
+   and fill text that shells out for something a tool covers, and names
+   the tool. The rules are the replacement table (`rt runs ...`,
+   `glab ...`, `git push`, `git rebase`, `rt herd ...`, `rt worktree
+   provision|dispose`, `rt sync`, `export RT_RUN_DB`, a `VAR=$(...)`
+   around an rt or glab call). They live in rt beside the roster, and
+   the kept-on-Bash list is allowlisted. A hit is an error in the check
+   output. It fails `check`'s exit only under a `--strict` flag, which
+   mattstack-skills' own CI and `rt skills sync` use; a team pack sees
+   the finding first and adopts `--strict` when it is ready.
+3. **An on-demand LLM audit.** `rt skills audit --pack <pack>` runs a
+   headless Claude with the tool list over the pack's skills and fills.
+   It reports what patterns cannot catch: an instruction in plain words
+   ("push the branch") that an agent will turn into a shell command,
+   values carried between code blocks through shell variables, and
+   wrapped commands. It is advisory, never a CI gate: slow, costs tokens,
+   answers can differ between runs, and needs a Claude login.
+   `writing-skills`' GREEN check gains the same question: did the fresh
+   agent call a shell command a tool covers?
+
 ## Order and releases
 
 1. **rt**, in reviewable PRs, each merged, deployed to the dev daemon and
@@ -287,14 +322,22 @@ Left to the classifier on purpose:
    mattstack`.
 3. **claimview pack**: fills, recompile, `rt skills sync --pack
    claimview`. The pack is employer-visible: no mattstack ticket ids in it.
-4. **Cleanup**: in `BASE_PERMISSIONS`, drop `Bash(rt runs *)`,
+4. **Pack authoring**:
+   - rt: `rt mcp tools --json`, the `rt skills check` lint and `--strict`,
+     and `rt skills audit`;
+   - mattstack-skills: the `mcp-tools` reference, the `creating-a-pack` and
+     `extending-a-pack` pointers, the GREEN-check question, and `--strict`
+     in its CI.
+   The lint lands after the rewrites, so it passes on the rewritten
+   skills from its first run.
+5. **Cleanup**: in `BASE_PERMISSIONS`, drop `Bash(rt runs *)`,
    `Bash(rt skills sync *)` and the three `glab` rules, keep
    `Bash(rt gate *)`, and add `Bash(rt chat tail *)` and
    `Bash(rt events wait *)`. Also update AGENTS.md ("Gates and the `rt_verb` MCP
    tool", the relocation parser section) and the rt.cool MCP docs page. The
    classifier refuses edits to `BASE_PERMISSIONS`, so Matt applies those
    lines.
-5. **Release**: teammates get it all in the next mattstack.app release.
+6. **Release**: teammates get it all in the next mattstack.app release.
    Skills and the pack must not reach a teammate before the rt that serves
    their tools; the release carries both.
 
@@ -314,6 +357,10 @@ Left to the classifier on purpose:
   fixtures for attended panes.
 - **Smoke.** Every new tool is called once for real against the glance
   harness project.
+- **Lint.** The lint is tested per rule: a hit for each pattern, and no
+  hit on the kept-on-Bash list or on prose that names a tool. `rt skills
+  check --strict` passes on the rewritten mattstack-skills and claimview
+  pack. `rt mcp tools --json` matches `mcpTools()`, pinned by a test.
 - **Audit re-run.** The three audit agents run again over the rewritten
   skills and pack. Pass means no rt, glab or git-write Bash call remains
   outside the kept list, and no `export` or `unset RT_RUN_DB`.
