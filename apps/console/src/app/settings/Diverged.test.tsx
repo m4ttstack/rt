@@ -221,6 +221,59 @@ describe('a diverged older name', () => {
     );
   });
 
+  it('a diverged scalar key offers Use the older value on its layer, which writes the older value', async () => {
+    const level: SettingDefWire = {
+      key: 'rt.logLevel',
+      type: 'string',
+      scopes: ['user'],
+      merge: 'replace',
+      secret: false,
+      teamLocked: false,
+      repoScoped: false,
+      writable: true,
+      description: 'Log level.',
+      hasDefault: true,
+      defaultValue: 'info',
+      effective: { scope: 'user', file: USER_FILE, value: 'debug' },
+      storeVersion: 2,
+      issues: [
+        {
+          scope: 'user',
+          file: USER_FILE,
+          kind: 'diverged',
+          path: [],
+          message: 'rt.logLevel changed after rt.logLevel@2 was written',
+          storeName: 'rt.logLevel',
+          olderValue: 'warn',
+          currentValue: 'debug',
+        },
+      ],
+    };
+    stubExplain(level, [
+      { scope: 'default', file: null, present: true, value: 'info' },
+      { scope: 'user', file: USER_FILE, present: true, value: 'debug' },
+    ]);
+    const s = store();
+    renderWithProviders(
+      <QueryClientProvider client={new QueryClient()}>
+        <ExplainModal
+          settingKey="rt.logLevel"
+          store={{ defs: [level], loading: false, error: null, ...s }}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const use = within(layer).getByRole('button', {
+      name: 'Use the older value',
+    });
+    expect(layer).toHaveTextContent('"warn"');
+    await userEvent.click(use);
+    await waitFor(() =>
+      expect(s.set).toHaveBeenCalledWith('rt.logLevel', 'user', 'warn')
+    );
+  });
+
   it('Use the older value switches to JSON when the older value does not fit the form', async () => {
     const BAD_OLDER = { dev: 3100 };
     const ROLES_BAD: SettingDefWire = {

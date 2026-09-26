@@ -314,6 +314,28 @@ function LayerLine({
             {`not allowed at this layer (allowed: ${def.scopes.join(', ')})`}
           </Text>
         )}
+        {replaceWith && !composite && writable && store && (
+          <Group gap={8} wrap="nowrap" py={2}>
+            <Text fz={12} c={text.muted}>
+              older value{' '}
+              <Text span inherit ff="monospace">
+                {JSON.stringify(replaceWith.value)}
+              </Text>
+            </Text>
+            <Button
+              size="compact-xs"
+              variant="default"
+              disabled={busy}
+              onClick={() =>
+                void onSet(scope, replaceWith.value).then(
+                  ok => ok && setSaved(true)
+                )
+              }
+            >
+              {replaceWith.label}
+            </Button>
+          </Group>
+        )}
         {row.file === null ? (
           <Text fz={12} ff="monospace" c={text.dimmed}>
             registry default
