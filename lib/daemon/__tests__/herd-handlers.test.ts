@@ -780,6 +780,13 @@ describe("worker verbs", () => {
     expect(gateStore.list({ open: true }).gates).toEqual([]);
   });
 
+  test("the label cap stays off every other gate: gate:open keeps a long option label", async () => {
+    const { gate } = await withJob();
+    const long = "l".repeat(HERD_OPTION_LABEL_MAX * 3);
+    const res = await gate["gate:open"]({ subject: "run:rt/review-1", kind: "question", questions: [{ id: "q1", label: "Post these findings?", multi: false, options: [long, "b"] }] });
+    if (!res.ok) throw new Error(res.error);
+  });
+
   test("ask accepts a short label with a long value and description, and ignores the (Recommended) suffix", async () => {
     const { h, herd } = await withJob();
     const shaped = [{ id: "q1", label: "Which?", multi: false, options: [

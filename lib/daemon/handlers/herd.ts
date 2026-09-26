@@ -76,7 +76,7 @@ function overlongOptionLabel(questions: GateQuestion[]): string | undefined {
     for (const o of q.options ?? []) {
       const label = (typeof o === "string" ? o : (o.label || o.value)).replace(RECOMMENDED_TAIL, "");
       if (label.length > HERD_OPTION_LABEL_MAX) {
-        return `option label over ${HERD_OPTION_LABEL_MAX} characters in question "${q.id}": give each option a short label and put the detail in its description ({"value","label","description"})`;
+        return `option label "${label.slice(0, 20)}..." is ${label.length} characters (max ${HERD_OPTION_LABEL_MAX}) in question "${q.id}": give each option a short label and put the detail in its description ({"value","label","description"})`;
       }
     }
   }

@@ -691,7 +691,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "herd_ask",
-      description: "Open a gate asking the herd operator one or more questions, using this worker pane's herd, job, and session identity.",
+      description: "Open a gate asking the herd operator one or more questions, using this worker pane's herd, job, and session identity. Each option's label is at most 60 characters: give options as {value, label, description}, with the full wording in value.",
       inputSchema: {
         type: "object",
         properties: {
