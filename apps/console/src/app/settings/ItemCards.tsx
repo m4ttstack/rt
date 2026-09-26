@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActionIcon,
   Box,
@@ -17,6 +17,7 @@ import {
   footerSummary,
   issuesByCard,
   issuesUnder,
+  type CardKey,
   type FooterSummary,
 } from './issues';
 
@@ -156,6 +157,7 @@ export function ItemCards({
   footerEnd,
   issueTestId,
   onOrder,
+  onTouched,
 }: {
   shape: FormShape;
   value: Entry[];
@@ -167,6 +169,8 @@ export function ItemCards({
   /** The card ids in display order after each move, removal or add; a
       card's id is its index in the value it mounted with. */
   onOrder?: (ids: number[]) => void;
+  /** Each card's touched fields, by display index, after every render. */
+  onTouched?: (touched: ReadonlyMap<CardKey, ReadonlySet<string>>) => void;
 }) {
   const next = useRef(value.length);
   const [ids, setIds] = useState(() => value.map((_, i) => i));
@@ -208,10 +212,11 @@ export function ItemCards({
       return { ...t, [id]: set };
     });
   const first = shape.required[0];
-  const summary = footerSummary(
-    issues,
-    new Map(ids.map((id, i) => [i, touched[id] ?? NO_TOUCHED]))
+  const touchedByIndex = new Map<CardKey, ReadonlySet<string>>(
+    ids.map((id, i) => [i, touched[id] ?? NO_TOUCHED])
   );
+  const summary = footerSummary(issues, touchedByIndex);
+  useEffect(() => onTouched?.(touchedByIndex));
 
   return (
     <Stack gap={8}>

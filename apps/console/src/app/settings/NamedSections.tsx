@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Box,
   Button,
@@ -13,7 +13,12 @@ import type { SchemaIssue } from '@mattstack/settings-kit/shapes';
 import { INPUT_TYPE } from './controlStyles';
 import { FieldGrid } from './FieldGrid';
 import { newEntry, type FormShape } from './formShape';
-import { footerSummary, issuesByCard, issuesUnder } from './issues';
+import {
+  footerSummary,
+  issuesByCard,
+  issuesUnder,
+  type CardKey,
+} from './issues';
 import { CARD_STYLE, CardAction, CardsFooter } from './ItemCards';
 
 type Entry = Record<string, unknown>;
@@ -31,6 +36,7 @@ export function NamedSections({
   issues,
   footerEnd,
   issueTestId,
+  onTouched,
 }: {
   shape: FormShape;
   value: Record<string, Entry>;
@@ -39,6 +45,8 @@ export function NamedSections({
   issues: SchemaIssue[];
   footerEnd: ReactNode;
   issueTestId?: string;
+  /** Each entry's touched fields, by name, after every render. */
+  onTouched?: (touched: ReadonlyMap<CardKey, ReadonlySet<string>>) => void;
 }) {
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
@@ -84,10 +92,11 @@ export function NamedSections({
       return next;
     });
 
-  const summary = footerSummary(
-    issues,
-    new Map(Object.keys(value).map(k => [k, touched.get(k) ?? NO_TOUCHED]))
+  const touchedByName = new Map<CardKey, ReadonlySet<string>>(
+    Object.keys(value).map(k => [k, touched.get(k) ?? NO_TOUCHED])
   );
+  const summary = footerSummary(issues, touchedByName);
+  useEffect(() => onTouched?.(touchedByName));
 
   return (
     <Stack gap={8}>
