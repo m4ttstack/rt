@@ -61,7 +61,7 @@ function renderHuman(report: SyncReport): void {
   if (refusal) {
     console.log(`${refusal.status === "refused" ? "refused" : "failed"}: ${refusal.detail}`);
   } else if (report.restartNeeded) {
-    console.log("synced; restart running Claude sessions to pick up the new caches");
+    console.log("synced; run /reload-plugins in running Claude sessions to pick up the new caches");
   } else {
     console.log("already current");
   }
