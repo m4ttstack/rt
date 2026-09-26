@@ -3,15 +3,24 @@ import { releaseApp } from "../release.ts";
 import type { ReleaseAppOptions, ReleaseAppReport, ReleaseAppSeams } from "../../lib/release/release-app.ts";
 import type { SelectOption } from "../../lib/pick-wrappers.ts";
 
+const helperTool = (name: string, extra: Record<string, unknown>) => ({
+  name, version: "", license: "MIT", archive: "raw", extract: "",
+  bundlePath: `Contents/Helpers/${name}`, exec: [`Contents/Helpers/${name}`],
+  exposeByDefault: false, entitlements: "jit", status: "bundled", kind: "helper",
+  ...extra,
+});
+
+const servedTreeTool = (name: string, port: number) => helperTool(name, { source: "tree", serve: { port, args: [] } });
+
 const LOCK = JSON.stringify({
   schema: 1, arch: "arm64", tools: [
-    { name: "jq", version: "1.8.2", url: "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64" },
-    { name: "deck", version: "", source: "tree" },
-    { name: "board", version: "", source: "tree", serve: { port: 11006, args: [] } },
-    { name: "chat", version: "", source: "tree", serve: { port: 11002, args: [] } },
-    { name: "console", version: "", source: "tree", serve: { port: 11001, args: [] } },
-    { name: "boxscore", version: "", source: "tree", serve: { port: 11005, args: [] } },
-    { name: "gitq", version: "0.2.1", repo: "m4ttstack/gitq", url: "https://github.com/m4ttstack/gitq/releases/download/v0.2.1/gitq-darwin-arm64" },
+    helperTool("jq", { version: "1.8.2", url: "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64", sha256: "0".repeat(64), entitlements: "none" }),
+    helperTool("deck", { source: "tree" }),
+    servedTreeTool("board", 11006),
+    servedTreeTool("chat", 11002),
+    servedTreeTool("console", 11001),
+    servedTreeTool("boxscore", 11005),
+    helperTool("gitq", { version: "0.2.1", repo: "m4ttstack/gitq", url: "https://github.com/m4ttstack/gitq/releases/download/v0.2.1/gitq-darwin-arm64", sha256: "0".repeat(64), exposeByDefault: true }),
   ],
 });
 
@@ -23,6 +32,7 @@ function seams(): ReleaseAppSeams {
     now: () => 0,
     sleep: async () => {},
     isTTY: false,
+    workDir: () => "/work",
     readFile: (path) => (path === "/repo/rt-tray/deps.lock" ? LOCK : null),
     writeFile: () => {},
     confirm: async () => false,

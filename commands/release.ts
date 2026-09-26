@@ -21,8 +21,9 @@
  * update-machine runs the skill's step 12: bring this machine's prod app,
  * dev bundle, daemon, and served suite up to a released tag.
  *
- * `app` is the fast path for a single served-app fix: bump, bundle, merge the
- * pin, notes, tag and verify in one resumable run (lib/release/release-app.ts).
+ * `app` is the fast path for a single served-app fix: qualify the path fast
+ * path, write and commit the notes, tag and verify in one resumable run
+ * (lib/release/release-app.ts).
  */
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir, homedir } from "os";
@@ -40,7 +41,7 @@ import {
   type ReleaseAppReport,
   type ReleaseAppSeams,
 } from "../lib/release/release-app.ts";
-import type { DepsRow } from "../lib/release/preflight.ts";
+import { parseDepsLock } from "../lib/bundle-layout.ts";
 import type { SelectOption } from "../lib/pick-wrappers.ts";
 import { conformanceViolations } from "../scripts/lib/picker-conformance.ts";
 import { TREE } from "../lib/command-tree-def.ts";
@@ -210,6 +211,7 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
 
 async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams> {
   const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
+  let workDir: string | null = null;
   return {
     repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
     exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 60_000, ...opts }),
@@ -217,6 +219,7 @@ async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     isTTY: interactive(),
+    workDir: () => (workDir ??= mkdtempSync(join(tmpdir(), "rt-release-app-"))),
     readFile: (path) => {
       try {
         return readFileSync(path, "utf8");
@@ -248,14 +251,10 @@ async function pickReleaseApp(options: SelectOption[]): Promise<string | null> {
 function releaseAppOptions(seams: ReleaseAppSeams): SelectOption[] {
   const raw = seams.readFile(join(seams.repoRoot, "rt-tray", "deps.lock"));
   if (!raw) return [];
-  try {
-    const rows = (JSON.parse(raw) as { tools: DepsRow[] }).tools;
-    return rows
-      .filter((r) => ((r.source === "tree" && r.serve !== undefined) || r.name === "gitq") && keepsFastPath(r.name))
-      .map((r) => ({ value: r.name, label: r.name, ...(r.version ? { hint: r.version } : {}) }));
-  } catch {
-    return [];
-  }
+  const rows = parseDepsLock(raw).tools;
+  return rows
+    .filter((r) => ((r.source === "tree" && r.serve !== undefined) || r.name === "gitq") && keepsFastPath(r.name))
+    .map((r) => ({ value: r.name, label: r.name, ...(r.version ? { hint: r.version } : {}) }));
 }
 
 function releaseAppSummary(report: ReleaseAppReport): string {

@@ -2,10 +2,13 @@
  * rt release app <name>: a served-app patch release end to end: qualify
  * origin/main for the path fast path, write and commit the notes, tag, and
  * verify the publish. Every step first detects whether it already happened,
- * so a rerun resumes.
+ * so a rerun resumes: an unverified newest tag is re-checked instead of
+ * stacking a new one on top of it, an already-committed notes commit is
+ * reused, and an existing local or remote tag is confirmed rather than
+ * recreated.
  */
-import { createHash } from "crypto";
 import { join } from "path";
+import { createHash } from "crypto";
 import type { RunResult } from "../subprocess.ts";
 import { checkGate, compareVersions, keepsFastPath, movedServedApps } from "./preflight.ts";
 import { runVerify, type VerifySeams } from "./verify.ts";
@@ -93,6 +96,8 @@ export interface ReleaseAppOptions {
 export interface ReleaseAppSeams extends VerifySeams {
   /** True only when a human can answer the notes prompt (a real TTY, RT_BATCH unset). */
   isTTY: boolean;
+  /** A scratch directory, created on first use, for the gh api payload files. */
+  workDir(): string;
   readFile(path: string): string | null;
   writeFile(path: string, text: string): void;
   confirm(message: string): Promise<boolean>;
@@ -120,6 +125,16 @@ class StepFailure extends Error {
 
 const errMessage = (err: unknown): string => String((err as Error)?.message ?? err);
 
+/** Every escaping error becomes a StepFailure carrying this step's id and resume, so the --json envelope is never empty. */
+async function inStep<T>(id: StepId, resume: string | null, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof StepFailure) throw err;
+    throw new StepFailure(id, errMessage(err), resume);
+  }
+}
+
 async function run(seams: ReleaseAppSeams, argv: [string, ...string[]], opts: { cwd?: string; timeoutMs?: number } = {}): Promise<string> {
   const r: RunResult = await seams.exec(argv, { timeoutMs: 60_000, ...opts });
   if (r.exitCode !== 0) throw new Error(`${argv.slice(0, 4).join(" ")} failed: ${(r.stderr || r.stdout).trim()}`);
@@ -128,6 +143,8 @@ async function run(seams: ReleaseAppSeams, argv: [string, ...string[]], opts: { 
 
 const git = (seams: ReleaseAppSeams, args: string[], timeoutMs?: number): Promise<string> =>
   run(seams, ["git", ...args], { cwd: seams.repoRoot, ...(timeoutMs ? { timeoutMs } : {}) });
+
+const gh = (seams: ReleaseAppSeams, args: string[]): Promise<string> => run(seams, ["gh", ...args]);
 
 interface RemoteTag {
   name: string;
@@ -152,10 +169,36 @@ function newestReleaseTag(tags: RemoteTag[]): string {
   return newest.name;
 }
 
+/** The commit a tag names, never the tag object: annotated tags need the explicit ^{} form to peel to it. */
+async function peelTag(seams: ReleaseAppSeams, tag: string): Promise<string> {
+  const lines = (await git(seams, ["ls-remote", "--tags", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`]))
+    .split("\n").map((l) => l.trim()).filter(Boolean);
+  const peeled = lines.find((l) => l.endsWith("^{}")) ?? lines[0];
+  return peeled ? peeled.split(/\s+/)[0]! : "";
+}
+
 async function refreshMain(seams: ReleaseAppSeams): Promise<{ headSha: string }> {
   await git(seams, ["fetch", "--quiet", "--tags", "origin", "main"], 120_000);
   const headSha = (await git(seams, ["rev-parse", "origin/main"])).trim();
   return { headSha };
+}
+
+/**
+ * The newest tag already sitting at origin/main HEAD, or at its own notes
+ * commit with nothing but more notes committed after it, is a release that
+ * already happened: a rerun re-verifies exactly it and never stacks a new
+ * tag on top of one that has not verified yet.
+ */
+async function resolvePhase(seams: ReleaseAppSeams, headSha: string, newestTag: string): Promise<Phase> {
+  const peeled = await peelTag(seams, newestTag);
+  if (!peeled) return "notes";
+  if (peeled === headSha) return "released";
+  const subject = (await git(seams, ["log", "-1", "--format=%s", peeled])).trim();
+  if (subject !== `chore(release): notes for ${newestTag}`) return "notes";
+  const ancestor = await seams.exec(["git", "merge-base", "--is-ancestor", peeled, "origin/main"], { cwd: seams.repoRoot });
+  if (ancestor.exitCode !== 0) return "notes";
+  const after = (await git(seams, ["diff", "--name-only", `${peeled}..origin/main`])).split("\n").map((l) => l.trim()).filter(Boolean);
+  return after.every((f) => f === "RELEASE_NOTES.md") ? "released" : "notes";
 }
 
 interface Ctx {
@@ -164,18 +207,23 @@ interface Ctx {
   lastTag: string;
   nextTag: string;
   moved: string[];
+  phase: Phase;
 }
 
 async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
   if (!keepsFastPath(name)) throw new StepFailure("qualify", `${name} is not a served-only app; use the full release process`, null);
   const { headSha } = await refreshMain(seams);
   const lastTag = newestReleaseTag(await remoteTags(seams));
+  const phase = await resolvePhase(seams, headSha, lastTag);
+  if (phase === "released") {
+    return { name, headSha, lastTag, nextTag: lastTag, moved: [], phase };
+  }
   const gate = await checkGate(seams, lastTag, "origin/main");
   if (gate.path !== "fast") throw new StepFailure("qualify", `not a fast-path diff since ${lastTag}: ${gate.reason}`, null);
   const files = (await git(seams, ["diff", "--name-only", `${lastTag}..origin/main`])).split("\n").map((f) => f.trim()).filter(Boolean);
   const moved = movedServedApps(files);
   if (!moved.includes(name)) throw new StepFailure("qualify", `${name} has not moved since ${lastTag} (moved: ${moved.join(", ") || "none"})`, null);
-  return { name, headSha, lastTag, nextTag: nextPatchTag(lastTag), moved };
+  return { name, headSha, lastTag, nextTag: nextPatchTag(lastTag), moved, phase };
 }
 
 export async function notesSectionsFor(seams: ReleaseAppSeams, lastTag: string, apps: string[]): Promise<NotesSection[]> {
@@ -189,17 +237,8 @@ export async function notesSectionsFor(seams: ReleaseAppSeams, lastTag: string, 
 }
 
 /**
- * A tag newer than the one qualify read means an earlier run already
- * finished; a rerun then only re-verifies the publish.
- */
-async function resolvePhase(seams: ReleaseAppSeams, ctx: Ctx): Promise<Phase> {
-  const tags = await remoteTags(seams);
-  return tags.some((t) => t.name === ctx.nextTag) ? "released" : "notes";
-}
-
-/**
  * Notes already on main count only when they are this tag's notes commit;
- * otherwise they describe a different (older or newer) release.
+ * otherwise they describe a different (older or hand-edited) release.
  */
 async function committedNotes(seams: ReleaseAppSeams, ctx: Ctx): Promise<{ sha: string; text: string } | null> {
   const range = `${ctx.lastTag}..origin/main`;
@@ -213,19 +252,68 @@ async function committedNotes(seams: ReleaseAppSeams, ctx: Ctx): Promise<{ sha: 
   return { sha, text: await git(seams, ["show", `${sha}:RELEASE_NOTES.md`]) };
 }
 
-/** A rerun after a crash mid-write must never land on top of an unrelated local edit. */
-async function commitNotes(seams: ReleaseAppSeams, ctx: Ctx, notes: string): Promise<string> {
-  const porcelain = (await git(seams, ["status", "--porcelain"])).trim();
-  if (porcelain) {
-    throw new StepFailure("notes", `the working tree is dirty (${porcelain.split("\n").length} change(s)); commit or stash before releasing`, null);
-  }
-  seams.writeFile(join(seams.repoRoot, "RELEASE_NOTES.md"), notes);
-  await git(seams, ["add", "RELEASE_NOTES.md"]);
-  await git(seams, ["commit", "-m", `chore(release): notes for ${ctx.nextTag}`]);
-  const sha = (await git(seams, ["rev-parse", "HEAD"])).trim();
-  await git(seams, ["push", "origin", "HEAD:main"], 120_000);
-  return sha;
+function writePayload(seams: ReleaseAppSeams, file: string, body: unknown): string {
+  const path = join(seams.workDir(), file);
+  seams.writeFile(path, JSON.stringify(body));
+  return path;
 }
+
+/**
+ * One commit of whole files on top of `parent`, then a fast-forward-only ref
+ * update: never touches the operator's working tree, so a branch checked out
+ * there, an untracked file, or a stale local main cannot wedge or misdirect
+ * the release. A branch that moved underneath fails instead of being
+ * overwritten.
+ */
+async function commitFiles(seams: ReleaseAppSeams, o: {
+  step: StepId;
+  parent: string;
+  baseTree: string;
+  files: { path: string; content: string }[];
+  message: string;
+  prefix: string;
+  currentHead: () => Promise<string>;
+  resume: string;
+}): Promise<string> {
+  const tree = (await gh(seams, ["api", `repos/${RT_REPO}/git/trees`, "--input",
+    writePayload(seams, `${o.prefix}-tree.json`, { base_tree: o.baseTree, tree: o.files.map((f) => ({ path: f.path, mode: "100644", type: "blob", content: f.content })) }),
+    "--jq", ".sha"])).trim();
+  const commit = (await gh(seams, ["api", `repos/${RT_REPO}/git/commits`, "--input",
+    writePayload(seams, `${o.prefix}-commit.json`, { message: o.message, tree, parents: [o.parent] }),
+    "--jq", ".sha"])).trim();
+  const update = await seams.exec(["gh", "api", "-X", "PATCH", `repos/${RT_REPO}/git/refs/heads/main`, "--input", writePayload(seams, `${o.prefix}-ref.json`, { sha: commit, force: false })], { timeoutMs: 60_000 });
+  if (update.exitCode === 0) return commit;
+  const reason = (update.stderr || update.stdout).trim();
+  const head = o.parent.slice(0, 9);
+  let now = "";
+  try {
+    now = await o.currentHead();
+  } catch {
+    now = "";
+  }
+  if (now && now !== o.parent) {
+    throw new StepFailure(o.step, `main moved from ${head} to ${now.slice(0, 9)} before the commit landed; nothing changed`, o.resume);
+  }
+  if (/HTTP 40[13]|protected branch|not accessible|permission/i.test(reason)) {
+    throw new StepFailure(o.step, `not allowed to update main (${reason}); check the gh token's scopes and the branch protection. Nothing changed`, null);
+  }
+  throw new StepFailure(o.step, `could not update main (${reason}); it is still at ${head}, so a rerun retries. Nothing changed`, o.resume);
+}
+
+async function commitNotes(seams: ReleaseAppSeams, ctx: Ctx, notes: string): Promise<string> {
+  return commitFiles(seams, {
+    step: "notes",
+    parent: ctx.headSha,
+    baseTree: (await git(seams, ["rev-parse", `${ctx.headSha}^{tree}`])).trim(),
+    files: [{ path: "RELEASE_NOTES.md", content: notes }],
+    message: `chore(release): notes for ${ctx.nextTag}`,
+    prefix: "notes",
+    currentHead: async () => (await git(seams, ["ls-remote", "origin", "refs/heads/main"], 30_000)).split(/\s+/)[0] ?? "",
+    resume: `rt release app ${ctx.name}`,
+  });
+}
+
+type Recorder = (id: StepId, status: StepStatus, detail: string, command?: string) => void;
 
 async function tagStep(seams: ReleaseAppSeams, ctx: Ctx, sha: string, rec: Recorder): Promise<void> {
   const tag = ctx.nextTag;
@@ -239,18 +327,41 @@ async function tagStep(seams: ReleaseAppSeams, ctx: Ctx, sha: string, rec: Recor
     await git(seams, ["tag", "-a", tag, sha, "-m", tag]);
   }
 
-  // Without the explicit ^{} pattern ls-remote prints only the tag object, never the commit it peels to.
-  const remote = (await git(seams, ["ls-remote", "--tags", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`])).split("\n").map((l) => l.trim()).filter(Boolean);
-  if (remote.length) {
-    const at = (remote.find((l) => l.endsWith("^{}")) ?? remote[0]!).split(/\s+/)[0]!;
-    if (at !== sha) throw new StepFailure("tag", `origin's ${tag} points at ${at.slice(0, 9)}, not the notes commit ${sha.slice(0, 9)}; resolve it by hand`, null);
+  const remoteSha = await peelTag(seams, tag);
+  if (remoteSha) {
+    if (remoteSha !== sha) throw new StepFailure("tag", `origin's ${tag} points at ${remoteSha.slice(0, 9)}, not the notes commit ${sha.slice(0, 9)}; resolve it by hand`, null);
     return rec("tag", "done", `${tag} is already on origin at ${sha.slice(0, 9)}`);
   }
   await git(seams, ["push", "origin", `refs/tags/${tag}`], 120_000);
   rec("tag", "done", `pushed ${tag} at ${sha.slice(0, 9)}`);
 }
 
-type Recorder = (id: StepId, status: StepStatus, detail: string, command?: string) => void;
+async function finishVerify(
+  seams: ReleaseAppSeams,
+  tag: string,
+  rec: Recorder,
+  report: (status: ReleaseStatus, resume?: string | null) => ReleaseAppReport,
+): Promise<ReleaseAppReport> {
+  seams.log(`  watching release.yml for ${tag} (a real run takes 25-50 minutes)`);
+  try {
+    const verify = await runVerify(seams, { tag });
+    if (verify.clean) {
+      rec("verify", "ok", `${tag} is published: run, notes, assets, state and releases/latest all verify`);
+      return report("released");
+    }
+    const runRow = verify.rows.find((r) => r.id === "run");
+    if (runRow?.status === "pending" || (verify.staleCount === 0 && verify.errorCount === 0)) {
+      rec("verify", "pending", runRow ? `${runRow.label}: ${runRow.detail ?? runRow.status}` : "still propagating");
+      return report("pending", `rt release verify ${tag}`);
+    }
+    const open = verify.rows.filter((r) => r.status !== "ok").map((r) => `${r.label}: ${r.detail ?? r.status}`).join("; ");
+    rec("verify", "failed", open);
+    return report("failed", `rt release verify ${tag}`);
+  } catch (err) {
+    rec("verify", "failed", errMessage(err));
+    return report("failed", `rt release verify ${tag}`);
+  }
+}
 
 export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppOptions): Promise<ReleaseAppReport> {
   const opts = { dryRun: false, json: false, yesNotes: null, ...rawOpts };
@@ -272,95 +383,92 @@ export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppO
 
   let ctx: Ctx;
   try {
-    ctx = await qualify(seams, opts.name);
+    ctx = await inStep("qualify", rerun, () => qualify(seams, opts.name));
   } catch (err) {
     if (!(err instanceof StepFailure)) throw err;
-    rec("qualify", "stopped", err.message);
-    return report("declined");
+    if (err.resume === null) {
+      rec("qualify", "stopped", err.message);
+      return report("declined");
+    }
+    rec("qualify", "failed", err.message);
+    return report("failed", err.resume);
   }
   lastTag = ctx.lastTag;
   nextTag = ctx.nextTag;
+
+  if (ctx.phase === "released") {
+    rec("qualify", "ok", `${ctx.lastTag} has not moved since; its publish has not verified as done, so re-checking it before any new release`);
+    try {
+      notes = await git(seams, ["show", "origin/main:RELEASE_NOTES.md"]);
+      hash = notesHash(notes);
+    } catch {
+      // no RELEASE_NOTES.md at this ref; the report simply carries no notes text
+    }
+    rec("notes", "done", `${ctx.lastTag} already ships these notes`);
+    rec("tag", "done", `${ctx.lastTag} is on origin`);
+    return finishVerify(seams, ctx.lastTag, rec, report);
+  }
+
   rec("qualify", "ok", `origin/main is on the fast path since ${ctx.lastTag}; ${ctx.moved.join(", ")} moved; releasing ${opts.name} as ${ctx.nextTag}`);
 
-  const sections = await notesSectionsFor(seams, ctx.lastTag, ctx.moved);
+  const sections = await inStep("notes", rerun, () => notesSectionsFor(seams, ctx.lastTag, ctx.moved));
   notes = renderNotes({ sections, lastTag: ctx.lastTag, nextTag: ctx.nextTag });
   hash = notesHash(notes);
 
   if (opts.dryRun) {
-    rec("notes", "planned", `generate RELEASE_NOTES.md for ${ctx.lastTag}..origin/main, approve them (--yes-notes <hash> off a terminal), commit them on main`);
+    const already = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+    if (already) {
+      rec("notes", "done", `RELEASE_NOTES.md for ${ctx.nextTag} is already committed on main (${already.sha.slice(0, 9)})`);
+    } else {
+      rec("notes", "planned", `generate RELEASE_NOTES.md for ${ctx.lastTag}..origin/main, approve them (--yes-notes <hash> off a terminal), commit them on main`);
+    }
     rec("tag", "planned", `tag ${ctx.nextTag} at the notes commit and push it`, `git tag -a ${ctx.nextTag} <notes commit> -m ${ctx.nextTag}`);
     rec("verify", "planned", "watch release.yml and check the published release", `rt release verify ${ctx.nextTag}`);
     return report("planned");
   }
 
-  const phase = await resolvePhase(seams, ctx);
-  if (phase === "released") {
-    const tag = (await remoteTags(seams)).find((t) => t.name === ctx.nextTag)!;
-    notes = await git(seams, ["show", `${tag.sha}:RELEASE_NOTES.md`]);
+  let notesSha: string;
+  const committed = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+  if (committed) {
+    notesSha = committed.sha;
+    notes = committed.text;
     hash = notesHash(notes);
-    rec("notes", "done", `${ctx.nextTag} already ships these notes`);
-    rec("tag", "done", `${ctx.nextTag} is on origin`);
+    rec("notes", "done", `RELEASE_NOTES.md for ${ctx.nextTag} is already committed on main (${committed.sha.slice(0, 9)})`);
   } else {
-    let notesSha: string;
-    const committed = await committedNotes(seams, ctx);
-    if (committed) {
-      notesSha = committed.sha;
-      notes = committed.text;
-      hash = notesHash(notes);
-      rec("notes", "done", `RELEASE_NOTES.md for ${ctx.nextTag} is already committed on main (${committed.sha.slice(0, 9)})`);
-    } else {
-      if (opts.yesNotes !== null) {
-        if (opts.yesNotes !== hash) {
-          if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
-          rec("notes", "stopped", `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.nextTag}): these notes need approval, nothing committed`);
-          return report("awaiting-approval", `${rerun}${opts.json ? " --json" : ""} --yes-notes ${hash}`);
-        }
-      } else {
+    if (opts.yesNotes !== null) {
+      if (opts.yesNotes !== hash) {
         if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
-        if (opts.json || !seams.isTTY) {
-          rec("notes", "stopped", `the notes for ${ctx.nextTag} (hash ${hash}) need approval; nothing committed`);
-          return report("awaiting-approval", `${rerun}${opts.json ? " --json" : ""} --yes-notes ${hash}`);
-        }
-        if (!(await seams.confirm(`Commit these notes and tag ${ctx.nextTag}?`))) {
-          rec("notes", "stopped", "declined at the prompt; nothing committed");
-          return report("declined", rerun);
-        }
+        rec("notes", "stopped", `--yes-notes ${opts.yesNotes} does not match these notes (hash ${hash} for ${ctx.nextTag}): these notes need approval, nothing committed`);
+        return report("awaiting-approval", `${rerun}${opts.json ? " --json" : ""} --yes-notes ${hash}`);
       }
-      try {
-        notesSha = await commitNotes(seams, ctx, notes);
-      } catch (err) {
-        if (!(err instanceof StepFailure)) throw err;
-        rec("notes", "failed", err.message);
-        return report("failed", err.resume);
+    } else {
+      if (!opts.json) seams.log(`\n${notes}\nnotes hash ${hash}`);
+      if (opts.json || !seams.isTTY) {
+        rec("notes", "stopped", `the notes for ${ctx.nextTag} (hash ${hash}) need approval; nothing committed`);
+        return report("awaiting-approval", `${rerun}${opts.json ? " --json" : ""} --yes-notes ${hash}`);
       }
-      rec("notes", "ok", `committed RELEASE_NOTES.md for ${ctx.nextTag} on main (${notesSha.slice(0, 9)})`);
+      if (!(await seams.confirm(`Commit these notes and tag ${ctx.nextTag}?`))) {
+        rec("notes", "stopped", "declined at the prompt; nothing committed");
+        return report("declined", rerun);
+      }
     }
-
     try {
-      await tagStep(seams, ctx, notesSha, rec);
+      notesSha = await inStep("notes", rerun, () => commitNotes(seams, ctx, notes!));
     } catch (err) {
       if (!(err instanceof StepFailure)) throw err;
-      rec("tag", "failed", err.message);
+      rec("notes", "failed", err.message);
       return report("failed", err.resume);
     }
+    rec("notes", "ok", `committed RELEASE_NOTES.md for ${ctx.nextTag} on main (${notesSha.slice(0, 9)})`);
   }
 
   try {
-    const verify = await runVerify(seams, { tag: ctx.nextTag });
-    if (verify.clean) {
-      rec("verify", "ok", `${ctx.nextTag} is published: run, notes, assets, state and releases/latest all verify`);
-      return report("released");
-    }
-    const runRow = verify.rows.find((r) => r.id === "run");
-    if (runRow?.status === "pending" || (verify.staleCount === 0 && verify.errorCount === 0)) {
-      rec("verify", "pending", runRow ? `${runRow.label}: ${runRow.detail ?? runRow.status}` : "still propagating");
-      return report("pending", `rt release verify ${ctx.nextTag}`);
-    }
-    const open = verify.rows.filter((r) => r.status !== "ok").map((r) => `${r.label}: ${r.detail ?? r.status}`).join("; ");
-    rec("verify", "failed", open);
-    return report("failed", `rt release verify ${ctx.nextTag}`);
+    await inStep("tag", rerun, () => tagStep(seams, ctx, notesSha, rec));
   } catch (err) {
-    rec("verify", "failed", errMessage(err));
-    return report("failed", `rt release verify ${ctx.nextTag}`);
+    if (!(err instanceof StepFailure)) throw err;
+    rec("tag", "failed", err.message);
+    return report("failed", err.resume);
   }
+
+  return finishVerify(seams, ctx.nextTag, rec, report);
 }
