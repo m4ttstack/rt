@@ -5,7 +5,7 @@ import type { CommandArg, CommandNode } from "../command-tree.ts";
 import { listAgentSafe, resolveLeaf } from "../command-tree-resolve.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 import { execWithTimeout, type ExecResult } from "../setup/probes.ts";
-import { checkTempRootPath, tempRootsForThisProcess } from "./temp-root-guard.ts";
+import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess } from "./temp-root-guard.ts";
 
 export const RT_VERB_TIMEOUT_MS = 30_000;
 const TAIL_BYTES = 400;
@@ -17,6 +17,7 @@ export interface RtVerbDeps {
   isDir: (path: string) => boolean;
   spawn: (argv: string[], opts: { cwd?: string; env: Record<string, string>; timeoutMs: number }) => Promise<ExecResult>;
   tempRoots: () => string[];
+  readRoots: () => string[];
 }
 
 export function realRtVerbDeps(): RtVerbDeps {
@@ -26,6 +27,7 @@ export function realRtVerbDeps(): RtVerbDeps {
     isDir: (p) => existsSync(p) && statSync(p).isDirectory(),
     spawn: (argv, opts) => execWithTimeout(argv, opts),
     tempRoots: tempRootsForThisProcess,
+    readRoots: readRootsForThisProcess,
   };
 }
 
@@ -73,15 +75,24 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   flagTypes.set("--json", "boolean");
   const declared = `Declared flags: ${[...flagTypes.keys()].join(", ")}`;
   const tempRootFlags = new Set(leaf.node.agentTempRootFlags ?? []);
+  const readRootFlags = new Set(leaf.node.agentReadRootFlags ?? []);
   let tempRoots: string[] | null = null;
-  // A leaf's --out-shaped flag writes to a caller-named path with no
-  // permission prompt: confined to the Claude Code temp root before the
-  // value is ever forwarded, so an unsafe target never reaches the spawn.
-  const tempRootError = (name: string, value: string): string | null => {
-    if (!tempRootFlags.has(name)) return null;
-    tempRoots ??= deps.tempRoots();
-    const check = checkTempRootPath(value, tempRoots);
-    return check.ok ? null : check.error;
+  let readRoots: string[] | null = null;
+  // A leaf's path flags write or read a caller-named file with no permission
+  // prompt: each is confined before the value is ever forwarded, so an unsafe
+  // path never reaches the spawn.
+  const pathError = (name: string, value: string): string | null => {
+    if (tempRootFlags.has(name)) {
+      tempRoots ??= deps.tempRoots();
+      const check = checkTempRootPath(value, tempRoots);
+      if (!check.ok) return `${name}: ${check.error}`;
+    }
+    if (readRootFlags.has(name)) {
+      readRoots ??= deps.readRoots();
+      const check = checkReadRootPath(value, readRoots);
+      if (!check.ok) return `${name}: ${check.error}`;
+    }
+    return null;
   };
   const forwarded: string[] = [];
   for (let i = 0; i < leaf.rest.length; i++) {
@@ -104,7 +115,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
       // as absent and widens the request's scope instead of erroring.
       const value = leaf.rest[i + 1];
       if (value === undefined || value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
-      const rootError = tempRootError(name, value);
+      const rootError = pathError(name, value);
       if (rootError) return fail(rootError);
       forwarded.push(name, value);
       i++;
@@ -114,7 +125,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     if (type === "boolean") return fail(`${name} is a switch and takes no value; pass it as ${name}`);
     const value = arg.slice(eq + 1);
     if (value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
-    const rootError = tempRootError(name, value);
+    const rootError = pathError(name, value);
     if (rootError) return fail(rootError);
     forwarded.push(name, value);
   }

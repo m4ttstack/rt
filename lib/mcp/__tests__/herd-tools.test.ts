@@ -1,17 +1,28 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { herdToolDefs, type HerdToolDeps } from "../herd-tools.ts";
 
 /** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
 const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-herd-brief-out-")));
+/** Stands in for an installed plugin root; the read guard realpaths each file, so they must exist. */
+const FAKE_PLUGIN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-herd-brief-plugin-")));
+const OUTSIDE = realpathSync(mkdtempSync(join(tmpdir(), "rt-herd-brief-outside-")));
+const TEMPLATE = join(FAKE_PLUGIN_ROOT, "job-template.md");
+const STRATEGIES = join(FAKE_PLUGIN_ROOT, "strategies.md");
+const METHOD = join(FAKE_TEMP_ROOT, "method.md");
+const SECRET = join(OUTSIDE, "id_ed25519");
+const ESCAPE_LINK = join(FAKE_PLUGIN_ROOT, "escape.md");
+for (const f of [TEMPLATE, STRATEGIES, METHOD]) writeFileSync(f, "body");
+writeFileSync(SECRET, "PRIVATE KEY");
+symlinkSync(SECRET, ESCAPE_LINK);
 
 afterAll(() => {
-  rmSync(FAKE_TEMP_ROOT, { recursive: true, force: true });
+  for (const dir of [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT, OUTSIDE]) rmSync(dir, { recursive: true, force: true });
 });
 
-function fake(tempRoots: string[] = [FAKE_TEMP_ROOT]) {
+function fake(tempRoots: string[] = [FAKE_TEMP_ROOT], readRoots: string[] = [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT]) {
   const calls: Array<{ fn: string; a: any; o: any }> = [];
   const rec = (fn: string) => (async (a: unknown, o: unknown) => { calls.push({ fn, a, o }); return { ok: true, data: { fn } }; }) as any;
   const deps: HerdToolDeps = {
@@ -19,6 +30,7 @@ function fake(tempRoots: string[] = [FAKE_TEMP_ROOT]) {
     attend: rec("attend"), wrapUp: rec("wrapUp"), resume: rec("resume"), milestone: rec("milestone"),
     verb: (async (input: unknown) => { calls.push({ fn: "verb", a: input, o: undefined }); return { ok: true, body: { brief: "x" } }; }) as any,
     tempRoots: () => tempRoots,
+    readRoots: () => readRoots,
   };
   return { calls, tool: (n: string) => herdToolDefs(deps).find((t) => t.name === n)! };
 }
@@ -49,15 +61,22 @@ describe("herd shepherd tools", () => {
   test("herd_brief spawns rt herd brief through the verb runner with repeated --fill", async () => {
     const { tool, calls } = fake();
     const out = join(FAKE_TEMP_ROOT, "o.md");
-    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", strategy: "direct-tdd", strategies: "/s.md", fill: ["goal=ship", "fence=src/"], out }, SESSION);
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, strategy: "direct-tdd", strategies: STRATEGIES, fill: ["goal=ship", "fence=src/"], out }, SESSION);
     expect(r.ok).toBe(true);
-    expect(calls[0]!.a).toEqual({ args: ["herd", "brief", "--job", "j", "--template", "/t.md", "--strategy", "direct-tdd", "--strategies", "/s.md", "--fill", "goal=ship", "--fill", "fence=src/", "--out", out] });
+    expect(calls[0]!.a).toEqual({ args: ["herd", "brief", "--job", "j", "--template", TEMPLATE, "--strategy", "direct-tdd", "--strategies", STRATEGIES, "--fill", "goal=ship", "--fill", "fence=src/", "--out", out] });
+  });
+
+  test("herd_brief passes a methodFile inside the temp root through", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, methodFile: METHOD }, SESSION);
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.a).toEqual({ args: ["herd", "brief", "--job", "j", "--template", TEMPLATE, "--method-file", METHOD] });
   });
 
   test("herd_brief refuses an out path outside the Claude Code temp root, calling the verb runner zero times", async () => {
     const { tool, calls } = fake();
     const out = join(realpathSync(homedir()), ".zshrc");
-    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", methodFile: "/m.md", out }, SESSION);
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, methodFile: METHOD, out }, SESSION);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("temp root");
     expect(calls).toEqual([]);
@@ -65,8 +84,38 @@ describe("herd shepherd tools", () => {
 
   test("herd_brief refuses a relative out path, calling the verb runner zero times", async () => {
     const { tool, calls } = fake();
-    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", methodFile: "/m.md", out: "relative/brief.md" }, SESSION);
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, methodFile: METHOD, out: "relative/brief.md" }, SESSION);
     expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test("herd_brief refuses a template, strategies or methodFile outside every read root, calling the verb runner zero times", async () => {
+    for (const input of [
+      { job: "j", template: SECRET, methodFile: METHOD },
+      { job: "j", template: TEMPLATE, strategy: "direct-tdd", strategies: SECRET },
+      { job: "j", template: TEMPLATE, methodFile: SECRET },
+    ]) {
+      const { tool, calls } = fake();
+      const r = await tool("herd_brief").handler(input, SESSION);
+      expect(r.ok, JSON.stringify(input)).toBe(false);
+      expect(r.error).toContain("plugin or pack root");
+      expect(calls).toEqual([]);
+    }
+  });
+
+  test("herd_brief refuses a relative template, calling the verb runner zero times", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_brief").handler({ job: "j", template: "job-template.md", methodFile: METHOD }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("absolute");
+    expect(calls).toEqual([]);
+  });
+
+  test("herd_brief refuses a methodFile symlinked inside a read root to a file outside, calling the verb runner zero times", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, methodFile: ESCAPE_LINK }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("plugin or pack root");
     expect(calls).toEqual([]);
   });
   test("herd_attend needs HERDR_WORKSPACE_ID", async () => {

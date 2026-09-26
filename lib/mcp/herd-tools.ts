@@ -11,19 +11,20 @@ import type { Commands } from "../../packages/rt-client/src/index.ts";
 import { resolveRepoTarget } from "./mr-target.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { checkOptional, checkRequired, checkStringArray, err, fromResponse, ok, requireWorkerEnv, resolveSoleHerd, type McpToolDef } from "./shared.ts";
-import { checkTempRootPath, tempRootsForThisProcess } from "./temp-root-guard.ts";
+import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess } from "./temp-root-guard.ts";
 
 export interface HerdToolDeps {
   start: typeof herdStart; spawn: typeof herdSpawn; close: typeof herdClose; status: typeof herdStatus; list: typeof herdList;
   attend: typeof herdAttend; wrapUp: typeof herdWrapUp; resume: typeof herdResume; milestone: typeof herdMilestone;
   verb: typeof runRtVerb;
   tempRoots: () => string[];
+  readRoots: () => string[];
 }
 
 export const realHerdToolDeps: HerdToolDeps = {
   start: herdStart, spawn: herdSpawn, close: herdClose, status: herdStatus, list: herdList,
   attend: herdAttend, wrapUp: herdWrapUp, resume: herdResume, milestone: herdMilestone, verb: runRtVerb,
-  tempRoots: tempRootsForThisProcess,
+  tempRoots: tempRootsForThisProcess, readRoots: readRootsForThisProcess,
 };
 
 /** herd:spawn provisions a worktree and launches an agent; the default 60s budget is too tight. */
@@ -79,7 +80,13 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
         if (bad) return err(bad);
         if (typeof input.out === "string") {
           const check = checkTempRootPath(input.out, deps.tempRoots());
-          if (!check.ok) return err(check.error);
+          if (!check.ok) return err(`out: ${check.error}`);
+        }
+        const readRoots = deps.readRoots();
+        for (const field of ["template", "strategies", "methodFile"] as const) {
+          if (typeof input[field] !== "string") continue;
+          const check = checkReadRootPath(input[field], readRoots);
+          if (!check.ok) return err(`${field}: ${check.error}`);
         }
         const args = ["herd", "brief", "--job", input.job as string, "--template", input.template as string];
         if (typeof input.strategy === "string") args.push("--strategy", input.strategy);

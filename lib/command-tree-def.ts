@@ -409,6 +409,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     fn: "brief",
     agentSafe: true,
     agentTempRootFlags: ["--out"],
+    agentReadRootFlags: ["--template", "--strategies", "--method-file"],
     omitBehavior: { exempt: "agent-facing; the shepherd passes every path and fill explicitly" },
     args: [
       { name: "Job", flag: "--job", type: "text", placeholder: "acme-1483-facts", hint: "Job name; fills the template's job slot" },

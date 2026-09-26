@@ -153,6 +153,9 @@ export interface CommandNode {
 
   /** Value flags whose path rt_verb confines to the Claude Code temp root before spawning (see lib/mcp/temp-root-guard.ts): a leaf that writes to a caller-named path this freely must not let an agent point it outside its own sandbox. */
   agentTempRootFlags?: string[];
+
+  /** Value flags whose file rt_verb reads only from the Claude Code temp root or an installed plugin or pack root (see lib/mcp/temp-root-guard.ts): a leaf that echoes a caller-named file back must not let an agent read a key or a token through it. */
+  agentReadRootFlags?: string[];
 }
 
 /** See CommandNode.omitBehavior. */

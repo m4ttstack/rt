@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import type { CommandNode } from "../../command-tree.ts";
@@ -8,9 +8,18 @@ import { RT_VERB_TIMEOUT_MS, runRtVerb, type RtVerbDeps } from "../rt-verb.ts";
 
 /** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
 const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-out-")));
+/** Stands in for an installed plugin root; the read guard realpaths the file, so it must exist. */
+const FAKE_PLUGIN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-plugin-")));
+const OUTSIDE = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-outside-")));
+const TEMPLATE = join(FAKE_PLUGIN_ROOT, "job-template.md");
+const SECRET = join(OUTSIDE, "id_ed25519");
+const ESCAPE_LINK = join(FAKE_PLUGIN_ROOT, "escape.md");
+writeFileSync(TEMPLATE, "template");
+writeFileSync(SECRET, "PRIVATE KEY");
+symlinkSync(SECRET, ESCAPE_LINK);
 
 afterAll(() => {
-  rmSync(FAKE_TEMP_ROOT, { recursive: true, force: true });
+  for (const dir of [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT, OUTSIDE]) rmSync(dir, { recursive: true, force: true });
 });
 
 const tree: Record<string, CommandNode> = {
@@ -22,14 +31,14 @@ const tree: Record<string, CommandNode> = {
       dispose: { description: "d", module: "./m.ts" },
       slow: { description: "s", module: "./m.ts", agentSafe: true, agentTimeoutMs: 600_000, args: [{ name: "JSON", flag: "--json", type: "boolean" }] },
       brief: {
-        description: "b", module: "./m.ts", agentSafe: true, agentTempRootFlags: ["--out"],
-        args: [{ name: "Out", flag: "--out", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+        description: "b", module: "./m.ts", agentSafe: true, agentTempRootFlags: ["--out"], agentReadRootFlags: ["--template"],
+        args: [{ name: "Out", flag: "--out", type: "text" }, { name: "Template", flag: "--template", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
       },
     },
   },
 };
 
-function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [], tempRoots: string[] = [FAKE_TEMP_ROOT]): RtVerbDeps {
+function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [], tempRoots: string[] = [FAKE_TEMP_ROOT], readRoots: string[] = [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT]): RtVerbDeps {
   return {
     tree,
     selfArgv: () => ["/bin/rt"],
@@ -39,6 +48,7 @@ function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [
       return result;
     },
     tempRoots: () => tempRoots,
+    readRoots: () => readRoots,
   };
 }
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
@@ -90,6 +100,33 @@ describe("runRtVerb", () => {
   test("agentTempRootFlags: a relative value is refused with zero spawn calls", async () => {
     const r = await refused({ args: ["worktree", "brief", "--out", "relative/brief.md"] });
     expect(r.ok).toBe(false);
+  });
+
+  test("agentReadRootFlags: a file inside an allowed read root passes through, both --name value and --name=value", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const a = await runRtVerb({ args: ["worktree", "brief", "--template", TEMPLATE] }, deps(ok("{}"), calls));
+    expect(a.ok).toBe(true);
+    const b = await runRtVerb({ args: ["worktree", "brief", `--template=${TEMPLATE}`] }, deps(ok("{}"), calls));
+    expect(b.ok).toBe(true);
+    expect(calls.map((c) => c.argv.slice(3, 5))).toEqual([["--template", TEMPLATE], ["--template", TEMPLATE]]);
+  });
+
+  test("agentReadRootFlags: a file outside every read root is refused with zero spawn calls, both flag forms", async () => {
+    const a = await refused({ args: ["worktree", "brief", "--template", SECRET] });
+    expect(a.ok ? "" : a.error).toContain("--template");
+    expect(a.ok ? "" : a.error).toContain("plugin or pack root");
+    const b = await refused({ args: ["worktree", "brief", `--template=${SECRET}`] });
+    expect(b.ok ? "" : b.error).toContain("plugin or pack root");
+  });
+
+  test("agentReadRootFlags: a relative value is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--template", "job-template.md"] });
+    expect(r.ok ? "" : r.error).toContain("absolute");
+  });
+
+  test("agentReadRootFlags: a symlink inside a read root pointing outside is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--template", ESCAPE_LINK] });
+    expect(r.ok ? "" : r.error).toContain("plugin or pack root");
   });
 
   test("agentTempRootFlags does not affect a flag it does not name", async () => {

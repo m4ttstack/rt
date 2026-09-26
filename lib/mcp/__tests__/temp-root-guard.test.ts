@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
-import { checkTempRootPath } from "../temp-root-guard.ts";
+import { checkReadRootPath, checkTempRootPath } from "../temp-root-guard.ts";
 
 const createdDirs: string[] = [];
 
@@ -124,6 +124,102 @@ describe("checkTempRootPath", () => {
   test("no roots resolved for this process is a refusal, not a silent pass", () => {
     const root = realTempDir("rt-temp-root-guard-");
     const r = checkTempRootPath(join(root, "brief.md"), []);
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("checkReadRootPath", () => {
+  function fileIn(dir: string, name: string, body = "body"): string {
+    const p = join(dir, name);
+    writeFileSync(p, body);
+    return p;
+  }
+
+  test("an existing regular file inside any root passes", () => {
+    const tempRoot = realTempDir("rt-read-root-temp-");
+    const pluginRoot = realTempDir("rt-read-root-plugin-");
+    expect(checkReadRootPath(fileIn(tempRoot, "t.md"), [tempRoot, pluginRoot])).toEqual({ ok: true });
+    expect(checkReadRootPath(fileIn(pluginRoot, "s.md"), [tempRoot, pluginRoot])).toEqual({ ok: true });
+  });
+
+  test("a file outside every root is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    const outside = realTempDir("rt-read-root-outside-");
+    const r = checkReadRootPath(fileIn(outside, "id_ed25519"), [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("plugin or pack root");
+  });
+
+  test("a relative path is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    fileIn(root, "t.md");
+    const r = checkReadRootPath("t.md", [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("absolute");
+  });
+
+  test("a symlink inside a root that points outside it is refused, because its realpath lands outside", () => {
+    const root = realTempDir("rt-read-root-");
+    const outside = realTempDir("rt-read-root-outside-");
+    const secret = fileIn(outside, "id_ed25519", "PRIVATE KEY");
+    const link = join(root, "template.md");
+    symlinkSync(secret, link);
+    const r = checkReadRootPath(link, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("plugin or pack root");
+  });
+
+  test("a symlink inside a root that points elsewhere inside a root passes", () => {
+    const root = realTempDir("rt-read-root-");
+    const real = fileIn(root, "real.md");
+    const link = join(root, "link.md");
+    symlinkSync(real, link);
+    expect(checkReadRootPath(link, [root])).toEqual({ ok: true });
+  });
+
+  test("a missing file is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    const r = checkReadRootPath(join(root, "absent.md"), [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("does not exist");
+  });
+
+  test("a directory or a FIFO is refused (not a regular file)", () => {
+    const root = realTempDir("rt-read-root-");
+    const dir = join(root, "adir");
+    mkdirSync(dir);
+    const fifo = join(root, "pipe");
+    execFileSync("mkfifo", [fifo]);
+    for (const p of [dir, fifo]) {
+      const r = checkReadRootPath(p, [root]);
+      expect(r.ok, p).toBe(false);
+      expect(r.ok ? "" : r.error).toContain("regular file");
+    }
+  });
+
+  test("a hardlinked file is refused (its inode can be shared with a file outside every root)", () => {
+    const root = realTempDir("rt-read-root-");
+    const outside = realTempDir("rt-read-root-outside-");
+    const secret = fileIn(outside, "id_ed25519", "PRIVATE KEY");
+    const hardlink = join(root, "t.md");
+    linkSync(secret, hardlink);
+    const r = checkReadRootPath(hardlink, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("hardlinked");
+  });
+
+  test("a path with a `..` segment is refused before any resolution", () => {
+    const root = realTempDir("rt-read-root-");
+    mkdirSync(join(root, "sub"));
+    fileIn(root, "t.md");
+    const r = checkReadRootPath(`${root}/sub/../t.md`, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("normalized");
+  });
+
+  test("no roots is a refusal, not a silent pass", () => {
+    const root = realTempDir("rt-read-root-");
+    const r = checkReadRootPath(fileIn(root, "t.md"), []);
     expect(r.ok).toBe(false);
   });
 });

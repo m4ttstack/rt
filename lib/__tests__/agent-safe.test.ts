@@ -29,6 +29,21 @@ describe("agent-safe surface", () => {
     }
   });
 
+  test("herd brief confines every caller-named path it writes or reads", () => {
+    const brief = TREE.herd!.subcommands!.brief!;
+    expect(brief.agentTempRootFlags).toEqual(["--out"]);
+    expect([...(brief.agentReadRootFlags ?? [])].sort()).toEqual(["--method-file", "--strategies", "--template"]);
+  });
+
+  test("every confined flag names a declared text flag of its leaf", () => {
+    for (const { path, node } of listAgentSafe(TREE)) {
+      const textFlags = new Set((node.args ?? []).filter((a) => a.flag && a.type === "text").map((a) => a.flag));
+      for (const flag of [...(node.agentTempRootFlags ?? []), ...(node.agentReadRootFlags ?? [])]) {
+        expect(textFlags.has(flag), `${path.join(" ")} ${flag}`).toBe(true);
+      }
+    }
+  });
+
   test("each declares --json and can run without a person", () => {
     for (const { path, node } of listAgentSafe(TREE)) {
       const where = path.join(" ");
