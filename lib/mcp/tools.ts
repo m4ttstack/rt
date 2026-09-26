@@ -23,8 +23,10 @@ import { explainError } from "../explain-error.ts";
 import { gitToolDefs, realGitToolDeps } from "./git-tools.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
+import { herdToolDefs } from "./herd-tools.ts";
 import { mrReadToolDefs } from "./mr-read-tools.ts";
 import { runToolDefs } from "./run-tools.ts";
+import { worktreeToolDefs } from "./worktree-tools.ts";
 import {
   checkOptional, checkPositiveInts, checkRequired, checkStringArray,
   err, fromResponse, HERD_ENV_ERROR, MR_TARGET_PROPS, MR_WRITE_TIMEOUT_MS, ok,
@@ -764,5 +766,7 @@ export function mcpTools(): McpToolDef[] {
     ...runToolDefs(),
     ...mrReadToolDefs(),
     ...gitToolDefs(realGitToolDeps),
+    ...worktreeToolDefs(),
+    ...herdToolDefs(),
   ];
 }

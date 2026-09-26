@@ -140,15 +140,29 @@ export interface CommandNode {
   /**
    * An agent may run this leaf through the mattstack MCP server's `rt_verb`
    * tool with no permission prompt, including from a pane reading untrusted
-   * text (an MR under review). The bar: no state change the caller directs,
-   * under any flag the leaf declares. It never deletes, and never writes
-   * settings, secrets, worktrees, runs, or another agent's state. Housekeeping
-   * the implementation does on any read (a legacy import, a self-healing index
-   * row) is not a caller-directed change and does not disqualify a leaf.
-   * Set it only on a leaf that declares --json. Guarded by
-   * lib/__tests__/agent-safe.test.ts.
+   * text (an MR under review). The bar: a read, or a routine write that
+   * stays inside rt's own state and the caller's own work -- a pack it
+   * compiles, checks, syncs or binds; its own runs, gates and briefs. It
+   * never merges, pushes only a pack's own publish (skills sync), and never
+   * writes another agent's state. Set it only on a leaf that declares
+   * --json. Guarded by lib/__tests__/agent-safe.test.ts.
    */
   agentSafe?: true;
+
+  /** rt_verb's cap for this leaf when its normal run outlasts RT_VERB_TIMEOUT_MS. */
+  agentTimeoutMs?: number;
+
+  /** Value flags whose path rt_verb confines to the Claude Code temp root before spawning (see lib/mcp/temp-root-guard.ts): a leaf that writes to a caller-named path this freely must not let an agent point it outside its own sandbox. */
+  agentTempRootFlags?: string[];
+
+  /** Value flags whose file rt_verb reads only from the Claude Code temp root or an installed plugin or pack root (see lib/mcp/temp-root-guard.ts): a leaf that echoes a caller-named file back must not let an agent read a key or a token through it. */
+  agentReadRootFlags?: string[];
+
+  /** Declared flags rt_verb refuses outright: they let a caller-written file (a manifest, a pack tree) drive a leaf that recompiles, commits or pushes a shared pack. */
+  agentDeniedFlags?: string[];
+
+  /** rt_verb refuses a caller-chosen cwd: this leaf resolves its pack from the enclosing tree, so a cwd in a caller-written stub pack reproduces a denied --pack-dir. */
+  agentNoCwd?: true;
 }
 
 /** See CommandNode.omitBehavior. */

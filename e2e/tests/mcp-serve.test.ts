@@ -183,6 +183,8 @@ const EXPECTED_TOOL_NAMES = [
   "run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list",
   "mr_view", "mr_list", "mr_for_branch", "mr_threads", "mr_pipeline", "mr_job_trace", "mr_merge",
   "git_push", "git_pull", "git_rebase", "branch_sync",
+  "worktree_provision", "worktree_dispose", "worktree_stop_holders",
+  "herd_start", "herd_spawn", "herd_brief", "herd_close", "herd_status", "herd_list", "herd_attend", "herd_wrap_up", "herd_resume", "herd_milestone",
 ];
 
 describe("rt mcp serve e2e", () => {
@@ -230,7 +232,7 @@ describe("rt mcp serve e2e", () => {
       const names = listResult.tools.map((t) => t.name).sort();
       expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
 
-      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list", "mr_view", "mr_list", "mr_for_branch", "mr_threads", "mr_pipeline", "mr_job_trace", "mr_merge", "git_push", "git_pull", "git_rebase", "branch_sync"];
+      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list", "mr_view", "mr_list", "mr_for_branch", "mr_threads", "mr_pipeline", "mr_job_trace", "mr_merge", "git_push", "git_pull", "git_rebase", "branch_sync", "worktree_provision", "worktree_dispose", "worktree_stop_holders", "herd_start", "herd_spawn", "herd_brief", "herd_close", "herd_status", "herd_list", "herd_attend", "herd_wrap_up", "herd_resume", "herd_milestone"];
       for (const name of PUBLISHED) expect(names, name).toContain(name);
 
       const call = await client.request("tools/call", { name: "gate_list", arguments: {} });
@@ -432,4 +434,43 @@ describe("rt mcp serve e2e", () => {
       }
     }
   }, 60_000);
+
+  test("rt_verb runs settings list against the isolated test HOME", async () => {
+    const server = runRtPiped(["mcp", "serve"], home);
+    const client = new McpClient(server);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["settings", "list"] } });
+      expect(call.error).toBeUndefined();
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      const body = JSON.parse(result.content[0]!.text) as { ok?: unknown; settings?: unknown };
+      expect(body.ok).toBe(true);
+      expect(Array.isArray(body.settings)).toBe(true);
+      const settings = body.settings as Array<{ key?: unknown }>;
+      expect(settings.length).toBeGreaterThan(0);
+      for (const s of settings) expect(typeof s.key).toBe("string");
+      expect(settings.some((s) => s.key === "rt.worktrees")).toBe(true);
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      const exitedInTime = await Promise.race([
+        server.exited.then(() => true),
+        Bun.sleep(3000).then(() => false),
+      ]);
+      try {
+        expect(exitedInTime).toBe(true);
+      } finally {
+        if (!exitedInTime) {
+          try { server.kill(); } catch { /* already gone */ }
+          await server.exited;
+        }
+      }
+    }
+  }, 30_000);
 });
