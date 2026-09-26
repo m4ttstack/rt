@@ -634,7 +634,7 @@ describe("syncPack", () => {
     const calls: Call[] = [];
     const deps = makeDeps(pack, engine, {
       calls,
-      installed: { [pluginId(pack)]: "1.0.0", [pluginId(engine)]: "2.0.0" },
+      installed: { [pluginId(pack)]: "0.9.0", [pluginId(engine)]: "2.0.0" },
       drift: [false],
       lintHits: [2],
       lintStrict: [true],
@@ -647,6 +647,9 @@ describe("syncPack", () => {
     expect(checkStep.status).toBe("refused");
     expect(checkStep.detail).toContain("mcp lint");
     expect(checkStep.detail).toContain("rt skills check");
+    const names = stepNames(report.steps);
+    expect(names.at(-1)).toBe("check");
+    for (const later of ["bump", "compile", "recheck", "commit-push", "update-pack"]) expect(names).not.toContain(later);
   });
 
   test("27: check step is advisory-only on lint hits when the pack is not strict", async () => {
