@@ -47,6 +47,8 @@ describe('turbo task graph', () => {
     const run = dryRun(['serve-check']);
     const tasks = byId(run);
     expect(realIds(run)).toEqual([
+      '@mattstack/rt-client#build',
+      '@mattstack/settings-kit#build',
       'boxscore#build',
       'boxscore#build:binary',
       'boxscore#serve-check',
@@ -103,7 +105,6 @@ describe('turbo task graph', () => {
       'build-storybook',
       'treeshake',
       'purity',
-      'scripts:test',
       '--filter=//',
     ]);
     expect(realIds(run)).toEqual([
@@ -111,7 +112,6 @@ describe('turbo task graph', () => {
       '//#format:check',
       '//#lint:root',
       '//#purity',
-      '//#scripts:test',
       '//#tokens:fresh',
       '//#treeshake',
       '@mattstack/tui-kit#build',
@@ -126,7 +126,7 @@ describe('turbo task graph', () => {
       'tsconfig.tools.json',
       '.prettierrc',
       'bunfig.toml',
-      'eslint.config.js',
+      'eslint.config.mjs',
     ]) {
       expect(files).toContain(f);
     }
@@ -151,7 +151,6 @@ describe('turbo task graph', () => {
       'tokens:fresh',
       'build-storybook',
       'treeshake',
-      'scripts:test',
       '--filter=//',
     ]);
     for (const t of run.tasks) {

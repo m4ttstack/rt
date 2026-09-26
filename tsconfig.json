@@ -25,7 +25,22 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  // apps/* and extensions/* are standalone sub-projects (their own tsconfig,
-  // build, and deps); the root project type-checks the rt CLI/daemon only.
-  "exclude": ["apps", "extensions", "website"]
+  // The apps and their platform packages type-check under turbo with their
+  // own tsconfigs; the root project checks the rt CLI, daemon and rt's own
+  // three packages (rt-client, settings-kit, git-core) only.
+  "exclude": [
+    "apps",
+    "extensions",
+    "website",
+    "docs",
+    "stories",
+    ".storybook",
+    "probe",
+    "packages/gate-kit",
+    "packages/server",
+    "packages/tokens",
+    "packages/tokyo",
+    "packages/tui-kit",
+    "packages/ui"
+  ]
 }

@@ -91,7 +91,6 @@ describe('scripts/turbo.sh', () => {
       '//#format:check',
       '//#lint:root',
       '//#purity',
-      '//#scripts:test',
       '//#treeshake',
       '@mattstack/tokens#test',
       '@mattstack/tui-kit#build',

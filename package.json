@@ -38,7 +38,7 @@
     "rt": "./cli.ts"
   },
   "scripts": {
-    "test": "bun test lib commands packages/rt-client packages/settings-kit packages/git-core scripts rt-tray/Tests/stub-rt rt-tray/vm/run/helpers",
+    "test": "bun test ./lib ./commands ./packages/rt-client ./packages/settings-kit ./packages/git-core ./scripts ./rt-tray/Tests/stub-rt ./rt-tray/vm/run/helpers",
     "test:watch": "bun run test --watch",
     "test:timings": "rm -f test-timings.json && bun run test --timings=test-timings.json --update-timings",
     "test:e2e": "bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/",

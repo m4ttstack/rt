@@ -25,7 +25,10 @@ export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage(
   const script = pkg.scripts.test ?? "";
   const dirs = /^bun test ([\w./][\w./-]*(?: [\w./][\w./-]*)*)$/.exec(script)?.[1]?.trim();
   if (!dirs) throw new Error(`package.json test script is not a bare bun test run over directories: ${script}`);
-  return dirs.split(/\s+/);
+  // A leading "./" scopes bun test's substring filter to that directory (a bare
+  // name matches anywhere in the tree); strip it so callers keep working with
+  // plain relative paths.
+  return dirs.split(/\s+/).map((dir) => dir.replace(/^\.\//, ""));
 }
 
 export function alwaysRun(): string[] {
