@@ -22,6 +22,7 @@ import { parseIdentity } from "../settings/identity.ts";
 import { explainError } from "../explain-error.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
+import { herdToolDefs } from "./herd-tools.ts";
 import { runToolDefs } from "./run-tools.ts";
 import { worktreeToolDefs } from "./worktree-tools.ts";
 import {
@@ -723,5 +724,6 @@ export function mcpTools(): McpToolDef[] {
     },
     ...runToolDefs(),
     ...worktreeToolDefs(),
+    ...herdToolDefs(),
   ];
 }
