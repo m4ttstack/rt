@@ -39,6 +39,8 @@ import { validateChain } from "../lib/skills/chain.ts";
 import { compileSkill, HEADER_COMMENT, isInlined } from "../lib/skills/compile.ts";
 import { skillMdDriftCauses, type DriftCause } from "../lib/skills/drift.ts";
 import { discoverPacks, findEnclosingPack, surfaceFileFor, type PackInfo } from "../lib/skills/packs.ts";
+import { mcpTools } from "../lib/mcp/tools.ts";
+import { formatHit, lintPackDir, type LintHit } from "../lib/skills/mcp-lint.ts";
 import { findPlaceholders } from "../lib/skills/placeholders.ts";
 import { buildStageEntries, hostDir, outDirFor, otherSideDir, targetOutDirs } from "../lib/skills/layout.ts";
 import { computePackSha, maskProvenance, mattstackProvenance, packPluginIdentity } from "../lib/skills/provenance.ts";
@@ -67,7 +69,7 @@ import type { AttachmentSource, CompileResult, Side, StageEntry, StepSource, Ver
  * prints these as a one-line "rt skills: <message>" and exits 1 with no
  * stack trace; anything else propagates to the top-level crash handler.
  */
-class SkillsUsageError extends Error {}
+export class SkillsUsageError extends Error {}
 
 async function withCleanErrors(fn: () => Promise<void>): Promise<void> {
   try {
@@ -98,6 +100,7 @@ type Flags = {
   packDir: string | null;
   mattstackDir: string | null;
   json: boolean;
+  strict: boolean;
 };
 
 function parseFlags(args: string[]): Flags {
@@ -109,6 +112,7 @@ function parseFlags(args: string[]): Flags {
   let packDir: string | null = null;
   let mattstackDir: string | null = null;
   let json = false;
+  let strict = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
@@ -122,12 +126,13 @@ function parseFlags(args: string[]): Flags {
       case "--pack-dir": packDir = requireFlagValue("--pack-dir", args[++i]); break;
       case "--mattstack-dir": mattstackDir = args[++i] ?? null; break;
       case "--json": json = true; break;
+      case "--strict": strict = true; break;
       default:
         throw new SkillsUsageError(`unrecognized argument "${a}"`);
     }
   }
 
-  return { team, verbs: verbs.length ? verbs : null, manifest, dryRun, preview, packDir, mattstackDir, json };
+  return { team, verbs: verbs.length ? verbs : null, manifest, dryRun, preview, packDir, mattstackDir, json, strict };
 }
 
 function packRootDir(mattstackRoot: string, team: string): string {
@@ -160,6 +165,16 @@ function packNameFor(packDir: string): string {
 
 function packTeamFor(packDir: string): string {
   return packPluginIdentity(packDir)?.name ?? packNameFor(packDir);
+}
+
+/** A pack opts into --strict by declaring it in its own manifest; an unreadable or absent manifest is never strict. */
+function packStrictLint(packDir: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(packDir, ".claude-plugin", "plugin.json"), "utf8")) as { strictLint?: unknown };
+    return parsed.strictLint === true;
+  } catch {
+    return false;
+  }
 }
 
 async function resolvePack(flags: { team: string | null; packDir: string | null; mattstackDir: string | null }): Promise<PackTarget> {
@@ -994,6 +1009,8 @@ export type CheckPayload = {
   chainErrors: string[];
   installed: InstalledInfo | null;
   drift: boolean;
+  mcpLint: LintHit[];
+  strictLint: boolean;
 };
 
 async function computeCheck(flags: Flags): Promise<CheckPayload> {
@@ -1081,8 +1098,10 @@ async function computeCheck(flags: Flags): Promise<CheckPayload> {
   // nothing to compare against, so it would only cost a real filesystem scan
   // for a null result.
   const installed = resolved.pluginRoots.list.length === 0 ? null : installedInfoFor(resolved, discoverPacks());
+  const mcpLint = lintPackDir(resolved.packDir, undefined, new Set(mcpTools().map((t) => t.name)));
+  const strictLint = packStrictLint(resolved.packDir);
 
-  return { pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors, installed, drift: anyStale };
+  return { pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors, installed, drift: anyStale, mcpLint, strictLint };
 }
 
 export async function checkPack(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string }): Promise<CheckPayload> {
@@ -1127,13 +1146,19 @@ export async function skillsCheck(args: string[]): Promise<void> {
         const line = installedCacheLine(payload.installed);
         if (line) console.log(line);
       }
+      for (const hit of payload.mcpLint) console.log(formatHit(hit));
+      const policy = payload.strictLint
+        ? "strict: --strict and rt skills sync fail on them"
+        : flags.strict ? "--strict fails on them" : "advisory; --strict fails on them";
+      console.log(payload.mcpLint.length > 0 ? `mcp lint: ${payload.mcpLint.length} hits (${policy})` : "mcp lint: clean");
     }
 
     if (payload.drift) process.exitCode = 1;
+    if (flags.strict && payload.mcpLint.length > 0) process.exitCode = 1;
 
     if (flags.json) {
-      const { pack, packDir, verbs, chainErrors, installed } = payload;
-      console.log(JSON.stringify({ pack, packDir, verbs, chainErrors, installed }));
+      const { pack, packDir, verbs, chainErrors, installed, mcpLint, strictLint } = payload;
+      console.log(JSON.stringify({ pack, packDir, verbs, chainErrors, installed, mcpLint, strictLint }));
     }
   });
 }
@@ -2057,6 +2082,7 @@ async function pickBindArgs(args: string[]): Promise<PickedBind | null> {
     packDir: bindFlags.packDir,
     mattstackDir: bindFlags.mattstackDir,
     json: false,
+    strict: false,
   });
 
   const { filterableSelect } = await import("../lib/pick-wrappers.ts");
@@ -2149,6 +2175,7 @@ export async function skillsBind(args: string[]): Promise<void> {
       packDir: bindFlags.packDir,
       mattstackDir: bindFlags.mattstackDir,
       json: false,
+      strict: false,
     });
 
     // Roster verb wins on a name collision -- resolve() lets compileTargets reject

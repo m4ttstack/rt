@@ -23,6 +23,7 @@ rt skills
 | [`materialize`](materialize) | Run merge-manifests.sh to materialize skill bindings for registered repos |
 | [`compile`](compile) | Compile pack verbs from step sources + manifest bindings into committed SKILL.md files |
 | [`check`](check) | Report compiled skills that no longer match their sources |
+| [`audit`](audit) | Advisory LLM audit of a pack's skills and fills for shell instructions the MCP tools cover (plain-words commands, shell-variable hand-offs, wrapped calls); slow, costs tokens, never a gate |
 | [`sync`](sync) | Bring a pack's compiled skills and installed plugin caches current (recompile and plugin-update chain; refuses on content drift) |
 | [`init`](init) | Scaffold this zone's team pack with a generic work pipeline, declare the repo, compile, check, and install it |
 | [`surface`](surface) | List, set, or apply the pack's public/internal skill surface (bare invocation opens a multi-toggle palette) |

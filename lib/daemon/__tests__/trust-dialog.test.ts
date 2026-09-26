@@ -134,6 +134,36 @@ const RELOCATION_WRAPPED = [
   "╰──────────────────────────────────────────────────────────╯",
 ].join("\n");
 
+// Captured from an attended EnterWorktree call on Claude Code v2.1.283 (a
+// herdr pane, not an `rt agent` launch); the cursor starts on "1. Yes".
+const ATTENDED_ENTER = [
+  "",
+  " ▐▛███▛█   Claude Code v2.1.283",
+  "▝▜██████▀  Sonnet 5 with high effort · Claude Max",
+  " ▝▝   ▝▝   ~/Documents/GitHub/repo-tools",
+  "",
+  "",
+  "❯ Call the EnterWorktree tool with path /Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn and nothing else.",
+  "  Do not run any other tool, do not edit anything.",
+  "",
+  "⏺ Entering worktree(/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn)",
+  "",
+  "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+  " Tool use",
+  "",
+  "   Entering worktree(/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn)",
+  "   │ Creates an isolated worktree (via git or configured hooks) and switches the session into it",
+  "",
+  " │ permission-root relocation to \"/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn\" — a model-supplied",
+  " │ worktree outside .claude/worktrees/",
+  "",
+  " Do you want to proceed?",
+  " ❯ 1. Yes",
+  "   2. No",
+  "",
+  " Esc to cancel · Tab to amend",
+];
+
 describe("readRelocationPrompt", () => {
   test("a screen with no relocation prompt is not one", () => {
     expect(readRelocationPrompt("$ claude\nworking on the brief...\n")).toBeNull();
@@ -481,5 +511,16 @@ describe("readRelocationPrompt", () => {
       "│ Do you want to proceed?                                             │",
     ].join("\n");
     expect(readRelocationPrompt(screen)).toBeNull();
+  });
+});
+
+describe("captured attended-pane dialogs", () => {
+  test("the attended EnterWorktree dialog parses to its path", () => {
+    const p = readRelocationPrompt(ATTENDED_ENTER.join("\n"));
+    expect(p).toMatchObject({
+      kind: "accept",
+      path: "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn",
+      keys: ["enter"],
+    });
   });
 });

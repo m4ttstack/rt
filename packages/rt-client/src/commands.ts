@@ -728,6 +728,13 @@ export interface Commands {
   /** `callerWorkspace` (HERDR_WORKSPACE_ID) is required only for a `bg:`
       ref, whose focus opens an attend tab in the caller's own workspace. */
   "pane:focus": { payload: { paneId: string; callerWorkspace?: string }; data: PaneFocusResult };
+  /** Name mode is two announcements: the PreToolUse hook's (no path; the
+      tree does not exist yet) then the provisioning hook's, sent once the
+      tree exists with its path. Path mode is one announcement with the path. */
+  "pane:announce-relocation": {
+    payload: { sessionId: string; paneId?: string; tool: "EnterWorktree"; path?: string; cwd: string };
+    data: { scheduled: boolean; pane: string | null; reason?: "no-pane" | "herd-pane" | "disabled" | "awaiting-path" };
+  };
 
   // ─── R013/R016 ────────────────────────────────────────────────
   "cache:read": { payload: { branches?: string[]; maxAgeMs?: number; repoIdentity?: string }; data: Record<string, BranchEnrichment> };
@@ -1023,6 +1030,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "pane:spawn",
   "pane:send",
   "pane:focus",
+  "pane:announce-relocation",
 
   // ─── R013/R016 ────────────────────────────────────────────────
   "cache:read",
