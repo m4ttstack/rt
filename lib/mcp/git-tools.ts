@@ -119,8 +119,8 @@ async function remoteOf(ref: string, cwd: string, git: GitRunner): Promise<strin
 }
 
 // onto is placed after --end-of-options so git never parses it as an option
-// (`--exec=<cmd>` would run that command); a dash-leading value is still
-// refused because no ref name can start with a dash.
+// (`--exec=<cmd>` would run that command); a dash-leading value would parse
+// as an option anywhere --end-of-options is missing, so it is refused even here.
 export async function gitRebase(cwd: string, opts: { onto?: string; abort?: boolean }, git: GitRunner): Promise<ToolResult> {
   if (opts.abort && opts.onto !== undefined) return err("pass onto or abort, not both");
   if (opts.abort) {
@@ -177,8 +177,9 @@ async function pushDestinationRedirected(cwd: string, git: GitRunner, branch: st
 }
 
 // rt sync interpolates the branch name into shell command strings, and git
-// accepts `$`, `(`, `;`, `|` and `${IFS}` in branch names.
-const SHELL_SAFE_BRANCH = /^[A-Za-z0-9._\/-]+$/;
+// accepts `$`, `(`, `;`, `|` and `${IFS}` in branch names. A dash-leading
+// name (`refs/heads/--mirror` can exist) would parse as a git option there.
+const SHELL_SAFE_BRANCH = /^[A-Za-z0-9._][A-Za-z0-9._\/-]*$/;
 
 // A paused rebase detaches HEAD, so this runs before the detached-HEAD
 // refusal to give the error that says how to get out. `--git-path` answers
@@ -208,7 +209,8 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (
   const fetched = await git(["fetch", "origin"], cwd);
   if (fetched.code !== 0) return { ok: false, error: `git fetch origin failed: ${detail(fetched)}` };
   const remote = await git(["rev-parse", "--verify", "--quiet", `origin/${branch}`], cwd);
-  if (remote.code !== 0) return { ok: true, diverged: false };
+  if (remote.code === 1) return { ok: true, diverged: false };
+  if (remote.code !== 0) return { ok: false, error: `git rev-parse --verify origin/${branch} failed: ${detail(remote)}` };
 
   const counts = await git(["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], cwd);
   if (counts.code !== 0) return { ok: false, error: `git rev-list --left-right --count failed: ${detail(counts)}` };

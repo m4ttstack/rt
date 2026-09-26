@@ -316,6 +316,9 @@ describe("branchSyncPreflight", () => {
   });
   test("no remote branch yet passes; a detached HEAD refuses", async () => {
     expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
+    const broken = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 128, stderr: "fatal: bad object" }, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" } }));
+    expect(broken.ok).toBe(false);
+    expect((broken as { error: string }).error).toContain("fatal: bad object");
     const detached = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { code: 1 } }));
     expect(detached.ok).toBe(false);
     expect((detached as { error: string }).error).toContain("detached");
@@ -346,8 +349,8 @@ describe("branchSyncPreflight", () => {
   });
 
   describe("branch names rt sync cannot pass safely", () => {
-    test("a branch with shell metacharacters or whitespace refuses before any config read or fetch", async () => {
-      for (const branch of ["x$(touch${IFS}PWNED)", "a;id|sh", "a b"]) {
+    test("a branch with shell metacharacters, whitespace or a leading dash refuses before any config read or fetch", async () => {
+      for (const branch of ["x$(touch${IFS}PWNED)", "a;id|sh", "a b", "--mirror", "--all", "-f"]) {
         const calls: string[] = [];
         const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls));
         expect(r.ok, branch).toBe(false);
@@ -444,14 +447,16 @@ describe("branch_sync tool", () => {
     expect(r.ok).toBe(false);
     expect(ran).toBe(false);
   });
-  test("a branch name carrying shell never reaches rt sync", async () => {
-    let ran = false;
-    const calls: string[] = [];
-    const tool = gitToolDefs({ git: fakeGit({ ...clean, "symbolic-ref --quiet --short HEAD": { stdout: "x$(touch${IFS}PWNED)\n" } }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
-    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
-    expect(r.ok).toBe(false);
-    expect(ran).toBe(false);
-    expect(calls).not.toContain("fetch origin");
+  test("a branch name carrying shell or a git option never reaches rt sync", async () => {
+    for (const branch of ["x$(touch${IFS}PWNED)", "--mirror", "--all", "-f"]) {
+      let ran = false;
+      const calls: string[] = [];
+      const tool = gitToolDefs({ git: fakeGit({ ...clean, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+      const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+      expect(r.ok, branch).toBe(false);
+      expect(ran, branch).toBe(false);
+      expect(calls, branch).not.toContain("fetch origin");
+    }
   });
   test("a push redirect never runs rt sync", async () => {
     let ran = false;
