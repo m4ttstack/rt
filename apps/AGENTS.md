@@ -22,8 +22,9 @@ it precedes the numbered kit contract sections.
 
 ### Reading order
 
-1. `README.md` -- what the four platform packages are, the subpath tables,
-   the consumer snippets, the repository layout, and local development.
+1. `docs/apps/README.md` -- what the four platform packages are, the
+   subpath tables, the consumer snippets, the repository layout, and local
+   development.
 2. `docs/superpowers/specs/2026-08-26-app-kit-design.md` -- historical: why
    these packages exist and the decisions taken during brainstorming.
 3. `docs/superpowers/specs/2026-09-06-apps-fold-in-design.md` -- historical:
@@ -33,22 +34,17 @@ it precedes the numbered kit contract sections.
 4. The kit contract below (sections 1 to 10): import walls, theme and icon
    extension points, the boot family, and the consumer requirements a new
    app must not skip.
-5. `docs/ui-authoring.md` -- MANDATORY before writing UI colour or type
+5. `docs/apps/ui-authoring.md` -- MANDATORY before writing UI colour or type
    anywhere in this repo: the Radix step model, the role tokens, the
    contrast bars and their ledger, and the type rules. Each app's own
    `apps/<name>/AGENTS.md` points back here and carries that app's
    specifics.
-6. `docs/bundle-cutover-brief.md` -- anything release- or bundle-shaped:
-   how the mac-app bundle pipeline reads each app's
-   `apps/<name>/mattstack.deck.json` recipe, app-prefixed release tags,
-   and why old app repos stay unarchived until a shipped bundle release
-   repoints to them.
 
 ### Repository layout
 
 `packages/{ui,server,tokyo,tui-kit,tokens,gate-kit}` and
 `apps/{chat,console,boxscore,board,deck}` are the two workspace roots; see
-README.md's "Repository layout" section for what each package/app is.
+`docs/apps/README.md`'s "Repository layout" section for what each package/app is.
 `packages/gate-kit` (`@mattstack/gate-kit`, the gate sheet primitives
 console and board share) is a private workspace member like
 `packages/tokens`, not one of the four versioned platform packages. The
@@ -74,22 +70,26 @@ produce its own lock.
 ### CI shape
 
 Every gate runs through Turborepo (`turbo.json`, entry point
-`scripts/turbo.sh`). `bun run check` is exactly what CI runs:
-`.github/workflows/ci.yml`'s `checks` job (ubuntu) calls
-`scripts/turbo.sh check --affected` on PRs and `check` on main; `deck-macos`
-runs `test --filter=deck` because deck shells to `plutil`/`launchd`, both
-macOS-only, and `scripts/turbo.sh` drops deck off macOS.
+`scripts/turbo.sh`), invoked from the rt monorepo's own
+`.github/workflows/checks.yml`, not a `ci.yml` in this directory: the
+`static` job calls `scripts/turbo.sh check --affected` on PRs and `check`
+on main; `deck-macos` runs `scripts/turbo.sh test --filter=deck` because
+deck shells to `plutil`/`launchd`, both macOS-only, and `scripts/turbo.sh`
+drops deck off macOS.
 
 `check` is three turbo invocations in order: the two codegen gates
 (`@mattstack/tui-kit#gates`, `//#tokens:fresh`) alone and serially, since
 they rewrite files the package tests read; the package gates (`typecheck`,
 `lint`, `test`, `serve-check`); then the root gates (`lint:root`,
-`format:check`, `build-storybook`, `treeshake`, `purity`, `scripts:test`)
-plus `@mattstack/tokens#test`. The first and last groups run on every PR
-whatever changed, because `--affected` walks the package graph and those
-tasks read trees the graph does not connect them to; their declared
-`inputs` decide the cache hit. The tui-kit visual and parity oracles are
-not in `check`; `bun run tui-kit:oracles` runs them locally.
+`format:check`, `build-storybook`, `treeshake`, `purity`, `typecheck`,
+`docs:check`, `picker:check`, `turbo:test`, `test`) plus
+`@mattstack/tokens#test`. `//#turbo:test` covers the turbo config's own
+tests
+(`scripts/__tests__/turbo-*.test.ts`). The first and last groups run on
+every PR whatever changed, because `--affected` walks the package graph
+and those tasks read trees the graph does not connect them to; their
+declared `inputs` decide the cache hit. The tui-kit visual and parity
+oracles are not in `check`; `bun run tui-kit:oracles` runs them locally.
 
 The cache is `<common git dir>/turbo-cache`, shared by every worktree of
 the checkout; CI restores the same path from the Actions cache. `--force`
@@ -132,10 +132,12 @@ that fail typecheck.
 
 ### rt identity note
 
-rt currently shows this repo under the identity label `app-kit`, via a
-machine-settings `rt.repoIdentityOverrides` bridge, until RT-112 re-keys
-it to the repo's actual name. The row and its data are correct; only the
-label is stale.
+This is about the pre-fold-in `m4ttstack/apps` remote, not the `apps/`
+directory you are reading this in: on a machine that has not yet cut over,
+rt still shows that remote under the identity label `app-kit`, via a
+machine-settings `rt.repoIdentityOverrides` bridge. The Stage A cutover's
+machine-state audit retires that override along with the rest of the old
+remote's tracking; nothing in this repo needs to change for it.
 
 ### Mantine: look it up, don't recall it
 
@@ -165,13 +167,13 @@ identity only. Per the fold-in decision none of them publishes
 npm), and every one is marked `private`. `packages/tokens` and
 `packages/gate-kit` stay private and unpublished. Every app
 under `apps/` consumes the four platform packages workspace-only
-(`workspace:*`); external npm deps such as `@mattstack/rt-client` (pinned
-exact in the root catalog), `@mattstack/glance`, `@mattstack/settings-kit`, and
-`invadrs` come from the registry via `catalog:`. The packed-tarball
-mechanism in README.md's "Bundle-transition tarballs" section stays
-documented as the sanctioned path for a future app that has not yet
-folded in as a workspace member; do not propose or wire up a publish
-workflow.
+(`workspace:*`); `@mattstack/rt-client` and `@mattstack/settings-kit` are
+likewise private workspace packages linked with `workspace:*`, not
+registry pulls. `@mattstack/glance` and `invadrs` remain real npm registry
+deps, pulled via `catalog:`. The packed-tarball mechanism in
+`docs/apps/README.md`'s "Bundle-transition tarballs" section stays documented as the sanctioned
+path for a future app that has not yet folded in as a workspace member; do
+not propose or wire up a publish workflow.
 
 ## 1. Why the import walls exist, and how to satisfy them
 
@@ -868,8 +870,8 @@ missing any of them breaks in a way that does not announce itself as
    `mantine-tokyo`) in its own `package.json`. `workspace:*` resolves
    through this repo's single `bun install`, so peers (`react`, `vite`,
    `wouter`) resolve once, the same as a registry install would. The
-   packed-tarball mechanism (`bun pm pack`, README.md's "Bundle-transition
-   tarballs" section) is for a consumer OUTSIDE this workspace only -- an
+   packed-tarball mechanism (`bun pm pack`, `docs/apps/README.md`'s
+   "Bundle-transition tarballs" section) is for a consumer OUTSIDE this workspace only -- an
    app that has not folded in yet. A bare `file:../packages/ui` dependency
    from outside the workspace still hits Bun 1.3's symlink-into-source
    behavior (contents symlink rather than copy, so peers resolve twice:

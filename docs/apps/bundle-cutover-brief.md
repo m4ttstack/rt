@@ -1,5 +1,9 @@
 # Bundle cutover brief: rt side
 
+Historical: the handoff for the apps repo's own bundle cutover, kept for
+reference. Apps has since folded into this repo; nothing here is an
+open task.
+
 For max, owner of `bundle-apps.yml` and the mac-app bundle pipeline. This
 is the repo-side handoff for Task 7 of the apps fold-in
 (`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`, "Bundle

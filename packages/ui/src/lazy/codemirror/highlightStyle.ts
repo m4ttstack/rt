@@ -3,7 +3,7 @@ import { tags } from '@lezer/highlight';
 
 /**
  * Token colours for every language the kit's CodeMirror offers, built from
- * `--tk-text-*` role tokens (docs/ui-authoring.md) instead of hex. Installed
+ * `--tk-text-*` role tokens (docs/apps/ui-authoring.md) instead of hex. Installed
  * as a non-fallback highlighter (see `syntaxHighlighting` call site), which
  * CodeMirror gives full precedence over `basicSetup`'s fallback
  * `defaultHighlightStyle` -- so JSON strings read as `--tk-text-cyan`

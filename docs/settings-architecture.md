@@ -98,12 +98,14 @@ exist for out-of-process callers only.
 5. `cd packages/rt-client && bun run build`: dist is what consumers copy, and
    the dist-freshness test fails otherwise.
 6. Deliver the new registry to every consumer: a node_modules copy never
-   updates itself. A `file:` consumer (console) re-copies on `bun install`;
-   the apps pinned to the published package (gitq, board) only see the key
-   after an rt-client version bump + publish + install; deck additionally
-   BUNDLES rt-client into its compiled binary, so it needs a rebuild +
-   fresh-inode install + `codesign -f -s -` to pick up path or registry
-   changes.
+   updates itself. Board, console and deck link `@mattstack/rt-client` as an
+   in-tree `workspace:*` package, so the registry row lands for them on the
+   next `bun install` (the root `postinstall` rebuilds rt-client's `dist/`)
+   or the next turbo build; deck additionally bundles rt-client into its
+   compiled binary, so it needs a rebuild at the next release to ship the
+   change. gitq, still its own repo, stays on the last published npm
+   `rt-client` and only sees the key after a version bump + publish +
+   install there.
 7. Read via `getSetting`, write via `setSetting`. Never construct store paths
    by hand; never cache a path or a value at module load.
 

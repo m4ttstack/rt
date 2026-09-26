@@ -247,8 +247,10 @@ before adding an app or changing how one builds.
 
 1. **The app must answer `--version` with a bare semver and exit 0.**
    `build-apps` smoke-tests the built artifact under an isolated HOME
-   right after compiling it; a server that just starts listening hangs
-   the probe. Apps on `@mattstack/app-server` get this from
+   right after compiling it, checking only that `--version` exits 0 (a
+   server that just starts listening hangs the probe); it never compares
+   the printed version against the tag, which `update-machine` does
+   separately. Apps on `@mattstack/app-server` get this from
    `serveMattstackApp` (0.1.2 or later): pass `version` from
    `package.json`, never a hardcoded string, or the tag and the binary
    disagree.
@@ -260,7 +262,7 @@ before adding an app or changing how one builds.
 3. **`serve: { port, args }` on the deps.lock row marks it a served app.**
    `parseDepsLock` requires the row's bundlePath and exec to be exactly
    `Contents/Helpers/<name>`, a port from 1024 to 65535 used by no other
-   row, and args with no whitespace. Relax a `serve` rule only after a
+   served row, and args with no whitespace. Relax a `serve` rule only after a
    release whose parser already accepts the relaxed form has shipped:
    after a Sparkle update a still-running daemon re-reads the replaced
    bundle's lock with its old parser, and a lock it rejects sends every
