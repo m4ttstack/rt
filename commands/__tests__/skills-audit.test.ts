@@ -30,7 +30,7 @@ describe("buildAuditPrompt", () => {
 });
 
 describe("buildAuditInvocation", () => {
-  const LOCKDOWN = ["--tools=Read", "--allowedTools=Read", "--strict-mcp-config", "--permission-mode=dontAsk", "--setting-sources=user"];
+  const LOCKDOWN = ["--tools=Read", "--allowedTools=Read", "--strict-mcp-config", "--permission-mode=dontAsk", "--setting-sources=user", "--no-session-persistence"];
 
   test("is a headless claude run with the prompt, Read only, no bypass, no account", () => {
     const inv = buildAuditInvocation("PROMPT", SESSION);

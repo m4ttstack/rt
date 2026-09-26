@@ -31,11 +31,10 @@ export function buildAuditPrompt(paths: string[], tools: Array<{ name: string; d
   ].join("\n\n");
 }
 
-// The prompt is untrusted skill text telling the model to call MCP writes, so
-// the run gets Read only, no MCP servers, and denies anything not allowed
-// rather than inheriting the user's auto mode and base allow list. Each flag
-// is one --flag=value token: a variadic option would swallow the prompt.
-const AUDIT_LOCKDOWN = "--tools=Read --allowedTools=Read --strict-mcp-config --permission-mode=dontAsk --setting-sources=user";
+// The prompt is untrusted skill text. --strict-mcp-config loads no MCP server and
+// --tools=Read removes Bash, Write and Edit; --setting-sources=user still loads the
+// user allow list. Each flag is one token: a variadic option would swallow the prompt.
+const AUDIT_LOCKDOWN = "--tools=Read --allowedTools=Read --strict-mcp-config --permission-mode=dontAsk --setting-sources=user --no-session-persistence";
 
 export function buildAuditInvocation(prompt: string, sessionId: string): AgentInvocation {
   return { headless: true, prompt, session: { kind: "start", sessionId }, yolo: false, extraArgs: AUDIT_LOCKDOWN };
