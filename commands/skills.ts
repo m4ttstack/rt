@@ -947,12 +947,16 @@ export async function skillsCompile(args: string[]): Promise<void> {
 }
 
 /**
- * The in-process compile call for the later sync chain: full-pack real
- * compile, no printing, no process.exit. `ok` is false on chain errors,
- * lint failures, or misplaced verbs -- each named in `errors` -- with no
- * partial write on failure, exactly as the handler behaves today.
+ * The in-process compile call for the later sync chain, and for any --json
+ * caller that must fold a recompile's outcome into its own single envelope
+ * instead of letting skillsCompile print a second, unparseable line: no
+ * printing, no process.exit. `verbs` scopes the compile the way --verb does
+ * (default null: full pack); `write` false previews without touching disk
+ * (default true). `ok` is false on chain errors, lint failures, or misplaced
+ * verbs -- each named in `errors` -- with no partial write on failure,
+ * exactly as the handler behaves today.
  */
-export async function compilePackAll(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string }): Promise<{ ok: boolean; errors: string[] }> {
+export async function compilePackAll(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string; verbs?: string[] | null; write?: boolean }): Promise<{ ok: boolean; errors: string[] }> {
   const args: string[] = [];
   if (opts.pack) args.push("--pack", opts.pack);
   if (opts.packDir) args.push("--pack-dir", opts.packDir);
@@ -961,7 +965,7 @@ export async function compilePackAll(opts: { pack?: string; packDir?: string; ma
   const resolved = await resolve(parseFlags(args));
   const chainErrors = pipelineChainErrors(resolved);
   if (chainErrors.length > 0) return { ok: false, errors: chainErrors };
-  const { failures, misplaced } = performCompile(resolved, null, true);
+  const { failures, misplaced } = performCompile(resolved, opts.verbs ?? null, opts.write ?? true);
   const errors = [...failures, ...misplaced.map((name) => `misplaced: ${name}`)];
   return { ok: errors.length === 0, errors };
 }
@@ -1742,7 +1746,9 @@ async function runList(flags: SurfaceFlags): Promise<void> {
   if (rows.length === 0) console.log("(no skills registered in this pack)");
 }
 
-async function runApply(flags: SurfaceFlags): Promise<void> {
+type ApplyResult = { moved: string[]; recorded: string[]; compileErrors: string[] };
+
+async function runApply(flags: SurfaceFlags): Promise<ApplyResult> {
   const { packDir } = await resolveSurfacePaths(flags);
   const verbNames = new Set(readVerbRoster(packDir).map((v) => v.name));
   const surface = readSurface(packDir);
@@ -1751,7 +1757,7 @@ async function runApply(flags: SurfaceFlags): Promise<void> {
   const publicSet = surface ? new Set(surface.public) : defaultPublicSet(skillsNames, verbNames);
 
   const candidates = [...new Set<string>([...skillsNames, ...attachmentNames])].sort();
-  let moved = 0;
+  const moved: string[] = [];
 
   for (const name of candidates) {
     const currentlyUnderSkills = skillsNames.has(name);
@@ -1766,15 +1772,15 @@ async function runApply(flags: SurfaceFlags): Promise<void> {
 
     const move = planMove(packDir, entry, currentlyUnderSkills ? "attachments" : "skills");
     const route = `${dirname(move.fromRel)}/ -> ${dirname(move.toRel)}/`;
-    moved++;
+    moved.push(name);
 
     if (flags.dryRun) {
-      console.log(`would move ${name}: ${route}`);
+      if (!flags.json) console.log(`would move ${name}: ${route}`);
       continue;
     }
 
     const note = moveHandAuthoredDir(packDir, move);
-    console.log(`moved ${name}: ${route}${note ? ` (${note})` : ""}`);
+    if (!flags.json) console.log(`moved ${name}: ${route}${note ? ` (${note})` : ""}`);
   }
 
   // surface.jsonc only ever names the public side -- internal is the absence
@@ -1782,19 +1788,37 @@ async function runApply(flags: SurfaceFlags): Promise<void> {
   // reconcile or announce for a stage the surface doesn't list. A listed
   // stage with neither side on disk has nothing to git-mv either; the
   // trailing compile below is what actually places it.
-  let recorded = 0;
+  const recorded: string[] = [];
   for (const name of [...stageNames].sort()) {
     if (!publicSet.has(name)) continue;
     if (existsSync(outDirFor(packDir, name, true)) || existsSync(otherSideDir(packDir, name, true))) continue;
-    recorded++;
-    console.log(flags.dryRun
-      ? `${name}: would record; emitted to skills/ on the next compile`
-      : `${name}: recorded; emitted to skills/ on the next compile`);
+    recorded.push(name);
+    if (!flags.json) {
+      console.log(flags.dryRun
+        ? `${name}: would record; emitted to skills/ on the next compile`
+        : `${name}: recorded; emitted to skills/ on the next compile`);
+    }
   }
 
-  if (moved === 0 && recorded === 0) console.log("no moves needed");
+  if (!flags.json && moved.length === 0 && recorded.length === 0) console.log("no moves needed");
+
+  if (flags.json) {
+    // The recompile runs through compilePackAll, not skillsCompile, so its
+    // report folds into the caller's single envelope instead of a second
+    // stdout line rt_verb's single JSON.parse would then fail on.
+    const compileResult = await compilePackAll({
+      pack: flags.team ?? undefined,
+      packDir,
+      manifest: flags.manifest ?? undefined,
+      mattstackDir: flags.mattstackDir ?? undefined,
+      write: !flags.dryRun,
+    });
+    if (!compileResult.ok) process.exitCode = 1;
+    return { moved, recorded, compileErrors: compileResult.errors };
+  }
 
   await skillsCompile(compileArgs(flags, packDir));
+  return { moved, recorded, compileErrors: [] };
 }
 
 /**
@@ -1829,9 +1853,19 @@ async function runSet(names: string[], want: "public" | "internal", flags: Surfa
   }
 
   writeSurfaceConfig(packDir, [...publicSet].sort());
-  for (const name of names) console.log(`${name}: ${want}`);
+  if (!flags.json) for (const name of names) console.log(`${name}: ${want}`);
 
-  await runApply(flags);
+  const result = await runApply(flags);
+  if (flags.json) {
+    console.log(JSON.stringify({
+      ok: result.compileErrors.length === 0,
+      dryRun: flags.dryRun,
+      set: names.map((name) => ({ name, want })),
+      moved: result.moved,
+      recorded: result.recorded,
+      compileErrors: result.compileErrors,
+    }));
+  }
 }
 
 export type SurfaceDelta = { toPublic: string[]; toInternal: string[] };
@@ -1967,7 +2001,16 @@ export async function skillsSurface(args: string[]): Promise<void> {
     if (mode === "apply") {
       const { flags, rest } = parseSurfaceFlags(args.slice(1));
       if (rest.length) throw new SkillsUsageError(`unrecognized argument "${rest[0]}"`);
-      await runApply(flags);
+      const result = await runApply(flags);
+      if (flags.json) {
+        console.log(JSON.stringify({
+          ok: result.compileErrors.length === 0,
+          dryRun: flags.dryRun,
+          moved: result.moved,
+          recorded: result.recorded,
+          compileErrors: result.compileErrors,
+        }));
+      }
       return;
     }
 
@@ -2002,6 +2045,14 @@ export async function skillsSurface(args: string[]): Promise<void> {
 
     const { flags, rest } = parseSurfaceFlags(args);
     if (rest.length) throw new SkillsUsageError(`unrecognized argument "${rest[0]}"`);
+    // The palette is an interactive picker with no --json shape of its own;
+    // a --json caller gets a clean usage error instead of the picker's
+    // no-tty prose or a silent hang.
+    if (flags.json) {
+      console.log(JSON.stringify({ ok: false, error: "rt skills surface --json needs a mode: list, set <name...> --public|--internal, or apply" }));
+      process.exitCode = 1;
+      return;
+    }
     await runPalette(flags);
   });
 }
@@ -2014,6 +2065,7 @@ type BindFlags = {
   dryRun: boolean;
   packDir: string | null;
   mattstackDir: string | null;
+  json: boolean;
 };
 
 function parseBindFlags(args: string[]): BindFlags {
@@ -2022,6 +2074,7 @@ function parseBindFlags(args: string[]): BindFlags {
   let dryRun = false;
   let packDir: string | null = null;
   let mattstackDir: string | null = null;
+  let json = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
@@ -2032,12 +2085,13 @@ function parseBindFlags(args: string[]): BindFlags {
       case "--dry-run": dryRun = true; break;
       case "--pack-dir": packDir = requireFlagValue("--pack-dir", args[++i]); break;
       case "--mattstack-dir": mattstackDir = args[++i] ?? null; break;
+      case "--json": json = true; break;
       default:
         throw new SkillsUsageError(`unrecognized argument "${a}"`);
     }
   }
 
-  return { team, manifest, dryRun, packDir, mattstackDir };
+  return { team, manifest, dryRun, packDir, mattstackDir, json };
 }
 
 type PickedBind = { verbName: string; slotName: string; fill: string; flagArgs: string[] };
@@ -2049,14 +2103,14 @@ type PickedBind = { verbName: string; slotName: string; fill: string; flagArgs: 
  * skillsBind falls through to its existing error -- the non-TTY / --json paths
  * never call this and stay byte-for-byte unchanged.
  */
-/** Split `skills bind` args into positionals and flag args (bind's flags: --dry-run boolean, plus the value-taking --pack/--team/--manifest/--pack-dir/--mattstack-dir). Keeps the &lt;verb&gt; &lt;slot&gt; &lt;fill&gt; count right even when flags are interleaved. */
+/** Split `skills bind` args into positionals and flag args (bind's flags: --dry-run/--json boolean, plus the value-taking --pack/--team/--manifest/--pack-dir/--mattstack-dir). Keeps the &lt;verb&gt; &lt;slot&gt; &lt;fill&gt; count right even when flags are interleaved. */
 function separateBindArgs(args: string[]): { positionals: string[]; flagArgs: string[] } {
   const valued = new Set(["--pack", "--team", "--manifest", "--pack-dir", "--mattstack-dir"]);
   const positionals: string[] = [];
   const flagArgs: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
-    if (a === "--dry-run") {
+    if (a === "--dry-run" || a === "--json") {
       flagArgs.push(a);
     } else if (valued.has(a)) {
       flagArgs.push(a);
@@ -2230,7 +2284,8 @@ export async function skillsBind(args: string[]): Promise<void> {
     const summary = `${verbName}.${slotName}: ${oldValue} -> ${fill}`;
 
     if (bindFlags.dryRun) {
-      console.log(summary);
+      if (bindFlags.json) console.log(JSON.stringify({ ok: true, dryRun: true, verb: verbName, slot: slotName, from: oldValue, to: fill }));
+      else console.log(summary);
       return;
     }
 
@@ -2265,8 +2320,36 @@ export async function skillsBind(args: string[]): Promise<void> {
     if (fragmentWrite) writeFileSync(fragmentWrite.path, fragmentWrite.text);
     writeFileSync(resolved.manifestPath, manifestAfter);
 
-    console.log(fragmentWrite ? `${summary} (fragment updated: ${fragmentWrite.path})` : summary);
+    // A stage's bound fills feed every orchestrator's compiled allowed-tools union
+    // (stageAllowedToolsFor) -- scoping to `--verb <stage>` would leave every
+    // orchestrator's SKILL.md stale, so a stage bind recompiles the whole pack.
+    const verbFilter = rosterVerb ? [verbName] : null;
 
+    if (bindFlags.json) {
+      // The recompile runs through compilePackAll, not skillsCompile, so its
+      // report folds into this one envelope instead of a second stdout line
+      // rt_verb's single JSON.parse would then fail on.
+      const compileResult = await compilePackAll({
+        pack: resolved.team,
+        packDir: resolved.packDir,
+        manifest: resolved.manifestPath,
+        mattstackDir: bindFlags.mattstackDir ?? undefined,
+        verbs: verbFilter,
+      });
+      if (!compileResult.ok) process.exitCode = 1;
+      console.log(JSON.stringify({
+        ok: compileResult.ok,
+        verb: verbName,
+        slot: slotName,
+        from: oldValue,
+        to: fill,
+        fragmentUpdated: fragmentWrite?.path ?? null,
+        compileErrors: compileResult.errors,
+      }));
+      return;
+    }
+
+    console.log(fragmentWrite ? `${summary} (fragment updated: ${fragmentWrite.path})` : summary);
     const surfaceFlags: SurfaceFlags = {
       team: resolved.team,
       dryRun: false,
@@ -2275,10 +2358,7 @@ export async function skillsBind(args: string[]): Promise<void> {
       manifest: resolved.manifestPath,
       json: false,
     };
-    // A stage's bound fills feed every orchestrator's compiled allowed-tools union
-    // (stageAllowedToolsFor) -- scoping to `--verb <stage>` would leave every
-    // orchestrator's SKILL.md stale, so a stage bind recompiles the whole pack.
-    const recompileArgs = rosterVerb ? [...compileArgs(surfaceFlags, resolved.packDir), "--verb", verbName] : compileArgs(surfaceFlags, resolved.packDir);
+    const recompileArgs = verbFilter ? [...compileArgs(surfaceFlags, resolved.packDir), "--verb", verbName] : compileArgs(surfaceFlags, resolved.packDir);
     await skillsCompile(recompileArgs);
   });
 }

@@ -5,6 +5,7 @@ import type { CommandArg, CommandNode } from "../command-tree.ts";
 import { listAgentSafe, resolveLeaf } from "../command-tree-resolve.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 import { execWithTimeout, type ExecResult } from "../setup/probes.ts";
+import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess, type ReadRoots } from "./temp-root-guard.ts";
 
 export const RT_VERB_TIMEOUT_MS = 30_000;
 const TAIL_BYTES = 400;
@@ -15,6 +16,8 @@ export interface RtVerbDeps {
   selfArgv: () => string[];
   isDir: (path: string) => boolean;
   spawn: (argv: string[], opts: { cwd?: string; env: Record<string, string>; timeoutMs: number }) => Promise<ExecResult>;
+  tempRoots: () => string[];
+  readRoots: () => ReadRoots;
 }
 
 export function realRtVerbDeps(): RtVerbDeps {
@@ -23,6 +26,8 @@ export function realRtVerbDeps(): RtVerbDeps {
     selfArgv: () => rtSelfArgv(),
     isDir: (p) => existsSync(p) && statSync(p).isDirectory(),
     spawn: (argv, opts) => execWithTimeout(argv, opts),
+    tempRoots: tempRootsForThisProcess,
+    readRoots: readRootsForThisProcess,
   };
 }
 
@@ -69,6 +74,27 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   for (const a of leaf.node.args ?? []) if (a.flag) flagTypes.set(a.flag, a.type);
   flagTypes.set("--json", "boolean");
   const declared = `Declared flags: ${[...flagTypes.keys()].join(", ")}`;
+  const tempRootFlags = new Set(leaf.node.agentTempRootFlags ?? []);
+  const readRootFlags = new Set(leaf.node.agentReadRootFlags ?? []);
+  const deniedFlags = new Set(leaf.node.agentDeniedFlags ?? []);
+  let tempRoots: string[] | null = null;
+  let readRoots: ReadRoots | null = null;
+  // A leaf's path flags write or read a caller-named file with no permission
+  // prompt: each is confined before the value is ever forwarded, so an unsafe
+  // path never reaches the spawn.
+  const pathError = (name: string, value: string): string | null => {
+    if (tempRootFlags.has(name)) {
+      tempRoots ??= deps.tempRoots();
+      const check = checkTempRootPath(value, tempRoots);
+      if (!check.ok) return `${name}: ${check.error}`;
+    }
+    if (readRootFlags.has(name)) {
+      readRoots ??= deps.readRoots();
+      const check = checkReadRootPath(value, readRoots.roots, readRoots.pluginListError);
+      if (!check.ok) return `${name}: ${check.error}`;
+    }
+    return null;
+  };
   const forwarded: string[] = [];
   for (let i = 0; i < leaf.rest.length; i++) {
     const arg = leaf.rest[i]!;
@@ -80,6 +106,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     const name = eq < 0 ? arg : arg.slice(0, eq);
     const type = flagTypes.get(name);
     if (!type) return fail(`${verb} does not declare ${name}. ${declared}`);
+    if (deniedFlags.has(name)) return fail(`${name} is not available through rt_verb for ${verb}; run it from a shell, where the permission prompt applies`);
     if (eq < 0) {
       if (type === "boolean") {
         forwarded.push(arg);
@@ -90,6 +117,8 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
       // as absent and widens the request's scope instead of erroring.
       const value = leaf.rest[i + 1];
       if (value === undefined || value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
+      const rootError = pathError(name, value);
+      if (rootError) return fail(rootError);
       forwarded.push(name, value);
       i++;
       continue;
@@ -98,11 +127,14 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     if (type === "boolean") return fail(`${name} is a switch and takes no value; pass it as ${name}`);
     const value = arg.slice(eq + 1);
     if (value === "" || value.startsWith("-")) return fail(`${name} needs a value`);
+    const rootError = pathError(name, value);
+    if (rootError) return fail(rootError);
     forwarded.push(name, value);
   }
 
   let cwd: string | undefined;
   if (input.cwd !== undefined) {
+    if (leaf.node.agentNoCwd) return fail(`${verb} resolves its pack from cwd; pass --pack instead`);
     if (typeof input.cwd !== "string" || !isAbsolute(input.cwd) || !deps.isDir(input.cwd)) {
       return fail("cwd must be an absolute path to an existing directory");
     }
@@ -110,15 +142,16 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   }
 
   const rest = forwarded.includes("--json") ? forwarded : [...forwarded, "--json"];
+  const cap = leaf.node.agentTimeoutMs ?? RT_VERB_TIMEOUT_MS;
   const res = await deps.spawn([...deps.selfArgv(), ...leaf.path, ...rest], {
     cwd,
     env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" },
-    timeoutMs: RT_VERB_TIMEOUT_MS,
+    timeoutMs: cap,
   });
 
   const parsed = parseJson(res.stdout);
   if (res.code === 0) return parsed.ok ? { ok: true, body: parsed.value } : fail(`${verb} returned non-JSON output: ${tail(res.stdout)}`);
-  if (res.code === 124) return fail(`${verb} timed out after ${RT_VERB_TIMEOUT_MS / 1000}s`);
+  if (res.code === 124) return fail(`${verb} timed out after ${cap / 1000}s`);
   const envelopeMessage = parsed.ok ? errorText(parsed.value) : null;
   if (res.code === 2 && envelopeMessage) return fail(envelopeMessage);
   const detail = envelopeMessage ?? (tail(res.stderr) || tail(res.stdout));

@@ -1,7 +1,27 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { join } from "path";
 import type { CommandNode } from "../../command-tree.ts";
+import { TREE } from "../../command-tree-def.ts";
 import type { ExecResult } from "../../setup/probes.ts";
 import { RT_VERB_TIMEOUT_MS, runRtVerb, type RtVerbDeps } from "../rt-verb.ts";
+
+/** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
+const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-out-")));
+/** Stands in for an installed plugin root; the read guard realpaths the file, so it must exist. */
+const FAKE_PLUGIN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-plugin-")));
+const OUTSIDE = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-outside-")));
+const TEMPLATE = join(FAKE_PLUGIN_ROOT, "job-template.md");
+const SECRET = join(OUTSIDE, "id_ed25519");
+const ESCAPE_LINK = join(FAKE_PLUGIN_ROOT, "escape.md");
+writeFileSync(TEMPLATE, "template");
+writeFileSync(SECRET, "PRIVATE KEY");
+symlinkSync(SECRET, ESCAPE_LINK);
+
+afterAll(() => {
+  for (const dir of [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT, OUTSIDE]) rmSync(dir, { recursive: true, force: true });
+});
 
 const tree: Record<string, CommandNode> = {
   worktree: {
@@ -10,11 +30,24 @@ const tree: Record<string, CommandNode> = {
     subcommands: {
       list: { description: "l", module: "./m.ts", agentSafe: true, args: [{ name: "Repo", flag: "--repo", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }] },
       dispose: { description: "d", module: "./m.ts" },
+      slow: { description: "s", module: "./m.ts", agentSafe: true, agentTimeoutMs: 600_000, args: [{ name: "JSON", flag: "--json", type: "boolean" }] },
+      brief: {
+        description: "b", module: "./m.ts", agentSafe: true, agentTempRootFlags: ["--out"], agentReadRootFlags: ["--template"],
+        args: [{ name: "Out", flag: "--out", type: "text" }, { name: "Template", flag: "--template", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
+      publish: {
+        description: "p", module: "./m.ts", agentSafe: true, agentDeniedFlags: ["--manifest"], agentNoCwd: true,
+        args: [{ name: "Manifest", flag: "--manifest", type: "text" }, { name: "Pack", flag: "--pack", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
+      check: {
+        description: "c", module: "./m.ts", agentSafe: true,
+        args: [{ name: "Manifest", flag: "--manifest", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
     },
   },
 };
 
-function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = []): RtVerbDeps {
+function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [], tempRoots: string[] = [FAKE_TEMP_ROOT], readRoots: string[] = [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT]): RtVerbDeps {
   return {
     tree,
     selfArgv: () => ["/bin/rt"],
@@ -23,6 +56,8 @@ function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [
       calls.push({ argv, opts });
       return result;
     },
+    tempRoots: () => tempRoots,
+    readRoots: () => ({ roots: readRoots }),
   };
 }
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
@@ -41,6 +76,132 @@ describe("runRtVerb", () => {
     expect(r).toEqual({ ok: true, body: { worktrees: [] } });
     expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "list", "--repo", "x", "--json"]);
     expect(calls[0]!.opts).toEqual({ cwd: "/work", env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" }, timeoutMs: RT_VERB_TIMEOUT_MS });
+  });
+
+  test("a leaf's agentTimeoutMs replaces the default cap", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    await runRtVerb({ args: ["worktree", "slow"] }, deps(ok("{}"), calls));
+    expect((calls[0]!.opts as { timeoutMs: number }).timeoutMs).toBe(600_000);
+  });
+
+  test("a timed-out leaf's own cap names the timeout, not the default", async () => {
+    const r = await runRtVerb({ args: ["worktree", "slow"] }, deps({ code: 124, stdout: "", stderr: "" }));
+    expect(r.ok ? "" : r.error).toContain("timed out after 600s");
+    expect(r.ok ? "" : r.error).not.toContain("30s");
+  });
+
+  test("agentTempRootFlags: a value inside the temp root passes through, both --name value and --name=value", async () => {
+    const out = join(FAKE_TEMP_ROOT, "brief.md");
+    const a = await runRtVerb({ args: ["worktree", "brief", "--out", out] }, deps(ok("{}")));
+    expect(a.ok).toBe(true);
+    const b = await runRtVerb({ args: ["worktree", "brief", `--out=${out}`] }, deps(ok("{}")));
+    expect(b.ok).toBe(true);
+  });
+
+  test("agentTempRootFlags: a value outside the temp root is refused with zero spawn calls, both flag forms", async () => {
+    const outside = join(realpathSync(homedir()), ".zshrc");
+    const a = await refused({ args: ["worktree", "brief", "--out", outside] });
+    expect(a.ok ? "" : a.error).toContain("temp root");
+    const b = await refused({ args: ["worktree", "brief", `--out=${outside}`] });
+    expect(b.ok ? "" : b.error).toContain("temp root");
+  });
+
+  test("agentTempRootFlags: a relative value is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--out", "relative/brief.md"] });
+    expect(r.ok).toBe(false);
+  });
+
+  test("agentReadRootFlags: a file inside an allowed read root passes through, both --name value and --name=value", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const a = await runRtVerb({ args: ["worktree", "brief", "--template", TEMPLATE] }, deps(ok("{}"), calls));
+    expect(a.ok).toBe(true);
+    const b = await runRtVerb({ args: ["worktree", "brief", `--template=${TEMPLATE}`] }, deps(ok("{}"), calls));
+    expect(b.ok).toBe(true);
+    expect(calls.map((c) => c.argv.slice(3, 5))).toEqual([["--template", TEMPLATE], ["--template", TEMPLATE]]);
+  });
+
+  test("agentReadRootFlags: a file outside every read root is refused with zero spawn calls, both flag forms", async () => {
+    const a = await refused({ args: ["worktree", "brief", "--template", SECRET] });
+    expect(a.ok ? "" : a.error).toContain("--template");
+    expect(a.ok ? "" : a.error).toContain("plugin or pack root");
+    const b = await refused({ args: ["worktree", "brief", `--template=${SECRET}`] });
+    expect(b.ok ? "" : b.error).toContain("plugin or pack root");
+  });
+
+  test("agentReadRootFlags: a relative value is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--template", "job-template.md"] });
+    expect(r.ok ? "" : r.error).toContain("absolute");
+  });
+
+  test("agentReadRootFlags: a symlink inside a read root pointing outside is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--template", ESCAPE_LINK] });
+    expect(r.ok ? "" : r.error).toContain("plugin or pack root");
+  });
+
+  test("agentDeniedFlags: a denied flag is refused in both forms with zero spawn calls", async () => {
+    for (const args of [["worktree", "publish", "--manifest", "/tmp/claude-501/m.jsonc"], ["worktree", "publish", "--manifest=/tmp/claude-501/m.jsonc"]]) {
+      const r = await refused({ args });
+      expect(r.ok ? "" : r.error, args.join(" ")).toContain("--manifest is not available through rt_verb");
+    }
+  });
+
+  test("agentDeniedFlags: the leaf's other flags still run", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "publish", "--pack", "acme"] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "publish", "--pack", "acme", "--json"]);
+  });
+
+  test("agentDeniedFlags: a leaf without the field forwards the same flag", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "check", "--manifest", "/tmp/m.jsonc"] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toContain("/tmp/m.jsonc");
+  });
+
+  test("agentNoCwd: a cwd is refused with zero spawn calls; the same call without cwd runs", async () => {
+    const r = await refused({ args: ["worktree", "publish", "--pack", "acme"], cwd: "/work" });
+    expect(r.ok ? "" : r.error).toContain("rt worktree publish resolves its pack from cwd; pass --pack instead");
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const ran = await runRtVerb({ args: ["worktree", "publish", "--pack", "acme"] }, deps(ok("{}"), calls));
+    expect(ran.ok).toBe(true);
+    expect((calls[0]!.opts as { cwd?: string }).cwd).toBeUndefined();
+  });
+
+  test("agentNoCwd: an unflagged leaf still accepts cwd", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "check"], cwd: "/work" }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect((calls[0]!.opts as { cwd?: string }).cwd).toBe("/work");
+  });
+
+  test("the real tree refuses cwd on skills bind, compile, sync and surface with zero spawn calls, and runs them without it", async () => {
+    for (const args of [["skills", "bind", "work", "domain", "acme:x"], ["skills", "compile"], ["skills", "sync", "--pack", "acme"], ["skills", "surface", "list"]]) {
+      const calls: { argv: string[]; opts: unknown }[] = [];
+      const r = await runRtVerb({ args, cwd: "/work" }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+      expect(r.ok ? "" : r.error, args.join(" ")).toContain("resolves its pack from cwd; pass --pack instead");
+      expect(calls, args.join(" ")).toEqual([]);
+      const without = await runRtVerb({ args }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+      expect(without.ok, args.join(" ")).toBe(true);
+      expect(calls.length, args.join(" ")).toBe(1);
+    }
+  });
+
+  test("the real tree forwards skills surface set <name> --public", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["skills", "surface", "set", "review", "--public"] }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toEqual(["/bin/rt", "skills", "surface", "set", "review", "--public", "--json"]);
+    const internal = await runRtVerb({ args: ["skills", "surface", "set", "review", "--internal"] }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+    expect(internal.ok).toBe(true);
+  });
+
+  test("agentTempRootFlags does not affect a flag it does not name", async () => {
+    const outside = join(realpathSync(homedir()), ".zshrc");
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "list", "--repo", outside] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toContain(outside);
   });
 
   test("does not double --json and canonicalizes aliases", async () => {

@@ -24,7 +24,7 @@ rt herd brief [flags]
 | `--strategy` | text |  | Strategy body to copy in as ## Method (mutually exclusive with --method-file) |
 | `--strategies` | text |  | Strategy bodies file; required with --strategy |
 | `--method-file` | text |  | Domain-supplied Method block (mutually exclusive with --strategy) |
-| `--fill` | text |  | Fill one template slot; repeat per slot (the real template has no discrete --fence/--branch slots, see C8 note) |
+| `--fill` | text |  | Fill one template slot as slot=value, where slot is the slot's label in the template; repeat per slot |
 | `--out` | text |  | Write the brief here; omit to print it |
 | [`--json`](/guides/common-flags) | boolean | `false` | Emit the brief as JSON instead of printing it plain |
 

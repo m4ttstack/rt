@@ -14,11 +14,10 @@ function flagged(tree: Record<string, CommandNode>, prefix: string[] = []): { pa
 describe("agent-safe surface", () => {
   test("every agent-safe leaf is listed here, so each addition is reviewed", () => {
     expect(listAgentSafe(TREE).map((e) => e.path.join(" ")).sort()).toEqual([
-      "endpoint lookup",
-      "herd status",
-      "skills writing-style show",
-      "worktree list",
-      "worktree triage",
+      "daemon status", "endpoint lookup", "events list", "gate list", "gate subscriptions", "git branches", "git log", "git status",
+      "herd brief", "herd gates", "herd status", "pane list", "pane peek", "repos status", "runs find", "runs show",
+      "settings explain", "settings get", "settings list", "setup status", "skills bind", "skills check", "skills compile",
+      "skills surface", "skills sync", "skills writing-style show", "team status", "worktree await-ready", "worktree list", "worktree triage",
     ]);
   });
 
@@ -27,6 +26,46 @@ describe("agent-safe surface", () => {
     expect(flagged({ branch }).map((e) => e.path.join(" "))).toEqual(["branch"]);
     for (const { path, node } of flagged(TREE)) {
       expect(node.subcommands, path.join(" ")).toBeUndefined();
+    }
+  });
+
+  test("herd brief confines every caller-named path it writes or reads", () => {
+    const brief = TREE.herd!.subcommands!.brief!;
+    expect(brief.agentTempRootFlags).toEqual(["--out"]);
+    expect([...(brief.agentReadRootFlags ?? [])].sort()).toEqual(["--method-file", "--strategies", "--template"]);
+  });
+
+  test("herd brief's --fill hint says what the flag does, with no review-round reference", () => {
+    const fill = TREE.herd!.subcommands!.brief!.args!.find((a) => a.flag === "--fill")!;
+    expect(fill.hint).not.toMatch(/\bC\d+\b|\bnote\b/);
+    expect(fill.hint).toContain("slot");
+  });
+
+  test("the skills leaves that recompile, commit or push deny the flags that would point them at a caller-written manifest or pack", () => {
+    const skills = TREE.skills!.subcommands!;
+    expect(skills.sync!.agentDeniedFlags).toEqual(["--manifest"]);
+    expect(skills.bind!.agentDeniedFlags).toEqual(["--manifest"]);
+    expect(skills.compile!.agentDeniedFlags).toEqual(["--manifest", "--pack-dir"]);
+    expect(skills.check!.agentDeniedFlags).toBeUndefined();
+  });
+
+  test("the skills leaves that resolve a pack from cwd refuse an rt_verb cwd; skills check stays open", () => {
+    const skills = TREE.skills!.subcommands!;
+    for (const leaf of ["bind", "compile", "sync", "surface"]) expect(skills[leaf]!.agentNoCwd, leaf).toBe(true);
+    expect(skills.check!.agentNoCwd).toBeUndefined();
+  });
+
+  test("skills surface declares --public and --internal, so set can run through rt_verb", () => {
+    const flags = (TREE.skills!.subcommands!.surface!.args ?? []).filter((a) => a.type === "boolean").map((a) => a.flag);
+    expect(flags).toEqual(expect.arrayContaining(["--public", "--internal"]));
+  });
+
+  test("every confined flag names a declared text flag of its leaf", () => {
+    for (const { path, node } of listAgentSafe(TREE)) {
+      const textFlags = new Set((node.args ?? []).filter((a) => a.flag && a.type === "text").map((a) => a.flag));
+      for (const flag of [...(node.agentTempRootFlags ?? []), ...(node.agentReadRootFlags ?? []), ...(node.agentDeniedFlags ?? [])]) {
+        expect(textFlags.has(flag), `${path.join(" ")} ${flag}`).toBe(true);
+      }
     }
   });
 

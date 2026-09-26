@@ -251,6 +251,34 @@ describe("skillsBind", () => {
     expect(skillMd).toContain("acme:watch-ci-domain-v2");
   });
 
+  test("--json success path prints exactly one parseable JSON document, recompile folded in", async () => {
+    const packDir = makePackDir();
+    writeStubs(packDir, { "watch-ci": { engine: "watch-ci", description: "Watch CI" } });
+    const { mattstackDir, manifestPath } = makeEngineFixture();
+
+    await skillsBind([
+      "watch-ci", "domain", "acme:watch-ci-domain-v2", "--json",
+      "--pack", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath,
+    ]);
+
+    expect(logs).toHaveLength(1);
+    const payload = JSON.parse(logs[0]!);
+    expect(payload).toEqual({
+      ok: true,
+      verb: "watch-ci",
+      slot: "domain",
+      from: "acme:watch-ci-domain-v1",
+      to: "acme:watch-ci-domain-v2",
+      fragmentUpdated: null,
+      compileErrors: [],
+    });
+
+    const bindings = readManifestBindings(manifestPath);
+    expect(bindings["mattstack:watch-ci"]?.domain).toBe("acme:watch-ci-domain-v2");
+    const skillMd = readFileSync(join(packDir, "skills", "watch-ci", "SKILL.md"), "utf8");
+    expect(skillMd).toContain("acme:watch-ci-domain-v2");
+  });
+
   test("comments in the manifest survive the write", async () => {
     const packDir = makePackDir();
     writeStubs(packDir, { "watch-ci": { engine: "watch-ci", description: "Watch CI" } });

@@ -250,6 +250,30 @@ describe("skillsSurface list", () => {
 });
 
 describe("skillsSurface set", () => {
+  test("--json: prints exactly one parseable JSON document, recompile folded in, no prose", async () => {
+    const packDir = makePackDir();
+    writeStubs(packDir, {});
+    writeFile(join(packDir, "attachments", "my-attach", "SKILL.md"), "---\nname: a\n---\nbody\n");
+    const { mattstackDir, manifestPath } = makeEngineFixture();
+
+    await skillsSurface([
+      "set", "my-attach", "--public", "--json",
+      "--team", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath,
+    ]);
+
+    expect(logs).toHaveLength(1);
+    const payload = JSON.parse(logs[0]!);
+    expect(payload).toEqual({
+      ok: true,
+      dryRun: false,
+      set: [{ name: "my-attach", want: "public" }],
+      moved: ["my-attach"],
+      recorded: [],
+      compileErrors: [],
+    });
+    expect(existsSync(join(packDir, "skills", "my-attach", "SKILL.md"))).toBe(true);
+  });
+
   test("--public on an attachments/ dir: bootstraps surface.jsonc, moves it to skills/ via apply (plain rename, no git repo)", async () => {
     const packDir = makePackDir();
     writeStubs(packDir, {});
@@ -472,6 +496,22 @@ describe("skillsSurface apply", () => {
     expect(existsSync(join(packDir, "skills", "my-verb", "SKILL.md"))).toBe(true);
   });
 
+  test("--json: prints exactly one parseable JSON document, recompile folded in, no prose", async () => {
+    const packDir = makePackDir();
+    writeStubs(packDir, { "my-verb": { engine: "my-verb", description: "Do the thing" } });
+    const { mattstackDir, manifestPath } = makeEngineFixture();
+
+    await skillsSurface([
+      "apply", "--json",
+      "--team", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath,
+    ]);
+
+    expect(logs).toHaveLength(1);
+    const payload = JSON.parse(logs[0]!);
+    expect(payload).toEqual({ ok: true, dryRun: false, moved: [], recorded: [], compileErrors: [] });
+    expect(existsSync(join(packDir, "skills", "my-verb", "SKILL.md"))).toBe(true);
+  });
+
   test("unrecognized argument: clean one-line error, exit 1", async () => {
     const { exitCode, errors } = await runExpectingCleanExit(() =>
       skillsSurface(["apply", "--bogus"]),
@@ -614,6 +654,21 @@ describe("skillsSurface bare invocation (interactive palette)", () => {
     expect(out).toContain("my-skill");
     expect(out).toContain("no tty -- edit one at a time: rt skills surface set");
     expect(out).not.toContain("fzf");
+  });
+
+  test("--json with no mode: a JSON usage error, not palette prose", async () => {
+    const packDir = makePackDir();
+    writeStubs(packDir, {});
+    writeFile(join(packDir, "skills", "my-skill", "SKILL.md"), "---\nname: s\n---\nbody\n");
+
+    await skillsSurface(["--json", "--team", "t", "--pack-dir", packDir]);
+
+    expect(process.exitCode).toBe(1);
+    expect(logs).toHaveLength(1);
+    const payload = JSON.parse(logs[0]!);
+    expect(payload.ok).toBe(false);
+    expect(payload.error).toContain("needs a mode");
+    expect(existsSync(join(packDir, "pack", "surface.jsonc"))).toBe(false);
   });
 
   test("empty pack: prints a no-skills message instead of crashing", async () => {

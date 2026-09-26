@@ -459,7 +459,8 @@ export function renderListRow(s: ListedSetting): string {
 
 export async function settingsExplain(args: string[]): Promise<void> {
   const [key] = positionals(args);
-  if (!key) fail("usage: rt settings explain <key> [--repo <name>]");
+  if (!key) fail("usage: rt settings explain <key> [--repo <name>] [--json]");
+  const json = args.includes("--json");
   const repoCtx = await resolveRepoContext(flagValue(args, "--repo"));
 
   let rows: ExplainRow[];
@@ -473,6 +474,11 @@ export async function settingsExplain(args: string[]): Promise<void> {
 
   const def = getDef(key) as SettingDef; // explainSetting already threw for an unregistered key
   const currentName = currentStoreName(def);
+
+  if (json) {
+    console.log(JSON.stringify({ ok: true, key, rows, currentStore: currentName ?? null }));
+    return;
+  }
 
   console.log("");
   console.log(`  ${bold}${key}${reset}`);
