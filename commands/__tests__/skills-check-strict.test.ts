@@ -51,8 +51,19 @@ describe("checkPack strictness", () => {
     }
   });
 
-  test("the pack named mattstack is always strict", async () => {
+  test("a pack named mattstack without the flag is not strict", async () => {
     const dir = makePack({ name: "mattstack", version: "1.0.0" });
+    try {
+      const payload = await checkPack({ packDir: dir });
+      expect(payload.mcpLint.length).toBe(1);
+      expect(payload.strictLint).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a pack named mattstack with \"strictLint\": true in plugin.json is strict", async () => {
+    const dir = makePack({ name: "mattstack", version: "1.0.0", strictLint: true });
     try {
       const payload = await checkPack({ packDir: dir });
       expect(payload.mcpLint.length).toBe(1);

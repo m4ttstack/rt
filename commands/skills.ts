@@ -1098,7 +1098,7 @@ async function computeCheck(flags: Flags): Promise<CheckPayload> {
   // for a null result.
   const installed = resolved.pluginRoots.list.length === 0 ? null : installedInfoFor(resolved, discoverPacks());
   const mcpLint = lintPackDir(resolved.packDir);
-  const strictLint = resolved.team === "mattstack" || packStrictLint(resolved.packDir);
+  const strictLint = packStrictLint(resolved.packDir);
 
   return { pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors, installed, drift: anyStale, mcpLint, strictLint };
 }
