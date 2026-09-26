@@ -63,12 +63,18 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return err(b.error);
   const branch = b.branch;
-  const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd);
   const args = ["push"];
   if (opts.forceWithLease) args.push("--force-with-lease");
+  const asOrigin = `pass setUpstream: true to push it as origin/${branch}`;
   let remote: string;
   let remoteBranch: string;
-  if (upstream.code === 0) {
+  if (opts.setUpstream) {
+    remote = "origin";
+    remoteBranch = branch;
+    args.push("-u");
+  } else {
+    const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd);
+    if (upstream.code !== 0) return err(`${branch} has no upstream; ${asOrigin}`);
     const full = upstream.stdout.trim();
     const slash = full.indexOf("/");
     if (slash <= 0) return err(`cannot read the upstream of ${branch}: ${full}`);
@@ -76,15 +82,13 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     remoteBranch = full.slice(slash + 1);
     // `git checkout -b feat/x origin/main` tracks main, so the local name
     // passing says nothing about where the refspec lands.
-    if (PROTECTED.has(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
+    if (PROTECTED.has(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
     const remoteDef = await remoteDefault(cwd, git, remote);
     if (remoteDef === null) return err(`refusing to push ${branch}: its upstream is ${full}, whose remote's default branch could not be determined`);
-    if (remoteBranch === remoteDef.name) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
-  } else {
-    if (!opts.setUpstream) return err(`${branch} has no upstream; pass setUpstream: true to push it as origin/${branch}`);
-    remote = "origin";
-    remoteBranch = branch;
-    args.push("-u");
+    if (remoteBranch === remoteDef.name) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
+    // A stacked child tracking origin/<parent> would fast-forward the
+    // parent's branch with the child's commits.
+    if (remoteBranch !== branch) return err(`refusing to push ${branch}: its upstream is ${full}, a different branch name; ${asOrigin}`);
   }
   args.push(remote, `HEAD:refs/heads/${remoteBranch}`);
   const r = await git(args, cwd);

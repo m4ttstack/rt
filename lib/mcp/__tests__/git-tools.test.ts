@@ -26,13 +26,24 @@ describe("gitPush", () => {
     expect(r.ok).toBe(true);
     expect(calls.at(-1)).toBe("push --force-with-lease origin HEAD:refs/heads/feat/x");
   });
-  test("an upstream with a different branch name is pushed to THAT name, never to origin/<local>", async () => {
+  test("an upstream with a different branch name is refused, naming both and setUpstream", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/renamed\n" }, "push origin HEAD:refs/heads/feat/renamed": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/parent\n" }, "push origin HEAD:refs/heads/feat/parent": {} };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("feat/x");
+    expect(r.error).toContain("origin/feat/parent");
+    expect(r.error).toContain("setUpstream");
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("setUpstream pushes as origin/<branch> whatever the existing upstream, without reading it", async () => {
+    const calls: string[] = [];
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/main\n" }, "push -u origin HEAD:refs/heads/feat/x": {} };
+    const r = await gitPush("/t", { setUpstream: true }, fakeGit(script, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push origin HEAD:refs/heads/feat/renamed");
-    expect((r.body as { upstream: string }).upstream).toBe("origin/feat/renamed");
+    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
+    expect(calls).not.toContain("rev-parse --abbrev-ref --symbolic-full-name @{u}");
+    expect((r.body as { upstream: string }).upstream).toBe("origin/feat/x");
   });
   test("an upstream on another remote goes to that remote", async () => {
     const calls: string[] = [];
@@ -91,6 +102,7 @@ describe("gitPush", () => {
       const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${up}\n` } }, calls));
       expect(r.ok, up).toBe(false);
       expect(r.error, up).toContain(up);
+      expect(r.error, up).toContain("setUpstream: true");
       expect(calls.some((c) => c.startsWith("push")), up).toBe(false);
     }
   });
