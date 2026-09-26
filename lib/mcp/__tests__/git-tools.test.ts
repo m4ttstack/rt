@@ -68,12 +68,33 @@ describe("gitPush", () => {
     expect(r.ok).toBe(true);
     expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/feat/x");
   });
-  test("a remote name with a regex special character is matched by its literal prefix, not left unstripped by a broken RegExp", async () => {
-    const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork+x/trunk\n" }, "symbolic-ref --quiet refs/remotes/fork+x/HEAD": { stdout: "refs/remotes/fork+x/trunk\n" } };
-    const r = await gitPush("/t", {}, fakeGit(script, calls));
-    expect(r.ok).toBe(false);
-    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  describe("a same-named upstream that is its own remote's default", () => {
+    const onTrunk = (upstream: string): Script => ({ ...onFeature, ...on("trunk"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${upstream}\n` }, "push fork HEAD:refs/heads/trunk": {}, "push fork+x HEAD:refs/heads/trunk": {} });
+    const refusal = (remote: string) => `refusing to push trunk: its upstream ${remote}/trunk is ${remote}'s default branch; pass setUpstream: true to push it as origin/trunk`;
+    test("is refused, read from that remote's local HEAD symref", async () => {
+      const calls: string[] = [];
+      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { stdout: "refs/remotes/fork/trunk\n" } }, calls));
+      expect(r.error).toBe(refusal("fork"));
+      expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+    });
+    test("is refused, read from ls-remote when that remote's HEAD symref is missing", async () => {
+      const calls: string[] = [];
+      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref fork HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" } }, calls));
+      expect(r.error).toBe(refusal("fork"));
+      expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+    });
+    test("is refused when the remote name carries a regex metacharacter", async () => {
+      const calls: string[] = [];
+      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork+x/trunk"), "symbolic-ref --quiet refs/remotes/fork+x/HEAD": { stdout: "refs/remotes/fork+x/trunk\n" } }, calls));
+      expect(r.error).toBe(refusal("fork+x"));
+      expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+    });
+    test("is pushed when that remote defaults to another branch", async () => {
+      const calls: string[] = [];
+      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { stdout: "refs/remotes/fork/main\n" } }, calls));
+      expect(r.ok).toBe(true);
+      expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/trunk");
+    });
   });
   test("origin's default resolved via ls-remote when its HEAD symref is missing refuses the current branch develop", async () => {
     const calls: string[] = [];
@@ -83,18 +104,6 @@ describe("gitPush", () => {
       "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n<sha>\tHEAD\n" },
       "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" },
       "push origin HEAD:refs/heads/develop": {},
-    };
-    const r = await gitPush("/t", {}, fakeGit(script, calls));
-    expect(r.ok).toBe(false);
-    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
-  });
-  test("an upstream's remote default resolved via ls-remote when its HEAD symref is missing refuses origin/trunk", async () => {
-    const calls: string[] = [];
-    const script: Script = {
-      ...on("feat/x"),
-      "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/trunk\n" },
-      "symbolic-ref --quiet refs/remotes/origin/HEAD": { code: 128 },
-      "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" },
     };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(false);
@@ -148,22 +157,14 @@ describe("gitPush", () => {
       expect(calls.at(-1)).toBe("push origin HEAD:refs/heads/feat/x");
     });
   });
-  test("a feature branch whose upstream is origin/main (checkout -b feat/x origin/main) is refused", async () => {
+  test("a feature branch whose upstream is origin/main (checkout -b feat/x origin/main) is refused as a different branch name", async () => {
     for (const up of ["origin/main", "origin/master", "origin/develop"]) {
       const calls: string[] = [];
       const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${up}\n` } }, calls));
       expect(r.ok, up).toBe(false);
-      expect(r.error, up).toContain(up);
-      expect(r.error, up).toContain("setUpstream: true");
+      expect(r.error, up).toBe(`refusing to push feat/x: its upstream is ${up}, a different branch name; pass setUpstream: true to push it as origin/feat/x`);
       expect(calls.some((c) => c.startsWith("push")), up).toBe(false);
     }
-  });
-  test("an upstream on another remote is checked against THAT remote's default", async () => {
-    const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/trunk\n" }, "symbolic-ref --quiet refs/remotes/fork/HEAD": { stdout: "refs/remotes/fork/trunk\n" } };
-    const r = await gitPush("/t", {}, fakeGit(script, calls));
-    expect(r.ok).toBe(false);
-    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
   });
   test("setUpstream pushes -u origin HEAD:refs/heads/<branch>", async () => {
     const calls: string[] = [];

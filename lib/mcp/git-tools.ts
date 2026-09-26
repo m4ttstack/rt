@@ -99,15 +99,15 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     if (slash <= 0) return err(`cannot read the upstream of ${branch}: ${full}`);
     remote = full.slice(0, slash);
     remoteBranch = full.slice(slash + 1);
-    // `git checkout -b feat/x origin/main` tracks main, so the local name
-    // passing says nothing about where the refspec lands.
-    if (PROTECTED.has(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
+    // `git checkout -b feat/x origin/main` tracks main, and a stacked child
+    // tracking origin/<parent> would fast-forward the parent with the child's
+    // commits, so the refspec only ever lands on the branch's own name.
+    if (remoteBranch !== branch) return err(`refusing to push ${branch}: its upstream is ${full}, a different branch name; ${asOrigin}`);
+    // pushableBranch checked origin's default only; another remote can
+    // default to a name origin treats as an ordinary branch.
     const remoteDef = await remoteDefault(cwd, git, remote);
     if (remoteDef === null) return err(`refusing to push ${branch}: its upstream is ${full}, whose remote's default branch could not be determined`);
-    if (remoteDef.names.includes(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
-    // A stacked child tracking origin/<parent> would fast-forward the
-    // parent's branch with the child's commits.
-    if (remoteBranch !== branch) return err(`refusing to push ${branch}: its upstream is ${full}, a different branch name; ${asOrigin}`);
+    if (remoteDef.names.includes(remoteBranch)) return err(`refusing to push ${branch}: its upstream ${full} is ${remote}'s default branch; ${asOrigin}`);
   }
   args.push(remote, `HEAD:refs/heads/${remoteBranch}`);
   const r = await git(args, cwd);
