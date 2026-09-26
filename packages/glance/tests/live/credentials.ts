@@ -126,7 +126,7 @@ export function parseGitHubSlug(webUrl: string): { owner: string; repo: string }
   return { owner, repo };
 }
 
-const DEFAULT_PATH = new URL('../../../../harness_credentials.json', import.meta.url).pathname;
+const DEFAULT_PATH = new URL('../../harness_credentials.json', import.meta.url).pathname;
 
 /** Returns null when the file is absent, so the runner can skip with a message. */
 export async function loadCredentials(

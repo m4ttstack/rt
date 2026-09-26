@@ -46,7 +46,7 @@ import {
   type PollSample
 } from './analysis.ts';
 
-const REPO_ROOT = new URL('../../../../../', import.meta.url).pathname;
+const REPO_ROOT = new URL('../../../', import.meta.url).pathname;
 
 /**
  * Skew allowance when matching a driven action to an event. `performedAt` is

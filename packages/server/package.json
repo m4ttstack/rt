@@ -35,7 +35,7 @@
   },
   "peerDependencies": {
     "@mattstack/rt-client": "workspace:*",
-    "@mattstack/glance": "catalog:",
+    "@mattstack/glance": "workspace:*",
     "hono": "catalog:"
   }
 }

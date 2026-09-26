@@ -24,7 +24,9 @@
     "prepublishOnly": "bun run check-types && bun run check:node",
     "check-types": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
     "check-types:live": "tsc -p tsconfig.tests.json --noEmit",
-    "check:node": "bun run build && node tests/node-smoke.mjs"
+    "check:node": "bun run build && node tests/node-smoke.mjs",
+    "typecheck": "bun run check-types",
+    "test": "bun test tests"
   },
   "license": "MIT",
   "repository": {
@@ -40,7 +42,7 @@
     "@octokit/openapi-types": "^28.0.0",
     "@types/bun": "^1.3.14",
     "@types/node": "^22.15.21",
-    "typescript": "catalog:"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@gitbeaker/rest": "^43.8.0",

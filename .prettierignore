@@ -5,6 +5,8 @@ docs
 bun.lock
 packages/ui/scripts/treeshake-probe/dist
 packages/tui-kit
+/packages/glance
+/packages/glance-react
 apps/*/design
 apps/board/skills/*/SKILL.md
 apps/deck/core/generated
