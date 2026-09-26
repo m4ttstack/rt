@@ -1,8 +1,8 @@
 /**
- * Helpers shared by every MCP tool module (lib/mcp/tools.ts, run-tools.ts,
- * and later task modules). No MCP SDK import here, and no import of
- * commands/herd.ts or commands/chat.ts (both pull in TUI-adjacent modules
- * that lib/mcp must stay clear of).
+ * Helpers shared by every MCP tool module (lib/mcp/tools.ts, run-tools.ts).
+ * No MCP SDK import here, and no import of commands/herd.ts or
+ * commands/chat.ts (both pull in TUI-adjacent modules that lib/mcp must
+ * stay clear of).
  */
 import { herdList } from "../../packages/rt-client/src/index.ts";
 import type { RtResponse } from "../../packages/rt-client/src/index.ts";

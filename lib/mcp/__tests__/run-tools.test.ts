@@ -3,6 +3,10 @@ import { packRootFrom, runToolDefs, splitFlags, type RunToolDeps } from "../run-
 
 type Call = { verb: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string };
 
+const RUNS_ROOT = "/runs";
+const DB = `${RUNS_ROOT}/repo/id/state.db`;
+const RUNS_ROOT_ENV = { RT_RUNS_ROOT: RUNS_ROOT } as NodeJS.ProcessEnv;
+
 function fakeDeps(out = '{"ok":true}', code = 0): { deps: RunToolDeps; calls: Call[] } {
   const calls: Call[] = [];
   return {
@@ -11,6 +15,7 @@ function fakeDeps(out = '{"ok":true}', code = 0): { deps: RunToolDeps; calls: Ca
       write: async (verb, args, env, cwd) => { calls.push({ verb, args, env: env ?? {}, cwd: cwd ?? "" }); return { out, code }; },
       list: async () => ({ ok: true, data: { runs: [] } }) as any,
       realpath: (p) => p.replace("/link/", "/real/"),
+      isPackRoot: () => true,
     },
   };
 }
@@ -25,6 +30,14 @@ describe("splitFlags", () => {
     for (const bad of ["--repo 'r'", '--repo "r"', "--repo $(id)", "--repo `id`"]) {
       expect(splitFlags(bad).ok, bad).toBe(false);
     }
+  });
+  test("refuses C0 control characters and DEL", () => {
+    for (const bad of ["--repo r\x00", "--repo r\x07", "--repo r\x1b", "--repo r\x7f"]) {
+      expect(splitFlags(bad).ok, bad).toBe(false);
+    }
+  });
+  test("still splits on tab, newline and carriage return", () => {
+    expect(splitFlags("--repo\tr\n--work-type\rw").ok).toBe(true);
   });
 });
 
@@ -49,47 +62,107 @@ describe("run_start", () => {
     expect(res.ok).toBe(false);
     expect(calls).toEqual([]);
   });
+  test("refuses a relative skillDir without calling write", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p", skillDir: "pack/skills/work" }, {} as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("skillDir");
+    expect(calls).toEqual([]);
+  });
+  test("refuses a skillDir whose derived pack root carries no plugin manifest", async () => {
+    const { deps, calls } = fakeDeps();
+    deps.isPackRoot = () => false;
+    const res = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("plugin.json");
+    expect(calls).toEqual([]);
+  });
+
+  describe("flags allowlist", () => {
+    test("refuses an unknown flag", async () => {
+      const { deps, calls } = fakeDeps();
+      const res = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p --evil x", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("--evil");
+      expect(calls).toEqual([]);
+    });
+    test("refuses an attempted --pack-dirs override in --x v form", async () => {
+      const { deps, calls } = fakeDeps();
+      const res = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p --pack-dirs /evil", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("--pack-dirs");
+      expect(calls).toEqual([]);
+    });
+    test("refuses an attempted --pack-dirs override in --x=v form", async () => {
+      const { deps, calls } = fakeDeps();
+      const res = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p --pack-dirs=/evil", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("--pack-dirs");
+      expect(calls).toEqual([]);
+    });
+    test("refuses --ticket and --spawned-by named inside the flags string itself", async () => {
+      const { deps, calls } = fakeDeps();
+      const ticket = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p --ticket T-1", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+      const spawned = await tool(deps, "run_start").handler({ flags: "--repo r --work-type w --pipeline p --spawned-by board", skillDir: "/link/pack/skills/work" }, {} as NodeJS.ProcessEnv);
+      expect(ticket.ok).toBe(false);
+      expect(spawned.ok).toBe(false);
+      expect(calls).toEqual([]);
+    });
+    test("accepts every flag run-start's own CLI parses", async () => {
+      const { deps, calls } = fakeDeps('{"ok":true,"runId":"x","runDb":"/db"}');
+      const res = await tool(deps, "run_start").handler({
+        flags: "--repo r --work-type w --pipeline p --run-id abc --mattstack-sha sha1 --mattstack-dirty 1 --pack-sha name=val",
+        skillDir: "/link/pack/skills/work",
+      }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(true);
+      expect(calls[0]!.args).toEqual([
+        "--repo", "r", "--work-type", "w", "--pipeline", "p",
+        "--run-id", "abc", "--mattstack-sha", "sha1", "--mattstack-dirty", "1", "--pack-sha", "name=val",
+        "--pack-dirs", "/real/pack",
+      ]);
+    });
+  });
 });
 
 describe("run tools pass runDb as RT_RUN_DB and cwd through", () => {
   test("run_stage start", async () => {
     const { deps, calls } = fakeDeps();
-    await tool(deps, "run_stage").handler({ runDb: "/db", action: "start", stage: "plan" }, { HOME: "/h" } as NodeJS.ProcessEnv);
+    await tool(deps, "run_stage").handler({ runDb: DB, action: "start", stage: "plan" }, { HOME: "/h", ...RUNS_ROOT_ENV } as NodeJS.ProcessEnv);
     expect(calls[0]).toMatchObject({ verb: "stage-start", args: ["--stage", "plan"] });
-    expect(calls[0]!.env.RT_RUN_DB).toBe("/db");
+    expect(calls[0]!.env.RT_RUN_DB).toBe(DB);
     expect(calls[0]!.env.HOME).toBe("/h");
   });
   test("run_stage fail carries reason and detailPath; redirect carries to", async () => {
     const { deps, calls } = fakeDeps();
-    await tool(deps, "run_stage").handler({ runDb: "/db", action: "fail", stage: "ci", reason: "red", detailPath: "/d" }, {} as NodeJS.ProcessEnv);
-    await tool(deps, "run_stage").handler({ runDb: "/db", action: "redirect", stage: "ci", to: "implement", reason: "back" }, {} as NodeJS.ProcessEnv);
+    await tool(deps, "run_stage").handler({ runDb: DB, action: "fail", stage: "ci", reason: "red", detailPath: "/d" }, RUNS_ROOT_ENV);
+    await tool(deps, "run_stage").handler({ runDb: DB, action: "redirect", stage: "ci", to: "implement", reason: "back" }, RUNS_ROOT_ENV);
     expect(calls[0]).toMatchObject({ verb: "stage-fail", args: ["--stage", "ci", "--reason", "red", "--detail-path", "/d"] });
     expect(calls[1]).toMatchObject({ verb: "stage-redirect", args: ["--stage", "ci", "--to", "implement", "--reason", "back"] });
   });
   test("run_stage redirect without to is a field error", async () => {
     const { deps, calls } = fakeDeps();
-    const res = await tool(deps, "run_stage").handler({ runDb: "/db", action: "redirect", stage: "ci" }, {} as NodeJS.ProcessEnv);
+    const res = await tool(deps, "run_stage").handler({ runDb: DB, action: "redirect", stage: "ci" }, RUNS_ROOT_ENV);
     expect(res.ok).toBe(false);
     expect(res.error).toContain("to");
     expect(calls).toEqual([]);
   });
   test("run_field_set and run_field_get", async () => {
     const { deps, calls } = fakeDeps("main", 0);
-    await tool(deps, "run_field_set").handler({ runDb: "/db", key: "branch", value: "feat", stage: "provision" }, {} as NodeJS.ProcessEnv);
-    const got = await tool(deps, "run_field_get").handler({ runDb: "/db", key: "branch" }, {} as NodeJS.ProcessEnv);
+    await tool(deps, "run_field_set").handler({ runDb: DB, key: "branch", value: "feat", stage: "provision" }, RUNS_ROOT_ENV);
+    const got = await tool(deps, "run_field_get").handler({ runDb: DB, key: "branch" }, RUNS_ROOT_ENV);
     expect(calls[0]).toMatchObject({ verb: "field", args: ["set", "branch", "feat", "--stage", "provision"] });
     expect(calls[1]).toMatchObject({ verb: "field", args: ["get", "branch"] });
     expect(got).toEqual({ ok: true, body: { value: "main" } });
   });
   test("run_field_get on a missing key (exit 3) is an error naming the key", async () => {
     const { deps } = fakeDeps("", 3);
-    const res = await tool(deps, "run_field_get").handler({ runDb: "/db", key: "mr" }, {} as NodeJS.ProcessEnv);
+    const res = await tool(deps, "run_field_get").handler({ runDb: DB, key: "mr" }, RUNS_ROOT_ENV);
     expect(res.ok).toBe(false);
     expect(res.error).toContain("mr");
   });
   test("run_decision serializes selection itself", async () => {
     const { deps, calls } = fakeDeps();
-    await tool(deps, "run_decision").handler({ runDb: "/db", contract: "gate@1", scope: "close", selection: { next: "done" }, decidedBy: "pane" }, {} as NodeJS.ProcessEnv);
+    await tool(deps, "run_decision").handler({ runDb: DB, contract: "gate@1", scope: "close", selection: { next: "done" }, decidedBy: "pane" }, RUNS_ROOT_ENV);
     expect(calls[0]).toMatchObject({ verb: "decision", args: ["record", "--contract", "gate@1", "--scope", "close", "--selection", '{"next":"done"}', "--decided-by", "pane"] });
   });
   test("run_status and run_snapshot; cwd stands in when runDb is omitted", async () => {
@@ -119,7 +192,44 @@ describe("run tools pass runDb as RT_RUN_DB and cwd through", () => {
   });
   test("a non-zero write result surfaces the envelope's error", async () => {
     const { deps } = fakeDeps('{"ok":false,"error":"stage not running"}', 2);
-    const res = await tool(deps, "run_snapshot").handler({ runDb: "/db" }, {} as NodeJS.ProcessEnv);
+    const res = await tool(deps, "run_snapshot").handler({ runDb: DB }, RUNS_ROOT_ENV);
     expect(res).toEqual({ ok: false, body: undefined, error: "stage not running" });
+  });
+});
+
+describe("runDb and cwd validation", () => {
+  test("refuses a relative runDb", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_snapshot").handler({ runDb: "repo/id/state.db" }, RUNS_ROOT_ENV);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("runDb");
+    expect(calls).toEqual([]);
+  });
+  test("refuses a relative cwd", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_snapshot").handler({ cwd: "tree" }, {} as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("cwd");
+    expect(calls).toEqual([]);
+  });
+  test("refuses a runDb outside the runs root", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_snapshot").handler({ runDb: "/elsewhere/repo/id/state.db" }, RUNS_ROOT_ENV);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("runs root");
+    expect(calls).toEqual([]);
+  });
+  test("refuses a runDb whose basename is not state.db", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_snapshot").handler({ runDb: `${RUNS_ROOT}/repo/id/other.db` }, RUNS_ROOT_ENV);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("state.db");
+    expect(calls).toEqual([]);
+  });
+  test("accepts an absolute runDb under the runs root named state.db", async () => {
+    const { deps, calls } = fakeDeps();
+    const res = await tool(deps, "run_snapshot").handler({ runDb: DB }, RUNS_ROOT_ENV);
+    expect(res.ok).toBe(true);
+    expect(calls[0]!.env.RT_RUN_DB).toBe(DB);
   });
 });

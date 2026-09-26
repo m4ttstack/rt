@@ -1,25 +1,55 @@
 import { realpathSync } from "fs";
-import { resolve } from "path";
+import { basename, isAbsolute, resolve } from "path";
 import { runWriteVerb, type WriteVerb } from "../../commands/runs-write.ts";
 import { listRuns } from "../../packages/rt-client/src/index.ts";
+import { packPluginIdentity } from "../skills/provenance.ts";
+import { runsRoot } from "../runs/paths.ts";
 import { checkOptional, checkRequired, err, fromResponse, ok, type McpToolDef, type ToolResult } from "./shared.ts";
 
 export interface RunToolDeps {
   write: typeof runWriteVerb;
   list: typeof listRuns;
   realpath: (p: string) => string;
+  isPackRoot: (packRoot: string) => boolean;
 }
 
-export const realRunToolDeps: RunToolDeps = { write: runWriteVerb, list: listRuns, realpath: (p) => realpathSync(p) };
+export const realRunToolDeps: RunToolDeps = {
+  write: runWriteVerb,
+  list: listRuns,
+  realpath: (p) => realpathSync(p),
+  isPackRoot: (p) => packPluginIdentity(p) !== null,
+};
 
 // A quote or substitution in the compiled flag string would need a shell to
 // mean anything; a whitespace split cannot honor it, so it is refused rather
 // than passed through with a different meaning.
 const SHELL_SYNTAX = /['"`$\\]/;
 
+// Matches rt_verb's CONTROL_CHAR, minus tab/LF/CR (\x09,\x0a,\x0d), which
+// \s already splits on rather than needing a separate refusal.
+const CONTROL_CHAR = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+
 export function splitFlags(flags: string): { ok: true; args: string[] } | { ok: false; error: string } {
   if (SHELL_SYNTAX.test(flags)) return { ok: false, error: "flags must be plain flag tokens; quotes, $ and backticks are refused" };
+  if (CONTROL_CHAR.test(flags)) return { ok: false, error: "flags must not contain control characters" };
   return { ok: true, args: flags.split(/\s+/).filter((a) => a !== "") };
+}
+
+// The set run-start's own CLI parses (commands/runs-write.ts) minus the ones
+// this tool appends itself (--pack-dirs, --ticket, --spawned-by): a flags
+// string that named one of those would let its value win over the tool's
+// own append, since flagValue resolves the FIRST occurrence in argv.
+const RUN_START_FLAGS = new Set(["--repo", "--work-type", "--pipeline", "--run-id", "--mattstack-sha", "--mattstack-dirty", "--pack-sha"]);
+
+function checkRunStartFlags(args: string[]): string | undefined {
+  for (const a of args) {
+    if (!a.startsWith("--")) continue;
+    const name = a.split("=")[0]!;
+    if (!RUN_START_FLAGS.has(name)) {
+      return `flags may only set ${[...RUN_START_FLAGS].sort().join(", ")}; refuses ${name}`;
+    }
+  }
+  return undefined;
 }
 
 export function packRootFrom(skillDir: string, realpath: (p: string) => string): string {
@@ -37,18 +67,36 @@ function parseOut(out: string): unknown {
   try { return JSON.parse(out); } catch { return null; }
 }
 
+/** A caller-supplied runDb must resolve under the runs root and name the
+    run store's own file, or it is a path into arbitrary state the daemon
+    was never asked to write. */
+function checkRunDb(runDb: string, env: NodeJS.ProcessEnv, realpath: (p: string) => string): string | undefined {
+  if (!isAbsolute(runDb)) return '"runDb" must be an absolute path';
+  let real: string;
+  try { real = realpath(runDb); } catch { return `runDb ${runDb} does not resolve`; }
+  const root = typeof env.RT_RUNS_ROOT === "string" && env.RT_RUNS_ROOT !== "" ? env.RT_RUNS_ROOT : runsRoot();
+  if (real !== root && !real.startsWith(root.endsWith("/") ? root : `${root}/`)) return `runDb must be under the runs root (${root})`;
+  if (basename(real) !== "state.db") return 'runDb must name a run store\'s "state.db"';
+  return undefined;
+}
+
 /** The pair every run tool but run_start and run_list resolves its DB from. */
-function runTarget(input: Record<string, unknown>, env: NodeJS.ProcessEnv): { env: NodeJS.ProcessEnv; cwd: string } | { error: string } {
+function runTarget(input: Record<string, unknown>, env: NodeJS.ProcessEnv, realpath: (p: string) => string): { env: NodeJS.ProcessEnv; cwd: string } | { error: string } {
   const bad = checkOptional(input, [{ name: "runDb", type: "string" }, { name: "cwd", type: "string" }]);
   if (bad) return { error: bad };
-  if (typeof input.runDb === "string") return { env: { ...env, RT_RUN_DB: input.runDb }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
+  if (input.cwd !== undefined && !isAbsolute(input.cwd as string)) return { error: '"cwd" must be an absolute path' };
+  if (typeof input.runDb === "string") {
+    const dbBad = checkRunDb(input.runDb, env, realpath);
+    if (dbBad) return { error: dbBad };
+    return { env: { ...env, RT_RUN_DB: input.runDb }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
+  }
   if (typeof input.cwd === "string") return { env, cwd: input.cwd };
   return { error: NO_RUN };
 }
 
 export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
   async function write(verb: WriteVerb, args: string[], input: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<ToolResult> {
-    const target = runTarget(input, env);
+    const target = runTarget(input, env, deps.realpath);
     if ("error" in target) return err(target.error);
     const r = await deps.write(verb, args, target.env, target.cwd);
     const body = parseOut(r.out);
@@ -75,10 +123,15 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
       async handler(input, env) {
         const bad = checkRequired(input, [{ name: "flags", type: "string" }, { name: "skillDir", type: "string" }]) ?? checkOptional(input, [{ name: "ticket", type: "string" }, { name: "spawnedBy", type: "string" }]);
         if (bad) return err(bad);
+        const skillDir = input.skillDir as string;
+        if (!isAbsolute(skillDir)) return err('"skillDir" must be an absolute path');
         const split = splitFlags(input.flags as string);
         if (!split.ok) return err(split.error);
+        const flagsBad = checkRunStartFlags(split.args);
+        if (flagsBad) return err(flagsBad);
         let packRoot: string;
-        try { packRoot = packRootFrom(input.skillDir as string, deps.realpath); } catch { return err(`skillDir ${String(input.skillDir)} does not resolve`); }
+        try { packRoot = packRootFrom(skillDir, deps.realpath); } catch { return err(`skillDir ${skillDir} does not resolve`); }
+        if (!deps.isPackRoot(packRoot)) return err(`skillDir ${skillDir} does not resolve to a pack (no .claude-plugin/plugin.json under ${packRoot})`);
         const args = [...split.args, "--pack-dirs", packRoot];
         if (typeof input.ticket === "string") args.push("--ticket", input.ticket);
         if (typeof input.spawnedBy === "string") args.push("--spawned-by", input.spawnedBy);
@@ -145,7 +198,7 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
       async handler(input, env) {
         const bad = checkRequired(input, [{ name: "key", type: "string" }]);
         if (bad) return err(bad);
-        const target = runTarget(input, env);
+        const target = runTarget(input, env, deps.realpath);
         if ("error" in target) return err(target.error);
         const r = await deps.write("field", ["get", input.key as string], target.env, target.cwd);
         if (r.code === 3) return err(`field "${String(input.key)}" is not set on this run`);
