@@ -69,15 +69,20 @@ function parseOut(out: string): unknown {
 
 /** A caller-supplied runDb must resolve under the runs root and name the
     run store's own file, or it is a path into arbitrary state the daemon
-    was never asked to write. */
-function checkRunDb(runDb: string, env: NodeJS.ProcessEnv, realpath: (p: string) => string): string | undefined {
-  if (!isAbsolute(runDb)) return '"runDb" must be an absolute path';
+    was never asked to write. The root is realpathed too (tolerating one
+    that does not exist yet): on macOS ~/.mattstack sits under /var, itself
+    a symlink to /private/var, so an unresolved root would fail confinement
+    against the very runDb run_start just returned. */
+function checkRunDb(runDb: string, env: NodeJS.ProcessEnv, realpath: (p: string) => string): { ok: true; real: string } | { ok: false; error: string } {
+  if (!isAbsolute(runDb)) return { ok: false, error: '"runDb" must be an absolute path' };
   let real: string;
-  try { real = realpath(runDb); } catch { return `runDb ${runDb} does not resolve`; }
-  const root = typeof env.RT_RUNS_ROOT === "string" && env.RT_RUNS_ROOT !== "" ? env.RT_RUNS_ROOT : runsRoot();
-  if (real !== root && !real.startsWith(root.endsWith("/") ? root : `${root}/`)) return `runDb must be under the runs root (${root})`;
-  if (basename(real) !== "state.db") return 'runDb must name a run store\'s "state.db"';
-  return undefined;
+  try { real = realpath(runDb); } catch { return { ok: false, error: `runDb ${runDb} does not resolve` }; }
+  const rawRoot = typeof env.RT_RUNS_ROOT === "string" && env.RT_RUNS_ROOT !== "" ? env.RT_RUNS_ROOT : runsRoot();
+  let root = rawRoot;
+  try { root = realpath(rawRoot); } catch { /* root need not exist yet; compare against it unresolved */ }
+  if (real !== root && !real.startsWith(root.endsWith("/") ? root : `${root}/`)) return { ok: false, error: `runDb must be under the runs root (${root})` };
+  if (basename(real) !== "state.db") return { ok: false, error: 'runDb must name a run store\'s "state.db"' };
+  return { ok: true, real };
 }
 
 /** The pair every run tool but run_start and run_list resolves its DB from. */
@@ -86,9 +91,9 @@ function runTarget(input: Record<string, unknown>, env: NodeJS.ProcessEnv, realp
   if (bad) return { error: bad };
   if (input.cwd !== undefined && !isAbsolute(input.cwd as string)) return { error: '"cwd" must be an absolute path' };
   if (typeof input.runDb === "string") {
-    const dbBad = checkRunDb(input.runDb, env, realpath);
-    if (dbBad) return { error: dbBad };
-    return { env: { ...env, RT_RUN_DB: input.runDb }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
+    const db = checkRunDb(input.runDb, env, realpath);
+    if (!db.ok) return { error: db.error };
+    return { env: { ...env, RT_RUN_DB: db.real }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
   }
   if (typeof input.cwd === "string") return { env, cwd: input.cwd };
   return { error: NO_RUN };

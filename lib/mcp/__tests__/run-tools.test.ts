@@ -232,4 +232,33 @@ describe("runDb and cwd validation", () => {
     expect(res.ok).toBe(true);
     expect(calls[0]!.env.RT_RUN_DB).toBe(DB);
   });
+  test("passes the realpathed runDb as RT_RUN_DB, not the raw input", async () => {
+    const { deps, calls } = fakeDeps();
+    deps.realpath = (p) => p.replace(/link/g, "real");
+    const res = await tool(deps, "run_snapshot").handler({ runDb: `${RUNS_ROOT}/link/repo/id/state.db` }, { RT_RUNS_ROOT: `${RUNS_ROOT}/link` } as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(true);
+    expect(calls[0]!.env.RT_RUN_DB).toBe(`${RUNS_ROOT}/real/repo/id/state.db`);
+  });
+  test("realpaths the runs root too, so a runDb behind a symlinked root (macOS /var -> /private/var) still resolves", async () => {
+    const { deps, calls } = fakeDeps();
+    deps.realpath = (p) => p.replace("/var/", "/private/var/");
+    const res = await tool(deps, "run_snapshot").handler({ runDb: "/var/runs/repo/id/state.db" }, { RT_RUNS_ROOT: "/var/runs" } as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(true);
+    expect(calls[0]!.env.RT_RUN_DB).toBe("/private/var/runs/repo/id/state.db");
+  });
+  test("still refuses a runDb outside the root once both are realpathed", async () => {
+    const { deps, calls } = fakeDeps();
+    deps.realpath = (p) => p.replace("/var/", "/private/var/");
+    const res = await tool(deps, "run_snapshot").handler({ runDb: "/elsewhere/repo/id/state.db" }, { RT_RUNS_ROOT: "/var/runs" } as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("runs root");
+    expect(calls).toEqual([]);
+  });
+  test("tolerates a runs root that does not resolve yet (a fresh install)", async () => {
+    const { deps } = fakeDeps();
+    const ROOT = "/fresh/runs";
+    deps.realpath = (p) => { if (p === ROOT) throw new Error("ENOENT"); return p; };
+    const res = await tool(deps, "run_snapshot").handler({ runDb: `${ROOT}/repo/id/state.db` }, { RT_RUNS_ROOT: ROOT } as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(true);
+  });
 });
