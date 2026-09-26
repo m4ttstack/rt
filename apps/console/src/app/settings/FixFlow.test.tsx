@@ -368,6 +368,17 @@ describe('Fix in the explain modal', () => {
       expect(input).toHaveAttribute('aria-invalid', 'true');
       expect(row).toHaveTextContent('expected string, got number');
       await waitFor(() => expect(scrolled).toContain(input));
+      scrolled.length = 0;
+      await userEvent.click(
+        within(layer).getByRole('button', { name: 'Cancel' })
+      );
+      await userEvent.click(
+        within(layer).getByRole('button', {
+          name: 'set rt.notify.eventBridges at user',
+        })
+      );
+      await within(layer).findByTestId('item-0');
+      expect(scrolled).toEqual([]);
     } finally {
       Element.prototype.scrollIntoView = original;
     }

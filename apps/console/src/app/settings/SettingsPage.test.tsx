@@ -358,7 +358,13 @@ describe('SettingsPage', () => {
     ).toBeInTheDocument();
     await userEvent.type(
       screen.getByRole('textbox', { name: 'filter settings' }),
-      'bare'
+      'zzz'
+    );
+    expect(
+      await screen.findByText('No settings match “zzz”')
+    ).toBeInTheDocument();
+    await userEvent.clear(
+      screen.getByRole('textbox', { name: 'filter settings' })
     );
     expect(
       await screen.findByRole('button', { name: 'explain board.bareKey' })

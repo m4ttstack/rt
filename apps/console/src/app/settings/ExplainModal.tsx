@@ -150,6 +150,11 @@ function LayerLine({
   // Fix seeds editing open only when the row is editable; a row with no
   // console control keeps Remove as its only remedy.
   const [editing, setEditing] = useState(startEditing && editable);
+  // Only the editor Fix opened scrolls to its bad field; a reopen does not.
+  const [reveal, setReveal] = useState(startEditing);
+  useEffect(() => {
+    if (!editing) setReveal(false);
+  }, [editing]);
   const [saved, setSaved] = useState(false);
   // Close on the re-read, not the write, so the old value never flashes.
   useEffect(() => {
@@ -336,7 +341,7 @@ function LayerLine({
             saving={busy}
             replaceWith={replaceWith}
             reported={reported}
-            reveal={startEditing}
+            reveal={reveal}
             onCancel={() => setEditing(false)}
             onSave={v =>
               onSet(scope, v).then(ok => {
