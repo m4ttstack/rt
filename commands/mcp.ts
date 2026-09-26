@@ -1,5 +1,5 @@
 import { mcpTools, type McpToolDef } from "../lib/mcp/tools.ts";
-import { toCallResult } from "../lib/mcp/redact.ts";
+import { callTool } from "../lib/mcp/redact.ts";
 
 declare const RT_VERSION: string;
 
@@ -44,7 +44,7 @@ export async function mcpServe(_args: string[]): Promise<void> {
       const tool = toolByName.get(request.params.name);
       if (!tool) return { isError: true, content: [{ type: "text" as const, text: `unknown tool: ${request.params.name}` }] };
 
-      return toCallResult(await tool.handler((request.params.arguments ?? {}) as Record<string, unknown>, process.env));
+      return callTool(tool, (request.params.arguments ?? {}) as Record<string, unknown>, process.env);
     })();
     pending.add(call);
     call.finally(() => pending.delete(call));
