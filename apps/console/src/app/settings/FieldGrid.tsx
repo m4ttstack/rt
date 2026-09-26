@@ -341,14 +341,6 @@ export function FieldGrid({
                     textOverflow: 'ellipsis',
                     padding: '4px 8px',
                     borderRadius: 4,
-                    // An unbroken JSON string (no spaces for `white-space:
-                    // nowrap` to break on) has an effectively unbounded
-                    // min-content width. Without size containment that
-                    // propagates through Mantine's ScrollArea, whose own
-                    // content wrapper is `min-width: min-content`, and
-                    // widens the whole settings panel instead of
-                    // ellipsizing in place.
-                    contain: 'inline-size',
                   }}
                   title={raw}
                 >

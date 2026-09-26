@@ -18,18 +18,11 @@ import { JsonBlock } from './JsonBlock';
 // wider than the space actually available for it.
 const DIVERGED_COL_BASIS = 260;
 
-/** `minWidth: 0` lets a column shrink at all (a flex item's automatic
-    minimum size otherwise floors at its content's width); `contain` keeps
-    JsonBlock's own intrinsic width from reaching back out to size this
-    column. Neither alone stops the row from widening the page: a
-    `flex-shrink: 0` column cannot become smaller than its own unshrinkable
-    width, so it still reports that width to every ancestor doing intrinsic
-    sizing (such as the settings page's own scroll area) regardless of
-    `contain`. */
+/** `minWidth: 0` lets a column shrink at all; a flex item's automatic
+    minimum size otherwise floors at its content's width. */
 const DIVERGED_COL_STYLE = {
   flex: `1 1 ${DIVERGED_COL_BASIS}px`,
   minWidth: 0,
-  contain: 'inline-size',
 } as const;
 
 const DIVERGED_WRAP_STYLE = { width: '100%', minWidth: 0 } as const;

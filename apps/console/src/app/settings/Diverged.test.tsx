@@ -89,7 +89,7 @@ function findConfirm(title: string): Promise<HTMLElement> {
 }
 
 describe('a diverged older name', () => {
-  it('the row shows both values, contained so neither widens the page', () => {
+  it('the row shows both values in columns that can shrink', () => {
     renderWithProviders(
       <SettingRow def={ROLES} store={store()} subhead={null} query="" />
     );
@@ -110,7 +110,6 @@ describe('a diverged older name', () => {
       // intrinsic sizing, widening the whole page (see IssueLines.tsx).
       expect(col.style.flexShrink).toBe('1');
       expect(col.style.minWidth).toBe('0px');
-      expect(col.style.contain).toBe('inline-size');
       const block = within(col).getByTestId('json-block');
       expect(block.style.width).toBe('100%');
       expect(block.style.minWidth).toBe('0px');
@@ -272,6 +271,52 @@ describe('a diverged older name', () => {
     await waitFor(() =>
       expect(s.set).toHaveBeenCalledWith('rt.logLevel', 'user', 'warn')
     );
+  });
+
+  it('the revoke-only approval key never offers Use the older value', async () => {
+    const approval: SettingDefWire = {
+      key: 'rt.worktreeReadyApproval',
+      type: 'string',
+      scopes: ['user'],
+      merge: 'replace',
+      secret: false,
+      teamLocked: false,
+      repoScoped: false,
+      writable: true,
+      description: 'Approved worktree ready commands, by hash.',
+      hasDefault: false,
+      defaultValue: null,
+      effective: { scope: 'user', file: USER_FILE, value: 'aaaa' },
+      storeVersion: 2,
+      issues: [
+        {
+          scope: 'user',
+          file: USER_FILE,
+          kind: 'diverged',
+          path: [],
+          message: 'older name changed',
+          storeName: 'rt.worktreeReadyApproval',
+          olderValue: 'bbbb',
+          currentValue: 'aaaa',
+        },
+      ],
+    };
+    stubExplain(approval, [
+      { scope: 'user', file: USER_FILE, present: true, value: 'aaaa' },
+    ]);
+    renderWithProviders(
+      <QueryClientProvider client={new QueryClient()}>
+        <ExplainModal
+          settingKey="rt.worktreeReadyApproval"
+          store={{ defs: [approval], loading: false, error: null, ...store() }}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    const layer = await screen.findByTestId('layer-user');
+    expect(
+      within(layer).queryByRole('button', { name: 'Use the older value' })
+    ).toBeNull();
   });
 
   it('Use the older value switches to JSON when the older value does not fit the form', async () => {

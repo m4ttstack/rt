@@ -387,7 +387,12 @@ export function SettingsPage() {
             bg={bg.level3}
             scrollAreaProps={{ viewportRef: frame }}
           >
-            <Box px={32} pb={32}>
+            {/* The page's one overflow guard: Mantine's ScrollArea content
+                wrapper is `min-width: min-content`, so without size
+                containment here any unbreakable descendant (a long path, a
+                JSON value, a nowrap label) widens the page and scrolls it
+                sideways instead of truncating or wrapping in place. */}
+            <Box px={32} pb={32} style={{ contain: 'inline-size' }}>
               {store.error && (
                 <Alert
                   color="bad"

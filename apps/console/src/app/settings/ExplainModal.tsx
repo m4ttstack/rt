@@ -321,7 +321,7 @@ function LayerLine({
             {`not allowed at this layer (allowed: ${def.scopes.join(', ')})`}
           </Text>
         )}
-        {replaceWith && !composite && writable && store && (
+        {replaceWith && !composite && editable && store && (
           <Group gap={8} wrap="nowrap" py={2}>
             <Text fz={12} c={text.muted}>
               older value{' '}

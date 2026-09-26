@@ -539,6 +539,16 @@ describe('SettingsPage', () => {
   });
 });
 
+describe('page overflow', () => {
+  it('the settings content is size-contained, so no descendant can widen the page', async () => {
+    renderPage();
+    const heading = await screen.findByRole('heading', { name: 'Board' });
+    let el: HTMLElement | null = heading;
+    while (el && el.style.contain !== 'inline-size') el = el.parentElement;
+    expect(el).not.toBeNull();
+  });
+});
+
 describe('repo picker', () => {
   const ROLES = (
     effective: SettingDefWire['effective'],
