@@ -1,13 +1,15 @@
+import { existsSync } from "fs";
+import { resolve } from "path";
 import { execWithTimeout } from "../setup/probes.ts";
 import { rtSelfArgv } from "../rt-self.ts";
-import { runCapture } from "../subprocess.ts";
+import { childEnv, runCapture } from "../subprocess.ts";
 import { checkOptional, err, ok, type McpToolDef, type ToolResult } from "./shared.ts";
 import { checkRegisteredTree, realTreeGuardDeps, type TreeGuardDeps } from "./tree-guard.ts";
 
 export type GitRunner = (args: string[], cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 export const realGitRunner: GitRunner = async (args, cwd) => {
-  const r = await runCapture(["git", ...args], { cwd, stderr: "pipe", timeoutMs: 120_000 });
+  const r = await runCapture(["git", ...args], { cwd, stderr: "pipe", timeoutMs: 120_000, env: { ...childEnv(), GIT_TERMINAL_PROMPT: "0" } });
   return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr };
 };
 
@@ -38,8 +40,10 @@ async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Pr
   return match ? { name: match[1]! } : null;
 }
 
+// git follows a push rejection with several `hint:` lines, which would push
+// the `! [rejected]` line out of a plain last-3-lines tail.
 function detail(r: { stderr: string; stdout: string }): string {
-  return (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-3).join(" ");
+  return (r.stderr.trim() || r.stdout.trim()).split("\n").filter((l) => !l.startsWith("hint:")).slice(-3).join(" ");
 }
 
 /** The branch a tool may push from: never detached, never main/master or the
@@ -176,7 +180,21 @@ async function pushDestinationRedirected(cwd: string, git: GitRunner, branch: st
 // accepts `$`, `(`, `;`, `|` and `${IFS}` in branch names.
 const SHELL_SAFE_BRANCH = /^[A-Za-z0-9._\/-]+$/;
 
-export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
+// A paused rebase detaches HEAD, so this runs before the detached-HEAD
+// refusal to give the error that says how to get out. `--git-path` answers
+// relative to cwd in a main checkout and absolutely in a linked worktree.
+async function rebaseInProgress(cwd: string, git: GitRunner, exists: (p: string) => boolean): Promise<{ inProgress: boolean } | { error: string }> {
+  const r = await git(["rev-parse", "--git-path", "rebase-merge", "--git-path", "rebase-apply"], cwd);
+  if (r.code !== 0) return { error: `git rev-parse --git-path failed: ${detail(r)}` };
+  const paths = lines(r.stdout);
+  if (paths.length !== 2) return { error: `git rev-parse --git-path returned an unreadable answer: ${detail(r)}` };
+  return { inProgress: paths.some((p) => exists(resolve(cwd, p))) };
+}
+
+export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (p: string) => boolean = existsSync): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
+  const rebasing = await rebaseInProgress(cwd, git, exists);
+  if ("error" in rebasing) return { ok: false, error: rebasing.error };
+  if (rebasing.inProgress) return { ok: false, error: "a rebase is in progress; finish it with git rebase --continue or git_rebase {abort: true}" };
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
   const { branch, defaultBranch } = b;
@@ -304,7 +322,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
         let body: unknown = null;
         try { body = JSON.parse(r.stdout); } catch { body = null; }
         const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-        if (r.code === 0) return ok({ status: "synced", resetToOrigin: pre.diverged, ...obj });
+        if (r.code === 0) return ok({ status: "synced", divergedFromOrigin: pre.diverged, ...obj });
         if (r.code === 3) return ok({ status: "conflict", ...obj });
         if (r.code === 124) return err(`rt sync timed out after ${SYNC_TIMEOUT_MS / 1000}s`);
         const message = typeof obj.error === "string" ? obj.error : detail(r);

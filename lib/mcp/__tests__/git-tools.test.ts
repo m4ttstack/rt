@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { branchSyncPreflight, gitPull, gitPush, gitRebase, gitToolDefs, type GitRunner } from "../git-tools.ts";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { branchSyncPreflight, gitPull, gitPush, gitRebase, gitToolDefs, realGitRunner, type GitRunner } from "../git-tools.ts";
 import type { TreeGuardDeps } from "../tree-guard.ts";
+
+const GIT_PATHS = "rev-parse --git-path rebase-merge --git-path rebase-apply";
 
 type Script = Record<string, { code?: number; stdout?: string; stderr?: string }>;
 // `git remote` answers "origin\nfork" unless the script overrides it, so the
@@ -131,6 +136,20 @@ describe("gitPush", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toContain("setUpstream");
   });
+  test("a rejected push reports the rejection line, not git's trailing hints", async () => {
+    const stderr = [
+      "To example.com:acme/app.git",
+      " ! [rejected]        feat/x -> feat/x (fetch first)",
+      "error: failed to push some refs to 'example.com:acme/app.git'",
+      "hint: Updates were rejected because the remote contains work that you do not",
+      "hint: have locally.",
+      "hint: See the 'Note about fast-forwards' in 'git push --help' for details.",
+    ].join("\n");
+    const r = await gitPush("/t", {}, fakeGit({ ...onFeature, "push origin HEAD:refs/heads/feat/x": { code: 1, stderr } }));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("! [rejected]");
+    expect(r.error).not.toContain("hint:");
+  });
   test("refuses a detached HEAD", async () => {
     const calls: string[] = [];
     const r = await gitPush("/t", {}, fakeGit({ "symbolic-ref --quiet --short HEAD": { code: 1 } }, calls));
@@ -144,6 +163,19 @@ describe("gitPush", () => {
       const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls));
       expect(r.ok, branch).toBe(false);
       expect(calls.some((c) => c.startsWith("push")), branch).toBe(false);
+    }
+  });
+});
+
+describe("realGitRunner", () => {
+  test("runs git with terminal prompts disabled so a credential prompt fails instead of hanging", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "git-runner-"));
+    try {
+      const r = await realGitRunner(["-c", 'alias.envp=!printf %s "$GIT_TERMINAL_PROMPT"', "envp"], dir);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toBe("0");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
@@ -214,6 +246,7 @@ describe("gitToolDefs guard", () => {
 
 describe("branchSyncPreflight", () => {
   const base: Script = {
+    [GIT_PATHS]: { stdout: "/t/.git/rebase-merge\n/t/.git/rebase-apply\n" },
     "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
     "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
     "config --get-all remote.origin.push": { code: 1 },
@@ -280,7 +313,25 @@ describe("branchSyncPreflight", () => {
   });
   test("no remote branch yet passes; a detached HEAD refuses", async () => {
     expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
-    expect((await branchSyncPreflight("/t", fakeGit({ "symbolic-ref --quiet --short HEAD": { code: 1 } }))).ok).toBe(false);
+    const detached = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { code: 1 } }));
+    expect(detached.ok).toBe(false);
+    expect((detached as { error: string }).error).toContain("detached");
+  });
+  test("a tree paused mid-rebase refuses with how to finish it, before the detached-HEAD refusal", async () => {
+    for (const [gitPaths, present] of [
+      [".git/rebase-merge\n.git/rebase-apply\n", "/t/.git/rebase-merge"],
+      ["/repo/.git/worktrees/t/rebase-merge\n/repo/.git/worktrees/t/rebase-apply\n", "/repo/.git/worktrees/t/rebase-apply"],
+    ] as const) {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [GIT_PATHS]: { stdout: gitPaths }, "symbolic-ref --quiet --short HEAD": { code: 1 } }, calls), (p) => p === present);
+      expect(r.ok, present).toBe(false);
+      expect((r as { error: string }).error, present).toBe("a rebase is in progress; finish it with git rebase --continue or git_rebase {abort: true}");
+      expect(calls, present).not.toContain("fetch origin");
+    }
+  });
+  test("the rebase-in-progress probe failing refuses", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "0\t1\n" }, [GIT_PATHS]: { code: 128, stderr: "fatal: not a git repository" } }), () => false);
+    expect(r.ok).toBe(false);
   });
   test("main, master and the remote default branch refuse before any fetch (rt sync would force-push them)", async () => {
     for (const branch of ["main", "master", "develop"]) {
@@ -356,11 +407,17 @@ describe("branchSyncPreflight", () => {
 describe("branch_sync tool", () => {
   const guard: TreeGuardDeps = { repoIndex: () => ({ r: "/t" }), treeByPath: () => null, realpath: (p) => p };
   const clean: Script = {
+    [GIT_PATHS]: { stdout: "/t/.git/rebase-merge\n/t/.git/rebase-apply\n" },
     "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
     "config --get-all remote.origin.push": { code: 1 }, "config --get push.default": { code: 1 },
     "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
     "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
   };
+  test("exit 0 with empty stdout is synced, reporting whether the preflight saw a divergence", async () => {
+    const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code: 0, stdout: "", stderr: "" }) }).find((t) => t.name === "branch_sync")!;
+    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(r).toEqual({ ok: true, body: { status: "synced", divergedFromOrigin: false } });
+  });
   test("exit 0 is synced, exit 3 is a conflict bundle, exit 4 is a refusal", async () => {
     for (const [code, stdout, expectOk, status] of [[0, '{"pushed":true}', true, "synced"], [3, '{"conflicts":["a.ts"]}', true, "conflict"], [4, '{"error":"stack member"}', false, ""]] as const) {
       const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code, stdout, stderr: "" }) }).find((t) => t.name === "branch_sync")!;

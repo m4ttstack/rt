@@ -19,6 +19,12 @@ describe("checkRegisteredTree", () => {
     }
     expect((checkRegisteredTree("/real/other", deps) as { error: string }).error).toContain("registered");
   });
+  test("a subdirectory of a registered tree is refused with a message naming the root", () => {
+    const r = checkRegisteredTree("/link/app/src", deps);
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain("root");
+    expect((r as { error: string }).error).toContain("registered");
+  });
 });
 
 describe("findTreeByRealpath", () => {

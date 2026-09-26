@@ -52,7 +52,7 @@ export const realTreeGuardDeps: TreeGuardDeps = {
 };
 
 export const UNREGISTERED_TREE =
-  "tree must be an absolute path to a checkout or worktree of a repo registered with rt (rt repos register in its checkout first)";
+  "tree must be the absolute path of the root of a checkout or worktree of a repo registered with rt, not a directory inside one (rt repos register in its checkout first)";
 
 export function checkRegisteredTree(
   tree: unknown,
