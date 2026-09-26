@@ -88,11 +88,15 @@ describe('scripts/turbo.sh', () => {
     expect(pkgIds).not.toContain('@mattstack/tui-kit#gates');
     expect(realIds(roots!)).toEqual([
       '//#build-storybook',
+      '//#docs:check',
       '//#format:check',
       '//#lint:root',
+      '//#picker:check',
       '//#purity',
       '//#treeshake',
+      '//#typecheck',
       '@mattstack/tokens#test',
+      '@mattstack/tokens#typecheck',
       '@mattstack/tui-kit#build',
     ]);
   });

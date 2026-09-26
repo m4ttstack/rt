@@ -144,6 +144,45 @@
     },
     "//#purity": {
       "inputs": ["$TURBO_DEFAULT$"]
+    },
+    "//#typecheck": {
+      "inputs": [
+        "cli.ts",
+        "lib/**",
+        "commands/**",
+        "scripts/**",
+        "e2e/**",
+        "test-setup.ts",
+        "tsconfig.json",
+        "vitest.config.ts",
+        "packages/rt-client/src/**",
+        "packages/rt-client/test/**",
+        "packages/settings-kit/src/**",
+        "packages/git-core/src/**",
+        "packages/git-core/test-support/**",
+        "rt-tray/Tests/stub-rt/**",
+        "rt-tray/vm/run/helpers/**",
+        "!**/node_modules/**",
+        "!**/dist/**"
+      ]
+    },
+    "//#docs:check": {
+      "inputs": [
+        "cli.ts",
+        "lib/**",
+        "commands/**",
+        "scripts/**",
+        "website/docs/**",
+        "!**/node_modules/**"
+      ]
+    },
+    "//#picker:check": {
+      "inputs": [
+        "lib/command-tree-def.ts",
+        "lib/command-tree-resolve.ts",
+        "scripts/lib/picker-conformance.ts",
+        "commands/**"
+      ]
     }
   }
 }

@@ -46,6 +46,6 @@ fi
 bun "$turbo" run --cache-dir="$cache" typecheck lint test serve-check \
   ${pkg_flags[@]+"${pkg_flags[@]}"}
 
-bun "$turbo" run --cache-dir="$cache" lint:root format:check build-storybook treeshake purity test \
+bun "$turbo" run --cache-dir="$cache" lint:root format:check build-storybook treeshake purity typecheck docs:check picker:check test \
   --filter=// --filter=@mattstack/tokens \
   ${always_flags[@]+"${always_flags[@]}"}
