@@ -71,10 +71,22 @@ export function createRelocationWatcher(deps: RelocationWatcherDeps): Relocation
     deps.log.debug({ pane: pane.paneRef, tool: a.tool }, "relocation: no dialog inside the window");
   }
 
+  /** herdr pane ids are per-server sequential, so a pane id alone can name a
+      different server's pane; the session decides and the pane id may only
+      agree with it. The pane id stands in only for a pane that reports no
+      session at all. */
+  function paneFor(a: Announce, panes: LivePane[]): LivePane | null {
+    const bySession = resolveLivePane({ sessionId: a.sessionId }, panes);
+    if (bySession) return a.paneId === undefined || a.paneId === bySession.paneRef ? bySession : null;
+    if (a.paneId === undefined) return null;
+    const byPane = resolveLivePane({ paneId: a.paneId }, panes);
+    return byPane && byPane.sessionId === undefined ? byPane : null;
+  }
+
   return {
     async announce(a) {
       const panes = (await deps.snapshot()) ?? [];
-      const pane = resolveLivePane({ paneId: a.paneId, sessionId: a.sessionId }, panes);
+      const pane = paneFor(a, panes);
       if (!pane) return { scheduled: false, pane: null, reason: "no-pane" };
       if (a.path === undefined) return { scheduled: false, pane: pane.paneRef, reason: "awaiting-path" };
       if (deps.isHerdPane(pane.paneRef)) return { scheduled: false, pane: pane.paneRef, reason: "herd-pane" };

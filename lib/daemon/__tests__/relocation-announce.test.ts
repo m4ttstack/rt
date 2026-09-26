@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createRelocationWatcher, type RelocationWatcherDeps } from "../relocation-announce.ts";
 import type { LivePane } from "../pane-resolve-live.ts";
+import { createPaneHandlers } from "../handlers/pane.ts";
 
 const pane: LivePane = { paneRef: "7", sockPath: "/s", workspaceId: "w", agentStatus: "blocked", sessionId: "s1", cwd: "/repo" };
 const log = { info() {}, warn() {}, debug() {} };
@@ -67,10 +68,47 @@ describe("relocation watcher", () => {
     await settle();
     expect(b.seen.length).toBeGreaterThan(0);
   });
+  describe("pane identity: session first, pane id as the cross-check", () => {
+    const main: LivePane = { paneRef: "w1:p1", sockPath: "/main", workspaceId: "w1", agentStatus: "blocked", sessionId: "s-main" };
+    const bg: LivePane = { paneRef: "bg:w1:p1", sockPath: "/bg", workspaceId: "w1", agentStatus: "blocked", sessionId: "s-bg" };
+    const both = async () => [main, bg];
+    const at = (paneId: string | undefined, sessionId: string) => ({ sessionId, ...(paneId ? { paneId } : {}), tool: "EnterWorktree" as const, path: "/pool/t1", cwd: "/repo" });
+
+    test("a bg session announcing its bg ref schedules on the bg pane, and the herd check sees that pane", async () => {
+      const herdChecked: string[] = [];
+      const { w } = watcher({ snapshot: both, isHerdPane: (ref) => { herdChecked.push(ref); return false; } });
+      expect(await w.announce(at("bg:w1:p1", "s-bg"))).toEqual({ scheduled: true, pane: "bg:w1:p1" });
+      expect(herdChecked).toEqual(["bg:w1:p1"]);
+    });
+    test("a bare pane id from a bg session never lands on the main server's same-id pane", async () => {
+      expect(await watcher({ snapshot: both }).w.announce(at("w1:p1", "s-bg"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
+    });
+    test("a pane id that disagrees with the session's pane is refused", async () => {
+      expect(await watcher({ snapshot: both }).w.announce(at("bg:w1:p1", "s-main"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
+    });
+    test("no pane reports the session: the pane id is used only when that pane reports no session", async () => {
+      const bare: LivePane = { paneRef: "w2:p4", sockPath: "/main", workspaceId: "w2", agentStatus: "blocked" };
+      const snapshot = async () => [main, bg, bare];
+      expect(await watcher({ snapshot }).w.announce(at("w2:p4", "s-new"))).toEqual({ scheduled: true, pane: "w2:p4" });
+      expect(await watcher({ snapshot }).w.announce(at("bg:w1:p1", "s-new"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
+      expect(await watcher({ snapshot }).w.announce(at(undefined, "s-new"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
+    });
+  });
   test("an unregistered outcome stops the watch: the human answers", async () => {
     const { w, seen } = watcher({ outcomes: ["unregistered", "accepted"] });
     await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t1", cwd: "/repo" });
     await settle();
     expect(seen.length).toBe(1);
+  });
+});
+
+describe("pane:announce-relocation handler", () => {
+  test("a non-string paneId is refused before the watcher sees it", async () => {
+    const announced: unknown[] = [];
+    const relocation = { announce: async (a: unknown) => { announced.push(a); return { scheduled: false as const, pane: null, reason: "no-pane" as const }; } };
+    const h = createPaneHandlers({ db: {} as never, repoIndex: () => ({}), relocation });
+    expect(await h["pane:announce-relocation"]({ sessionId: "s1", paneId: 7, tool: "EnterWorktree", cwd: "/repo" }))
+      .toEqual({ ok: false, error: "paneId must be a string" });
+    expect(announced).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import { decideCreate, decideRemove, stockWorktreeAdd } from "../lib/worktree/cl
 import { loadWorktreeAppConfig } from "../lib/worktree/config.ts";
 import { explainError } from "./worktree.ts";
 import { findTreeByPath } from "../lib/worktree/registry.ts";
+import { selfPaneRef } from "../lib/self-pane.ts";
 import { rtCommand } from "../packages/rt-client/src/index.ts";
 import type { Commands } from "../packages/rt-client/src/index.ts";
 
@@ -212,7 +213,8 @@ export function buildRelocationAnnouncement(stdin: string, env: NodeJS.ProcessEn
   if (hook.tool_name !== "EnterWorktree") return null;
   if (typeof hook.session_id !== "string" || typeof hook.cwd !== "string") return null;
   const out: RelocationAnnouncement = { sessionId: hook.session_id, tool: "EnterWorktree", cwd: hook.cwd };
-  if (env.HERDR_PANE_ID) out.paneId = env.HERDR_PANE_ID;
+  const paneId = selfPaneRef(env);
+  if (paneId) out.paneId = paneId;
   const input = hook.tool_input;
   if (input && typeof input === "object" && typeof (input as { path?: unknown }).path === "string") {
     out.path = (input as { path: string }).path;
@@ -297,7 +299,8 @@ export async function claudeHookCommand(args: string[], _ctx: unknown): Promise<
   }
   if (decision.kind === "provisioned" && parsed.sessionId) {
     const announce: RelocationAnnouncement = { sessionId: parsed.sessionId, tool: "EnterWorktree", path: decision.path, cwd: parsed.cwd };
-    if (process.env.HERDR_PANE_ID) announce.paneId = process.env.HERDR_PANE_ID;
+    const paneId = selfPaneRef(process.env);
+    if (paneId) announce.paneId = paneId;
     try {
       await rtCommand("pane:announce-relocation", announce, { timeoutMs: 3_000 });
     } catch {

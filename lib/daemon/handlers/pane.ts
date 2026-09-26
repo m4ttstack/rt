@@ -412,6 +412,7 @@ export function createPaneHandlers(opts: {
       if (!p || typeof p.sessionId !== "string" || typeof p.cwd !== "string") return { ok: false, error: "sessionId and cwd are required" };
       if (p.tool !== "EnterWorktree") return { ok: false, error: "tool must be EnterWorktree" };
       if (p.path !== undefined && typeof p.path !== "string") return { ok: false, error: "path must be a string" };
+      if (p.paneId !== undefined && typeof p.paneId !== "string") return { ok: false, error: "paneId must be a string" };
       if (!relocation) return { ok: true, data: { scheduled: false, pane: null, reason: "disabled" } };
       return { ok: true, data: await relocation.announce(p) };
     },
