@@ -598,7 +598,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_merge",
-      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge and returns autoMerge: true. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge and returns autoMerge: true, except that when the pipeline has already passed and the MR is mergeable, GitLab merges it at once and the tool returns merged: true. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: { ...MR_TARGET_PROPS, squash: { type: "boolean" }, removeSourceBranch: { type: "boolean" }, whenPipelineSucceeds: { type: "boolean" } },
@@ -612,7 +612,15 @@ export function mcpTools(): McpToolDef[] {
         }
         const target = await resolveMrTarget(input);
         if (!target.ok) return err(target.error);
-        if (input.whenPipelineSucceeds === true) return runMrAction(target, "setAutoMerge", [], { autoMerge: true });
+        if (input.whenPipelineSucceeds === true) {
+          const set = withLandingHint(await runMrAction(target, "setAutoMerge", [], { autoMerge: true }), "the MR's state");
+          if (!set.ok) return set;
+          // The daemon writes the MR back after a void action before replying, so a
+          // cache read with no maxAgeMs already reflects an immediate merge.
+          const back = await readProjectMRs(target.identity);
+          const merged = back.ok && Object.values(back.data?.mrs ?? {}).some((e) => e.pr.iid === target.iid && e.pr.state === "merged");
+          return ok(merged ? { merged: true } : { autoMerge: true });
+        }
         const merge: { squash?: boolean; shouldRemoveSourceBranch?: boolean } = {};
         if (typeof input.squash === "boolean") merge.squash = input.squash;
         if (typeof input.removeSourceBranch === "boolean") merge.shouldRemoveSourceBranch = input.removeSourceBranch;
