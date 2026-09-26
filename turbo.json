@@ -157,6 +157,7 @@
         "vitest.config.ts",
         "packages/rt-client/src/**",
         "packages/rt-client/test/**",
+        "packages/glance/src/**",
         "packages/settings-kit/src/**",
         "packages/git-core/src/**",
         "packages/git-core/test-support/**",
