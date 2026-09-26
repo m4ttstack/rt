@@ -597,6 +597,29 @@ export function mcpTools(): McpToolDef[] {
       },
     },
     {
+      name: "mr_merge",
+      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge and returns autoMerge: true. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { ...MR_TARGET_PROPS, squash: { type: "boolean" }, removeSourceBranch: { type: "boolean" }, whenPipelineSucceeds: { type: "boolean" } },
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkOptional(input, [{ name: "squash", type: "boolean" }, { name: "removeSourceBranch", type: "boolean" }, { name: "whenPipelineSucceeds", type: "boolean" }]);
+        if (bad) return err(bad);
+        if (input.whenPipelineSucceeds === true && (input.squash !== undefined || input.removeSourceBranch !== undefined)) {
+          return err("whenPipelineSucceeds enables auto-merge, which uses the project's merge settings and cannot take squash or removeSourceBranch");
+        }
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        if (input.whenPipelineSucceeds === true) return runMrAction(target, "setAutoMerge", [], { autoMerge: true });
+        const merge: { squash?: boolean; shouldRemoveSourceBranch?: boolean } = {};
+        if (typeof input.squash === "boolean") merge.squash = input.squash;
+        if (typeof input.removeSourceBranch === "boolean") merge.shouldRemoveSourceBranch = input.removeSourceBranch;
+        return withLandingHint(await runMrAction(target, "merge", [merge], { merged: true }), "the MR's state");
+      },
+    },
+    {
       name: "mr_map",
       description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the repo's registered name: either its serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev) or its short repo-label alias.",
       inputSchema: {

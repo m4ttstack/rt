@@ -8,7 +8,7 @@ import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 import { REPO_INDEX_NS } from "../../repo-index.ts";
 import { closeStateDb, setKvValue } from "../../state/index.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_upload","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb","run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list","mr_view","mr_list","mr_for_branch","mr_threads","mr_pipeline","mr_job_trace"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_upload","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb","run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list","mr_view","mr_list","mr_for_branch","mr_threads","mr_pipeline","mr_job_trace","mr_merge"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -26,6 +26,7 @@ const realRtClient = await import("../../../packages/rt-client/src/index.ts");
 const { serializeIdentity } = realRtClient;
 const realTransport = await import("../../../packages/rt-client/src/transport.ts");
 const realRtCommand = realTransport.rtCommand;
+const ID = "remote:gitlab.com%2Facme%2Facme-dev";
 
 describe("mcpTools", () => {
   test("roster matches the published tool names", () => {
@@ -649,7 +650,7 @@ describe("mcpTools", () => {
     });
 
     test("every MR-level write tool offers repoName, iid and mrUrl with none required; mr_create offers repoName and mrUrl", () => {
-      for (const name of ["mr_reply_thread", "mr_comment_inline", "mr_comment", "mr_update", "mr_approve", "mr_resolve_thread", "mr_ready", "mr_retry", "mr_rebase"]) {
+      for (const name of ["mr_reply_thread", "mr_comment_inline", "mr_comment", "mr_update", "mr_approve", "mr_resolve_thread", "mr_ready", "mr_retry", "mr_rebase", "mr_merge"]) {
         const schema = mcpTools().find((t) => t.name === name)!.inputSchema as { properties: Record<string, unknown>; required?: string[] };
         expect(Object.keys(schema.properties), name).toEqual(expect.arrayContaining(["repoName", "iid", "mrUrl"]));
         expect(schema.required ?? [], name).not.toContain("repoName");
@@ -1173,6 +1174,51 @@ describe("mcpTools", () => {
       const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
       expect(res.ok).toBe(false);
       expect(res.error).toContain("gate g1 is closed (closed)");
+    });
+  });
+
+  describe("mr_merge", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    test("mr_merge merges now with squash and removeSourceBranch mapped to glance's input", async () => {
+      const calls: Array<{ name: string; payload: any }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: async (name: string, payload: unknown) => { calls.push({ name, payload }); return { ok: true, data: {} }; } }));
+      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
+      const res = await tool.handler({ repoName: ID, iid: 4, squash: true, removeSourceBranch: true }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { merged: true } });
+      expect(calls[0]!.payload).toMatchObject({ action: "merge", iid: 4, args: [{ squash: true, shouldRemoveSourceBranch: true }] });
+    });
+
+    test("mr_merge with whenPipelineSucceeds routes to setAutoMerge and says so", async () => {
+      const calls: Array<{ name: string; payload: any }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: async (name: string, payload: unknown) => { calls.push({ name, payload }); return { ok: true, data: {} }; } }));
+      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
+      const res = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { autoMerge: true } });
+      expect(calls[0]!.payload).toMatchObject({ action: "setAutoMerge", args: [] });
+    });
+
+    test("mr_merge refuses a non-boolean squash", async () => {
+      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
+      const res = await tool.handler({ repoName: ID, iid: 4, squash: "yes" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+    });
+
+    test("mr_merge refuses whenPipelineSucceeds combined with squash or removeSourceBranch, with no daemon call", async () => {
+      const calls: Array<{ name: string; payload: any }> = [];
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: async (name: string, payload: unknown) => { calls.push({ name, payload }); return { ok: true, data: {} }; } }));
+      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
+      const withSquash = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true, squash: true }, {} as NodeJS.ProcessEnv);
+      const withRemove = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true, removeSourceBranch: false }, {} as NodeJS.ProcessEnv);
+      expect(withSquash.ok).toBe(false);
+      expect(withSquash.error).toContain("auto-merge");
+      expect(withSquash.error).toContain("project's merge settings");
+      expect(withSquash.error).toContain("squash");
+      expect(withSquash.error).toContain("removeSourceBranch");
+      expect(withRemove.ok).toBe(false);
+      expect(calls).toEqual([]);
     });
   });
 });
