@@ -35,6 +35,7 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
     hasDefault: false,
     defaultValue: undefined,
     effective: { scope: null, file: null },
+    storeVersion: 1,
     ...over,
   };
 }

@@ -29,6 +29,7 @@ function def(
     hasDefault: false,
     defaultValue: null,
     effective: { scope: 'team', value: [], file: 'team.jsonc' },
+    storeVersion: 1,
     ...overrides,
   };
 }

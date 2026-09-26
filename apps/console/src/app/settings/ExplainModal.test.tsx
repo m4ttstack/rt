@@ -26,6 +26,7 @@ const DEF: SettingDefWire = {
   hasDefault: false,
   defaultValue: null,
   effective: { scope: 'machine', file: '/stores/local.jsonc', value: 'm-old' },
+  storeVersion: 1,
 };
 
 const ROWS: ExplainRowWire[] = [
