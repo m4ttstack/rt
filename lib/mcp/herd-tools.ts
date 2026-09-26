@@ -31,6 +31,23 @@ export const realHerdToolDeps: HerdToolDeps = {
 const SPAWN_TIMEOUT_MS = 300_000;
 const HERD_PROP = { herd: { type: "string", description: "Herd id; defaults to HERD_ID, else the sole active herd." } };
 const NO_SESSION = "CLAUDE_CODE_SESSION_ID is not set; this tool runs inside a Claude Code session";
+const IN_WORKER = "HERD_JOB is set, so this is a herd worker pane; only the shepherd session runs this tool";
+
+/**
+ * Every tool runs with no permission prompt, so a pane reading untrusted
+ * text must not reach another session's herd: only the session the daemon
+ * records as the herd's shepherd (herd:start, then each herd:resume) may
+ * spawn into, close or wrap it up.
+ */
+async function requireShepherd(herd: string, env: NodeJS.ProcessEnv, status: typeof herdStatus): Promise<string | null> {
+  if (!env.CLAUDE_CODE_SESSION_ID) return NO_SESSION;
+  const res = await status({ herd });
+  if (!res.ok) return fromResponse(res).error ?? `cannot read herd "${herd}"`;
+  if (res.data?.herd.shepherdSession !== env.CLAUDE_CODE_SESSION_ID) {
+    return `this session is not the shepherd of herd "${herd}"; run herd_resume on it first to take it over`;
+  }
+  return null;
+}
 
 async function herdFor(input: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<{ herd: string } | { error: string }> {
   if (typeof input.herd === "string") return { herd: input.herd };
@@ -58,13 +75,16 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_spawn",
-      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). Runs with no check: the shepherd owns its herd. Takes minutes.",
+      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). Only the herd's shepherd session may call it. Takes minutes.",
       inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" }, brief: { type: "string" }, dir: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, account: { type: "string" }, disposable: { type: "boolean" } }, required: ["job"], additionalProperties: false },
       async handler(input, env) {
+        if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "job", type: "string" }]) ?? checkOptional(input, [{ name: "brief", type: "string" }, { name: "dir", type: "string" }, { name: "model", type: "string" }, { name: "effort", type: "string" }, { name: "account", type: "string" }, { name: "disposable", type: "boolean" }]);
         if (bad) return err(bad);
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
+        const owner = await requireShepherd(h.herd, env, deps.status);
+        if (owner) return err(owner);
         const payload: Commands["herd:spawn"]["payload"] = { herd: h.herd, job: input.job as string };
         for (const k of ["brief", "dir", "model", "effort", "account"] as const) if (typeof input[k] === "string") payload[k] = input[k] as string;
         if (typeof input.disposable === "boolean") payload.disposable = input.disposable;
@@ -100,13 +120,16 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_close",
-      description: "Close one job's pane.",
+      description: "Close one job's pane. Only the herd's shepherd session may call it.",
       inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" } }, required: ["job"], additionalProperties: false },
       async handler(input, env) {
+        if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "job", type: "string" }]);
         if (bad) return err(bad);
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
+        const owner = await requireShepherd(h.herd, env, deps.status);
+        if (owner) return err(owner);
         return fromResponse(await deps.close({ herd: h.herd, job: input.job as string }));
       },
     },
@@ -145,14 +168,16 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_wrap_up",
-      description: "Close panes, dispose the named worktrees, delete job dirs and archive the room in one pass, driven by the wrap-up form's answers.",
-      inputSchema: { type: "object", properties: { ...HERD_PROP, closePanes: { type: "boolean" }, dispose: { type: "array", items: { type: "string" } }, deleteJobDirs: { type: "boolean" }, archiveRoom: { type: "boolean" } }, additionalProperties: false },
+      description: "Close panes, dispose the named worktrees, delete job dirs and archive the room in one pass, driven by the wrap-up form's answers. herd is required; only the herd's shepherd session may call it.",
+      inputSchema: { type: "object", properties: { herd: { type: "string", description: "Herd id." }, closePanes: { type: "boolean" }, dispose: { type: "array", items: { type: "string" } }, deleteJobDirs: { type: "boolean" }, archiveRoom: { type: "boolean" } }, required: ["herd"], additionalProperties: false },
       async handler(input, env) {
-        const bad = checkOptional(input, [{ name: "closePanes", type: "boolean" }, { name: "deleteJobDirs", type: "boolean" }, { name: "archiveRoom", type: "boolean" }]) ?? checkStringArray(input, "dispose");
+        if (env.HERD_JOB) return err(IN_WORKER);
+        const bad = checkRequired(input, [{ name: "herd", type: "string" }]) ?? checkOptional(input, [{ name: "closePanes", type: "boolean" }, { name: "deleteJobDirs", type: "boolean" }, { name: "archiveRoom", type: "boolean" }]) ?? checkStringArray(input, "dispose");
         if (bad) return err(bad);
-        const h = await herdFor(input, env);
-        if ("error" in h) return err(h.error);
-        const payload: Commands["herd:wrap-up"]["payload"] = { herd: h.herd };
+        const herd = input.herd as string;
+        const owner = await requireShepherd(herd, env, deps.status);
+        if (owner) return err(owner);
+        const payload: Commands["herd:wrap-up"]["payload"] = { herd };
         for (const k of ["closePanes", "deleteJobDirs", "archiveRoom"] as const) if (typeof input[k] === "boolean") payload[k] = input[k] as boolean;
         if (Array.isArray(input.dispose)) payload.dispose = input.dispose as string[];
         return fromResponse(await deps.wrapUp(payload));
@@ -160,9 +185,10 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_resume",
-      description: "Re-attach this session to a herd: re-subscribes to its gates and returns the open ones plus status.",
+      description: "Re-attach this session to a herd: re-subscribes to its gates and returns the open ones plus status. Any session but a worker pane may take a herd over this way.",
       inputSchema: { type: "object", properties: { herd: { type: "string" } }, required: ["herd"], additionalProperties: false },
       async handler(input, env) {
+        if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "herd", type: "string" }]);
         if (bad) return err(bad);
         if (!env.CLAUDE_CODE_SESSION_ID) return err(NO_SESSION);
