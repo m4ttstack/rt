@@ -94,7 +94,7 @@ describe("skills check --strict", () => {
     try {
       const strict = await runCheck(["--pack-dir", dir, "--strict"]);
       expect(strict.exitCode).toBe(1);
-      expect(strict.logs).toContain("mcp lint: 1 hits (strict: --strict and rt skills sync fail on them)");
+      expect(strict.logs).toContain("mcp lint: 1 hits (--strict fails on them)");
 
       const advisory = await runCheck(["--pack-dir", dir]);
       expect(advisory.exitCode).toBe(0);
@@ -109,6 +109,17 @@ describe("skills check --strict", () => {
     try {
       const { exitCode, logs } = await runCheck(["--pack-dir", dir]);
       expect(exitCode).toBe(0);
+      expect(logs).toContain("mcp lint: 1 hits (strict: --strict and rt skills sync fail on them)");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a strictLint pack run with --strict names sync too", async () => {
+    const dir = makePack({ name: "acme", version: "1.0.0", strictLint: true });
+    try {
+      const { exitCode, logs } = await runCheck(["--pack-dir", dir, "--strict"]);
+      expect(exitCode).toBe(1);
       expect(logs).toContain("mcp lint: 1 hits (strict: --strict and rt skills sync fail on them)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
