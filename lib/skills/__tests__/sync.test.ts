@@ -36,6 +36,8 @@ type World = {
   branchFail?: Record<string, string>;
   installed?: Record<string, string>;
   drift?: boolean[];
+  lintHits?: number[];
+  lintStrict?: boolean[];
   checkThrows?: boolean;
   compileOk?: boolean;
   compileErrors?: string[];
@@ -58,6 +60,8 @@ function makeDeps(pack: PackInfo, engine: PackInfo, world: World): SyncDeps {
   const installedVersions = new Map<string, string>(Object.entries(world.installed ?? {}));
   const installDirs = new Map<string, string>();
   const driftAnswers = [...(world.drift ?? [])];
+  const lintHitsAnswers = [...(world.lintHits ?? [])];
+  const lintStrictAnswers = [...(world.lintStrict ?? [])];
 
   function installDirFor(id: string): string {
     let dir = installDirs.get(id);
@@ -140,7 +144,7 @@ function makeDeps(pack: PackInfo, engine: PackInfo, world: World): SyncDeps {
       if (world.checkThrows) throw new Error("checkPack: manifest discovery found nothing");
       const next = driftAnswers.shift();
       if (next === undefined) throw new Error("checkPack: fixture ran out of configured drift answers");
-      return { drift: next };
+      return { drift: next, lintHits: lintHitsAnswers.shift() ?? 0, strict: lintStrictAnswers.shift() ?? false };
     },
     compilePack: async () => ({ ok: world.compileOk ?? true, errors: world.compileErrors ?? [] }),
     configDir: world.configDir ?? tmp("rt-sync-config-"),
@@ -622,5 +626,88 @@ describe("syncPack", () => {
 
     expect(report.warnings.length).toBe(1);
     expect(report.warnings[0]).toContain("dangling");
+  });
+
+  test("26: check step refuses on strict lint hits even with no content drift", async () => {
+    const pack = fixturePack("acme", "local", "1.0.0");
+    const engine = fixturePack("beacon", "local", "2.0.0");
+    const calls: Call[] = [];
+    const deps = makeDeps(pack, engine, {
+      calls,
+      installed: { [pluginId(pack)]: "1.0.0", [pluginId(engine)]: "2.0.0" },
+      drift: [false],
+      lintHits: [2],
+      lintStrict: [true],
+    });
+
+    const report = await syncPack(pack, engine, deps);
+
+    expect(report.ok).toBe(false);
+    const checkStep = report.steps.find((s) => s.name === "check")!;
+    expect(checkStep.status).toBe("refused");
+    expect(checkStep.detail).toContain("mcp lint");
+    expect(checkStep.detail).toContain("rt skills check");
+  });
+
+  test("27: check step is advisory-only on lint hits when the pack is not strict", async () => {
+    const pack = fixturePack("acme", "local", "1.0.0");
+    const engine = fixturePack("beacon", "local", "2.0.0");
+    const calls: Call[] = [];
+    const deps = makeDeps(pack, engine, {
+      calls,
+      installed: { [pluginId(pack)]: "1.0.0", [pluginId(engine)]: "2.0.0" },
+      drift: [false],
+      lintHits: [2],
+      lintStrict: [false],
+    });
+
+    const report = await syncPack(pack, engine, deps);
+
+    expect(report.ok).toBe(true);
+    const checkStep = report.steps.find((s) => s.name === "check")!;
+    expect(checkStep.status).toBe("ran");
+    expect(checkStep.detail).toContain("2 hits (advisory");
+    expect(checkStep.detail).toContain("strictLint");
+  });
+
+  test("28: check step carries no lint text at zero hits, even under a strict pack", async () => {
+    const pack = fixturePack("acme", "local", "1.0.0");
+    const engine = fixturePack("beacon", "local", "2.0.0");
+    const calls: Call[] = [];
+    const deps = makeDeps(pack, engine, {
+      calls,
+      installed: { [pluginId(pack)]: "1.0.0", [pluginId(engine)]: "2.0.0" },
+      drift: [false],
+      lintHits: [0],
+      lintStrict: [true],
+    });
+
+    const report = await syncPack(pack, engine, deps);
+
+    expect(report.ok).toBe(true);
+    const checkStep = report.steps.find((s) => s.name === "check")!;
+    expect(checkStep.status).toBe("ran");
+    expect(checkStep.detail).not.toContain("mcp lint");
+  });
+
+  test("29: recheck refuses when the post-compile check reports strict lint hits", async () => {
+    const pack = fixturePack("acme", "local", "0.5.2");
+    const engine = fixturePack("beacon", "local", "2.0.0");
+    const calls: Call[] = [];
+    const deps = makeDeps(pack, engine, {
+      calls,
+      installed: { [pluginId(pack)]: "0.5.2", [pluginId(engine)]: "2.0.0" },
+      drift: [true, false],
+      lintHits: [0, 3],
+      lintStrict: [false, true],
+    });
+
+    const report = await syncPack(pack, engine, deps);
+
+    const recheck = report.steps.find((s) => s.name === "recheck")!;
+    expect(recheck.status).toBe("refused");
+    expect(recheck.detail).toContain("mcp lint");
+    expect(recheck.detail).toContain("rt skills check");
+    expect(report.ok).toBe(false);
   });
 });

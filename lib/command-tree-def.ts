@@ -2235,6 +2235,7 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Verb", flag: "--verb", type: "text", placeholder: "watch-ci", hint: "Check only this verb (repeatable); omit for every compiled verb" },
           { name: "Manifest", flag: "--manifest", type: "text", placeholder: "/path/to/skills.jsonc", hint: "Manifest path; omit to auto-find the newest ~/.mattstack/repos/*/skills.jsonc naming this pack" },
           { name: "Pack dir", flag: "--pack-dir", type: "text", placeholder: "/path/to/pack", hint: "Check this pack directory's sources (a worktree, say) instead of resolving --pack through the registry" },
+          { name: "Strict", flag: "--strict", type: "boolean", default: false, hint: "Fail the exit code on mcp lint hits (mattstack-skills CI uses this; rt skills sync applies it to the mattstack pack and to a pack whose plugin.json sets strictLint)" },
           SETUP_JSON_ARG,
         ],
       },
