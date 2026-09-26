@@ -37,7 +37,8 @@ or "just sed the jsonc" — is the bug this contract exists to prevent.
    version bump, publish and install there; the add-a-key checklist in the
    routed doc carries the real per-consumer delivery steps. A key that
    resolves undefined — or throws unknown-key — in one app while
-   `rt settings` knows it is a stale copy, not a missing value.
+   `rt settings` knows it is a stale `dist/` (rebuild rt-client) or, for
+   gitq, a stale published install, not a missing value.
 3. Scopes, weakest → strongest: `default < team < user < team.repo <
    user.repo < machine < machine.repo` — most-specific wins; machine
    outranks user outranks team. Pick the scope by whose intent it is: team

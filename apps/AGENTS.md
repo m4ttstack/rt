@@ -14,7 +14,7 @@ component, touching `packages/server/src/**`, or consuming
 mantine-kit; see `docs/superpowers/specs/2026-08-26-app-kit-design.md`).
 "The mattstack layer", "The server package", and "Consumer requirements"
 are new to this repo. Colour and type decisions are NOT made here:
-`docs/ui-authoring.md` owns them, for this package and every app. "Working
+`docs/apps/ui-authoring.md` owns them, for this package and every app. "Working
 in this repo" right below is the repo-wide reading order and layout notes;
 it precedes the numbered kit contract sections.
 
@@ -135,9 +135,10 @@ that fail typecheck.
 This is about the pre-fold-in `m4ttstack/apps` remote, not the `apps/`
 directory you are reading this in: on a machine that has not yet cut over,
 rt still shows that remote under the identity label `app-kit`, via a
-machine-settings `rt.repoIdentityOverrides` bridge. The Stage A cutover's
-machine-state audit retires that override along with the rest of the old
-remote's tracking; nothing in this repo needs to change for it.
+machine-settings `rt.repoIdentityOverrides` bridge. That override is
+machine state, not something this repo owns, and it retires along with the
+rest of that remote's tracking once the remote itself is removed. Nothing
+in this repo needs to change for it.
 
 ### Mantine: look it up, don't recall it
 
@@ -170,10 +171,10 @@ under `apps/` consumes the four platform packages workspace-only
 (`workspace:*`); `@mattstack/rt-client` and `@mattstack/settings-kit` are
 likewise private workspace packages linked with `workspace:*`, not
 registry pulls. `@mattstack/glance` and `invadrs` remain real npm registry
-deps, pulled via `catalog:`. The packed-tarball mechanism in
-`docs/apps/README.md`'s "Bundle-transition tarballs" section stays documented as the sanctioned
-path for a future app that has not yet folded in as a workspace member; do
-not propose or wire up a publish workflow.
+deps, pulled via `catalog:`. A future app that has not yet folded in as a
+workspace member follows `docs/release-and-distribution.md`'s "Adding a
+served app" list, not a packed-tarball workflow; do not propose or wire one
+up here.
 
 ## 1. Why the import walls exist, and how to satisfy them
 
@@ -870,8 +871,8 @@ missing any of them breaks in a way that does not announce itself as
    `mantine-tokyo`) in its own `package.json`. `workspace:*` resolves
    through this repo's single `bun install`, so peers (`react`, `vite`,
    `wouter`) resolve once, the same as a registry install would. The
-   packed-tarball mechanism (`bun pm pack`, `docs/apps/README.md`'s
-   "Bundle-transition tarballs" section) is for a consumer OUTSIDE this workspace only -- an
+   packed-tarball mechanism (`bun pm pack`, `docs/release-and-distribution.md`'s
+   "Adding a served app" list) is for a consumer OUTSIDE this workspace only -- an
    app that has not folded in yet. A bare `file:../packages/ui` dependency
    from outside the workspace still hits Bun 1.3's symlink-into-source
    behavior (contents symlink rather than copy, so peers resolve twice:

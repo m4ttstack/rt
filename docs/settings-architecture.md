@@ -95,8 +95,10 @@ exist for out-of-process callers only.
    schema or no entry.
 4. `bun run cli.ts settings schema lock` regenerates `schema.lock.json`;
    commit it with the schema. CI regenerates it and fails on any difference.
-5. `cd packages/rt-client && bun run build`: dist is what consumers copy, and
-   the dist-freshness test fails otherwise.
+5. `cd packages/rt-client && bun run build`: workspace consumers (board,
+   console, deck) link the package and resolve `dist/` directly, and gitq
+   installs whatever `dist/` the last npm publish shipped; either way a
+   stale `dist/` is what the dist-freshness test catches.
 6. Deliver the new registry to every consumer: a node_modules copy never
    updates itself. Board, console and deck link `@mattstack/rt-client` as an
    in-tree `workspace:*` package, so the registry row lands for them on the

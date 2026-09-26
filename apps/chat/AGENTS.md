@@ -24,9 +24,9 @@ server frame). The kit contract itself, covering the import walls, icon
 registry, theme override patterns, facade recipes
 (modals/notifications/forms), the `MattstackShell`/`mountMattstackApp`
 mattstack layer, and the server package's routes/relay/static contract,
-lives at this repo's root:
+lives in `apps/AGENTS.md`:
 
-**`AGENTS.md` (repo root)**
+**`apps/AGENTS.md`**
 
 Read that first for anything touching `@mattstack/app-kit/*` or
 `@mattstack/app-server`. What follows here is only what's specific to how

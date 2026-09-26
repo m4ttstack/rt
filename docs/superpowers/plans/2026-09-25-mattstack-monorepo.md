@@ -1661,7 +1661,7 @@ git commit -m "glance: publish on demand with bun publish"
 
 ### Task 17: Stage B cutover (Matt-gated)
 
-- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported apps history into one commit and loses blame and `--follow`) on Matt's confirmation.
+- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported glance history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (rt code changed: the glance link).
 - [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches with format-patch first); move `~/Documents/GitHub/glance/harness_credentials.json` to the repo-tools root (gitignored) and repoint the path in `~/.claude/CLAUDE.md`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fglance` entry; delete `~/Documents/GitHub/glance`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fglance/`.
 - [ ] **Step 4: README links**: in `mattstack-skills/README.md` and `fast-browser/README.md` point the glance link at `https://github.com/m4ttstack/rt/tree/main/packages/glance` (a direct commit on each repo's main; both are docs-only).
@@ -1810,7 +1810,7 @@ git commit -m "docs: gitq lives in apps/gitq"
 
 ### Task 21: Stage C cutover (Matt-gated)
 
-- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported apps history into one commit and loses blame and `--follow`) on Matt's confirmation.
+- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported gitq history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (deps.lock and rt code changed).
 - [ ] **Step 3: `gh repo archive m4ttstack/gitq --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches first); relink the five `~/.claude/skills/gitq:*` symlinks (absorb, publish, restructure, sync, track) to `~/Documents/GitHub/repo-tools/apps/gitq/skills/<name>`; `rt settings set gitq.board --scope machine` with the `gitq` repo entry's path at `~/Documents/GitHub/repo-tools`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fgitq` entry; delete `~/Documents/GitHub/gitq`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fgitq/`.
 - [ ] **Step 4: README links** in `mattstack-skills/README.md` and `fast-browser/README.md` point the gitq link at `https://github.com/m4ttstack/rt/tree/main/apps/gitq`.
