@@ -26,6 +26,10 @@ describe("redactCredentials", () => {
     expect(redactCredentials(`export GITLAB_TOKEN=${FAKE_GL} and ${FAKE_GH}\n${FAKE_FEED}`)).toBe("export GITLAB_TOKEN=[redacted] and [redacted]\n[redacted]");
   });
 
+  test("masks a token glued to an underscore or dash", () => {
+    expect(redactCredentials(`GITLAB_TOKEN_${FAKE_GL}`)).toBe("GITLAB_TOKEN_[redacted]");
+  });
+
   test("masks header-style credentials", () => {
     expect(redactCredentials("PRIVATE-TOKEN: secretvalue\nAuthorization: Bearer abc.def\nJOB-TOKEN: x1")).toBe("PRIVATE-TOKEN: [redacted]\nAuthorization: [redacted]\nJOB-TOKEN: [redacted]");
   });
@@ -53,6 +57,11 @@ describe("redactDeep", () => {
     expect(out.html).toBe('<img src="https://gl.com/a.png?private_token=[redacted]">');
     expect(out.list).toEqual(["x\n[redacted]", 3, null]);
     expect(Object.keys(out)).toContain("[redacted]");
+  });
+
+  test("an object with toJSON serializes through it, then redacts", () => {
+    const d = new Date("2026-09-26T00:00:00.000Z");
+    expect(JSON.stringify(redactDeep({ at: d }))).toBe(JSON.stringify({ at: d }));
   });
 });
 

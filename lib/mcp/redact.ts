@@ -10,7 +10,7 @@ import { err, type McpToolDef, type ToolResult } from "./shared.ts";
     lookbehinds and length caps keep every pattern linear on large traces. */
 const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}):\/\/([^/\s"'@?#]{1,512})@/gi;
 const CREDENTIAL_PARAM = /([?&;](?:private_token|access_token|job_token|oauth_token|feed_token|token|api_key|apikey|sig)=)[^&\s"'#\\<>]{1,2048}/gi;
-const TOKEN_SHAPE = /(?<![A-Za-z0-9_-])(?:glpat|gldt|glrt|glptt|glcbt|glft|glsoat|gloas|glimt|glagent|glffct|glwt|ghp|gho|ghu|ghs|ghr|github_pat)[-_][A-Za-z0-9_-]{16,512}/g;
+const TOKEN_SHAPE = /(?<![A-Za-z0-9])(?:glpat|gldt|glrt|glptt|glcbt|glft|glsoat|gloas|glimt|glagent|glffct|glwt|ghp|gho|ghu|ghs|ghr|github_pat)[-_][A-Za-z0-9_-]{16,512}/g;
 const CREDENTIAL_HEADER = /\b(PRIVATE-TOKEN|JOB-TOKEN|Authorization)(:[ \t]*)[^\r\n]{1,2048}/gi;
 
 export function redactCredentials(text: string): string {
@@ -25,6 +25,9 @@ export function redactCredentials(text: string): string {
 export function redactDeep(value: unknown): unknown {
   if (typeof value === "string") return redactCredentials(value);
   if (Array.isArray(value)) return value.map(redactDeep);
+  if (value !== null && typeof value === "object" && typeof (value as { toJSON?: unknown }).toJSON === "function") {
+    return redactDeep((value as { toJSON: () => unknown }).toJSON());
+  }
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) out[redactCredentials(k)] = redactDeep(v);
