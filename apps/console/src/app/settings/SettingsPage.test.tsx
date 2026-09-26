@@ -618,7 +618,11 @@ describe('repo picker', () => {
     );
     expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
     expect(document.querySelector('.mantine-Skeleton-root')).toBeNull();
+    const list = screen.getByTestId('settings-list');
+    expect(list).toHaveAttribute('aria-busy', 'true');
+    expect(list).toHaveAttribute('inert');
     release();
+    await waitFor(() => expect(list).not.toHaveAttribute('inert'));
   });
 
   it('the Changed count follows the picked repo', async () => {

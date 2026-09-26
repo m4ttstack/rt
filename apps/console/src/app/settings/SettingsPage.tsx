@@ -439,23 +439,33 @@ export function SettingsPage() {
                   </Button>
                 </Stack>
               ) : (
-                visible.map(s => (
-                  <SettingsSection
-                    key={s.group.id}
-                    section={s}
-                    store={store}
-                    query={query}
-                    filtering={filtering}
-                    agentProvider={agentProvider}
-                    onExplain={explain.open}
-                    onFix={(key, issue) =>
-                      explain.open(key, {
-                        fix: issue?.scope,
-                        repo: issue?.repo,
-                      })
-                    }
-                  />
-                ))
+                <Box
+                  data-testid="settings-list"
+                  inert={store.loading}
+                  aria-busy={store.loading || undefined}
+                  style={{
+                    opacity: store.loading ? 0.55 : undefined,
+                    transition: 'opacity 120ms',
+                  }}
+                >
+                  {visible.map(s => (
+                    <SettingsSection
+                      key={s.group.id}
+                      section={s}
+                      store={store}
+                      query={query}
+                      filtering={filtering}
+                      agentProvider={agentProvider}
+                      onExplain={explain.open}
+                      onFix={(key, issue) =>
+                        explain.open(key, {
+                          fix: issue?.scope,
+                          repo: issue?.repo,
+                        })
+                      }
+                    />
+                  ))}
+                </Box>
               )}
               {filtering && visible.length > 0 && hiddenGroups > 0 && (
                 <Group gap={8} pt={20}>
