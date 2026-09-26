@@ -786,7 +786,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           isHerdPane: (paneRef) => {
             try {
               return herdStore.list({ status: "active" }).some((h) => herdStore.jobs(h.id).some((j) => j.pane === paneRef));
-            } catch {
+            } catch (err) {
+              log.warn({ err, pane: paneRef }, "relocation: herd registry read failed; standing down for this pane");
               return true;
             }
           },
@@ -794,7 +795,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             try {
               const v = getSetting<unknown>("panes.relocationAutoAccept").value;
               return typeof v === "boolean" ? v : true;
-            } catch {
+            } catch (err) {
+              log.warn({ err }, "relocation: panes.relocationAutoAccept unreadable; keeping the default");
               return true;
             }
           },
