@@ -18,6 +18,11 @@ import { decideCreate, decideRemove, stockWorktreeAdd } from "../lib/worktree/cl
 import { loadWorktreeAppConfig } from "../lib/worktree/config.ts";
 import { explainError } from "./worktree.ts";
 import { findTreeByPath } from "../lib/worktree/registry.ts";
+import { selfPaneRef } from "../lib/self-pane.ts";
+import { rtCommand } from "../packages/rt-client/src/index.ts";
+import type { Commands } from "../packages/rt-client/src/index.ts";
+
+type RelocationAnnouncement = Commands["pane:announce-relocation"]["payload"];
 
 // One shared number with lib/claude-settings.ts's HOOK_TIMEOUT_SECONDS (the
 // installed hook entries' Claude Code `timeout` field) so the two can never
@@ -178,7 +183,7 @@ export async function hookStatusCommand(args: string[], _ctx: unknown): Promise<
 }
 
 type ParsedStdin =
-  | { event: "create"; cwd: string; name: string }
+  | { event: "create"; cwd: string; name: string; sessionId?: string }
   | { event: "remove"; path: string | null }
   | { event: "invalid" };
 
@@ -186,7 +191,7 @@ export function parseHookStdin(raw: string): ParsedStdin {
   try {
     const j = JSON.parse(raw);
     if (j.hook_event_name === "WorktreeCreate" && typeof j.cwd === "string" && typeof j.name === "string") {
-      return { event: "create", cwd: j.cwd, name: j.name };
+      return { event: "create", cwd: j.cwd, name: j.name, ...(typeof j.session_id === "string" ? { sessionId: j.session_id } : {}) };
     }
     if (j.hook_event_name === "WorktreeRemove") {
       const p = typeof j.worktree_path === "string" ? j.worktree_path : typeof j.path === "string" ? j.path : null;
@@ -194,6 +199,39 @@ export function parseHookStdin(raw: string): ParsedStdin {
     }
   } catch { /* fall through to invalid */ }
   return { event: "invalid" };
+}
+
+/** Only EnterWorktree paints a Claude Code relocation dialog (ExitWorktree has none on 2.1.283), so any other tool is null. */
+export function buildRelocationAnnouncement(stdin: string, env: NodeJS.ProcessEnv): RelocationAnnouncement | null {
+  let hook: { session_id?: unknown; cwd?: unknown; tool_name?: unknown; tool_input?: unknown };
+  try {
+    hook = JSON.parse(stdin);
+  } catch {
+    return null;
+  }
+  if (!hook || typeof hook !== "object") return null;
+  if (hook.tool_name !== "EnterWorktree") return null;
+  if (typeof hook.session_id !== "string" || typeof hook.cwd !== "string") return null;
+  const out: RelocationAnnouncement = { sessionId: hook.session_id, tool: "EnterWorktree", cwd: hook.cwd };
+  const paneId = selfPaneRef(env);
+  if (paneId) out.paneId = paneId;
+  const input = hook.tool_input;
+  if (input && typeof input === "object" && typeof (input as { path?: unknown }).path === "string") {
+    out.path = (input as { path: string }).path;
+  }
+  return out;
+}
+
+/** Never call directly: Claude Code's PreToolUse hook drives this over stdin. Every path prints nothing and exits 0 so a daemon-down or malformed-input case never stalls the pane. */
+export async function announceRelocation(_args: string[]): Promise<void> {
+  const stdin = process.stdin.isTTY ? "" : await Bun.stdin.text();
+  const payload = buildRelocationAnnouncement(stdin, process.env);
+  if (!payload) return;
+  try {
+    await rtCommand("pane:announce-relocation", payload, { timeoutMs: 3_000 });
+  } catch {
+    // the daemon being unreachable falls through to the human's own dialog, not the hook's error
+  }
 }
 
 /**
@@ -258,6 +296,16 @@ export async function claudeHookCommand(args: string[], _ctx: unknown): Promise<
   if (decision.kind === "refused") {
     console.error(`rt worktree provision refused: ${explainError(decision.error)} (escape hatch: rt worktree hook uninstall)`);
     process.exit(2);
+  }
+  if (decision.kind === "provisioned" && parsed.sessionId) {
+    const announce: RelocationAnnouncement = { sessionId: parsed.sessionId, tool: "EnterWorktree", path: decision.path, cwd: parsed.cwd };
+    const paneId = selfPaneRef(process.env);
+    if (paneId) announce.paneId = paneId;
+    try {
+      await rtCommand("pane:announce-relocation", announce, { timeoutMs: 3_000 });
+    } catch {
+      // same as announceRelocation: the dialog falls to the human on a daemon-down case
+    }
   }
   console.log(decision.path);
   process.exit(0);

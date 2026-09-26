@@ -1222,6 +1222,14 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Remove", flag: "--remove", type: "boolean", default: false, hint: "Handle a WorktreeRemove event (courtesy guarded dispose)" },
         ],
       },
+      "announce-relocation": {
+        description: "Claude Code EnterWorktree PreToolUse hook endpoint (stdin JSON in, nothing out); never call directly",
+        module: "./commands/worktree-hook.ts",
+        fn: "announceRelocation",
+        hidden: true,
+        omitBehavior: { exempt: "agent-facing; driven by Claude Code over stdin, never interactively" },
+        args: [],
+      },
       hook: {
         description: "Claude Code worktree hook: install, remove, or inspect the WorktreeCreate/WorktreeRemove wiring",
         subcommands: {
