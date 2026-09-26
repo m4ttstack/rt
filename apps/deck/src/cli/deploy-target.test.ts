@@ -16,8 +16,9 @@ test("resolves to the self record's supervised program path, whatever it is", as
   const { putRecord, reloadRegistry } = await import('../registry/records.ts');
   const { deployTarget } = await import('./deploy-target.ts');
   reloadRegistry();
-  // A hand install under ~/.local/bin, not install.sh's ~/.mattstack/deck/bin:
-  // the plist execs this exact path, so deploy must write here.
+  // A hand install under ~/.local/bin, not an older standalone install's
+  // ~/.mattstack/deck/bin: the plist execs this exact path, so deploy must
+  // write here.
   putRecord({
     name: 'deck',
     managedBy: 'deck',

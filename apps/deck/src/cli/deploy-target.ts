@@ -3,8 +3,9 @@ import { getRecord } from '../registry/records.ts';
 /**
  * Where a deploy must write deck's new binary: the path the platform's own
  * launchd plist execs. bootstrapSelf bakes that absolute path into the self
- * record's command, so it differs per machine (install.sh puts it under
- * ~/.mattstack/deck/bin, a hand install may use ~/.local/bin). `deck restart
+ * record's command, so it differs per machine (a hand install may use
+ * ~/.local/bin, an older standalone install may still sit under
+ * ~/.mattstack/deck/bin). `deck restart
  * deck` is `launchctl kickstart -k`, which re-execs the plist's existing
  * program path without re-reading anything, so a binary written anywhere else
  * leaves the restart running the stale build. Reading the record instead of

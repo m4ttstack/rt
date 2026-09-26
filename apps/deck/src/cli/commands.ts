@@ -41,7 +41,7 @@ usage:
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
   deck remote <name> on|off                serve <name> publicly from Railway (on) or the tunnel (off)
   deck push <name>                         redeploy a remote app from the local checkout
-  deck serve | setup | uninstall | update  platform lifecycle
+  deck serve | setup | uninstall           platform lifecycle
   deck version`;
 
 interface Io {

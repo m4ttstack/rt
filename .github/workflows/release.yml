@@ -13,7 +13,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # App code runs here and only here. The release job below imports the
+  # Developer ID key and never runs a recipe; it receives these bytes as an
+  # artifact and signs them like any fetched helper.
+  build-apps:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Build the tree rows
+        run: bun scripts/build-apps.ts --arch arm64
+      # upload-artifact strips executable bits and dereferences symlinks;
+      # tar keeps the binaries runnable.
+      - name: Pack the handoff
+        run: tar czf apps-handoff.tgz -C rt-tray/deps/arm64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apps-handoff
+          path: apps-handoff.tgz
+
   release:
+    needs: build-apps
     runs-on: macos-15
     permissions:
       contents: write
@@ -157,12 +181,19 @@ jobs:
           restore-keys: mattstack-deps-${{ runner.os }}-
 
       - name: Fetch bundled dependencies
-        # GH_TOKEN: console and chat are private repos, so their release
-        # assets refuse bare curl; fetch-deps falls back to gh, which needs
-        # a token that can read the m4ttstack app repos.
         env:
           GH_TOKEN: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
         run: scripts/fetch-deps.sh arm64
+
+      - name: Land the tree rows
+        uses: actions/download-artifact@v4
+        with:
+          name: apps-handoff
+          path: handoff
+      - run: |
+          mkdir -p rt-tray/deps/arm64
+          tar xzf handoff/apps-handoff.tgz -C rt-tray/deps/arm64
+          ls rt-tray/deps/arm64
 
       # Saved straight after the fetch, so a run that fails later (notarize,
       # clean room) still keeps its downloads. Files deps.lock no longer pins

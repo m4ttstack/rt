@@ -287,9 +287,6 @@ else if (cmd === 'setup') {
       { force }
     )
   );
-} else if (cmd === 'update') {
-  const { update } = await import('./cli/update.ts');
-  process.exit(await update({ out: console.log, err: console.error }));
 } else {
   const { runCommand } = await import('./cli/commands.ts');
   process.exit(
