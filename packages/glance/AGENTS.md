@@ -1,3 +1,5 @@
+> Scope: packages/glance and packages/glance-react. This was the glance repo's contract before the fold-in.
+
 # glance
 
 The forge SDK behind the mattstack estate: `@mattstack/glance` (GitHub and
