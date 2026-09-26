@@ -1008,10 +1008,26 @@ describe("gitPush", () => {
   });
   test("an upstream on another remote goes to that remote", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "push fork HEAD:refs/heads/feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/fork/HEAD": { code: 128 }, "push fork HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(true);
     expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/feat/x");
+  });
+  test("a feature branch whose upstream is origin/main (checkout -b feat/x origin/main) is refused", async () => {
+    for (const up of ["origin/main", "origin/master", "origin/develop"]) {
+      const calls: string[] = [];
+      const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${up}\n` } }, calls));
+      expect(r.ok, up).toBe(false);
+      expect(r.error, up).toContain(up);
+      expect(calls.some((c) => c.startsWith("push")), up).toBe(false);
+    }
+  });
+  test("an upstream on another remote is checked against THAT remote's default", async () => {
+    const calls: string[] = [];
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/trunk\n" }, "symbolic-ref --quiet --short refs/remotes/fork/HEAD": { stdout: "fork/trunk\n" } };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
   });
   test("setUpstream pushes -u origin HEAD:refs/heads/<branch>", async () => {
     const calls: string[] = [];
@@ -1131,10 +1147,10 @@ async function currentBranch(cwd: string, git: GitRunner): Promise<string | null
   return r.code === 0 ? r.stdout.trim() : null;
 }
 
-async function remoteDefault(cwd: string, git: GitRunner): Promise<string | null> {
-  const r = await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd);
+async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<string | null> {
+  const r = await git(["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], cwd);
   if (r.code !== 0) return null;
-  return r.stdout.trim().replace(/^origin\//, "");
+  return r.stdout.trim().replace(new RegExp(`^${remote}/`), "");
 }
 
 function detail(r: { stderr: string; stdout: string }): string {
@@ -1168,6 +1184,10 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     if (slash <= 0) return err(`cannot read the upstream of ${branch}: ${full}`);
     remote = full.slice(0, slash);
     remoteBranch = full.slice(slash + 1);
+    // `git checkout -b feat/x origin/main` tracks main, so the local name
+    // passing says nothing about where the refspec lands.
+    const remoteDef = await remoteDefault(cwd, git, remote);
+    if (PROTECTED.has(remoteBranch) || remoteBranch === remoteDef) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
   } else {
     if (!opts.setUpstream) return err(`${branch} has no upstream; pass setUpstream: true to push it as origin/${branch}`);
     remote = "origin";
@@ -1349,6 +1369,8 @@ describe("branch_sync tool", () => {
 import { execWithTimeout } from "../setup/probes.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 
+// rt sync pushes `origin <local branch>` by name (commands/sync.ts:301), never
+// the tracked upstream, so the local-name refusal is the whole protection here.
 export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
