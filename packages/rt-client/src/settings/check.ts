@@ -53,19 +53,25 @@ function checkSection(s: StoreSection, out: CheckFinding[]): void {
     const read = readSection(def, s.section, { layer: true });
     if (!read.present) continue;
     const at = { key: def.key, scope: s.scope, file: s.file, ...(s.repo ? { repo: s.repo } : {}) };
-    for (const o of read.older) {
-      out.push({
-        ...at,
-        kind: o.label,
-        issues: o.migrationError ? [{ path: [], message: o.migrationError }] : [],
-        storeName: o.storeName,
-        ...(def.secret === true ? {} : { olderValue: o.value, currentValue: read.value }),
-      });
+    // Older-name findings are only meaningful where this key can legitimately be
+    // written: the same allow-list planStoreMigrations applies before walking older names.
+    const allowedHere = def.scopes.includes(s.scope) && (s.repo === undefined || def.repoScoped === true);
+    if (allowedHere) {
+      for (const o of read.older) {
+        out.push({
+          ...at,
+          kind: o.label,
+          issues: o.migrationError ? [{ path: [], message: o.migrationError }] : [],
+          storeName: o.storeName,
+          ...(def.secret === true ? {} : { olderValue: o.value, currentValue: read.value }),
+        });
+      }
     }
     const guarded = s.scope === "machine" ? { ...def, pathGuardFields: undefined } : def;
     const typed = validateValue(guarded, read.value);
     if (!typed.ok) {
-      out.push({ ...at, kind: "invalid", issues: [{ path: [], message: typed.reason }] });
+      const issues = [...(read.migrationError ? [{ path: [], message: read.migrationError }] : []), { path: [], message: typed.reason }];
+      out.push({ ...at, kind: "invalid", issues });
       continue;
     }
     const issues = [

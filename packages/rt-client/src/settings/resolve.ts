@@ -484,8 +484,10 @@ function resolveDef(def: SettingDef, stores: StoreBundle, opts: ResolveOpts): Re
     if (slot.scope !== "default") {
       const check = validateForScope(def, slot.scope, slot.value);
       if (!check.ok) {
-        row.invalid = check.reason;
-        invalid.push({ scope: slot.scope, file: slot.file, reason: check.reason });
+        const failed = slot.read?.migrationError;
+        const reason = failed ? `${failed}; ${check.reason}` : check.reason;
+        row.invalid = reason;
+        invalid.push({ scope: slot.scope, file: slot.file, reason });
         rows.push(row);
         continue;
       }

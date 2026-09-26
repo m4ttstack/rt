@@ -104,11 +104,38 @@ describe("settings/check over versioned store names", () => {
     });
   });
 
+  test("a value the chain cannot carry, whose authored shape also fails the type check, is invalid and keeps both the migration error and the type error", () => {
+    withMigration("rt.roles", { storeVersion: 2, migrateFrom: [{ version: 1, up: () => { throw new Error("boom"); } }] }, () => {
+      writeUser({ "rt.roles": [] });
+      const f = checkStores().findings.find((x) => x.key === "rt.roles" && x.kind === "invalid")!;
+      expect(f.issues).toEqual([
+        { path: [], message: "migration 1 -> 2 threw: boom" },
+        { path: [], message: "expected object, got array" },
+      ]);
+    });
+  });
+
   test("a diverged older name in a team repo section is found and names the repo", () => {
     withMigration("rt.roles", ROLES_BUMP, () => {
       writeTeam(TEAM, { repos: { [IDENTITY]: { "rt.roles": { web: { hook: "./dev.sh" } }, "rt.roles@2": { web: { devHook: "./other.sh" } } } } });
       const f = checkStores().findings.find((x) => x.kind === "diverged")!;
       expect(f).toMatchObject({ key: "rt.roles", scope: "team", repo: IDENTITY, storeName: "rt.roles" });
+    });
+  });
+
+  test("an older name in a scope the key does not allow is never labeled diverged, stale or leftover", () => {
+    withMigration(EB, EB_BUMP, () => {
+      writeTeam(TEAM, { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
+      const report = checkStores();
+      expect(report.findings.filter((x) => x.key === EB && ["diverged", "stale", "leftover"].includes(x.kind))).toEqual([]);
+    });
+  });
+
+  test("an older name in a repo section for a key that is not repo-scoped is never labeled diverged, stale or leftover", () => {
+    withMigration(EB, EB_BUMP, () => {
+      write(userSettingsPath(), { repos: { [IDENTITY]: { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED } } });
+      const report = checkStores();
+      expect(report.findings.filter((x) => x.key === EB && ["diverged", "stale", "leftover"].includes(x.kind))).toEqual([]);
     });
   });
 

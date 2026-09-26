@@ -73,6 +73,21 @@ describe("renderExplainRow over store names", () => {
     expect(current).not.toContain("read from");
   });
 
+  test("an invalid row still shows the store-name suffix and its older-name lines", () => {
+    const out = strip(renderExplainRow({
+      ...base,
+      value: [1],
+      invalid: "migration 1 -> 2 threw: boom; expected object, got array",
+      storeName: "rt.x",
+      storedVersion: 1,
+      authored: [1],
+      olderNames: [{ storeName: "rt.x", storedVersion: 1, label: "diverged", value: [9], authored: [8] }],
+    } as ExplainRow, "rt.x@2"));
+    expect(out).toContain("[invalid: migration 1 -> 2 threw: boom; expected object, got array]");
+    expect(out).toContain("[read from rt.x, version 1]");
+    expect(out).toContain("older rt.x: diverged  [9]");
+  });
+
   test("older names print one per line, a diverged one with its value", () => {
     const out = strip(renderExplainRow({
       ...base,
