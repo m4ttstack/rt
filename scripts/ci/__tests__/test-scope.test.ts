@@ -122,7 +122,7 @@ describe("decide", () => {
   });
 
   test("a glance source change runs rt's unit suite", () => {
-    expect(decide(prInput(["packages/glance/src/index.ts"])).mode).not.toBe("skip");
+    expect(decide(prInput(["packages/glance/src/index.ts"])).mode).toBe("full");
   });
 
   test("glance-react and typescript-config are apps trees", () => {

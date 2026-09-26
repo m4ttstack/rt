@@ -113,6 +113,7 @@ function invisible(input: ScopeInput, f: string): string | undefined {
   if (input.preloadImports.has(f)) return "imported by the preload";
   if (isFixture(f)) return "a fixture";
   if (f.startsWith("scripts/ci/")) return "the scope script";
+  if (f.startsWith("packages/glance/")) return "a workspace package --changed cannot trace through a bare import";
   return undefined;
 }
 
