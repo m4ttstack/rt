@@ -56,7 +56,7 @@ export function renderInitOutcome(out: InitOutcome): string {
     `pack ${out.pack.name} at ${out.pack.dir}`,
     `zone ${out.pack.zone}, marketplace ${out.pack.marketplace}, installed ${out.installed.plugin} ${out.installed.version}`,
     `repo manifest ${out.repo.manifest}`,
-    "restart your Claude session, then try:",
+    "run /reload-plugins in your Claude session, then try:",
     `  ${out.tryNext}`,
   ].join("\n");
 }

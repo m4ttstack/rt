@@ -28,10 +28,11 @@ describe("renderInitOutcome", () => {
     restartNeeded: true,
     tryNext: "/acme:work <ticket>",
   };
-  test("human output names the pack dir, the restart, and what to try", () => {
+  test("human output names the pack dir, /reload-plugins, and what to try", () => {
     const text = renderInitOutcome(okOutcome);
     expect(text).toContain("/z/mattstack/packs/acme");
-    expect(text).toContain("restart");
+    expect(text).toContain("/reload-plugins");
+    expect(text).not.toContain("restart");
     expect(text).toContain("/acme:work <ticket>");
   });
   test("a refusal renders as rt skills init: <detail>", () => {

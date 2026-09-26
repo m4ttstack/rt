@@ -163,7 +163,7 @@ export function InstalledCachesBar({
               aria-hidden
             />
             <Text fz={11} c={text.muted}>
-              restart running sessions to apply
+              run /reload-plugins in running sessions to apply
             </Text>
           </Group>
         ) : (
