@@ -179,7 +179,7 @@ export function setSetting(key: string, value: unknown, scope: SettingScope, opt
       if (Object.keys(baselines).length === 0) return [{ path: [...sectionPath, name], value }];
       const rawMigrated = section?.[MIGRATED_PROP];
       // A garbage $migrated (null, an array, a string) cannot take a property edit
-      // underneath it — jsonc-parser's modify throws adding an index to it — so it is
+      // underneath it (jsonc-parser's modify throws adding an index to it), so it is
       // replaced wholesale with a fresh object holding only the new baselines.
       const migratedIsObject = rawMigrated === undefined || (rawMigrated !== null && typeof rawMigrated === "object" && !Array.isArray(rawMigrated));
       return [
