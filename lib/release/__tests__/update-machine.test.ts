@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { UserActionableError } from "../../setup/errors.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDevAppRef, parseManagedDeckApps, runDevAppRebuild, runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
+import { assertDevAppRef, deckVersionAtTag, parseManagedDeckApps, runDevAppRebuild, runUpdateMachine, type UpdateMachineSeams } from "../update-machine.ts";
 
 const ok = (stdout = "", exitCode = 0) => Promise.resolve({ stdout, stderr: "", exitCode });
 const fail = (stderr = "boom", exitCode = 1) => Promise.resolve({ stdout: "", stderr, exitCode });
@@ -43,8 +43,11 @@ interface Options {
   deckRestartManagedExit?: number;
   deckListExit?: number;
   deckListGarbage?: boolean;
-  depsLockMissing?: boolean;
   downloadThrows?: boolean;
+  /** deck's registry.json `apps.<name>.dev.workingDirectory`, keyed by app name; an app left out reads as unregistered. Omitted entirely means the registry file is unreadable. */
+  registry?: Record<string, string>;
+  /** The version `git show <tag>:apps/deck/package.json` reports; defaults to the same 3.4.0 `deckVersion` defaults to, so an unrelated test stays green without opting in. */
+  deckPackageAtTag?: string;
   /** `fresh`: pid actually cycles on the broad `deck restart --managed`. `recovers` (default true): a targeted `deck restart <name>` retry cycles the pid when the broad restart didn't. */
   managed?: { name: string; fresh: boolean; recovers?: boolean; psUnparseable?: boolean; psTime?: "before" | "after"; settleAfterChecks?: number }[];
   daemonSourceRev?: string | null;
@@ -104,25 +107,37 @@ function daemonStatusJson(sourceRev: string | null | undefined): string {
   return JSON.stringify({ ok: true, state: "running", data: { identity: { flavor: "dev", version: "2.11.0", sourceRev: sourceRev ?? null }, pid: 4242 } });
 }
 
+/** deck's registry.json shape: `{ version, apps: { <name>: { dev: { workingDirectory } } } }`. */
+function registryJson(registry: Record<string, string> | undefined): string | null {
+  if (!registry) return null;
+  const apps = Object.fromEntries(Object.entries(registry).map(([name, dir]) => [name, { dev: { workingDirectory: dir } }]));
+  return JSON.stringify({ version: 1, apps });
+}
+
 /** A seam set representing a fully healthy machine: every leg succeeds cleanly. */
-function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: string[] } {
+function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams & { calls: string[][]; deckBin: string }; calls: string[] } {
   const calls: string[] = [];
+  const rawCalls: string[][] = [];
   const managed = opts.managed ?? [{ name: "board", fresh: true }, { name: "chat", fresh: true }];
   const pids = new Map(managed.map((m, i) => [m.name, 1000 + i]));
   let devPids = opts.devPidsBefore ?? [111];
   const devPidsAfter = opts.devPidsAfter ?? [222];
+  const deckBin = (opts.devPidsBefore ?? [111]).length > 0 ? DEV_DECK : PROD_DECK;
   let failExactSeen = 0;
   const psChecks = new Map<string, number>();
 
-  const seams: UpdateMachineSeams = {
+  const seams: UpdateMachineSeams & { calls: string[][]; deckBin: string } = {
     repoRoot: "/repo",
-    appsCheckoutPath: "/apps",
+    sharedCheckoutPath: "/Users/x/Documents/GitHub/repo-tools",
     workDir: "/work",
     uid: 501,
     isTTY: true,
+    calls: rawCalls,
+    deckBin,
     exec: (argv) => {
       const cmd = argv.join(" ");
       calls.push(cmd);
+      rawCalls.push([...argv]);
       if (opts.failExactCmd && cmd === opts.failExactCmd) {
         failExactSeen++;
         if (!opts.failExactOccurrence || failExactSeen === opts.failExactOccurrence) return fail("injected failure", opts.failExactCode ?? 1);
@@ -150,6 +165,8 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       if (cmd.startsWith("git clone")) return opts.cloneExit ? fail("clone failed", opts.cloneExit) : ok("");
       if (cmd.startsWith("git checkout")) return opts.checkoutExit ? fail("checkout failed", opts.checkoutExit) : ok("");
       if (cmd.startsWith("scripts/fetch-deps.sh")) return ok("", opts.fetchDepsExit ?? 0);
+      if (cmd === "bun install --frozen-lockfile") return ok("");
+      if (cmd === "bun scripts/build-apps.ts --arch arm64") return ok("");
       if (cmd.startsWith("rt-tray/build.sh")) return ok("", opts.buildExit ?? 0);
       if (cmd.startsWith("pgrep")) return ok(devPids.length ? `${devPids.join("\n")}\n` : "");
       if (cmd.startsWith("kill")) {
@@ -170,12 +187,16 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       if (cmd === "rt daemon restart") return opts.daemonRestartExit ? fail("restart failed", opts.daemonRestartExit) : ok("");
       if (cmd === "rt daemon status --json") return ok(daemonStatusJson(opts.daemonSourceRev === undefined ? RELEASED_SHORT : opts.daemonSourceRev));
       if (cmd === "git branch --show-current") return ok(`${opts.branch ?? "main"}\n`);
-      if (cmd === "git pull") return opts.pullExit ? fail("pull failed", opts.pullExit) : ok("");
+      if (cmd === "git pull --ff-only") return opts.pullExit ? fail("pull failed", opts.pullExit) : ok("");
+      if (cmd.startsWith("git show") && cmd.includes(":apps/deck/package.json")) {
+        return ok(JSON.stringify({ version: opts.deckPackageAtTag ?? "3.4.0" }));
+      }
       if (argv[0] === "deck") return fail("deck: resolved on PATH to a hand-installed copy");
       if (argv[0] === DEV_DECK || argv[0] === PROD_DECK) {
         const sub = argv.slice(1).join(" ");
-        // runDevAppRebuild's readiness and restart calls come before any served-suite pull.
-        const served = calls.includes("git pull");
+        // runDevAppRebuild's readiness and restart calls come before any served-suite reads its registry.
+        const served = calls.some((c) => c.startsWith("readFile") && c.includes("registry.json"));
+        if (sub.startsWith("register ")) return ok("");
         if (sub === "restart --managed") {
           if (served && opts.deckRestartManagedExit) return fail("deck restart --managed failed", opts.deckRestartManagedExit);
           if (served) for (const m of managed) if (m.fresh) pids.set(m.name, pids.get(m.name)! + 1);
@@ -221,7 +242,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
     readFile: (path) => {
       calls.push(`readFile ${path}`);
       if (path.endsWith("SHA256SUMS")) return "cafefeed  mattstack-2.11.0.dmg\n";
-      if (path.endsWith("deps.lock")) return opts.depsLockMissing ? null : JSON.stringify({ tools: [{ name: "deck", version: "3.4.0" }] });
+      if (path.endsWith("registry.json")) return registryJson(opts.registry);
       return null;
     },
     confirm: async () => true,
@@ -237,10 +258,10 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
 }
 
 describe("rt release update-machine", () => {
-  test("runs all five legs in order and reports ok when the machine is healthy", async () => {
+  test("runs all six legs in order and reports ok when the machine is healthy", async () => {
     const { seams } = fakeSeams();
     const report = await runUpdateMachine(seams, { yes: true });
-    expect(report.legs.map((l) => l.id)).toEqual(["prod-app", "dev-bundle", "daemon", "served-suite", "verify"]);
+    expect(report.legs.map((l) => l.id)).toEqual(["prod-app", "dev-bundle", "checkout-sync", "daemon", "served-suite", "verify"]);
     expect(report.legs.every((l) => l.status === "ok")).toBe(true);
     expect(report.ok).toBe(true);
     expect(report.haltedAfter).toBeNull();
@@ -250,7 +271,7 @@ describe("rt release update-machine", () => {
   test("--plan resolves and prints the legs without running any of them", async () => {
     const { seams, calls } = fakeSeams();
     const report = await runUpdateMachine(seams, { plan: true });
-    expect(report.legs).toHaveLength(5);
+    expect(report.legs).toHaveLength(6);
     expect(report.legs.every((l) => l.status === "planned")).toBe(true);
     expect(report.ok).toBe(true);
     // Only the read-only tag resolution may have run; nothing state-changing did.
@@ -294,7 +315,7 @@ describe("rt release update-machine", () => {
       return true;
     };
     await runUpdateMachine(seams, {});
-    expect(asked).toHaveLength(4);
+    expect(asked).toHaveLength(5);
   });
 
   test("declining a leg's confirm prompt skips just that leg; later legs still run (decline keeps skip-and-continue)", async () => {
@@ -304,7 +325,7 @@ describe("rt release update-machine", () => {
     const devLeg = report.legs.find((l) => l.id === "dev-bundle")!;
     expect(devLeg.status).toBe("skipped");
     expect(devLeg.detail).toContain("declined");
-    expect(report.legs.filter((l) => l.status === "ok")).toHaveLength(4);
+    expect(report.legs.filter((l) => l.status === "ok")).toHaveLength(5);
     expect(report.haltedAfter).toBeNull();
   });
 
@@ -325,21 +346,23 @@ describe("rt release update-machine", () => {
     test("a sha256 mismatch (aborted) halts every later state-changing leg, but the verify sweep still runs and the report names the halt", async () => {
       const { seams, calls } = fakeSeams({ shaMismatch: true });
       const report = await runUpdateMachine(seams, { yes: true });
-      expect(report.legs.map((l) => l.status)).toEqual(["aborted", "skipped", "skipped", "skipped", "ok"]);
-      expect(report.legs[4]!.id).toBe("verify");
+      expect(report.legs.map((l) => l.status)).toEqual(["aborted", "skipped", "skipped", "skipped", "skipped", "ok"]);
+      expect(report.legs[5]!.id).toBe("verify");
       expect(report.haltedAfter).toBe("prod app update");
-      for (const l of report.legs.slice(1, 4)) expect(l.detail).toContain("halted after");
+      for (const l of report.legs.slice(1, 5)) expect(l.detail).toContain("halted after");
       expect(calls.some((c) => c === "rt daemon restart")).toBe(false);
       expect(calls.some((c) => c === `${DEV_DECK} restart --managed`)).toBe(false);
       expect(calls.some((c) => c.startsWith("git clone"))).toBe(false);
+      expect(calls.some((c) => c === "git pull --ff-only")).toBe(false);
     });
 
     test("an error leg (not just aborted) also halts every later state-changing leg", async () => {
       const { seams } = fakeSeams({ buildExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
-      const [prodLeg, devLeg, daemonLeg, suiteLeg] = report.legs;
+      const [prodLeg, devLeg, checkoutLeg, daemonLeg, suiteLeg] = report.legs;
       expect(prodLeg!.status).toBe("ok");
       expect(devLeg!.status).toBe("error");
+      expect(checkoutLeg!.status).toBe("skipped");
       expect(daemonLeg!.status).toBe("skipped");
       expect(suiteLeg!.status).toBe("skipped");
       expect(report.haltedAfter).toBe("dev bundle rebuild");
@@ -562,12 +585,31 @@ describe("rt release update-machine", () => {
     expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack-dev.app"))).toBe(false);
   });
 
+  describe("dev-bundle: workspace build", () => {
+    test("dev-bundle builds the tree rows before build.sh", async () => {
+      const { seams } = fakeSeams({});
+      await runUpdateMachine(seams, { yes: true });
+      const i = seams.calls.findIndex((c) => c[0] === "bun" && c[1] === "scripts/build-apps.ts");
+      const j = seams.calls.findIndex((c) => c[0] === "rt-tray/build.sh");
+      expect(i).toBeGreaterThan(-1);
+      expect(i).toBeLessThan(j);
+    });
+
+    test("build-apps.ts failing fails the leg before build.sh runs", async () => {
+      const { seams, calls } = fakeSeams({ failExactCmd: "bun scripts/build-apps.ts --arch arm64" });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("error");
+      expect(calls.some((c) => c.startsWith("rt-tray/build.sh"))).toBe(false);
+    });
+  });
+
   describe("mutating exec exit codes", () => {
     const cases: { label: string; opt: keyof Options; legId: string }[] = [
       { label: "dev git clone", opt: "cloneExit", legId: "dev-bundle" },
       { label: "dev git checkout", opt: "checkoutExit", legId: "dev-bundle" },
       { label: "daemon restart", opt: "daemonRestartExit", legId: "daemon" },
-      { label: "served git pull", opt: "pullExit", legId: "served-suite" },
+      { label: "checkout-sync git pull", opt: "pullExit", legId: "checkout-sync" },
       { label: "served deck restart --managed", opt: "deckRestartManagedExit", legId: "served-suite" },
     ];
     for (const { label, opt, legId } of cases) {
@@ -685,14 +727,46 @@ describe("rt release update-machine", () => {
     });
   });
 
-  test("served suite: aborts and touches nothing when mattstack-apps is not on main", async () => {
-    const { seams, calls } = fakeSeams({ branch: "some-feature" });
-    const report = await runUpdateMachine(seams, { yes: true });
-    const leg = report.legs.find((l) => l.id === "served-suite")!;
-    expect(leg.status).toBe("aborted");
-    expect(leg.detail).toContain("not main");
-    expect(calls.some((c) => c === "git pull")).toBe(false);
-    expect(calls.some((c) => c === `${DEV_DECK} restart --managed`)).toBe(false);
+  describe("checkout-sync", () => {
+    test("checkout-sync refuses a shared checkout off main and halts the daemon leg", async () => {
+      const { seams } = fakeSeams({ branch: "feature-x" });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const sync = report.legs.find((l) => l.id === "checkout-sync")!;
+      const daemonLeg = report.legs.find((l) => l.id === "daemon")!;
+      expect(sync.status).toBe("aborted");
+      expect(sync.detail).toContain("not main");
+      expect(daemonLeg.status).toBe("skipped");
+      expect(daemonLeg.detail).toContain("halted after");
+      // haltedAfter carries the leg's LABEL, matching every other leg's halt (see
+      // "prod app update" above), not the bare leg id.
+      expect(report.haltedAfter).toBe("shared checkout sync");
+    });
+
+    test("checkout-sync: bun install failing fails the leg", async () => {
+      const { seams } = fakeSeams({ failExactCmd: "bun install --frozen-lockfile", failExactOccurrence: 2 });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "checkout-sync")!;
+      expect(leg.status).toBe("error");
+    });
+  });
+
+  describe("served suite: deck registry re-registration", () => {
+    test("re-registers a deck app whose registry row points at the old apps checkout", async () => {
+      const { seams } = fakeSeams({
+        registry: { board: "/Users/x/Documents/GitHub/mattstack-apps/apps/board", chat: "/Users/x/Documents/GitHub/repo-tools/apps/chat" },
+      });
+      await runUpdateMachine(seams, { yes: true });
+      expect(seams.calls).toContainEqual([seams.deckBin, "register", "--dir", "/Users/x/Documents/GitHub/repo-tools/apps/board"]);
+      expect(seams.calls).not.toContainEqual([seams.deckBin, "register", "--dir", "/Users/x/Documents/GitHub/repo-tools/apps/chat"]);
+    });
+
+    test("a failed deck register fails the served-suite leg, naming the app", async () => {
+      const { seams } = fakeSeams({ failExactCmd: `${DEV_DECK} register --dir /Users/x/Documents/GitHub/repo-tools/apps/board` });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "served-suite")!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("board");
+    });
   });
 
   test("served suite: restarts only the straggler by name and re-verifies", async () => {
@@ -830,14 +904,33 @@ describe("rt release update-machine", () => {
     });
   });
 
-  describe("a missing deps.lock is an error, never a silent skip", () => {
-    test("verify leg: an unreadable deps.lock is reported, not skipped", async () => {
-      const { seams } = fakeSeams({ depsLockMissing: true });
+  describe("verify: deck --version against the tree at the tag", () => {
+    test("verify compares deck --version to apps/deck/package.json at the tag", async () => {
+      const { seams } = fakeSeams({ deckVersion: "1.1.2", deckPackageAtTag: "1.1.2" });
+      const report = await runUpdateMachine(seams, { verifyOnly: true });
+      expect(report.ok).toBe(true);
+    });
+
+    test("a mismatch names both the running deck version and the tree's", async () => {
+      const { seams } = fakeSeams({ deckVersion: "1.1.2", deckPackageAtTag: "1.2.0" });
       const report = await runUpdateMachine(seams, { verifyOnly: true });
       const leg = report.legs[0]!;
       expect(leg.status).toBe("error");
-      expect(leg.detail).toContain("deps.lock not readable");
-      expect(leg.detail).toContain("rt checkout");
+      expect(leg.detail).toContain("deck --version is 1.1.2, the tree at v2.11.0 has 1.2.0");
+    });
+
+    test("a failed git show for the deck package at the tag is a problem, not a crash", async () => {
+      const { seams } = fakeSeams();
+      seams.exec = wrapExecFailing(seams.exec, "git show");
+      const report = await runUpdateMachine(seams, { verifyOnly: true });
+      const leg = report.legs[0]!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("git show");
+    });
+
+    test("deckVersionAtTag reads the version out of the tree's package.json at the tag", async () => {
+      const { seams } = fakeSeams({ deckPackageAtTag: "9.8.7" });
+      expect(await deckVersionAtTag(seams, TAG)).toBe("9.8.7");
     });
   });
 
@@ -896,7 +989,7 @@ describe("runDevAppRebuild", () => {
     expect(calls).toContain(`git checkout ${RELEASED_SHA}`);
     expect(calls.some((c) => c.startsWith("rt-tray/build.sh dev"))).toBe(true);
     expect(calls.some((c) => c.includes("/Applications/mattstack.app"))).toBe(false);
-    expect(calls.some((c) => c.startsWith("rt daemon") || c === "git pull")).toBe(false);
+    expect(calls.some((c) => c.startsWith("rt daemon") || c.startsWith("git pull"))).toBe(false);
   });
 
   test("swaps in the bundle build.sh actually writes, rt-tray/mattstack-dev.app", async () => {

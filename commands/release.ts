@@ -136,7 +136,7 @@ export async function createRealUpdateMachineSeams(options: UpdateMachineOptions
   const needsWorkDir = !options.plan && !options.verifyOnly;
   return {
     repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
-    appsCheckoutPath: join(homedir(), "Documents", "GitHub", "mattstack-apps"),
+    sharedCheckoutPath: join(homedir(), "Documents", "GitHub", "repo-tools"),
     workDir: needsWorkDir ? mkdtempSync(join(tmpdir(), "rt-update-machine-")) : "",
     uid: process.getuid ? process.getuid() : 501,
     isTTY: interactive(),
