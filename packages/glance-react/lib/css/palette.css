@@ -1,0 +1,169 @@
+/*
+ * GDS Raw Color Palette
+ *
+ * Pure hex color values — no semantic meaning.
+ * These are the building blocks that tokens.css maps to intents.
+ *
+ * Naming: --{hue}-{shade}  (e.g. --blue-40, --red-10)
+ * All values are static and theme-independent.
+ */
+
+:root {
+  /* ── Neutrals ──────────────────────────────────────────────────────────── */
+  --white: #fff;
+  --black: #000;
+  --black-30: #00000059;
+
+  /* ── Cool Gray (13-step scale) ─────────────────────────────────────────── */
+  --cool-gray-00: #fff;
+  --cool-gray-10: #fcfcfd;
+  --cool-gray-20: #f5f5f9;
+  --cool-gray-30: #e8e8ed;
+  --cool-gray-40: #d9d9e0;
+  --cool-gray-50: #aeaeb8;
+  --cool-gray-60: #9898a4;
+  --cool-gray-70: #797986;
+  --cool-gray-80: #666670;
+  --cool-gray-90: #3d3d43;
+  --cool-gray-100: #26262a;
+  --cool-gray-110: #1e1e20;
+  --cool-gray-120: #151515;
+
+  /* ── Alpha overlays ────────────────────────────────────────────────────── */
+  --darken-00: #00003505;
+  --darken-10: #0000350a;
+  --darken-20: #0000350f;
+  --darken-30: #0000351a;
+  --darken-40: #00003524;
+  --lighten-00: #dfdfff08;
+  --lighten-10: #dfdfff0f;
+  --lighten-20: #dfdfff17;
+  --lighten-30: #dfdfff21;
+  --lighten-40: #dfdfff2e;
+
+  /* ── Purple ─────────────────────────────────────────────────────────────── */
+  --purple-10: #f4effc;
+  --purple-20: #ccacff;
+  --purple-30: #a078e0;
+  --purple-40: #8256cb;
+  --purple-50: #6938b9;
+  --purple-60: #53397d;
+  --purple-70: #2c1e43;
+
+  /* ── Blue ───────────────────────────────────────────────────────────────── */
+  --blue-10: #eef3ff;
+  --blue-20: #9dcaff;
+  --blue-30: #5f8ded;
+  --blue-40: #3565e2;
+  --blue-50: #2657d5;
+  --blue-60: #2c4a95;
+  --blue-70: #18233f;
+
+  /* ── Teal ───────────────────────────────────────────────────────────────── */
+  --teal-10: #eef8f9;
+  --teal-20: #95ecfa;
+  --teal-30: #5ab8c6;
+  --teal-40: #3395a4;
+  --teal-50: #207e8d;
+  --teal-60: #18616c;
+  --teal-70: #0f2c31;
+
+  /* ── Green ──────────────────────────────────────────────────────────────── */
+  --green-10: #f0f7f1;
+  --green-20: #a0e3a6;
+  --green-30: #6ec075;
+  --green-40: #3a9a43;
+  --green-50: #328738;
+  --green-60: #29622d;
+  --green-70: #172919;
+
+  /* ── Lime ───────────────────────────────────────────────────────────────── */
+  --lime-10: #f5f9f0;
+  --lime-20: #c1e79c;
+  --lime-30: #8fbd56;
+  --lime-40: #78a63f;
+  --lime-50: #618939;
+  --lime-60: #456229;
+  --lime-70: #202917;
+
+  /* ── Yellow ─────────────────────────────────────────────────────────────── */
+  --yellow-10: #fffae9;
+  --yellow-20: #fac862;
+  --yellow-30: #f39506;
+  --yellow-40: #f07c00;
+  --yellow-50: #d66b00;
+  --yellow-60: #a95700;
+  --yellow-70: #382500;
+
+  /* ── Red ────────────────────────────────────────────────────────────────── */
+  --red-10: #fceeee;
+  --red-20: #ffa6b2;
+  --red-30: #e47479;
+  --red-40: #d25353;
+  --red-50: #b93838;
+  --red-60: #9d3131;
+  --red-70: #3c1c1c;
+
+  /* ── Diff colors ────────────────────────────────────────────────────────── */
+  --diff-gray-700: #0d1117;
+  --diff-gray-200: #1c1c22;
+  --diff-gray-100: #fbfafb;
+  --diff-green-900: #12261e;
+  --diff-green-800: #1d3926;
+  --diff-green-700: #1c4428;
+  --diff-green-600: #1d572d;
+  --diff-green-400: #abf2bc;
+  --diff-green-300: #ccffd8;
+  --diff-green-200: #e6ffec;
+  --diff-blue-900: #09154c;
+  --diff-blue-800: #142355;
+  --diff-blue-200: #d3f1fe;
+  --diff-blue-100: #edfaff;
+  --diff-teal-800: #0d2f52;
+  --diff-teal-700: #145359;
+  --diff-teal-600: #146b5d;
+  --diff-teal-400: #9ff3f0;
+  --diff-teal-300: #b9f9f6;
+  --diff-teal-200: #d6fffe;
+  --diff-red-900: #25171c;
+  --diff-red-700: #542426;
+  --diff-red-600: #792e2e;
+  --diff-red-400: #ffc3c0;
+  --diff-red-300: #ffd7d5;
+  --diff-red-200: #ffeae9;
+  --diff-purple-900: #1a1c50;
+  --diff-purple-700: #3b2c58;
+  --diff-purple-600: #55395e;
+  --diff-purple-400: #edc4ed;
+  --diff-purple-300: #e6cff2;
+  --diff-purple-200: #f5ecf8;
+  --diff-royal-800: #121d2f;
+  --diff-royal-700: #234a82;
+  --diff-royal-600: #215db7;
+  --diff-sky-400: #99c7f5;
+  --diff-sky-300: #bdf;
+  --diff-sky-200: #def;
+
+  /* ── Syntax highlighting ────────────────────────────────────────────────── */
+  --syntax-cloud: #e6edf3;
+  --syntax-chalk: #b9c8d8;
+  --syntax-oyster: grey;
+  --syntax-carbon: #6e7781;
+  --syntax-graphite: #1f2328;
+  --syntax-sky: #c9d9fb;
+  --syntax-ice: #a5d6ff;
+  --syntax-seafoam: #79c0ff;
+  --syntax-ocean: #456cdb;
+  --syntax-denim: #0550ae;
+  --syntax-blackberry: #050542;
+  --syntax-blueberry: #00007b;
+  --syntax-salmon: #ff7b72;
+  --syntax-strawberry: #e1554f;
+  --syntax-apple: #cf222e;
+  --syntax-mauve: #c46f6c;
+  --syntax-taro: #d2a8ff;
+  --syntax-grape: #c6abf4;
+  --syntax-eggplant: #7554d0;
+  --syntax-lime: #c9f1bf;
+  --syntax-kiwi: #3c845c;
+}

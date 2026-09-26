@@ -51,3 +51,7 @@ probe/dist-bin
 probe/vendor
 probe/bun.lock
 docs/apps/design/gate-triage-modal/gate-triage-modal.html
+
+# glance live-harness credentials: real tokens, never committed
+packages/glance/harness_credentials.json
+*.tsbuildinfo

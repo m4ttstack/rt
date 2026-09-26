@@ -1,0 +1,15 @@
+{
+  "extends": "@mattstack/typescript-config/react-library",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ]
+}

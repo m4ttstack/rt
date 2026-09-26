@@ -232,7 +232,6 @@ jobs:
         shell: bash
         run: |
           cd extensions/vscode/rt-context
-          bun install
           bun run package
           RT_VSIX="$(ls "$PWD"/*.vsix 2>/dev/null | head -1)"
           [ -n "$RT_VSIX" ] || { echo "::error::no .vsix produced by bun run package"; exit 1; }

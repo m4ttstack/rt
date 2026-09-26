@@ -120,6 +120,18 @@ describe("decide", () => {
     const d = decide(prInput(["apps/board/package.json"]));
     expect(d.mode).toBe("skip");
   });
+
+  test("a glance source change runs rt's unit suite", () => {
+    expect(decide(prInput(["packages/glance/src/index.ts"])).mode).toBe("full");
+  });
+
+  test("glance-react and typescript-config are apps trees", () => {
+    expect(
+      decide(
+        prInput(["packages/glance-react/lib/x.tsx", "packages/typescript-config/base.json", "docs/glance/README.md"])
+      ).mode
+    ).toBe("skip");
+  });
 });
 
 describe("unitDirs", () => {

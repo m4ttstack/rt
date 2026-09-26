@@ -69,7 +69,7 @@ function isFixture(f: string): boolean {
   return /(^|\/)(fixtures|__fixtures__)\//.test(f);
 }
 
-const APPS_PACKAGES = ["gate-kit", "server", "tokens", "tokyo", "tui-kit", "ui"];
+const APPS_PACKAGES = ["gate-kit", "server", "tokens", "tokyo", "tui-kit", "ui", "glance-react", "typescript-config"];
 const APPS_ROOT_FILES = new Set([
   "turbo.json",
   "eslint.config.mjs",
@@ -94,6 +94,7 @@ function isAppsTree(f: string): boolean {
     f.startsWith("stories/") ||
     f.startsWith(".storybook/") ||
     f.startsWith("probe/") ||
+    f.startsWith("docs/glance/") ||
     APPS_ROOT_FILES.has(f)
   );
 }
@@ -112,6 +113,7 @@ function invisible(input: ScopeInput, f: string): string | undefined {
   if (input.preloadImports.has(f)) return "imported by the preload";
   if (isFixture(f)) return "a fixture";
   if (f.startsWith("scripts/ci/")) return "the scope script";
+  if (f.startsWith("packages/glance/")) return "a workspace package --changed cannot trace through a bare import";
   return undefined;
 }
 

@@ -1,0 +1,7 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  }
+}

@@ -47,6 +47,7 @@ describe('turbo task graph', () => {
     const run = dryRun(['serve-check']);
     const tasks = byId(run);
     expect(realIds(run)).toEqual([
+      '@mattstack/glance#build',
       '@mattstack/rt-client#build',
       '@mattstack/settings-kit#build',
       'boxscore#build',
