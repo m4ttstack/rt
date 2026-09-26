@@ -44,7 +44,7 @@ export function alwaysRun(): string[] {
 
 // The always= GITHUB_OUTPUT line: "./" prefixed for the same reason as
 // unitDirs, a bare path there is a substring filter over the whole tree.
-export function alwaysRunDirs(): string[] {
+export function alwaysRunPaths(): string[] {
   return alwaysRun().map((f) => `./${f}`);
 }
 
@@ -81,7 +81,11 @@ const APPS_ROOT_FILES = new Set([
   "scripts/set-platform-version.ts",
 ]);
 
-/** The apps' trees run under turbo in `static`; the unit shards never read them. */
+// The apps' trees run under turbo in `static`; the unit shards never read
+// them. Safe to skip only because //#turbo:test (scripts/turbo.sh, run every
+// static) covers the two rt tests that glob apps/packages content
+// (scripts/__tests__/turbo-inputs.test.ts and turbo-graph.test.ts) -- without
+// that root task, an apps-only PR would bypass the guards written for it.
 function isAppsTree(f: string): boolean {
   return (
     f.startsWith("apps/") ||
@@ -205,7 +209,7 @@ if (import.meta.main) {
   const scope = event === "pull_request" ? collectSources() : { sources: new Map<string, string>(), preloadImports: new Set<string>() };
   const decision = decide({ event, changed, ...scope });
   const dirs = unitDirs().join(" ");
-  const always = alwaysRunDirs().join(" ");
+  const always = alwaysRunPaths().join(" ");
   console.log(`mode=${decision.mode} (${decision.reason})`);
   console.log(`dirs=${dirs}`);
   console.log(`always=${always}`);

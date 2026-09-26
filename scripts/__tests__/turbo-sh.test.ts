@@ -94,6 +94,7 @@ describe('scripts/turbo.sh', () => {
       '//#picker:check',
       '//#purity',
       '//#treeshake',
+      '//#turbo:test',
       '//#typecheck',
       '@mattstack/tokens#test',
       '@mattstack/tokens#typecheck',

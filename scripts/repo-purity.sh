@@ -29,10 +29,15 @@ A7=$(printf '%s%s' 'adjus' 'ter')
 A8=$(printf "%s%s" "hog" "warts")
 A9=$(printf "%s%s" "CV" "I")
 # A carrier name reached HEAD in a hyphenated form the first scrub missed,
-# because it had only caught the spaced form — a word list is only as good as
+# because it had only caught the spaced form: a word list is only as good as
 # its variants. Kept fragmented, like the rest, so this file stays clean of the
 # very term it bans.
 A10=$(printf "%s%s" "progres" "sive")
+# A10 is also a plain English word ("progressively"), so it alone gets word
+# boundaries: (^|non-word)term(non-word|$). A POSIX bracket-expression
+# boundary rather than \b, since \b is a GNU extension grep -E does not
+# portably support and this must behave the same under macOS grep (local)
+# and GNU grep (CI, ubuntu).
 A10B="(^|[^[:alnum:]])$A10([^[:alnum:]]|\$)"
 # A second carrier name, caught in the same picker-branch scrub as A10.
 A11=$(printf '%s%s' 'gei' 'co')

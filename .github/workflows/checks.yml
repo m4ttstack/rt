@@ -60,10 +60,10 @@ jobs:
       - name: Settings schema lock is in sync
         run: bun run cli.ts settings schema lock && git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json
 
-      # The checkout is shallow and on a PR holds only the merge commit, so
-      # origin/main has to be fetched explicitly into its tracking ref.
+      # The checkout has full history but only names the ref it checked out,
+      # so origin/main still needs an explicit fetch into its tracking ref.
       - name: Settings schema changes are classified
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && bun run cli.ts settings schema diff --against-ref origin/main
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main && bun run cli.ts settings schema diff --against-ref origin/main
 
       # release.yml is grandfathered out of the lint: it carries pre-existing
       # shellcheck findings whose quoting is tangled with the release flow.

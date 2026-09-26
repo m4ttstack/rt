@@ -183,6 +183,26 @@
         "scripts/lib/picker-conformance.ts",
         "commands/**"
       ]
+    },
+    "//#turbo:test": {
+      "inputs": [
+        "turbo.json",
+        "scripts/turbo.sh",
+        "scripts/__tests__/turbo-*.test.ts",
+        "scripts/__tests__/helpers.ts",
+        "package.json",
+        "eslint.config.mjs",
+        ".prettierrc",
+        "tsconfig.tools.json",
+        "$TURBO_ROOT$/apps/*/package.json",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/tui-kit/workshop/package.json",
+        "$TURBO_ROOT$/apps/**/*.test.ts",
+        "$TURBO_ROOT$/apps/**/*.test.tsx",
+        "$TURBO_ROOT$/packages/**/*.test.ts",
+        "$TURBO_ROOT$/packages/**/*.test.tsx",
+        "!**/node_modules/**"
+      ]
     }
   }
 }

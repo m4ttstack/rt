@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { alwaysRun, alwaysRunDirs, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
+import { alwaysRun, alwaysRunPaths, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
 
 // Synthetic unit test sources: one parity test that reads a Swift file and a
 // tray shell script by path, and one plain test.
@@ -115,6 +115,11 @@ describe("decide", () => {
     const d = decide(prInput(["apps/deck/src/registry/__fixtures__/deps-lock-serve.fixture.json"]));
     expect(d.mode).toBe("skip");
   });
+
+  test("an apps package.json skips too, since //#turbo:test covers it", () => {
+    const d = decide(prInput(["apps/board/package.json"]));
+    expect(d.mode).toBe("skip");
+  });
 });
 
 describe("unitDirs", () => {
@@ -165,11 +170,12 @@ describe("alwaysRun", () => {
   });
 });
 
-describe("alwaysRunDirs", () => {
-  test("every entry keeps its \"./\" prefix for the always= GITHUB_OUTPUT line", () => {
-    const dirs = alwaysRunDirs();
-    expect(dirs.length).toBe(alwaysRun().length);
-    for (const f of dirs) expect(f.startsWith("./")).toBe(true);
+describe("alwaysRunPaths", () => {
+  test("every token in the emitted always= line keeps its \"./\" prefix", () => {
+    const line = alwaysRunPaths().join(" ");
+    const tokens = line.split(" ");
+    expect(tokens.length).toBe(alwaysRun().length);
+    for (const token of tokens) expect(token.startsWith("./")).toBe(true);
   });
 });
 

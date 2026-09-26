@@ -52,6 +52,7 @@
     "docs:gen": "bun scripts/gen-docs.ts",
     "docs:check": "bun scripts/check-docs.ts",
     "picker:check": "bun scripts/lib/picker-conformance.ts",
+    "turbo:test": "bun test ./scripts/__tests__/turbo-inputs.test.ts ./scripts/__tests__/turbo-graph.test.ts ./scripts/__tests__/turbo-sh.test.ts",
     "docs:update": "bun scripts/update-docs.ts",
     "docs:deploy": "bash scripts/deploy-docs.sh",
     "purity": "scripts/repo-purity.sh",
