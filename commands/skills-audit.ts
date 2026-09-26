@@ -1,0 +1,68 @@
+import { randomUUID } from "crypto";
+import { existsSync } from "fs";
+import { relative } from "path";
+import { buildClaudeArgv, resolveClaudeBin } from "../lib/agent-argv/claude.ts";
+import type { AgentInvocation } from "../lib/agent-argv/types.ts";
+import { mcpToolsPayload } from "./mcp.ts";
+import { checkPack } from "./skills.ts";
+import { lintedMarkdownFiles } from "../lib/skills/mcp-lint.ts";
+import { runCapture } from "../lib/subprocess.ts";
+
+const AUDIT_TIMEOUT_MS = 600_000;
+
+// Paths only: a pack runs to tens of thousands of lines, and the prompt is
+// one argv token, so inlining file text would hit ARG_MAX. The run reads the
+// files itself (Read is the one tool it is allowed).
+export function buildAuditPrompt(paths: string[], tools: Array<{ name: string; description: string }>): string {
+  const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+  const fileList = paths.map((p) => `- ${p}`).join("\n");
+  return [
+    "You are auditing a mattstack skill pack. Agents that load these skills run in Claude Code auto mode, where every shell command a tool could have covered costs a classifier round trip or is blocked outright.",
+    "The mattstack MCP server publishes these tools:",
+    toolList,
+    "Read each file listed under Files with the Read tool (they are relative to your working directory), then report, as a Markdown list with one file:line per finding, three kinds of instruction that no pattern lint can catch:",
+    "1. an instruction in plain words (\"push the branch\", \"open the MR\", \"rebase onto main\") that an agent will turn into a shell command a tool covers; name the tool;",
+    "2. values carried between code blocks through shell variables ($IID, $RT_RUN_DB, read_token) instead of a tool result passed on explicitly;",
+    "3. wrapped commands (cd x && ..., VAR=$(...), pipes, -C <tree>) around an rt, glab or git call.",
+    "Anything on this kept list is fine and must not be reported: rt gate answer --by shepherd, rt gate wait, rt chat tail, rt events wait, git commit, git add, git fetch, git merge-base, git rebase --continue, git rebase --skip, project tooling such as pnpm. A line carrying <!-- mcp-lint: allow --> is a deliberate don't and must not be reported either.",
+    "End with one line: `findings: <n>`.",
+    "## Files",
+    fileList,
+  ].join("\n\n");
+}
+
+// Headless, no permission bypass, Read alone allowed: the audit reads the
+// pack and writes nothing.
+export function buildAuditInvocation(prompt: string, sessionId: string): AgentInvocation {
+  return { headless: true, prompt, session: { kind: "start", sessionId }, yolo: false, extraArgs: "--allowedTools=Read" };
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+export async function skillsAudit(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const pack = flag(args, "--pack");
+  const packDir = flag(args, "--pack-dir");
+  if (!pack && !packDir) { console.error("rt skills audit: pass --pack <name> or --pack-dir <dir>"); process.exit(2); }
+  const resolved = await checkPack({ ...(pack ? { pack } : {}), ...(packDir ? { packDir } : {}) });
+  const claude = resolveClaudeBin();
+  if (!existsSync(claude)) { console.error("rt skills audit: no claude binary on PATH; the audit needs a Claude login"); process.exit(2); }
+  const files = lintedMarkdownFiles(resolved.packDir).map((p) => relative(resolved.packDir, p));
+  const prompt = buildAuditPrompt(files, mcpToolsPayload().tools.map((t) => ({ name: t.name, description: t.description })));
+  const argv = buildClaudeArgv(buildAuditInvocation(prompt, randomUUID()), { claude });
+  const r = await runCapture(argv as [string, ...string[]], { cwd: resolved.packDir, timeoutMs: AUDIT_TIMEOUT_MS, stderr: "pipe" });
+  let text = r.stdout;
+  try {
+    const parsed = JSON.parse(r.stdout) as { result?: string };
+    if (typeof parsed.result === "string") text = parsed.result;
+  } catch {
+    // claude printed plain text, not the -p --output-format json envelope
+  }
+  if (r.exitCode !== 0) console.error(`rt skills audit: claude exited ${r.exitCode}: ${r.stderr.trim().split("\n").slice(-3).join(" ")}`);
+  if (json) { console.log(JSON.stringify({ pack: resolved.pack, packDir: resolved.packDir, files, report: text, advisory: true })); return; }
+  console.log(`rt skills audit (advisory; never a gate): ${resolved.pack}\n`);
+  console.log(text);
+}

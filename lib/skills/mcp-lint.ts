@@ -79,12 +79,13 @@ function walk(dir: string): string[] {
   return out;
 }
 
-export function lintPackDir(dir: string, deps: { list: (dir: string) => string[]; read: (path: string) => string } = { list: walk, read: (p) => readFileSync(p, "utf8") }): LintHit[] {
+export function lintedMarkdownFiles(dir: string, list: (dir: string) => string[] = walk): string[] {
   const roots = LINTED_ROOTS.map((r) => join(dir, r) + sep);
-  return deps.list(dir)
-    .filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r)))
-    .sort()
-    .flatMap((p) => lintSkillText(deps.read(p), p));
+  return list(dir).filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r))).sort();
+}
+
+export function lintPackDir(dir: string, deps: { list: (dir: string) => string[]; read: (path: string) => string } = { list: walk, read: (p) => readFileSync(p, "utf8") }): LintHit[] {
+  return lintedMarkdownFiles(dir, deps.list).flatMap((p) => lintSkillText(deps.read(p), p));
 }
 
 export function formatHit(h: LintHit): string {

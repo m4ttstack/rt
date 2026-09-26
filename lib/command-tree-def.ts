@@ -2239,6 +2239,16 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      audit: {
+        description: "Advisory LLM audit of a pack's skills and fills for shell instructions the MCP tools cover (plain-words commands, shell-variable hand-offs, wrapped calls); slow, costs tokens, never a gate",
+        module: "./commands/skills-audit.ts",
+        fn: "skillsAudit",
+        args: [
+          { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name; omit with --pack-dir" },
+          { name: "Pack dir", flag: "--pack-dir", type: "text", placeholder: "/path/to/pack", hint: "Audit this pack directory instead of resolving --pack" },
+          SETUP_JSON_ARG,
+        ],
+      },
       sync: {
         description: "Bring a pack's compiled skills and installed plugin caches current (recompile and plugin-update chain; refuses on content drift)",
         module: "./commands/skills-sync.ts",
