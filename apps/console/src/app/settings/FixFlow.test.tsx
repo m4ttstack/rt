@@ -30,8 +30,10 @@ vi.mock('../config/useSettings', () => ({
 const { SettingsPage } = await import('./SettingsPage');
 const { ExplainModal } = await import('./ExplainModal');
 const { schemaFields } = await import('./testSchemas');
+const { SettingsRepoContext } = await import('./useConsoleSettings');
 
 const REPO = 'gitlab.example.com/acme/app';
+const OTHER_REPO = 'gitlab.example.com/acme/web';
 const USER_FILE = '/home/user/settings.user.jsonc';
 const RULE = {
   pattern: 'gate/opened/*',
@@ -271,11 +273,15 @@ describe('Needs fixing on the page', () => {
 describe('Fix in the explain modal', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  function openFix(d: SettingDefWire, rows: ExplainRowWire[]) {
+  function openFix(
+    d: SettingDefWire,
+    rows: ExplainRowWire[],
+    setError: string | null = null
+  ) {
     vi.stubGlobal('fetch', async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ def: d, rows }),
+      json: async () => structuredClone({ def: d, rows }),
     }));
     renderWithProviders(
       <QueryClientProvider client={new QueryClient()}>
@@ -286,7 +292,7 @@ describe('Fix in the explain modal', () => {
             defs: [d],
             loading: false,
             error: null,
-            set: vi.fn(async () => null),
+            set: vi.fn(async () => setError),
             unset: vi.fn(async () => null),
             move: vi.fn(async () => null),
             prune: vi.fn(async () => null),
@@ -327,6 +333,315 @@ describe('Fix in the explain modal', () => {
         name: 'remove rt.notify.eventBridges from user',
       })
     ).toBeInTheDocument();
+  });
+
+  it('highlights and reveals the field at a reported issue path the explain rows do not repeat', async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+      openFix(
+        bridges({
+          effective: { scope: 'user', file: USER_FILE, value },
+          issues: [
+            {
+              scope: 'user',
+              file: USER_FILE,
+              kind: 'nonconforming',
+              path: [0, 'url'],
+              message: 'expected string, got number',
+            },
+          ],
+        }),
+        [
+          { scope: 'default', file: null, present: false },
+          { scope: 'user', file: USER_FILE, present: true, value },
+        ]
+      );
+      const layer = await screen.findByTestId('layer-user');
+      const item = await within(layer).findByTestId('item-0');
+      const row = within(item).getByTestId('field-row-url');
+      const input = within(row).getByRole('textbox', { name: 'url' });
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(row).toHaveTextContent('expected string, got number');
+      await waitFor(() => expect(scrolled).toContain(input));
+      scrolled.length = 0;
+      await userEvent.click(
+        within(layer).getByRole('button', { name: 'Cancel' })
+      );
+      await userEvent.click(
+        within(layer).getByRole('button', {
+          name: 'set rt.notify.eventBridges at user',
+        })
+      );
+      await within(layer).findByTestId('item-0');
+      expect(scrolled).toEqual([]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('a reported issue stays on its card through edits elsewhere and a move', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    openFix(
+      bridges({
+        effective: { scope: 'user', file: USER_FILE, value },
+        issues: [
+          {
+            scope: 'user',
+            file: USER_FILE,
+            kind: 'nonconforming',
+            path: [0, 'url'],
+            message: 'expected string, got number',
+          },
+        ],
+      }),
+      [
+        { scope: 'default', file: null, present: false },
+        { scope: 'user', file: USER_FILE, present: true, value },
+      ]
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const url = (i: number) =>
+      within(within(layer).getByTestId(`item-${i}`)).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-1');
+    await userEvent.type(
+      within(within(layer).getByTestId('item-1')).getByRole('textbox', {
+        name: 'title',
+      }),
+      'x'
+    );
+    expect(url(0)).toHaveAttribute('aria-invalid', 'true');
+    expect(within(layer).getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.click(
+      within(layer).getByRole('button', { name: 'move item 1 down' })
+    );
+    expect(url(1)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a reported issue no longer attaches to a layer written in the modal', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    openFix(
+      bridges({
+        effective: { scope: 'user', file: USER_FILE, value },
+        issues: [
+          {
+            scope: 'user',
+            file: USER_FILE,
+            kind: 'nonconforming',
+            path: [0, 'url'],
+            message: 'expected string, got number',
+          },
+        ],
+      }),
+      [
+        { scope: 'default', file: null, present: false },
+        { scope: 'user', file: USER_FILE, present: true, value },
+      ]
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const url = () =>
+      within(within(layer).getByTestId('item-0')).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-0');
+    await userEvent.type(url(), 'x');
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(layer).queryByTestId('item-0')).toBeNull()
+    );
+    await userEvent.click(
+      within(layer).getByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    await within(layer).findByTestId('item-0');
+    expect(url()).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a written layer takes its issues again once /defs is re-read', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    const issues = () => [
+      {
+        scope: 'user',
+        file: USER_FILE,
+        kind: 'nonconforming',
+        path: [0, 'url'],
+        message: 'expected string, got number',
+      },
+    ];
+    const d = bridges({
+      effective: { scope: 'user', file: USER_FILE, value },
+      issues: issues(),
+    });
+    const rows: ExplainRowWire[] = [
+      { scope: 'default', file: null, present: false },
+      { scope: 'user', file: USER_FILE, present: true, value },
+    ];
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => structuredClone({ def: d, rows }),
+    }));
+    const store = (defs: SettingDefWire[]) => ({
+      defs,
+      loading: false,
+      error: null,
+      set: vi.fn(async () => null),
+      unset: vi.fn(async () => null),
+      move: vi.fn(async () => null),
+      prune: vi.fn(async () => null),
+    });
+    const client = new QueryClient();
+    const modal = (s: ReturnType<typeof store>) => (
+      <QueryClientProvider client={client}>
+        <ExplainModal
+          settingKey={d.key}
+          fix="user"
+          store={s}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = renderWithProviders(modal(store([d])));
+    const layer = await screen.findByTestId('layer-user');
+    const url = () =>
+      within(within(layer).getByTestId('item-0')).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-0');
+    await userEvent.type(url(), 'x');
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(layer).queryByTestId('item-0')).toBeNull()
+    );
+    rerender(modal(store([{ ...d, issues: issues() }])));
+    await userEvent.click(
+      within(layer).getByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    await within(layer).findByTestId('item-0');
+    expect(url()).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a refused save keeps the reported issue on its layer', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    openFix(
+      bridges({
+        effective: { scope: 'user', file: USER_FILE, value },
+        issues: [
+          {
+            scope: 'user',
+            file: USER_FILE,
+            kind: 'nonconforming',
+            path: [0, 'url'],
+            message: 'expected string, got number',
+          },
+        ],
+      }),
+      [
+        { scope: 'default', file: null, present: false },
+        { scope: 'user', file: USER_FILE, present: true, value },
+      ],
+      'store refused the write'
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const url = () =>
+      within(within(layer).getByTestId('item-0')).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-0');
+    await userEvent.type(url(), 'x');
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await screen.findByText('store refused the write');
+    await userEvent.click(
+      within(layer).getByRole('button', { name: 'Cancel' })
+    );
+    await userEvent.click(
+      within(layer).getByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    await within(layer).findByTestId('item-0');
+    expect(url()).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a write in one repo keeps the reported issue on another repo’s rung', async () => {
+    const value = { dev: { fixedPort: 3000 } };
+    const issue = (repo: string) => ({
+      scope: 'team.repo',
+      file: '/home/team/settings.team.jsonc',
+      repo,
+      kind: 'nonconforming',
+      path: ['dev', 'fixedPort'],
+      message: 'expected number, got string',
+    });
+    const d = roles();
+    d.issues = [issue(REPO), issue(OTHER_REPO)];
+    const rows: ExplainRowWire[] = [
+      { scope: 'default', file: null, present: false },
+      { scope: 'team', file: '/home/team/settings.team.jsonc', present: false },
+      {
+        scope: 'team.repo',
+        file: '/home/team/settings.team.jsonc',
+        present: true,
+        value,
+      },
+    ];
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => structuredClone({ def: d, rows }),
+    }));
+    const store = {
+      defs: [d],
+      loading: false,
+      error: null,
+      set: vi.fn(async () => null),
+      unset: vi.fn(async () => null),
+      move: vi.fn(async () => null),
+      prune: vi.fn(async () => null),
+    };
+    const modal = (repo: string) => (
+      <SettingsRepoContext.Provider value={repo}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ExplainModal
+            settingKey={d.key}
+            fix="team.repo"
+            store={store}
+            onClose={vi.fn()}
+          />
+        </QueryClientProvider>
+      </SettingsRepoContext.Provider>
+    );
+    const { rerender } = renderWithProviders(modal(REPO));
+    const layer = await screen.findByTestId('layer-team.repo');
+    const port = () =>
+      within(layer).getByRole('textbox', { name: 'fixedPort' });
+    await userEvent.type(
+      await within(layer).findByRole('textbox', { name: 'fixedPort' }),
+      '1'
+    );
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(layer).queryByRole('button', { name: 'Save' })).toBeNull()
+    );
+    rerender(modal(OTHER_REPO));
+    await userEvent.click(
+      await within(layer).findByRole('button', {
+        name: 'set rt.roles at team · repo',
+      })
+    );
+    expect(
+      await within(layer).findByRole('textbox', { name: 'fixedPort' })
+    ).toBeInTheDocument();
+    expect(port()).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('a value the form cannot draw opens in JSON, never in cards', async () => {

@@ -155,6 +155,7 @@ export function ItemCards({
   issues,
   footerEnd,
   issueTestId,
+  onOrder,
 }: {
   shape: FormShape;
   value: Entry[];
@@ -163,6 +164,9 @@ export function ItemCards({
   issues: SchemaIssue[];
   footerEnd: ReactNode;
   issueTestId?: string;
+  /** The card ids in display order after each move, removal or add; a
+      card's id is its index in the value it mounted with. */
+  onOrder?: (ids: number[]) => void;
 }) {
   const next = useRef(value.length);
   const [ids, setIds] = useState(() => value.map((_, i) => i));
@@ -180,16 +184,20 @@ export function ItemCards({
     [out[a], out[b]] = [out[b]!, out[a]!];
     return out;
   };
+  const reorder = (order: number[]) => {
+    setIds(order);
+    onOrder?.(order);
+  };
   const move = (from: number, to: number) => {
-    setIds(swap(ids, from, to));
+    reorder(swap(ids, from, to));
     onChange(swap(value, from, to));
   };
   const remove = (at: number) => {
-    setIds(ids.filter((_, i) => i !== at));
+    reorder(ids.filter((_, i) => i !== at));
     onChange(value.filter((_, i) => i !== at));
   };
   const add = () => {
-    setIds([...ids, next.current++]);
+    reorder([...ids, next.current++]);
     onChange([...value, newEntry(shape)]);
   };
   const markTouched = (id: number, name: string) =>

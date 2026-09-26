@@ -359,7 +359,7 @@ describe('HealthTab: installed caches bar', () => {
     const steps = await screen.findByTestId('installed-caches-steps');
     expect(steps).toHaveTextContent('update-pack');
     expect(screen.getByTestId('installed-caches-restart')).toHaveTextContent(
-      'restart running sessions to apply'
+      'run /reload-plugins in running sessions to apply'
     );
   });
 
