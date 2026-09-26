@@ -248,11 +248,18 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (
 
   const fetched = await git(["fetch", "origin"], cwd);
   if (fetched.code !== 0) return { ok: false, error: `git fetch origin failed: ${detail(fetched)}` };
-  const remote = await git(["rev-parse", "--verify", "--quiet", `origin/${branch}`], cwd);
-  if (remote.code === 1) return { ok: true, diverged: false };
-  if (remote.code !== 0) return { ok: false, error: `git rev-parse --verify origin/${branch} failed: ${detail(remote)}` };
+  const shadowed = await shadowedRemoteName(cwd, git, branch, [`origin/${branch}`, `origin/${defaultBranch}`]);
+  if (shadowed !== null) return { ok: false, error: shadowed };
 
-  const counts = await git(["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], cwd);
+  // Full refs, since git resolves a short `origin/<b>` to refs/heads/origin/<b>
+  // before refs/remotes/origin/<b>.
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  const defaultRef = `refs/remotes/origin/${defaultBranch}`;
+  const remote = await git(["rev-parse", "--verify", "--quiet", remoteRef], cwd);
+  if (remote.code === 1) return { ok: true, diverged: false };
+  if (remote.code !== 0) return { ok: false, error: `git rev-parse --verify ${remoteRef} failed: ${detail(remote)}` };
+
+  const counts = await git(["rev-list", "--left-right", "--count", `${remoteRef}...HEAD`], cwd);
   if (counts.code !== 0) return { ok: false, error: `git rev-list --left-right --count failed: ${detail(counts)}` };
   const [behindStr, aheadStr] = counts.stdout.trim().split(/\s+/);
   const behind = Number(behindStr);
@@ -264,8 +271,6 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (
   // rt sync force-pushes a branch that is only behind without fast-forwarding it.
   if (ahead === 0) return { ok: false, error: `origin/${branch} has commits this tree lacks; run git_pull first` };
 
-  const remoteRef = `origin/${branch}`;
-  const defaultRef = `origin/${defaultBranch}`;
   // Commits reachable from the default branch are never unpushed work, the
   // same exclusion rt sync's reset applies.
   const unpushedCmd = await git(["rev-list", "--cherry-pick", "--right-only", "--no-merges", `${remoteRef}...HEAD`, `^${defaultRef}`], cwd);
@@ -279,9 +284,24 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (
     const remoteOnlyCmd = await git(["rev-list", "--cherry-pick", "--left-only", "--no-merges", `${remoteRef}...HEAD`, `^${defaultRef}`], cwd);
     if (remoteOnlyCmd.code !== 0) return { ok: false, error: `git rev-list --cherry-pick --left-only failed: ${detail(remoteOnlyCmd)}` };
     const remoteOnly = lines(remoteOnlyCmd.stdout);
-    if (remoteOnly.length > 0) return { ok: false, error: `${remoteRef} has commits this tree lacks; rt sync would keep the local rewrite and force-push over them: ${remoteOnly.join(", ")}` };
+    if (remoteOnly.length > 0) return { ok: false, error: `origin/${branch} has commits this tree lacks; rt sync would keep the local rewrite and force-push over them: ${remoteOnly.join(", ")}` };
   }
   return { ok: true, diverged: true };
+}
+
+// rt sync reads the short `origin/<b>` names, which a local branch, tag or
+// top-level ref of the same name outranks, so its counts and force-push
+// would be taken against the local ref instead of origin's.
+async function shadowedRemoteName(cwd: string, git: GitRunner, branch: string, shortNames: string[]): Promise<string | null> {
+  for (const shortName of shortNames) {
+    for (const ref of [`refs/heads/${shortName}`, `refs/tags/${shortName}`, `refs/${shortName}`]) {
+      const r = await git(["rev-parse", "--verify", "--quiet", ref], cwd);
+      if (r.code === 1) continue;
+      if (r.code === 0) return `refusing to sync ${branch}: a local ref named ${shortName} (${ref}) shadows the remote-tracking ref, which rt sync cannot sync safely`;
+      return `git rev-parse --verify ${ref} failed: ${detail(r)}`;
+    }
+  }
+  return null;
 }
 
 function lines(s: string): string[] {
@@ -371,6 +391,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
         if (r.code === 0) return ok({ status: "synced", divergedFromOrigin: pre.diverged, ...obj });
         if (r.code === 3) return ok({ status: "conflict", ...obj });
         if (r.code === 124) return err(`rt sync timed out after ${SYNC_TIMEOUT_MS / 1000}s`);
+        if (r.code === -1 && r.stderr.trim() === "") return err("could not start rt sync");
         const hint = typeof obj.hint === "string" ? (typeof obj.tool === "string" && obj.tool !== "" ? `${obj.hint}. Run: ${obj.tool}` : obj.hint) : null;
         const message = typeof obj.error === "string" ? obj.error : hint ?? detail(r);
         return err(`rt sync refused (exit ${r.code}): ${message}`);

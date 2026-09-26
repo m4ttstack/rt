@@ -399,17 +399,17 @@ describe("branchSyncPreflight", () => {
     "config --get-all remote.origin.push": { code: 1 },
     "config --get push.default": { code: 1 },
     "fetch origin": {},
-    "rev-parse --verify --quiet origin/feat/x": {},
+    "rev-parse --verify --quiet refs/remotes/origin/feat/x": {},
   };
   test("not diverged passes", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
     expect(r).toEqual({ ok: true, diverged: false });
   });
-  const COUNT = "rev-list --left-right --count origin/feat/x...HEAD";
-  const RIGHT_ONLY = "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop";
-  const LEFT_ONLY = "rev-list --cherry-pick --left-only --no-merges origin/feat/x...HEAD ^origin/develop";
-  const LOCAL_BASE = "merge-base HEAD origin/develop";
-  const REMOTE_BASE = "merge-base origin/feat/x origin/develop";
+  const COUNT = "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD";
+  const RIGHT_ONLY = "rev-list --cherry-pick --right-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/develop";
+  const LEFT_ONLY = "rev-list --cherry-pick --left-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/develop";
+  const LOCAL_BASE = "merge-base HEAD refs/remotes/origin/develop";
+  const REMOTE_BASE = "merge-base refs/remotes/origin/feat/x refs/remotes/origin/develop";
   const localNewer: Script = {
     [COUNT]: { stdout: "2\t4\n" },
     [RIGHT_ONLY]: {},
@@ -453,15 +453,15 @@ describe("branchSyncPreflight", () => {
   describe("which default the reset exclusion uses", () => {
     const staleLocalMain: Script = { "symbolic-ref --quiet refs/remotes/origin/HEAD": { stdout: "refs/remotes/origin/main\n" }, [COUNT]: { stdout: "3\t2\n" } };
     const against = (def: string): Script => ({
-      [`rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/${def}`]: {},
-      [`merge-base HEAD origin/${def}`]: { stdout: "b1\n" },
-      [`merge-base origin/feat/x origin/${def}`]: { stdout: "b1\n" },
+      [`rev-list --cherry-pick --right-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/${def}`]: {},
+      [`merge-base HEAD refs/remotes/origin/${def}`]: { stdout: "b1\n" },
+      [`merge-base refs/remotes/origin/feat/x refs/remotes/origin/${def}`]: { stdout: "b1\n" },
     });
     test("the remote's answer when it gave one, as rt sync does", async () => {
       const calls: string[] = [];
       const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref --end-of-options origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n" }, ...against("develop") }, calls));
       expect(r).toEqual({ ok: true, diverged: true });
-      expect(calls.some((c) => c.includes("^origin/main") || c.endsWith(" origin/main"))).toBe(false);
+      expect(calls.some((c) => c.includes("^refs/remotes/origin/main") || c.endsWith(" refs/remotes/origin/main"))).toBe(false);
     });
     test("the local answer when ls-remote fails", async () => {
       const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref --end-of-options origin HEAD": { code: 128 }, ...against("main") }));
@@ -469,7 +469,7 @@ describe("branchSyncPreflight", () => {
     });
   });
   test("diverged with an unpushed local commit refuses and names it", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { stdout: "0123456\n" } }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/develop": { stdout: "0123456\n" } }));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain("0123456");
   });
@@ -478,8 +478,8 @@ describe("branchSyncPreflight", () => {
     expect(r).toEqual({ ok: true, diverged: true });
   });
   test("no remote branch yet passes; a detached HEAD refuses", async () => {
-    expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
-    const broken = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 128, stderr: "fatal: bad object" }, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" } }));
+    expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet refs/remotes/origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
+    const broken = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet refs/remotes/origin/feat/x": { code: 128, stderr: "fatal: bad object" }, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "0\t1\n" } }));
     expect(broken.ok).toBe(false);
     expect((broken as { error: string }).error).toContain("fatal: bad object");
     const detached = await branchSyncPreflight("/t", fakeGit({ ...base, [FULL_HEAD]: { code: 1 } }));
@@ -553,6 +553,62 @@ describe("branchSyncPreflight", () => {
     });
   });
 
+  describe("a local ref shadowing a short remote-tracking name rt sync reads", () => {
+    const probe = (ref: string) => `rev-parse --verify --quiet ${ref}`;
+    const shadows = ["refs/heads/origin/feat/x", "refs/tags/origin/feat/x", "refs/origin/feat/x", "refs/heads/origin/develop", "refs/tags/origin/develop", "refs/origin/develop"];
+    test("every shadowing ref refuses after the fetch and before the counts", async () => {
+      for (const shadow of shadows) {
+        const calls: string[] = [];
+        const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "0\t1\n" }, [probe(shadow)]: { stdout: "abc\n" } }, calls));
+        const shortName = shadow.replace(/^refs\/(heads\/|tags\/)?/, "");
+        expect(r.ok, shadow).toBe(false);
+        expect((r as { error: string }).error, shadow).toBe(`refusing to sync feat/x: a local ref named ${shortName} (${shadow}) shadows the remote-tracking ref, which rt sync cannot sync safely`);
+        expect(calls.indexOf("fetch origin"), shadow).toBeLessThan(calls.indexOf(probe(shadow)));
+        expect(calls, shadow).not.toContain(COUNT);
+      }
+    });
+    test("a shadow probe error refuses", async () => {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "0\t1\n" }, [probe("refs/tags/origin/develop")]: { code: 128, stderr: "fatal: bad ref" } }, calls));
+      expect(r.ok).toBe(false);
+      expect((r as { error: string }).error).toContain("fatal: bad ref");
+      expect(calls).not.toContain(COUNT);
+    });
+    test("no shadowing ref probes all six and passes", async () => {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [COUNT]: { stdout: "0\t1\n" } }, calls));
+      expect(r).toEqual({ ok: true, diverged: false });
+      for (const shadow of shadows) expect(calls, shadow).toContain(probe(shadow));
+    });
+    test("real git: a local branch named origin/amb refuses", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "git-shadow-"));
+      try {
+        const origin = join(dir, "origin.git");
+        const work = join(dir, "work");
+        const id = ["-c", "user.email=t@example.com", "-c", "user.name=t"];
+        const steps: [string[], string][] = [
+          [["init", "-q", "--bare", "-b", "develop", origin], dir],
+          [["init", "-q", "-b", "develop", work], dir],
+          [[...id, "commit", "-q", "--allow-empty", "-m", "a"], work],
+          [["remote", "add", "origin", origin], work],
+          [["push", "-q", "origin", "develop"], work],
+          [["checkout", "-q", "-b", "amb"], work],
+          [[...id, "commit", "-q", "--allow-empty", "-m", "b"], work],
+          [["push", "-q", "origin", "amb"], work],
+          [["fetch", "-q", "origin"], work],
+          [["remote", "set-head", "origin", "develop"], work],
+          [["branch", "origin/amb"], work],
+        ];
+        for (const [args, cwd] of steps) expect((await realGitRunner(args, cwd)).code, args.join(" ")).toBe(0);
+        const r = await branchSyncPreflight(work, realGitRunner);
+        expect(r.ok).toBe(false);
+        expect((r as { error: string }).error).toContain("refs/heads/origin/amb");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("branch names rt sync cannot pass safely", () => {
     test("a branch with shell metacharacters, whitespace or a leading dash refuses before any config read or fetch", async () => {
       for (const branch of ["x$(touch${IFS}PWNED)", "a;id|sh", "a b", "--mirror", "--all", "-f"]) {
@@ -564,7 +620,7 @@ describe("branchSyncPreflight", () => {
       }
     });
     test("a branch of letters, digits, dots, slashes, dashes and underscores passes", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...on("feat/x-1.2_y"), "rev-parse --verify --quiet origin/feat/x-1.2_y": { code: 1 } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...on("feat/x-1.2_y"), "rev-parse --verify --quiet refs/remotes/origin/feat/x-1.2_y": { code: 1 } }));
       expect(r).toEqual({ ok: true, diverged: false });
     });
   });
@@ -586,7 +642,7 @@ describe("branchSyncPreflight", () => {
       expect(r.ok).toBe(false);
     });
     test("push.default upstream with branch.<b>.merge matching the current branch passes the redirect check", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "upstream\n" }, "config --get branch.feat/x.merge": { stdout: "refs/heads/feat/x\n" }, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "upstream\n" }, "config --get branch.feat/x.merge": { stdout: "refs/heads/feat/x\n" }, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
       expect(r).toEqual({ ok: true, diverged: false });
     });
     test("push.default tracking is treated the same as upstream", async () => {
@@ -601,15 +657,15 @@ describe("branchSyncPreflight", () => {
 
   describe("failing closed on a git error", () => {
     test("rev-list --left-right --count failing refuses instead of reading as not diverged", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { code: 128, stderr: "fatal: bad revision" } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { code: 128, stderr: "fatal: bad revision" } }));
       expect(r.ok).toBe(false);
     });
     test("a garbled count refuses instead of parsing as 0", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "not-a-number\n" } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "not-a-number\n" } }));
       expect(r.ok).toBe(false);
     });
     test("the unpushed-commit check failing refuses instead of reading as nothing unpushed", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { code: 128, stderr: "fatal: bad revision" } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/develop": { code: 128, stderr: "fatal: bad revision" } }));
       expect(r.ok).toBe(false);
     });
   });
@@ -621,8 +677,8 @@ describe("branch_sync tool", () => {
     [GIT_PATHS]: { stdout: "/t/.git/rebase-merge\n/t/.git/rebase-apply\n" },
     ...on("feat/x"), "symbolic-ref --quiet refs/remotes/origin/HEAD": { stdout: "refs/remotes/origin/develop\n" },
     "config --get-all remote.origin.push": { code: 1 }, "config --get push.default": { code: 1 },
-    "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
-    "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
+    "fetch origin": {}, "rev-parse --verify --quiet refs/remotes/origin/feat/x": {},
+    "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "0\t1\n" },
   };
   test("exit 0 with empty stdout is synced, reporting whether the preflight saw a divergence", async () => {
     const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code: 0, stdout: "", stderr: "" }) }).find((t) => t.name === "branch_sync")!;
@@ -645,9 +701,16 @@ describe("branch_sync tool", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe("rt sync refused (exit 4): feat/x is a member of stack s; sync the stack instead. Run: /gitq:sync");
   });
+  test("rt sync that could not be started says so, and a timeout stays a timeout", async () => {
+    const failed = await runSync(-1, "");
+    expect(failed).toEqual({ ok: false, body: undefined, error: "could not start rt sync" });
+    const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code: 124, stdout: "", stderr: "" }) }).find((t) => t.name === "branch_sync")!;
+    const timedOut = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(timedOut.error).toBe("rt sync timed out after 300s");
+  });
   test("a failed preflight never runs rt sync", async () => {
     let ran = false;
-    const tool = gitToolDefs({ git: fakeGit({ ...clean, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "1\t1\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { stdout: "9999\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, "rev-list --left-right --count refs/remotes/origin/feat/x...HEAD": { stdout: "1\t1\n" }, "rev-list --cherry-pick --right-only --no-merges refs/remotes/origin/feat/x...HEAD ^refs/remotes/origin/develop": { stdout: "9999\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
     const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
     expect(r.ok).toBe(false);
     expect(ran).toBe(false);
