@@ -202,6 +202,10 @@ describe("mr read tools", () => {
     const three = (await tool(deps, "mr_job_trace").handler({ repoName: ID, iid: 1, jobId: 7, tailLines: 3 }, {} as NodeJS.ProcessEnv)).body as any;
     expect(three).toEqual({ trace: "line 247\nline 248\nline 249", truncated: true, totalLines: 250 });
   });
+  test("mr_job_trace strips OSC sequences ended by BEL or ST", () => {
+    const out = tailTrace("\x1b]0;title\x07a\n\x1b]8;;https://x\x1b\\b\x1b]8;;\x1b\\", 200);
+    expect(out.trace).toBe("a\nb");
+  });
   test("mr_job_trace caps the kept lines at 64 KiB from the end on a whole character", () => {
     const line = "é".repeat(1000);
     const out = tailTrace(Array.from({ length: 100 }, () => line).join("\n"), 200);

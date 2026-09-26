@@ -27,12 +27,12 @@ const JOB_ID_NOTE = "jobId is the numeric part of a job id like gitlab:job:123. 
 
 const TRACE_TAIL_LINES = 200;
 const TRACE_MAX_BYTES = 64 * 1024;
-const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const ANSI_ESCAPES = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 type Pr = ProjectMRsData["mrs"][string]["pr"];
 
 export function tailTrace(raw: string, tailLines: number): { trace: string; truncated: boolean; totalLines: number } {
-  const lines = raw.replace(ANSI_CSI, "").split("\n");
+  const lines = raw.replace(ANSI_ESCAPES, "").split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   const kept = lines.slice(-tailLines);
   let trace = kept.join("\n");
