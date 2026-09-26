@@ -1489,7 +1489,16 @@ No code. Each step needs Matt's go; stop after each and report.
 - [ ] **Step 3: Release** from the merged main with the `rt:release` skill: full gate (rehearsal plus local walkthrough), then tag. This release proves the in-tree build path end to end.
 - [ ] **Step 4: Update this machine**: `rt release update-machine` (it re-registers the five deck apps at the rt checkout).
 - [ ] **Step 5: Archive the apps repo**: `gh repo archive m4ttstack/apps --yes`.
-- [ ] **Step 6: Local cleanup**: dispose every rt worktree of the app-kit identity (`rt worktree list`, then `rt worktree dispose <tree>` for each), remove the `remote:github.com%2Fm4ttstack%2Fapp-kit` binding from `~/.mattstack/rt/repos.json` (with the daemon stopped, or through the rt verb that untracks a repo if one exists: `rt repo --help`), delete `~/Documents/GitHub/mattstack-apps`.
+- [ ] **Step 6: Migrate this machine's state off the apps repo.** Audited 2026-09-25 against `~/.mattstack` and `~/.claude` (worktrees, logs, herd jobs, chat sessions and dev-app build copies excluded: history, left alone). `rt repos locate` does not fit: it re-points a repo that moved under the same identity, and here the `app-kit` identity retires into rt's. Every setting goes through `rt settings set --scope machine`, never a hand edit:
+  1. **In-flight branches**: `rt worktree list` shows 14 app-kit trees (radix-chat, radix-console-boxscore, radix-app-kit, radix-tui-kit, radix-board, radix-deck, deck-owner, board-drafts-hidden-note, board-status-line-clamp, board-merge-readback, console-json-editors, funnel-check, plan-dryrun, one agent tree). For each, Matt says carry or drop; carry = `git format-patch main` there, `git am` here (paths are unchanged so patches apply), then `rt worktree dispose <tree>`.
+  2. **Deck registry**: five `dev.workingDirectory` rows point at `~/Documents/GitHub/mattstack-apps/apps/<name>`; Step 4's `rt release update-machine` re-registers them (Task 11). Confirm with `deck list`.
+  3. **`rt.cron`** (machine scope): the `board-triage` trigger runs `bun run /Users/matt/Documents/GitHub/mattstack-apps/apps/board/bin/triage.ts`; set the same value with `repo-tools` in place of `mattstack-apps`.
+  4. **`rt.repoTracking`** (machine scope): drop the `remote:github.com%2Fm4ttstack%2Fapp-kit` entry (rt's own entry already covers the tree).
+  5. **`rt.repoIdentityOverrides`** (machine scope): drop the `https://github.com/m4ttstack/apps.git` to `github.com/m4ttstack/app-kit` mapping.
+  6. **Claude skill symlinks** in `~/.claude/skills`: `board:doctor`, `board:respond`, `board:review` and `deck:add-app` point at `mattstack-apps/apps/{board,deck}/skills/<name>`; relink each to `~/Documents/GitHub/repo-tools/apps/{board,deck}/skills/<name>`.
+  7. **Index**: delete `~/Documents/GitHub/mattstack-apps`, then `rt repos prune` drops the `remote:github.com%2Fm4ttstack%2Fapp-kit` binding (its path is gone); remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fapp-kit/` (worktree registry and run history of the retired identity) once every tree is disposed.
+  8. **state.db** rows keyed on the app-kit identity (branch_cache 152, run_history 9, git_badges 15 on 2026-09-25) are history; leave them unless the daemon's next sweep does not prune them and they show up in a picker.
+  Other estate machines: item 2 is what `rt release update-machine` does on each; items 3 to 6 are this Mac's only.
 - [ ] **Step 7: README links** in `mattstack-skills/README.md:12-14` and `fast-browser/README.md:25-26` still point at gitq and glance, which move in Stages B and C; leave them for those stages.
 
 ---
@@ -1646,7 +1655,7 @@ git commit -m "glance: publish on demand with bun publish"
 
 - [ ] **Step 1: PR**, review, green CI, squash-merge on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (rt code changed: the glance link).
-- [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**; remove the `remote:github.com%2Fm4ttstack%2Fglance` binding from `~/.mattstack/rt/repos.json`; dispose its worktrees; delete `~/Documents/GitHub/glance`.
+- [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches with format-patch first); move `~/Documents/GitHub/glance/harness_credentials.json` to the repo-tools root (gitignored) and repoint the path in `~/.claude/CLAUDE.md`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fglance` entry; delete `~/Documents/GitHub/glance`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fglance/`.
 - [ ] **Step 4: README links**: in `mattstack-skills/README.md` and `fast-browser/README.md` point the glance link at `https://github.com/m4ttstack/rt/tree/main/packages/glance` (a direct commit on each repo's main; both are docs-only).
 
 ---
@@ -1795,7 +1804,7 @@ git commit -m "docs: gitq lives in apps/gitq"
 
 - [ ] **Step 1: PR**, review, green CI, squash-merge on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (deps.lock and rt code changed).
-- [ ] **Step 3: `gh repo archive m4ttstack/gitq --yes`**; remove the `remote:github.com%2Fm4ttstack%2Fgitq` binding from `~/.mattstack/rt/repos.json`; dispose its worktrees; delete `~/Documents/GitHub/gitq`.
+- [ ] **Step 3: `gh repo archive m4ttstack/gitq --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches first); relink the five `~/.claude/skills/gitq:*` symlinks (absorb, publish, restructure, sync, track) to `~/Documents/GitHub/repo-tools/apps/gitq/skills/<name>`; `rt settings set gitq.board --scope machine` with the `gitq` repo entry's path at `~/Documents/GitHub/repo-tools`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fgitq` entry; delete `~/Documents/GitHub/gitq`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fgitq/`.
 - [ ] **Step 4: README links** in `mattstack-skills/README.md` and `fast-browser/README.md` point the gitq link at `https://github.com/m4ttstack/rt/tree/main/apps/gitq`.
 - [ ] **Step 5: Memory and docs**: `docs/architecture.md` in rt gains one line that apps, glance and gitq live in this repo; the memory files `project_rt_client_package.md` and `reference_repo_tools_e2e_not_in_test.md` get a dated line that rt-client is no longer published and the apps are in-tree.
 
