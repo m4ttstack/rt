@@ -22,6 +22,7 @@ import { parseIdentity } from "../settings/identity.ts";
 import { explainError } from "../explain-error.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
+import { runToolDefs } from "./run-tools.ts";
 import {
   checkOptional, checkPositiveInts, checkRequired, checkStringArray,
   err, fromResponse, HERD_ENV_ERROR, MR_TARGET_PROPS, MR_WRITE_TIMEOUT_MS, ok,
@@ -719,5 +720,6 @@ export function mcpTools(): McpToolDef[] {
         return r.ok ? ok(r.body) : err(r.error);
       },
     },
+    ...runToolDefs(),
   ];
 }
