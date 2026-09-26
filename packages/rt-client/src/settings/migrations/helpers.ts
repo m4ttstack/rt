@@ -17,12 +17,12 @@ function mapAt(value: unknown, path: MigrationPath, fn: (obj: Record<string, unk
   if (head === "[]") return Array.isArray(value) ? value.map((item) => mapAt(item, rest, fn)) : value;
   if (!isObject(value)) return value;
   if (head === "{}") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapAt(v, rest, fn)]));
-  return head in value ? { ...value, [head]: mapAt(value[head], rest, fn) } : value;
+  return Object.hasOwn(value, head) ? { ...value, [head]: mapAt(value[head], rest, fn) } : value;
 }
 
 export function renameProperty(value: unknown, path: MigrationPath, from: string, to: string): unknown {
   return mapAt(value, path, (obj) => {
-    if (!(from in obj)) return obj;
+    if (!Object.hasOwn(obj, from)) return obj;
     const { [from]: moved, ...rest } = obj;
     return { ...rest, [to]: moved };
   });
@@ -30,12 +30,12 @@ export function renameProperty(value: unknown, path: MigrationPath, from: string
 
 export function deleteProperty(value: unknown, path: MigrationPath, name: string): unknown {
   return mapAt(value, path, (obj) => {
-    if (!(name in obj)) return obj;
+    if (!Object.hasOwn(obj, name)) return obj;
     const { [name]: _dropped, ...rest } = obj;
     return rest;
   });
 }
 
 export function setDefault(value: unknown, path: MigrationPath, name: string, fallback: unknown): unknown {
-  return mapAt(value, path, (obj) => (name in obj ? obj : { ...obj, [name]: structuredClone(fallback) }));
+  return mapAt(value, path, (obj) => (Object.hasOwn(obj, name) ? obj : { ...obj, [name]: structuredClone(fallback) }));
 }
