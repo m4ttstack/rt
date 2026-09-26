@@ -38,7 +38,7 @@ export default defineConfig({
         'react-dom',
         // FA tree-shaking — consumers provide their own config
         '@fortawesome/fontawesome-svg-core',
-        // node:crypto usage in its provider code is not browser-bundleable; consumers already depend on it directly
+        // node:crypto usage in its provider code is not browser-bundleable; glance-react's own dependency on it is what a consumer resolves through
         '@mattstack/glance',
       ],
     },

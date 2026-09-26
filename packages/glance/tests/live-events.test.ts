@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   const REPO = 'm4tthew-dev/glance-test-repo';
   const creds = await loadCredentials();
   if (!creds) {
-    throw new Error('harness_credentials.json not found at the repo root');
+    throw new Error('harness_credentials.json not found at the package root');
   }
   const tok = (u: string) => creds.users.find((x) => x.username === u)!.token;
 
