@@ -453,6 +453,72 @@ describe('Fix in the explain modal', () => {
     expect(url()).not.toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('a written layer takes its issues again once /defs is re-read', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    const issues = () => [
+      {
+        scope: 'user',
+        file: USER_FILE,
+        kind: 'nonconforming',
+        path: [0, 'url'],
+        message: 'expected string, got number',
+      },
+    ];
+    const d = bridges({
+      effective: { scope: 'user', file: USER_FILE, value },
+      issues: issues(),
+    });
+    const rows: ExplainRowWire[] = [
+      { scope: 'default', file: null, present: false },
+      { scope: 'user', file: USER_FILE, present: true, value },
+    ];
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => structuredClone({ def: d, rows }),
+    }));
+    const store = (defs: SettingDefWire[]) => ({
+      defs,
+      loading: false,
+      error: null,
+      set: vi.fn(async () => null),
+      unset: vi.fn(async () => null),
+      move: vi.fn(async () => null),
+      prune: vi.fn(async () => null),
+    });
+    const client = new QueryClient();
+    const modal = (s: ReturnType<typeof store>) => (
+      <QueryClientProvider client={client}>
+        <ExplainModal
+          settingKey={d.key}
+          fix="user"
+          store={s}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = renderWithProviders(modal(store([d])));
+    const layer = await screen.findByTestId('layer-user');
+    const url = () =>
+      within(within(layer).getByTestId('item-0')).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-0');
+    await userEvent.type(url(), 'x');
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(layer).queryByTestId('item-0')).toBeNull()
+    );
+    rerender(modal(store([{ ...d, issues: issues() }])));
+    await userEvent.click(
+      within(layer).getByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    await within(layer).findByTestId('item-0');
+    expect(url()).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('a refused save keeps the reported issue on its layer', async () => {
     const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
     openFix(

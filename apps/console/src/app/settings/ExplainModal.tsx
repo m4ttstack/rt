@@ -443,10 +443,13 @@ function ExplainBody({
   }, [loading, rows, onRead]);
 
   // /explain never re-reads `issues`, so an issue carried from storeDef is
-  // stale for any layer written here until /defs is read again.
-  const [written, setWritten] = useState<ReadonlySet<string>>(new Set());
-  const wrote = (...scopes: string[]) =>
-    setWritten(w => new Set([...w, ...scopes]));
+  // stale for a layer written here until /defs is read again: each mark
+  // holds the `issues` the store had when the write began.
+  const [written, setWritten] = useState<ReadonlyMap<string, unknown>>(
+    new Map()
+  );
+  const wrote = (issues: unknown, ...scopes: string[]) =>
+    setWritten(w => new Map([...w, ...scopes.map(s => [s, issues] as const)]));
   // A rung is written per repo, so its mark carries the repo it landed in.
   const rung = (scope: string, target?: string) =>
     target ? `${scope}.repo@${target}` : scope;
@@ -454,18 +457,21 @@ function ExplainBody({
   // re-reads the stack; prune goes through the same path as any other write.
   const tracked: RowStore & Pick<ConsoleStore, 'prune'> = {
     set: async (...a) => {
+      const issues = storeDef.issues;
       const err = await store.set(...a);
-      if (!err) wrote(rung(a[1], a[3]));
+      if (!err) wrote(issues, rung(a[1], a[3]));
       return after(err);
     },
     unset: async (...a) => {
+      const issues = storeDef.issues;
       const err = await store.unset(...a);
-      if (!err) wrote(rung(a[1], a[2]));
+      if (!err) wrote(issues, rung(a[1], a[2]));
       return after(err);
     },
     move: async (...a) => {
+      const issues = storeDef.issues;
       const err = await store.move(...a);
-      wrote(...(err ? [a[2]] : [a[1], a[2]]));
+      wrote(issues, ...(err ? [a[2]] : [a[1], a[2]]));
       return after(err);
     },
     prune: async (...a) => after(await store.prune(...a)),
@@ -500,12 +506,13 @@ function ExplainBody({
 
   // /explain rows may omit a layer's nonconforming issues that /defs
   // reported, and those are the ones Fix was opened from.
+  const stale = (row: ExplainRowWire) => {
+    const mark = isRung(row.scope) ? `${row.scope}@${repo}` : row.scope;
+    return written.has(mark) && written.get(mark) === storeDef.issues;
+  };
   const reportedFor = (row: ExplainRowWire): SchemaIssue[] => [
     ...(row.nonconforming ?? []),
-    ...(written.has(isRung(row.scope) ? `${row.scope}@${repo}` : row.scope)
-      ? []
-      : (def.issues ?? [])
-    )
+    ...(stale(row) ? [] : (def.issues ?? []))
       .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
       .map(i => ({ path: i.path, message: i.message })),
   ];
