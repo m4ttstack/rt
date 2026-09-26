@@ -114,8 +114,9 @@ async function remoteOf(ref: string, cwd: string, git: GitRunner): Promise<strin
   return names.includes(head) ? head : null;
 }
 
-// `git rebase` does not take `--` before its ref, so a dash-leading onto is
-// refused outright: passed through, `--exec=<cmd>` would run that command.
+// onto is placed after --end-of-options so git never parses it as an option
+// (`--exec=<cmd>` would run that command); a dash-leading value is still
+// refused because no ref name can start with a dash.
 export async function gitRebase(cwd: string, opts: { onto?: string; abort?: boolean }, git: GitRunner): Promise<ToolResult> {
   if (opts.abort && opts.onto !== undefined) return err("pass onto or abort, not both");
   if (opts.abort) {
@@ -129,7 +130,7 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
     const f = await git(["fetch", fetched], cwd);
     if (f.code !== 0) return err(`git fetch ${fetched} failed: ${detail(f)}`);
   }
-  const r = await git(["rebase", opts.onto], cwd);
+  const r = await git(["rebase", "--end-of-options", opts.onto], cwd);
   if (r.code === 0) return ok({ status: "ok", onto: opts.onto, fetched });
   const conflicted = await git(["diff", "--name-only", "--diff-filter=U"], cwd);
   const files = conflicted.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
@@ -149,12 +150,10 @@ async function readConfig(cwd: string, git: GitRunner, args: string[]): Promise<
   return { status: "error", detail: `git config ${args.join(" ")} failed: ${detail(r)}` };
 }
 
-// `rt sync` runs a bare `git push --force-with-lease origin <branch>`
-// (commands/git/reset.ts, commands/sync.ts:301): git picks the destination
-// ref itself, and remote.origin.push or push.default=upstream/tracking with a
-// mismatched branch.<b>.merge can send that push to a different branch than
-// the one named here (reproduced: a worktree branch tracking origin/<default>
-// under push.default=upstream sends the push straight to <default>).
+// rt sync pushes a src-only refspec (`origin <branch>`), so git takes the
+// destination ref from config: remote.origin.push, or push.default
+// upstream/tracking with a branch.<b>.merge naming another branch, sends that
+// push to a different branch than the one checked here.
 async function pushDestinationRedirected(cwd: string, git: GitRunner, branch: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const originPush = await readConfig(cwd, git, ["--get-all", "remote.origin.push"]);
   if (originPush.status === "error") return { ok: false, error: originPush.detail };

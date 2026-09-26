@@ -163,15 +163,15 @@ describe("gitPull", () => {
 describe("gitRebase", () => {
   test("rebases onto a remote-tracking ref after fetching its remote", async () => {
     const calls: string[] = [];
-    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase origin/develop": {} }, calls));
+    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase --end-of-options origin/develop": {} }, calls));
     expect(r).toEqual({ ok: true, body: { status: "ok", onto: "origin/develop", fetched: "origin" } });
-    expect(calls).toEqual(["remote", "fetch origin", "rebase origin/develop"]);
+    expect(calls).toEqual(["remote", "fetch origin", "rebase --end-of-options origin/develop"]);
   });
   test("a local ref is not fetched", async () => {
     const calls: string[] = [];
-    const r = await gitRebase("/t", { onto: "develop" }, fakeGit({ "rebase develop": {} }, calls));
+    const r = await gitRebase("/t", { onto: "develop" }, fakeGit({ "rebase --end-of-options develop": {} }, calls));
     expect(r).toEqual({ ok: true, body: { status: "ok", onto: "develop", fetched: null } });
-    expect(calls).toEqual(["rebase develop"]);
+    expect(calls).toEqual(["rebase --end-of-options develop"]);
   });
   test("an onto that starts with a dash is refused before git runs", async () => {
     for (const onto of ["--exec=touch /tmp/x", "-i", "--onto=x"]) {
@@ -183,7 +183,7 @@ describe("gitRebase", () => {
   });
   test("a conflict returns the conflicted files and leaves the tree mid-rebase", async () => {
     const calls: string[] = [];
-    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase origin/develop": { code: 1, stderr: "CONFLICT" }, "diff --name-only --diff-filter=U": { stdout: "a.ts\nb.ts\n" } }, calls));
+    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase --end-of-options origin/develop": { code: 1, stderr: "CONFLICT" }, "diff --name-only --diff-filter=U": { stdout: "a.ts\nb.ts\n" } }, calls));
     expect(r).toEqual({ ok: true, body: { status: "conflict", onto: "origin/develop", files: ["a.ts", "b.ts"] } });
     expect(calls).not.toContain("rebase --abort");
   });
