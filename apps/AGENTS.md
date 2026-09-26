@@ -1,3 +1,8 @@
+> Scope: `apps/*` and the apps platform packages (`packages/gate-kit`,
+> `packages/server`, `packages/tokens`, `packages/tokyo`,
+> `packages/tui-kit`, `packages/ui`). rt's own contract is the root
+> `AGENTS.md`; this file was the apps repo's before the fold-in.
+
 # AGENTS.md
 
 Contract for anyone (human or agent) working in this repo: editing
