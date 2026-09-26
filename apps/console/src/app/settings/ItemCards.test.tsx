@@ -6,6 +6,11 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { formShape } from './formShape';
+import { ItemCards } from './ItemCards';
+import { SettingRow } from './SettingRow';
+import { schemaFields } from './testSchemas';
+
 vi.mock('@mattstack/app-kit/lazy', () => ({
   CodeMirror: ({
     value,
@@ -21,11 +26,6 @@ vi.mock('@mattstack/app-kit/lazy', () => ({
     />
   ),
 }));
-
-import { formShape } from './formShape';
-import { ItemCards } from './ItemCards';
-import { SettingRow } from './SettingRow';
-import { schemaFields } from './testSchemas';
 
 const RULE = {
   pattern: 'gate/opened/*',
@@ -279,7 +279,9 @@ describe('item cards', () => {
     expect(screen.queryByText(/required property/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     await userEvent.type(screen.getByRole('textbox', { name: 'JSON' }), ' ');
-    expect(screen.getByText(/required property "pattern" is missing/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/required property "pattern" is missing/)
+    ).toBeInTheDocument();
   });
 
   it('typing into and clearing a required field shows "required" on its row', async () => {

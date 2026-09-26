@@ -386,7 +386,9 @@ describe('Fix in the explain modal', () => {
     const layer = await screen.findByTestId('layer-user');
     await within(layer).findByTestId('item-2');
     expect(within(layer).queryByTestId('layer-value-user')).toBeNull();
-    expect(within(layer).getAllByText(/expected string, got number/)).toHaveLength(2);
+    expect(
+      within(layer).getAllByText(/expected string, got number/)
+    ).toHaveLength(2);
   });
 
   it('opens the layer in the form when the form can draw it, the field highlighted, Save off', async () => {

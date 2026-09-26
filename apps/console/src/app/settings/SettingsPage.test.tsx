@@ -597,7 +597,9 @@ describe('repo picker', () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ repos: [{ identity: REPO, label: 'acme/app' }] }),
+          json: async () => ({
+            repos: [{ identity: REPO, label: 'acme/app' }],
+          }),
         };
       if (url.includes(`repo=${encodeURIComponent(REPO)}`)) {
         await held;
