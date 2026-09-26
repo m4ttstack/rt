@@ -1485,6 +1485,14 @@ export const TREE: Record<string, CommandNode> = {
         omitBehavior: { exempt: "agent-facing; spawned by a plugin config, takes no positionals" },
         args: [],
       },
+      tools: {
+        description: "Every tool the mattstack MCP server publishes: name, description, input schema (the source the docs and the skills reference are generated from)",
+        module: "./commands/mcp.ts",
+        fn: "mcpToolsList",
+        hidden: true,
+        omitBehavior: { exempt: "no positional argument; a listing" },
+        args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the full roster as JSON" }],
+      },
     },
   },
 
