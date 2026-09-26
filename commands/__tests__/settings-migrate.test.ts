@@ -158,6 +158,38 @@ describe("rt settings migrate", () => {
     });
   });
 
+  test("--prune --force with no key is a usage error, not a crash, and changes nothing", async () => {
+    await withMigrationAsync(EB, EB_BUMP, async () => {
+      write(userSettingsPath(), { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
+      const before = readFileSync(userSettingsPath(), "utf8");
+      await settingsMigrate(["--prune", "--yes", "--force"], noPrompt);
+      expect(process.exitCode).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain("--force needs a key");
+      expect(readFileSync(userSettingsPath(), "utf8")).toBe(before);
+    });
+  });
+
+  test("--force --yes does not take --yes as the forced key: a usage error, not a silent no-op force", async () => {
+    await withMigrationAsync(EB, EB_BUMP, async () => {
+      write(userSettingsPath(), { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
+      const before = readFileSync(userSettingsPath(), "utf8");
+      await settingsMigrate(["--prune", "--force", "--yes"], noPrompt);
+      expect(process.exitCode).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain("--force needs a key");
+      expect(readFileSync(userSettingsPath(), "utf8")).toBe(before);
+    });
+  });
+
+  test("a --force key with no older store name in the plan warns without failing, and other forced keys still prune", async () => {
+    await withMigrationAsync(EB, EB_BUMP, async () => {
+      write(userSettingsPath(), { [EB]: EB_V1, [`${EB}@2`]: EB_V2_EDITED });
+      await settingsMigrate(["--prune", "--yes", "--force", EB, "--force", "rt.roles"], noPrompt);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join("\n")).toContain("--force rt.roles matches no older store name in this plan");
+      expect(read(userSettingsPath())).toEqual({ [`${EB}@2`]: EB_V2_EDITED });
+      expect(process.exitCode).toBe(0);
+    });
+  });
+
   test("--json reports the plan", async () => {
     await withMigrationAsync(EB, EB_BUMP, async () => {
       write(userSettingsPath(), { [EB]: EB_V1 });

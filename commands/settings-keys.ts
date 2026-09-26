@@ -595,7 +595,24 @@ export async function settingsMigrate(args: string[], deps: MigrateDeps = {}): P
   const plan = planStoreMigrations();
   if (write) return migrateWrite(plan, json);
   if (prune) {
-    const forced = new Set(args.flatMap((a, i) => (a === "--force" && args[i + 1] !== undefined ? [args[i + 1]!] : [])));
+    const forced = new Set<string>();
+    let forceUsageError = false;
+    args.forEach((a, i) => {
+      if (a !== "--force") return;
+      const value = args[i + 1];
+      if (value === undefined || value.startsWith("--")) forceUsageError = true;
+      else forced.add(value);
+    });
+    if (forceUsageError) {
+      console.error("rt settings migrate --prune: --force needs a key (e.g. --force rt.notify.eventBridges)");
+      process.exitCode = 1;
+      return;
+    }
+    for (const key of forced) {
+      if (!plan.older.some((o) => o.key === key)) {
+        console.error(`rt settings migrate --prune: --force ${key} matches no older store name in this plan`);
+      }
+    }
     const interactive = deps.interactive ?? (process.stdin.isTTY === true && !json && !process.env.RT_BATCH);
     const ask = deps.confirm ?? (async (message: string) => (await import("../lib/ui/prompts.ts")).confirm({ message, destructive: true }));
     return migratePrune(plan, { json, team: args.includes("--team"), yes: args.includes("--yes"), forced, interactive, ask });
