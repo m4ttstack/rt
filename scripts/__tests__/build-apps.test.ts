@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { buildTreeRows } from "../build-apps.ts";
@@ -7,10 +7,14 @@ import { buildTreeRows } from "../build-apps.ts";
 function fakeApp(root: string, name: string, opts: { skills?: boolean; serve?: boolean } = {}) {
   const dir = join(root, name);
   mkdirSync(join(dir, "dist"), { recursive: true });
+  const homeFile = join(dir, "dist", `${name}.home`);
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
     name, displayName: name, icon: "icon.svg",
     ...(opts.serve ? { port: 11090, includeInBundle: true } : {}),
-    bundle: { build: `printf '#!/bin/sh\\necho ${name} 0.0.0\\n' > dist/${name} && chmod 755 dist/${name}`, artifact: `dist/${name}` },
+    bundle: {
+      build: `printf '#!/bin/sh\\necho ${name} 0.0.0\\nprintf %%s "$HOME" > ${homeFile}\\n' > dist/${name} && chmod 755 dist/${name}`,
+      artifact: `dist/${name}`,
+    },
   }));
   writeFileSync(join(dir, "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
   if (opts.skills) {
@@ -46,6 +50,9 @@ describe("build-apps", () => {
     expect(existsSync(join(deps, "arm64", "alpha-skills", "hello", "SKILL.md"))).toBe(true);
     expect(existsSync(join(deps, "arm64", "beta-skills"))).toBe(false);
     expect(existsSync(join(deps, "arm64", "jq"))).toBe(false);
+    const smokeHome = readFileSync(join(apps, "alpha", "dist", "alpha.home"), "utf8");
+    expect(smokeHome).not.toBe(process.env.HOME);
+    expect(smokeHome.startsWith(tmpdir())).toBe(true);
   });
 
   test("refuses an artifact the recipe did not produce", async () => {

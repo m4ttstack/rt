@@ -12,7 +12,8 @@
  * Env: RT_DEPS_ROOT (default rt-tray/deps), RT_DEPS_LOCK (default
  * rt-tray/deps.lock), RT_APPS_ROOT (default apps/).
  */
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "fs";
+import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { spawnSync } from "child_process";
 import { parseDepsLock } from "../lib/bundle-layout.ts";
@@ -27,7 +28,7 @@ export interface BuildAppsSeams {
   lockPath: string;
   arch: "arm64";
   log(line: string): void;
-  /** Builds the packages/* workspace before any recipe runs. Omitted in tests, which stay hermetic. */
+  /** Builds the packages/* workspace before any recipe runs. */
   buildPackages?: () => void;
 }
 
@@ -39,37 +40,47 @@ export async function buildTreeRows(s: BuildAppsSeams): Promise<string[]> {
   const deps = join(s.depsRoot, s.arch);
   mkdirSync(deps, { recursive: true });
   s.buildPackages?.();
-  const built: string[] = [];
-  for (const row of lock.tools) {
-    if (row.source !== "tree") continue;
-    if (row.status !== "bundled") { s.log(`  . ${row.name}: pending, not built`); continue; }
-    if (!SAFE_NAME.test(row.name)) throw new Error(`refusing unsafe tool name: ${row.name}`);
-    const app = join(s.appsRoot, row.name);
-    const recipe = readBundleRecipe(join(app, "mattstack.deck.json"));
-    s.log(`  -> ${row.name}: ${recipe.build}`);
-    const run = spawnSync("bash", ["-c", recipe.build], { cwd: app, stdio: "inherit", env: process.env });
-    if (run.status !== 0) throw new Error(`${row.name}: bundle.build exited ${run.status}`);
-    const artifact = join(app, recipe.artifact);
-    if (!existsSync(artifact) || !(statSync(artifact).mode & 0o111)) {
-      throw new Error(`${row.name}: ${recipe.artifact} missing or not executable`);
+  // A built app reads ~/.mattstack at import time (deck's boot-env can rename
+  // ~/.mattstack/local, core/settings mints a secret into
+  // ~/.mattstack/deck/settings.json), so the smoke probe below never sees the
+  // real home: it gets a throwaway one, the same isolation
+  // rt-tray/check-bundle.sh gives the deck shim's own probe.
+  const smokeHome = mkdtempSync(join(tmpdir(), "build-apps-smoke-"));
+  try {
+    const built: string[] = [];
+    for (const row of lock.tools) {
+      if (row.source !== "tree") continue;
+      if (row.status !== "bundled") { s.log(`  . ${row.name}: pending, not built`); continue; }
+      if (!SAFE_NAME.test(row.name)) throw new Error(`refusing unsafe tool name: ${row.name}`);
+      const app = join(s.appsRoot, row.name);
+      const recipe = readBundleRecipe(join(app, "mattstack.deck.json"));
+      s.log(`  -> ${row.name}: ${recipe.build}`);
+      const run = spawnSync("bash", ["-c", recipe.build], { cwd: app, stdio: "inherit", env: process.env });
+      if (run.status !== 0) throw new Error(`${row.name}: bundle.build exited ${run.status}`);
+      const artifact = join(app, recipe.artifact);
+      if (!existsSync(artifact) || !(statSync(artifact).mode & 0o111)) {
+        throw new Error(`${row.name}: ${recipe.artifact} missing or not executable`);
+      }
+      const smoke = spawnSync(artifact, ["--version"], { stdio: "ignore", env: { HOME: smokeHome, PATH: "/usr/bin:/bin" } });
+      if (smoke.status !== 0) throw new Error(`${row.name}: ${recipe.artifact} --version exited ${smoke.status}`);
+      for (const suffix of ["", "-identity", "-skills", ".sha256", "-identity.sha256", "-skills.sha256"]) {
+        rmSync(join(deps, `${row.name}${suffix}`), { recursive: true, force: true });
+      }
+      copyFileSync(artifact, join(deps, row.name));
+      chmodSync(join(deps, row.name), 0o755);
+      stageIdentity(app, join(deps, `${row.name}-identity`), row.name);
+      if (row.skills) {
+        const skills = join(app, "skills");
+        if (!existsSync(skills)) throw new Error(`${row.name}: deps.lock says skills but apps/${row.name}/skills is absent`);
+        cpSync(skills, join(deps, `${row.name}-skills`), { recursive: true });
+      }
+      s.log(`  ok ${row.name}`);
+      built.push(row.name);
     }
-    const smoke = spawnSync(artifact, ["--version"], { stdio: "ignore" });
-    if (smoke.status !== 0) throw new Error(`${row.name}: ${recipe.artifact} --version exited ${smoke.status}`);
-    for (const suffix of ["", "-identity", "-skills", ".sha256", "-identity.sha256", "-skills.sha256"]) {
-      rmSync(join(deps, `${row.name}${suffix}`), { recursive: true, force: true });
-    }
-    copyFileSync(artifact, join(deps, row.name));
-    chmodSync(join(deps, row.name), 0o755);
-    stageIdentity(app, join(deps, `${row.name}-identity`), row.name);
-    if (row.skills) {
-      const skills = join(app, "skills");
-      if (!existsSync(skills)) throw new Error(`${row.name}: deps.lock says skills but apps/${row.name}/skills is absent`);
-      cpSync(skills, join(deps, `${row.name}-skills`), { recursive: true });
-    }
-    s.log(`  ok ${row.name}`);
-    built.push(row.name);
+    return built;
+  } finally {
+    rmSync(smokeHome, { recursive: true, force: true });
   }
-  return built;
 }
 
 function buildWorkspacePackages(): void {
