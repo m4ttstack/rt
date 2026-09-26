@@ -7,7 +7,7 @@ sidebar_label: diff
 
 `rt › settings › schema › diff`
 
-Classify every schema change since a previous lock as safe or breaking; exits 1 on an unbumped or unacknowledged breaking change
+Classify every schema change since a previous lock as safe or breaking; exits 1 unless a breaking change has a storeVersion bump and a matching migrateFrom entry (a never-shipped key may instead be acknowledged)
 
 ## Usage
 
@@ -21,6 +21,8 @@ rt settings schema diff [flags]
 | --- | --- | --- | --- |
 | `--against` | text |  | Diff against a lock file; a missing file counts as no lock |
 | `--against-ref` | text |  | Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock |
+| `--shipped-ref` | text |  | The release whose lock says which keys have shipped (default: the highest v* tag); only a key absent there may take a breaking change on an acknowledgement |
+| `--draft` | boolean | `false` | Write a migrateFrom entry (or a rename) for each breaking change into the migration files, for review |
 | [`--json`](/guides/common-flags) | boolean | `false` | Machine-readable output |
 
 _See code: [commands/settings-schema.ts › settingsSchemaDiff](https://github.com/m4ttstack/rt/blob/main/commands/settings-schema.ts)_

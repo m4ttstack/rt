@@ -566,6 +566,7 @@ describe("runPreflight", () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
+        if (cmd === "bun run cli.ts settings check --json") return ok('{"ok":true,"findings":[]}\n');
         if (cmd === "git show v2.10.2:packages/rt-client/src/settings/schema.lock.json") return ok(schemaLock);
         if (cmd.includes("--show-current")) return ok("main\n");
         if (cmd.includes("status")) return ok("");

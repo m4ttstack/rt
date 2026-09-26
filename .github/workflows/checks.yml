@@ -55,15 +55,18 @@ jobs:
       - name: Lockfile in sync
         run: bun install && git diff --exit-code -- bun.lock
 
-      # A schema change that would invalidate stored settings must bump
-      # storeVersion and be acknowledged; the committed lock is the record.
+      # A schema change that would invalidate stored settings needs a
+      # storeVersion bump and a matching migrateFrom entry (a never-shipped
+      # key may instead be acknowledged); the committed lock is the record.
       - name: Settings schema lock is in sync
         run: bun run cli.ts settings schema lock && git diff --exit-code -- packages/rt-client/src/settings/schema.lock.json
 
       # The checkout has full history but only names the ref it checked out,
       # so origin/main still needs an explicit fetch into its tracking ref.
+      # The v* tags are fetched too: the latest release's lock says which
+      # keys have shipped, and only a key that has not may skip a migration.
       - name: Settings schema changes are classified
-        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main && bun run cli.ts settings schema diff --against-ref origin/main
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main '+refs/tags/v*:refs/tags/v*' && bun run cli.ts settings schema diff --against-ref origin/main
 
       # release.yml is grandfathered out of the lint: it carries pre-existing
       # shellcheck findings whose quoting is tangled with the release flow.

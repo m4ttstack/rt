@@ -8,6 +8,8 @@ import { spawnSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { buildLock, checkLockAgainst, classifyLockDiff, isMissingPathAtRef, LOCK_PATH as DEFAULT_LOCK_PATH, readBreakingChanges, type Lock } from "../lib/settings/schema-lock.ts";
+import { applyDrafts, draftMigrations, MIGRATION_SCHEMAS_PATH, MIGRATIONS_INDEX_PATH, type Draft } from "../lib/settings/schema-draft.ts";
+import { getDef } from "../lib/settings/registry.ts";
 
 const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -58,7 +60,17 @@ function lockAtPath(path: string): Lock | Error {
   return {};
 }
 
-export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: string; git?: Git } = {}): Promise<void> {
+/** The highest v* tag by version sort, or null when the checkout has none. */
+function latestReleaseTag(repoRoot: string, git: Git): string | null {
+  const tags = git(["tag", "--list", "v*", "--sort=-v:refname"], repoRoot);
+  if (tags.status !== 0) return null;
+  return tags.stdout.split("\n").map((t) => t.trim()).find((t) => t !== "") ?? null;
+}
+
+export async function settingsSchemaDiff(
+  args: string[],
+  deps: { repoRoot?: string; git?: Git; shippedLock?: Lock | null; migrationsIndexPath?: string; migrationSchemasPath?: string } = {},
+): Promise<void> {
   const repoRoot = deps.repoRoot ?? REPO_ROOT;
   const fail = (message: string) => {
     console.error(`rt settings schema diff: ${message}`);
@@ -75,14 +87,49 @@ export async function settingsSchemaDiff(args: string[], deps: { repoRoot?: stri
 
   const next = buildLock();
   const changes = classifyLockDiff(prev, next);
-  const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges());
+  // deps.shippedLock, given, skips resolving a ref entirely: a test supplying it needs no
+  // git tag/show call at all, real or faked.
+  let shipped: Lock | null;
+  let shippedRef: string | null;
+  if (deps.shippedLock !== undefined) {
+    shipped = deps.shippedLock;
+    shippedRef = flagValue(args, "--shipped-ref") ?? null;
+  } else {
+    shippedRef = flagValue(args, "--shipped-ref") ?? latestReleaseTag(repoRoot, deps.git ?? realGit);
+    shipped = null;
+    if (shippedRef !== null) {
+      const atRef = lockAtRef(shippedRef, repoRoot, deps.git ?? realGit);
+      if (atRef instanceof Error) return fail(atRef.message);
+      shipped = atRef;
+    }
+  }
+  const { ok, problems } = checkLockAgainst(prev, next, readBreakingChanges(), { shipped, mode: "ci" });
+  let drafts: Draft[] = [];
+  if (args.includes("--draft")) {
+    const indexPath = deps.migrationsIndexPath ?? MIGRATIONS_INDEX_PATH;
+    const schemasPath = deps.migrationSchemasPath ?? MIGRATION_SCHEMAS_PATH;
+    drafts = draftMigrations(prev, next, (key) => {
+      const def = getDef(key);
+      return def?.merge === "deep" && def.type === "object";
+    });
+    if (drafts.length > 0) {
+      const files = applyDrafts(drafts, { index: readFileSync(indexPath, "utf8"), schemas: readFileSync(schemasPath, "utf8") });
+      writeFileSync(indexPath, files.index);
+      writeFileSync(schemasPath, files.schemas);
+    }
+  }
   if (json) {
-    console.log(JSON.stringify({ ok, changes, problems }, null, 2));
+    console.log(JSON.stringify({ ok, shipped: shippedRef, changes, problems, drafts }, null, 2));
   } else if (changes.length === 0) {
     console.log("no schema changes");
   } else {
     for (const c of changes) console.log(`${c.kind.padEnd(8)} ${c.key}  ${c.detail}`);
     for (const p of problems) console.log(`problem: ${p}`);
+    for (const d of drafts) {
+      console.log(d.kind === "step" ? `drafted   ${d.key}  migrateFrom version ${d.version}` : `drafted   ${d.key}  renamedFrom ${d.from}`);
+      for (const n of d.notes) console.log(`          note: ${n}`);
+    }
+    if (drafts.length > 0) console.log("next: review the drafts, add real examples, set storeVersion, then bun run cli.ts settings schema lock");
   }
   if (!ok) process.exitCode = 1;
 }

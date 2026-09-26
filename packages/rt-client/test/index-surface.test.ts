@@ -74,3 +74,13 @@ describe("index.ts settings schema surface", () => {
     expect(surface.classifyLockDiff).toBeUndefined();
   });
 });
+
+test("migration verbs are on the index; the authoring tools are not", async () => {
+  const index = (await import("../src/index.ts")) as Record<string, unknown>;
+  for (const name of ["readSection", "currentStoreName", "olderStoreNames", "storeNameStatus", "worstLabel", "valueHash", "pruneStoreName", "storeSections", "planStoreMigrations"]) {
+    expect(typeof index[name], name).toBe("function");
+  }
+  for (const name of ["zodSource", "draftMigrations", "applyDrafts", "proveMigration", "sampleValues", "MIGRATION_SCHEMAS"]) {
+    expect(name in index, name).toBe(false);
+  }
+});

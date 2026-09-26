@@ -1,9 +1,10 @@
 /**
  * rt release preflight — the release's mechanical checks (rt:release skill
  * steps 1-2c) as one read-only report: git/tag state, picker conformance,
- * settings schema lock, per-layer pin freshness across every vendored
- * surface, catalog pin drift, extension currency, rt-client npm-vs-source
- * parity, and the gate (fast vs full) the pending diff implies.
+ * settings schema lock, the candidate's settings check against the real
+ * stores, per-layer pin freshness across every vendored surface, catalog pin
+ * drift, extension currency, rt-client npm-vs-source parity, and the gate
+ * (fast vs full) the pending diff implies.
  *
  * Read-only by contract: the catalog check re-resolves refs with
  * `git ls-remote` itself because `marketplace.sh --refresh` rewrites
@@ -222,10 +223,50 @@ export async function checkSchemaLock(seams: PreflightSeams, tag: string | null)
     } catch (err) {
       throw new Error(`${SCHEMA_LOCK} at ${tag} is not valid JSON: ${(err as Error).message}`);
     }
-    const { ok, problems } = checkLockAgainst(prev, committed, acknowledged);
+    const { ok, problems } = checkLockAgainst(prev, committed, acknowledged, { shipped: prev, mode: "release" });
+    const bumps = Object.entries(committed)
+      .filter(([k, e]) => prev[k] !== undefined && e.storeVersion > prev[k]!.storeVersion)
+      .map(([k, e]) => `${k} ${prev[k]!.storeVersion} -> ${e.storeVersion}`);
+    const renameBumps = Object.entries(committed).flatMap(([k, e]) =>
+      (e.renamedFrom ?? [])
+        .filter((old) => prev[old] !== undefined && e.storeVersion > prev[old]!.storeVersion)
+        .map((old) => `${old} -> ${k} ${prev[old]!.storeVersion} -> ${e.storeVersion}`),
+    );
+    const allBumps = [...bumps, ...renameBumps];
+    const notes = allBumps.length > 0 ? `; storeVersion bumps for the release notes: ${allBumps.join(", ")}` : "";
     return ok
-      ? { id, label, status: "ok", detail: `no unacknowledged breaking change since ${tag}` }
+      ? { id, label, status: "ok", detail: `no unmigrated breaking change since ${tag}${notes}` }
       : { id, label, status: "stale", detail: problems.join("; ") };
+  } catch (err) {
+    return { id, label, status: "error", detail: String((err as Error).message ?? err) };
+  }
+}
+
+const FAILING_KINDS = new Set(["invalid", "nonconforming", "merged", "diverged"]);
+
+/**
+ * The candidate's own `rt settings check`, run from this checkout so its
+ * registry and migrations are the ones being released, against the real
+ * stores, read-only. A value the migrations cannot carry, or a diverged
+ * older name, stops the release.
+ */
+export async function checkSettingsStores(seams: PreflightSeams): Promise<CheckRow> {
+  const id = "settings-stores";
+  const label = "settings stores";
+  try {
+    const r = await seams.exec(["bun", "run", "cli.ts", "settings", "check", "--json"], { cwd: seams.repoRoot, timeoutMs: 120_000 });
+    const line = r.stdout.split("\n").find((l) => l.startsWith("{"));
+    if (!line) throw new Error(`settings check printed no JSON (exit ${r.exitCode}): ${r.stderr.trim().slice(0, 200)}`);
+    const report = JSON.parse(line) as { ok: boolean; findings: { key: string; kind: string; scope?: string; repo?: string; storeName?: string }[] };
+    if (report.ok) return { id, label, status: "ok", detail: "every stored value passes after migration; no diverged names" };
+    const detail = report.findings
+      .filter((f) => FAILING_KINDS.has(f.kind))
+      .map((f) => {
+        const location = [f.scope, f.repo].filter(Boolean).join("/");
+        return `${f.key} ${f.kind}${f.storeName ? ` (${f.storeName})` : ""}${location ? ` in ${location}` : ""}`;
+      })
+      .join("; ");
+    return { id, label, status: "stale", detail };
   } catch (err) {
     return { id, label, status: "error", detail: String((err as Error).message ?? err) };
   }
@@ -510,9 +551,10 @@ export async function runPreflight(seams: PreflightSeams): Promise<PreflightRepo
     lockError = { id: "deps-lock", label: "deps.lock", status: "error", detail: String((err as Error).message ?? err) };
   }
 
-  const [gate, schemaLockRow, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
+  const [gate, schemaLockRow, settingsStoresRow, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
     gitState.tag ? checkGate(seams, gitState.tag) : Promise.resolve(null),
     checkSchemaLock(seams, gitState.tag),
+    checkSettingsStores(seams),
     checkAppPins(seams, apps),
     checkStandaloneRows(seams, standalone),
     checkToolRows(seams, tools),
@@ -525,6 +567,7 @@ export async function runPreflight(seams: PreflightSeams): Promise<PreflightRepo
     gitState.row,
     checkPicker(seams),
     schemaLockRow,
+    settingsStoresRow,
     ...(lockError ? [lockError] : []),
     ...appRows,
     ...standaloneRows,

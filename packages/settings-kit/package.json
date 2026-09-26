@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/settings-kit",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Embeddable mattstack settings surface: a framework-neutral server handler over @mattstack/rt-client plus headless React hooks (callers bring their own UI).",
   "type": "module",
@@ -30,7 +30,7 @@
     "prepack": "bun run build"
   },
   "peerDependencies": {
-    "@mattstack/rt-client": ">=0.32.0 <1",
+    "@mattstack/rt-client": ">=0.33.0 <1",
     "react": ">=18"
   },
   "peerDependenciesMeta": {

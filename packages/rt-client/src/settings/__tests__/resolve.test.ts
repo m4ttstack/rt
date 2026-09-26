@@ -30,6 +30,7 @@ import {
   type ExplainRow,
   type Provenance,
 } from "../resolve.ts";
+import { withMigration } from "./with-migration.ts";
 import { withSchema } from "./with-schema.ts";
 
 const SNAPSHOT = { type: "object", properties: { enabled: { type: "boolean" }, debounceSec: { type: "number" } }, required: ["enabled", "debounceSec"] };
@@ -704,6 +705,15 @@ describe("settings/resolve", () => {
       writeMachine({ "rt.homeSnapshot": "nope" });
       expect(explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!.invalid).toContain("expected object");
       expect(getSetting("rt.homeSnapshot").value).toEqual(getDef("rt.homeSnapshot")?.default);
+    });
+
+    test("a value the chain cannot carry, whose authored shape also fails the type check, keeps the migration error alongside the type error", () => {
+      withMigration("rt.homeSnapshot", { storeVersion: 2, migrateFrom: [{ version: 1, up: () => { throw new Error("boom"); } }] }, () => {
+        writeMachine({ "rt.homeSnapshot": [] });
+        const row = explainSetting("rt.homeSnapshot").find((r) => r.scope === "machine")!;
+        expect(row.invalid).toContain("migration 1 -> 2 threw: boom");
+        expect(row.invalid).toContain("expected object, got array");
+      });
     });
 
     test("a partial deep layer is not labeled", () => {

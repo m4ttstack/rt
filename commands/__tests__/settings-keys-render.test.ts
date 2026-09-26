@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { renderExplainRow, renderListRow } from "../settings-keys.ts";
-import type { ListedSetting } from "../../lib/settings/resolve.ts";
+import type { ExplainRow, ListedSetting } from "../../lib/settings/resolve.ts";
 
 /** Strips ANSI so assertions read as plain text. */
 // eslint-disable-next-line no-control-regex
@@ -59,5 +59,53 @@ describe("renderExplainRow", () => {
     }));
 
     expect(line).toContain("[nonconforming: enabled: expected boolean, got string]");
+  });
+});
+
+describe("renderExplainRow over store names", () => {
+  const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+  const base = { scope: "user", file: "/home/user/settings.user.jsonc", present: true } as const;
+
+  test("a row read from an older name says so; one read from the current name does not", () => {
+    const migrated = strip(renderExplainRow({ ...base, value: [1], storeName: "rt.x", storedVersion: 1, authored: [0] } as ExplainRow, "rt.x@2"));
+    expect(migrated).toContain("[read from rt.x, version 1]");
+    const current = strip(renderExplainRow({ ...base, value: [1], storeName: "rt.x@2", storedVersion: 2, authored: [1] } as ExplainRow, "rt.x@2"));
+    expect(current).not.toContain("read from");
+  });
+
+  test("an invalid row still shows the store-name suffix and its older-name lines", () => {
+    const out = strip(renderExplainRow({
+      ...base,
+      value: [1],
+      invalid: "migration 1 -> 2 threw: boom; expected object, got array",
+      storeName: "rt.x",
+      storedVersion: 1,
+      authored: [1],
+      olderNames: [{ storeName: "rt.x", storedVersion: 1, label: "diverged", value: [9], authored: [8] }],
+    } as ExplainRow, "rt.x@2"));
+    expect(out).toContain("[invalid: migration 1 -> 2 threw: boom; expected object, got array]");
+    expect(out).toContain("[read from rt.x, version 1]");
+    expect(out).toContain("older rt.x: diverged  [9]");
+  });
+
+  test("older names print one per line, a diverged one with its value", () => {
+    const out = strip(renderExplainRow({
+      ...base,
+      value: [1],
+      storeName: "rt.x@2",
+      storedVersion: 2,
+      authored: [1],
+      olderLabel: "diverged",
+      olderNames: [{ storeName: "rt.x", storedVersion: 1, label: "diverged", value: [9], authored: [8] }],
+    } as ExplainRow, "rt.x@2"));
+    expect(out).toContain("older rt.x: diverged  [9]");
+  });
+});
+
+describe("renderListRow over store names", () => {
+  test("a diverged layer and a newer-rt name are labeled", () => {
+    const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(strip(renderListRow(row({ diverged: [{ scope: "user", file: null, storeNames: ["rt.roles"] }] })))).toContain("diverged[user]: rt.roles");
+    expect(strip(renderListRow(row({ key: "rt.roles@3", migrated: false, unregistered: true, newer: true })))).toContain("from a newer rt");
   });
 });
