@@ -1483,6 +1483,7 @@ git commit -m "docs: the release skill and AGENTS.md describe the in-tree apps"
 
 No code. Each step needs Matt's go; stop after each and report.
 
+- [ ] **Step 0: Refresh the import.** Work keeps landing on apps main while this branch is built. Re-run Task 1 Steps 1 and 2 against apps' current `main` (filter-repo is deterministic, so the rewritten history shares its older commits with the first import), then `git fetch apps-import main && git merge --no-ff -m "monorepo: refresh the apps import" apps-import/main`. Paths do not move, so it merges clean; re-run `bun install --frozen-lockfile`, `bun run test`, `scripts/turbo.sh check`. Anything still on a branch in the apps repo at cutover carries over with `git format-patch` there and `git am` here.
 - [ ] **Step 1: Open the PR** from the branch with `gh pr create`, title `monorepo: absorb m4ttstack/apps`, body per the repo's PR conventions. Wait for green `checks`, `e2e`, `purity` and the review (CodeRabbit, or an opus subagent review when it is rate-limited).
 - [ ] **Step 2: Merge** (squash) on Matt's confirmation.
 - [ ] **Step 3: Release** from the merged main with the `rt:release` skill: full gate (rehearsal plus local walkthrough), then tag. This release proves the in-tree build path end to end.
