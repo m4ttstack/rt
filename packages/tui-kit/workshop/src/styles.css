@@ -1,0 +1,53 @@
+/*
+ * Workshop chrome: layout only, nothing here touches `body`. The page canvas
+ * (font, colors, background grid) comes entirely from src/canvas.css,
+ * imported before this file in main.tsx — a `body` rule in this file would
+ * silently fight that opt-in over specificity/order, so this stylesheet
+ * stays scoped to the sidebar/main shell it actually owns.
+ *
+ * `--panel` / `--border` / `--muted` below are the alias-contract vars
+ * themselves (docs/token-census.md section (a)) — the workshop's own chrome
+ * is the first real consumer of the alias contract the Tokens page audits.
+ */
+
+.workshop-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.workshop-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 14rem;
+  flex-shrink: 0;
+  padding: 1rem;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.workshop-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.workshop-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.workshop-sidebar button {
+  text-align: left;
+}
+
+.workshop-nav-active {
+  font-weight: 600;
+}
+
+.workshop-main {
+  flex: 1;
+  overflow: auto;
+  padding: 2rem;
+}

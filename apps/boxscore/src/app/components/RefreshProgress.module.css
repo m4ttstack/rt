@@ -1,0 +1,50 @@
+.track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--mantine-color-default-hover);
+}
+
+.determinate {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--mantine-primary-color-filled);
+  transition: width 300ms ease;
+}
+
+.determinateStalled {
+  background: var(--mantine-color-warn-filled);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* Sized to 1/3 of the track, same visual language as a scanning progress bar. */
+.indeterminate {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 33%;
+  border-radius: 3px;
+  background: var(--mantine-primary-color-filled);
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}

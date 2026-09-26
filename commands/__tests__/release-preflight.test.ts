@@ -10,14 +10,14 @@ const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
 const COMMITTED_LOCK = readFileSync(join(import.meta.dir, "..", "..", LOCK_REL), "utf8");
 
 /**
- * A seam set whose only fault is a stale rt-client (npm behind source).
- * `prevLock` is what `git show <tag>:<lock>` answers; null makes git exit non-zero.
+ * A clean seam set; `prevLock` is what `git show <tag>:<lock>` answers (null
+ * makes git exit non-zero), and `violations` forces the picker row stale.
  */
 function fakeSeams(
-  rtClientSource: string,
   prevLock: string | null = COMMITTED_LOCK,
   committedLock: string = COMMITTED_LOCK,
   settingsCheck: string = '{"ok":true,"findings":[]}',
+  violations: { path: string }[] = [],
 ): PreflightSeams {
   return {
     repoRoot: "/repo",
@@ -43,17 +43,15 @@ function fakeSeams(
       if (cmd.includes("m4ttheweric/playwright")) return ok(JSON.stringify([{ tag_name: "fast-browser-v0.1.1" }]));
       return Promise.resolve({ stdout: "", stderr: "nope", exitCode: 1 });
     },
-    fetchJson: (url) =>
-      url.includes("rt-client") ? Promise.resolve({ version: "0.20.0" }) : Promise.reject(new Error("offline")),
+    fetchJson: () => Promise.reject(new Error("offline")),
     readFile: (p) => {
       if (p.endsWith("deps.lock")) return JSON.stringify({ schema: 1, arch: "arm64", tools: [] });
       if (p.endsWith("marketplace.json")) return JSON.stringify({ name: "m", plugins: [] });
-      if (p.endsWith("packages/rt-client/package.json")) return JSON.stringify({ version: rtClientSource });
       if (p === join("/repo", LOCK_REL)) return committedLock;
       if (p === join("/repo", "packages/rt-client/src/settings/breaking-schema-changes.json")) return "{}";
       return null;
     },
-    violations: () => [],
+    violations: () => violations,
   };
 }
 
@@ -80,7 +78,7 @@ afterEach(() => {
 
 describe("rt release preflight", () => {
   test("--json prints the contract envelope and exits clean when nothing is stale", async () => {
-    const { logs, exitCode } = await run(["--json"], fakeSeams("0.20.0"));
+    const { logs, exitCode } = await run(["--json"], fakeSeams());
     expect(logs).toHaveLength(1);
     const body = JSON.parse(logs[0]!);
     expect(body.contract).toBe(1);
@@ -91,7 +89,8 @@ describe("rt release preflight", () => {
   });
 
   test("--json exits 1 when a layer is stale", async () => {
-    const { logs, exitCode } = await run(["--json"], fakeSeams("0.21.0"));
+    const violations = [{ path: "release preflight" }];
+    const { logs, exitCode } = await run(["--json"], fakeSeams(COMMITTED_LOCK, COMMITTED_LOCK, undefined, violations));
     const body = JSON.parse(logs[0]!);
     expect(body.clean).toBe(false);
     expect(body.staleCount).toBe(1);
@@ -99,10 +98,11 @@ describe("rt release preflight", () => {
   });
 
   test("human output renders a checklist and a summary line", async () => {
-    const { logs, exitCode } = await run([], fakeSeams("0.21.0"));
+    const violations = [{ path: "release preflight" }];
+    const { logs, exitCode } = await run([], fakeSeams(COMMITTED_LOCK, COMMITTED_LOCK, undefined, violations));
     const out = logs.join("\n");
     expect(out).toContain("git state");
-    expect(out).toContain("rt-client");
+    expect(out).toContain("picker:check");
     expect(out).toContain("gate:");
     expect(out).toMatch(/1 stale/);
     expect(exitCode).toBe(1);
@@ -116,7 +116,7 @@ describe("rt release preflight schema-lock row", () => {
   };
 
   test("the committed lock matching the tag's lock is ok", async () => {
-    expect(await schemaRow(fakeSeams("0.20.0"))).toMatchObject({ label: "schema lock", status: "ok" });
+    expect(await schemaRow(fakeSeams())).toMatchObject({ label: "schema lock", status: "ok" });
   });
 
   test("a key narrowed since the tag without a storeVersion bump is stale and named", async () => {
@@ -124,21 +124,21 @@ describe("rt release preflight schema-lock row", () => {
     const key = Object.keys(committed)[0]!;
     const prev = { ...committed, [key]: { ...committed[key]!, schema: { ...committed[key]!.schema, type: [committed[key]!.schema.type, "null"] } } };
 
-    const row = await schemaRow(fakeSeams("0.20.0", JSON.stringify(prev)));
+    const row = await schemaRow(fakeSeams(JSON.stringify(prev)));
 
     expect(row?.status).toBe("stale");
     expect(row?.detail).toContain(key);
   });
 
   test("no lock at the tag is ok and says so", async () => {
-    expect(await schemaRow(fakeSeams("0.20.0", null))).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
+    expect(await schemaRow(fakeSeams(null))).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
   });
 
   test("a bump since the tag with a matching migrateFrom entry is ok and lists the bump for the release notes", async () => {
     const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
     const key = Object.keys(tagLock)[0]!;
     const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" }, migrateFrom: { "1": tagLock[key]!.schema } } };
-    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    const row = await schemaRow(fakeSeams(COMMITTED_LOCK, JSON.stringify(bumped)));
     expect(row?.status).toBe("ok");
     expect(row?.detail).toContain(`storeVersion bumps for the release notes: ${key} 1 -> 2`);
   });
@@ -159,7 +159,7 @@ describe("rt release preflight schema-lock row", () => {
       },
     };
 
-    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(committed)));
+    const row = await schemaRow(fakeSeams(COMMITTED_LOCK, JSON.stringify(committed)));
 
     expect(row?.status).toBe("ok");
     expect(row?.detail).toContain(
@@ -171,7 +171,7 @@ describe("rt release preflight schema-lock row", () => {
     const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
     const key = Object.keys(tagLock)[0]!;
     const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" } } };
-    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    const row = await schemaRow(fakeSeams(COMMITTED_LOCK, JSON.stringify(bumped)));
     expect(row?.status).toBe("stale");
     expect(row?.detail).toContain(`${key}: no migrateFrom entry for version 1`);
   });
@@ -184,7 +184,7 @@ describe("rt release preflight settings-stores row", () => {
   };
 
   test("a clean check of the real stores is ok", async () => {
-    expect(await storesRow(fakeSeams("0.20.0"))).toMatchObject({ label: "settings stores", status: "ok" });
+    expect(await storesRow(fakeSeams())).toMatchObject({ label: "settings stores", status: "ok" });
   });
 
   test("a value the migrations cannot carry, or a diverged name, is stale and named", async () => {
@@ -196,13 +196,13 @@ describe("rt release preflight settings-stores row", () => {
         { key: "rt.worktrees", scope: "user", kind: "stale", storeName: "rt.worktrees", issues: [] },
       ],
     });
-    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    const row = await storesRow(fakeSeams(COMMITTED_LOCK, COMMITTED_LOCK, report));
     expect(row?.status).toBe("stale");
     expect(row?.detail).toBe("rt.notify.eventBridges nonconforming in user; rt.roles diverged (rt.roles) in team/gitlab.example.com/acme/app");
   });
 
   test("no JSON from the check is an error", async () => {
-    expect((await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, "boom")))?.status).toBe("error");
+    expect((await storesRow(fakeSeams(COMMITTED_LOCK, COMMITTED_LOCK, "boom")))?.status).toBe("error");
   });
 
   test("a repo-level merged finding (no scope) still names its repo", async () => {
@@ -210,7 +210,7 @@ describe("rt release preflight settings-stores row", () => {
       ok: false,
       findings: [{ key: "rt.repoRoots", repo: "gitlab.example.com/acme/app", kind: "merged", storeName: "rt.repoRoots", issues: [] }],
     });
-    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    const row = await storesRow(fakeSeams(COMMITTED_LOCK, COMMITTED_LOCK, report));
     expect(row?.status).toBe("stale");
     expect(row?.detail).toBe("rt.repoRoots merged (rt.repoRoots) in gitlab.example.com/acme/app");
   });

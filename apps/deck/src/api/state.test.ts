@@ -1,0 +1,233 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test';
+
+const scratch = mkdtempSync(join(tmpdir(), 'local-state-'));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+const {
+  stateDir,
+  adoptLegacyStateDir,
+  claimApiInfo,
+  writeApiInfo,
+  readApiRunMode,
+  runModeFromEnv,
+} = await import('./state.ts');
+
+beforeEach(() => {
+  delete process.env.LOCAL_STATE_DIR;
+  delete process.env.LOCAL_LEGACY_STATE_DIR;
+  delete process.env.DECK_RUN_MODE;
+  delete process.env.DECK_RUN_REASON;
+});
+
+afterEach(() => {
+  delete process.env.DECK_RUN_MODE;
+  delete process.env.DECK_RUN_REASON;
+});
+
+test("adoptLegacyStateDir renames the pre-rename dir into place when the new one doesn't exist yet", () => {
+  const newDir = join(scratch, `deck-${Date.now()}`);
+  const legacyDir = join(scratch, `local-${Date.now()}`);
+  mkdirSync(legacyDir, { recursive: true });
+  writeFileSync(join(legacyDir, 'registry.json'), '{"version":1,"apps":{}}');
+  process.env.LOCAL_STATE_DIR = newDir;
+  process.env.LOCAL_LEGACY_STATE_DIR = legacyDir;
+
+  adoptLegacyStateDir();
+
+  expect(existsSync(newDir)).toBe(true);
+  expect(existsSync(legacyDir)).toBe(false);
+  expect(readFileSync(join(newDir, 'registry.json'), 'utf8')).toContain(
+    '"version":1'
+  );
+});
+
+test('adoptLegacyStateDir is a no-op when the new dir already exists -- never overwrites live state', () => {
+  const newDir = join(scratch, `deck-existing-${Date.now()}`);
+  const legacyDir = join(scratch, `local-existing-${Date.now()}`);
+  mkdirSync(newDir, { recursive: true });
+  writeFileSync(
+    join(newDir, 'registry.json'),
+    '{"version":1,"apps":{"kept":true}}'
+  );
+  mkdirSync(legacyDir, { recursive: true });
+  writeFileSync(
+    join(legacyDir, 'registry.json'),
+    '{"version":1,"apps":{"stale":true}}'
+  );
+  process.env.LOCAL_STATE_DIR = newDir;
+  process.env.LOCAL_LEGACY_STATE_DIR = legacyDir;
+
+  adoptLegacyStateDir();
+
+  expect(existsSync(legacyDir)).toBe(true); // untouched
+  expect(readFileSync(join(newDir, 'registry.json'), 'utf8')).toContain('kept'); // untouched
+});
+
+test('adoptLegacyStateDir is a no-op when no legacy dir exists', () => {
+  const newDir = join(scratch, `deck-fresh-${Date.now()}`);
+  const legacyDir = join(scratch, `local-never-existed-${Date.now()}`);
+  process.env.LOCAL_STATE_DIR = newDir;
+  process.env.LOCAL_LEGACY_STATE_DIR = legacyDir;
+
+  expect(() => adoptLegacyStateDir()).not.toThrow();
+  expect(existsSync(newDir)).toBe(false);
+});
+
+test('adoptLegacyStateDir is a no-op when the resolved new and legacy dirs are the same path', () => {
+  // Both overrides pointed at the identical directory: nothing to adopt
+  // FROM, and a rename onto itself must never be attempted.
+  const sameDir = join(scratch, `deck-same-${Date.now()}`);
+  mkdirSync(sameDir, { recursive: true });
+  process.env.LOCAL_STATE_DIR = sameDir;
+  process.env.LOCAL_LEGACY_STATE_DIR = sameDir;
+
+  expect(() => adoptLegacyStateDir()).not.toThrow();
+  expect(existsSync(sameDir)).toBe(true);
+});
+
+test('stateDir defaults under ~/.mattstack/deck', () => {
+  expect(stateDir()).toContain(join('.mattstack', 'deck'));
+});
+
+test('stateDir follows a faked HOME at call time, not a value frozen at process start', () => {
+  const originalHome = process.env.HOME;
+  const fakeHome = join(scratch, `home-${Date.now()}`);
+  process.env.HOME = fakeHome;
+  try {
+    expect(stateDir()).toBe(join(fakeHome, '.mattstack', 'deck'));
+  } finally {
+    process.env.HOME = originalHome;
+  }
+});
+
+function seededStateDir(apiJson?: object): string {
+  const dir = mkdtempSync(join(scratch, 'claim-'));
+  if (apiJson) writeFileSync(join(dir, 'api.json'), JSON.stringify(apiJson));
+  process.env.LOCAL_STATE_DIR = dir;
+  return dir;
+}
+
+function apiJsonIn(dir: string): unknown {
+  return JSON.parse(readFileSync(join(dir, 'api.json'), 'utf8'));
+}
+
+test('claimApiInfo writes api.json when none exists', async () => {
+  const dir = seededStateDir();
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
+});
+
+test('claimApiInfo overwrites an api.json whose pid is dead', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => false,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
+});
+
+test('claimApiInfo overwrites an api.json whose live pid does not answer on its port', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => false,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
+});
+
+test('claimApiInfo leaves an api.json alone while its writer is alive and answering', async () => {
+  const dir = seededStateDir({ port: 7000, pid: 4242 });
+  const probed: number[] = [];
+  const wrote = await claimApiInfo(7940, {
+    isAlive: pid => pid === 4242,
+    answers: async port => {
+      probed.push(port);
+      return true;
+    },
+  });
+  expect(wrote).toBe(false);
+  expect(probed).toEqual([7000]);
+  expect(apiJsonIn(dir)).toEqual({ port: 7000, pid: 4242 });
+});
+
+test('claimApiInfo overwrites an api.json naming its own port, whose live pid must be a reused one', async () => {
+  const dir = seededStateDir({ port: 7940, pid: 4242 });
+  const wrote = await claimApiInfo(7940, {
+    isAlive: () => true,
+    answers: async () => true,
+  });
+  expect(wrote).toBe(true);
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'standalone',
+  });
+});
+
+test('runModeFromEnv maps the shim variables', () => {
+  expect(runModeFromEnv({})).toEqual({ runMode: 'standalone' });
+  expect(runModeFromEnv({ DECK_RUN_MODE: 'source' })).toEqual({
+    runMode: 'source',
+  });
+  expect(
+    runModeFromEnv({ DECK_RUN_MODE: 'pinned', DECK_RUN_REASON: 'bun missing' })
+  ).toEqual({ runMode: 'pinned', runReason: 'bun missing' });
+  expect(runModeFromEnv({ DECK_RUN_MODE: 'weird' })).toEqual({
+    runMode: 'standalone',
+  });
+});
+
+test('writeApiInfo records the run mode and readApiRunMode reads it back', () => {
+  const dir = seededStateDir();
+  process.env.DECK_RUN_MODE = 'pinned';
+  process.env.DECK_RUN_REASON = 'no deck dev.workingDirectory';
+  writeApiInfo(7940);
+  expect(readApiRunMode()).toEqual({
+    runMode: 'pinned',
+    runReason: 'no deck dev.workingDirectory',
+  });
+  expect(apiJsonIn(dir)).toEqual({
+    port: 7940,
+    pid: process.pid,
+    runMode: 'pinned',
+    runReason: 'no deck dev.workingDirectory',
+  });
+});
+
+test('an api.json without runMode reads as standalone', () => {
+  seededStateDir({ port: 7940, pid: 1 });
+  expect(readApiRunMode()).toEqual({ runMode: 'standalone' });
+});
+
+test('readApiRunMode is null with no api.json', () => {
+  seededStateDir();
+  expect(readApiRunMode()).toBeNull();
+});

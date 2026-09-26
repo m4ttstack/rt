@@ -1,0 +1,3 @@
+# seeded canvas payloads: 2.6MB build artifacts, re-seed from the .dc.html files
+*.html
+!*.dc.html

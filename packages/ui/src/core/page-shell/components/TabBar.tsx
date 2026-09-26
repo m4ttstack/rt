@@ -1,0 +1,161 @@
+import { useLayoutEffect } from 'react';
+import { Divider, Group, Tabs } from '@mantine/core';
+import type { TabsProps } from '@mantine/core';
+
+import { Icon, type IconName } from '@mattstack/app-kit/icons';
+import { useIsInPageShell, usePageShellContext } from '../hooks';
+import classes from '../PageShell.module.css';
+import { RowTitle } from './RowTitle';
+
+/** Tab bar height in px, the default for the root's `tabBarHeight`. */
+export const PAGE_SHELL_TAB_BAR_HEIGHT = 46;
+
+export interface PageShellTab {
+  /** Stable identity for the tab. */
+  id: string;
+  /** Tab text (any ReactNode; a plain string is typical). */
+  label: React.ReactNode;
+  /**
+   * Custom label node rendered instead of `label` -- for tabs needing more
+   * than plain text (a badge, a truncating tooltip, ...).
+   */
+  labelComponent?: React.ReactNode;
+  /** Optional icon rendered before the label. */
+  icon?: IconName;
+  /** Optional icon rendered after the label. */
+  iconRight?: IconName;
+  active?: boolean;
+  /** Called on click (alongside any linking the tab carries). */
+  onClick?: () => void;
+  /**
+   * Router-agnostic linking, same idea as `RailEntry`: an element type to
+   * render the tab as (e.g. a router `Link`), typically paired with `href`.
+   * Typed-router caveat: polymorphic passthrough types a route-literal `to`
+   * loosely -- wrap through the router's `createLink()` instead of passing a
+   * bare typed `Link` (AGENTS.md section 10).
+   */
+  component?: React.ElementType;
+  href?: string;
+}
+
+export interface PageShellTabBarProps {
+  tabs: PageShellTab[];
+  /**
+   * Page title leading the tabs: the same `Title` order 2 `Header` renders,
+   * for a page whose tab row is its header row, but sized to the row it
+   * shares with the tabs and set off from them by a short hairline.
+   */
+  title?: React.ReactNode;
+  /** Right-aligned actions cluster trailing the tabs, as on `Header`. */
+  actions?: React.ReactNode;
+  /** Passthrough to Mantine `Tabs`' `color` (theme color for the active tab indicator). */
+  color?: TabsProps['color'];
+  /** Passthrough to Mantine `Tabs`' `radius`. @default 0 */
+  radius?: TabsProps['radius'];
+}
+
+/**
+ * The shell's tab row, rendered by the root when its `tabs` prop is set --
+ * or composed directly by a consumer building their own tab row (register
+ * presence into the shell's height math via
+ * `usePageShellContext().setHasTabBar`, the same way this component does).
+ * Spans the full shell width above the body row (sidebar included), sized
+ * by the root's `tabBarHeight` and sitting on the shared shell surface
+ * (context `bg`). Built on Mantine's native `Tabs`/`Tabs.Tab` (role="tablist"
+ * / role="tab" come from Mantine); the active tab carries the same calm
+ * primary-light tint the kit uses for other active states (`SelectableList`
+ * rows, the docs sidebar), on top of Mantine's native active indicator.
+ *
+ * `title` and `actions` sit outside the tablist, before and after it, so
+ * the tablist stays a clean tablist for assistive tech while the row can
+ * stand in for a header on pages that have no sidebar to span.
+ */
+export const TabBar = ({
+  tabs,
+  title,
+  actions,
+  color,
+  radius = 0,
+}: PageShellTabBarProps) => {
+  useIsInPageShell('TabBar');
+
+  const { tabBarHeight, bg, setHasTabBar } = usePageShellContext();
+
+  useLayoutEffect(() => {
+    // Lets other components know a tab bar is present (Content/Sidebar
+    // subtract its height). A consumer composing their own tab row
+    // registers into the same context state the same way.
+    setHasTabBar(true);
+    return () => {
+      setHasTabBar(false);
+    };
+  }, [setHasTabBar]);
+
+  return (
+    <Group
+      gap="md"
+      wrap="nowrap"
+      h={tabBarHeight}
+      px="sm"
+      bg={bg}
+      style={{
+        flexShrink: 0,
+        borderBottom: '1px solid var(--mantine-color-default-border)',
+      }}
+    >
+      {title != null && (
+        <Group gap="md" wrap="nowrap" pl="xs">
+          <RowTitle>{title}</RowTitle>
+          <Divider orientation="vertical" h="1.25em" />
+        </Group>
+      )}
+      <Tabs
+        variant="default"
+        value={tabs.find(tab => tab.active)?.id ?? null}
+        color={color}
+        radius={radius}
+        h="100%"
+      >
+        <Tabs.List id="page-shell-tab-bar" aria-label="Page tabs" h="100%">
+          {tabs.map(tab => {
+            const LinkComponent = tab.component;
+            return (
+              <Tabs.Tab
+                key={tab.id}
+                value={tab.id}
+                h="100%"
+                fz="sm"
+                classNames={{ tab: classes.tabBarTab }}
+                leftSection={tab.icon && <Icon name={tab.icon} size={16} />}
+                rightSection={
+                  tab.iconRight && <Icon name={tab.iconRight} size={16} />
+                }
+                onClick={tab.onClick}
+                // `component` can't take a dynamic value (the polymorphic
+                // types need a static element), so per-tab linking goes
+                // through Mantine's `renderRoot` escape hatch instead. `href`
+                // is folded in inside the callback (rather than passed as a
+                // prop to `Tabs.Tab` itself) so it stays out of the way of
+                // `Tabs.Tab`'s own prop types.
+                renderRoot={
+                  LinkComponent
+                    ? rootProps => (
+                        <LinkComponent {...rootProps} href={tab.href} />
+                      )
+                    : undefined
+                }
+              >
+                {tab.labelComponent ?? tab.label}
+              </Tabs.Tab>
+            );
+          })}
+        </Tabs.List>
+      </Tabs>
+      {actions != null && (
+        <Group gap="sm" ml="auto" wrap="nowrap">
+          {actions}
+        </Group>
+      )}
+    </Group>
+  );
+};

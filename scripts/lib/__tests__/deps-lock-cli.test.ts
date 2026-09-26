@@ -36,11 +36,13 @@ test("default path still reads the repo lock", async () => {
   expect(out.trim()).toBe("arm64");
 });
 
-test("every helper row of the repo lock emits exactly 11 fields", async () => {
+test("every helper row of the repo lock emits exactly 12 fields", async () => {
   const proc = Bun.spawn(["bun", CLI, "--kind", "helper"], { stdout: "pipe" });
   const out = await new Response(proc.stdout).text();
   expect(await proc.exited).toBe(0);
-  const rows = out.trim().split("\n");
+  // Not out.trim(): a fetched row's empty 12th field is a trailing tab, which
+  // .trim() would strip along with the newline on the very last row.
+  const rows = out.replace(/\n$/, "").split("\n");
   expect(rows.length).toBeGreaterThan(0);
-  for (const r of rows) expect(r.split("\t"), r.split("\t")[0]).toHaveLength(11);
+  for (const r of rows) expect(r.split("\t"), r.split("\t")[0]).toHaveLength(12);
 });

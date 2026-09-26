@@ -1,0 +1,41 @@
+.mantine-Notification-description {
+  color: var(--mantine-color-text);
+}
+
+:where([data-mantine-color-scheme='light']) {
+  /* By default, it's --mantine-color-gray-0, which is poorly contrasted to most bg colors */
+  .mantine-Accordion-item {
+    --item-filled-color: var(--mantine-color-body);
+  }
+
+  .mantine-CodeHighlight-root,
+  .mantine-InlineCodeHighlight-code {
+    --code-text-color: var(--mantine-color-gray-7);
+    --code-background: var(--mantine-color-gray-1);
+    --code-comment-color: var(--mantine-color-gray-6);
+    --code-keyword-color: var(--mantine-color-violet-8);
+    --code-tag-color: var(--mantine-color-red-9);
+    --code-literal-color: var(--mantine-color-blue-6);
+    --code-string-color: var(--mantine-color-blue-9);
+    --code-variable-color: var(--mantine-color-teal-9);
+    --code-class-color: var(--mantine-primary-color-9);
+  }
+}
+
+:where([data-mantine-color-scheme='dark']) {
+  .mantine-Accordion-item {
+    --item-filled-color: var(--mantine-color-body);
+  }
+  .mantine-CodeHighlight-root,
+  .mantine-InlineCodeHighlight-code {
+    --code-text-color: var(--mantine-color-dark-1);
+    --code-background: var(--mantine-color-dark-9);
+    --code-comment-color: var(--mantine-color-dark-3);
+    --code-keyword-color: var(--mantine-color-violet-3);
+    --code-tag-color: var(--mantine-color-yellow-4);
+    --code-literal-color: var(--mantine-color-blue-4);
+    --code-string-color: var(--mantine-color-teal-6);
+    --code-variable-color: var(--mantine-color-teal-2);
+    --code-class-color: var(--mantine-primary-color-3);
+  }
+}

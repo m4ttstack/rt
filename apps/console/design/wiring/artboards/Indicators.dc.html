@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197;
+      --dot-ok: #1f9d3a; --dot-warn: #e08a00; --dot-bad: #e5153f;
+      --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff;
+      --dot-ok: #4ade5b; --dot-warn: #ffbb3d; --dot-bad: #ff5c72;
+      --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); background: var(--bg1); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .badge { display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; white-space: nowrap; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .bullet { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid var(--border); background: var(--bg2); color: var(--muted); font-size: 9px; font-weight: 600; flex: none; }
+    .bullet.ok { border-color: var(--ok); color: var(--ok); }
+    .bullet.warn { border-color: var(--warn); color: var(--warn); }
+    .bullet.bad { border-color: var(--bad); background: var(--bad); color: #fff; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+    .entry { display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft); }
+    .entry:first-of-type { border-top: 0; }
+    .key { width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px; }
+  </style>
+</helmet>
+
+<div class="app {{schemeClass}}" style="width: 880px; min-height: 900px; padding: 14.4px;">
+  <div class="stack" style="gap: 11.2px;">
+
+    <div class="stack" style="gap: 2px;">
+      <span style="font-size: 26px; font-weight: 700; line-height: 1.35;">Indicators</span>
+      <span class="sm muted">Every marker the spine can show, and the question each one answers.</span>
+    </div>
+
+    <div style="background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 0 14.4px;">
+
+      <div class="entry">
+        <div class="key"><div class="bullet">3</div><span class="sm">numbered, neutral</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">A pipeline stage, at its position in the run order</span>
+          <span class="xs muted">The number is the step, and it is never replaced — a row in trouble still has to say where it runs. Stages carry no health colour at all: they compile INTO the orchestrator rather than to an artifact of their own, and `rt skills check` covers roster verbs only. A green ring here would be a claim nothing measured.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><div class="bullet warn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div><span class="sm">amber ring</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <div class="row" style="gap: 4.8px;"><span class="sm" style="font-weight: 600;">Source newer</span><span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">source newer</span></div>
+          <span class="xs muted">On a roster verb — the orchestrator, or anything outside the pipeline. You edited a source and did not recompile, so Claude is reading the previous compile, silently: no error anywhere else in the system says so.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><div class="bullet bad"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div><span class="sm">filled red</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <div class="row" style="gap: 4.8px;"><span class="sm" style="font-weight: 600;">Never compiled</span><span class="badge" style="background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad);">never compiled</span></div>
+          <span class="xs muted">No artifact on disk. The verb will not load when something invokes it.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><div class="bullet"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></div><span class="sm">unnumbered, grey</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">Outside the pipeline</span>
+          <span class="xs muted">The spine's last stop. Wired skills with no position in the run order — you invoke them, or another plugin does.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><div class="dot" style="background: var(--dot-ok); margin-left: 8px;"></div><span class="sm">small dot</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">Health, for anything with no step number</span>
+          <span class="xs muted">Green in sync, amber source newer, red never compiled, grey internal. Same vocabulary as the rings, quieter, because there is no run order to break.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><span class="badge-outline" style="margin-left: 8px;">3 sites</span><span class="sm">on a fill</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">This fill is wired in more than one place</span>
+          <span class="xs muted">Click it for every binding site. Twelve verbs against eighteen binding keys — this is the number that tells you what an edit reaches before you make it.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><span class="badge-outline" style="margin-left: 8px;">internal</span><span class="sm">on a skill</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">Not directly invocable</span>
+          <span class="xs muted">Has no public artifact, so it is never checked for drift — a grey dot, never an amber one. Absence of a health colour here is correct, not missing data.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><span class="badge-outline" style="margin-left: 8px;">optional</span><span class="sm">on a slot</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">The slot may be left unbound</span>
+          <span class="xs muted">An empty required slot is an error; an empty optional slot is a choice.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><span class="badge" style="background: color-mix(in srgb, var(--purple) var(--wash), transparent); color: var(--purple); margin-left: 8px;">bound by nothing</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">An orphaned fill</span>
+          <span class="xs muted">Not an error — a fill nothing resolves to. It sits at the end of the spine because the question it answers is "can I delete this?", which is the last thing you ask, not the first.</span>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="key"><span class="badge" style="background: color-mix(in srgb, var(--purple) var(--wash), transparent); color: var(--purple); margin-left: 8px;">another plugin</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">A binder that is not in this pack's roster</span>
+          <span class="xs muted">mr-board binds four of this pack's fills. It has no roster verb and cannot have one, so an index built from the roster alone would call those fills unused.</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":880,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>

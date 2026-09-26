@@ -1,0 +1,2473 @@
+{
+  "title": "MR Board",
+  "defaultMember": "rmarlow",
+  "members": [
+    {
+      "username": "rmarlow",
+      "name": "Rae Marlow",
+      "count": 3
+    },
+    {
+      "username": "tclearwater",
+      "name": "Tom Clearwater",
+      "count": 0
+    },
+    {
+      "username": "bfinch",
+      "name": "Bea Finch",
+      "count": 0
+    },
+    {
+      "username": "dolveira",
+      "name": "Dani Oliveira",
+      "count": 1
+    },
+    {
+      "username": "nkessler",
+      "name": "Nils Kessler",
+      "count": 1
+    },
+    {
+      "username": "pquist",
+      "name": "Pia Quist",
+      "count": 2
+    },
+    {
+      "username": "jvasquez",
+      "name": "Joel Vasquez",
+      "count": 1
+    },
+    {
+      "username": "hrenko",
+      "name": "Hana Renko",
+      "count": 0
+    }
+  ],
+  "allMembers": [
+    {
+      "username": "rmarlow",
+      "name": "Rae Marlow",
+      "hidden": false,
+      "count": 3
+    },
+    {
+      "username": "tclearwater",
+      "name": "Tom Clearwater",
+      "hidden": false,
+      "count": 0
+    },
+    {
+      "username": "bfinch",
+      "name": "Bea Finch",
+      "hidden": false,
+      "count": 0
+    },
+    {
+      "username": "dolveira",
+      "name": "Dani Oliveira",
+      "hidden": false,
+      "count": 1
+    },
+    {
+      "username": "nkessler",
+      "name": "Nils Kessler",
+      "hidden": false,
+      "count": 1
+    },
+    {
+      "username": "pquist",
+      "name": "Pia Quist",
+      "hidden": false,
+      "count": 2
+    },
+    {
+      "username": "jvasquez",
+      "name": "Joel Vasquez",
+      "hidden": false,
+      "count": 1
+    },
+    {
+      "username": "hrenko",
+      "name": "Hana Renko",
+      "hidden": false,
+      "count": 0
+    }
+  ],
+  "mrs": [
+    {
+      "provider": "gitlab",
+      "iid": 1204,
+      "title": "OPS-3201: warm the thumbnail cache on render events",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1204",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1005",
+        "username": "nkessler",
+        "name": "Nils Kessler",
+        "avatarUrl": null
+      },
+      "assignees": [
+        {
+          "id": "gitlab:user:1005",
+          "username": "nkessler",
+          "name": "Nils Kessler",
+          "avatarUrl": null
+        }
+      ],
+      "createdAt": "2025-08-10T09:00:00Z",
+      "sourceBranch": "feature/ops-3201",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 56,
+      "diff": {
+        "additions": 1079,
+        "deletions": 83,
+        "filesChanged": 8
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900001",
+        "status": "success",
+        "passing": 0,
+        "failing": 0,
+        "running": 0,
+        "total": 0,
+        "hasWarnings": false,
+        "jobs": []
+      },
+      "reviews": {
+        "required": 2,
+        "given": 0,
+        "remaining": 2,
+        "isApproved": false,
+        "approvedBy": [],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "blocked",
+      "statusDetail": "not_approved",
+      "isReady": false,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": true,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": true,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": true
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-18T10:40:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 2,
+      "slack": {
+        "status": "found",
+        "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000001",
+        "reactions": [],
+        "posted": true
+      },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1204",
+        "iid": 1204,
+        "status": "reviewing",
+        "tabId": "w12:t1",
+        "workspaceId": "w12",
+        "sessionId": "sess-a",
+        "startedAt": 1755602280000,
+        "updatedAt": 1755602880000
+      },
+      "orphan": {
+        "agentId": "ag-a",
+        "repo": null,
+        "subject": "agent:ag-a",
+        "surface": "herdr",
+        "sessionId": "sess-a",
+        "paneRef": null,
+        "state": "gone",
+        "since": 1755602880000,
+        "openGateIds": []
+      },
+      "gates": [],
+      "note": "ask design whether the empty state copy changes before this ships, then re-run the capture set and hand the diff to Nils"
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1210,
+      "title": "ACME-1210: route host imports through the plugin port",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1210",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1001",
+        "username": "rmarlow",
+        "name": "Rae Marlow",
+        "avatarUrl": null
+      },
+      "assignees": [],
+      "createdAt": "2025-08-17T09:00:00Z",
+      "sourceBranch": "acme-1210-host-port",
+      "targetBranch": "acme-1208-codegen-split",
+      "isStacked": true,
+      "behindTarget": 0,
+      "diff": {
+        "additions": 379,
+        "deletions": 147,
+        "filesChanged": 136
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900002",
+        "status": "success",
+        "passing": 14,
+        "failing": 0,
+        "running": 0,
+        "total": 14,
+        "hasWarnings": false,
+        "jobs": [
+          {
+            "id": "gitlab:job:8100001",
+            "name": "build:ci-test-image",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 753,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100001",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100002",
+            "name": "detect:changes",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 101,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100002",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100003",
+            "name": "test:ci-scripts",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 123,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100003",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100004",
+            "name": "danger",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 356,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100004",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100005",
+            "name": "dynamic-tests",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 755,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100006",
+            "name": "gql-detect-breaking-changes",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 449,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100006",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100007",
+            "name": "prettier:e2e",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 137,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100007",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100008",
+            "name": "test:.build:image:template",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 72,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100008",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100009",
+            "name": "gemnasium-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 136,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100009",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100010",
+            "name": "gemnasium-python-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 122,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100010",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100011",
+            "name": "secret_detection",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 73,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100011",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100012",
+            "name": "semgrep-sast",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 63,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100012",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100013",
+            "name": "gitlab:metrics",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 337,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100013",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100014",
+            "name": "gitlab:tests",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 65,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100014",
+            "downstreamPipeline": null
+          }
+        ]
+      },
+      "reviews": {
+        "required": 0,
+        "given": 0,
+        "remaining": 0,
+        "isApproved": false,
+        "approvedBy": [],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "mergeable",
+      "statusDetail": "mergeable",
+      "isReady": true,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": false,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": false
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-19T08:00:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 0,
+      "doctor": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1210",
+        "iid": 1210,
+        "status": "error",
+        "message": "abandoned by operator: no lease was held, needs a second look",
+        "tabId": "w93:t1",
+        "workspaceId": "w93",
+        "origin": "auto",
+        "startedAt": 1787076219752,
+        "updatedAt": 1787076492950
+      },
+      "slack": {
+        "status": "notfound",
+        "reactions": [],
+        "posted": false
+      },
+      "gates": []
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1235,
+      "title": "ACME-1235: add a temperature factor to the highlights panel",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1007",
+        "username": "jvasquez",
+        "name": "Joel Vasquez",
+        "avatarUrl": null
+      },
+      "assignees": [],
+      "createdAt": "2025-08-10T00:00:00Z",
+      "sourceBranch": "feature/ACME-1235-highlights-temperature-factor",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 72,
+      "diff": {
+        "additions": 585,
+        "deletions": 2,
+        "filesChanged": 12
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900003",
+        "status": "success_with_warnings",
+        "passing": 23,
+        "failing": 0,
+        "running": 0,
+        "total": 25,
+        "hasWarnings": true,
+        "jobs": [
+          {
+            "id": "gitlab:job:8100015",
+            "name": "build:ci-test-image",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 466,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100015",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100016",
+            "name": "detect:changes",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 113,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100016",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100017",
+            "name": "generate:backend-schema",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 361,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100017",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100018",
+            "name": "test:ci-scripts",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 149,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100018",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100019",
+            "name": "danger",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 218,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100019",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100020",
+            "name": "dynamic-tests",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 758,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100021",
+            "name": "gql-detect-breaking-changes",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 426,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100021",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100022",
+            "name": "prettier:e2e",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 165,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100022",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100023",
+            "name": "secret_detection",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 53,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100023",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100024",
+            "name": "test:.build:image:template",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 100,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100024",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100025",
+            "name": "preview:env:stop",
+            "stage": "preview",
+            "status": "manual",
+            "allowFailure": true,
+            "duration": null,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100025",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100026",
+            "name": "preview:build:docker",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 319,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100026",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100027",
+            "name": "preview:build:api",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 140,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100027",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100028",
+            "name": "preview:build:worker",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 181,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100028",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100029",
+            "name": "preview:build:search",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 286,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100029",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100030",
+            "name": "preview:build:vercel",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 63,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100030",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100031",
+            "name": "preview:check_e2e_support",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 29,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100031",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100032",
+            "name": "preview:env:create",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 29,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100032",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100033",
+            "name": "preview:test:trigger",
+            "stage": "preview",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 2,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100034",
+            "name": "snyk-security-scan",
+            "stage": "scan:parallel",
+            "status": "failed",
+            "allowFailure": true,
+            "duration": 288,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100034",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100035",
+            "name": "gemnasium-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 158,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100035",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100036",
+            "name": "gemnasium-python-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 246,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100036",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100037",
+            "name": "semgrep-sast",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 41,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100037",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100038",
+            "name": "gitlab:metrics",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 208,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100038",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100039",
+            "name": "gitlab:tests",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 94,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100039",
+            "downstreamPipeline": null
+          }
+        ]
+      },
+      "reviews": {
+        "required": 2,
+        "given": 2,
+        "remaining": 0,
+        "isApproved": true,
+        "approvedBy": [
+          {
+            "id": "gitlab:user:1004",
+            "username": "dolveira",
+            "name": "Dani Oliveira",
+            "avatarUrl": null
+          },
+          {
+            "id": "gitlab:user:1005",
+            "username": "nkessler",
+            "name": "Nils Kessler",
+            "avatarUrl": null
+          }
+        ],
+        "reviewers": [
+          {
+            "id": "gitlab:user:rmarlow",
+            "username": "rmarlow",
+            "name": "Rae Marlow",
+            "avatarUrl": null,
+            "reviewState": "UNREVIEWED"
+          }
+        ],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "mergeable",
+      "statusDetail": "mergeable",
+      "isReady": true,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": false,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": false
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-19T09:05:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 5,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 0,
+        "resolved": 5
+      },
+      "generalComments": 0,
+      "slack": {
+        "status": "found",
+        "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000002",
+        "reactions": ["eyes"],
+        "posted": true
+      },
+      "peerReviews": [
+        {
+          "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "iid": 1235,
+          "reviewer": "pat",
+          "status": "reviewing",
+          "updatedAt": 1755603420000
+        }
+      ],
+      "gates": [
+        {
+          "gateId": "gate-review-post-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "review-post",
+          "label": "review-post",
+          "status": "open",
+          "openedAt": 1755604200000,
+          "domain": "review",
+          "context": "Findings: Important (2), Minor (4)\n[Important] Dropped guard exposes a state-changing mutation the host blocks (confirm safe)\n[Important] Share-link URL renders into a DOM anchor href; session replay is not in the threat model (confirm)\n[Minor] `key={link.name}` collides on duplicate contact names; see [the keying note](https://example.com/keys)\n[Minor] Non-menuitem interactive controls inside a menu (keyboard reachability)\n[Minor] Doc overstates the split rationale between the two controls\n[Minor] Unused renderer mock entry in the test setup",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "tiers",
+              "label": "Post which findings?",
+              "multi": true,
+              "options": [
+                {
+                  "value": "Important",
+                  "label": "Important (2)"
+                },
+                {
+                  "value": "Minor",
+                  "label": "Minor (4)"
+                }
+              ]
+            },
+            {
+              "id": "outcome",
+              "label": "Verdict",
+              "multi": false,
+              "options": [
+                {
+                  "value": "comment",
+                  "label": "comment (recommended)"
+                },
+                "approve"
+              ]
+            }
+          ]
+        },
+        {
+          "gateId": "gate-respond-plan-1235-r1",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-plan",
+          "label": "respond gate !1235",
+          "status": "answered",
+          "openedAt": 1755603300000,
+          "answeredAt": 1755603360000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":1,\"threads\":{\"total\":3,\"blocking\":1},\"adjudication\":\"all valid · fresh-context adjudicated\"}",
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"blocking\",\"claim\":{\"summary\":\"The temperature factor is applied twice when the panel re-renders with a cached score.\",\"points\":[\"`scoreFor()` already multiplies by the factor, and the panel multiplies again\",\"a cached score of 0.8 renders as 0.64 after one refresh\"]},\"verdict\":{\"call\":\"valid\",\"note\":\"reproduced against the checkout with a cached score\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}}",
+              "options": [
+                {
+                  "value": "reply:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "reply",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "fix (recommended)",
+                  "description": "drop the second multiply in panel.tsx and add a cached-score render test"
+                },
+                {
+                  "value": "skip:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"non-blocking\",\"claim\":{\"summary\":\"Could the factor's default live in settings instead of a constant?\"},\"verdict\":{\"call\":\"valid-low-value\",\"note\":\"reasonable, but no second caller needs it yet\"},\"reply\":{\"kind\":\"direction\",\"text\":\"Agree it could; keep the constant until a second caller appears, and say so.\"}}",
+              "options": [
+                {
+                  "value": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "reply (recommended)",
+                  "description": "answer with the direction above, no code change"
+                },
+                {
+                  "value": "fix:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "fix",
+                  "description": "move the default into settings now"
+                },
+                {
+                  "value": "skip:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-3",
+              "label": "highlights/legend.tsx:31",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"question\",\"claim\":{\"summary\":\"Is the legend meant to say \\\"score\\\" while the panel shows the factored value?\"},\"verdict\":{\"call\":\"valid\",\"note\":\"a naming question, no code change needed\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Yes: the legend names the metric, and the tooltip beside it explains the factor.\"}}",
+              "options": [
+                {
+                  "value": "reply:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "reply (recommended)",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "fix",
+                  "description": "rename the legend to match the panel"
+                },
+                {
+                  "value": "skip:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ],
+          "answers": {
+            "thread-1": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+            "thread-2": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+            "thread-3": {
+              "value": "reply:7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d",
+              "text": "Yes, on purpose: the legend names the metric, and the tooltip beside it explains the factor."
+            },
+            "code-changes": "approve"
+          }
+        },
+        {
+          "gateId": "gate-respond-plan-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-plan",
+          "label": "respond gate !1235",
+          "status": "open",
+          "openedAt": 1755603540000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"plan@1\",\"reviewer\":\"pat\",\"round\":2,\"threads\":{\"total\":2,\"blocking\":1},\"adjudication\":\"both valid · fresh-context adjudicated\"}",
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"blocking\",\"claim\":{\"summary\":\"The temperature factor is applied twice when the panel re-renders with a cached score.\",\"points\":[\"`scoreFor()` already multiplies by the factor, and the panel multiplies again\",\"a cached score of 0.8 renders as 0.64 after one refresh\"]},\"verdict\":{\"call\":\"valid\",\"note\":\"reproduced against the checkout with a cached score\"},\"reply\":{\"kind\":\"verbatim\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}}",
+              "options": [
+                {
+                  "value": "reply:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "reply",
+                  "description": "post the drafted reply only, no code change"
+                },
+                {
+                  "value": "fix:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "fix (recommended)",
+                  "description": "drop the second multiply in panel.tsx and add a cached-score render test"
+                },
+                {
+                  "value": "skip:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": false,
+              "context": "{\"gate-ctx\":\"thread@1\",\"author\":\"pat\",\"severity\":\"non-blocking\",\"claim\":{\"summary\":\"Could the factor's default live in settings instead of a constant?\"},\"verdict\":{\"call\":\"valid-low-value\",\"note\":\"reasonable, but no second caller needs it yet\"},\"reply\":{\"kind\":\"direction\",\"text\":\"Agree it could; keep the constant until a second caller appears, and say so.\"}}",
+              "options": [
+                {
+                  "value": "reply:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "reply (recommended)",
+                  "description": "answer with the direction above, no code change"
+                },
+                {
+                  "value": "fix:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "fix",
+                  "description": "move the default into settings now"
+                },
+                {
+                  "value": "skip:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "skip",
+                  "description": "neither reply nor fix; the thread stays open"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ]
+        },
+        {
+          "gateId": "gate-respond-post-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "respond-post",
+          "label": "respond-post !1235",
+          "status": "open",
+          "openedAt": 1755603480000,
+          "domain": "respond",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "context": "{\"gate-ctx\":\"post@1\",\"reviewer\":\"pat\",\"round\":1,\"replies\":2,\"fixes\":[{\"sha\":\"4be91c2\"}]}",
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "highlights/panel.tsx:118",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"reply@1\",\"thread\":\"f1e2d3c4b5a697887766554433221100ffeeddcc\",\"file\":\"highlights/panel.tsx:118\",\"verb\":\"fix\",\"sha\":\"4be91c2\",\"text\":\"Good catch. The panel now reads the factored score as-is; added a test that renders a cached score twice.\"}",
+              "options": [
+                {
+                  "value": "post:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "Post (Recommended)",
+                  "description": "post this reply to the thread"
+                },
+                {
+                  "value": "resolve:f1e2d3c4b5a697887766554433221100ffeeddcc",
+                  "label": "Resolve (Recommended)",
+                  "description": "resolve the thread"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "highlights/temperature.ts:42",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"reply@1\",\"thread\":\"0a1b2c3d4e5f60718293a4b5c6d7e8f901234567\",\"file\":\"highlights/temperature.ts:42\",\"verb\":\"reply\",\"text\":\"Agreed it could live in settings. Keeping the constant until a second caller needs it; noted that beside the constant.\"}",
+              "options": [
+                {
+                  "value": "post:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "Post (Recommended)",
+                  "description": "post this reply to the thread"
+                },
+                {
+                  "value": "resolve:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                  "label": "Resolve",
+                  "description": "resolve the thread"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1236,
+      "title": "ACME-1236: compress stored cache entries in redis",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1236",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1001",
+        "username": "rmarlow",
+        "name": "Rae Marlow",
+        "avatarUrl": null
+      },
+      "assignees": [],
+      "createdAt": "2025-08-05T00:00:00Z",
+      "sourceBranch": "acme-1236-compress-cache",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 26,
+      "diff": {
+        "additions": 434,
+        "deletions": 98,
+        "filesChanged": 7
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900004",
+        "status": "success_with_warnings",
+        "passing": 14,
+        "failing": 0,
+        "running": 0,
+        "total": 15,
+        "hasWarnings": true,
+        "jobs": [
+          {
+            "id": "gitlab:job:8100040",
+            "name": "build:ci-test-image",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 443,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100040",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100041",
+            "name": "detect:changes",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 69,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100041",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100042",
+            "name": "test:ci-scripts",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 109,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100042",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100043",
+            "name": "danger",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 226,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100043",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100044",
+            "name": "dynamic-tests",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 863,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100045",
+            "name": "gql-detect-breaking-changes",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 470,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100045",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100046",
+            "name": "prettier:e2e",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 121,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100046",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100047",
+            "name": "secret_detection",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 52,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100047",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100048",
+            "name": "test:.build:image:template",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 61,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100048",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100049",
+            "name": "snyk-security-scan",
+            "stage": "scan:parallel",
+            "status": "failed",
+            "allowFailure": true,
+            "duration": 269,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100049",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100050",
+            "name": "gemnasium-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 124,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100050",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100051",
+            "name": "gemnasium-python-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 106,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100051",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100052",
+            "name": "semgrep-sast",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 54,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100052",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100053",
+            "name": "gitlab:metrics",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 226,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100053",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100054",
+            "name": "gitlab:tests",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 75,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100054",
+            "downstreamPipeline": null
+          }
+        ]
+      },
+      "reviews": {
+        "required": 2,
+        "given": 0,
+        "remaining": 2,
+        "isApproved": false,
+        "approvedBy": [],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "blocked",
+      "statusDetail": "not_approved",
+      "isReady": false,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": true,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": true,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": true,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": true
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-16T20:00:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 2,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 2,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 0,
+      "doctor": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1236",
+        "iid": 1236,
+        "status": "done",
+        "message": "green at 4c1de07: a parallel session fixed the type error and the lint reasons, so this run stood down from writes and watched to green",
+        "tabId": "w8W:t1",
+        "workspaceId": "w8W",
+        "origin": "auto",
+        "startedAt": 1786999854990,
+        "updatedAt": 1787003357832
+      },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1236",
+        "iid": 1236,
+        "status": "done",
+        "message": "3 suggestions: key prefix, compression threshold, eviction test",
+        "tabId": "w8Y:t1",
+        "workspaceId": "w8Y",
+        "outcome": "comment",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "startedAt": 1787062674525,
+        "updatedAt": 1787063356985,
+        "reportReady": true
+      },
+      "slack": {
+        "status": "notfound",
+        "reactions": [],
+        "posted": false
+      },
+      "gates": []
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1271,
+      "title": "ACME-1271 fix dangling bullet separator after the label on contact tabs",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1006",
+        "username": "pquist",
+        "name": "Pia Quist",
+        "avatarUrl": null
+      },
+      "assignees": [
+        {
+          "id": "gitlab:user:1006",
+          "username": "pquist",
+          "name": "Pia Quist",
+          "avatarUrl": null
+        }
+      ],
+      "createdAt": "2025-08-12T00:00:00Z",
+      "sourceBranch": "feature/acme-1271",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 206,
+      "diff": {
+        "additions": 75,
+        "deletions": 14,
+        "filesChanged": 2
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900005",
+        "status": "failed",
+        "passing": 0,
+        "failing": 0,
+        "running": 0,
+        "total": 0,
+        "hasWarnings": false,
+        "jobs": []
+      },
+      "reviews": {
+        "required": 2,
+        "given": 1,
+        "remaining": 0,
+        "isApproved": true,
+        "approvedBy": [
+          {
+            "id": "gitlab:user:1004",
+            "username": "dolveira",
+            "name": "Dani Oliveira",
+            "avatarUrl": null
+          }
+        ],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "blocked",
+      "statusDetail": "conflict",
+      "isReady": false,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": true,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": true,
+        "needsRebase": false,
+        "pipelineFailing": true,
+        "pipelineRunning": false,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": true
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-19T06:00:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
+      "pipelineState": "failed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 1,
+      "slack": {
+        "status": "found",
+        "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000003",
+        "reactions": [],
+        "posted": true
+      },
+      "respond": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+        "iid": 1271,
+        "status": "done",
+        "message": "answered 2 of 2 open threads",
+        "posted": 2,
+        "threads": 2,
+        "tabId": "w1:t1",
+        "workspaceId": "w1",
+        "sessionId": "11111111-1111-4111-8111-111111111111",
+        "startedAt": 1755595000000,
+        "updatedAt": 1755596000000
+      },
+      "doctor": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+        "iid": 1271,
+        "status": "watching",
+        "message": "rebased onto main, waiting on the re-run",
+        "tabId": "w15:t1",
+        "workspaceId": "w15",
+        "origin": "auto",
+        "startedAt": 1755602700000,
+        "updatedAt": 1755603300000
+      },
+      "gates": [
+        {
+          "gateId": "gate-review-post-1271",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+          "kind": "review-post",
+          "label": "review-post",
+          "status": "open",
+          "openedAt": 1755603000000,
+          "domain": "review",
+          "context": "{\"gate-ctx\":\"review@1\",\"reviewer\":\"pat\",\"readiness\":\"with-fixes\",\"summary\":\"The separator still renders for a label-only tab, and nothing in the suite exercises that shape; the rest is housekeeping.\",\"findings\":{\"important\":2,\"minor\":3},\"round\":2,\"re_review\":true,\"prior\":{\"addressed\":2,\"still_open\":1}}",
+          "origin": {
+            "paneId": "pane-1271",
+            "tabId": "w16:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "findings-1",
+              "label": "Post which findings to !1271?",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"findings@1\",\"findings\":[{\"id\":\"f1\",\"severity\":\"important\",\"title\":\"separator still renders after an empty label\",\"file\":\"src/tabs/TabBar.tsx:58\",\"body\":\"The check reads `label !== undefined`, and the label-only tab passes an empty string, so the bullet separator renders before nothing. Keying on a non-empty label fixes both call sites.\",\"fix\":\"check label for a non-empty string, not for presence\",\"disposition\":\"still-open\"},{\"id\":\"f2\",\"severity\":\"important\",\"title\":\"label-only tab has no test\",\"file\":\"src/tabs/TabBar.test.tsx\",\"body\":\"The suite covers icon-plus-label and icon-only tabs; label-only is the missing third shape, and the separator bug lives in it.\",\"fix\":\"add a label-only case to the existing describe block\",\"evidence\":\"TabBar.test.tsx: 6 pass, 0 fail, no label-only case\",\"disposition\":\"new\"},{\"id\":\"f3\",\"severity\":\"minor\",\"title\":\"hover ring width now matches the spec\",\"file\":\"src/tabs/TabBar.css:12\",\"body\":\"The last round flagged the hover ring as one pixel wide at the 480px breakpoint. The stylesheet now uses the shared ring token; confirm before resolving.\",\"disposition\":\"addressed-check\"},{\"id\":\"f4\",\"severity\":\"minor\",\"title\":\"stale comment above the separator\",\"file\":\"src/tabs/TabBar.tsx:52\",\"body\":\"The comment still describes the old icon-first layout.\",\"fix\":\"drop the comment or restate the current order\",\"disposition\":\"new\"}]}",
+              "options": [
+                {
+                  "value": "f1",
+                  "label": "[Important] separator still renders after an empty label",
+                  "description": "src/tabs/TabBar.tsx:58 · check label for a non-empty string, not for presence"
+                },
+                {
+                  "value": "f2",
+                  "label": "[Important] label-only tab has no test",
+                  "description": "src/tabs/TabBar.test.tsx · add a label-only case to the existing describe block"
+                },
+                {
+                  "value": "f3",
+                  "label": "[Minor] hover ring width now matches the spec",
+                  "description": "src/tabs/TabBar.css:12"
+                },
+                {
+                  "value": "f4",
+                  "label": "[Minor] stale comment above the separator",
+                  "description": "src/tabs/TabBar.tsx:52 · drop the comment or restate the current order"
+                }
+              ]
+            },
+            {
+              "id": "findings-2",
+              "label": "Post which findings to !1271?",
+              "multi": true,
+              "context": "{\"gate-ctx\":\"findings@1\",\"findings\":[{\"id\":\"f5\",\"severity\":\"minor\",\"title\":\"changelog entry missing\",\"body\":\"Tab rendering changed in a way users can see, and the changelog has no entry for it.\",\"fix\":\"add a line under Unreleased\",\"disposition\":\"new\"}]}",
+              "options": [
+                {
+                  "value": "f5",
+                  "label": "[Minor] changelog entry missing",
+                  "description": "not inline-anchorable · add a line under Unreleased"
+                }
+              ]
+            },
+            {
+              "id": "outcome",
+              "label": "Verdict on !1271: ready once the separator check is fixed",
+              "multi": false,
+              "options": [
+                {
+                  "value": "comment",
+                  "label": "comment (recommended)",
+                  "description": "post the picked findings, no merge decision yet"
+                },
+                {
+                  "value": "approve",
+                  "label": "approve",
+                  "description": "approve alongside the picked findings"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1273,
+      "title": "ACME-1273 point AGENTS.md at the merge request description template",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1273",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1006",
+        "username": "pquist",
+        "name": "Pia Quist",
+        "avatarUrl": null
+      },
+      "assignees": [
+        {
+          "id": "gitlab:user:1006",
+          "username": "pquist",
+          "name": "Pia Quist",
+          "avatarUrl": null
+        }
+      ],
+      "createdAt": "2025-08-01T00:00:00Z",
+      "sourceBranch": "feature/acme-1273",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 0,
+      "diff": {
+        "additions": 3,
+        "deletions": 0,
+        "filesChanged": 1
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900006",
+        "status": "success_with_warnings",
+        "passing": 14,
+        "failing": 0,
+        "running": 0,
+        "total": 15,
+        "hasWarnings": true,
+        "jobs": [
+          {
+            "id": "gitlab:job:8100055",
+            "name": "build:ci-test-image",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 439,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100055",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100056",
+            "name": "detect:changes",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 45,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100056",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100057",
+            "name": "test:ci-scripts",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 93,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100057",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100058",
+            "name": "danger",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 210,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100058",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100059",
+            "name": "dynamic-tests",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 19,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100060",
+            "name": "gql-detect-breaking-changes",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 395,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100060",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100061",
+            "name": "prettier:e2e",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 119,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100061",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100062",
+            "name": "test:.build:image:template",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 56,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100062",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100063",
+            "name": "snyk-security-scan",
+            "stage": "scan:parallel",
+            "status": "failed",
+            "allowFailure": true,
+            "duration": 226,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100063",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100064",
+            "name": "gemnasium-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 116,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100064",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100065",
+            "name": "gemnasium-python-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 107,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100065",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100066",
+            "name": "secret_detection",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 56,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100066",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100067",
+            "name": "semgrep-sast",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 43,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100067",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100068",
+            "name": "gitlab:metrics",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 61,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100068",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100069",
+            "name": "gitlab:tests",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 53,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100069",
+            "downstreamPipeline": null
+          }
+        ]
+      },
+      "reviews": {
+        "required": 1,
+        "given": 1,
+        "remaining": 0,
+        "isApproved": true,
+        "approvedBy": [
+          {
+            "id": "gitlab:user:1002",
+            "username": "tclearwater",
+            "name": "Tom Clearwater",
+            "avatarUrl": null
+          }
+        ],
+        "reviewers": [
+          {
+            "id": "gitlab:user:rmarlow",
+            "username": "rmarlow",
+            "name": "Rae Marlow",
+            "avatarUrl": null,
+            "reviewState": "REVIEWED"
+          }
+        ],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "mergeable",
+      "statusDetail": "mergeable",
+      "isReady": true,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": false,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": false
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-15T12:00:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 1,
+        "resolved": 1
+      },
+      "generalComments": 0,
+      "slack": {
+        "status": "found",
+        "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000004",
+        "reactions": ["white_check_mark"],
+        "posted": true
+      },
+      "gates": [],
+      "myThreads": {
+        "awaiting": 0,
+        "replied": 1,
+        "resolved": 1
+      },
+      "note": "waiting on Dana to confirm the copy before this merges"
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1374,
+      "title": "ACME-1374: attribute panel summaries to secondary contributors",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1374",
+      "state": "opened",
+      "isDraft": false,
+      "author": {
+        "id": "gitlab:user:1004",
+        "username": "dolveira",
+        "name": "Dani Oliveira",
+        "avatarUrl": null
+      },
+      "assignees": [],
+      "createdAt": "2025-07-30T00:00:00Z",
+      "sourceBranch": "acme-1374-summary-attribution",
+      "targetBranch": "main",
+      "isStacked": false,
+      "behindTarget": 4,
+      "diff": {
+        "additions": 464,
+        "deletions": 109,
+        "filesChanged": 19
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900007",
+        "status": "success",
+        "passing": 0,
+        "failing": 0,
+        "running": 0,
+        "total": 0,
+        "hasWarnings": false,
+        "jobs": []
+      },
+      "reviews": {
+        "required": 2,
+        "given": 0,
+        "remaining": 2,
+        "isApproved": false,
+        "approvedBy": [],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "blocked",
+      "statusDetail": "not_approved",
+      "isReady": false,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": true,
+        "disabled": true,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": true,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": false,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": true,
+        "hasUnresolvedDiscussions": false,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": true
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-14T02:00:00Z",
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 0,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 1,
+      "slack": {
+        "status": "found",
+        "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000005",
+        "reactions": [],
+        "posted": true
+      },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1374",
+        "iid": 1374,
+        "status": "reviewing",
+        "tabId": "w14:t1",
+        "workspaceId": "w14",
+        "sessionId": "33333333-3333-4333-8333-333333333333",
+        "startedAt": 1755603360000,
+        "updatedAt": 1755603360000
+      },
+      "gates": []
+    },
+    {
+      "provider": "gitlab",
+      "iid": 1429,
+      "title": "Draft: ACME-1429: standalone vite harness renders widgets against a stub host port",
+      "webUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1429",
+      "state": "draft",
+      "isDraft": true,
+      "author": {
+        "id": "gitlab:user:1001",
+        "username": "rmarlow",
+        "name": "Rae Marlow",
+        "avatarUrl": null
+      },
+      "assignees": [],
+      "createdAt": "2025-08-18T00:00:00Z",
+      "sourceBranch": "acme-1429-standalone-harness",
+      "targetBranch": "acme-1210-host-port",
+      "isStacked": true,
+      "behindTarget": 0,
+      "diff": {
+        "additions": 3488,
+        "deletions": 805,
+        "filesChanged": 77
+      },
+      "pipeline": {
+        "id": "gitlab:pipeline:900008",
+        "status": "success",
+        "passing": 16,
+        "failing": 0,
+        "running": 0,
+        "total": 16,
+        "hasWarnings": false,
+        "jobs": [
+          {
+            "id": "gitlab:job:8100070",
+            "name": "build:ci-test-image",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 431,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100070",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100071",
+            "name": "detect:changes",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 67,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100071",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100072",
+            "name": "generate:backend-schema",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 341,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100072",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100073",
+            "name": "test:ci-scripts",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 147,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100073",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100074",
+            "name": "test:api:docker-build",
+            "stage": "pre",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 131,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100074",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100075",
+            "name": "danger",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 265,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100075",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100076",
+            "name": "dynamic-tests",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 789,
+            "webUrl": null,
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100077",
+            "name": "gql-detect-breaking-changes",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 544,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100077",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100078",
+            "name": "prettier:e2e",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 192,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100078",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100079",
+            "name": "test:.build:image:template",
+            "stage": "test",
+            "status": "success",
+            "allowFailure": false,
+            "duration": 61,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100079",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100080",
+            "name": "gemnasium-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 186,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100080",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100081",
+            "name": "gemnasium-python-dependency_scanning",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 164,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100081",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100082",
+            "name": "secret_detection",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 47,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100082",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100083",
+            "name": "semgrep-sast",
+            "stage": "scan:parallel",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 50,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100083",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100084",
+            "name": "gitlab:metrics",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 97,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100084",
+            "downstreamPipeline": null
+          },
+          {
+            "id": "gitlab:job:8100085",
+            "name": "gitlab:tests",
+            "stage": "results",
+            "status": "success",
+            "allowFailure": true,
+            "duration": 86,
+            "webUrl": "https://gitlab.example.com/acme/webapp/-/jobs/8100085",
+            "downstreamPipeline": null
+          }
+        ]
+      },
+      "reviews": {
+        "required": 0,
+        "given": 0,
+        "remaining": 0,
+        "isApproved": false,
+        "approvedBy": [],
+        "reviewers": [],
+        "totalAssigned": 0,
+        "haveActed": 0,
+        "havePending": 0,
+        "haveNotStarted": 0
+      },
+      "status": "draft",
+      "statusDetail": "draft_status",
+      "isReady": false,
+      "isCheckingMergeability": false,
+      "isMerging": false,
+      "isRebasing": false,
+      "isLoading": false,
+      "mergeButton": {
+        "visible": false,
+        "disabled": true,
+        "loading": false,
+        "label": "Merge"
+      },
+      "autoMergeButton": {
+        "visible": false,
+        "isActive": false,
+        "strategy": null,
+        "setBy": null,
+        "label": "Auto-merge",
+        "cancelLabel": "Cancel auto-merge"
+      },
+      "rebaseButton": {
+        "visible": false,
+        "loading": false,
+        "label": "Rebase"
+      },
+      "blockers": {
+        "isDraft": true,
+        "hasConflicts": false,
+        "needsRebase": false,
+        "pipelineFailing": false,
+        "pipelineRunning": false,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": true,
+        "hasMergeError": false,
+        "mergeError": null,
+        "any": true
+      },
+      "connection": "idle",
+      "updatedAt": "2025-08-19T09:30:00Z",
+      "unresolvedThreads": 1,
+      "reviewerComments": 1,
+      "pipelineState": "passed",
+      "repositoryId": "gitlab:1000042",
+      "rtRepo": "webapp",
+      "codeownerSections": [],
+      "threadSummary": {
+        "awaiting": 1,
+        "replied": 0,
+        "resolved": 0
+      },
+      "generalComments": 0,
+      "doctor": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1429",
+        "iid": 1429,
+        "status": "done",
+        "message": "rebased onto main and added the missing property to the host fixture; pipeline green, no blocking failures",
+        "tabId": "w97:t2",
+        "workspaceId": "w97",
+        "origin": "auto",
+        "startedAt": 1787093479261,
+        "updatedAt": 1787097715532
+      },
+      "drafts": [
+        {
+          "kind": "note",
+          "body": "held draft body",
+          "createdAt": 1755590000000
+        }
+      ],
+      "slack": {
+        "status": "notfound",
+        "reactions": [],
+        "posted": false
+      },
+      "gates": [
+        {
+          "gateId": "gate-respond-plan-1429",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1429",
+          "kind": "respond-plan",
+          "label": "respond gate !1429",
+          "status": "parked",
+          "openedAt": 1755603600000,
+          "parkedAt": 1755607200000,
+          "domain": "respond",
+          "context": "MR 1429 (WEB-440) has 4 unresolved threads from Nils Kessler. Fresh-context adjudication done. Recommendation per thread below.\n\n=== thread-1 harness.ts:212 \u2014 verdict pushback \u2192 recommend REPLY ===\nNils: \"The slot key drops the widget's version suffix, so two versions of one widget collapse into a single slot. Should the key carry the version?\"\nAdjudication: the key is built from the normalized slot, and normalizeSlot keeps the version (it strips the trailing slash only). The fixture cited mounts the same version twice. Reply with the normalizer's contract and the test that pins it.\n\n=== thread-2 stubHost.ts:58 \u2014 verdict valid \u2192 recommend FIX ===\nNils: \"stubHost keeps the first response's headers even when they are empty and the second response has some.\"\nAdjudication: correct. Prefer the non-empty headers per response; one helper, one test.\n\n=== thread-3 useWidgetRows.ts:91 \u2014 verdict needs-clarification \u2192 recommend REPLY ===\nNils: \"Is the render order stable across a hot reload? Widgets looked reordered in the preview.\"\nAdjudication: a reload keeps insertion order and sorts by mount time, which the preview's two widgets share. Reply with the tiebreak (widget id) and ask whether the preview expected declaration order instead.\n\n=== thread-4 harness.test.ts:140 \u2014 verdict valid \u2192 recommend FIX ===\nNils: \"No test covers the two-versions-one-slot case.\"\nAdjudication: correct. Add the case beside the existing slot test.\n\n=== code-changes ===\nThreads 2 and 4 are the proposed fixes; one commit, no behavior change outside the stub host and its test.",
+          "origin": {
+            "paneId": "pane-1429",
+            "tabId": "w17:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "harness.ts:212",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "stubHost.ts:58",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-3",
+              "label": "useWidgetRows.ts:91",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-4",
+              "label": "harness.test.ts:140",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "local": true,
+  "canInvite": true,
+  "peering": "ok",
+  "slackEnabled": true,
+  "slackEmoji": {
+    "looking": "eyes",
+    "commented": "comment",
+    "approved": "white_check_mark"
+  },
+  "slackTemplates": {
+    "single": "{title}: {url}",
+    "multiHeader": "{count} MR's ready for review :pray:",
+    "multiItem": "- {title}: {url}"
+  },
+  "fetchedAt": 1755600000000,
+  "fetchError": null,
+  "dataSyncedAt": 1755603480000,
+  "syncError": null,
+  "scopeUncovered": [],
+  "scopeWindowDays": 30,
+  "staleAfterDays": 30,
+  "tabs": [
+    {
+      "id": "team",
+      "label": "Team",
+      "source": {
+        "kind": "authors"
+      }
+    },
+    {
+      "id": "acme-queue",
+      "label": "Acme Queue",
+      "source": {
+        "kind": "codeowners",
+        "section": "Acme",
+        "excludeMembers": true
+      }
+    }
+  ],
+  "scopeUncoveredSections": [],
+  "scopeKnownSections": ["Acme - #pod-acme", "Docs"]
+}

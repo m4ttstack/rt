@@ -1,0 +1,3 @@
+You are running /board:respond for https://gitlab.example.com/acme/queue/-/merge_requests/91 with --state /tmp/st/h2 --status-bin /tmp/bin/board-status --report /tmp/st/report.md and no --skill; the respond slot resolved to nothing, so you are on the generic no-domain-skill path. This is a fresh run, round 1. You emitted triaging and fetched !91's discussions: every thread is either resolved or was opened by the CI bot, so there is no unresolved human thread.
+
+Tools are unavailable in this test. List every status write you make from here, with its exact arguments, and say what the board badge should read.
