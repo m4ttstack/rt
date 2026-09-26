@@ -64,7 +64,10 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
   if ("error" in b) return err(b.error);
   const branch = b.branch;
   const args = ["push"];
-  if (opts.forceWithLease) args.push("--force-with-lease");
+  // A lease alone checks against origin/<branch> as last fetched, and any
+  // fetch (git_rebase fetches first) moves that ref, so the lease passes
+  // over remote commits HEAD never saw; --force-if-includes refuses those.
+  if (opts.forceWithLease) args.push("--force-with-lease", "--force-if-includes");
   const asOrigin = `pass setUpstream: true to push it as origin/${branch}`;
   let remote: string;
   let remoteBranch: string;
@@ -234,7 +237,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
   return [
     {
       name: "git_push",
-      description: "Push the tree's current branch to its upstream (or as origin/<branch> with setUpstream). Force is only ever --force-with-lease. Refuses a detached HEAD, the repo's default branch, main and master.",
+      description: "Push the tree's current branch to its same-named upstream, or as origin/<branch> with setUpstream: true (which replaces any existing upstream). Force is only ever --force-with-lease --force-if-includes. Refuses a detached HEAD, the repo's default branch, main and master, and an upstream that is the default branch or has a different branch name unless setUpstream is passed.",
       inputSchema: { type: "object", properties: { ...TREE_PROP, forceWithLease: { type: "boolean" }, setUpstream: { type: "boolean" } }, required: ["tree"], additionalProperties: false },
       handler: guarded(async (path, input) => {
         const bad = checkOptional(input, [{ name: "forceWithLease", type: "boolean" }, { name: "setUpstream", type: "boolean" }]);

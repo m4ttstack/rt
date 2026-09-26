@@ -20,11 +20,17 @@ const onFeature: Script = {
 };
 
 describe("gitPush", () => {
-  test("pushes HEAD to the upstream by explicit refspec, force only as --force-with-lease", async () => {
+  test("pushes HEAD to the upstream by explicit refspec, force only as --force-with-lease --force-if-includes", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --force-with-lease origin HEAD:refs/heads/feat/x": {} }, calls));
+    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --force-with-lease --force-if-includes origin HEAD:refs/heads/feat/x": {} }, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push --force-with-lease origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --force-with-lease --force-if-includes origin HEAD:refs/heads/feat/x");
+  });
+  test("a forced setUpstream push carries both lease flags before -u", async () => {
+    const calls: string[] = [];
+    const r = await gitPush("/t", { forceWithLease: true, setUpstream: true }, fakeGit({ ...onFeature, "push --force-with-lease --force-if-includes -u origin HEAD:refs/heads/feat/x": {} }, calls));
+    expect(r.ok).toBe(true);
+    expect(calls.at(-1)).toBe("push --force-with-lease --force-if-includes -u origin HEAD:refs/heads/feat/x");
   });
   test("an upstream with a different branch name is refused, naming both and setUpstream", async () => {
     const calls: string[] = [];
