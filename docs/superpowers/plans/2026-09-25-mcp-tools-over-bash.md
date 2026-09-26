@@ -26,6 +26,18 @@
 - Skill edits (Parts B and C) follow `superpowers:writing-skills`: RED baseline on the current skill, edit, GREEN retest with a fresh agent that loads the edited skill and is observed calling the tools, `sh tests/certify.sh <skill-dir>` in mattstack-skills, version bump in the same commit, `rt skills sync --pack <pack>` after merge to main.
 - Run tools, git tools and `branch_sync` take their directory or `runDb` as an argument and refuse a call that gives neither; no tool handler reads `process.cwd()` (the MCP server's cwd is fixed at session start, so it would name the wrong tree).
 
+## Parallel execution (shepherdr)
+
+The tasks are self-contained so they can fan out. Waves, each a herd of disposable-worktree jobs; a job is one lane's tasks in order:
+
+- **Wave 0 (one job, first):** Tasks 1-2. `lib/mcp/shared.ts` is what every other tool file imports; nothing in Part A fans out before this PR merges and deploys.
+- **Wave 1 (five jobs, after wave 0 deploys):** PR (a) close-out Task 3; PR (b) Tasks 4-6; PR (c) Tasks 7-10; PR (d) Tasks 11-14; Part E rt half Tasks 31-33. Disjoint files. The only shared lines are the roster spread in `tools.ts`, `NAMES` in `tools.test.ts` and `PUBLISHED` in the e2e test, all append-only, so the second to merge rebases and re-runs `bun test lib/mcp`. PR (e) Tasks 16-18 can join this wave once Matt has done Task 15's captures (a person-in-a-pane step); Task 15 itself is Matt's.
+- **Wave 2 (four jobs, after every wave-1 PR is deployed and a fresh session lists the tools):** mattstack-skills lanes: Tasks 19-20; Task 21; Task 22; Tasks 23-26. Disjoint files; each bumps `plugin.json`, a one-line rebase. Task 27 (audit re-run, ledger, PR, sync) is one job after the four merge.
+- **Wave 3 (two jobs, after Task 27's sync):** Part C Tasks 28-30 (one worker, employer-visible pack, no ticket ids); Tasks 34-35.
+- **Wave 4 (sequential):** Tasks 36-38, with Matt applying `BASE_PERMISSIONS` and running the gate.
+
+Every worker runs with the Global Constraints and its lane's tasks only; the deploy between waves is a single `rt daemon restart` by the shepherd after the wave's merges, and each worker's smoke needs a session started after that restart.
+
 ## Review Focus
 
 1. A `tree` argument that is a symlink to a registered worktree (macOS `/tmp` vs `/private/tmp`, a user symlink): the guard must compare realpaths, or a legitimate tree is refused and an alias of an unregistered one is accepted. Pinned in Task 7.
@@ -153,7 +165,7 @@ Expected: PASS.
 **Files:**
 - Create: `lib/mcp/shared.ts`, `lib/mcp/run-tools.ts`
 - Modify: `lib/mcp/tools.ts` (import the helpers from `shared.ts` instead of defining them; spread `runToolDefs()` into the roster)
-- Test: `lib/mcp/__tests__/run-tools.test.ts`; update `lib/mcp/__tests__/tools.test.ts` (`NAMES` gains the eight names, count 25 becomes 33)
+- Test: `lib/mcp/__tests__/run-tools.test.ts`; update `lib/mcp/__tests__/tools.test.ts` (`NAMES` gains the eight names; the count assertion becomes `expect(mcpTools().length).toBe(NAMES.length)` so later tasks only append to `NAMES`)
 
 **Interfaces:**
 - Consumes: `runWriteVerb` from Task 1; `listRuns(payload, opts)` from `packages/rt-client/src/client.ts`.
@@ -300,7 +312,7 @@ describe("run tools pass runDb as RT_RUN_DB and cwd through", () => {
 });
 ```
 
-Also in `lib/mcp/__tests__/tools.test.ts`: add `"run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list"` to `NAMES` and change the count assertion to 33.
+Also in `lib/mcp/__tests__/tools.test.ts`: add `"run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list"` to `NAMES`, and replace the `roster has 25 tools` test body with `expect(mcpTools().length).toBe(NAMES.length)` (renamed `roster has exactly the published tools`), so every later task appends to `NAMES` and nothing else, and parallel merges never fight over a number.
 
 - [ ] **Step 3: Run to verify failure**
 
@@ -510,7 +522,7 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
 - [ ] **Step 5: Run the tests**
 
 Run: `bun test lib/mcp`
-Expected: PASS, roster 33.
+Expected: PASS (the roster equals `NAMES`).
 
 - [ ] **Step 6: Guard the import boundary**
 
@@ -528,15 +540,14 @@ Expected: PASS (run-tools imports only `commands/runs-write.ts`, which has no UI
 
 - [ ] **Step 1: Extend the e2e list assertion**
 
-In the test at `e2e/tests/mcp-serve.test.ts:208` ("initialize -> tools/list -> tools/call ..."), after the existing names check, add:
+In the test at `e2e/tests/mcp-serve.test.ts:208` ("initialize -> tools/list -> tools/call ..."), after the existing names check, add one loop that later close-outs never edit (each PR appends to `PUBLISHED` only):
 
 ```ts
-for (const name of ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list"]) {
-  expect(toolNames, name).toContain(name);
-}
+const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list"];
+for (const name of PUBLISHED) expect(toolNames, name).toContain(name);
 ```
 
-(`toolNames` is whatever the test already binds the listed names to; read the test and use its variable.)
+(`toolNames` is whatever the test already binds the listed names to; read the test and use its variable.) Tasks 6, 10, 14 and 18 append their tool names to `PUBLISHED`.
 
 - [ ] **Step 2: Build and run the gate**
 
@@ -559,7 +570,7 @@ Commit `e2e/tests/mcp-serve.test.ts` as `mcp: e2e lists the run tools`. Open the
 **Files:**
 - Create: `lib/mcp/mr-read-tools.ts`
 - Modify: `lib/mcp/tools.ts` (spread `mrReadToolDefs()`)
-- Test: `lib/mcp/__tests__/mr-read-tools.test.ts`; `tools.test.ts` `NAMES` gains six names, count 39
+- Test: `lib/mcp/__tests__/mr-read-tools.test.ts`; `tools.test.ts` `NAMES` gains six names
 
 **Interfaces:**
 - Consumes: `resolveMrTarget`, `resolveRepoTarget` (`lib/mcp/mr-target.ts`); `readProjectMRs(repoName, maxAgeMs?, demand?, opts?)`, `readDiscussions(repoName, iid, opts)`, `readMrsByBranch(repoName, branches, opts)`, `rtCommand` from rt-client.
@@ -785,7 +796,7 @@ Export `checkPositiveInts` from `shared.ts` if Task 2 left it in `tools.ts`. Spr
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun test lib/mcp`. Expected: PASS with roster 39 (update `NAMES` and the count).
+Run: `bun test lib/mcp`. Expected: PASS (append the six names to `NAMES`).
 
 - [ ] **Step 5: Commit**
 
@@ -831,7 +842,7 @@ test("mr_merge refuses a non-boolean squash", async () => {
 });
 ```
 
-`ID` is the serialized identity constant the file already uses for mr tools (search for `remote:gitlab.com` in the file; define `const ID = ...` if absent). Add `"mr_merge"` to `NAMES`, count 40.
+`ID` is the serialized identity constant the file already uses for mr tools (search for `remote:gitlab.com` in the file; define `const ID = ...` if absent). Add `"mr_merge"` to `NAMES`.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1291,7 +1302,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
 
 **Files:**
 - Modify: `lib/mcp/git-tools.ts` (add `branchSyncPreflight`, `realSyncRunner`, `realGitToolDeps`, the `branch_sync` def), `lib/mcp/tools.ts` (spread `gitToolDefs(realGitToolDeps)`)
-- Test: `lib/mcp/__tests__/git-tools.test.ts`; `tools.test.ts` `NAMES` gains `git_push`, `git_pull`, `git_rebase`, `branch_sync`, count 44
+- Test: `lib/mcp/__tests__/git-tools.test.ts`; `tools.test.ts` `NAMES` gains `git_push`, `git_pull`, `git_rebase`, `branch_sync`
 
 **Interfaces:**
 - Consumes: `execWithTimeout(argv, { cwd, env, timeoutMs })` (`lib/setup/probes.ts`), `rtSelfArgv()` (`lib/rt-self.ts`), `rt sync --json --no-agent` (exit 0 synced, 3 conflict bundle on stdout, 4 stack refusal).
@@ -1420,7 +1431,7 @@ Add to the `gitToolDefs` array:
 
 Check `execWithTimeout`'s return shape at `lib/setup/probes.ts:15` (`ExecResult`) and adapt the `sync` dep type to it if its field names differ from `{ code, stdout, stderr }`. In `tools.ts`: `import { gitToolDefs, realGitToolDeps } from "./git-tools.ts";` and spread `...gitToolDefs(realGitToolDeps)`.
 
-- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS, roster 44.
+- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS.
 - [ ] **Step 5: Commit.** `git add lib/mcp/git-tools.ts lib/mcp/tools.ts lib/mcp/__tests__/git-tools.test.ts lib/mcp/__tests__/tools.test.ts` then `git commit -m "mcp: branch_sync with the cherry-gated reset preflight"`.
 
 ### Task 10: PR (c) close-out
@@ -1437,7 +1448,7 @@ Check `execWithTimeout`'s return shape at `lib/setup/probes.ts:15` (`ExecResult`
 **Files:**
 - Create: `lib/mcp/worktree-tools.ts`
 - Modify: `lib/mcp/tools.ts` (spread)
-- Test: `lib/mcp/__tests__/worktree-tools.test.ts`; `tools.test.ts` `NAMES` gains three, count 47
+- Test: `lib/mcp/__tests__/worktree-tools.test.ts`; `tools.test.ts` `NAMES` gains three
 
 **Interfaces:**
 - Consumes: `resolveRepoTarget({ repoName })`; daemon `worktree:provision {repoName, branch?, ticket?, ticketTitle?, disposal?, owner?}`, `worktree:dispose {repoName, tree}`, `worktree:stop-holders {repoName, tree}`.
@@ -1563,7 +1574,7 @@ export function worktreeToolDefs(deps: { command: typeof rtCommand } = { command
 
 The unit test passes an identity string, which `resolveRepoTarget` accepts without a registry lookup when it parses as an identity; if `tryResolveRepoArg` still consults the store, seed the repo index the way `tools.test.ts` does (`setKvValue(REPO_INDEX_NS, ...)`) in a `beforeEach`.
 
-- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS, roster 47.
+- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS.
 - [ ] **Step 5: Commit.** `git add lib/mcp/worktree-tools.ts lib/mcp/tools.ts lib/mcp/__tests__/worktree-tools.test.ts lib/mcp/__tests__/tools.test.ts` then `git commit -m "mcp: worktree_provision, worktree_dispose, worktree_stop_holders"`.
 
 ### Task 12: `lib/mcp/herd-tools.ts`
@@ -1571,7 +1582,7 @@ The unit test passes an identity string, which `resolveRepoTarget` accepts witho
 **Files:**
 - Create: `lib/mcp/herd-tools.ts`
 - Modify: `lib/mcp/tools.ts` (spread; keep `herd_gates`, `herd_ask`, `herd_answer`, `herd_report` where they are)
-- Test: `lib/mcp/__tests__/herd-tools.test.ts`; `tools.test.ts` `NAMES` gains ten, count 57
+- Test: `lib/mcp/__tests__/herd-tools.test.ts`; `tools.test.ts` `NAMES` gains ten
 
 **Interfaces:**
 - Consumes: rt-client `herdStart`, `herdSpawn`, `herdClose`, `herdStatus`, `herdList`, `herdAttend`, `herdWrapUp`, `herdResume`, `herdMilestone` (signatures in `packages/rt-client/src/client.ts:565-690`); `runRtVerb` (`lib/mcp/rt-verb.ts`); `resolveSoleHerd`, `requireWorkerEnv` from `shared.ts`; `resolveRepoTarget`.
@@ -1837,7 +1848,7 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
 
 Match each rt-client wrapper's exact parameter list (`packages/rt-client/src/client.ts`); `herdList` takes `{ all? }`, `herdStatus` takes `{ herd }`. Spread `...herdToolDefs()` in `tools.ts`.
 
-- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS, roster 57.
+- [ ] **Step 4: Run.** `bun test lib/mcp`: PASS.
 - [ ] **Step 5: Commit.** `git add lib/mcp/herd-tools.ts lib/mcp/tools.ts lib/mcp/__tests__/herd-tools.test.ts lib/mcp/__tests__/tools.test.ts` then `git commit -m "mcp: shepherd herd tools and herd_milestone"`.
 
 ### Task 13: Wider `rt_verb` and the per-node cap
