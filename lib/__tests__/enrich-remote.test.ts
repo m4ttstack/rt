@@ -73,3 +73,28 @@ describe("isGitHubRemote", () => {
     expect(isGitLabRemote(gitlab)).toBe(true);
   });
 });
+
+describe("parseRemoteUrl", () => {
+  const FAKE = "glpat-FAKE0000000000000000";
+
+  test("ssh and plain https remotes give an https host and the project path", () => {
+    expect(parseRemoteUrl("git@gitlab.example.com:acme/app.git")).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/app" });
+    expect(parseRemoteUrl("https://gitlab.example.com/acme/platform/app.git")).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/platform/app" });
+    expect(parseRemoteUrl("http://gitlab.example.com/acme/app")).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/app" });
+  });
+
+  test("a token-bearing https remote yields a host with no userinfo, so no URL built from it carries the token", () => {
+    const withUserAndToken = parseRemoteUrl(`https://oauth2:${FAKE}@gitlab.example.com/acme/app.git`);
+    expect(withUserAndToken).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/app" });
+    const withTokenOnly = parseRemoteUrl(`https://${FAKE}@gitlab.example.com/acme/app.git`);
+    expect(withTokenOnly).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/app" });
+    expect(JSON.stringify([withUserAndToken, withTokenOnly])).not.toContain(FAKE);
+  });
+
+  test("a gitlab-looking userinfo cannot make another host count as GitLab", () => {
+    const spoof = "https://gitlab.com@evil.example/acme/app.git";
+    expect(parseRemoteUrl(spoof)?.host).toBe("https://evil.example");
+    expect(isGitLabRemote(spoof)).toBe(false);
+    expect(isGitLabRemote(`https://oauth2:${FAKE}@gitlab.example.com/acme/app.git`)).toBe(true);
+  });
+});
