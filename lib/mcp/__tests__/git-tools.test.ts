@@ -36,10 +36,54 @@ describe("gitPush", () => {
   });
   test("an upstream on another remote goes to that remote", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/fork/HEAD": { code: 128 }, "push fork HEAD:refs/heads/feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref fork HEAD": { stdout: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD\n" }, "push fork HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(true);
     expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/feat/x");
+  });
+  test("a remote name with a regex special character is matched by its literal prefix, not left unstripped by a broken RegExp", async () => {
+    const calls: string[] = [];
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork+x/trunk\n" }, "symbolic-ref --quiet --short refs/remotes/fork+x/HEAD": { stdout: "fork+x/trunk\n" } };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("origin's default resolved via ls-remote when its HEAD symref is missing refuses the current branch develop", async () => {
+    const calls: string[] = [];
+    const script: Script = {
+      "symbolic-ref --quiet --short HEAD": { stdout: "develop\n" },
+      "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
+      "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n<sha>\tHEAD\n" },
+      "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" },
+      "push origin HEAD:refs/heads/develop": {},
+    };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("an upstream's remote default resolved via ls-remote when its HEAD symref is missing refuses origin/trunk", async () => {
+    const calls: string[] = [];
+    const script: Script = {
+      "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+      "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/trunk\n" },
+      "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
+      "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" },
+    };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("origin's default unknown when both the symref and ls-remote fail refuses with a named error", async () => {
+    const calls: string[] = [];
+    const script: Script = {
+      "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+      "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
+      "ls-remote --symref origin HEAD": { code: 128 },
+    };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("could not be determined");
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
   });
   test("a feature branch whose upstream is origin/main (checkout -b feat/x origin/main) is refused", async () => {
     for (const up of ["origin/main", "origin/master", "origin/develop"]) {
@@ -109,7 +153,6 @@ describe("gitRebase", () => {
     const calls: string[] = [];
     const r = await gitRebase("/t", { onto: "develop" }, fakeGit({ "rebase develop": {} }, calls));
     expect(r).toEqual({ ok: true, body: { status: "ok", onto: "develop", fetched: null } });
-    // remoteOf short-circuits on a slash-less ref before ever calling `git remote`.
     expect(calls).toEqual(["rebase develop"]);
   });
   test("an onto that starts with a dash is refused before git runs", async () => {

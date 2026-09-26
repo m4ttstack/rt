@@ -16,22 +16,41 @@ async function currentBranch(cwd: string, git: GitRunner): Promise<string | null
   return r.code === 0 ? r.stdout.trim() : null;
 }
 
-async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<string | null> {
-  const r = await git(["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], cwd);
-  if (r.code !== 0) return null;
-  return r.stdout.trim().replace(new RegExp(`^${remote}/`), "");
+/** The remote's default branch: known (its name) or null, meaning unknown,
+    which callers must refuse rather than treat as "no default". The prefix
+    is stripped with startsWith/slice, never a RegExp built from `remote`,
+    since a remote name can carry characters a regex would treat as
+    metacharacters (`+`, `(`) or that make the RegExp constructor throw.
+    `refs/remotes/<remote>/HEAD` can be missing or stale (a shallow clone, a
+    remote added without a fetch), so a miss there falls back to asking the
+    remote itself via `ls-remote --symref`. */
+async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<{ name: string } | null> {
+  const prefix = `${remote}/`;
+  const sym = await git(["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], cwd);
+  if (sym.code === 0) {
+    const s = sym.stdout.trim();
+    if (s.startsWith(prefix)) return { name: s.slice(prefix.length) };
+  }
+  const ls = await git(["ls-remote", "--symref", remote, "HEAD"], cwd);
+  const match = ls.code === 0 ? ls.stdout.match(/^ref:\s+refs\/heads\/(\S+)\s+HEAD/m) : null;
+  return match ? { name: match[1]! } : null;
 }
 
 function detail(r: { stderr: string; stdout: string }): string {
   return (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-3).join(" ");
 }
 
-/** The branch a tool may push from: never detached, never main/master or the remote default. */
+/** The branch a tool may push from: never detached, never main/master or the
+    remote default. An origin whose default cannot be determined refuses
+    rather than falling through as "no default", so a repo defaulting to
+    develop or trunk is protected exactly like one defaulting to main. */
 export async function pushableBranch(cwd: string, git: GitRunner): Promise<{ branch: string } | { error: string }> {
   const branch = await currentBranch(cwd, git);
   if (branch === null) return { error: "refusing to push a detached HEAD" };
+  if (PROTECTED.has(branch)) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
   const def = await remoteDefault(cwd, git);
-  if (PROTECTED.has(branch) || branch === def) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
+  if (def === null) return { error: `refusing to push ${branch}: origin's default branch could not be determined` };
+  if (branch === def.name) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
   return { branch };
 }
 
@@ -55,8 +74,10 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     remoteBranch = full.slice(slash + 1);
     // `git checkout -b feat/x origin/main` tracks main, so the local name
     // passing says nothing about where the refspec lands.
+    if (PROTECTED.has(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
     const remoteDef = await remoteDefault(cwd, git, remote);
-    if (PROTECTED.has(remoteBranch) || remoteBranch === remoteDef) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
+    if (remoteDef === null) return err(`refusing to push ${branch}: its upstream is ${full}, whose remote's default branch could not be determined`);
+    if (remoteBranch === remoteDef.name) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; retarget the upstream (git branch -u) or pass setUpstream after unsetting it`);
   } else {
     if (!opts.setUpstream) return err(`${branch} has no upstream; pass setUpstream: true to push it as origin/${branch}`);
     remote = "origin";
@@ -110,13 +131,11 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
 export interface GitToolDeps {
   git: GitRunner;
   guard: TreeGuardDeps;
-  /** Runs `rt sync --json --no-agent` in a tree; Task 9 supplies the real one. */
   sync: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 }
 
 const TREE_PROP = { tree: { type: "string", description: "Absolute path of a checkout or worktree of a repo registered with rt." } };
 
-/** Task 9 adds `realGitToolDeps` (the `sync` slot's real implementation) and wires this into lib/mcp/tools.ts. */
 export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
   const guarded = (fn: (path: string, input: Record<string, unknown>) => Promise<ToolResult>) => async (input: Record<string, unknown>): Promise<ToolResult> => {
     const tree = checkRegisteredTree(input.tree, deps.guard);
