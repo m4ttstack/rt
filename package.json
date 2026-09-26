@@ -56,7 +56,7 @@
     "docs:update": "bun scripts/update-docs.ts",
     "docs:deploy": "bash scripts/deploy-docs.sh",
     "purity": "scripts/repo-purity.sh",
-    "postinstall": "bun run --cwd packages/rt-client build && bun run --cwd packages/settings-kit build",
+    "postinstall": "bun run --cwd packages/rt-client build && bun run --cwd packages/settings-kit build && bun run --cwd packages/tui-kit build",
     "ui:build": "cd ui && CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -X main.version=${RT_VERSION:-dev}\" -o dist/rt-ui ./cmd/rt-ui",
     "ui:test": "cd ui && go vet ./... && go test ./...",
     "check": "scripts/turbo.sh check",

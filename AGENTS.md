@@ -478,15 +478,16 @@ name` on the next bump, rolls the migration back, and makes every later
 `openStateDb` call throw. Add a column by creating the table with it
 (`IF NOT EXISTS`), or guard the add behind a `PRAGMA table_info` check.
 
-### `rt-client` and `settings-kit` are private workspace packages
+### `rt-client`, `settings-kit` and `tui-kit` are private workspace packages
 
-`packages/rt-client` and `packages/settings-kit` publish nowhere; every
-consumer inside this monorepo (rt itself, board, console, chat, boxscore,
-deck) links the workspace package directly, and the root `postinstall`
-builds both `dist/` directories. gitq, still its own repo, stays on the
-last published npm `rt-client` (its `package.json` pins `^0.14.0`); a
-change in this tree never reaches it until gitq folds in (Stage C). There
-is no npm version to announce or renumber for either package.
+`packages/rt-client`, `packages/settings-kit` and `packages/tui-kit` publish
+nowhere; every consumer inside this monorepo (rt itself, board, console,
+chat, boxscore, deck) links the workspace package directly, and the root
+`postinstall` builds all three `dist/` directories. gitq, still its own
+repo, stays on the last published npm `rt-client` (its `package.json` pins
+`^0.14.0`); a change in this tree never reaches it until gitq folds in
+(Stage C). There is no npm version to announce or renumber for any of the
+three.
 
 ### `packages/rt-client/dist/` goes stale without warning
 
