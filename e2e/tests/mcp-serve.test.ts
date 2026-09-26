@@ -180,6 +180,7 @@ const EXPECTED_TOOL_NAMES = [
   "herd_answer", "herd_ask", "herd_gates", "herd_report",
   "mr_approve", "mr_comment", "mr_comment_inline", "mr_create", "mr_map", "mr_ready", "mr_rebase", "mr_reply_thread", "mr_resolve_thread", "mr_retry", "mr_update", "mr_upload",
   "rt_verb",
+  "run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list",
 ];
 
 describe("rt mcp serve e2e", () => {
@@ -226,6 +227,9 @@ describe("rt mcp serve e2e", () => {
       const listResult = list.result as { tools: Array<{ name: string }> };
       const names = listResult.tools.map((t) => t.name).sort();
       expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
+
+      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list"];
+      for (const name of PUBLISHED) expect(names, name).toContain(name);
 
       const call = await client.request("tools/call", { name: "gate_list", arguments: {} });
       expect(call.error).toBeUndefined();
