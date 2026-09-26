@@ -52,11 +52,15 @@ function codeOn(lines: string[]): Array<{ line: number; text: string }> {
   return out;
 }
 
-export function lintSkillText(text: string, file: string): LintHit[] {
+/** `tools` is the set of tool names the server publishes: a rule naming any
+    other tool stays silent, since agents cannot call it yet. Omitted, every
+    rule applies. */
+export function lintSkillText(text: string, file: string, tools?: ReadonlySet<string>): LintHit[] {
+  const rules = tools ? MCP_LINT_RULES.filter((r) => tools.has(r.tool)) : MCP_LINT_RULES;
   const hits: LintHit[] = [];
   for (const { line, text: code } of codeOn(text.split("\n"))) {
     if (KEPT_ON_BASH.some((k) => k.test(code))) continue;
-    const rule = MCP_LINT_RULES.find((r) => r.pattern.test(code));
+    const rule = rules.find((r) => r.pattern.test(code));
     if (rule) hits.push({ file, line, text: code.trim(), rule: rule.id, tool: rule.tool, note: rule.note });
   }
   return hits;
@@ -120,8 +124,8 @@ export function lintedMarkdownFiles(dir: string, deps: LintDeps = DISK): string[
   return lintedSources(dir, deps).map((s) => s.path);
 }
 
-export function lintPackDir(dir: string, deps: LintDeps = DISK): LintHit[] {
-  return lintedSources(dir, deps).flatMap((s) => lintSkillText(s.text, s.path));
+export function lintPackDir(dir: string, deps: LintDeps = DISK, tools?: ReadonlySet<string>): LintHit[] {
+  return lintedSources(dir, deps).flatMap((s) => lintSkillText(s.text, s.path, tools));
 }
 
 export function formatHit(h: LintHit): string {

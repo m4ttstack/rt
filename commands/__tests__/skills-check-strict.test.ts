@@ -2,14 +2,15 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { mcpTools } from "../../lib/mcp/tools.ts";
 import { checkPack, skillsCheck } from "../skills.ts";
 
-function makePack(manifest: Record<string, unknown>): string {
+function makePack(manifest: Record<string, unknown>, body = "Record it with `rt runs snapshot`."): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt-skills-check-strict-")));
   mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
   writeFileSync(join(dir, ".claude-plugin", "plugin.json"), JSON.stringify(manifest));
   mkdirSync(join(dir, "skills", "x"), { recursive: true });
-  writeFileSync(join(dir, "skills", "x", "SKILL.md"), "---\nname: x\n---\nPush with `git push`.\n");
+  writeFileSync(join(dir, "skills", "x", "SKILL.md"), `---\nname: x\n---\n${body}\n`);
   return dir;
 }
 
@@ -46,6 +47,19 @@ describe("checkPack strictness", () => {
       const payload = await checkPack({ packDir: dir });
       expect(payload.mcpLint.length).toBe(1);
       expect(payload.strictLint).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("only rules naming a tool the server publishes report", async () => {
+    const published = new Set(mcpTools().map((t) => t.name));
+    const dir = makePack({ name: "acme", version: "1.0.0" }, "Push with `git push`, then `rt runs snapshot`.");
+    try {
+      const payload = await checkPack({ packDir: dir });
+      expect(payload.mcpLint.every((h) => published.has(h.tool))).toBe(true);
+      expect(payload.mcpLint.map((h) => h.rule)).toContain("rt-runs");
+      expect(payload.mcpLint.some((h) => h.rule === "git-push")).toBe(published.has("git_push"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -106,8 +120,8 @@ describe("skills check --strict", () => {
     try {
       const { logs } = await runCheck(["--pack-dir", dir, "--json"]);
       const parsed = JSON.parse(logs.at(-1)!) as { mcpLint: Array<{ rule: string; tool: string }>; strictLint: boolean };
-      expect(parsed.mcpLint.map((h) => h.rule)).toEqual(["git-push"]);
-      expect(parsed.mcpLint[0]!.tool).toBe("git_push");
+      expect(parsed.mcpLint.map((h) => h.rule)).toEqual(["rt-runs"]);
+      expect(parsed.mcpLint[0]!.tool).toBe("run_stage");
       expect(parsed.strictLint).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

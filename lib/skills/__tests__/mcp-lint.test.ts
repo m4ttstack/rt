@@ -80,6 +80,19 @@ describe("lintSkillText: no hits", () => {
   });
 });
 
+describe("lintSkillText: published tools only", () => {
+  test("a rule whose tool is not published never reports", () => {
+    expect(lintSkillText("`git push`", "a.md", new Set(["run_stage"]))).toEqual([]);
+  });
+  test("a rule whose tool is published reports", () => {
+    expect(lintSkillText("`git push`", "a.md", new Set(["git_push"])).map((h) => h.tool)).toEqual(["git_push"]);
+  });
+  test("lintPackDir passes the published set through", () => {
+    const deps = { list: () => ["/p/skills/a/SKILL.md"], read: () => "`git push`\n```\nrt runs snapshot\n```" };
+    expect(lintPackDir("/p", deps, new Set(["run_stage"])).map((h) => h.rule)).toEqual(["rt-runs"]);
+  });
+});
+
 describe("lintPackDir", () => {
   test("walks skills, attachments and plugin/skills markdown only", () => {
     const files: Record<string, string> = {

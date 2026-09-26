@@ -39,6 +39,7 @@ import { validateChain } from "../lib/skills/chain.ts";
 import { compileSkill, HEADER_COMMENT, isInlined } from "../lib/skills/compile.ts";
 import { skillMdDriftCauses, type DriftCause } from "../lib/skills/drift.ts";
 import { discoverPacks, findEnclosingPack, surfaceFileFor, type PackInfo } from "../lib/skills/packs.ts";
+import { mcpTools } from "../lib/mcp/tools.ts";
 import { formatHit, lintPackDir, type LintHit } from "../lib/skills/mcp-lint.ts";
 import { findPlaceholders } from "../lib/skills/placeholders.ts";
 import { buildStageEntries, hostDir, outDirFor, otherSideDir, targetOutDirs } from "../lib/skills/layout.ts";
@@ -1097,7 +1098,7 @@ async function computeCheck(flags: Flags): Promise<CheckPayload> {
   // nothing to compare against, so it would only cost a real filesystem scan
   // for a null result.
   const installed = resolved.pluginRoots.list.length === 0 ? null : installedInfoFor(resolved, discoverPacks());
-  const mcpLint = lintPackDir(resolved.packDir);
+  const mcpLint = lintPackDir(resolved.packDir, undefined, new Set(mcpTools().map((t) => t.name)));
   const strictLint = packStrictLint(resolved.packDir);
 
   return { pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors, installed, drift: anyStale, mcpLint, strictLint };
