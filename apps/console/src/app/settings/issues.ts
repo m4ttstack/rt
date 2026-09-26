@@ -47,6 +47,38 @@ export function issuesUnder(
     .map(i => ({ ...i, path: i.path.slice(1) }));
 }
 
+function valueAt(value: unknown, path: (string | number)[]): unknown {
+  let at = value;
+  for (const p of path) {
+    if (at === null || typeof at !== 'object') return undefined;
+    at = (at as Record<string | number, unknown>)[p];
+  }
+  return at;
+}
+
+/** Issues the store reported on a layer that the draft has not touched:
+    one stays while the value at its path is still the stored one, so a
+    field the server refused shows its error even where the local check
+    passes it, and drops once the user edits that value. */
+export function standingIssues(
+  reported: SchemaIssue[],
+  stored: unknown,
+  draft: unknown,
+  checked: SchemaIssue[]
+): SchemaIssue[] {
+  const seen = new Set(checked.map(issueText));
+  const out: SchemaIssue[] = [];
+  for (const issue of reported) {
+    const key = issueText(issue);
+    if (seen.has(key)) continue;
+    const before = JSON.stringify(valueAt(stored, issue.path));
+    if (JSON.stringify(valueAt(draft, issue.path)) !== before) continue;
+    seen.add(key);
+    out.push(issue);
+  }
+  return out;
+}
+
 const REQUIRED_RE = /^required property/;
 
 /** A short word where one exists ("required" for a missing required

@@ -329,6 +329,44 @@ describe('Fix in the explain modal', () => {
     ).toBeInTheDocument();
   });
 
+  it('highlights and reveals the field at a reported issue path the explain rows do not repeat', async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+      openFix(
+        bridges({
+          effective: { scope: 'user', file: USER_FILE, value },
+          issues: [
+            {
+              scope: 'user',
+              file: USER_FILE,
+              kind: 'nonconforming',
+              path: [0, 'url'],
+              message: 'expected string, got number',
+            },
+          ],
+        }),
+        [
+          { scope: 'default', file: null, present: false },
+          { scope: 'user', file: USER_FILE, present: true, value },
+        ]
+      );
+      const layer = await screen.findByTestId('layer-user');
+      const item = await within(layer).findByTestId('item-0');
+      const row = within(item).getByTestId('field-row-url');
+      const input = within(row).getByRole('textbox', { name: 'url' });
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(row).toHaveTextContent('expected string, got number');
+      await waitFor(() => expect(scrolled).toContain(input));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('a value the form cannot draw opens in JSON, never in cards', async () => {
     openFix(
       bridges({

@@ -1,7 +1,7 @@
 import type { SchemaIssue } from '@mattstack/settings-kit/shapes';
 import { describe, expect, it } from 'vitest';
 
-import { footerSummary, type CardKey } from './issues';
+import { footerSummary, standingIssues, type CardKey } from './issues';
 
 describe('footerSummary with string card keys (named sections)', () => {
   it('numbers a touched issue by entry name, not #N', () => {
@@ -49,5 +49,26 @@ describe('footerSummary with string card keys (named sections)', () => {
     expect(summary.noteText).toBe(
       'git.example.org, other.example.org have 2 empty required fields'
     );
+  });
+});
+
+describe('standingIssues', () => {
+  const reported: SchemaIssue[] = [
+    { path: [0, 'url'], message: 'expected string, got number' },
+  ];
+  const stored = [{ url: 'https://example.test', title: 't' }];
+
+  it('keeps a reported issue while its value is the stored one', () => {
+    const draft = [{ url: 'https://example.test', title: 'edited' }];
+    expect(standingIssues(reported, stored, draft, [])).toEqual(reported);
+  });
+
+  it('drops a reported issue once its value is edited', () => {
+    const draft = [{ url: 'https://example.test/new', title: 't' }];
+    expect(standingIssues(reported, stored, draft, [])).toEqual([]);
+  });
+
+  it('never repeats an issue the local check already found', () => {
+    expect(standingIssues(reported, stored, stored, reported)).toEqual([]);
   });
 });

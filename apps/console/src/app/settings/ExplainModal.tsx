@@ -19,7 +19,7 @@ import type {
   ExplainRowWire,
   SettingDefWire,
 } from '@mattstack/settings-kit/react';
-import { rowKind } from '@mattstack/settings-kit/shapes';
+import { rowKind, type SchemaIssue } from '@mattstack/settings-kit/shapes';
 
 import { analyzeChain, shortValue } from '../config/chain';
 import { useAgentModels } from '../config/useSettings';
@@ -27,7 +27,7 @@ import { useEditorHref } from '../editorHref';
 import { DivergedPanel } from './DivergedPanel';
 import { DraftEditor } from './DraftEditor';
 import { editorKind, formOf } from './formShape';
-import { isDiverged, issueText } from './issues';
+import { isDiverged, issueText, type WireIssue } from './issues';
 import { JsonBlock } from './JsonBlock';
 import { ScalarControl } from './ScalarControl';
 import { ScopeBadge } from './ScopeBadge';
@@ -119,6 +119,7 @@ function LayerLine({
   onRemove,
   startEditing = false,
   replaceWith,
+  reported,
 }: {
   def: SettingDefWire;
   row: ExplainRowWire;
@@ -128,6 +129,7 @@ function LayerLine({
   onRemove: (scope: string) => Promise<boolean>;
   startEditing?: boolean;
   replaceWith?: { label: string; value: unknown };
+  reported?: SchemaIssue[];
 }) {
   const { text } = useSchemeColors();
   const editorHref = useEditorHref();
@@ -333,6 +335,8 @@ function LayerLine({
             targetLabel={isRung(scope) ? `${store} · repo` : store}
             saving={busy}
             replaceWith={replaceWith}
+            reported={reported}
+            reveal={startEditing}
             onCancel={() => setEditing(false)}
             onSave={v =>
               onSet(scope, v).then(ok => {
@@ -461,14 +465,27 @@ function ExplainBody({
     return verdict.overridden.includes(row) ? 'overridden' : 'inert';
   };
   const diverged = def.secret ? [] : (def.issues ?? []).filter(isDiverged);
+  const onLayer = (row: ExplainRowWire) => (issue: WireIssue) =>
+    issue.scope !== row.scope
+      ? false
+      : isRung(row.scope)
+        ? issue.repo === repo
+        : true;
   const replaceWithFor = (row: ExplainRowWire) => {
-    const issue = diverged.find(d =>
-      d.scope !== row.scope ? false : isRung(row.scope) ? d.repo === repo : true
-    );
+    const issue = diverged.find(onLayer(row));
     return issue
       ? { label: 'Use the older value', value: issue.olderValue }
       : undefined;
   };
+
+  // /explain rows may omit a layer's nonconforming issues that /defs
+  // reported, and those are the ones Fix was opened from.
+  const reportedFor = (row: ExplainRowWire): SchemaIssue[] => [
+    ...(row.nonconforming ?? []),
+    ...(def.issues ?? [])
+      .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
+      .map(i => ({ path: i.path, message: i.message })),
+  ];
 
   return (
     <Stack gap={0}>
@@ -544,6 +561,7 @@ function ExplainBody({
             onRemove={scope => layers.clear(scope)}
             startEditing={r.scope === fix && r.present}
             replaceWith={replaceWithFor(r)}
+            reported={reportedFor(r)}
           />
         ))
       )}
