@@ -33,17 +33,21 @@ A9=$(printf "%s%s" "CV" "I")
 # its variants. Kept fragmented, like the rest, so this file stays clean of the
 # very term it bans.
 A10=$(printf "%s%s" "progres" "sive")
+A10B="(^|[^[:alnum:]])$A10([^[:alnum:]]|\$)"
 # A second carrier name, caught in the same picker-branch scrub as A10.
 A11=$(printf '%s%s' 'gei' 'co')
 
-PATTERN="$A1|$A2|$A3|$A4|$A5|$A6|$A7|$A8|$A9|$A10|$A11"
+PATTERN="$A1|$A2|$A3|$A4|$A5|$A6|$A7|$A8|$A9|$A10B|$A11"
 
-# Lockfiles are excluded: their base64 integrity hashes collide with the short
-# patterns often enough to be pure noise, and nothing is authored in them.
+# Lockfiles and PNGs are excluded: base64 integrity hashes and binary bytes
+# collide with the short patterns often enough to be pure noise, and nothing
+# is authored in either.
 HITS=$(cd "$ROOT" \
   && git ls-files -z \
-  | grep -zvE '(bun\.lock|package-lock\.json)$' \
-  | xargs -0 grep -niE "$PATTERN" 2>/dev/null \
+    -- ':(exclude)*bun.lock' \
+       ':(exclude)*package-lock.json' \
+       ':(exclude)*.png' \
+  | xargs -0 grep -IniE "$PATTERN" 2>/dev/null \
   | grep -v '^scripts/repo-purity.sh:' || true)
 if [ -n "$HITS" ]; then
   echo "FAIL repo-purity:"

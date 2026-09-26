@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { alwaysRun, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
+import { alwaysRun, alwaysRunDirs, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
 
 // Synthetic unit test sources: one parity test that reads a Swift file and a
 // tray shell script by path, and one plain test.
@@ -17,6 +17,12 @@ const preloadImports = new Set(["packages/rt-client/src/test-isolation.ts", "lib
 
 function pr(changed: string[]): ScopeInput {
   return { event: "pull_request", changed, sources, preloadImports };
+}
+
+// The real unit sources, for cases that depend on what an actual rt test reads.
+const real = collectSources();
+function prInput(changed: string[]): ScopeInput {
+  return { event: "pull_request", changed, ...real };
 }
 
 describe("decide", () => {
@@ -93,6 +99,22 @@ describe("decide", () => {
       expect(decide(pr(changed)).reason.length).toBeGreaterThan(0);
     }
   });
+
+  test("an apps-only PR skips the unit shards", () => {
+    const d = decide(prInput(["apps/board/src/App.tsx", "packages/ui/src/index.ts", "docs/apps/README.md"]));
+    expect(d.mode).toBe("skip");
+  });
+
+  test("apps root config read by a unit test still runs", () => {
+    // scripts/__tests__/turbo-inputs.test.ts reads turbo.json
+    const d = decide(prInput(["turbo.json"]));
+    expect(d.mode).not.toBe("skip");
+  });
+
+  test("an apps fixture does not force the full suite", () => {
+    const d = decide(prInput(["apps/deck/src/registry/__fixtures__/deps-lock-serve.fixture.json"]));
+    expect(d.mode).toBe("skip");
+  });
 });
 
 describe("unitDirs", () => {
@@ -140,6 +162,14 @@ describe("alwaysRun", () => {
       expect(files).toContain(f);
     }
     for (const f of files) expect(existsSync(join(ROOT, f))).toBe(true);
+  });
+});
+
+describe("alwaysRunDirs", () => {
+  test("every entry keeps its \"./\" prefix for the always= GITHUB_OUTPUT line", () => {
+    const dirs = alwaysRunDirs();
+    expect(dirs.length).toBe(alwaysRun().length);
+    for (const f of dirs) expect(f.startsWith("./")).toBe(true);
   });
 });
 

@@ -42,6 +42,12 @@ export function alwaysRun(): string[] {
   return files.filter((f) => /^no-.*\.test\.tsx?$/.test(basename(f))).sort();
 }
 
+// The always= GITHUB_OUTPUT line: "./" prefixed for the same reason as
+// unitDirs, a bare path there is a substring filter over the whole tree.
+export function alwaysRunDirs(): string[] {
+  return alwaysRun().map((f) => `./${f}`);
+}
+
 function readPackage() {
   return JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 }
@@ -61,6 +67,31 @@ function isSwift(f: string): boolean {
 
 function isFixture(f: string): boolean {
   return /(^|\/)(fixtures|__fixtures__)\//.test(f);
+}
+
+const APPS_PACKAGES = ["gate-kit", "server", "tokens", "tokyo", "tui-kit", "ui"];
+const APPS_ROOT_FILES = new Set([
+  "turbo.json",
+  "eslint.config.mjs",
+  ".prettierrc",
+  ".prettierignore",
+  "tsconfig.tools.json",
+  "vitest.config.ts",
+  "scripts/turbo.sh",
+  "scripts/set-platform-version.ts",
+]);
+
+/** The apps' trees run under turbo in `static`; the unit shards never read them. */
+function isAppsTree(f: string): boolean {
+  return (
+    f.startsWith("apps/") ||
+    APPS_PACKAGES.some((p) => f.startsWith(`packages/${p}/`)) ||
+    f.startsWith("docs/apps/") ||
+    f.startsWith("stories/") ||
+    f.startsWith(".storybook/") ||
+    f.startsWith("probe/") ||
+    APPS_ROOT_FILES.has(f)
+  );
 }
 
 function readBy(sources: Map<string, string>, f: string): string | undefined {
@@ -84,10 +115,14 @@ export function decide(input: ScopeInput): Decision {
   if (input.event !== "pull_request") return { mode: "full", reason: `${input.event} is not a pull request` };
   if (input.changed.length === 0) return { mode: "skip", reason: "no changed files" };
 
-  const skippable = input.changed.every((f) => (isDocs(f) || isSwift(f)) && !isFixture(f));
+  const skippable = input.changed.every((f) => isAppsTree(f) || ((isDocs(f) || isSwift(f)) && !isFixture(f)));
   if (skippable) {
-    const read = input.changed.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
-    if (!read) return { mode: "skip", reason: "only docs or swift, none of it read by a unit test" };
+    // Only the finite named apps root files are ever read by hardcoded path;
+    // an ordinary apps source file's basename (index.ts, README.md) is common
+    // enough to false-positive against unrelated rt tests.
+    const checkable = input.changed.filter((f) => !isAppsTree(f) || APPS_ROOT_FILES.has(f));
+    const read = checkable.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
+    if (!read) return { mode: "skip", reason: "only docs, swift or apps trees, none of it read by a unit test" };
     return { mode: "full", reason: `${read[0]} is read by ${read[1]}` };
   }
 
@@ -170,7 +205,7 @@ if (import.meta.main) {
   const scope = event === "pull_request" ? collectSources() : { sources: new Map<string, string>(), preloadImports: new Set<string>() };
   const decision = decide({ event, changed, ...scope });
   const dirs = unitDirs().join(" ");
-  const always = alwaysRun().join(" ");
+  const always = alwaysRunDirs().join(" ");
   console.log(`mode=${decision.mode} (${decision.reason})`);
   console.log(`dirs=${dirs}`);
   console.log(`always=${always}`);
