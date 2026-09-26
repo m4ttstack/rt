@@ -59,9 +59,13 @@ function valueAt(value: unknown, path: (string | number)[]): unknown {
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+const kindOf = (v: unknown) =>
+  Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v;
+
 /** Entries carry no identity, so an index in `path` still names the entry
-    it was reported on only while its list keeps its length and every other
-    entry in it is unchanged: a move, a removal or an add renumbers it. */
+    it was reported on only while its list keeps its length, every other
+    entry in it is unchanged and the entry itself keeps its kind: a move, a
+    removal, an add or a swap to another kind renumbers or replaces it. */
 function indexesHold(
   stored: unknown,
   draft: unknown,
@@ -75,6 +79,7 @@ function indexesHold(
       Array.isArray(before) &&
       Array.isArray(after) &&
       before.length === after.length &&
+      kindOf(before[seg]) === kindOf(after[seg]) &&
       before.every((entry, j) => j === seg || same(entry, after[j]))
     );
   });

@@ -79,6 +79,13 @@ describe('standingIssues', () => {
     expect(standingIssues(reported, twins, [twins[1]], [])).toEqual([]);
   });
 
+  it('drops an item issue once its entry is replaced by another kind', () => {
+    const missing: SchemaIssue[] = [
+      { path: [0, 'to'], message: 'required property "to"' },
+    ];
+    expect(standingIssues(missing, [{ from: 1 }], [8080], [])).toEqual([]);
+  });
+
   it('never repeats an issue the local check already found', () => {
     expect(standingIssues(reported, stored, stored, reported)).toEqual([]);
   });
