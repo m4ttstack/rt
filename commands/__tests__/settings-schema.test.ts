@@ -142,7 +142,8 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("an unknown --against-ref is an error, not an empty lock", async () => {
-    const errors = await captureErrors(() => settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"]));
+    const git = (args: string[]) => (args[0] === "rev-parse" ? { status: 1, stdout: "", stderr: "" } : { status: 0, stdout: "", stderr: "" });
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"], { git }));
 
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-branch-for-schema-diff"))).toBe(true);
@@ -178,12 +179,14 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("--json reports the shipped ref whose lock the acknowledgement hatch reads", async () => {
-    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "HEAD", "--json"]);
+    const git = () => ({ status: 0, stdout: "{}", stderr: "" });
+    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "HEAD", "--json"], { git });
     expect(JSON.parse(logs.join("\n")).shipped).toBe("HEAD");
   });
 
   test("an unknown --shipped-ref is an error, not an empty lock", async () => {
-    const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "refs/tags/no-such-tag-for-schema-diff", "--json"]));
+    const git = (args: string[]) => (args[0] === "rev-parse" ? { status: 1, stdout: "", stderr: "" } : { status: 0, stdout: "", stderr: "" });
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "refs/tags/no-such-tag-for-schema-diff", "--json"], { git }));
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-tag-for-schema-diff"))).toBe(true);
   });
