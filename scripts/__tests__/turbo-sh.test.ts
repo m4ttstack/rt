@@ -57,7 +57,7 @@ describe('scripts/turbo.sh', () => {
   test('caches under the repo common git dir', () => {
     const dry = run(['typecheck', '--filter=@mattstack/tokens', '--dry=json']);
     expect(dry.code, dry.err).toBe(0);
-    const { hash } = documents(dry.out)[0].tasks.find(
+    const { hash } = documents(dry.out)[0]!.tasks.find(
       t => t.taskId === '@mattstack/tokens#typecheck'
     )!;
     // tsc is a node script; a version-manager node shim on PATH cannot start
@@ -78,15 +78,15 @@ describe('scripts/turbo.sh', () => {
     const docs = documents(r.out);
     expect(docs).toHaveLength(3);
     const [codegen, pkgs, roots] = docs;
-    expect(realIds(codegen)).toEqual([
+    expect(realIds(codegen!)).toEqual([
       '//#tokens:fresh',
       '@mattstack/tui-kit#gates',
     ]);
-    const pkgIds = realIds(pkgs);
+    const pkgIds = realIds(pkgs!);
     expect(pkgIds).toContain('board#test');
     expect(pkgIds).toContain('chat#serve-check');
     expect(pkgIds).not.toContain('@mattstack/tui-kit#gates');
-    expect(realIds(roots)).toEqual([
+    expect(realIds(roots!)).toEqual([
       '//#build-storybook',
       '//#format:check',
       '//#lint:root',
@@ -104,8 +104,8 @@ describe('scripts/turbo.sh', () => {
     const linux = documents(
       run(['check', '--dry=json'], { uname: 'Linux' }).out
     )[1];
-    expect(realIds(mac)).toContain('deck#test');
-    expect(realIds(linux)).not.toContain('deck#test');
+    expect(realIds(mac!)).toContain('deck#test');
+    expect(realIds(linux!)).not.toContain('deck#test');
   });
 
   test('check --affected still runs the codegen and root gates', () => {
@@ -114,11 +114,11 @@ describe('scripts/turbo.sh', () => {
     });
     expect(r.code, r.err).toBe(0);
     const [codegen, , roots] = documents(r.out);
-    expect(realIds(codegen)).toEqual([
+    expect(realIds(codegen!)).toEqual([
       '//#tokens:fresh',
       '@mattstack/tui-kit#gates',
     ]);
-    expect(realIds(roots)).toContain('//#purity');
-    expect(realIds(roots)).toContain('@mattstack/tokens#test');
+    expect(realIds(roots!)).toContain('//#purity');
+    expect(realIds(roots!)).toContain('@mattstack/tokens#test');
   });
 });

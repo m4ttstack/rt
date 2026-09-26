@@ -10,7 +10,9 @@ const REACHES_ROOT =
   /import\.meta\.dirname,\s*(['"])\.\.\1,\s*\1\.\.\1,\s*\1\.\.\1/;
 
 function packageOf(file: string): string {
-  const [kind, name] = relative(ROOT, file).split(sep);
+  const parts = relative(ROOT, file).split(sep);
+  const kind = parts[0]!;
+  const name = parts[1]!;
   const pkg = JSON.parse(
     readFileSync(join(ROOT, kind, name, 'package.json'), 'utf8')
   );
