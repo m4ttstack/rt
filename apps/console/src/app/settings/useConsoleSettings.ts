@@ -74,6 +74,14 @@ async function getJson<T>(url: string): Promise<T> {
   return body;
 }
 
+/** The wire types every def as carrying a description, but a def that
+    omits one must read as empty rather than crash every string op on it. */
+function withDescription(def: SettingDefWire): SettingDefWire {
+  return typeof def.description === 'string'
+    ? def
+    : { ...def, description: '' };
+}
+
 function query(params: Record<string, string | null>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
@@ -112,7 +120,7 @@ export function useConsoleSettings(
     )
       .then(body => {
         if (!alive) return;
-        setDefs(body.defs);
+        setDefs(body.defs.map(withDescription));
         setUnregistered(body.unregistered ?? []);
         setError(null);
       })

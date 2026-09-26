@@ -45,8 +45,9 @@ const SCOPES = ['user', 'team', 'machine'] as const;
 const TOOLBAR_ROW = 68;
 // The title row and the toolbar row, plus the header's own bottom hairline.
 const HEADER_HEIGHT = PAGE_ROW_HEIGHT + TOOLBAR_ROW + 1;
-// Shared by the toolbar's three count chips (Changed, Editable, Needs
-// fixing), so their label geometry never drifts apart between edits.
+// Shared by the three count chips (Changed and Editable in the toolbar,
+// Needs fixing beside the title), so their label geometry never drifts
+// apart between edits.
 const FILTER_CHIP_STYLES = {
   label: { height: 30, paddingInline: 12, fontSize: 12, fontWeight: 500 },
 };
@@ -257,14 +258,28 @@ export function SettingsPage() {
                 wrap="nowrap"
                 style={{ borderBottom: '1px solid var(--tk-border-soft)' }}
               >
-                <Title
-                  order={2}
-                  size="h5"
-                  fw={700}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  Settings
-                </Title>
+                <Group gap={16} wrap="nowrap">
+                  <Title
+                    order={2}
+                    size="h5"
+                    fw={700}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    Settings
+                  </Title>
+                  <Chip
+                    checked={needsFixingOnly}
+                    onChange={setNeedsFixingOnly}
+                    variant="outline"
+                    size="sm"
+                    styles={FILTER_CHIP_STYLES}
+                  >
+                    Needs fixing{' '}
+                    <Text span inherit ff="monospace">
+                      {store.defs.filter(needsFixing).length}
+                    </Text>
+                  </Chip>
+                </Group>
                 <Group gap={12} wrap="nowrap">
                   <RepoPicker value={repo} onChange={setRepo} />
                   {asOf && (
@@ -279,7 +294,14 @@ export function SettingsPage() {
                   )}
                 </Group>
               </Group>
-              <Group gap={12} px={32} h={TOOLBAR_ROW} wrap="nowrap">
+              <Group
+                role="toolbar"
+                aria-label="settings filters"
+                gap={12}
+                px={32}
+                h={TOOLBAR_ROW}
+                wrap="nowrap"
+              >
                 <TextInput
                   ref={filterRef}
                   aria-label="filter settings"
@@ -336,18 +358,6 @@ export function SettingsPage() {
                   Editable{' '}
                   <Text span inherit ff="monospace">
                     {store.defs.filter(isEditable).length}
-                  </Text>
-                </Chip>
-                <Chip
-                  checked={needsFixingOnly}
-                  onChange={setNeedsFixingOnly}
-                  variant="outline"
-                  size="sm"
-                  styles={FILTER_CHIP_STYLES}
-                >
-                  Needs fixing{' '}
-                  <Text span inherit ff="monospace">
-                    {store.defs.filter(needsFixing).length}
                   </Text>
                 </Chip>
                 <SegmentedControl
