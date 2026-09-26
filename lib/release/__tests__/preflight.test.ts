@@ -184,13 +184,13 @@ describe("checkGate by path", () => {
       exec: (argv) => {
         const cmd = argv.join(" ");
         calls.push(cmd);
-        if (cmd === "git diff --name-only v2.10.2..origin/main") return ok("apps/board/src/a.ts\n");
+        if (cmd === "git diff --no-renames --name-only v2.10.2..origin/main") return ok("apps/board/src/a.ts\n");
         return failExec();
       },
     });
     const g = await checkGate(s, "v2.10.2", "origin/main");
     expect(g.path).toBe("fast");
-    expect(calls).toContain("git diff --name-only v2.10.2..origin/main");
+    expect(calls).toContain("git diff --no-renames --name-only v2.10.2..origin/main");
   });
   test("keepsFastPath names exactly the serve-only apps", () => {
     for (const name of ["board", "boxscore", "chat", "console", "gitq"]) expect(keepsFastPath(name)).toBe(true);

@@ -284,7 +284,7 @@ export async function checkSettingsStores(seams: PreflightSeams): Promise<CheckR
 
 export async function checkGate(seams: Pick<PreflightSeams, "repoRoot" | "exec">, tag: string, ref = "HEAD"): Promise<GateImplication> {
   try {
-    const files = (await git(seams, ["diff", "--name-only", `${tag}..${ref}`])).split("\n").map((f) => f.trim()).filter(Boolean);
+    const files = (await git(seams, ["diff", "--no-renames", "--name-only", `${tag}..${ref}`])).split("\n").map((f) => f.trim()).filter(Boolean);
     if (files.length === 0) return { path: "full", reason: "no changes since the tag" };
     const outside = files.filter((f) => !FAST_PATH_FILES.has(f) && !f.startsWith("website/") && !fastPathApp(f));
     if (outside.length > 0) return { path: "full", reason: `changes outside the served apps, notes and website: ${outside.slice(0, 5).join(", ")}` };

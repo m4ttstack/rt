@@ -244,7 +244,7 @@ async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
 
   const gate = await checkGate(seams, lastTag, "origin/main");
   if (gate.path !== "fast") throw new StepFailure("qualify", `not a fast-path diff since ${lastTag}: ${gate.reason}`, null);
-  const files = (await git(seams, ["diff", "--name-only", `${lastTag}..origin/main`])).split("\n").map((f) => f.trim()).filter(Boolean);
+  const files = (await git(seams, ["diff", "--no-renames", "--name-only", `${lastTag}..origin/main`])).split("\n").map((f) => f.trim()).filter(Boolean);
   const moved = movedServedApps(files);
   if (!moved.includes(name)) throw new StepFailure("qualify", `${name} has not moved since ${lastTag} (moved: ${moved.join(", ") || "none"})`, null);
   const nextTag = nextPatchTag(lastTag);
@@ -329,7 +329,7 @@ async function commitFiles(seams: ReleaseAppSeams, o: {
 }
 
 async function commitNotes(seams: ReleaseAppSeams, ctx: Ctx, notes: string): Promise<string> {
-  return commitFiles(seams, {
+  const commit = await commitFiles(seams, {
     step: "notes",
     parent: ctx.headSha,
     baseTree: (await git(seams, ["rev-parse", `${ctx.headSha}^{tree}`])).trim(),
@@ -339,6 +339,10 @@ async function commitNotes(seams: ReleaseAppSeams, ctx: Ctx, notes: string): Pro
     currentHead: async () => (await git(seams, ["ls-remote", "origin", "refs/heads/main"], 30_000)).split(/\s+/)[0] ?? "",
     resume: `rt release app ${ctx.name}`,
   });
+  // commitFiles lands the notes commit on GitHub via the API; the local git object
+  // set does not have it until fetched, and tagStep tags it locally right after this.
+  await refreshMain(seams);
+  return commit;
 }
 
 type Recorder = (id: StepId, status: StepStatus, detail: string, command?: string) => void;
@@ -443,12 +447,26 @@ export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppO
 
   rec("qualify", "ok", ctx.qualifyDetail);
 
-  const sections = await inStep("notes", rerun, () => notesSectionsFor(seams, ctx.lastTag, ctx.moved));
+  let sections: NotesSection[];
+  try {
+    sections = await inStep("notes", rerun, () => notesSectionsFor(seams, ctx.lastTag, ctx.moved));
+  } catch (err) {
+    if (!(err instanceof StepFailure)) throw err;
+    rec("notes", "failed", err.message);
+    return report("failed", err.resume);
+  }
   notes = renderNotes({ sections, lastTag: ctx.lastTag, nextTag: ctx.nextTag });
   hash = notesHash(notes);
 
   if (opts.dryRun) {
-    const already = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+    let already: { sha: string; text: string } | null;
+    try {
+      already = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+    } catch (err) {
+      if (!(err instanceof StepFailure)) throw err;
+      rec("notes", "failed", err.message);
+      return report("failed", err.resume);
+    }
     if (already) {
       rec("notes", "done", `RELEASE_NOTES.md for ${ctx.nextTag} is already committed on main (${already.sha.slice(0, 9)})`);
     } else {
@@ -460,7 +478,14 @@ export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppO
   }
 
   let notesSha: string;
-  const committed = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+  let committed: { sha: string; text: string } | null;
+  try {
+    committed = await inStep("notes", rerun, () => committedNotes(seams, ctx));
+  } catch (err) {
+    if (!(err instanceof StepFailure)) throw err;
+    rec("notes", "failed", err.message);
+    return report("failed", err.resume);
+  }
   if (committed) {
     notesSha = committed.sha;
     notes = committed.text;

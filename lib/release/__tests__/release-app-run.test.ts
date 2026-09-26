@@ -28,6 +28,8 @@ interface Run {
 class World {
   commits = new Map<string, Commit>();
   main: string;
+  /** Shas a `git fetch` has pulled in; a commit the gh API lands on main is remote-only until fetched, so local git commands (tag, rev-parse) refuse it before that. */
+  localShas = new Set<string>();
   localTags = new Map<string, string>();
   remoteTags = new Map<string, string>();
   runs = new Map<number, Run>();
@@ -47,6 +49,7 @@ class World {
   constructor() {
     this.commit("c0", null, ["apps/board/index.ts", "RELEASE_NOTES.md"], `${LAST} notes\n`, "first");
     this.main = "c0";
+    this.localShas.add("c0");
     this.localTags.set(LAST, "c0");
     this.remoteTags.set(LAST, "c0");
     this.releaseRun(LAST, "success");
@@ -106,7 +109,10 @@ class World {
     const cmd = argv.join(" ");
     let m: RegExpMatchArray | null;
 
-    if (cmd === "git fetch --quiet --tags origin main") return ok();
+    if (cmd === "git fetch --quiet --tags origin main") {
+      for (let c = this.commits.get(this.main); c; c = c.parent ? this.commits.get(c.parent) : undefined) this.localShas.add(c.sha);
+      return ok();
+    }
     if (cmd === "git rev-parse origin/main") return ok(`${this.main}\n`);
     if (cmd === "git ls-remote --tags --refs origin v*") {
       return ok([...this.remoteTags.entries()].map(([t, c]) => `${c}\trefs/tags/${t}`).join("\n") + "\n");
@@ -116,7 +122,7 @@ class World {
       const c = this.remoteTags.get(m[1]!);
       return ok(c ? `tagobj\trefs/tags/${m[1]}\n${c}\trefs/tags/${m[1]}^{}\n` : "");
     }
-    if ((m = cmd.match(/^git diff --name-only (\S+)\.\.(\S+)$/))) {
+    if ((m = cmd.match(/^git diff(?: --no-renames)? --name-only (\S+)\.\.(\S+)$/))) {
       return ok([...new Set(this.range(m[1]!, m[2]!).flatMap((c) => c.files))].join("\n"));
     }
     if ((m = cmd.match(/^git log --format=%s (\S+)\.\.origin\/main -- apps\/(\S+)\/$/))) {
@@ -146,7 +152,9 @@ class World {
       return c ? ok(`${c}\n`) : err("", 1);
     }
     if ((m = cmd.match(/^git tag -a (\S+) (\S+) -m \S+$/))) {
-      this.localTags.set(m[1]!, m[2]!);
+      const sha = m[2]!;
+      if (!this.localShas.has(sha)) return err(`fatal: not a valid object name '${sha}'.`, 128);
+      this.localTags.set(m[1]!, sha);
       return ok();
     }
     if ((m = cmd.match(/^git push origin refs\/tags\/(\S+)$/))) {
@@ -333,6 +341,36 @@ describe("runReleaseApp: the approval flow", () => {
     const body = JSON.parse(patch[1]) as { sha: string; force: boolean };
     expect(body.force).toBe(false);
     expect(w.commits.get(body.sha)!.parent).toBe(mainBefore);
+  });
+
+  test("the tag step fails when the notes commit is never fetched from origin", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const hash = await toApproval(w);
+    let fetches = 0;
+    const exec = w.exec;
+    const seams = w.seams({
+      exec: async (argv) => {
+        if (argv.join(" ") === "git fetch --quiet --tags origin main") {
+          fetches += 1;
+          // Drop every fetch after qualify's own: simulates commitNotes never re-fetching the API-made commit.
+          if (fetches > 1) { w.calls.push(argv); return { stdout: "", stderr: "", exitCode: 0 }; }
+        }
+        return exec(argv);
+      },
+    });
+    const r = await runReleaseApp(seams, opts({ yesNotes: hash }));
+    expect(lastStep(r)).toMatchObject({ id: "tag", status: "failed" });
+    expect(lastStep(r).detail).toContain("not a valid object name");
+  });
+
+  test("the tag step succeeds once the notes commit is fetched from origin first", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const hash = await toApproval(w);
+    const r = await runReleaseApp(w.seams(), opts({ yesNotes: hash }));
+    expect(r.status).toBe("released");
+    expect(r.steps.find((s) => s.id === "tag")).toMatchObject({ status: "done" });
   });
 
   test("main moving under the notes commit fails with the resume command", async () => {
