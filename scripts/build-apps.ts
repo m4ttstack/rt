@@ -18,7 +18,7 @@ import { join, resolve } from "path";
 import { spawnSync } from "child_process";
 import { parseDepsLock } from "../lib/bundle-layout.ts";
 import { stageIdentity } from "./lib/app-identity.ts";
-import { readBundleRecipe } from "./bundle-ci/validate-manifest.ts";
+import { readBundleRecipe } from "./lib/validate-manifest.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 
