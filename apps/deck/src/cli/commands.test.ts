@@ -456,7 +456,7 @@ test('adopt --json against no running platform answers the frozen deck-not-runni
   });
 });
 
-test('--version prints the bare semver — the bundle gate matches it against deps.lock verbatim', async () => {
+test('--version prints the bare semver: update-machine matches it against package.json at the tag', async () => {
   const x = io();
   expect(await runCommand(['--version'], x)).toBe(0);
   expect(x.lines).toHaveLength(1);

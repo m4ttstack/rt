@@ -66,7 +66,7 @@ test('the fixture bytes match the digests its repo-tools twin pins', () => {
     ).toBe(digest);
 });
 
-test('reads the staged identity bundle-apps ships', () => {
+test('reads the staged identity build-apps ships', () => {
   expect(readBundledIdentity(FIXTURE_RESOURCES, 'board')).toEqual({
     displayName: 'Board',
     description: 'Open MRs ready for review.',

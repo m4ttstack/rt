@@ -638,8 +638,9 @@ export async function runCommand(
         return 0;
       }
       case '--version': {
-        // Bare semver, nothing else: the mattstack bundle gate compares this
-        // output against the rt-tray deps.lock row verbatim.
+        // Bare semver, nothing else: update-machine's served-suite leg
+        // compares this output against apps/deck/package.json's version at
+        // the released tag verbatim.
         io.out(VERSION);
         return 0;
       }

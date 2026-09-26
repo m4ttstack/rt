@@ -10,8 +10,8 @@ import type { DepsLockTool } from "../../lib/bundle-layout.ts";
 
 export const IDENTITY_MANIFEST = "mattstack.deck.json";
 
-// Parity anchor: m4ttstack/apps apps/deck/src/registry/manifest.ts
-// (MAX_ICON_BYTES, SVG_ROOT) and deck-manifest.ts (NAME_RE, the badge rule).
+// Parity anchor: apps/deck/src/registry/manifest.ts (MAX_ICON_BYTES,
+// SVG_ROOT) and deck-manifest.ts (NAME_RE, the badge rule).
 // Deck silently drops an identity it refuses, so these rules move with deck's.
 const MAX_ICON_BYTES = 64 * 1024;
 const SVG_ROOT = /^\s*(?:<\?xml\b[^>]*\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE\b[^>]*>\s*)*<svg[\s>]/i;

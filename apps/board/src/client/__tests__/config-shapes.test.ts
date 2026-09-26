@@ -46,11 +46,7 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
 /** Composite board.* registry keys with no edit UI yet -- rowKind's
     "readonly" fallback (no shapeOf editor) is the intended rendering for
     these, not a coverage gap. */
-// board.rtRepos is retired: the board derives it from board.projects and
-// board.gitlabHost (config.ts deriveRtRepos). The registry row goes with the
-// next @mattstack/rt-client publish; until board picks that up, the key is
-// still registered and must not be offered for editing.
-const DELIBERATELY_READONLY_COMPOSITES: string[] = ['board.rtRepos'];
+const DELIBERATELY_READONLY_COMPOSITES: string[] = [];
 
 describe('shapeOf', () => {
   test('gives every composite board.* registry key a board editor or a widget', () => {

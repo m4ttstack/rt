@@ -2,7 +2,7 @@
 # Serves the compiled boxscore the way deck runs it in prod: from
 # $HOME/.mattstack/boxscore under a fresh HOME, with no source tree to fall
 # back on, and with a hostile .env and bunfig.toml in that working directory.
-# bundle-apps and check-bundle only run --version, which exits before any
+# build-apps and check-bundle only run --version, which exits before any
 # boxscore code loads, so this is the one proof the binary serves and opens
 # its SQLite store.
 set -euo pipefail

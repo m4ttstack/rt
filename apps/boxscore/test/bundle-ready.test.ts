@@ -34,7 +34,7 @@ function compileOutfile(script: string): string | undefined {
 }
 
 describe('bundle recipe', () => {
-  it('opts boxscore into the bundle with a recipe bundle-apps can run', () => {
+  it('opts boxscore into the bundle with a recipe build-apps can run', () => {
     expect(manifest.name).toBe('boxscore');
     expect(pkg.name).toBe('boxscore');
     expect(manifest.includeInBundle).toBe(true);

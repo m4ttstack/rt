@@ -14,7 +14,7 @@ import {
   stageIdentity,
 } from "../app-identity.ts";
 
-// Parity anchor: m4ttstack/apps apps/deck/src/registry/__fixtures__/bundle-resources/
+// Parity anchor: apps/deck/src/registry/__fixtures__/bundle-resources/
 // holds byte-identical files, and deck's bundled-identity test proves deck
 // reads exactly these bytes as board's identity.
 const FIXTURE = join(import.meta.dir, "fixtures", "bundle-resources", "apps", "board");
