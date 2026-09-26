@@ -181,6 +181,8 @@ const EXPECTED_TOOL_NAMES = [
   "mr_approve", "mr_comment", "mr_comment_inline", "mr_create", "mr_map", "mr_ready", "mr_rebase", "mr_reply_thread", "mr_resolve_thread", "mr_retry", "mr_update", "mr_upload",
   "rt_verb",
   "run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list",
+  "worktree_provision", "worktree_dispose", "worktree_stop_holders",
+  "herd_start", "herd_spawn", "herd_brief", "herd_close", "herd_status", "herd_list", "herd_attend", "herd_wrap_up", "herd_resume", "herd_milestone",
 ];
 
 describe("rt mcp serve e2e", () => {
@@ -228,7 +230,7 @@ describe("rt mcp serve e2e", () => {
       const names = listResult.tools.map((t) => t.name).sort();
       expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
 
-      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list"];
+      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list", "worktree_provision", "worktree_dispose", "worktree_stop_holders", "herd_start", "herd_spawn", "herd_brief", "herd_close", "herd_status", "herd_list", "herd_attend", "herd_wrap_up", "herd_resume", "herd_milestone"];
       for (const name of PUBLISHED) expect(names, name).toContain(name);
 
       const call = await client.request("tools/call", { name: "gate_list", arguments: {} });
@@ -430,4 +432,37 @@ describe("rt mcp serve e2e", () => {
       }
     }
   }, 60_000);
+
+  test("rt_verb runs settings list against the isolated test HOME", async () => {
+    const server = runRtPiped(["mcp", "serve"], home);
+    const client = new McpClient(server);
+    try {
+      await client.request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "rt-e2e", version: "0.0.0" },
+      });
+      client.notify("notifications/initialized");
+
+      const call = await client.request("tools/call", { name: "rt_verb", arguments: { args: ["settings", "list"] } });
+      expect(call.error).toBeUndefined();
+      const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+    } finally {
+      try { server.stdin.end(); } catch { /* already closed */ }
+      const exitedInTime = await Promise.race([
+        server.exited.then(() => true),
+        Bun.sleep(3000).then(() => false),
+      ]);
+      try {
+        expect(exitedInTime).toBe(true);
+      } finally {
+        if (!exitedInTime) {
+          try { server.kill(); } catch { /* already gone */ }
+          await server.exited;
+        }
+      }
+    }
+  }, 30_000);
 });
