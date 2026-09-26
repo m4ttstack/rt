@@ -175,6 +175,30 @@ describe("per-pane single-flight drive guard", () => {
   });
 });
 
+describe("the watcher composed with the real relocation driver", () => {
+  test("a dialog for a registered tree that is not the announced one is left to the human with no key sent", async () => {
+    const calls: string[] = [];
+    const herdr = (async (method: string) => {
+      calls.push(method);
+      if (method === "pane.read") return { ok: true, result: { read: { text: attended(TREE_B) } } };
+      return { ok: true, result: {} };
+    }) as never;
+    const outcomes: string[] = [];
+    const { w } = watcher({
+      isRegisteredTree: (p) => p === TREE_A || p === TREE_B,
+      drive: async (_pane, allowed) => {
+        const o = await driveRelocationAccept({ herdr, sock: {}, pane: "w1:p1", context: {}, settleMs: 1, stepMs: 1, isRegisteredTree: allowed });
+        outcomes.push(o);
+        return o;
+      },
+    });
+    expect(await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: TREE_A, cwd: "/repo" })).toEqual({ scheduled: true, pane: "7" });
+    await settle();
+    expect(outcomes).toEqual(["unregistered"]);
+    expect(calls).toEqual(["pane.read"]);
+  });
+});
+
 describe("pane:announce-relocation handler", () => {
   test("a non-string paneId is refused before the watcher sees it", async () => {
     const announced: unknown[] = [];
