@@ -574,6 +574,13 @@ describe("versioned store names on the wire", () => {
     expect(pruneCalls).toEqual([]);
   });
 
+  test("/prune refuses a scope the key does not allow, saying pruned rather than unset", async () => {
+    const res = (await call(post("/api/settings/prune", { key: "t.rules", scope: "team", storeName: "t.rules" })))!;
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain(`"t.rules" cannot be pruned in the team store`);
+    expect(pruneCalls).toEqual([]);
+  });
+
   test("/prune refuses a composite key under the default allowComposite, same as /set and /unset", async () => {
     const res = await settingsHandler(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.rules" }), { rt: MIG_RT });
     expect(res!.status).toBe(400);

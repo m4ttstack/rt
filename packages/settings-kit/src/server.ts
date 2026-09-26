@@ -551,7 +551,7 @@ export async function settingsHandler(
     }
     if (!def.scopes.includes(scope)) {
       return json(
-        { error: `"${key}" cannot be unset in the ${scope} store (allowed: ${def.scopes.join(", ")})` },
+        { error: `"${key}" cannot be pruned in the ${scope} store (allowed: ${def.scopes.join(", ")})` },
         400,
       );
     }
