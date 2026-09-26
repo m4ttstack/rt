@@ -737,8 +737,6 @@ describe("rt release update-machine", () => {
       expect(sync.detail).toContain("not main");
       expect(daemonLeg.status).toBe("skipped");
       expect(daemonLeg.detail).toContain("halted after");
-      // haltedAfter carries the leg's LABEL, matching every other leg's halt (see
-      // "prod app update" above), not the bare leg id.
       expect(report.haltedAfter).toBe("shared checkout sync");
     });
 

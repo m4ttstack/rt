@@ -7,10 +7,9 @@ import { expect, test } from 'bun:test';
 import { parseServeCatalog, readBundleCatalog } from './bundle-catalog.ts';
 
 // Parity anchor: byte-identical twin at
-// scripts/lib/__tests__/fixtures/deps-lock-serve.fixture.json (same repo,
-// since the fold-in), whose test pins the same digest and asserts rt's own
-// parser derives expectedCatalog. Change both files together and move the
-// digest in both tests.
+// scripts/lib/__tests__/fixtures/deps-lock-serve.fixture.json, whose test
+// pins the same digest and asserts rt's own parser derives expectedCatalog.
+// Change both files together and move the digest in both tests.
 const FIXTURE_SHA256 =
   '1d651d8275690b5465cf67ea6926287537020673d2c272834da74503db1f1828';
 

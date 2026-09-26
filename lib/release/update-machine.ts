@@ -1,8 +1,8 @@
 /**
  * rt release update-machine... the rt:release skill's step 12 as one verb:
- * bring this developer's own machine (prod app, dev bundle, daemon, and the
- * served suite) up to a released tag, in that order, with a verification
- * sweep at the end.
+ * bring this developer's own machine (prod app, dev bundle, checkout sync,
+ * daemon, and the served suite) up to a released tag, in that order, with a
+ * verification sweep at the end.
  *
  * Every external effect goes through UpdateMachineSeams so this module stays
  * pure and testable; the real seams (network, exec, prompts, chat) live in
