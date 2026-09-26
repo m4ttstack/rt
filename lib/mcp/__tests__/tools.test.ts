@@ -8,7 +8,7 @@ import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 import { REPO_INDEX_NS } from "../../repo-index.ts";
 import { closeStateDb, setKvValue } from "../../state/index.ts";
 
-const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_upload","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb","run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list","mr_view","mr_list","mr_for_branch","mr_threads","mr_pipeline","mr_job_trace","mr_merge"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_comment","mr_create","mr_update","mr_upload","mr_approve","mr_resolve_thread","mr_ready","mr_retry","mr_rebase","mr_map","herd_gates","herd_ask","herd_answer","herd_report","rt_verb","run_start","run_stage","run_field_set","run_field_get","run_decision","run_status","run_snapshot","run_list","mr_view","mr_list","mr_for_branch","mr_threads","mr_pipeline","mr_job_trace","mr_merge","git_push","git_pull","git_rebase","branch_sync"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
