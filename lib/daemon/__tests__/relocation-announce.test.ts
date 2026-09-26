@@ -67,6 +67,13 @@ describe("relocation watcher", () => {
     expect(seen[0]!("/pool/t2")).toBe(false);
     expect(seen[0]!("/elsewhere")).toBe(false);
   });
+  test("a relative announced path resolves against the announcing session's cwd, not the daemon's", async () => {
+    const { w, seen } = watcher();
+    await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "t1", cwd: "/pool" });
+    await settle();
+    expect(seen[0]!("/pool/t1")).toBe(true);
+    expect(seen[0]!("/pool/t2")).toBe(false);
+  });
   test("EnterWorktree without a path (name mode) schedules nothing: the tree does not exist yet", async () => {
     const { w, seen } = watcher();
     expect(await w.announce({ sessionId: "s1", tool: "EnterWorktree", cwd: "/repo" })).toEqual({ scheduled: false, pane: "7", reason: "awaiting-path" });

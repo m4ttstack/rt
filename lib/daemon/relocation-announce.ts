@@ -6,6 +6,7 @@
  * enough for EnterWorktree to provision and paint, short enough that a stale
  * announcement cannot answer a later, unrelated dialog.
  */
+import { resolve } from "node:path";
 import type { Logger } from "pino";
 import type { Commands } from "../../packages/rt-client/src/commands.ts";
 import { resolveLivePane, type LivePane } from "./pane-resolve-live.ts";
@@ -63,7 +64,7 @@ export function createRelocationWatcher(deps: RelocationWatcherDeps): Relocation
   };
 
   function allowedFor(a: Announce): (path: string) => boolean {
-    const want = a.path as string;
+    const want = resolve(a.cwd, a.path as string);
     return (p) => deps.isRegisteredTree(p) && same(p, want);
   }
 
