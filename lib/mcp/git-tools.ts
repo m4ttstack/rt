@@ -325,7 +325,8 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
         if (r.code === 0) return ok({ status: "synced", divergedFromOrigin: pre.diverged, ...obj });
         if (r.code === 3) return ok({ status: "conflict", ...obj });
         if (r.code === 124) return err(`rt sync timed out after ${SYNC_TIMEOUT_MS / 1000}s`);
-        const message = typeof obj.error === "string" ? obj.error : detail(r);
+        const hint = typeof obj.hint === "string" ? (typeof obj.tool === "string" && obj.tool !== "" ? `${obj.hint}. Run: ${obj.tool}` : obj.hint) : null;
+        const message = typeof obj.error === "string" ? obj.error : hint ?? detail(r);
         return err(`rt sync refused (exit ${r.code}): ${message}`);
       }),
     },

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { checkRegisteredTree, findTreeByRealpath, type TreeGuardDeps } from "../tree-guard.ts";
 
 const deps: TreeGuardDeps = {
@@ -24,6 +27,33 @@ describe("checkRegisteredTree", () => {
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain("root");
     expect((r as { error: string }).error).toContain("registered");
+  });
+});
+
+describe("checkRegisteredTree on a real filesystem", () => {
+  test("a registry record stored at a symlink path accepts the tree by realpath; an alias to an unregistered directory is refused", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-guard-"));
+    try {
+      const tree = join(root, "tree");
+      const other = join(root, "other");
+      mkdirSync(tree);
+      mkdirSync(other);
+      const treeLink = join(root, "tree-link");
+      const otherLink = join(root, "other-link");
+      symlinkSync(tree, treeLink);
+      symlinkSync(other, otherLink);
+      const byRepo = { "remote:example.com%2Facme%2Fapp": [{ name: "app-1", path: treeLink }] };
+      const fsDeps: TreeGuardDeps = {
+        repoIndex: () => ({}),
+        treeByPath: (p) => findTreeByRealpath(p, byRepo, realpathSync),
+        realpath: realpathSync,
+      };
+      expect(checkRegisteredTree(treeLink, fsDeps)).toEqual({ ok: true, path: realpathSync(tree), repoName: "remote:example.com%2Facme%2Fapp" });
+      expect(checkRegisteredTree(tree, fsDeps)).toEqual({ ok: true, path: realpathSync(tree), repoName: "remote:example.com%2Facme%2Fapp" });
+      expect(checkRegisteredTree(otherLink, fsDeps).ok).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

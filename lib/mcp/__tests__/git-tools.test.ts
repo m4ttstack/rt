@@ -234,13 +234,15 @@ describe("gitToolDefs guard", () => {
   test("every git tool refuses an unregistered tree before running git", async () => {
     const calls: string[] = [];
     const guard: TreeGuardDeps = { repoIndex: () => ({}), treeByPath: () => null, realpath: (p) => p };
-    for (const [name, input] of [["git_push", {}], ["git_pull", {}], ["git_rebase", { onto: "x" }]] as const) {
-      const tool = gitToolDefs({ git: fakeGit({}, calls), guard, sync: async () => ({ code: 0, stdout: "{}", stderr: "" }) }).find((t) => t.name === name)!;
+    let synced = false;
+    for (const [name, input] of [["git_push", {}], ["git_pull", {}], ["git_rebase", { onto: "x" }], ["branch_sync", {}]] as const) {
+      const tool = gitToolDefs({ git: fakeGit({}, calls), guard, sync: async () => { synced = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === name)!;
       const r = await tool.handler({ tree: "/elsewhere", ...input }, {} as NodeJS.ProcessEnv);
       expect(r.ok, name).toBe(false);
       expect(r.error, name).toContain("registered");
     }
     expect(calls).toEqual([]);
+    expect(synced).toBe(false);
   });
 });
 
@@ -297,7 +299,8 @@ describe("branchSyncPreflight", () => {
     expect(calls).not.toContain(LEFT_ONLY);
   });
   test("a failing local-newer probe refuses", async () => {
-    for (const broken of [{ [LOCAL_BASE]: { code: 128, stderr: "fatal: bad" } }, { [REMOTE_BASE]: { code: 1 } }, { "merge-base --is-ancestor oldbase newbase": { code: 128 } }, { [LEFT_ONLY]: { code: 128 } }]) {
+    const brokenProbes: Script[] = [{ [LOCAL_BASE]: { code: 128, stderr: "fatal: bad" } }, { [REMOTE_BASE]: { code: 1 } }, { "merge-base --is-ancestor oldbase newbase": { code: 128 } }, { [LEFT_ONLY]: { code: 128 } }];
+    for (const broken of brokenProbes) {
       const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...localNewer, [LEFT_ONLY]: {}, ...broken }));
       expect(r.ok, Object.keys(broken)[0]).toBe(false);
     }
@@ -418,13 +421,21 @@ describe("branch_sync tool", () => {
     const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
     expect(r).toEqual({ ok: true, body: { status: "synced", divergedFromOrigin: false } });
   });
-  test("exit 0 is synced, exit 3 is a conflict bundle, exit 4 is a refusal", async () => {
-    for (const [code, stdout, expectOk, status] of [[0, '{"pushed":true}', true, "synced"], [3, '{"conflicts":["a.ts"]}', true, "conflict"], [4, '{"error":"stack member"}', false, ""]] as const) {
-      const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code, stdout, stderr: "" }) }).find((t) => t.name === "branch_sync")!;
-      const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
-      expect(r.ok, String(code)).toBe(expectOk);
-      if (expectOk) expect((r.body as { status: string }).status).toBe(status);
-    }
+  const runSync = async (code: number, stdout: string) => {
+    const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code, stdout, stderr: "" }) }).find((t) => t.name === "branch_sync")!;
+    return tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+  };
+  test("exit 3 is a conflict carrying rt sync's bundle", async () => {
+    const bundle = { kind: "rebase-conflict", state: "mid-rebase", branch: "feat/x", target: "origin/develop", commitsBehind: 2, unresolvedFiles: ["a.ts"], autoResolvedFiles: [], backupBranch: null, branchCommits: [], targetCommits: [], hint: "resolve and continue" };
+    const r = await runSync(3, JSON.stringify(bundle, null, 2));
+    expect(r.ok).toBe(true);
+    expect(r.body).toMatchObject({ status: "conflict", unresolvedFiles: ["a.ts"], state: "mid-rebase" });
+  });
+  test("exit 4 is a refusal whose error carries the stack refusal's hint", async () => {
+    const refusal = { kind: "stack-refusal", branch: "feat/x", source: "gitq", stack: null, mrs: null, tool: "/gitq:sync", hint: "feat/x is a member of stack s; sync the stack instead" };
+    const r = await runSync(4, JSON.stringify(refusal, null, 2));
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("rt sync refused (exit 4): feat/x is a member of stack s; sync the stack instead. Run: /gitq:sync");
   });
   test("a failed preflight never runs rt sync", async () => {
     let ran = false;
