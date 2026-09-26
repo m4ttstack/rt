@@ -38,10 +38,12 @@ import {
   type Provenance,
   type Resolved,
 } from "../lib/settings/resolve.ts";
-import { setSetting, unsetSetting } from "../lib/settings/write.ts";
+import { pruneStoreName, setSetting, unsetSetting } from "../lib/settings/write.ts";
+import { currentStoreName } from "../lib/settings/migrate.ts";
 import { getDef, isMigrated, type SettingDef, type SettingScope } from "../lib/settings/registry.ts";
 import { firstIssueText, formatIssuePath } from "../lib/settings/schema.ts";
 import { checkStores, type CheckFinding } from "../lib/settings/check.ts";
+import { planStoreMigrations, type MigrationPlan, type OlderName } from "../lib/settings/migrate-stores.ts";
 import { buildInterceptRules, writeInterceptRules } from "../lib/endpoint/shim.ts";
 
 // ─── arg parsing (commands/events.ts conventions) ────────────────────────────
@@ -446,6 +448,8 @@ export function renderListRow(s: ListedSetting): string {
   for (const inv of s.invalid ?? []) labels.push(`invalid[${inv.scope}]: ${inv.reason}`);
   for (const nc of s.nonconforming ?? []) labels.push(`nonconforming[${nc.scope}]: ${firstIssueText(nc.issues)}`);
   if (s.mergedIssues && s.mergedIssues.length > 0) labels.push(`merged: ${firstIssueText(s.mergedIssues)}`);
+  for (const d of s.diverged ?? []) labels.push(`diverged[${d.scope}]: ${d.storeNames.join(", ")}`);
+  if (s.newer) labels.push("from a newer rt");
 
   const labelStr = labels.length > 0 ? `  ${yellow}(${labels.join("; ")})${reset}` : "";
   return `  ${bold}${s.key}${reset} = ${formatValueInline(s.value)}${labelStr}`;
@@ -467,10 +471,13 @@ export async function settingsExplain(args: string[]): Promise<void> {
     failWithError(err);
   }
 
+  const def = getDef(key) as SettingDef; // explainSetting already threw for an unregistered key
+  const currentName = currentStoreName(def);
+
   console.log("");
   console.log(`  ${bold}${key}${reset}`);
   for (const row of rows) {
-    console.log(renderExplainRow(row));
+    console.log(renderExplainRow(row, currentName));
   }
   console.log("");
 }
@@ -481,9 +488,16 @@ export async function settingsExplain(args: string[]): Promise<void> {
  * show their authored value; shadowed (teamLocked) and invalid rows are
  * marked but not applied.
  */
-export function renderExplainRow(row: ExplainRow): string {
+export function renderExplainRow(row: ExplainRow, currentName?: string): string {
   const scopeLabel = row.scope.padEnd(11);
   const fileLabel = row.file ?? (row.scope === "default" ? "(registry default)" : "(no file)");
+  const from =
+    currentName !== undefined && row.storeName !== undefined && row.storeName !== currentName
+      ? `  ${dim}[read from ${row.storeName}, version ${row.storedVersion}]${reset}`
+      : "";
+  const older = (row.olderNames ?? [])
+    .map((o) => `\n      ${o.label === "diverged" ? red : dim}older ${o.storeName}: ${o.label}${reset}${o.label === "diverged" ? `  ${formatValueInline(o.value)}` : ""}`)
+    .join("");
 
   if (!row.present) {
     return `  ${dim}${scopeLabel} ${fileLabel}  —${reset}`;
@@ -493,24 +507,31 @@ export function renderExplainRow(row: ExplainRow): string {
     return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[shadowed: ${row.shadowed}]${reset}`;
   }
   if (row.invalid) {
-    return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${red}[invalid: ${row.invalid}]${reset}`;
+    return `  ${dim}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${red}[invalid: ${row.invalid}]${reset}${from}${older}`;
   }
   if (row.nonconforming) {
-    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}`;
+    return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}  ${yellow}[nonconforming: ${firstIssueText(row.nonconforming)}]${reset}${from}${older}`;
   }
-  return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}`;
+  return `  ${green}${scopeLabel}${reset} ${fileLabel}  ${formatValueInline(row.value)}${from}${older}`;
 }
 
 // ─── check ──────────────────────────────────────────────────────────────────
 
-/** A header line per finding, then one line per issue. A `merged` finding
+/** A header line per finding, then values or issues. A `merged` finding
     carries no scope or file, so its header names only the repo, if any. */
 export function renderCheckFinding(f: CheckFinding): string {
   const where = [f.scope, f.repo].filter(Boolean).join("/");
   const label = where ? `${where}  ` : "";
   const file = f.file ? `  ${dim}${f.file}${reset}` : "";
+  const kindText = f.newer ? "unregistered (from a newer rt)" : f.kind;
+  const kind = f.kind === "stale" || f.kind === "leftover" ? `${dim}${kindText}${reset}` : `${red}${kindText}${reset}`;
+  const name = f.storeName ? `  ${f.storeName}` : "";
+  const values =
+    f.kind === "diverged" && "olderValue" in f
+      ? `\n      ${f.storeName}: ${formatValueInline(f.olderValue)}\n      current: ${formatValueInline(f.currentValue)}`
+      : "";
   const issues = f.issues.map((i) => `\n      ${formatIssuePath(i.path)}: ${i.message}`).join("");
-  return `  ${bold}${f.key}${reset}  ${label}${red}${f.kind}${reset}${file}${issues}`;
+  return `  ${bold}${f.key}${reset}  ${label}${kind}${name}${file}${values}${issues}`;
 }
 
 export async function settingsCheck(args: string[]): Promise<void> {
@@ -523,9 +544,166 @@ export async function settingsCheck(args: string[]): Promise<void> {
     console.log("");
     for (const f of report.findings) console.log(renderCheckFinding(f));
     const unregistered = report.findings.filter((f) => f.kind === "unregistered").length;
-    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered`);
+    const older = report.findings.filter((f) => f.kind === "stale" || f.kind === "leftover").length;
+    console.log(`\n  ${report.failing} failing, ${unregistered} unregistered, ${older} stale or leftover`);
     console.log("");
   }
 
   if (report.failing > 0) process.exitCode = 1;
+}
+
+// ─── migrate ────────────────────────────────────────────────────────────────
+
+export interface MigrateDeps {
+  confirm?: (message: string) => Promise<boolean>;
+  interactive?: boolean;
+}
+
+const whereOf = (x: { scope: string; repo?: string; file: string }) => `${[x.scope, x.repo].filter(Boolean).join("/")}  ${dim}${x.file}${reset}`;
+const isSecret = (key: string) => getDef(key)?.secret === true;
+const shown = (key: string, value: unknown) => (isSecret(key) ? "(secret)" : formatValueInline(value));
+/** `undefined` rather than a placeholder string: JSON.stringify drops the property entirely, matching check.ts's own secret handling. */
+const redacted = (key: string, value: unknown): unknown => (isSecret(key) ? undefined : value);
+const redactOlder = <T extends OlderName>(o: T): T => ({
+  ...o,
+  olderValue: redacted(o.key, o.olderValue),
+  currentValue: redacted(o.key, o.currentValue),
+  authored: redacted(o.key, o.authored),
+});
+
+function renderOlder(o: OlderName): string {
+  const color = o.label === "diverged" ? red : dim;
+  const values = o.label === "diverged" ? `\n      ${o.storeName}: ${shown(o.key, o.olderValue)}\n      current: ${shown(o.key, o.currentValue)}` : "";
+  return `  ${bold}${o.key}${reset}  ${whereOf(o)}  ${color}${o.storeName}: ${o.label}${reset}${values}`;
+}
+
+/**
+ * rt settings migrate [--write | --prune [--team] [--force <key>]... [--yes]] [--json]
+ * Dry run by default. --write is additive (current names from migrated
+ * values, baselines recorded by the ordinary write path); --prune deletes
+ * leftover and stale older names through pruneStoreName after confirmation.
+ */
+export async function settingsMigrate(args: string[], deps: MigrateDeps = {}): Promise<void> {
+  const json = args.includes("--json");
+  const write = args.includes("--write");
+  const prune = args.includes("--prune");
+  if (write && prune) {
+    console.error("rt settings: run --write and --prune separately (write first; prune once every reader of the store knows the new names)");
+    process.exitCode = 1;
+    return;
+  }
+  const plan = planStoreMigrations();
+  if (write) return migrateWrite(plan, json);
+  if (prune) {
+    const forced = new Set<string>();
+    let forceUsageError = false;
+    args.forEach((a, i) => {
+      if (a !== "--force") return;
+      const value = args[i + 1];
+      if (value === undefined || value.startsWith("--")) forceUsageError = true;
+      else forced.add(value);
+    });
+    if (forceUsageError) {
+      console.error("rt settings migrate --prune: --force needs a key (e.g. --force rt.notify.eventBridges)");
+      process.exitCode = 1;
+      return;
+    }
+    for (const key of forced) {
+      if (!plan.older.some((o) => o.key === key)) {
+        console.error(`rt settings migrate --prune: --force ${key} matches no older store name in this plan`);
+      }
+    }
+    const interactive = deps.interactive ?? (process.stdin.isTTY === true && !json && !process.env.RT_BATCH);
+    const ask = deps.confirm ?? (async (message: string) => (await import("../lib/ui/prompts.ts")).confirm({ message, destructive: true }));
+    return migratePrune(plan, { json, team: args.includes("--team"), yes: args.includes("--yes"), forced, interactive, ask });
+  }
+  if (json) {
+    console.log(JSON.stringify({
+      ok: plan.failures.length === 0,
+      writes: plan.writes.map((w) => ({ ...w, value: redacted(w.key, w.value) })),
+      failures: plan.failures,
+      older: plan.older.map((o) => redactOlder(o)),
+    }));
+  } else {
+    console.log("");
+    for (const w of plan.writes) console.log(`  ${bold}${w.key}${reset}  ${whereOf(w)}  would write ${w.storeName} from ${w.fromName}: ${shown(w.key, w.value)}`);
+    for (const f of plan.failures) console.log(`  ${bold}${f.key}${reset}  ${whereOf(f)}  ${red}cannot migrate ${f.fromName}${reset}: ${f.message}`);
+    for (const o of plan.older) console.log(renderOlder(o));
+    if (plan.writes.length + plan.failures.length + plan.older.length === 0) console.log("  every stored key is under its current store name");
+    console.log("");
+  }
+  if (plan.failures.length > 0) process.exitCode = 1;
+}
+
+function migrateWrite(plan: MigrationPlan, json: boolean): void {
+  const written: MigrationPlan["writes"] = [];
+  const errors: { key: string; file: string; repo?: string; error: string }[] = [];
+  for (const w of plan.writes) {
+    try {
+      setSetting(w.key, w.value, w.scope, { ...(w.repo ? { repoIdentity: w.repo } : {}), ...(w.team ? { team: w.team } : {}) });
+      written.push(w);
+    } catch (err) {
+      errors.push({ key: w.key, file: w.file, ...(w.repo ? { repo: w.repo } : {}), error: (err as Error).message });
+    }
+  }
+  const ok = errors.length === 0 && plan.failures.length === 0;
+  if (json) {
+    console.log(JSON.stringify({ ok, written: written.map((w) => ({ ...w, value: redacted(w.key, w.value) })), errors, failures: plan.failures }));
+  } else {
+    console.log("");
+    for (const w of written) console.log(`  ${bold}${w.key}${reset}  ${whereOf(w)}  wrote ${w.storeName} from ${w.fromName}`);
+    for (const e of errors) console.log(`  ${bold}${e.key}${reset}  ${red}${e.error}${reset}`);
+    for (const f of plan.failures) console.log(`  ${bold}${f.key}${reset}  ${whereOf(f)}  ${red}cannot migrate ${f.fromName}${reset}: ${f.message}`);
+    if (written.length + errors.length + plan.failures.length === 0) console.log("  nothing to write");
+    console.log("");
+  }
+  if (!ok) process.exitCode = 1;
+}
+
+async function migratePrune(
+  plan: MigrationPlan,
+  o: { json: boolean; team: boolean; yes: boolean; forced: Set<string>; interactive: boolean; ask: (message: string) => Promise<boolean> },
+): Promise<void> {
+  const refused: (OlderName & { reason: string })[] = [];
+  const pruned: OlderName[] = [];
+  const byFile = new Map<string, OlderName[]>();
+  for (const n of plan.older) {
+    if (n.scope === "team" && !o.team) refused.push({ ...n, reason: "team store: pass --team to prune it" });
+    else if (n.label === "diverged" && !o.forced.has(n.key)) refused.push({ ...n, reason: `diverged: pass --force ${n.key} to delete it` });
+    else byFile.set(n.file, [...(byFile.get(n.file) ?? []), n]);
+  }
+  for (const [file, names] of byFile) {
+    const scope = names[0]!.scope;
+    if (!o.json) {
+      console.log(`\n  ${bold}${scope} store${reset}  ${dim}${file}${reset}`);
+      for (const n of names) console.log(`    ${n.storeName}${n.repo ? `  (${n.repo})` : ""}  ${n.label}`);
+      const versions = [...new Map(names.map((n) => [n.key, n.storeVersion])).entries()].map(([k, v]) => `${k} (storeVersion ${v})`);
+      console.log(`    every reader of this store must know: ${versions.join(", ")}`);
+    }
+    const noun = names.length === 1 ? "name" : "names";
+    const approved = o.yes || (o.interactive && (await o.ask(`Delete ${names.length} older store ${noun} from the ${scope} store (${file})?`)));
+    if (!approved) {
+      const reason = o.interactive ? "not confirmed" : "confirmation needed: run on a terminal, or pass --yes";
+      for (const n of names) refused.push({ ...n, reason });
+      continue;
+    }
+    for (const n of names) {
+      if (n.label === "diverged" && !o.json) console.log(`  deleting diverged ${n.storeName}; its value was: ${shown(n.key, n.authored)}`);
+      try {
+        pruneStoreName(n.key, n.storeName, n.scope, { ...(n.repo ? { repoIdentity: n.repo } : {}), ...(n.team ? { team: n.team } : {}), force: n.label === "diverged" });
+        pruned.push(n);
+      } catch (err) {
+        refused.push({ ...n, reason: (err as Error).message });
+      }
+    }
+  }
+  if (o.json) {
+    console.log(JSON.stringify({ ok: refused.length === 0, pruned: pruned.map((n) => redactOlder(n)), refused: refused.map((r) => redactOlder(r)) }));
+  } else {
+    console.log("");
+    for (const r of refused) console.log(`  ${bold}${r.key}${reset}  ${whereOf(r)}  ${r.storeName}: ${red}${r.reason}${reset}`);
+    console.log(`  pruned ${pruned.length}, refused ${refused.length}`);
+    console.log("");
+  }
+  if (refused.length > 0) process.exitCode = 1;
 }

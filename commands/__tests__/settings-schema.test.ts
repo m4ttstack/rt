@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { buildLock } from "../../lib/settings/schema-lock.ts";
+import { MIGRATIONS_INDEX_PATH, MIGRATION_SCHEMAS_PATH } from "../../lib/settings/schema-draft.ts";
 import { settingsSchemaDiff, settingsSchemaLock } from "../settings-schema.ts";
 
 describe("settingsSchemaLock", () => {
@@ -48,6 +49,7 @@ describe("settingsSchemaLock", () => {
 });
 
 describe("settingsSchemaDiff", () => {
+  const LOCK_REL = "packages/rt-client/src/settings/schema.lock.json";
   let dir: string;
   let logs: string[];
   const origLog = console.log;
@@ -88,7 +90,7 @@ describe("settingsSchemaDiff", () => {
     const key = Object.keys(built)[0]!;
     const prev = { ...built, [key]: { ...built[key]!, schema: { ...built[key]!.schema, type: "boolean" } } };
 
-    await settingsSchemaDiff(["--against", writeLock(prev), "--json"]);
+    await settingsSchemaDiff(["--against", writeLock(prev), "--json"], { shippedLock: null });
 
     const body = JSON.parse(logs.join("\n"));
     expect(body.ok).toBe(false);
@@ -98,7 +100,7 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("an empty previous lock is all additions and passes", async () => {
-    await settingsSchemaDiff(["--against", writeLock({}), "--json"]);
+    await settingsSchemaDiff(["--against", writeLock({}), "--json"], { shippedLock: null });
 
     const body = JSON.parse(logs.join("\n"));
     expect(body.ok).toBe(true);
@@ -109,7 +111,7 @@ describe("settingsSchemaDiff", () => {
 
   test("a missing --against file reads as an empty lock and warns naming the path", async () => {
     const absent = join(dir, "absent.json");
-    const errors = await captureErrors(() => settingsSchemaDiff(["--against", absent, "--json"]));
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", absent, "--json"], { shippedLock: null }));
 
     expect(JSON.parse(logs.join("\n")).ok).toBe(true);
     expect(process.exitCode).toBe(0);
@@ -133,21 +135,28 @@ describe("settingsSchemaDiff", () => {
   });
 
   test("the committed lock diffed against itself prints no changes", async () => {
-    await settingsSchemaDiff(["--against", writeLock(buildLock())]);
+    await settingsSchemaDiff(["--against", writeLock(buildLock())], { shippedLock: null });
 
     expect(logs).toEqual(["no schema changes"]);
     expect(process.exitCode).toBe(0);
   });
 
   test("an unknown --against-ref is an error, not an empty lock", async () => {
-    const errors = await captureErrors(() => settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"]));
+    const git = (args: string[]) => (args[0] === "rev-parse" ? { status: 1, stdout: "", stderr: "" } : { status: 0, stdout: "", stderr: "" });
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against-ref", "refs/heads/no-such-branch-for-schema-diff", "--json"], { git }));
 
     expect(process.exitCode).toBe(1);
     expect(errors.some((e) => e.includes("no-such-branch-for-schema-diff"))).toBe(true);
   });
 
-  const fakeGit = (show: { status: number; stdout?: string; stderr?: string }) => (args: string[]) =>
-    args[0] === "rev-parse" ? { status: 0, stdout: "abc\n", stderr: "" } : { stdout: "", stderr: "", ...show };
+  // "tag" is answered separately from "show" so a fake built for the against-ref path never
+  // doubles as a (wrong) tag list: an unanswered tag --list must read as "no tags", not as
+  // whatever the show fixture happens to return.
+  const fakeGit = (show: { status: number; stdout?: string; stderr?: string }, tag: { status?: number; stdout?: string } = { status: 0, stdout: "" }) => (args: string[]) => {
+    if (args[0] === "rev-parse") return { status: 0, stdout: "abc\n", stderr: "" };
+    if (args[0] === "tag") return { status: tag.status ?? 0, stdout: tag.stdout ?? "", stderr: "" };
+    return { stdout: "", stderr: "", ...show };
+  };
 
   test("a ref whose tree has no lock reads as an empty lock", async () => {
     for (const stderr of [
@@ -167,6 +176,56 @@ describe("settingsSchemaDiff", () => {
     expect(process.exitCode).toBe(1);
     expect(logs).toEqual([]);
     expect(errors.some((e) => e.includes("bad object"))).toBe(true);
+  });
+
+  test("--json reports the shipped ref whose lock the acknowledgement hatch reads", async () => {
+    const git = () => ({ status: 0, stdout: "{}", stderr: "" });
+    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "HEAD", "--json"], { git });
+    expect(JSON.parse(logs.join("\n")).shipped).toBe("HEAD");
+  });
+
+  test("an unknown --shipped-ref is an error, not an empty lock", async () => {
+    const git = (args: string[]) => (args[0] === "rev-parse" ? { status: 1, stdout: "", stderr: "" } : { status: 0, stdout: "", stderr: "" });
+    const errors = await captureErrors(() => settingsSchemaDiff(["--against", writeLock(buildLock()), "--shipped-ref", "refs/tags/no-such-tag-for-schema-diff", "--json"], { git }));
+    expect(process.exitCode).toBe(1);
+    expect(errors.some((e) => e.includes("no-such-tag-for-schema-diff"))).toBe(true);
+  });
+
+  test("no --shipped-ref resolves the highest v* tag from git tag --list, and reads that tag's lock", async () => {
+    const shows: string[] = [];
+    const git = (args: string[]) => {
+      if (args[0] === "tag") return { status: 0, stdout: "v9.9.9\nv1.0.0\n", stderr: "" };
+      if (args[0] === "rev-parse") return { status: 0, stdout: "abc\n", stderr: "" };
+      shows.push(args[1] ?? "");
+      return { status: 0, stdout: "{}", stderr: "" };
+    };
+
+    await settingsSchemaDiff(["--against", writeLock(buildLock()), "--json"], { git });
+
+    expect(JSON.parse(logs.join("\n")).shipped).toBe("v9.9.9");
+    expect(shows).toEqual([`v9.9.9:${LOCK_REL}`]);
+  });
+
+  test("--draft writes a step for a breaking change into copies of the two migration files", async () => {
+    const built = buildLock();
+    const key = Object.keys(built)[0]!;
+    const prev = { ...built, [key]: { ...built[key]!, schema: { type: "boolean" } } };
+    const indexPath = join(dir, "index.ts");
+    const schemasPath = join(dir, "schemas.ts");
+    copyFileSync(MIGRATIONS_INDEX_PATH, indexPath);
+    copyFileSync(MIGRATION_SCHEMAS_PATH, schemasPath);
+
+    await settingsSchemaDiff(["--against", writeLock(prev), "--draft", "--json"], {
+      shippedLock: null,
+      migrationsIndexPath: indexPath,
+      migrationSchemasPath: schemasPath,
+    });
+
+    const body = JSON.parse(logs.join("\n")) as { drafts: { kind: string; key: string }[] };
+    expect(body.drafts).toContainEqual(expect.objectContaining({ kind: "step", key }));
+    expect(readFileSync(indexPath, "utf8")).toContain(`key: ${JSON.stringify(key)}`);
+    expect(readFileSync(schemasPath, "utf8")).toContain("schema: z.boolean()");
+    expect(process.exitCode).toBe(1);
   });
 
   test("a malformed lock at the ref or in --against is an error naming its source", async () => {

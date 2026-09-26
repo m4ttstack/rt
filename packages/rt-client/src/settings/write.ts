@@ -94,10 +94,11 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
-import { applyEdits, modify, parseTree, type JSONPath, type Node, type ParseError } from "jsonc-parser";
+import { applyEdits, modify, parse, parseTree, type JSONPath, type Node, type ParseError } from "jsonc-parser";
 import { randomBytes } from "crypto";
 import { dirname } from "path";
 import { assertNotRealStoreInTest } from "../test-isolation.ts";
+import { baselinesOf, baselinesToRecord, currentStoreName, MIGRATED_PROP, olderStoreNames, readSection } from "./migrate.ts";
 import { machineSettingsPath, teamSettingsPath, userSettingsPath } from "./paths.ts";
 import { getDef, isMigrated, isRetiredKey, type SettingDef, type SettingScope } from "./registry-machinery.ts";
 import { listTeams } from "./stores.ts";
@@ -118,6 +119,23 @@ const FORMAT = { tabSize: 2, insertSpaces: true, eol: "\n" };
 
 function refuse(message: string): never {
   throw new Error(`rt: ${message}`);
+}
+
+interface StoreEdit {
+  path: JSONPath;
+  value: unknown;
+}
+
+function sectionOf(root: Record<string, unknown>, repoIdentity: string | undefined): Record<string, unknown> | undefined {
+  if (repoIdentity === undefined) return root;
+  const repos = root.repos;
+  if (repos === null || typeof repos !== "object" || Array.isArray(repos)) return undefined;
+  const section = (repos as Record<string, unknown>)[repoIdentity];
+  return section !== null && typeof section === "object" && !Array.isArray(section) ? (section as Record<string, unknown>) : undefined;
+}
+
+function sectionPathOf(repoIdentity: string | undefined): JSONPath {
+  return repoIdentity !== undefined ? ["repos", repoIdentity] : [];
 }
 
 /**
@@ -150,9 +168,29 @@ export function setSetting(key: string, value: unknown, scope: SettingScope, opt
   }
 
   const storePath = resolveStorePath(scope, opts);
-  const jsonPath: JSONPath = opts.repoIdentity !== undefined ? ["repos", opts.repoIdentity, key] : [key];
+  const sectionPath = sectionPathOf(opts.repoIdentity);
+  const name = currentStoreName(def);
 
-  writeIntoStore(storePath, jsonPath, value, /* createIfMissing */ scope !== "team");
+  writeIntoStore(
+    storePath,
+    (root) => {
+      const section = sectionOf(root, opts.repoIdentity);
+      const baselines = baselinesToRecord(def, section);
+      if (Object.keys(baselines).length === 0) return [{ path: [...sectionPath, name], value }];
+      const rawMigrated = section?.[MIGRATED_PROP];
+      // A garbage $migrated (null, an array, a string) cannot take a property edit
+      // underneath it (jsonc-parser's modify throws adding an index to it), so it is
+      // replaced wholesale with a fresh object holding only the new baselines.
+      const migratedIsObject = rawMigrated === undefined || (rawMigrated !== null && typeof rawMigrated === "object" && !Array.isArray(rawMigrated));
+      return [
+        { path: [...sectionPath, name], value },
+        ...(migratedIsObject
+          ? Object.entries(baselines).map(([older, hash]) => ({ path: [...sectionPath, MIGRATED_PROP, older], value: hash }))
+          : [{ path: [...sectionPath, MIGRATED_PROP], value: baselines }]),
+      ];
+    },
+    /* createIfMissing */ scope !== "team",
+  );
 
   // All three stores are tracked repos with nothing auto-committing a write
   // (H2, the snapshot daemon, is unbuilt) — every scope gets the reminder,
@@ -179,7 +217,7 @@ export function unsetSetting(key: string, scope: SettingScope, opts: SetSettingO
   const def = getDef(key);
   if (!def && isRetiredKey(key)) {
     if (opts.repoIdentity !== undefined) refuse(`"${key}" is not repo-scoped; omit the repo identity`);
-    return removeKeyFromScope(key, scope, opts, [key]);
+    return removeKeyFromScope(key, scope, opts, () => [[key]]);
   }
   if (!def) {
     refuse(`unknown setting "${key}" — not in the settings registry (see \`rt settings list\`)`);
@@ -197,15 +235,30 @@ export function unsetSetting(key: string, scope: SettingScope, opts: SetSettingO
     refuse(`"${key}" is not repo-scoped — omit the repo identity`);
   }
 
-  const jsonPath: JSONPath = opts.repoIdentity !== undefined ? ["repos", opts.repoIdentity, key] : [key];
-  return removeKeyFromScope(key, scope, opts, jsonPath);
+  const sectionPath = sectionPathOf(opts.repoIdentity);
+  return removeKeyFromScope(key, scope, opts, (root) => {
+    const section = sectionOf(root, opts.repoIdentity);
+    if (!section) return [];
+    const diverged = readSection(def, section, { layer: true }).older.filter((o) => o.label === "diverged");
+    if (diverged.length > 0) {
+      refuse(
+        `"${key}" has an older store name edited after its current one (${diverged.map((o) => o.storeName).join(", ")}) in the ${scope} store; compare both values with \`rt settings migrate\`, then remove the older one with \`rt settings migrate --prune --force ${key}\` (add --team for a team-store name); prune lists every name it will delete before asking to confirm`,
+      );
+    }
+    const names = [currentStoreName(def), ...olderStoreNames(def).map((o) => o.name)].filter((n) => section[n] !== undefined);
+    const baselines = baselinesOf(section);
+    return [
+      ...names.map((n) => [...sectionPath, n]),
+      ...names.filter((n) => baselines[n] !== undefined).map((n) => [...sectionPath, MIGRATED_PROP, n]),
+    ];
+  });
 }
 
-function removeKeyFromScope(key: string, scope: SettingScope, opts: SetSettingOpts, jsonPath: JSONPath): boolean {
+function removeKeyFromScope(key: string, scope: SettingScope, opts: SetSettingOpts, planPaths: (root: Record<string, unknown>) => JSONPath[]): boolean {
   const storePath = resolveStorePathForUnset(scope, opts);
   if (storePath === null || !existsSync(storePath)) return false;
 
-  const removed = removeFromStore(storePath, jsonPath);
+  const removed = removeFromStore(storePath, planPaths);
 
   if (removed) {
     console.error(
@@ -347,7 +400,7 @@ function findDuplicateKey(node: Node): string | undefined {
   return undefined;
 }
 
-function writeIntoStore(storePath: string, jsonPath: JSONPath, value: unknown, createIfMissing: boolean): void {
+function writeIntoStore(storePath: string, planEdits: (root: Record<string, unknown>) => StoreEdit[], createIfMissing: boolean): void {
   assertNotRealStoreInTest(storePath);
   let content: string;
   if (existsSync(storePath)) {
@@ -368,8 +421,11 @@ function writeIntoStore(storePath: string, jsonPath: JSONPath, value: unknown, c
     content = seedHeader();
   }
 
-  const edits = modify(content, jsonPath, value, { formattingOptions: FORMAT });
-  const next = applyEdits(content, edits);
+  const root = (parse(content, [], { allowTrailingComma: true }) ?? {}) as Record<string, unknown>;
+  let next = content;
+  for (const edit of planEdits(root)) {
+    next = applyEdits(next, modify(next, edit.path, edit.value, { formattingOptions: FORMAT }));
+  }
   const finalText = next.endsWith("\n") ? next : `${next}\n`;
 
   // Write-temp-then-rename in the same directory, mirroring
@@ -382,25 +438,44 @@ function writeIntoStore(storePath: string, jsonPath: JSONPath, value: unknown, c
 }
 
 /**
- * Removes `jsonPath` from an existing store file. A key that isn't present
- * yields zero edits from `modify` and the file is left untouched (no write,
- * no mtime churn). Malformed stores refuse exactly as on the set side —
+ * Removes every path `planPaths` plans against the store's root from an
+ * existing store file. A path that isn't present yields zero edits from
+ * `modify`, and the resulting text is compared byte-for-byte against the
+ * original: no textual change means no write and no mtime churn. Malformed
+ * stores refuse exactly as on the set side...
  * `modify`-by-offset against a duplicate-key document is as wrong for
  * removal as it is for writes.
  */
-function removeFromStore(storePath: string, jsonPath: JSONPath): boolean {
+function removeFromStore(storePath: string, planPaths: (root: Record<string, unknown>) => JSONPath[]): boolean {
   assertNotRealStoreInTest(storePath);
   const content = readFileSync(storePath, "utf8");
   if (content.trim() === "") return false;
   assertEditableJsonc(storePath, content);
 
-  const edits = modify(content, jsonPath, undefined, { formattingOptions: FORMAT });
-  if (edits.length === 0) return false;
+  const root = (parse(content, [], { allowTrailingComma: true }) ?? {}) as Record<string, unknown>;
+  const paths = planPaths(root);
+  let next = content;
+  for (const path of paths) next = applyEdits(next, modify(next, path, undefined, { formattingOptions: FORMAT }));
+  next = dropEmptyMigrated(next, paths);
+  if (next === content) return false;
 
-  const next = applyEdits(content, edits);
-  const finalText = next.endsWith("\n") ? next : `${next}\n`;
-  writeTempThenRename(storePath, finalText);
+  writeTempThenRename(storePath, next.endsWith("\n") ? next : `${next}\n`);
   return true;
+}
+
+/** A `$migrated` map emptied by this removal goes too; one left non-empty stays. */
+function dropEmptyMigrated(content: string, removed: JSONPath[]): string {
+  let next = content;
+  const owners = new Set(removed.filter((p) => p.at(-2) === MIGRATED_PROP).map((p) => JSON.stringify(p.slice(0, -1))));
+  for (const owner of owners) {
+    const path = JSON.parse(owner) as string[];
+    const root = parse(next, [], { allowTrailingComma: true }) as unknown;
+    const node = path.reduce<unknown>((at, seg) => (at !== null && typeof at === "object" ? (at as Record<string, unknown>)[seg] : undefined), root);
+    if (node !== null && typeof node === "object" && Object.keys(node).length === 0) {
+      next = applyEdits(next, modify(next, path, undefined, { formattingOptions: FORMAT }));
+    }
+  }
+  return next;
 }
 
 function writeTempThenRename(storePath: string, finalText: string): void {
@@ -416,4 +491,45 @@ function writeTempThenRename(storePath: string, finalText: string): void {
     }
     throw err;
   }
+}
+
+export interface PruneOpts extends SetSettingOpts {
+  /** Delete the name even when it diverged from the current one. */
+  force?: boolean;
+}
+
+/**
+ * Deletes one older store name of `key`, and its `$migrated` baseline, from
+ * a section whose current name is present. Its own path rather than
+ * unsetSetting: the name is not a registry key, and a diverged name needs
+ * `force`. `authored` is the value it removed.
+ */
+export function pruneStoreName(key: string, storeName: string, scope: SettingScope, opts: PruneOpts = {}): { removed: boolean; authored?: unknown } {
+  const def = getDef(key);
+  if (!def) refuse(`unknown setting "${key}"; not in the settings registry (see \`rt settings list\`)`);
+  if (!def.scopes.includes(scope)) refuse(`"${key}" is not stored in the ${scope} store (allowed: ${def.scopes.join(", ")})`);
+  if (opts.repoIdentity !== undefined && def.repoScoped !== true) refuse(`"${key}" is not repo-scoped; omit the repo identity`);
+  if (!olderStoreNames(def).some((o) => o.name === storeName)) refuse(`"${storeName}" is not an older store name of "${key}"`);
+
+  const storePath = resolveStorePathForUnset(scope, opts);
+  if (storePath === null || !existsSync(storePath)) return { removed: false };
+  const sectionPath = sectionPathOf(opts.repoIdentity);
+  let authored: unknown;
+  const removed = removeFromStore(storePath, (root) => {
+    const section = sectionOf(root, opts.repoIdentity);
+    if (section?.[storeName] === undefined) return [];
+    const current = currentStoreName(def);
+    if (section[current] === undefined) {
+      refuse(`"${key}" has no "${current}" in the ${scope} store yet; run \`rt settings migrate --write\` before pruning "${storeName}"`);
+    }
+    const older = readSection(def, section, { layer: true }).older.find((o) => o.storeName === storeName)!;
+    if (older.label === "diverged" && opts.force !== true) {
+      refuse(`"${storeName}" diverged from "${current}" in the ${scope} store; deleting it needs force`);
+    }
+    authored = older.authored;
+    return [[...sectionPath, storeName], ...(baselinesOf(section)[storeName] !== undefined ? [[...sectionPath, MIGRATED_PROP, storeName]] : [])];
+  });
+  if (!removed) return { removed };
+  console.error(`rt: removed "${storeName}" from the local ${scope} store (${storePath}); this is local only until you commit and push it.`);
+  return { removed, authored };
 }

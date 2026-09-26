@@ -1788,6 +1788,19 @@ export const TREE: Record<string, CommandNode> = {
         fn: "settingsCheck",
         args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" }],
       },
+      migrate: {
+        description: "Carry stored settings to each key's current store name; a dry run unless --write or --prune",
+        module: "./commands/settings-keys.ts",
+        fn: "settingsMigrate",
+        args: [
+          { name: "Write", flag: "--write", type: "boolean", default: false, hint: "Write each key's current store name from its migrated value where it is absent (additive)" },
+          { name: "Prune", flag: "--prune", type: "boolean", default: false, hint: "Delete older store names labeled leftover or stale, after confirmation" },
+          { name: "Team", flag: "--team", type: "boolean", default: false, hint: "Let --prune touch the team store" },
+          { name: "Force", flag: "--force", type: "text", placeholder: "rt.roles", hint: "Let --prune delete this key's diverged older names (repeatable)" },
+          { name: "Yes", flag: "--yes", type: "boolean", default: false, hint: "Confirm --prune without a prompt (non-interactive runs)" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
+        ],
+      },
       linear: {
         description: "Linear API configuration",
         subcommands: {
@@ -1865,12 +1878,14 @@ export const TREE: Record<string, CommandNode> = {
             args: [{ name: "Out", flag: "--out", type: "text", placeholder: "path/to/lock.json", hint: "Write somewhere else than the committed lock (tests)" }],
           },
           diff: {
-            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 on an unbumped or unacknowledged breaking change",
+            description: "Classify every schema change since a previous lock as safe or breaking; exits 1 unless a breaking change has a storeVersion bump and a matching migrateFrom entry (a never-shipped key may instead be acknowledged)",
             module: "./commands/settings-schema.ts",
             fn: "settingsSchemaDiff",
             args: [
               { name: "Against", flag: "--against", type: "text", placeholder: "path/to/lock.json", hint: "Diff against a lock file; a missing file counts as no lock" },
               { name: "Against ref", flag: "--against-ref", type: "text", placeholder: "origin/main", hint: "Diff against the committed lock at a git ref (default origin/main); a ref with no lock counts as no lock" },
+              { name: "Shipped ref", flag: "--shipped-ref", type: "text", placeholder: "v2.14.0", hint: "The release whose lock says which keys have shipped (default: the highest v* tag); only a key absent there may take a breaking change on an acknowledgement" },
+              { name: "Draft", flag: "--draft", type: "boolean", default: false, hint: "Write a migrateFrom entry (or a rename) for each breaking change into the migration files, for review" },
               { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
             ],
           },

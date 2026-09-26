@@ -26,8 +26,15 @@
 import { REGISTRY } from "./registry-defs.ts";
 import LOCK from "./schema.lock.json" with { type: "json" };
 import { layerJsonSchema, type JsonSchema } from "./schema.ts";
+import { MIGRATION_STEPS, RENAMES } from "./migrations/index.ts";
 
 export type SettingScope = "user" | "team" | "machine";
+
+/** One link of a key's migration chain: reads the value at `version`, returns it at `version + 1`. */
+export interface MigrationStep {
+  version: number;
+  up: (value: unknown) => unknown;
+}
 
 export interface SettingDef {
   key: string;
@@ -47,6 +54,10 @@ export interface SettingDef {
   layerSchema?: JsonSchema;
   /** Bumped only on a breaking schema change; the lock file records it. Default 1. */
   storeVersion?: number;
+  /** Steps from each older readable version, ascending; the last reaches storeVersion. */
+  migrateFrom?: MigrationStep[];
+  /** Keys whose store names hold older versions of this key. */
+  renamedFrom?: string[];
   description: string;
 }
 
@@ -63,7 +74,17 @@ function attachSchemas(defs: readonly SettingDef[]): SettingDef[] {
   });
 }
 
-const DEFS: readonly SettingDef[] = attachSchemas(REGISTRY);
+function attachMigrations(def: SettingDef): SettingDef {
+  const renamedFrom = RENAMES[def.key];
+  const owners = new Set([def.key, ...(renamedFrom ?? [])]);
+  const steps = MIGRATION_STEPS.filter((s) => owners.has(s.key))
+    .map(({ version, up }) => ({ version, up }))
+    .sort((a, b) => a.version - b.version);
+  if (steps.length === 0 && renamedFrom === undefined) return def;
+  return { ...def, ...(steps.length > 0 ? { migrateFrom: steps } : {}), ...(renamedFrom ? { renamedFrom: [...renamedFrom] } : {}) };
+}
+
+const DEFS: readonly SettingDef[] = attachSchemas(REGISTRY).map(attachMigrations);
 const BY_KEY: Map<string, SettingDef> = new Map(DEFS.map((def) => [def.key, def]));
 
 /**

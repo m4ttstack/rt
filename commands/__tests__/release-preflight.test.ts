@@ -13,11 +13,17 @@ const COMMITTED_LOCK = readFileSync(join(import.meta.dir, "..", "..", LOCK_REL),
  * A seam set whose only fault is a stale rt-client (npm behind source).
  * `prevLock` is what `git show <tag>:<lock>` answers; null makes git exit non-zero.
  */
-function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_LOCK): PreflightSeams {
+function fakeSeams(
+  rtClientSource: string,
+  prevLock: string | null = COMMITTED_LOCK,
+  committedLock: string = COMMITTED_LOCK,
+  settingsCheck: string = '{"ok":true,"findings":[]}',
+): PreflightSeams {
   return {
     repoRoot: "/repo",
     exec: (argv) => {
       const cmd = argv.join(" ");
+      if (cmd === "bun run cli.ts settings check --json") return ok(`${settingsCheck}\n`);
       if (cmd === `git show v2.10.2:${LOCK_REL}`) {
         return prevLock === null
           ? Promise.resolve({ stdout: "", stderr: `fatal: path '${LOCK_REL}' does not exist in 'v2.10.2'`, exitCode: 128 })
@@ -43,7 +49,7 @@ function fakeSeams(rtClientSource: string, prevLock: string | null = COMMITTED_L
       if (p.endsWith("deps.lock")) return JSON.stringify({ schema: 1, arch: "arm64", tools: [] });
       if (p.endsWith("marketplace.json")) return JSON.stringify({ name: "m", plugins: [] });
       if (p.endsWith("packages/rt-client/package.json")) return JSON.stringify({ version: rtClientSource });
-      if (p === join("/repo", LOCK_REL)) return COMMITTED_LOCK;
+      if (p === join("/repo", LOCK_REL)) return committedLock;
       if (p === join("/repo", "packages/rt-client/src/settings/breaking-schema-changes.json")) return "{}";
       return null;
     },
@@ -126,5 +132,86 @@ describe("rt release preflight schema-lock row", () => {
 
   test("no lock at the tag is ok and says so", async () => {
     expect(await schemaRow(fakeSeams("0.20.0", null))).toMatchObject({ status: "ok", detail: "no lock at v2.10.2" });
+  });
+
+  test("a bump since the tag with a matching migrateFrom entry is ok and lists the bump for the release notes", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const key = Object.keys(tagLock)[0]!;
+    const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" }, migrateFrom: { "1": tagLock[key]!.schema } } };
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toContain(`storeVersion bumps for the release notes: ${key} 1 -> 2`);
+  });
+
+  test("a key renamed and bumped since the tag lists the old name's storeVersion in the release notes", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const oldKey = Object.keys(tagLock)[0]!;
+    const oldEntry = tagLock[oldKey]!;
+    const heirKey = `${oldKey}.renamed`;
+    const { [oldKey]: _removed, ...rest } = tagLock;
+    const committed = {
+      ...rest,
+      [heirKey]: {
+        storeVersion: oldEntry.storeVersion + 1,
+        schema: { type: "boolean" },
+        renamedFrom: [oldKey],
+        migrateFrom: { [String(oldEntry.storeVersion)]: oldEntry.schema },
+      },
+    };
+
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(committed)));
+
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toContain(
+      `storeVersion bumps for the release notes: ${oldKey} -> ${heirKey} ${oldEntry.storeVersion} -> ${oldEntry.storeVersion + 1}`,
+    );
+  });
+
+  test("a bump since the tag with no migrateFrom entry is stale", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const key = Object.keys(tagLock)[0]!;
+    const bumped = { ...tagLock, [key]: { storeVersion: 2, schema: { type: "boolean" } } };
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(bumped)));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toContain(`${key}: no migrateFrom entry for version 1`);
+  });
+});
+
+describe("rt release preflight settings-stores row", () => {
+  const storesRow = async (seams: PreflightSeams) => {
+    const { logs } = await run(["--json"], seams);
+    return (JSON.parse(logs[0]!).rows as { id: string; label: string; status: string; detail?: string }[]).find((r) => r.id === "settings-stores");
+  };
+
+  test("a clean check of the real stores is ok", async () => {
+    expect(await storesRow(fakeSeams("0.20.0"))).toMatchObject({ label: "settings stores", status: "ok" });
+  });
+
+  test("a value the migrations cannot carry, or a diverged name, is stale and named", async () => {
+    const report = JSON.stringify({
+      ok: false,
+      findings: [
+        { key: "rt.notify.eventBridges", scope: "user", kind: "nonconforming", issues: [{ path: [], message: "migration 1 -> 2 threw: boom" }] },
+        { key: "rt.roles", scope: "team", repo: "gitlab.example.com/acme/app", kind: "diverged", storeName: "rt.roles", issues: [] },
+        { key: "rt.worktrees", scope: "user", kind: "stale", storeName: "rt.worktrees", issues: [] },
+      ],
+    });
+    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toBe("rt.notify.eventBridges nonconforming in user; rt.roles diverged (rt.roles) in team/gitlab.example.com/acme/app");
+  });
+
+  test("no JSON from the check is an error", async () => {
+    expect((await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, "boom")))?.status).toBe("error");
+  });
+
+  test("a repo-level merged finding (no scope) still names its repo", async () => {
+    const report = JSON.stringify({
+      ok: false,
+      findings: [{ key: "rt.repoRoots", repo: "gitlab.example.com/acme/app", kind: "merged", storeName: "rt.repoRoots", issues: [] }],
+    });
+    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toBe("rt.repoRoots merged (rt.repoRoots) in gitlab.example.com/acme/app");
   });
 });

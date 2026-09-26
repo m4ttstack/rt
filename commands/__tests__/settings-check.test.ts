@@ -14,6 +14,9 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { settingsCheck } from "../settings-keys.ts";
 import { machineSettingsPath } from "../../lib/rt-paths.ts";
+import { userSettingsPath } from "../../packages/rt-client/src/settings/paths.ts";
+import { renameProperty } from "../../packages/rt-client/src/settings/migrations/helpers.ts";
+import { withMigrationAsync } from "../../packages/rt-client/src/settings/__tests__/with-migration.ts";
 
 describe("rt settings check", () => {
   const origHome = process.env.HOME;
@@ -82,5 +85,34 @@ describe("rt settings check", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.findings).toEqual([]);
     expect(process.exitCode).toBe(0);
+  });
+
+  const EB = "rt.notify.eventBridges";
+  const EB_BUMP = {
+    storeVersion: 2,
+    migrateFrom: [{ version: 1, up: (v: unknown) => renameProperty(v, ["[]"], "pattern", "match") }],
+    schema: { type: "array", items: { type: "object", properties: { match: { type: "string" } }, required: ["match"] } },
+  };
+
+  test("a diverged older name exits 1 and prints both values", async () => {
+    await withMigrationAsync(EB, EB_BUMP, async () => {
+      write(userSettingsPath(), { [EB]: [{ pattern: "gate/*" }], [`${EB}@2`]: [{ match: "herd/*" }] });
+      await settingsCheck([]);
+      const out = stripAnsi(logSpy.mock.calls.map((c) => String(c[0])).join("\n"));
+      expect(out).toContain("diverged");
+      expect(out).toContain('[{"match":"gate/*"}]');
+      expect(out).toContain('[{"match":"herd/*"}]');
+      expect(process.exitCode).toBe(1);
+    });
+  });
+
+  test("--json carries storeName, olderValue and currentValue", async () => {
+    await withMigrationAsync(EB, EB_BUMP, async () => {
+      write(userSettingsPath(), { [EB]: [{ pattern: "gate/*" }], [`${EB}@2`]: [{ match: "herd/*" }] });
+      await settingsCheck(["--json"]);
+      const printed = logSpy.mock.calls.map((c) => c[0] as string).find((line) => line.startsWith("{"));
+      const f = (JSON.parse(printed as string) as { findings: Record<string, unknown>[] }).findings.find((x) => x.kind === "diverged");
+      expect(f).toMatchObject({ storeName: EB, olderValue: [{ match: "gate/*" }], currentValue: [{ match: "herd/*" }] });
+    });
   });
 });

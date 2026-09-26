@@ -159,14 +159,52 @@ path formatted `[0].pattern` or `emoji.looking`.
   Annotations (`title`, `description`, `default`, `labels`, `placeholder`
   and the like) never count, except inside a `oneOf` branch, which is
   compared as a whole.
-  A breaking change passes only when the key's `storeVersion` went up and
-  `breaking-schema-changes.json` (next to the registry) gives the key a
-  one-line reason; a removed key needs only the reason. CI runs the diff
-  against `main` on every PR, and release preflight's `schema lock` row runs
-  it against the lock at the previous release tag.
+  A breaking change passes only with the key's `storeVersion` bumped by one
+  and a `migrateFrom` entry for the previous version whose schema matches
+  the lock being diffed against. `breaking-schema-changes.json` (next to
+  the registry) stands in for that, with a one-line reason, only for a key
+  the lock at the latest release tag does not have (never shipped), and
+  only in CI, no bump needed. A removed key needs either a rename heir
+  (listed in `RENAMES`, whose chain then continues under the new name) or
+  the same one-line reason. CI runs the diff against `main` on every PR
+  (one `storeVersion` step allowed per key); release preflight's
+  `schema lock` row runs it against the lock at the previous release tag,
+  where the chain must cover every version since that tag and the
+  never-shipped reason no longer applies (a key in that lock has shipped).
 - A typed optional property added to a loose object is safe for the
   classifier but can collide with a stored extra of the same name and a
   different type; `rt settings check` before release is what catches that.
+
+## Changing a key's shape (store versions and migrations)
+
+A breaking schema change gives the key a new store name instead of
+rewriting values in place: `key` at `storeVersion` 1, `key@N` above it.
+Code keeps using the plain key. Readers on an older rt-client keep reading
+the name they know; the resolver on the new one reads `key@N`, else the
+highest older name it can migrate (`migrateFrom` steps in
+`packages/rt-client/src/settings/migrations/index.ts`, run in memory).
+
+- Every write lands on the current name. The first write of `key@N` into a
+  section records `$migrated: { <older name>: <hash> }` for the older names
+  there; afterwards an older name is `leftover` (its migrated value equals
+  the current one), `stale` (unchanged since) or `diverged` (edited or
+  created after). `$`-prefixed properties are store metadata.
+- To change a shape: edit the zod schema, run `rt settings schema diff
+  --draft` (it writes the step and the previous version's schema into
+  `migrations/index.ts` and `migrations/schemas.ts`), finish any step that
+  throws `TODO`, add real (invented) examples, bump `storeVersion` in
+  `registry-defs.ts`, then `rt settings schema lock`. CI fails a breaking
+  change until the bump and a `migrateFrom` entry matching main's lock are
+  in; the proof test runs every step over generated samples.
+- A renamed key lists its old key in `RENAMES` and keeps its version; the
+  old key's names read as older names of the new one.
+- `rt settings migrate` shows what is stored under older names; `--write`
+  adds current names (additive, safe for every reader); `--prune` deletes
+  leftover and stale older names after confirmation, the team store only
+  with `--team`, a diverged one only with `--force <key>`.
+- `rt settings check` fails on a diverged name or a value the chain cannot
+  carry; release preflight runs the candidate's check against the real
+  stores.
 
 ## Porting an app's config (the ownership latch)
 
@@ -210,6 +248,13 @@ on every install (stated at the `board.*` block in registry-defs).
   branch that checkout has is what `rt` and a restarted daemon run.
 - Settings are boot-read in deck/board — a store change needs an app restart;
   the config-file watchers do not see store edits.
+- **A raw `readStore(...).global[key]` never sees `key@N`.** `identity.ts`,
+  `lib/team/members.ts`, `lib/team/invite.ts` and `commands/team.ts` read
+  their keys that way; move such a reader to `readSection` (or the
+  resolver) before its key's `storeVersion` goes above 1.
+- **Do not run `rt settings migrate --write` before the apps' rt-client
+  moves.** Writing `key@N` starts divergence for every writer still on the
+  old name.
 
 ## Per-app key tables
 
