@@ -114,6 +114,15 @@ describe("settings/write over versioned store names", () => {
     });
   });
 
+  test("a non-object $migrated is replaced wholesale rather than crashing the write", () => {
+    withMigration(EB, EB_BUMP, () => {
+      writeUser({ [EB]: EB_V1, $migrated: null });
+      setSetting(EB, EB_V2, "user");
+      expect(userRoot().$migrated).toEqual({ [EB]: valueHash(EB_V1) });
+      expect(userRoot()[`${EB}@2`]).toEqual(EB_V2);
+    });
+  });
+
   test("a repo-section write lands in that section with its own baseline and leaves the global section alone", () => {
     withMigration("rt.roles", ROLES_BUMP, () => {
       writeUser({ repos: { [IDENTITY]: { "rt.roles": { web: { hook: "./dev.sh" } } } } });
