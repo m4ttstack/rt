@@ -46,14 +46,14 @@ function detail(r: { stderr: string; stdout: string }): string {
     remote default. An origin whose default cannot be determined refuses
     rather than falling through as "no default", so a repo defaulting to
     develop or trunk is protected exactly like one defaulting to main. */
-export async function pushableBranch(cwd: string, git: GitRunner): Promise<{ branch: string } | { error: string }> {
+export async function pushableBranch(cwd: string, git: GitRunner): Promise<{ branch: string; defaultBranch: string } | { error: string }> {
   const branch = await currentBranch(cwd, git);
   if (branch === null) return { error: "refusing to push a detached HEAD" };
   if (PROTECTED.has(branch)) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
   const def = await remoteDefault(cwd, git);
   if (def === null) return { error: `refusing to push ${branch}: origin's default branch could not be determined` };
   if (branch === def.name) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
-  return { branch };
+  return { branch, defaultBranch: def.name };
 }
 
 // A bare `git push` obeys push.default, which under `matching` pushes every
@@ -130,21 +130,72 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
   return err(`git rebase ${opts.onto} failed: ${detail(r)}`);
 }
 
-// rt sync pushes `origin <local branch>` by name (commands/sync.ts:301), never
-// the tracked upstream, so the local-name refusal is the whole protection here.
+type ConfigRead = { status: "set"; value: string } | { status: "unset" } | { status: "error"; detail: string };
+
+// `git config --get*` exits 1 when the key is absent, and anything else nonzero
+// means the config could not be read at all (a corrupt file, a lock), which is
+// never the same thing as "not configured".
+async function readConfig(cwd: string, git: GitRunner, args: string[]): Promise<ConfigRead> {
+  const r = await git(["config", ...args], cwd);
+  if (r.code === 0) return { status: "set", value: r.stdout.trim() };
+  if (r.code === 1) return { status: "unset" };
+  return { status: "error", detail: `git config ${args.join(" ")} failed: ${detail(r)}` };
+}
+
+// `rt sync` runs a bare `git push --force-with-lease origin <branch>`
+// (commands/git/reset.ts, commands/sync.ts:301): git picks the destination
+// ref itself, and remote.origin.push or push.default=upstream/tracking with a
+// mismatched branch.<b>.merge can send that push to a different branch than
+// the one named here (reproduced: a worktree branch tracking origin/<default>
+// under push.default=upstream sends the push straight to <default>).
+async function pushDestinationRedirected(cwd: string, git: GitRunner, branch: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const originPush = await readConfig(cwd, git, ["--get-all", "remote.origin.push"]);
+  if (originPush.status === "error") return { ok: false, error: originPush.detail };
+  if (originPush.status === "set") return { ok: false, error: `refusing to sync ${branch}: remote.origin.push redirects pushes to another ref` };
+
+  const pushDefault = await readConfig(cwd, git, ["--get", "push.default"]);
+  if (pushDefault.status === "error") return { ok: false, error: pushDefault.detail };
+  if (pushDefault.status === "unset" || (pushDefault.value !== "upstream" && pushDefault.value !== "tracking")) return { ok: true };
+
+  const merge = await readConfig(cwd, git, ["--get", `branch.${branch}.merge`]);
+  if (merge.status === "error") return { ok: false, error: merge.detail };
+  const expected = `refs/heads/${branch}`;
+  if (merge.status === "unset" || merge.value !== expected) {
+    return { ok: false, error: `refusing to sync ${branch}: push.default is ${pushDefault.value} and branch.${branch}.merge is not ${expected}, so the push could land elsewhere` };
+  }
+  return { ok: true };
+}
+
 export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
-  const branch = b.branch;
+  const { branch, defaultBranch } = b;
+
+  const redirect = await pushDestinationRedirected(cwd, git, branch);
+  if (!redirect.ok) return { ok: false, error: redirect.error };
+
   const fetched = await git(["fetch", "origin"], cwd);
   if (fetched.code !== 0) return { ok: false, error: `git fetch origin failed: ${detail(fetched)}` };
   const remote = await git(["rev-parse", "--verify", "--quiet", `origin/${branch}`], cwd);
   if (remote.code !== 0) return { ok: true, diverged: false };
+
   const counts = await git(["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], cwd);
-  const [behind, ahead] = counts.stdout.trim().split(/\s+/).map((n) => Number(n));
-  if (!behind || !ahead) return { ok: true, diverged: false };
-  const cherry = await git(["cherry", `origin/${branch}`, "HEAD"], cwd);
-  const unpushed = cherry.stdout.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
+  if (counts.code !== 0) return { ok: false, error: `git rev-list --left-right --count failed: ${detail(counts)}` };
+  const [behindStr, aheadStr] = counts.stdout.trim().split(/\s+/);
+  const behind = Number(behindStr);
+  const ahead = Number(aheadStr);
+  if (!Number.isInteger(behind) || behind < 0 || !Number.isInteger(ahead) || ahead < 0) {
+    return { ok: false, error: `git rev-list --left-right --count returned an unreadable count: ${detail(counts)}` };
+  }
+  if (behind === 0 || ahead === 0) return { ok: true, diverged: false };
+
+  // `git cherry` marks a commit the default branch already carries (baked in
+  // by a rebase onto it) as unpushed, since it has no patch-equivalent on
+  // origin/<branch> either; excluding `^origin/<default>` is what `rt sync`
+  // itself does (commands/git/reset.ts:236-241) to avoid that false positive.
+  const unpushedCmd = await git(["rev-list", "--cherry-pick", "--right-only", "--no-merges", `origin/${branch}...HEAD`, `^origin/${defaultBranch}`], cwd);
+  if (unpushedCmd.code !== 0) return { ok: false, error: `git rev-list --cherry-pick failed: ${detail(unpushedCmd)}` };
+  const unpushed = unpushedCmd.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
   if (unpushed.length > 0) return { ok: false, error: `refusing to reset ${branch} to origin: local commits with no equivalent on origin would be lost: ${unpushed.join(", ")}` };
   return { ok: true, diverged: true };
 }

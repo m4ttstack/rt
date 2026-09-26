@@ -198,6 +198,8 @@ describe("branchSyncPreflight", () => {
   const base: Script = {
     "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
     "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    "config --get-all remote.origin.push": { code: 1 },
+    "config --get push.default": { code: 1 },
     "fetch origin": {},
     "rev-parse --verify --quiet origin/feat/x": {},
   };
@@ -206,13 +208,17 @@ describe("branchSyncPreflight", () => {
     expect(r).toEqual({ ok: true, diverged: false });
   });
   test("diverged with every local commit patch-equivalent on origin passes (the GitLab-rebased case)", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "cherry origin/feat/x HEAD": { stdout: "- abc\n- def\n" } }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": {} }));
     expect(r).toEqual({ ok: true, diverged: true });
   });
   test("diverged with an unpushed local commit refuses and names it", async () => {
-    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "cherry origin/feat/x HEAD": { stdout: "- abc\n+ 0123456\n" } }));
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { stdout: "0123456\n" } }));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain("0123456");
+  });
+  test("a local rebase onto a newer default does not read the rebase-carried commits as unpushed work", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "2\t4\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": {} }));
+    expect(r).toEqual({ ok: true, diverged: true });
   });
   test("no remote branch yet passes; a detached HEAD refuses", async () => {
     expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
@@ -226,12 +232,58 @@ describe("branchSyncPreflight", () => {
       expect(calls, branch).not.toContain("fetch origin");
     }
   });
+
+  describe("push redirection", () => {
+    test("remote.origin.push set refuses, naming the setting, before any fetch", async () => {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get-all remote.origin.push": { stdout: "+refs/heads/*:refs/heads/*\n" } }, calls));
+      expect(r.ok).toBe(false);
+      expect((r as { error: string }).error).toContain("remote.origin.push");
+      expect(calls).not.toContain("fetch origin");
+    });
+    test("push.default upstream with branch.<b>.merge pointing elsewhere refuses", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "upstream\n" }, "config --get branch.feat/x.merge": { stdout: "refs/heads/develop\n" } }));
+      expect(r.ok).toBe(false);
+    });
+    test("push.default upstream with branch.<b>.merge unset refuses", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "upstream\n" }, "config --get branch.feat/x.merge": { code: 1 } }));
+      expect(r.ok).toBe(false);
+    });
+    test("push.default upstream with branch.<b>.merge matching the current branch passes the redirect check", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "upstream\n" }, "config --get branch.feat/x.merge": { stdout: "refs/heads/feat/x\n" }, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
+      expect(r).toEqual({ ok: true, diverged: false });
+    });
+    test("push.default tracking is treated the same as upstream", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get push.default": { stdout: "tracking\n" }, "config --get branch.feat/x.merge": { stdout: "refs/heads/develop\n" } }));
+      expect(r.ok).toBe(false);
+    });
+    test("a git config error other than unset refuses", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "config --get-all remote.origin.push": { code: 2, stderr: "fatal: bad config" } }));
+      expect(r.ok).toBe(false);
+    });
+  });
+
+  describe("failing closed on a git error", () => {
+    test("rev-list --left-right --count failing refuses instead of reading as not diverged", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { code: 128, stderr: "fatal: bad revision" } }));
+      expect(r.ok).toBe(false);
+    });
+    test("a garbled count refuses instead of parsing as 0", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "not-a-number\n" } }));
+      expect(r.ok).toBe(false);
+    });
+    test("the unpushed-commit check failing refuses instead of reading as nothing unpushed", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { code: 128, stderr: "fatal: bad revision" } }));
+      expect(r.ok).toBe(false);
+    });
+  });
 });
 
 describe("branch_sync tool", () => {
   const guard: TreeGuardDeps = { repoIndex: () => ({ r: "/t" }), treeByPath: () => null, realpath: (p) => p };
   const clean: Script = {
     "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    "config --get-all remote.origin.push": { code: 1 }, "config --get push.default": { code: 1 },
     "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
     "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
   };
@@ -245,7 +297,14 @@ describe("branch_sync tool", () => {
   });
   test("a failed preflight never runs rt sync", async () => {
     let ran = false;
-    const tool = gitToolDefs({ git: fakeGit({ ...clean, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "1\t1\n" }, "cherry origin/feat/x HEAD": { stdout: "+ 9999\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "1\t1\n" }, "rev-list --cherry-pick --right-only --no-merges origin/feat/x...HEAD ^origin/develop": { stdout: "9999\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
+  });
+  test("a push redirect never runs rt sync", async () => {
+    let ran = false;
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, "config --get-all remote.origin.push": { stdout: "+refs/heads/*:refs/heads/*\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
     const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
     expect(r.ok).toBe(false);
     expect(ran).toBe(false);
