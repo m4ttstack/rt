@@ -113,6 +113,13 @@ describe("release.yml", () => {
     const install = wf.jobs.release.steps.find((s: any) => s.name === "Install dependencies");
     expect(install.run).toContain("--frozen-lockfile");
   });
+  test("the release job's install skips third-party lifecycle scripts; build-apps still runs them", () => {
+    const install = wf.jobs.release.steps.find((s: any) => s.name === "Install dependencies");
+    expect(install.run).toContain("bun install --frozen-lockfile --ignore-scripts");
+    expect(install.run).toContain("bun run postinstall");
+    const buildAppsInstall = wf.jobs["build-apps"].steps.find((s: any) => s.run === "bun install --frozen-lockfile");
+    expect(buildAppsInstall).toBeDefined();
+  });
   test("no RT_SANDBOX_PRESIGN escape hatch in CI", () => {
     expect(JSON.stringify(wf)).not.toContain("RT_SANDBOX_PRESIGN");
   });
