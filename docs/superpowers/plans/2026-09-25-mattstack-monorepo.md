@@ -1526,12 +1526,15 @@ git clone --single-branch --branch main https://github.com/m4ttstack/glance.git 
 cd "$SCRATCH"
 git filter-repo --force --invert-paths --path CLAUDE.md --path LICENSE --path bun.lock --path package.json --path .gitignore --path packages/glance-react/.github
 git filter-repo --force \
+  --path-rename docs/:docs/glance/ \
   --path-rename README.md:docs/glance/README.md \
   --path-rename AGENTS.md:packages/glance/AGENTS.md \
-  --path-rename docs/:docs/glance/ \
   --path-rename harness_credentials.example.json:packages/glance/harness_credentials.example.json
+git filter-repo --force --replace-text "$SCRUB_RULES"
 git ls-files | grep -vE '^(packages/|docs/glance/)' || echo "root clean"
 ```
+The directory rename comes first: filter-repo applies renames in order and cascades, so a file rule that targets a directory another rule also renames gets nested twice (`docs/glance/glance/README.md`) when it runs first. `$SCRUB_RULES` is a `--replace-text` file kept outside the repo, built from the purity pattern in `scripts/repo-purity.sh` against the clone's tree (placeholder ticket ids to `ACME-<digits>`, identifiers whose spelling matches a banned term renamed); glance's commit messages and file names matched nothing, so it needs no `--replace-message` pass.
+
 Expected: `root clean`.
 
 - [ ] **Step 2: Merge**
@@ -1663,7 +1666,7 @@ git commit -m "glance: publish on demand with bun publish"
 
 - [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported glance history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (rt code changed: the glance link).
-- [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches with format-patch first); move `~/Documents/GitHub/glance/harness_credentials.json` to the repo-tools root (gitignored) and repoint the path in `~/.claude/CLAUDE.md`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fglance` entry; delete `~/Documents/GitHub/glance`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fglance/`.
+- [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches with format-patch first); move `~/Documents/GitHub/glance/harness_credentials.json` to `~/Documents/GitHub/repo-tools/packages/glance/harness_credentials.json` (the path the live-harness loader resolves and `.gitignore` covers after Task 15) and repoint the path in `~/.claude/CLAUDE.md`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fglance` entry; delete `~/Documents/GitHub/glance`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fglance/`.
 - [ ] **Step 4: README links**: in `mattstack-skills/README.md` and `fast-browser/README.md` point the glance link at `https://github.com/m4ttstack/rt/tree/main/packages/glance` (a direct commit on each repo's main; both are docs-only).
 
 ---
@@ -1815,6 +1818,15 @@ git commit -m "docs: gitq lives in apps/gitq"
 - [ ] **Step 3: `gh repo archive m4ttstack/gitq --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches first); relink the five `~/.claude/skills/gitq:*` symlinks (absorb, publish, restructure, sync, track) to `~/Documents/GitHub/repo-tools/apps/gitq/skills/<name>`; `rt settings set gitq.board --scope machine` with the `gitq` repo entry's path at `~/Documents/GitHub/repo-tools`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fgitq` entry; delete `~/Documents/GitHub/gitq`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fgitq/`.
 - [ ] **Step 4: README links** in `mattstack-skills/README.md` and `fast-browser/README.md` point the gitq link at `https://github.com/m4ttstack/rt/tree/main/apps/gitq`.
 - [ ] **Step 5: Memory and docs**: `docs/architecture.md` in rt gains one line that apps, glance and gitq live in this repo; the memory files `project_rt_client_package.md` and `reference_repo_tools_e2e_not_in_test.md` get a dated line that rt-client is no longer published and the apps are in-tree.
+
+### Task 22: npm cleanup (Matt-gated)
+
+Every `@mattstack/*` package on npm was published either for an outside consumer or only to move code between repos that are now one tree. Once Stage C ships, the second kind has no reader left.
+
+- [ ] **Step 1: Inventory** (read-only): for every package name under `packages/*`, `apps/*` and `extensions/*` plus any `@mattstack/*` name `npm search` or the org page lists, record `npm view <name> versions time --json` (versions, publish dates, whether the latest is older than 72 hours) and every in-estate consumer that still installs it from the registry (`grep` for the name in every package.json across `~/Documents/GitHub/*` and the mattstack plugin marketplace). Sort into: keep (an outside consumer exists: the plugin, a standalone install, a published skill pack), unpublish (published only to feed apps, glance or gitq, all now `workspace:*`), undecided.
+- [ ] **Step 2: Matt's call** on the unpublish list, one form question per package.
+- [ ] **Step 3: Unpublish**: `npm unpublish <name> --force` removes a whole package only within 72 hours of its last publish or when it has no dependents and low downloads (npm's policy); otherwise `npm deprecate <name> "folded into m4ttstack/rt; consume it as a workspace package"` is the fallback. Needs Matt's OTP (bw vault). Record what was removed or deprecated in `docs/architecture.md`.
+- [ ] **Step 4**: set `"private": true` on every package that was unpublished or deprecated so nothing republishes it by accident, and drop any `publishConfig`; commit on a branch and merge.
 
 ---
 

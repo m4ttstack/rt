@@ -62,6 +62,10 @@ pinning its own version. `packages/tui-kit` and `apps/board` each pin
 `"typescript": "^7"` as deliberate exceptions -- the catalog's `~6` line
 would downgrade their compiler, so both opt out on purpose, for the same
 reason. Do not add a further exception without the same kind of reason.
+`packages/glance` and `packages/glance-react` pin TypeScript 5.9, vite 7 and
+`@vitejs/plugin-react` 5 explicitly, the third documented exception, until
+they are bumped in their own PR; `extensions/vscode/rt-context` pins the
+same TypeScript 5.9 line for its esbuild path, a fourth.
 Member-level lockfiles are forbidden: the root
 `bun.lock` is the only lockfile that owns resolution, so a workspace
 member never runs `bun install` scoped to itself in a way that would
@@ -159,7 +163,9 @@ from a different Mantine version.
 
 ### Publishing
 
-Nothing in this repo publishes to npm. `@mattstack/app-kit`,
+`packages/glance` and `packages/glance-react` publish to npm on demand
+(`packages/glance/docs/releasing.md`); nothing else in this repo publishes.
+`@mattstack/app-kit`,
 `@mattstack/app-server`, `@mattstack/mantine-tokyo`, and
 `@mattstack/tui-kit` each carry a version (bumped together via
 `scripts/set-platform-version.ts`), but that version is a tree-internal
@@ -170,8 +176,9 @@ npm), and every one is marked `private`. `packages/tokens` and
 under `apps/` consumes the four platform packages workspace-only
 (`workspace:*`); `@mattstack/rt-client` and `@mattstack/settings-kit` are
 likewise private workspace packages linked with `workspace:*`, not
-registry pulls. `@mattstack/glance` and `invadrs` remain real npm registry
-deps, pulled via `catalog:`. A future app that has not yet folded in as a
+registry pulls. `@mattstack/glance` is a workspace member now
+(`workspace:*`, no longer in the catalog); `invadrs` remains a real npm
+registry dep. A future app that has not yet folded in as a
 workspace member follows `docs/release-and-distribution.md`'s "Adding a
 served app" list, not a packed-tarball workflow; do not propose or wire one
 up here.

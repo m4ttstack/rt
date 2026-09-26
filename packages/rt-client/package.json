@@ -58,6 +58,7 @@
     "prepack": "bun run build"
   },
   "devDependencies": {
+    "@mattstack/glance": "workspace:*",
     "typescript": "^5.9.2",
     "zod": "^4.6.5"
   }

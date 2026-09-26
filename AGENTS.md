@@ -44,7 +44,8 @@ release builds them at the tagged commit (`scripts/build-apps.ts`, the
 `source: "tree"` rows, which is deck's served-app catalog. gitq stays its
 own repo (`~/Documents/GitHub/gitq`) and keeps a `repo`/`url`/`sha256` pin
 in `deps.lock` like fast-browser's; see `skills/rt-release/SKILL.md` for
-how that pin gets bumped.
+how that pin gets bumped. `packages/glance` and `packages/glance-react`
+keep their own contract in `packages/glance/AGENTS.md`.
 
 ## Worktree pool: the golden tree
 
@@ -488,6 +489,12 @@ repo, stays on the last published npm `rt-client` (its `package.json` pins
 `^0.14.0`); a change in this tree never reaches it until gitq folds in.
 There is no npm version to announce or renumber for any of the three.
 
+`packages/glance` links the same way in-repo (rt-client, the VS Code
+extension and root typecheck all resolve its `workspace:*` dist), but it is
+not private: it publishes to npm on its own schedule via `bun publish`
+(`packages/glance/docs/releasing.md`), never through the shared
+`scripts/set-platform-version.ts` bump.
+
 ### `packages/rt-client/dist/` goes stale without warning
 
 `dist/` is gitignored. Inside this monorepo, consumers link the workspace
@@ -501,6 +508,11 @@ artifact is not, and nothing about the working tree looks wrong. Run
 merge that does.
 
 `packages/rt-client/test/dist-freshness.test.ts` is the guard and names the fix in its failure message. Treat that failure as a real instruction, not as a flaky artifact test. It caught this three separate times in one day across three sessions.
+
+`packages/glance/dist/` is the same trap: root typecheck, rt-client's build
+and the VS Code extension all resolve it through `workspace:*`, while bun
+itself reads `src/` directly. Run `bun run build` in `packages/glance` after
+touching its source, and after any merge that does.
 
 ### Bytecode compile (`--bytecode`) silently falls back on failure
 

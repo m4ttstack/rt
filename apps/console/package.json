@@ -32,7 +32,7 @@
     "@mattstack/app-kit": "workspace:*",
     "@mattstack/app-server": "workspace:*",
     "@mattstack/gate-kit": "workspace:*",
-    "@mattstack/glance": "catalog:",
+    "@mattstack/glance": "workspace:*",
     "@mattstack/mantine-tokyo": "workspace:*",
     "@mattstack/rt-client": "workspace:*",
     "@mattstack/settings-kit": "workspace:*",

@@ -83,10 +83,15 @@ export async function buildTreeRows(s: BuildAppsSeams): Promise<string[]> {
   }
 }
 
+// glance-react's dist ships nothing this release bundles (no in-tree
+// consumer, no deps.lock row); its own build gates go through
+// scripts/turbo.sh check instead, never this release path.
+export const WORKSPACE_BUILD_ARGS = ["build", "--filter=./packages/*", "--filter=!@mattstack/glance-react", "--output-logs=errors-only"];
+
 function buildWorkspacePackages(): void {
   // An argv array bypasses the shell entirely, so "./packages/*" reaches
   // turbo's directory filter as one literal string, never glob-expanded.
-  const run = spawnSync("bash", ["scripts/turbo.sh", "build", "--filter=./packages/*", "--output-logs=errors-only"], {
+  const run = spawnSync("bash", ["scripts/turbo.sh", ...WORKSPACE_BUILD_ARGS], {
     cwd: ROOT,
     stdio: "inherit",
     env: process.env,

@@ -1,0 +1,124 @@
+{
+  "name": "@mattstack/glance-react",
+  "private": false,
+  "version": "0.4.2",
+  "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/main.mjs",
+  "module": "./dist/main.mjs",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "bun": "./lib/main.ts",
+      "import": "./dist/main.mjs",
+      "require": "./dist/main.cjs",
+      "default": "./dist/main.mjs"
+    },
+    "./styles.css": {
+      "bun": "./lib/css/styles.css",
+      "default": "./lib/css/styles.css"
+    },
+    "./tokens.css": {
+      "bun": "./lib/css/tokens.css",
+      "default": "./lib/css/tokens.css"
+    },
+    "./utilities.css": {
+      "bun": "./lib/css/utilities.css",
+      "default": "./lib/css/utilities.css"
+    }
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist",
+    "lib",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m4ttstack/rt.git",
+    "directory": "packages/glance-react"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b ./tsconfig.lib.json && vite build && bunx @tailwindcss/cli -i lib/css/styles.css -o dist/styles.css --minify && cat lib/css/palette.css lib/css/tokens.css > dist/tokens.css",
+    "build:app": "tsc -b ./tsconfig.app.json && vite build --config vite.app.config.ts",
+    "dev:app": "vite --config vite.app.config.ts",
+    "dev:app:dist": "TEST_DIST=1 vite --config vite.app.config.ts",
+    "test": "vitest run",
+    "lint": "eslint . --quiet",
+    "format:write": "prettier --write \"**/*.{ts,tsx}\" --cache",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\" --cache",
+    "preview": "vite preview",
+    "prepublishOnly": "bun run check-types && bun run build",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "check-types": "tsc --noEmit -p tsconfig.lib.json && tsc --noEmit -p tsconfig.app.json",
+    "typecheck": "bun run check-types"
+  },
+  "peerDependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "dependencies": {
+    "@mattstack/glance": "workspace:*",
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.2.0",
+    "@tailwindcss/vite": "catalog:",
+    "class-variance-authority": "catalog:",
+    "clsx": "catalog:",
+    "lucide-react": "catalog:",
+    "radix-ui": "catalog:",
+    "react-icons": "^5.6.0",
+    "tailwind-merge": "catalog:",
+    "tailwindcss": "catalog:",
+    "tw-animate-css": "catalog:"
+  },
+  "devDependencies": {
+    "@chromatic-com/storybook": "^5.2.1",
+    "@eslint/js": "^9.19.0",
+    "@ianvs/prettier-plugin-sort-imports": "^4.4.1",
+    "@storybook/addon-a11y": "^10.5.2",
+    "@storybook/addon-docs": "^10.5.2",
+    "@storybook/addon-vitest": "^10.5.2",
+    "@storybook/react-vite": "^10.5.2",
+    "@tailwindcss/cli": "^4.2.1",
+    "@types/node": "^25.4.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "^5.1.4",
+    "eslint": "^9.19.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "eslint-plugin-storybook": "^10.5.2",
+    "globals": "^15.14.0",
+    "happy-dom": "^16.8.1",
+    "playwright": "^1.59.1",
+    "prettier": "3.4.2",
+    "storybook": "^10.5.2",
+    "storybook-dark-mode": "^5.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.23.0",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.0",
+    "babel-plugin-react-compiler": "catalog:",
+    "vitest": "catalog:",
+    "vite-tsconfig-paths": "catalog:",
+    "@mattstack/typescript-config": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/m4ttstack/rt/tree/main/packages/glance-react",
+  "bugs": {
+    "url": "https://github.com/m4ttstack/rt/issues"
+  }
+}
