@@ -398,7 +398,9 @@ export function SettingsPage() {
                   <Text fz={12}>{store.error}</Text>
                 </Alert>
               )}
-              {store.loading ? (
+              {/* Skeletons only before the first list: a repo switch keeps the
+                  list it has on screen until the new one arrives. */}
+              {store.loading && store.defs.length === 0 ? (
                 <Stack gap="md" pt={28}>
                   {[220, 280, 180, 240].map(w => (
                     <Group key={w} justify="space-between">
