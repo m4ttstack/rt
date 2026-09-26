@@ -5,7 +5,7 @@ import type { CommandArg, CommandNode } from "../command-tree.ts";
 import { listAgentSafe, resolveLeaf } from "../command-tree-resolve.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 import { execWithTimeout, type ExecResult } from "../setup/probes.ts";
-import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess } from "./temp-root-guard.ts";
+import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess, type ReadRoots } from "./temp-root-guard.ts";
 
 export const RT_VERB_TIMEOUT_MS = 30_000;
 const TAIL_BYTES = 400;
@@ -17,7 +17,7 @@ export interface RtVerbDeps {
   isDir: (path: string) => boolean;
   spawn: (argv: string[], opts: { cwd?: string; env: Record<string, string>; timeoutMs: number }) => Promise<ExecResult>;
   tempRoots: () => string[];
-  readRoots: () => string[];
+  readRoots: () => ReadRoots;
 }
 
 export function realRtVerbDeps(): RtVerbDeps {
@@ -77,7 +77,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   const tempRootFlags = new Set(leaf.node.agentTempRootFlags ?? []);
   const readRootFlags = new Set(leaf.node.agentReadRootFlags ?? []);
   let tempRoots: string[] | null = null;
-  let readRoots: string[] | null = null;
+  let readRoots: ReadRoots | null = null;
   // A leaf's path flags write or read a caller-named file with no permission
   // prompt: each is confined before the value is ever forwarded, so an unsafe
   // path never reaches the spawn.
@@ -89,7 +89,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     }
     if (readRootFlags.has(name)) {
       readRoots ??= deps.readRoots();
-      const check = checkReadRootPath(value, readRoots);
+      const check = checkReadRootPath(value, readRoots.roots, readRoots.pluginListError);
       if (!check.ok) return `${name}: ${check.error}`;
     }
     return null;

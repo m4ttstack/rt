@@ -9,10 +9,10 @@
  */
 import { lstatSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, isAbsolute, join, normalize } from "path";
+import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "path";
 import { claudeTempRoots, isInsideRoot } from "../daemon/upload-guard.ts";
 import { discoverPacks } from "../skills/packs.ts";
-import { resolvePluginRoots } from "../skills/sources.ts";
+import { buildPluginRoots, listInstalledPlugins } from "../skills/sources.ts";
 
 type PathCheck = { ok: true } | { ok: false; error: string };
 
@@ -20,43 +20,85 @@ export function tempRootsForThisProcess(): string[] {
   return claudeTempRoots(typeof process.getuid === "function" ? process.getuid() : null);
 }
 
-function installedPluginRoots(): string[] {
-  try {
-    return Object.values(resolvePluginRoots().byName).map((p) => p.dir);
-  } catch {
-    return [];
-  }
+/** The plugin listing is a synchronous subprocess inside `rt mcp serve`: unbounded, one hang would stall every tool on the server. */
+export const PLUGIN_LIST_TIMEOUT_MS = 10_000;
+export const READ_ROOTS_TTL_MS = 60_000;
+
+/** pluginListError is set when the plugin listing failed; roots then holds no plugin root, so the read guard fails closed. */
+export type ReadRoots = { roots: string[]; pluginListError?: string };
+
+export interface ReadRootSources {
+  tempRoots: () => string[];
+  /** Throws when the installed plugins cannot be listed. */
+  pluginRoots: () => string[];
+  packRoots: () => string[];
+  now: () => number;
 }
 
-function installedPackRoots(): string[] {
-  try {
-    return discoverPacks().map((p) => p.dir);
-  } catch {
-    return [];
-  }
+function pluginListCause(e: unknown): string {
+  if ((e as { code?: unknown } | null)?.code === "ETIMEDOUT") return `claude plugin list timed out after ${PLUGIN_LIST_TIMEOUT_MS / 1000}s`;
+  const message = e instanceof Error ? e.message : String(e);
+  return `claude plugin list failed: ${message.split("\n")[0]}`;
 }
 
 /**
- * The temp root plus every installed plugin and pack root. A root that is
- * the home directory or one of its ancestors is dropped: a marketplace entry
- * pointed that wide would turn the read guard into no guard.
+ * The temp root plus every installed plugin and pack root, cached for ttlMs.
+ * A root that is the home directory or one of its ancestors is dropped: a
+ * marketplace entry pointed that wide would turn the read guard into no
+ * guard. A failed listing is cached too, so a hung `claude` costs one
+ * timeout per TTL rather than one per call.
  */
-export function readRootsForThisProcess(): string[] {
-  const home = homedir();
-  const wide = (root: string) => root === home || isInsideRoot(home, root);
-  return [...tempRootsForThisProcess(), ...installedPluginRoots().filter((r) => !wide(r)), ...installedPackRoots().filter((r) => !wide(r))];
+export function cachedReadRoots(src: ReadRootSources, ttlMs = READ_ROOTS_TTL_MS): () => ReadRoots {
+  let cache: { at: number; value: ReadRoots } | null = null;
+  return () => {
+    const now = src.now();
+    if (cache && now - cache.at < ttlMs) return cache.value;
+    const home = homedir();
+    const narrow = (root: string) => root !== home && !isInsideRoot(home, root);
+    let plugins: string[] = [];
+    let pluginListError: string | undefined;
+    try {
+      plugins = src.pluginRoots();
+    } catch (e) {
+      pluginListError = pluginListCause(e);
+    }
+    let packs: string[] = [];
+    try {
+      packs = src.packRoots();
+    } catch {
+      packs = [];
+    }
+    const value: ReadRoots = { roots: [...src.tempRoots(), ...plugins.filter(narrow), ...packs.filter(narrow)] };
+    if (pluginListError) value.pluginListError = pluginListError;
+    cache = { at: now, value };
+    return value;
+  };
+}
+
+/** One per process, so herd_brief's handler and rt_verb's real deps share a resolution. */
+export const readRootsForThisProcess = cachedReadRoots({
+  tempRoots: tempRootsForThisProcess,
+  pluginRoots: () => Object.values(buildPluginRoots(listInstalledPlugins({ timeoutMs: PLUGIN_LIST_TIMEOUT_MS })).byName).map((p) => p.dir),
+  packRoots: () => discoverPacks().map((p) => p.dir),
+  now: Date.now,
+});
+
+function matchingRoot(real: string, roots: readonly string[]): string | null {
+  for (const root of roots) {
+    if (typeof root !== "string" || !isAbsolute(root)) continue;
+    if (isInsideRoot(real, root)) return root;
+    try {
+      const rootReal = realpathSync(root);
+      if (isInsideRoot(real, rootReal)) return rootReal;
+    } catch {
+      // a root that does not exist contains nothing
+    }
+  }
+  return null;
 }
 
 function containedInAnyRoot(real: string, roots: readonly string[]): boolean {
-  return roots.some((root) => {
-    if (typeof root !== "string" || !isAbsolute(root)) return false;
-    if (isInsideRoot(real, root)) return true;
-    try {
-      return isInsideRoot(real, realpathSync(root));
-    } catch {
-      return false;
-    }
-  });
+  return matchingRoot(real, roots) !== null;
 }
 
 /**
@@ -127,9 +169,12 @@ export function checkTempRootPath(path: unknown, roots: readonly string[]): Path
  * so a symlink inside a root that points outside every root is refused. The
  * realpath must be a regular file with nlink 1: a FIFO would hang the
  * child's read, and a hardlink shares its inode with a file that can sit
- * outside every root.
+ * outside every root. Below the matched root no component may start with a
+ * dot and the file must be .md: plugin and pack roots are whole checkouts,
+ * and their .git, .env and other dotfiles are not briefs. The root's own
+ * path is exempt, since plugin roots live under ~/.claude.
  */
-export function checkReadRootPath(path: unknown, roots: readonly string[]): PathCheck {
+export function checkReadRootPath(path: unknown, roots: readonly string[], pluginListError?: string): { ok: true; realpath: string } | { ok: false; error: string } {
   const allowed = roots.length > 0
     ? "the Claude Code temp root or an installed plugin or pack root"
     : "the Claude Code temp root or an installed plugin or pack root (none resolved for this process)";
@@ -146,8 +191,18 @@ export function checkReadRootPath(path: unknown, roots: readonly string[]): Path
   } catch {
     return { ok: false, error: `file does not exist: ${path}` };
   }
-  if (!containedInAnyRoot(real, roots)) {
+  const root = matchingRoot(real, roots);
+  if (root === null) {
+    if (pluginListError) {
+      return { ok: false, error: `path is not inside the Claude Code temp root or an installed pack root, and the installed plugins could not be listed (${pluginListError}), so a plugin root cannot be checked (got "${path}")` };
+    }
     return { ok: false, error: `path must be inside ${allowed} (got "${path}")` };
+  }
+  if (relative(root, real).split(sep).some((c) => c.startsWith("."))) {
+    return { ok: false, error: `a path component below the root starts with a dot (got "${path}")` };
+  }
+  if (extname(real) !== ".md") {
+    return { ok: false, error: `path must name a .md file (got "${path}")` };
   }
 
   const stat = statSync(real, { throwIfNoEntry: false });
@@ -157,5 +212,5 @@ export function checkReadRootPath(path: unknown, roots: readonly string[]): Path
   if (stat.nlink !== 1) {
     return { ok: false, error: `path must not be a hardlinked file (got "${path}")` };
   }
-  return { ok: true };
+  return { ok: true, realpath: real };
 }

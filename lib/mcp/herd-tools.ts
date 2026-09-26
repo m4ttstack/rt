@@ -8,18 +8,18 @@ import {
   herdAttend, herdClose, herdList, herdMilestone, herdResume, herdSpawn, herdStart, herdStatus, herdWrapUp,
 } from "../../packages/rt-client/src/index.ts";
 import type { Commands } from "../../packages/rt-client/src/index.ts";
-import { isAbsolute } from "path";
+import { readFileSync } from "fs";
 import { resolveRepoTarget } from "./mr-target.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { checkOptional, checkRequired, checkStringArray, err, fromResponse, ok, requireWorkerEnv, resolveSoleHerd, type McpToolDef } from "./shared.ts";
-import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess } from "./temp-root-guard.ts";
+import { checkReadRootPath, checkTempRootPath, readRootsForThisProcess, tempRootsForThisProcess, type ReadRoots } from "./temp-root-guard.ts";
 
 export interface HerdToolDeps {
   start: typeof herdStart; spawn: typeof herdSpawn; close: typeof herdClose; status: typeof herdStatus; list: typeof herdList;
   attend: typeof herdAttend; wrapUp: typeof herdWrapUp; resume: typeof herdResume; milestone: typeof herdMilestone;
   verb: typeof runRtVerb;
   tempRoots: () => string[];
-  readRoots: () => string[];
+  readRoots: () => ReadRoots;
 }
 
 export const realHerdToolDeps: HerdToolDeps = {
@@ -44,7 +44,7 @@ async function requireShepherd(herd: string, env: NodeJS.ProcessEnv, status: typ
   if (!env.CLAUDE_CODE_SESSION_ID) return NO_SESSION;
   const res = await status({ herd });
   if (!res.ok) return fromResponse(res).error ?? `cannot read herd "${herd}"`;
-  if (res.data?.herd.shepherdSession !== env.CLAUDE_CODE_SESSION_ID) {
+  if (res.data?.herd?.shepherdSession !== env.CLAUDE_CODE_SESSION_ID) {
     return `this session is not the shepherd of herd "${herd}"; run herd_resume on it first to take it over`;
   }
   return null;
@@ -76,20 +76,31 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_spawn",
-      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). Only the herd's shepherd session may call it. Takes minutes.",
-      inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" }, brief: { type: "string" }, dir: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, account: { type: "string" }, disposable: { type: "boolean" } }, required: ["job"], additionalProperties: false },
+      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). brief is an absolute path to a .md brief file (herd_brief's out) inside the Claude Code temp root or an installed plugin or pack root; its contents become the worker's prompt. Omitted, the job's stored brief is reused. Only the herd's shepherd session may call it. Takes minutes.",
+      inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" }, brief: { type: "string", description: "Absolute path to the brief file; its contents are sent, not the path." }, dir: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, account: { type: "string" }, disposable: { type: "boolean" } }, required: ["job"], additionalProperties: false },
       async handler(input, env) {
         if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "job", type: "string" }]) ?? checkOptional(input, [{ name: "brief", type: "string" }, { name: "dir", type: "string" }, { name: "model", type: "string" }, { name: "effort", type: "string" }, { name: "account", type: "string" }, { name: "disposable", type: "boolean" }]);
         if (bad) return err(bad);
-        // This server's cwd is fixed at session start, so a relative brief names no file the caller meant.
-        if (typeof input.brief === "string" && !isAbsolute(input.brief)) return err("brief must be an absolute path");
+        // herd:spawn takes the brief TEXT (the CLI reads --brief <file> itself), so the file is read here, after confinement.
+        let brief: string | undefined;
+        if (typeof input.brief === "string") {
+          const rr = deps.readRoots();
+          const check = checkReadRootPath(input.brief, rr.roots, rr.pluginListError);
+          if (!check.ok) return err(`brief: ${check.error}`);
+          try {
+            brief = readFileSync(check.realpath, "utf8");
+          } catch (e) {
+            return err(`brief: cannot read ${input.brief}: ${(e as Error).message}`);
+          }
+        }
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
         const owner = await requireShepherd(h.herd, env, deps.status);
         if (owner) return err(owner);
         const payload: Commands["herd:spawn"]["payload"] = { herd: h.herd, job: input.job as string };
-        for (const k of ["brief", "dir", "model", "effort", "account"] as const) if (typeof input[k] === "string") payload[k] = input[k] as string;
+        if (brief !== undefined) payload.brief = brief;
+        for (const k of ["dir", "model", "effort", "account"] as const) if (typeof input[k] === "string") payload[k] = input[k] as string;
         if (typeof input.disposable === "boolean") payload.disposable = input.disposable;
         return fromResponse(await deps.spawn(payload, { timeoutMs: SPAWN_TIMEOUT_MS }));
       },
@@ -108,7 +119,7 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
         const readRoots = deps.readRoots();
         for (const field of ["template", "strategies", "methodFile"] as const) {
           if (typeof input[field] !== "string") continue;
-          const check = checkReadRootPath(input[field], readRoots);
+          const check = checkReadRootPath(input[field], readRoots.roots, readRoots.pluginListError);
           if (!check.ok) return err(`${field}: ${check.error}`);
         }
         const args = ["herd", "brief", "--job", input.job as string, "--template", input.template as string];

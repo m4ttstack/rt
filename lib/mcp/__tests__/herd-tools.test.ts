@@ -14,7 +14,11 @@ const STRATEGIES = join(FAKE_PLUGIN_ROOT, "strategies.md");
 const METHOD = join(FAKE_TEMP_ROOT, "method.md");
 const SECRET = join(OUTSIDE, "id_ed25519");
 const ESCAPE_LINK = join(FAKE_PLUGIN_ROOT, "escape.md");
-for (const f of [TEMPLATE, STRATEGIES, METHOD]) writeFileSync(f, "body");
+const BRIEF = join(FAKE_TEMP_ROOT, "brief.md");
+const BRIEF_BODY = "# Job j\n\nShip the widget.\n";
+const OUTSIDE_MD = join(OUTSIDE, "notes.md");
+for (const f of [TEMPLATE, STRATEGIES, METHOD, OUTSIDE_MD]) writeFileSync(f, "body");
+writeFileSync(BRIEF, BRIEF_BODY);
 writeFileSync(SECRET, "PRIVATE KEY");
 symlinkSync(SECRET, ESCAPE_LINK);
 
@@ -22,14 +26,18 @@ afterAll(() => {
   for (const dir of [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT, OUTSIDE]) rmSync(dir, { recursive: true, force: true });
 });
 
-function fake(opts: { statusError?: string } = {}) {
+function fake(opts: { statusError?: string; statusData?: unknown; pluginListError?: string } = {}) {
   const tempRoots = [FAKE_TEMP_ROOT];
-  const readRoots = [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT];
+  // A failed plugin listing leaves only the temp root, as the real resolver does.
+  const readRoots = opts.pluginListError
+    ? { roots: [FAKE_TEMP_ROOT], pluginListError: opts.pluginListError }
+    : { roots: [FAKE_TEMP_ROOT, FAKE_PLUGIN_ROOT] };
   const calls: Array<{ fn: string; a: any; o: any }> = [];
   const rec = (fn: string) => (async (a: unknown, o: unknown) => { calls.push({ fn, a, o }); return { ok: true, data: { fn } }; }) as any;
   const status = (async (a: { herd: string }) => {
     calls.push({ fn: "status", a, o: undefined });
     if (opts.statusError) return { ok: false, error: opts.statusError };
+    if (opts.statusData !== undefined) return { ok: true, data: opts.statusData };
     return { ok: true, data: { herd: { id: a.herd, shepherdSession: "s1" }, jobs: [] } };
   }) as any;
   const deps: HerdToolDeps = {
@@ -130,17 +138,47 @@ describe("herd shepherd tools", () => {
     const r = await tool("herd_start").handler({ name: "n", repo: "remote:gitlab.com%2Facme%2Facme-dev" }, {} as NodeJS.ProcessEnv);
     expect(r.ok).toBe(false);
   });
-  test("herd_spawn passes every option and a minutes-long timeout", async () => {
+  test("herd_spawn passes every option and a minutes-long timeout, sending the brief file's CONTENTS, not its path", async () => {
     const { tool, destructive } = fake();
-    await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: "/b.md", model: "opus", effort: "high", account: "a", disposable: true }, SESSION);
-    expect(destructive()[0]!.a).toEqual({ herd: "hd-1", job: "j", brief: "/b.md", model: "opus", effort: "high", account: "a", disposable: true });
+    await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: BRIEF, model: "opus", effort: "high", account: "a", disposable: true }, SESSION);
+    expect(destructive()[0]!.a).toEqual({ herd: "hd-1", job: "j", brief: BRIEF_BODY, model: "opus", effort: "high", account: "a", disposable: true });
     expect(destructive()[0]!.o.timeoutMs).toBeGreaterThanOrEqual(180_000);
   });
-  test("herd_spawn refuses a relative brief path, with zero daemon calls", async () => {
+  test("herd_spawn refuses a brief outside every read root, with zero daemon calls", async () => {
     const { tool, calls } = fake();
-    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: "brief.md" }, SESSION);
+    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: OUTSIDE_MD }, SESSION);
     expect(r.ok).toBe(false);
-    expect(r.error).toContain("brief must be an absolute path");
+    expect(r.error).toContain("brief: ");
+    expect(r.error).toContain("plugin or pack root");
+    expect(calls).toEqual([]);
+  });
+  test("herd_spawn refuses a relative or non-normalized brief path, with zero daemon calls", async () => {
+    for (const [brief, cause] of [["brief.md", "absolute"], [`${FAKE_TEMP_ROOT}/sub/../brief.md`, "normalized"], [`${FAKE_TEMP_ROOT}/./brief.md`, "normalized"]]) {
+      const { tool, calls } = fake();
+      const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief }, SESSION);
+      expect(r.ok, brief).toBe(false);
+      expect(r.error, brief).toContain(cause);
+      expect(calls, brief).toEqual([]);
+    }
+  });
+  test("herd_spawn's description says brief is a path whose contents become the prompt", () => {
+    const { tool } = fake();
+    const d = tool("herd_spawn").description;
+    expect(d).toContain("brief is an absolute path");
+    expect(d).toContain("its contents");
+  });
+  test("a status reply with no herd in it refuses rather than throwing, with zero destructive calls", async () => {
+    const { tool, destructive } = fake({ statusData: {} });
+    const r = await tool("herd_close").handler({ herd: "hd-1", job: "j" }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("not the shepherd");
+    expect(destructive()).toEqual([]);
+  });
+  test("herd_brief surfaces a failed plugin listing as the cause, calling the verb runner zero times", async () => {
+    const { tool, calls } = fake({ pluginListError: "claude plugin list timed out after 10s" });
+    const r = await tool("herd_brief").handler({ job: "j", template: TEMPLATE, methodFile: METHOD }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("installed plugins could not be listed (claude plugin list timed out after 10s)");
     expect(calls).toEqual([]);
   });
   test("herd_brief's description names every path confinement", () => {

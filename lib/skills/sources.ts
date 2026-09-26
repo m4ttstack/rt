@@ -36,9 +36,9 @@ export type PluginListEntry = { id: string; installPath: string };
 
 export type PluginRoots = { byName: Record<string, { dir: string; version: string }>; list: PluginListEntry[] };
 
-export function listInstalledPlugins(): PluginListEntry[] {
+export function listInstalledPlugins(opts: { timeoutMs?: number } = {}): PluginListEntry[] {
   const bin = resolveClaudeBin() ?? "claude";
-  const raw = execFileSync(bin, ["plugin", "list", "--json"], { encoding: "utf8" });
+  const raw = execFileSync(bin, ["plugin", "list", "--json"], { encoding: "utf8", ...(opts.timeoutMs !== undefined && { timeout: opts.timeoutMs }) });
   return JSON.parse(raw) as PluginListEntry[];
 }
 

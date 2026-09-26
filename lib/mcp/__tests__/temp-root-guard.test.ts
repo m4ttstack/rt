@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
-import { tmpdir } from "os";
-import { checkReadRootPath, checkTempRootPath } from "../temp-root-guard.ts";
+import { homedir, tmpdir } from "os";
+import { cachedReadRoots, checkReadRootPath, checkTempRootPath, PLUGIN_LIST_TIMEOUT_MS, type ReadRootSources } from "../temp-root-guard.ts";
 
 const createdDirs: string[] = [];
 
@@ -149,8 +149,8 @@ describe("checkReadRootPath", () => {
   test("an existing regular file inside any root passes", () => {
     const tempRoot = realTempDir("rt-read-root-temp-");
     const pluginRoot = realTempDir("rt-read-root-plugin-");
-    expect(checkReadRootPath(fileIn(tempRoot, "t.md"), [tempRoot, pluginRoot])).toEqual({ ok: true });
-    expect(checkReadRootPath(fileIn(pluginRoot, "s.md"), [tempRoot, pluginRoot])).toEqual({ ok: true });
+    expect(checkReadRootPath(fileIn(tempRoot, "t.md"), [tempRoot, pluginRoot])).toEqual({ ok: true, realpath: join(tempRoot, "t.md") });
+    expect(checkReadRootPath(fileIn(pluginRoot, "s.md"), [tempRoot, pluginRoot])).toEqual({ ok: true, realpath: join(pluginRoot, "s.md") });
   });
 
   test("a file outside every root is refused", () => {
@@ -185,7 +185,7 @@ describe("checkReadRootPath", () => {
     const real = fileIn(root, "real.md");
     const link = join(root, "link.md");
     symlinkSync(real, link);
-    expect(checkReadRootPath(link, [root])).toEqual({ ok: true });
+    expect(checkReadRootPath(link, [root])).toEqual({ ok: true, realpath: real });
   });
 
   test("a missing file is refused", () => {
@@ -197,9 +197,9 @@ describe("checkReadRootPath", () => {
 
   test("a directory or a FIFO is refused (not a regular file)", () => {
     const root = realTempDir("rt-read-root-");
-    const dir = join(root, "adir");
+    const dir = join(root, "adir.md");
     mkdirSync(dir);
-    const fifo = join(root, "pipe");
+    const fifo = join(root, "pipe.md");
     execFileSync("mkfifo", [fifo]);
     for (const p of [dir, fifo]) {
       const r = checkReadRootPath(p, [root]);
@@ -232,5 +232,113 @@ describe("checkReadRootPath", () => {
     const root = realTempDir("rt-read-root-");
     const r = checkReadRootPath(fileIn(root, "t.md"), []);
     expect(r.ok).toBe(false);
+  });
+
+  test("a dot-leading component below the matched root is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    mkdirSync(join(root, ".git"));
+    for (const p of [fileIn(join(root, ".git"), "config.md"), fileIn(root, ".env.md")]) {
+      const r = checkReadRootPath(p, [root]);
+      expect(r.ok, p).toBe(false);
+      expect(r.ok ? "" : r.error).toContain("starts with a dot");
+    }
+  });
+
+  test("a symlink whose realpath lands in a dot-leading directory below the root is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    mkdirSync(join(root, ".hidden"));
+    const real = fileIn(join(root, ".hidden"), "t.md");
+    const link = join(root, "t.md");
+    symlinkSync(real, link);
+    const r = checkReadRootPath(link, [root]);
+    expect(r.ok ? "" : r.error).toContain("starts with a dot");
+  });
+
+  test("a file without a .md extension is refused", () => {
+    const root = realTempDir("rt-read-root-");
+    for (const name of ["t.txt", "id_ed25519", "brief.MD.bak"]) {
+      const r = checkReadRootPath(fileIn(root, name), [root]);
+      expect(r.ok, name).toBe(false);
+      expect(r.ok ? "" : r.error).toContain(".md");
+    }
+  });
+
+  test("a root that itself sits under a dot-leading directory still works", () => {
+    const base = realTempDir("rt-read-root-home-");
+    const root = join(base, ".claude", "plugins", "cache", "mattstack");
+    mkdirSync(join(root, "references"), { recursive: true });
+    const p = fileIn(join(root, "references"), "job-template.md");
+    expect(checkReadRootPath(p, [root])).toEqual({ ok: true, realpath: p });
+  });
+
+  test("when the installed plugins could not be listed, a path outside the other roots is refused naming that cause", () => {
+    const root = realTempDir("rt-read-root-");
+    const outside = realTempDir("rt-read-root-outside-");
+    const r = checkReadRootPath(fileIn(outside, "t.md"), [root], "claude plugin list timed out after 10s");
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("installed plugins could not be listed");
+    expect(r.ok ? "" : r.error).toContain("timed out after 10s");
+  });
+
+  test("when the installed plugins could not be listed, a file inside the temp root still passes", () => {
+    const root = realTempDir("rt-read-root-");
+    const p = fileIn(root, "t.md");
+    expect(checkReadRootPath(p, [root], "claude plugin list failed: boom")).toEqual({ ok: true, realpath: p });
+  });
+});
+
+describe("cachedReadRoots", () => {
+  function sources(overrides: Partial<ReadRootSources> = {}) {
+    let clock = 1_000;
+    const counts = { plugins: 0, packs: 0 };
+    const src: ReadRootSources = {
+      tempRoots: () => ["/private/tmp/claude-501"],
+      pluginRoots: () => { counts.plugins++; return ["/opt/plugins/mattstack"]; },
+      packRoots: () => { counts.packs++; return ["/opt/packs/acme"]; },
+      now: () => clock,
+      ...overrides,
+    };
+    return { src, counts, advance: (ms: number) => { clock += ms; } };
+  }
+
+  test("a second call within the TTL is served from the cache; after it, the roots are resolved again", () => {
+    const { src, counts, advance } = sources();
+    const resolve = cachedReadRoots(src, 60_000);
+    const first = resolve();
+    expect(first).toEqual({ roots: ["/private/tmp/claude-501", "/opt/plugins/mattstack", "/opt/packs/acme"] });
+    advance(59_000);
+    expect(resolve()).toBe(first);
+    expect(counts).toEqual({ plugins: 1, packs: 1 });
+    advance(2_000);
+    resolve();
+    expect(counts).toEqual({ plugins: 2, packs: 2 });
+  });
+
+  test("a failing listing yields no plugin roots and a cause naming the failure", () => {
+    const { src } = sources({ pluginRoots: () => { throw new Error("claude: command not found\nmore"); } });
+    const r = cachedReadRoots(src)();
+    expect(r.roots).toEqual(["/private/tmp/claude-501", "/opt/packs/acme"]);
+    expect(r.pluginListError).toBe("claude plugin list failed: claude: command not found");
+  });
+
+  test("a timed-out listing yields a cause naming the timeout", () => {
+    const { src } = sources({ pluginRoots: () => { throw Object.assign(new Error("spawnSync claude ETIMEDOUT"), { code: "ETIMEDOUT" }); } });
+    const r = cachedReadRoots(src)();
+    expect(r.pluginListError).toBe(`claude plugin list timed out after ${PLUGIN_LIST_TIMEOUT_MS / 1000}s`);
+  });
+
+  test("a plugin or pack root that is the home directory or one of its ancestors is dropped", () => {
+    const { src } = sources({ pluginRoots: () => [homedir(), "/"], packRoots: () => [dirname(homedir())] });
+    expect(cachedReadRoots(src)().roots).toEqual(["/private/tmp/claude-501"]);
+  });
+
+  test("a failed listing refuses a plugin file end to end, naming the cause", () => {
+    const pluginRoot = realTempDir("rt-read-root-plugin-");
+    const p = join(pluginRoot, "job-template.md");
+    writeFileSync(p, "body");
+    const { src } = sources({ pluginRoots: () => { throw Object.assign(new Error("x"), { code: "ETIMEDOUT" }); } });
+    const rr = cachedReadRoots(src)();
+    const r = checkReadRootPath(p, rr.roots, rr.pluginListError);
+    expect(r.ok ? "" : r.error).toContain("installed plugins could not be listed (claude plugin list timed out");
   });
 });

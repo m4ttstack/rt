@@ -48,7 +48,7 @@ function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [
       return result;
     },
     tempRoots: () => tempRoots,
-    readRoots: () => readRoots,
+    readRoots: () => ({ roots: readRoots }),
   };
 }
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
