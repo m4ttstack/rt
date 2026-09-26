@@ -24,12 +24,12 @@
 - `BASE_PERMISSIONS` (`lib/setup/base-permissions.ts`) edits are refused by the classifier for agents: Part D hands Matt the exact lines.
 - The claimview pack is employer-visible: no mattstack ticket ids (`RT-*`, `SKILLS-*`) anywhere in it, including commit messages on its repo. Its team repo auto-commits and pushes dirty files on `main`, so Part C works on a branch in a worktree of that repo.
 - Skill edits (Parts B and C) follow `superpowers:writing-skills`: RED baseline on the current skill, edit, GREEN retest with a fresh agent that loads the edited skill and is observed calling the tools, `sh tests/certify.sh <skill-dir>` in mattstack-skills, version bump in the same commit, `rt skills sync --pack <pack>` after merge to main.
-- Run tools, git tools and `branch_sync` take their directory or `runDb` as an argument; nothing reads `process.cwd()` at call time in a tool handler (the MCP server's cwd is fixed at session start).
+- Run tools, git tools and `branch_sync` take their directory or `runDb` as an argument and refuse a call that gives neither; no tool handler reads `process.cwd()` (the MCP server's cwd is fixed at session start, so it would name the wrong tree).
 
 ## Review Focus
 
 1. A `tree` argument that is a symlink to a registered worktree (macOS `/tmp` vs `/private/tmp`, a user symlink): the guard must compare realpaths, or a legitimate tree is refused and an alias of an unregistered one is accepted. Pinned in Task 7.
-2. `git_push` on a branch whose upstream is a different remote branch name (`branch.<name>.merge` differs): the push must go to the tracked upstream, never invent `origin/<branch>`. Pinned in Task 8.
+2. `git_push` on a branch whose upstream is a different remote branch name or remote (`branch.<name>.merge` or `.remote` differs), and a user whose `push.default` is `matching`: the push must go to exactly the tracked upstream ref by explicit refspec, never a bare `git push` that could sweep in main. Pinned in Task 8 (the renamed-upstream and other-remote tests, and every push call carrying `HEAD:refs/heads/<name>`).
 3. A `run_start` `flags` string carrying a shell quote or a `$(`: the tool must refuse it, never split it into args that reach `runStart`. Pinned in Task 2.
 4. An announced relocation whose dialog names a registered tree that is NOT the announced path (two EnterWorktree calls in quick succession, or a stale announcement): the daemon must leave it for the human. Pinned in Task 16.
 5. `mr_merge` with `whenPipelineSucceeds: true` on an MR whose pipeline already succeeded: `setAutoMerge` alone may be a no-op on GitLab; the tool must return what it did (`autoMerge: true`) rather than `merged: true`, so the skill reports honestly. Pinned in Task 5.
@@ -57,7 +57,7 @@ claimview pack: `attachments/**/SKILL.md`, `skills/**`, `PACK.md`, `.claude-plug
 
 # Part A: rt
 
-Each PR ends the same way (repeated in its close-out task): open the PR on `m4ttstack/rt`, wait for CI green and the CodeRabbit pass (or an Opus review if rate-limited), merge, deploy to the dev daemon (`git branch --show-current` on the shared checkout must read `main`, pull, `rt daemon restart`), then smoke every new tool once against the glance harness project (`/Users/matt/Documents/GitHub/glance/harness_credentials.json` names the repo and users).
+Each PR ends the same way (repeated in its close-out task): open the PR on `m4ttstack/rt`, wait for CI green and the CodeRabbit pass (or an Opus review if rate-limited), merge, deploy to the dev daemon (`git branch --show-current` on the shared checkout must read `main`, pull, `rt daemon restart`), then start a FRESH Claude Code session for the smoke (the mattstack MCP server is spawned once at session start, so a session opened before the deploy never lists the new tools; confirm with the tool list before calling anything), and smoke every new tool once against the glance harness project (`/Users/matt/Documents/GitHub/glance/harness_credentials.json` names the repo and users).
 
 ## PR (a): run tools
 
@@ -267,13 +267,30 @@ describe("run tools pass runDb as RT_RUN_DB and cwd through", () => {
     await tool(deps, "run_decision").handler({ runDb: "/db", contract: "gate@1", scope: "close", selection: { next: "done" }, decidedBy: "pane" }, {} as NodeJS.ProcessEnv);
     expect(calls[0]).toMatchObject({ verb: "decision", args: ["record", "--contract", "gate@1", "--scope", "close", "--selection", '{"next":"done"}', "--decided-by", "pane"] });
   });
-  test("run_status and run_snapshot; cwd falls through when runDb is omitted", async () => {
+  test("run_status and run_snapshot; cwd stands in when runDb is omitted", async () => {
     const { deps, calls } = fakeDeps();
     await tool(deps, "run_status").handler({ cwd: "/tree", status: "done" }, {} as NodeJS.ProcessEnv);
     await tool(deps, "run_snapshot").handler({ cwd: "/tree" }, {} as NodeJS.ProcessEnv);
     expect(calls[0]).toMatchObject({ verb: "run-status", args: ["--status", "done"], cwd: "/tree" });
     expect(calls[0]!.env.RT_RUN_DB).toBeUndefined();
     expect(calls[1]).toMatchObject({ verb: "snapshot", args: [], cwd: "/tree" });
+  });
+  test("neither runDb nor cwd is refused without touching the run store", async () => {
+    const { deps, calls } = fakeDeps();
+    for (const name of ["run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot"]) {
+      const res = await tool(deps, name).handler({ action: "start", stage: "s", key: "k", value: "v", contract: "c", scope: "s", selection: {}, decidedBy: "d", status: "done" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok, name).toBe(false);
+      expect(res.error, name).toContain("runDb");
+    }
+    expect(calls).toEqual([]);
+  });
+  test("run_list passes the repo positionally to listRuns", async () => {
+    const seen: unknown[] = [];
+    const { deps } = fakeDeps();
+    deps.list = (async (repo: unknown) => { seen.push(repo); return { ok: true, data: { runs: [] } }; }) as any;
+    await tool(deps, "run_list").handler({ repo: "acme" }, {} as NodeJS.ProcessEnv);
+    await tool(deps, "run_list").handler({}, {} as NodeJS.ProcessEnv);
+    expect(seen).toEqual(["acme", undefined]);
   });
   test("a non-zero write result surfaces the envelope's error", async () => {
     const { deps } = fakeDeps('{"ok":false,"error":"stage not running"}', 2);
@@ -322,21 +339,30 @@ export function packRootFrom(skillDir: string, realpath: (p: string) => string):
 }
 
 const RUN_DB_PROPS = {
-  runDb: { type: "string", description: "The runDb run_start returned. Always pass it; omitted, the run is resolved from cwd (the newest running run whose worktree holds it) or the server's session." },
+  runDb: { type: "string", description: "The runDb run_start returned. Always pass it; omitted, cwd is required and the run is the newest running one whose worktree holds it." },
   cwd: { type: "string", description: "Absolute worktree path, used only when runDb is omitted." },
 };
+
+const NO_RUN = "pass runDb (from run_start) or cwd (the worktree); this server's own directory is not the run's";
 
 function parseOut(out: string): unknown {
   try { return JSON.parse(out); } catch { return null; }
 }
 
+/** The pair every run tool but run_start and run_list resolves its DB from. */
+function runTarget(input: Record<string, unknown>, env: NodeJS.ProcessEnv): { env: NodeJS.ProcessEnv; cwd: string } | { error: string } {
+  const bad = checkOptional(input, [{ name: "runDb", type: "string" }, { name: "cwd", type: "string" }]);
+  if (bad) return { error: bad };
+  if (typeof input.runDb === "string") return { env: { ...env, RT_RUN_DB: input.runDb }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
+  if (typeof input.cwd === "string") return { env, cwd: input.cwd };
+  return { error: NO_RUN };
+}
+
 export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
   async function write(verb: WriteVerb, args: string[], input: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<ToolResult> {
-    const bad = checkOptional(input, [{ name: "runDb", type: "string" }, { name: "cwd", type: "string" }]);
-    if (bad) return err(bad);
-    const runEnv = typeof input.runDb === "string" ? { ...env, RT_RUN_DB: input.runDb } : env;
-    const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
-    const r = await deps.write(verb, args, runEnv, cwd);
+    const target = runTarget(input, env);
+    if ("error" in target) return err(target.error);
+    const r = await deps.write(verb, args, target.env, target.cwd);
     const body = parseOut(r.out);
     if (r.code === 0) return ok(body ?? { ok: true });
     const message = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string" ? (body as { error: string }).error : `rt runs ${verb} failed (exit ${r.code})`;
@@ -368,7 +394,8 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
         const args = [...split.args, "--pack-dirs", packRoot];
         if (typeof input.ticket === "string") args.push("--ticket", input.ticket);
         if (typeof input.spawnedBy === "string") args.push("--spawned-by", input.spawnedBy);
-        const r = await deps.write("run-start", args, env, process.cwd());
+        // run-start never resolves a DB, so the pack root stands in for cwd.
+        const r = await deps.write("run-start", args, env, packRoot);
         const body = parseOut(r.out) as { ok?: boolean; error?: string } | null;
         if (r.code !== 0 || !body?.ok) return err(body?.error ?? `rt runs run-start failed (exit ${r.code})`);
         return ok(body);
@@ -428,11 +455,11 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
       description: "Read one run field; errors when the key is not set.",
       inputSchema: { type: "object", properties: { ...RUN_DB_PROPS, key: { type: "string" } }, required: ["key"], additionalProperties: false },
       async handler(input, env) {
-        const bad = checkRequired(input, [{ name: "key", type: "string" }]) ?? checkOptional(input, [{ name: "runDb", type: "string" }, { name: "cwd", type: "string" }]);
+        const bad = checkRequired(input, [{ name: "key", type: "string" }]);
         if (bad) return err(bad);
-        const runEnv = typeof input.runDb === "string" ? { ...env, RT_RUN_DB: input.runDb } : env;
-        const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
-        const r = await deps.write("field", ["get", input.key as string], runEnv, cwd);
+        const target = runTarget(input, env);
+        if ("error" in target) return err(target.error);
+        const r = await deps.write("field", ["get", input.key as string], target.env, target.cwd);
         if (r.code === 3) return err(`field "${String(input.key)}" is not set on this run`);
         if (r.code !== 0) return err((parseOut(r.out) as { error?: string } | null)?.error ?? `rt runs field get failed (exit ${r.code})`);
         return ok({ value: r.out });
@@ -471,14 +498,14 @@ export function runToolDefs(deps: RunToolDeps = realRunToolDeps): McpToolDef[] {
       async handler(input) {
         const bad = checkOptional(input, [{ name: "repo", type: "string" }]);
         if (bad) return err(bad);
-        return fromResponse(await deps.list(typeof input.repo === "string" ? { repo: input.repo } : {}, {}));
+        return fromResponse(await deps.list(typeof input.repo === "string" ? input.repo : undefined, {}));
       },
     },
   ];
 }
 ```
 
-Check `listRuns`'s signature at `packages/rt-client/src/client.ts:110` and match its parameter order exactly. In `lib/mcp/tools.ts`, `import { runToolDefs } from "./run-tools.ts";` and end `mcpTools()`'s array with `...runToolDefs(),`.
+`listRuns` is `listRuns(repo?: string, opts: RtClientOptions = {})` (`packages/rt-client/src/client.ts:110`): the repo goes positionally, never as `{ repo }`. In `lib/mcp/tools.ts`, `import { runToolDefs } from "./run-tools.ts";` and end `mcpTools()`'s array with `...runToolDefs(),`.
 
 - [ ] **Step 5: Run the tests**
 
@@ -523,7 +550,7 @@ Run: `bun run test` then `bunx tsc --noEmit`. Expected: green.
 
 - [ ] **Step 4: Commit, open the PR, merge, deploy, smoke**
 
-Commit `e2e/tests/mcp-serve.test.ts` as `mcp: e2e lists the run tools`. Open the PR titled `mcp: run_* tools (RT-326 a)`. After merge: on the shared checkout confirm `git branch --show-current` prints `main`, pull, `rt daemon restart`. Smoke: from a Claude Code pane in a glance harness worktree call `run_start` with the `work` engine's compiled flags, then `run_stage`, `run_field_set`, `run_field_get`, `run_decision`, `run_snapshot`, `run_list`, `run_status` once each; every call returns `ok`, and `rt runs show <runId>` shows the rows.
+Commit `e2e/tests/mcp-serve.test.ts` as `mcp: e2e lists the run tools`. Open the PR titled `mcp: run_* tools (RT-326 a)`. After merge: on the shared checkout confirm `git branch --show-current` prints `main`, pull, `rt daemon restart`. Smoke: start a fresh Claude Code session in a glance harness worktree (an existing session keeps the old MCP server), confirm `run_start` is in the tool list, then call `run_start` with the `work` engine's compiled flags, then `run_stage`, `run_field_set`, `run_field_get`, `run_decision`, `run_snapshot`, `run_list`, `run_status` once each; every call returns `ok`, and `rt runs show <runId>` shows the rows.
 
 ## PR (b): GitLab reads and `mr_merge`
 
@@ -848,7 +875,7 @@ Run: `bun test lib/mcp`. Expected: PASS.
 - [ ] **Step 1: e2e list assertion** gains `mr_view`, `mr_list`, `mr_for_branch`, `mr_threads`, `mr_pipeline`, `mr_job_trace`, `mr_merge` (same loop as Task 3).
 - [ ] **Step 2:** Build `dist/rt`, run `e2e/tests/mcp-serve.test.ts`, `bun run test`, `bunx tsc --noEmit`. Expected: green.
 - [ ] **Step 3:** Commit `mcp: e2e lists the GitLab read tools and mr_merge`; PR `mcp: GitLab reads and mr_merge (RT-326 b)`; merge; deploy (branch check, pull, `rt daemon restart`).
-- [ ] **Step 4: Smoke** on the glance harness project: `mr_list`, `mr_view`, `mr_for_branch`, `mr_threads {refresh: true}`, `mr_pipeline`, `mr_job_trace` on a harness MR; `mr_merge` on a throwaway harness MR created for the purpose (open it with `mr_create`, merge it, confirm merged on GitLab).
+- [ ] **Step 4: Smoke** from a fresh Claude Code session (the deployed server is only picked up at session start) on the glance harness project: `mr_list`, `mr_view`, `mr_for_branch`, `mr_threads {refresh: true}`, `mr_pipeline`, `mr_job_trace` on a harness MR; `mr_merge` on a throwaway harness MR created for the purpose (open it with `mr_create`, merge it, confirm merged on GitLab).
 
 ## PR (c): git tools
 
@@ -948,11 +975,13 @@ import { gitPull, gitPush, gitRebase, gitToolDefs, type GitRunner } from "../git
 import type { TreeGuardDeps } from "../tree-guard.ts";
 
 type Script = Record<string, { code?: number; stdout?: string; stderr?: string }>;
+// `git remote` answers "origin\nfork" unless the script overrides it, so the
+// fetch-before-rebase branch has remotes to recognize.
 function fakeGit(script: Script, calls: string[] = []): GitRunner {
   return async (args) => {
     const key = args.join(" ");
     calls.push(key);
-    const hit = script[key] ?? { code: 1, stderr: `unscripted: ${key}` };
+    const hit = script[key] ?? (key === "remote" ? { stdout: "origin\nfork\n" } : { code: 1, stderr: `unscripted: ${key}` });
     return { code: hit.code ?? 0, stdout: hit.stdout ?? "", stderr: hit.stderr ?? "" };
   };
 }
@@ -963,18 +992,33 @@ const onFeature: Script = {
 };
 
 describe("gitPush", () => {
-  test("pushes the current branch to its upstream, force only as --force-with-lease", async () => {
+  test("pushes HEAD to the upstream by explicit refspec, force only as --force-with-lease", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --force-with-lease": {} }, calls));
+    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --force-with-lease origin HEAD:refs/heads/feat/x": {} }, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push --force-with-lease");
+    expect(calls.at(-1)).toBe("push --force-with-lease origin HEAD:refs/heads/feat/x");
   });
-  test("setUpstream pushes -u origin <branch>", async () => {
+  test("an upstream with a different branch name is pushed to THAT name, never to origin/<local>", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 }, "push -u origin feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/renamed\n" }, "push origin HEAD:refs/heads/feat/renamed": {} };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(true);
+    expect(calls.at(-1)).toBe("push origin HEAD:refs/heads/feat/renamed");
+    expect((r.body as { upstream: string }).upstream).toBe("origin/feat/renamed");
+  });
+  test("an upstream on another remote goes to that remote", async () => {
+    const calls: string[] = [];
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "push fork HEAD:refs/heads/feat/x": {} };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(true);
+    expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/feat/x");
+  });
+  test("setUpstream pushes -u origin HEAD:refs/heads/<branch>", async () => {
+    const calls: string[] = [];
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 }, "push -u origin HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", { setUpstream: true }, fakeGit(script, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push -u origin feat/x");
+    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
   });
   test("no upstream and no setUpstream is an error naming setUpstream", async () => {
     const r = await gitPush("/t", {}, fakeGit({ ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 } }));
@@ -1011,14 +1055,29 @@ describe("gitPull", () => {
 });
 
 describe("gitRebase", () => {
-  test("rebases onto the named branch", async () => {
+  test("rebases onto a remote-tracking ref after fetching its remote", async () => {
     const calls: string[] = [];
-    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "rebase origin/develop": {} }, calls));
-    expect(r).toEqual({ ok: true, body: { status: "ok", onto: "origin/develop" } });
+    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase origin/develop": {} }, calls));
+    expect(r).toEqual({ ok: true, body: { status: "ok", onto: "origin/develop", fetched: "origin" } });
+    expect(calls).toEqual(["remote", "fetch origin", "rebase origin/develop"]);
+  });
+  test("a local ref is not fetched", async () => {
+    const calls: string[] = [];
+    const r = await gitRebase("/t", { onto: "develop" }, fakeGit({ "rebase develop": {} }, calls));
+    expect(r).toEqual({ ok: true, body: { status: "ok", onto: "develop", fetched: null } });
+    expect(calls).toEqual(["remote", "rebase develop"]);
+  });
+  test("an onto that starts with a dash is refused before git runs", async () => {
+    for (const onto of ["--exec=touch /tmp/x", "-i", "--onto=x"]) {
+      const calls: string[] = [];
+      const r = await gitRebase("/t", { onto }, fakeGit({}, calls));
+      expect(r.ok, onto).toBe(false);
+      expect(calls.filter((c) => c.startsWith("rebase")), onto).toEqual([]);
+    }
   });
   test("a conflict returns the conflicted files and leaves the tree mid-rebase", async () => {
     const calls: string[] = [];
-    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "rebase origin/develop": { code: 1, stderr: "CONFLICT" }, "diff --name-only --diff-filter=U": { stdout: "a.ts\nb.ts\n" } }, calls));
+    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase origin/develop": { code: 1, stderr: "CONFLICT" }, "diff --name-only --diff-filter=U": { stdout: "a.ts\nb.ts\n" } }, calls));
     expect(r).toEqual({ ok: true, body: { status: "conflict", onto: "origin/develop", files: ["a.ts", "b.ts"] } });
     expect(calls).not.toContain("rebase --abort");
   });
@@ -1082,21 +1141,43 @@ function detail(r: { stderr: string; stdout: string }): string {
   return (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-3).join(" ");
 }
 
-export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; setUpstream?: boolean }, git: GitRunner): Promise<ToolResult> {
+/** The branch a tool may push from: never detached, never main/master or the remote default. */
+export async function pushableBranch(cwd: string, git: GitRunner): Promise<{ branch: string } | { error: string }> {
   const branch = await currentBranch(cwd, git);
-  if (branch === null) return err("refusing to push a detached HEAD");
+  if (branch === null) return { error: "refusing to push a detached HEAD" };
   const def = await remoteDefault(cwd, git);
-  if (PROTECTED.has(branch) || branch === def) return err(`refusing to push ${branch}: the default branch and main/master are never pushed by a tool`);
+  if (PROTECTED.has(branch) || branch === def) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
+  return { branch };
+}
+
+// A bare `git push` obeys push.default, which under `matching` pushes every
+// matching branch (main included) and under `simple` fails on a renamed
+// upstream; an explicit refspec pushes exactly one ref either way.
+export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; setUpstream?: boolean }, git: GitRunner): Promise<ToolResult> {
+  const b = await pushableBranch(cwd, git);
+  if ("error" in b) return err(b.error);
+  const branch = b.branch;
   const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd);
   const args = ["push"];
   if (opts.forceWithLease) args.push("--force-with-lease");
-  if (upstream.code !== 0) {
+  let remote: string;
+  let remoteBranch: string;
+  if (upstream.code === 0) {
+    const full = upstream.stdout.trim();
+    const slash = full.indexOf("/");
+    if (slash <= 0) return err(`cannot read the upstream of ${branch}: ${full}`);
+    remote = full.slice(0, slash);
+    remoteBranch = full.slice(slash + 1);
+  } else {
     if (!opts.setUpstream) return err(`${branch} has no upstream; pass setUpstream: true to push it as origin/${branch}`);
-    args.push("-u", "origin", branch);
+    remote = "origin";
+    remoteBranch = branch;
+    args.push("-u");
   }
+  args.push(remote, `HEAD:refs/heads/${remoteBranch}`);
   const r = await git(args, cwd);
   if (r.code !== 0) return err(`git push failed: ${detail(r)}`);
-  return ok({ pushed: true, branch, forceWithLease: opts.forceWithLease === true, upstream: upstream.code === 0 ? upstream.stdout.trim() : `origin/${branch}` });
+  return ok({ pushed: true, branch, forceWithLease: opts.forceWithLease === true, upstream: `${remote}/${remoteBranch}` });
 }
 
 export async function gitPull(cwd: string, git: GitRunner): Promise<ToolResult> {
@@ -1105,6 +1186,17 @@ export async function gitPull(cwd: string, git: GitRunner): Promise<ToolResult> 
   return ok({ pulled: true, output: r.stdout.trim() });
 }
 
+async function remoteOf(ref: string, cwd: string, git: GitRunner): Promise<string | null> {
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return null;
+  const remotes = await git(["remote"], cwd);
+  const names = remotes.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const head = ref.slice(0, slash);
+  return names.includes(head) ? head : null;
+}
+
+// `git rebase` does not take `--` before its ref, so a dash-leading onto is
+// refused outright: passed through, `--exec=<cmd>` would run that command.
 export async function gitRebase(cwd: string, opts: { onto?: string; abort?: boolean }, git: GitRunner): Promise<ToolResult> {
   if (opts.abort && opts.onto !== undefined) return err("pass onto or abort, not both");
   if (opts.abort) {
@@ -1112,8 +1204,14 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
     return r.code === 0 ? ok({ status: "aborted" }) : err(`git rebase --abort failed: ${detail(r)}`);
   }
   if (typeof opts.onto !== "string" || opts.onto === "") return err('"onto" (a branch or ref) is required unless abort: true');
+  if (opts.onto.startsWith("-") || /\s/.test(opts.onto)) return err('"onto" must be a branch or ref name, not an option');
+  const fetched = await remoteOf(opts.onto, cwd, git);
+  if (fetched !== null) {
+    const f = await git(["fetch", fetched], cwd);
+    if (f.code !== 0) return err(`git fetch ${fetched} failed: ${detail(f)}`);
+  }
   const r = await git(["rebase", opts.onto], cwd);
-  if (r.code === 0) return ok({ status: "ok", onto: opts.onto });
+  if (r.code === 0) return ok({ status: "ok", onto: opts.onto, fetched });
   const conflicted = await git(["diff", "--name-only", "--diff-filter=U"], cwd);
   const files = conflicted.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
   if (files.length > 0) return ok({ status: "conflict", onto: opts.onto, files });
@@ -1154,7 +1252,7 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
     },
     {
       name: "git_rebase",
-      description: "Rebase the tree's current branch onto a named branch or ref. On a conflict it returns status conflict with the conflicted files and leaves the tree mid-rebase for you to resolve (then finish with git rebase --continue in Bash), or pass abort: true to abort one in progress.",
+      description: "Rebase the tree's current branch onto a named branch or ref; a remote-tracking ref (origin/<branch>) is fetched first. On a conflict it returns status conflict with the conflicted files and leaves the tree mid-rebase for you to resolve (then finish with git rebase --continue in Bash), or pass abort: true to abort one in progress.",
       inputSchema: { type: "object", properties: { ...TREE_PROP, onto: { type: "string" }, abort: { type: "boolean" } }, required: ["tree"], additionalProperties: false },
       handler: guarded(async (path, input) => {
         const bad = checkOptional(input, [{ name: "onto", type: "string" }, { name: "abort", type: "boolean" }]);
@@ -1187,6 +1285,7 @@ import { branchSyncPreflight } from "../git-tools.ts";
 describe("branchSyncPreflight", () => {
   const base: Script = {
     "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+    "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
     "fetch origin": {},
     "rev-parse --verify --quiet origin/feat/x": {},
   };
@@ -1207,12 +1306,21 @@ describe("branchSyncPreflight", () => {
     expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
     expect((await branchSyncPreflight("/t", fakeGit({ "symbolic-ref --quiet --short HEAD": { code: 1 } }))).ok).toBe(false);
   });
+  test("main, master and the remote default branch refuse before any fetch (rt sync would force-push them)", async () => {
+    for (const branch of ["main", "master", "develop"]) {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" } }, calls));
+      expect(r.ok, branch).toBe(false);
+      expect(calls, branch).not.toContain("fetch origin");
+    }
+  });
 });
 
 describe("branch_sync tool", () => {
   const guard: TreeGuardDeps = { repoIndex: () => ({ r: "/t" }), treeByPath: () => null, realpath: (p) => p };
   const clean: Script = {
-    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
+    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
     "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
   };
   test("exit 0 is synced, exit 3 is a conflict bundle, exit 4 is a refusal", async () => {
@@ -1242,8 +1350,9 @@ import { execWithTimeout } from "../setup/probes.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 
 export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
-  const branch = await currentBranch(cwd, git);
-  if (branch === null) return { ok: false, error: "refusing to sync a detached HEAD" };
+  const b = await pushableBranch(cwd, git);
+  if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
+  const branch = b.branch;
   const fetched = await git(["fetch", "origin"], cwd);
   if (fetched.code !== 0) return { ok: false, error: `git fetch origin failed: ${detail(fetched)}` };
   const remote = await git(["rev-parse", "--verify", "--quiet", `origin/${branch}`], cwd);
@@ -1297,7 +1406,7 @@ Check `execWithTimeout`'s return shape at `lib/setup/probes.ts:15` (`ExecResult`
 - [ ] **Step 1:** e2e list assertion gains `git_push`, `git_pull`, `git_rebase`, `branch_sync`.
 - [ ] **Step 2:** `bun test lib/__tests__/no-spawn-without-env.test.ts` (runCapture passes `childEnv()`; execWithTimeout passes an env: both satisfy the guard). Build `dist/rt`; run `e2e/tests/mcp-serve.test.ts`; `bun run test`; `bunx tsc --noEmit`.
 - [ ] **Step 3:** Commit `mcp: e2e lists the git tools`; PR `mcp: git tools (RT-326 c)`; merge; deploy.
-- [ ] **Step 4: Smoke** in a glance harness worktree on a feature branch: `git_push {setUpstream: true}`, a second `git_push {forceWithLease: true}` after an amend, `git_pull`, `git_rebase {onto: "origin/main"}`, `git_rebase {abort: true}` after a staged conflict, `branch_sync`. Also `git_push` on `main` and on an unregistered directory: both refused.
+- [ ] **Step 4: Smoke** from a fresh Claude Code session in a glance harness worktree on a feature branch: `git_push {setUpstream: true}`, a second `git_push {forceWithLease: true}` after an amend, `git_pull`, `git_rebase {onto: "origin/main"}`, `git_rebase {abort: true}` after a staged conflict, `branch_sync`. Also `git_push` on `main` and on an unregistered directory: both refused.
 
 ## PR (d): worktree and herd tools, wider `rt_verb`
 
@@ -1765,7 +1874,7 @@ In `lib/command-tree-def.ts`, add `agentSafe: true,` to each leaf listed above. 
 - [ ] **Step 1:** e2e list assertion gains the three worktree tools and ten herd tools; add one `tools/call rt_verb {args:["settings","list"]}` case asserting `ok`.
 - [ ] **Step 2:** Build `dist/rt`; run `e2e/tests/mcp-serve.test.ts`; `bun run test`; `bunx tsc --noEmit`; `bun run picker:check`.
 - [ ] **Step 3:** Commit `mcp: e2e lists the worktree and herd tools`; PR `mcp: worktree and herd tools, wider rt_verb (RT-326 d)`; merge; deploy.
-- [ ] **Step 4: Smoke** on the harness: `worktree_provision {ticket}` then EnterWorktree by path; `worktree_stop_holders`; `worktree_dispose` from another pane; `herd_start`, `herd_brief`, `herd_spawn` (one worker), `herd_status`, `herd_list`, `herd_attend`, `herd_close`, `herd_wrap_up`, `herd_resume`; from the worker: `herd_milestone`. `rt_verb` for `runs show`, `skills check`, `git status`.
+- [ ] **Step 4: Smoke** from a fresh Claude Code session on the harness: `worktree_provision {ticket}` then EnterWorktree by path; `worktree_stop_holders`; `worktree_dispose` from another pane; `herd_start`, `herd_brief`, `herd_spawn` (one worker), `herd_status`, `herd_list`, `herd_attend`, `herd_close`, `herd_wrap_up`, `herd_resume`; from the worker: `herd_milestone`. `rt_verb` for `runs show`, `skills check`, `git status`.
 
 ## PR (e): relocation auto-accept on attended panes
 
@@ -1823,9 +1932,11 @@ and `ruledEchoPath` tries each echo prefix, returning the tool it matched; the b
 ```ts
 "pane:announce-relocation": {
   payload: { sessionId: string; paneId?: string; tool: "EnterWorktree" | "ExitWorktree"; path?: string; cwd: string };
-  data: { scheduled: boolean; pane: string | null; reason?: "no-pane" | "herd-pane" | "disabled" };
+  data: { scheduled: boolean; pane: string | null; reason?: "no-pane" | "herd-pane" | "disabled" | "awaiting-path" };
 };
 ```
+
+Name mode is two announcements: the `PreToolUse` hook's (no path; it records the session's origin and schedules nothing, because rt's `WorktreeCreate` hook still has to provision the tree, minutes on a cold create) and then `rt worktree claude-hook`'s, sent the moment the tree exists with its path (Task 17), which schedules the watch. Path mode is one announcement with the path.
 
 - `createRelocationWatcher(deps: RelocationWatcherDeps): RelocationWatcher` where
 
@@ -1897,12 +2008,21 @@ describe("relocation watcher", () => {
     expect(seen[0]!("/pool/t2")).toBe(false);
     expect(seen[0]!("/elsewhere")).toBe(false);
   });
-  test("EnterWorktree without a path (name mode) allows any registered tree", async () => {
+  test("EnterWorktree without a path (name mode) records the origin and schedules nothing: the tree does not exist yet", async () => {
+    const { w, seen } = watcher();
+    expect(await w.announce({ sessionId: "s1", tool: "EnterWorktree", cwd: "/repo" })).toEqual({ scheduled: false, pane: "7", reason: "awaiting-path" });
+    await settle();
+    expect(seen).toEqual([]);
+    expect(w.originFor("s1")).toBe("/repo");
+  });
+  test("the provisioned-path announcement that follows name mode schedules the watch for that path only", async () => {
     const { w, seen } = watcher();
     await w.announce({ sessionId: "s1", tool: "EnterWorktree", cwd: "/repo" });
+    expect(await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t2", cwd: "/repo" })).toEqual({ scheduled: true, pane: "7" });
     await settle();
     expect(seen[0]!("/pool/t2")).toBe(true);
-    expect(seen[0]!("/elsewhere")).toBe(false);
+    expect(seen[0]!("/pool/t1")).toBe(false);
+    expect(w.originFor("s1")).toBe("/repo");
   });
   test("ExitWorktree allows the session's recorded origin, which need not be registered", async () => {
     const { w, seen } = watcher({ outcomes: ["accepted", "accepted"] });
@@ -1985,11 +2105,8 @@ export function createRelocationWatcher(deps: RelocationWatcherDeps): Relocation
       const origin = origins.get(a.sessionId);
       return (p) => origin !== undefined && same(p, origin);
     }
-    if (a.path !== undefined) {
-      const want = a.path;
-      return (p) => deps.isRegisteredTree(p) && same(p, want);
-    }
-    return (p) => deps.isRegisteredTree(p);
+    const want = a.path as string;
+    return (p) => deps.isRegisteredTree(p) && same(p, want);
   }
 
   async function watch(pane: LivePane, allowed: (p: string) => boolean, a: Announce): Promise<void> {
@@ -2018,10 +2135,14 @@ export function createRelocationWatcher(deps: RelocationWatcherDeps): Relocation
   return {
     originFor: (sessionId) => origins.get(sessionId),
     async announce(a) {
-      if (a.tool === "EnterWorktree") origins.set(a.sessionId, a.cwd);
+      // The origin is the cwd of the FIRST EnterWorktree announcement; the
+      // provisioned-path one that follows in name mode has the same cwd.
+      if (a.tool === "EnterWorktree" && a.path === undefined) origins.set(a.sessionId, a.cwd);
+      if (a.tool === "EnterWorktree" && a.path !== undefined && !origins.has(a.sessionId)) origins.set(a.sessionId, a.cwd);
       const panes = (await deps.snapshot()) ?? [];
       const pane = resolveLivePane({ paneId: a.paneId, sessionId: a.sessionId }, panes);
       if (!pane) return { scheduled: false, pane: null, reason: "no-pane" };
+      if (a.tool === "EnterWorktree" && a.path === undefined) return { scheduled: false, pane: pane.paneRef, reason: "awaiting-path" };
       if (deps.isHerdPane(pane.paneRef)) return { scheduled: false, pane: pane.paneRef, reason: "herd-pane" };
       if (!deps.enabled()) return { scheduled: false, pane: pane.paneRef, reason: "disabled" };
       void watch(pane, allowedFor(a), a);
@@ -2074,6 +2195,7 @@ const relocationWatcher = createRelocationWatcher({
 
 **Interfaces:**
 - Produces: `buildRelocationAnnouncement(stdin: string, env: NodeJS.ProcessEnv): Commands["pane:announce-relocation"]["payload"] | null` (null when the hook input is not an Enter/ExitWorktree call or lacks a session id); `announceRelocation(_args: string[]): Promise<void>` reads stdin, calls `rtCommand("pane:announce-relocation", payload, { timeoutMs: 3_000 })`, prints nothing, always exits 0.
+- Also: `parseHookStdin`'s `create` variant gains `sessionId?: string` (from `session_id`), and `claudeHookCommand` sends the second, path-carrying announcement right after `decideCreate` returns a path (name mode's tree now exists), before it prints the path.
 
 - [ ] **Step 1: Failing test**
 
@@ -2103,7 +2225,18 @@ describe("buildRelocationAnnouncement", () => {
     expect(buildRelocationAnnouncement("", {} as NodeJS.ProcessEnv)).toBeNull();
   });
 });
+
+describe("parseHookStdin keeps the session for the provisioned-path announcement", () => {
+  test("WorktreeCreate carries session_id when present", () => {
+    expect(parseHookStdin(JSON.stringify({ hook_event_name: "WorktreeCreate", cwd: "/repo", name: "rt-326", session_id: "s1" })))
+      .toEqual({ event: "create", cwd: "/repo", name: "rt-326", sessionId: "s1" });
+    expect(parseHookStdin(JSON.stringify({ hook_event_name: "WorktreeCreate", cwd: "/repo", name: "rt-326" })))
+      .toEqual({ event: "create", cwd: "/repo", name: "rt-326" });
+  });
+});
 ```
+
+(`parseHookStdin` is already exported from `commands/worktree-hook.ts`; add it to the import.)
 
 - [ ] **Step 2: Run to verify failure.** `bun test commands/__tests__/worktree-announce-relocation.test.ts`: FAIL.
 
@@ -2140,6 +2273,26 @@ export async function announceRelocation(_args: string[]): Promise<void> {
 }
 ```
 
+In `parseHookStdin`, the create branch becomes:
+
+```ts
+if (j.hook_event_name === "WorktreeCreate" && typeof j.cwd === "string" && typeof j.name === "string") {
+  return { event: "create", cwd: j.cwd, name: j.name, ...(typeof j.session_id === "string" ? { sessionId: j.session_id } : {}) };
+}
+```
+
+with `ParsedStdin`'s create variant `{ event: "create"; cwd: string; name: string; sessionId?: string }`. In `claudeHookCommand`, between the `refused` check and `console.log(decision.path)`:
+
+```ts
+if (parsed.sessionId) {
+  const announce: Commands["pane:announce-relocation"]["payload"] = { sessionId: parsed.sessionId, tool: "EnterWorktree", path: decision.path, cwd: parsed.cwd };
+  if (process.env.HERDR_PANE_ID) announce.paneId = process.env.HERDR_PANE_ID;
+  try { await rtCommand("pane:announce-relocation", announce, { timeoutMs: 3_000 }); } catch { /* same as above: the dialog falls to the human */ }
+}
+```
+
+This is the announcement that schedules the watch in name mode; the tree exists at this point and Claude Code paints the dialog right after the hook prints the path, so the 8s window in Task 16 starts when it should.
+
 Command tree node, beside `"claude-hook"`:
 
 ```ts
@@ -2163,7 +2316,7 @@ Command tree node, beside `"claude-hook"`:
 - [ ] **Step 1: Hook-to-daemon test.** Add to `e2e/tests/reconciler.test.ts` (or a new `e2e/tests/relocation-announce.test.ts` on the same harness): start the daemon, send `pane:announce-relocation` over the socket with a session id no pane has, assert `{ scheduled: false, pane: null, reason: "no-pane" }`; send with `tool: "Bash"`, assert an error. (The accept path itself needs a live herdr pane and is covered by the smoke below.)
 - [ ] **Step 2:** `bun run test`; `bunx tsc --noEmit`; `bun run picker:check`; build `dist/rt` and run the e2e file.
 - [ ] **Step 3:** Commit; PR `daemon: relocation auto-accept for announced attended panes (RT-326 e)`; merge; deploy (`rt daemon restart` is what makes the new command live).
-- [ ] **Step 4: Smoke** needs the hook from Part B Task 26 installed in the plugin (`rt skills sync --pack mattstack` after that task merges): in an attended herdr pane, `EnterWorktree` by path into a pool tree, then `ExitWorktree`; neither dialog waits. Then `EnterWorktree` to a directory outside rt's registry: the dialog waits for the person (check `rt daemon logs` for "leaving it for the human").
+- [ ] **Step 4: Smoke** needs the hook from Part B Task 26 installed in the plugin (`rt skills sync --pack mattstack` after that task merges) and a fresh Claude Code session started after both the deploy and the sync (hooks and the MCP server are read at session start): in an attended herdr pane, `EnterWorktree` by path into a pool tree, then `ExitWorktree`; neither dialog waits. Then `EnterWorktree` by name (rt's `WorktreeCreate` hook provisions; the dialog paints after the tree exists): it does not wait either. Then `EnterWorktree` to a directory outside rt's registry: the dialog waits for the person (check `rt daemon logs` for "leaving it for the human").
 
 ---
 
@@ -2197,7 +2350,7 @@ Repo: `/Users/matt/Documents/GitHub/mattstack-skills` (branch off `main`; the re
 | `git push -u origin <branch>` | `git_push {tree, setUpstream: true}` |
 | `git push --force-with-lease` | `git_push {tree, forceWithLease: true}` |
 | `git push` (plain) | `git_push {tree}` |
-| `git fetch origin` then `git rebase origin/<default>` | `git_rebase {tree, onto: "origin/<default>"}` (it fetches) |
+| `git fetch origin` then `git rebase origin/<default>` | `git_rebase {tree, onto: "origin/<default>"}` (a remote-tracking `onto` fetches that remote first; a bare `git fetch` for a read stays in Bash) |
 | `git rebase --abort` | `git_rebase {tree, abort: true}` |
 | `cd <worktree> && rt sync --json` | `branch_sync {tree}`; exit-code table becomes the `status` field (`synced`, `conflict`) or the tool's error |
 | `rt worktree provision --repo R --ticket T --json` / `--branch B` | `worktree_provision {repoName, ticket, ticketTitle}` / `{repoName, branch}`; then `EnterWorktree` with `path` = the result's `path` |
@@ -2441,7 +2594,7 @@ Pack: `/Users/matt/.mattstack/teams/claimview/mattstack/packs/claimview`, inside
 - [ ] **Step 2: Audit re-run** over the pack: the Task 27 grep, run inside the pack directory. Every hit is on the kept list or prose.
 - [ ] **Step 3: GREEN** on `work`, `ship`, `watch-ci`, `shepherdr` (one worker) against the claimview harness. `certify.sh --domain` on every touched dir exits 0.
 - [ ] **Step 4:** Bump `version` in `.claude-plugin/plugin.json` (`0.5.64` to `0.6.0`); commit `claimview pack: recompile on mattstack 0.22; version 0.6.0`.
-- [ ] **Step 5:** Push the branch; open the MR on `claimview-tools` with `mr_create` (title without ticket ids: `claimview pack: run the pipeline on the mattstack MCP tools`); after merge, on the team repo's `main` (which auto-syncs): `rt skills sync --pack claimview`; `rt skills check` shows 0.6.0. Remove the worktree: `git worktree remove .worktrees/mcp-tools`.
+- [ ] **Step 5: Publish through the team zone, not an MR.** Pack changes reach `claimview-tools` only through the team zone's auto-snapshot of `main`; nothing here writes to that employer project directly. From `/Users/matt/.mattstack/teams/claimview` (on `main`): `git merge --ff-only mcp-tools` (one command); the auto-snapshot commits and pushes it. Then `rt skills sync --pack claimview`; `rt skills check` shows 0.6.0. Remove the worktree: `git worktree remove .worktrees/mcp-tools` and `git branch -d mcp-tools`. An MR on `claimview-tools` is never opened by an agent for this work; if one is wanted, Matt says so explicitly and opens or authorizes it himself.
 
 ---
 
@@ -2517,5 +2670,5 @@ Run: `bun test lib/setup/__tests__/base-permissions.test.ts`: FAIL until Matt's 
 
 **Type consistency.** `McpToolDef` and `ToolResult` come from `shared.ts` (Task 2) and every later tool file imports them from there. `GitToolDeps.sync` returns `{ code, stdout, stderr }` in Tasks 8 and 9 (Task 9 notes the `ExecResult` field check). `RelocationDriveOutcome` (Task 16) is `trust-accept.ts`'s existing export. `Commands["pane:announce-relocation"]` is declared in Task 16 and consumed by Task 17's `buildRelocationAnnouncement`.
 
-**Review Focus coverage.** (1) symlinked tree: Task 7's realpath test. (2) upstream on a different remote branch: Task 8 pushes to `@{u}` and only invents `origin/<branch>` under `setUpstream`; the "no upstream" test pins it. (3) shell syntax in `flags`: Task 2's `splitFlags` test. (4) dialog naming a registered tree that is not the announced path: Task 16's "allows only the announced registered path" test. (5) `mr_merge` auto-merge honesty: Task 5's `autoMerge: true` test.
+**Review Focus coverage.** (1) symlinked tree: Task 7's realpath test. (2) upstream with another name or remote, and `push.default=matching`: Task 8 pushes an explicit `HEAD:refs/heads/<upstream>` refspec to the upstream's remote and only invents `origin/<branch>` under `setUpstream`; the renamed-upstream, other-remote and "no upstream" tests pin it. `git_rebase` refuses a dash-leading `onto` (the `--exec` hole) and `branch_sync` shares `git_push`'s protected-branch refusal, both tested. (3) shell syntax in `flags`: Task 2's `splitFlags` test. (4) dialog naming a registered tree that is not the announced path: Task 16's "allows only the announced registered path" test. (5) `mr_merge` auto-merge honesty: Task 5's `autoMerge: true` test.
 
