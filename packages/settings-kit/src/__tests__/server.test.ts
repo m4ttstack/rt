@@ -510,7 +510,7 @@ describe("versioned store names on the wire", () => {
       return args[1] === "t.gone" ? { removed: false } : { removed: true, authored: [{ pattern: "gate/*" }] };
     },
   } as unknown as RtSettingsApi;
-  const call = (req: Request) => settingsHandler(req, { rt: MIG_RT });
+  const call = (req: Request) => settingsHandler(req, { rt: MIG_RT, allowComposite: true });
 
   beforeEach(() => {
     pruneCalls.length = 0;
@@ -571,6 +571,13 @@ describe("versioned store names on the wire", () => {
     expect((await call(notJson))!.status).toBe(415);
     expect((await call(post("/api/settings/prune", { key: "t.nope", scope: "user", storeName: "t.nope" })))!.status).toBe(404);
     expect((await call(post("/api/settings/prune", { key: "t.secretRules", scope: "user", storeName: "t.secretRules" })))!.status).toBe(400);
+    expect(pruneCalls).toEqual([]);
+  });
+
+  test("/prune refuses a composite key under the default allowComposite, same as /set and /unset", async () => {
+    const res = await settingsHandler(post("/api/settings/prune", { key: "t.rules", scope: "user", storeName: "t.rules" }), { rt: MIG_RT });
+    expect(res!.status).toBe(400);
+    expect(((await res!.json()) as { error: string }).error).toContain("composite value");
     expect(pruneCalls).toEqual([]);
   });
 });

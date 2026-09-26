@@ -545,6 +545,19 @@ export async function settingsHandler(
     const def = rt.getDef(key);
     if (!def) return json({ error: `unknown setting "${key}"` }, 404);
     if (def.secret === true) return json({ error: "secret keys are not writable here" }, 400);
+    const mode = opts.allowComposite ?? false;
+    if (!compositeAllowed(def, mode)) {
+      return json({ error: mode === "shaped" ? `"${key}" has no editable shape` : COMPOSITE_COPY }, 400);
+    }
+    if (!def.scopes.includes(scope)) {
+      return json(
+        { error: `"${key}" cannot be unset in the ${scope} store (allowed: ${def.scopes.join(", ")})` },
+        400,
+      );
+    }
+    if (!isWritable(def, rt.isMigrated, mode)) {
+      return json({ error: `"${key}" is not writable through the resolver yet` }, 400);
+    }
     if (!storeName) return json({ error: "storeName is required" }, 400);
 
     const pruneOpts: { team?: string; repoIdentity?: string; force: boolean } = { force: body?.force === true };
