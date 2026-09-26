@@ -65,6 +65,24 @@ export const SHEPHERD_HANDLE = "shepherd";
 export const SYSTEM_HANDLE = "herdr";
 export const MILESTONE_OPTIONS = ["Approve", "Revise", "Spawn a reviewer"] as const;
 
+/** Herd questions only: every other gate (MR review, pipeline, board) carries
+    rich option text through the shared gate store, so this cap never moves
+    into gate:open or normalizeGateQuestions. */
+export const HERD_OPTION_LABEL_MAX = 60;
+const RECOMMENDED_TAIL = /\s*\(\s*recommended\s*\)\s*$/i;
+
+function overlongOptionLabel(questions: GateQuestion[]): string | undefined {
+  for (const q of questions) {
+    for (const o of q.options ?? []) {
+      const label = (typeof o === "string" ? o : (o.label || o.value)).replace(RECOMMENDED_TAIL, "");
+      if (label.length > HERD_OPTION_LABEL_MAX) {
+        return `option label "${label.slice(0, 20)}..." is ${label.length} characters (max ${HERD_OPTION_LABEL_MAX}) in question "${q.id}": give each option a short label and put the detail in its description ({"value","label","description"})`;
+      }
+    }
+  }
+  return undefined;
+}
+
 const HERD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 // The old in-spawn retry's budget, now passed to agent:start's own trust
 // driver (RT-156) as trustWaitMs instead of running a second driver here.
@@ -448,6 +466,10 @@ export function createHerdHandlers(deps: HerdDeps) {
       const herd = store.get(herdId);
       const job = herd ? store.getJob(herdId, name) : null;
       if (!herd || !job) return { ok: false, error: `unknown job "${name}" in herd "${herdId}"` };
+      if (Array.isArray(p!.questions) && p!.questions.every(isValidQuestion)) {
+        const wordy = overlongOptionLabel(p!.questions);
+        if (wordy) return { ok: false, error: wordy };
+      }
       const paneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "question", questions: p!.questions,
