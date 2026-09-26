@@ -442,12 +442,28 @@ function ExplainBody({
     if (!loading && rows.length > 0) onRead(new Date());
   }, [loading, rows, onRead]);
 
+  // /explain never re-reads `issues`, so an issue carried from storeDef is
+  // stale for any layer written here until /defs is read again.
+  const [written, setWritten] = useState<ReadonlySet<string>>(new Set());
+  const wrote = (...scopes: string[]) =>
+    setWritten(w => new Set([...w, ...scopes]));
+  const rung = (scope: string, repo?: string) =>
+    repo ? `${scope}.repo` : scope;
   // A failed move can still have written its target, so every settled write
   // re-reads the stack; prune goes through the same path as any other write.
   const tracked: RowStore & Pick<ConsoleStore, 'prune'> = {
-    set: async (...a) => after(await store.set(...a)),
-    unset: async (...a) => after(await store.unset(...a)),
-    move: async (...a) => after(await store.move(...a)),
+    set: async (...a) => {
+      wrote(rung(a[1], a[3]));
+      return after(await store.set(...a));
+    },
+    unset: async (...a) => {
+      wrote(rung(a[1], a[2]));
+      return after(await store.unset(...a));
+    },
+    move: async (...a) => {
+      wrote(a[1], a[2]);
+      return after(await store.move(...a));
+    },
     prune: async (...a) => after(await store.prune(...a)),
   };
   function after(err: string | null) {
@@ -482,7 +498,7 @@ function ExplainBody({
   // reported, and those are the ones Fix was opened from.
   const reportedFor = (row: ExplainRowWire): SchemaIssue[] => [
     ...(row.nonconforming ?? []),
-    ...(def.issues ?? [])
+    ...(written.has(row.scope) ? [] : (def.issues ?? []))
       .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
       .map(i => ({ path: i.path, message: i.message })),
   ];
