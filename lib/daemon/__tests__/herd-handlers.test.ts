@@ -7,7 +7,7 @@ import { createHerdStore, type HerdStore, herdSubject } from "../herd-store.ts";
 import { createGatesStore, GATE_BY_PANE, type GatesStore } from "../gates-store.ts";
 import { createGateHandlers } from "../handlers/gate.ts";
 import { createEventsBus } from "../events-bus.ts";
-import { createHerdHandlers, type HerdDeps } from "../handlers/herd.ts";
+import { createHerdHandlers, HERD_OPTION_LABEL_MAX, type HerdDeps } from "../handlers/herd.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "../bg-claims-store.ts";
 import { bgSocketPath, type BgService } from "../bg-service.ts";
 import { createBgHandlers } from "../handlers/bg.ts";
@@ -767,6 +767,27 @@ describe("worker verbs", () => {
     const g = gateStore.get(res.data.gate)!;
     expect(g.origin).toMatchObject({ paneId: "w9:p1", presentation: "form" });
     expect(g.nudge).toEqual({ session: "sess-w1" });
+  });
+
+  test("ask refuses an option label over the cap, names the limit, and opens no gate", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const wordy = [{ id: "q1", label: "Which?", multi: false, options: ["x".repeat(200), "b"] }];
+    const res = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", questions: wordy });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain(`${HERD_OPTION_LABEL_MAX}`);
+    expect(res.error).toContain("description");
+    expect(gateStore.list({ open: true }).gates).toEqual([]);
+  });
+
+  test("ask accepts a short label with a long value and description, and ignores the (Recommended) suffix", async () => {
+    const { h, herd } = await withJob();
+    const shaped = [{ id: "q1", label: "Which?", multi: false, options: [
+      { value: "v".repeat(300), label: "Short pick" + "!".repeat(HERD_OPTION_LABEL_MAX - 10), description: "d".repeat(400) },
+      { value: "b", label: "x".repeat(HERD_OPTION_LABEL_MAX) + " (Recommended)" },
+    ] }];
+    const res = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", questions: shaped });
+    if (!res.ok) throw new Error(res.error);
   });
 
   test("ask refuses an unknown job and invalid questions", async () => {
