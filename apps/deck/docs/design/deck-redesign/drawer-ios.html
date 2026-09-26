@@ -1,0 +1,127 @@
+<style>
+  .ph { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size:12.5px; color:#4c505e; background:#ececf0; border:1px solid #c8cad1; border-radius:10px; width:300px; overflow:hidden; flex-shrink:0; }
+  .ph .nav { display:flex; align-items:center; justify-content:space-between; padding:12px 14px 10px; background:#f3f4f7; border-bottom:1px solid #dcdee5; }
+  .ph .nav .back { color:#2e7de9; }
+  .ph .nav .ttl { font-weight:700; color:#343b58; }
+  .ph .nav .x { color:#9aa0b0; }
+  .ph .inner { padding:14px 12px 18px; }
+  .grp { background:#fff; border:1px solid #dcdee5; border-radius:9px; overflow:hidden; margin-bottom:6px; }
+  .grp .r { display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid #ecedf1; }
+  .grp .r:last-child { border-bottom:none; }
+  .grp .r .l { color:#343b58; flex:1; white-space:nowrap; }
+  .grp .r .v { color:#9aa0b0; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .grp .r .ch { color:#c0c3cc; }
+  .grp .r.act .l { color:#2e7de9; }
+  .grp .r.danger { justify-content:center; }
+  .grp .r.danger .l { color:#c64343; flex:none; }
+  .foot { color:#8990a3; font-size:10.5px; line-height:1.5; padding:0 12px; margin:-2px 0 14px; }
+  .sw { display:inline-block; width:30px; height:17px; border-radius:999px; background:#2e7de9; position:relative; flex-shrink:0; }
+  .sw::after { content:""; position:absolute; right:2px; top:2px; width:13px; height:13px; border-radius:50%; background:#fff; }
+  .sw.off { background:#c4c7d0; } .sw.off::after { right:auto; left:2px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.g { background:#587539; }
+  .stat { padding:2px 14px 12px; background:#f3f4f7; border-bottom:1px solid #dcdee5; color:#7a7f8d; margin-top:-1px; }
+  .logbox { background:#2a2e3f; border-radius:8px; padding:10px 12px; color:#9aa5ce; font-size:10.5px; line-height:1.6; }
+  .cap { font-size:11px; color:#8990a3; margin-top:8px; font-family:ui-monospace,Menlo,monospace; text-align:center; }
+  .arrow { align-self:center; color:#b0b4c0; font-size:20px; padding:0 2px; }
+</style>
+
+<h2>Drawer as an iOS-style settings screen</h2>
+<p class="subtitle">Root screen holds only glanceable state and navigation — grouped rows with value hints and chevrons. Anything with depth (dev port, access, logs) is a sub-screen that slides in with ‹ back. Nothing is ever crowded; every surface does one job.</p>
+
+<div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+
+  <div>
+    <div class="ph">
+      <div class="nav"><span class="back" style="visibility:hidden;">‹ back</span><span class="ttl">orbit</span><span class="x">✕</span></div>
+      <div class="stat"><span class="dot g"></span>200 in 18ms · running pid 5311 · <span style="color:#2e7de9;">open ↗</span></div>
+      <div class="inner">
+        <div class="grp">
+          <div class="r"><span class="l">public</span><span class="sw"></span></div>
+        </div>
+        <div class="foot">orbit.mattstack is reachable through the tunnel</div>
+        <div class="grp">
+          <div class="r"><span class="l">dev port</span><span class="v">3007 · override</span><span class="ch">›</span></div>
+          <div class="r"><span class="l">access</span><span class="v">password · 2 emails</span><span class="ch">›</span></div>
+          <div class="r"><span class="l">logs</span><span class="v">2 lines of stderr</span><span class="ch">›</span></div>
+        </div>
+        <div class="grp">
+          <div class="r act"><span class="l">↻ restart service</span></div>
+          <div class="r act"><span class="l">✎ edit app…</span></div>
+        </div>
+        <div class="grp" style="margin-top:14px;">
+          <div class="r danger"><span class="l">remove app…</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">root — state at a glance, depth behind chevrons</div>
+  </div>
+
+  <div class="arrow">›</div>
+
+  <div>
+    <div class="ph">
+      <div class="nav"><span class="back">‹ orbit</span><span class="ttl">dev port</span><span class="x">✕</span></div>
+      <div class="inner" style="padding-top:16px;">
+        <div class="grp">
+          <div class="r"><span class="l">assigned port</span><span class="v">11007</span></div>
+          <div class="r"><span class="l">override</span><span class="v" style="color:#343b58;">3007</span></div>
+        </div>
+        <div class="foot">the proxy routes orbit.mattstack to the override while it's set</div>
+        <div class="grp">
+          <div class="r"><span class="l">public follows dev</span><span class="sw off"></span></div>
+        </div>
+        <div class="foot">off: visitors keep getting port 11007 while you develop on 3007</div>
+        <div class="grp">
+          <div class="r act"><span class="l">revert to 11007</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">dev port — room for the explanation the popover never had</div>
+  </div>
+
+  <div class="arrow">›</div>
+
+  <div>
+    <div class="ph">
+      <div class="nav"><span class="back">‹ orbit</span><span class="ttl">access</span><span class="x">✕</span></div>
+      <div class="inner" style="padding-top:16px;">
+        <div class="grp">
+          <div class="r"><span class="l">password</span><span class="v">set</span></div>
+          <div class="r act"><span class="l">change password…</span></div>
+          <div class="r act"><span class="l" style="color:#c64343;">remove password</span></div>
+        </div>
+        <div class="foot">visitors must enter the password before the tunnel forwards them</div>
+        <div class="grp">
+          <div class="r"><span class="l">matt@bouncer.mx</span><span class="ch" style="color:#c64343;">✕</span></div>
+          <div class="r"><span class="l">bee@bouncer.mx</span><span class="ch" style="color:#c64343;">✕</span></div>
+          <div class="r act"><span class="l">+ add email…</span></div>
+        </div>
+        <div class="foot">these addresses may log in with cloudflare access instead</div>
+      </div>
+    </div>
+    <div class="cap">access — password group, allowlist group, footers explain</div>
+  </div>
+
+</div>
+
+<h3 style="margin-top:26px;">Why this pattern fits</h3>
+<ul style="font-size:14px; line-height:1.8; margin-left:18px;">
+  <li><strong>The root never overfills.</strong> New per-app features (health history, env vars, whatever comes) are one more nav row, not another crammed section.</li>
+  <li><strong>Value hints do the glancing</strong> — "3007 · override", "password · 2 emails", "2 lines of stderr" — you only descend when acting.</li>
+  <li><strong>Footers give every control the sentence of explanation</strong> the popover/tooltip approach never had space for.</li>
+  <li><strong>One switch = inline, more than one concern = sub-screen</strong> — the iOS rule, applied: public stays a root toggle; dev port and access descend.</li>
+  <li>Logs sub-screen (not shown) is just the full stderr view — the modal dies.</li>
+  <li>Navigation is a slide within the drawer; ✕ always closes the whole drawer, ‹ walks back. Esc = back, then close.</li>
+</ul>
+
+<div class="options" style="margin-top:18px;">
+  <div class="option" data-choice="ios-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>This is the drawer — lock it</h3><p>Next: full-board composite with this drawer, then interaction details and the spec.</p></div>
+  </div>
+  <div class="option" data-choice="ios-iterate" onclick="toggleSelect(this)">
+    <div class="letter">↻</div>
+    <div class="content"><h3>Right pattern, iterate the details</h3><p>Tell me which screen or row is off.</p></div>
+  </div>
+</div>

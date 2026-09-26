@@ -1,0 +1,151 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "tsconfig.tools.json",
+    ".prettierrc",
+    "bunfig.toml",
+    "eslint.config.js"
+  ],
+  "globalPassThroughEnv": ["CI"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "build:binary": {
+      "dependsOn": ["build"],
+      "outputs": [
+        "dist/**",
+        "dist-bin/**",
+        "src/server/embedded/**",
+        "!dist-bin/dist-hidden/**"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {},
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "serve-check": {},
+    "chat#serve-check": {
+      "dependsOn": ["build"],
+      "passThroughEnv": ["GATE_PORT"]
+    },
+    "mattstack-console#serve-check": {
+      "dependsOn": ["build:binary"],
+      "passThroughEnv": ["GATE_PORT"]
+    },
+    "boxscore#serve-check": {
+      "dependsOn": ["build:binary"],
+      "passThroughEnv": ["GATE_PORT"]
+    },
+    "@mattstack/tui-kit#browsers": {
+      "cache": false
+    },
+    "@mattstack/tui-kit#test": {
+      "dependsOn": ["^build", "browsers"]
+    },
+    "board#test": {
+      "dependsOn": ["^build", "@mattstack/tui-kit#browsers"]
+    },
+    "@mattstack/tui-kit#test:oracles": {
+      "dependsOn": ["^build", "browsers"],
+      "cache": false
+    },
+    "@mattstack/tui-kit#gates": {
+      "dependsOn": ["^build"]
+    },
+    "@mattstack/tokens#test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/ui/src/**",
+        "$TURBO_ROOT$/packages/tokyo/src/**",
+        "$TURBO_ROOT$/packages/tui-kit/src/**",
+        "$TURBO_ROOT$/packages/tui-kit/assets/**",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**"
+      ]
+    },
+    "boxscore#test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/turbo.json",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**"
+      ]
+    },
+    "//#lint:root": {
+      "inputs": [
+        "eslint.config.js",
+        ".storybook/**",
+        "stories/**",
+        "$TURBO_ROOT$/packages/**",
+        "$TURBO_ROOT$/apps/board/src/**/*.css",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**",
+        "!$TURBO_ROOT$/**/.vitest-attachments/**"
+      ]
+    },
+    "//#format:check": {
+      "inputs": ["$TURBO_DEFAULT$"]
+    },
+    "//#tokens:fresh": {
+      "inputs": [
+        "bun.lock",
+        "$TURBO_ROOT$/packages/tokens/**",
+        "$TURBO_ROOT$/packages/tui-kit/src/generated/**",
+        "$TURBO_ROOT$/packages/tui-kit/assets/**",
+        "$TURBO_ROOT$/packages/tokyo/src/**",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**"
+      ]
+    },
+    "//#build-storybook": {
+      "dependsOn": ["@mattstack/tui-kit#build"],
+      "inputs": [
+        ".storybook/**",
+        "stories/**",
+        "$TURBO_ROOT$/packages/ui/**",
+        "$TURBO_ROOT$/packages/tokyo/**",
+        "$TURBO_ROOT$/packages/gate-kit/src/**",
+        "$TURBO_ROOT$/packages/tokens/src/**",
+        "$TURBO_ROOT$/apps/console/src/**",
+        "$TURBO_ROOT$/apps/board/src/**",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**",
+        "!$TURBO_ROOT$/**/src/server/embedded/**"
+      ],
+      "outputs": ["storybook-static/**"]
+    },
+    "//#treeshake": {
+      "inputs": [
+        "$TURBO_ROOT$/packages/ui/**",
+        "$TURBO_ROOT$/packages/tokyo/**",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/dist-bin/**"
+      ]
+    },
+    "//#purity": {
+      "inputs": ["$TURBO_DEFAULT$"]
+    },
+    "//#scripts:test": {
+      "inputs": ["$TURBO_DEFAULT$"]
+    }
+  }
+}

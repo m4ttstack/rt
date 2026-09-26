@@ -1,0 +1,10 @@
+{
+  "name": "deck",
+  "dev": {
+    "deploy": "bun run deploy"
+  },
+  "bundle": {
+    "build": "bun install --frozen-lockfile && bun run build:board && bun run build",
+    "artifact": "dist/deck"
+  }
+}

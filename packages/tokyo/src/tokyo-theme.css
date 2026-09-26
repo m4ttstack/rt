@@ -1,0 +1,517 @@
+/*
+ * Tokyo Day / Tokyo Night -- tui-kit's palette, carried into the mantine-kit
+ * surface ladder.
+ *
+ * Every hex below is tui-kit's exact string (src/theme.ts, cross-checked
+ * against its docs/token-census.md, which censused mr-board's style.css).
+ * Nothing here may be rounded or re-derived: parity with tui-kit is by
+ * construction. Two values are DERIVATIONS rather than parity, and both are
+ * marked at their definition -- tui-kit has no fourth surface and no
+ * scheme-varying shadow ramp.
+ *
+ * tui-kit switches scheme with `light-dark()` under `.dark`; Mantine switches
+ * on `[data-mantine-color-scheme]`. The attribute selectors below are that
+ * join, and they are why the palette is declared twice instead of once.
+ */
+
+/*
+ * ONE face, not one per weight: JetBrains Mono ships as a variable font, so a
+ * single woff2 carries the 100-800 axis and the browser interpolates every
+ * weight from it. Vendored byte-identical to tui-kit's own
+ * `assets/fonts/jetbrains-mono.woff2` -- the kit leads its consumers on font,
+ * so this is a one-directional departure the kit made deliberately, not a
+ * census value to reconcile.
+ */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono.woff2') format('woff2');
+}
+
+/* `--tk-wash` is the translucent tint an active or alert surface lays over
+   its background, as color-mix(in srgb, <token> var(--tk-wash), transparent):
+   the accent wash on a selected room and an armed icon, the mention-of-you
+   highlight, the deaf chip, and the daemon-down banner. It is lighter in the
+   light scheme because the same alpha reads heavier on a pale ground.
+
+   The declarations live in the per-scheme blocks below, one each, which
+   tokyo-theme.test.ts checks by name -- so this note sits outside them. */
+:root[data-mantine-color-scheme='light'] {
+  /* BEGIN GENERATED: tokyo tokens light */
+  /* Light surfaces: white cards on Radix slate 2 to 4 (packages/tokens/src/radix.ts); contrast rides text and borders, not surface-to-surface fill. */
+  --tk-chrome: #e8e8ec;
+  --tk-bg: #f0f0f3;
+  --tk-panel: #f9f9fb;
+  --tk-card: #ffffff;
+  --tk-inset: #f0f0f3;
+  --tk-overlay: #f9f9fb;
+  --tk-border: #cdced6;
+  --tk-border-soft: #d9d9e0;
+  --tk-border-on-card: #cdced6;
+  --tk-control-edge: #b9bbc6;
+  --tk-soft-on-card: #d9d9e0;
+  --tk-fg: #1c2024;
+  --tk-muted: #8b8d98;
+  /* AA-compliant muted for TEXT (>=4.5:1 on bg 1-3). The raw muted token above
+     stays tui-kit's exact hex for dots/borders; only the muted TEXT roles read
+     the value below, which the scheme-vars contract lets an app remap. */
+  --tk-muted-text: #60646c;
+  --tk-muted-on-card: #60646c;
+  --tk-accent: #3e63dd;
+  /* AA-compliant accent for LINK TEXT (>=4.5:1 on bg 1-3). The raw accent
+     token above stays tui-kit's exact hex for fills and badges; only anchor
+     text reads the darker value below. Same split as the muted pair. */
+  --tk-accent-text: #3a5bc7;
+  --tk-badge-text: #60646c;
+  /* AA-compliant red for TEXT (>=4.5:1 on bg 1-3); the raw red token above stays tui-kit's exact hex for fills and error surfaces. Same split as the muted/accent pair. */
+  --tk-red-text: #cb1d63;
+  --tk-green: #0d9b8a;
+  --tk-green-text: #008573;
+  --tk-red: #e93d82;
+  --tk-amber: #ef5f00;
+  --tk-amber-text: #cc4e00;
+  --tk-purple: #8e4ec6;
+  --tk-cyan: #0797b9;
+  --tk-grid-line: rgba(52, 59, 88, 0.05);
+  --tk-dot-ok: #0d9b8a;
+  --tk-dot-warn: #ef5f00;
+  --tk-dot-bad: #e93d82;
+  --tk-raised: #e8e8ec;
+  --tk-surface-1: #ffffff;
+  --tk-surface-2: #f9f9fb;
+  --tk-surface-3: #f0f0f3;
+  --tk-surface-4: #e8e8ec;
+  --tk-text-1: #1c2024;
+  --tk-text-2: #60646c;
+  --tk-text-3: #60646c;
+  --tk-text-4: #60646c;
+  --tk-line-1: #b9bbc6;
+  --tk-line-2: #cdced6;
+  --tk-line-3: #d9d9e0;
+  --tk-fill-accent: #3e63dd;
+  --tk-fill-ok: #0d9b8a;
+  --tk-fill-bad: #e93d82;
+  --tk-fill-warn: #ef5f00;
+  --tk-fill-purple: #8e4ec6;
+  --tk-fill-cyan: #0797b9;
+  --tk-fill-gold: #ffc53d;
+  --tk-fill-accent-hover: #3358d4;
+  --tk-fill-ok-hover: color-mix(in srgb, #0d9b8a 88%, #1c2024);
+  --tk-fill-bad-hover: #df3478;
+  --tk-fill-warn-hover: color-mix(in srgb, #ef5f00 88%, #1c2024);
+  --tk-fill-purple-hover: #8347b9;
+  --tk-fill-cyan-hover: color-mix(in srgb, #0797b9 88%, #1c2024);
+  --tk-fill-gold-hover: #ffba18;
+  --tk-on-fill-accent: #ffffff;
+  --tk-on-fill-ok: #ffffff;
+  --tk-on-fill-bad: #ffffff;
+  --tk-on-fill-warn: #ffffff;
+  --tk-on-fill-purple: #ffffff;
+  --tk-on-fill-cyan: #ffffff;
+  --tk-on-fill-gold: #1c2024;
+  --tk-text-accent: #3a5bc7;
+  --tk-text-ok: #008573;
+  --tk-text-bad: #cb1d63;
+  --tk-text-warn: #cc4e00;
+  --tk-text-purple: #8145b5;
+  --tk-text-cyan: #107d98;
+  --tk-text-gold: #ab6400;
+  --tk-text-accent-small: #1f2d5c;
+  --tk-text-ok-small: #0d3d38;
+  --tk-text-bad-small: #621639;
+  --tk-text-warn-small: #582d1d;
+  --tk-text-purple-small: #402060;
+  --tk-text-cyan-small: #0d3c48;
+  --tk-text-gold-small: #4f3422;
+  --tk-text-accent-vivid: #3a5bc7;
+  --tk-text-ok-vivid: #008573;
+  --tk-text-bad-vivid: #cb1d63;
+  --tk-text-warn-vivid: #cc4e00;
+  --tk-text-purple-vivid: #8145b5;
+  --tk-text-cyan-vivid: #107d98;
+  --tk-text-gold-vivid: #ab6400;
+
+  --tk-wash: 10%;
+  /* END GENERATED */
+}
+
+:root[data-mantine-color-scheme='dark'] {
+  /* BEGIN GENERATED: tokyo tokens dark */
+  /* Dark surfaces: Radix slate 1 to 4, page darkest, cards on step 3, step 4 reserved for raised grounds. */
+  --tk-chrome: #18191b;
+  --tk-bg: #111113;
+  --tk-panel: #18191b;
+  --tk-card: #212225;
+  --tk-inset: #111113;
+  --tk-overlay: #212225;
+  --tk-border: #43484e;
+  --tk-border-soft: #363a3f;
+  --tk-border-on-card: #696e77;
+  --tk-control-edge: #696e77;
+  --tk-soft-on-card: #43484e;
+  --tk-fg: #edeef0;
+  --tk-muted: #696e77;
+  /* AA-compliant muted text for the dark scheme (>=4.5:1 on bg 1-3). */
+  --tk-muted-text: #b0b4ba;
+  --tk-muted-on-card: #b0b4ba;
+  --tk-accent: #3e63dd;
+  /* Accent for link text in dark (>=4.5:1 on bg 1-3); the accent already
+     clears AA there, so this equals it. */
+  --tk-accent-text: #9eb1ff;
+  --tk-badge-text: #b0b4ba;
+  /* Red text for the dark scheme; the raw red already clears AA there, so this equals it. */
+  --tk-red-text: #ff92ad;
+  --tk-green: #12a594;
+  --tk-green-text: #0bd8b6;
+  --tk-red: #e93d82;
+  --tk-amber: #f76b15;
+  --tk-amber-text: #ffa057;
+  --tk-purple: #8e4ec6;
+  --tk-cyan: #00a2c7;
+  --tk-grid-line: rgba(122, 162, 247, 0.06);
+  --tk-dot-ok: #12a594;
+  --tk-dot-warn: #f76b15;
+  --tk-dot-bad: #e93d82;
+  --tk-raised: #272a2d;
+  --tk-surface-1: #111113;
+  --tk-surface-2: #18191b;
+  --tk-surface-3: #212225;
+  --tk-surface-4: #272a2d;
+  --tk-text-1: #edeef0;
+  --tk-text-2: #b0b4ba;
+  --tk-text-3: #b0b4ba;
+  --tk-text-4: #b0b4ba;
+  --tk-line-1: #696e77;
+  --tk-line-2: #43484e;
+  --tk-line-3: #363a3f;
+  --tk-fill-accent: #3e63dd;
+  --tk-fill-ok: #12a594;
+  --tk-fill-bad: #e93d82;
+  --tk-fill-warn: #f76b15;
+  --tk-fill-purple: #8e4ec6;
+  --tk-fill-cyan: #00a2c7;
+  --tk-fill-gold: #ffc53d;
+  --tk-fill-accent-hover: #5472e4;
+  --tk-fill-ok-hover: #0eb39e;
+  --tk-fill-bad-hover: #ee518a;
+  --tk-fill-warn-hover: #ff801f;
+  --tk-fill-purple-hover: #9a5cd0;
+  --tk-fill-cyan-hover: #23afd0;
+  --tk-fill-gold-hover: #ffd60a;
+  --tk-on-fill-accent: #ffffff;
+  --tk-on-fill-ok: #ffffff;
+  --tk-on-fill-bad: #ffffff;
+  --tk-on-fill-warn: #ffffff;
+  --tk-on-fill-purple: #ffffff;
+  --tk-on-fill-cyan: #ffffff;
+  --tk-on-fill-gold: #1c2024;
+  --tk-text-accent: #9eb1ff;
+  --tk-text-ok: #0bd8b6;
+  --tk-text-bad: #ff92ad;
+  --tk-text-warn: #ffa057;
+  --tk-text-purple: #d19dff;
+  --tk-text-cyan: #4ccce6;
+  --tk-text-gold: #ffca16;
+  --tk-text-accent-small: #d6e1ff;
+  --tk-text-ok-small: #adf0dd;
+  --tk-text-bad-small: #fdd3e8;
+  --tk-text-warn-small: #ffe0c2;
+  --tk-text-purple-small: #ecd9fa;
+  --tk-text-cyan-small: #b6ecf7;
+  --tk-text-gold-small: #ffe7b3;
+  --tk-text-accent-vivid: #9eb1ff;
+  --tk-text-ok-vivid: #0bd8b6;
+  --tk-text-bad-vivid: #ff92ad;
+  --tk-text-warn-vivid: #ffa057;
+  --tk-text-purple-vivid: #d19dff;
+  --tk-text-cyan-vivid: #4ccce6;
+  --tk-text-gold-vivid: #ffca16;
+
+  --tk-wash: 15%;
+  /* END GENERATED */
+}
+
+/*
+ * The kit's live surface slots, re-pointed at the Tokyo roles. Only the
+ * `--ui-*` layer moves; `--ui-base-*` stays kit-owned, so `.ui-base-surfaces`
+ * and `ThemeIsland` still restore the unbranded look on a dev route.
+ *
+ * The ladder runs the opposite direction from the kit's own (Tokyo steps
+ * toward the light in both schemes, away from the page), which the slot
+ * contract permits: it fixes four scheme-aware roles, not their ordering.
+ *
+ * DERIVATION, not parity: tui-kit has three surfaces, so level 4 -- the
+ * contrast/hover step -- reads packages/tokens's own raised ground
+ * (`--tk-raised`) rather than mixing one up from the card.
+ *
+ * Four text slots, `--ui-text-1` through `--ui-text-4`, mirror the band
+ * ladder: 1 is primary at every size, 2/3 step down for secondary text at
+ * body/meta sizes, and 4 is dimmed's home -- the small-text slot, sharing
+ * 2/3's step (slate 11) rather than 1's, since that step measures legible
+ * at small sizes too (packages/tokens/src/values.ts).
+ */
+:root {
+  --ui-bg-1: var(--tk-bg);
+  --ui-bg-2: var(--tk-panel);
+  --ui-bg-3: var(--tk-card);
+  --ui-bg-4: var(--tk-raised);
+
+  --ui-text-1: var(--tk-text-1);
+  --ui-text-2: var(--tk-text-2);
+  --ui-text-3: var(--tk-text-3);
+  --ui-text-4: var(--tk-text-4);
+  --ui-text-muted: var(--ui-text-3);
+  --ui-text-dimmed: var(--ui-text-4);
+  --ui-text-gray: var(--ui-text-1);
+}
+
+/*
+ * Mantine's own semantic slots. Safe to point `--mantine-color-body` at
+ * `--ui-bg-1` here only because the Tokyo layer above resolves to a literal:
+ * the cycle scheme-vars.css warns about needs `--ui-bg-1` to read back
+ * through `body`, and it no longer does.
+ *
+ * READ THIS BEFORE TRUSTING ANY LINE BELOW. Mantine declares all of these in
+ * its own `:root[data-mantine-color-scheme='…']` blocks, emitted at runtime
+ * and later in the document, so a bare `:root` here LOSES every time.
+ *
+ * `text` is the slot this block never needed, and not by its doing: in dark
+ * Mantine's `dark-0` fallback reads the theme's `dark` tuple, which is
+ * slate, so it resolves to `--tk-fg` exactly; in light it is Mantine's
+ * `theme.black` (#000) standing in for `--tk-fg`, a difference no eye
+ * resolves.
+ *
+ * `anchor` is the exception, overridden at raised specificity below: Mantine
+ * derives it from `theme.primaryColor` (= `accent`) as the accent ramp's
+ * canonical shade, which fails contrast for LINK TEXT on a pale ground. The
+ * darker `--tk-accent-text` is applied there instead.
+ *
+ * These do NOT take effect, and the app renders Mantine's value instead.
+ * Slot by slot against the generated tuples: `body` and `default` diverge
+ * in both schemes, and in dark the slate `dark` tuple lands `body` on
+ * --tk-panel (dark-7) and `default` on --tk-card (dark-6), one surface step
+ * above what the lines below ask for, which is what puts a Modal or Popover
+ * on a ground the page does not share. `default-hover` diverges in light
+ * only, against Mantine's gray-0; in dark, dark-5 IS --tk-raised.
+ * `default-border` is the reverse, and is the most visible dark change the
+ * slate tuples make: gray-4 IS --tk-border in light, but dark renders
+ * dark-4, one slate step above --tk-border. `default-color` diverges in
+ * both, only as Mantine's flat black and white standing in for --tk-fg.
+ *
+ * They are kept because scheme-scoping them is a design change rather than
+ * a repair: in light, `body` and `default` would repaint every Modal,
+ * Popover and Drawer from #fff to the Tokyo panel. `dimmed` and
+ * `placeholder` were in this set but are genuine repairs (the raw
+ * --tk-muted fails AA as text), so both are scheme-scoped below onto
+ * --tk-muted-text.
+ *
+ * `error` was the only one that both diverged AND failed contrast, and it is
+ * scheme-scoped below. Anything added here needs the same check: put it in a
+ * scheme block if it has to win.
+ */
+:root {
+  --mantine-color-body: var(--ui-bg-1);
+  --mantine-color-text: var(--tk-fg);
+
+  --mantine-color-default: var(--tk-panel);
+  --mantine-color-default-hover: var(--ui-bg-4);
+  --mantine-color-default-color: var(--tk-fg);
+  --mantine-color-default-border: var(--tk-border);
+}
+
+/*
+ * Mantine declares these in its own `[data-mantine-color-scheme]` blocks, which
+ * outrank the bare `:root` above -- scoping the override per scheme is what
+ * makes it win, and `--tk-red`/`--tk-muted-text` already vary by scheme so one
+ * grouped selector covers both. Without the error line, dark falls back to
+ * `red-8`, which fails contrast on `--tk-panel`; without the dimmed line,
+ * muted TEXT renders Mantine's `gray-6`, too light on the pale ramp -- the AA
+ * muted-text role is what body and hint copy should read. Without the
+ * placeholder line, dark placeholder text reads `dark-3`, a slate fill step
+ * that lands at 3.10:1 on the input ground.
+ */
+:root[data-mantine-color-scheme='light'],
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-error: var(--tk-red);
+  --mantine-color-dimmed: var(--tk-muted-text);
+  --mantine-color-placeholder: var(--tk-muted-text);
+}
+
+/*
+ * Link text. Mantine derives `--mantine-color-anchor` from `theme.primaryColor`
+ * (= `accent`) as the ramp's canonical shade, which reads at 3.7:1 on the pale
+ * card in light -- under AA for text. `--tk-accent-text` clears 4.5:1 on bg 1-3;
+ * in dark it equals the accent, which already passes.
+ *
+ * This needs MORE than the scheme-scoping `error` gets. Mantine re-emits the
+ * anchor var from the theme into its runtime `data-mantine-styles` <style>,
+ * injected AFTER this file's imported CSS at the SAME specificity, so an
+ * equal-specificity override would lose on source order. The doubled `:root`
+ * raises specificity above Mantine's `:root[data-mantine-color-scheme=...]`,
+ * so this wins regardless of load order (dev or prod). `error` needs no such
+ * bump because the theme never re-emits it.
+ */
+:root:root[data-mantine-color-scheme='light'],
+:root:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-anchor: var(--tk-accent-text);
+}
+
+/*
+ * Mantine derives a hue's text, outline, filled-hover and dark tint from
+ * fixed tuple indices; the tokens package chooses steps by rule instead,
+ * and these blocks pin the two together. Doubled `:root` for the same
+ * reason as `anchor` above: Mantine re-emits colour variables from the
+ * theme into its runtime style tag.
+ */
+:root:root[data-mantine-color-scheme='light'] {
+  /* BEGIN GENERATED: mantine pins light */
+  --mantine-color-accent-filled: #3e63dd;
+  --mantine-color-accent-filled-hover: #3358d4;
+  --mantine-color-accent-text: #3a5bc7;
+  --mantine-color-accent-outline: #3a5bc7;
+  --mantine-color-ok-filled: #0d9b8a;
+  --mantine-color-ok-filled-hover: color-mix(in srgb, #0d9b8a 88%, #1c2024);
+  --mantine-color-ok-text: #008573;
+  --mantine-color-ok-outline: #008573;
+  --mantine-color-bad-filled: #e93d82;
+  --mantine-color-bad-filled-hover: #df3478;
+  --mantine-color-bad-text: #cb1d63;
+  --mantine-color-bad-outline: #cb1d63;
+  --mantine-color-warn-filled: #ef5f00;
+  --mantine-color-warn-filled-hover: color-mix(in srgb, #ef5f00 88%, #1c2024);
+  --mantine-color-warn-text: #cc4e00;
+  --mantine-color-warn-outline: #cc4e00;
+  --mantine-color-purple-filled: #8e4ec6;
+  --mantine-color-purple-filled-hover: #8347b9;
+  --mantine-color-purple-text: #8145b5;
+  --mantine-color-purple-outline: #8145b5;
+  --mantine-color-cyan-filled: #0797b9;
+  --mantine-color-cyan-filled-hover: color-mix(in srgb, #0797b9 88%, #1c2024);
+  --mantine-color-cyan-text: #107d98;
+  --mantine-color-cyan-outline: #107d98;
+  --mantine-color-gold-filled: #ffc53d;
+  --mantine-color-gold-filled-hover: #ffba18;
+  --mantine-color-gold-text: #ab6400;
+  --mantine-color-gold-outline: #ab6400;
+  /* END GENERATED */
+}
+:root:root[data-mantine-color-scheme='dark'] {
+  /* BEGIN GENERATED: mantine pins dark */
+  --mantine-color-accent-filled: #3e63dd;
+  --mantine-color-accent-filled-hover: #5472e4;
+  --mantine-color-accent-text: #9eb1ff;
+  --mantine-color-accent-outline: #9eb1ff;
+  --mantine-color-accent-light: #182449;
+  --mantine-color-accent-light-hover: #1d2e62;
+  --mantine-color-ok-filled: #12a594;
+  --mantine-color-ok-filled-hover: #0eb39e;
+  --mantine-color-ok-text: #0bd8b6;
+  --mantine-color-ok-outline: #0bd8b6;
+  --mantine-color-ok-light: #0d2d2a;
+  --mantine-color-ok-light-hover: #023b37;
+  --mantine-color-bad-filled: #e93d82;
+  --mantine-color-bad-filled-hover: #ee518a;
+  --mantine-color-bad-text: #ff92ad;
+  --mantine-color-bad-outline: #ff92ad;
+  --mantine-color-bad-light: #381525;
+  --mantine-color-bad-light-hover: #4d122f;
+  --mantine-color-warn-filled: #f76b15;
+  --mantine-color-warn-filled-hover: #ff801f;
+  --mantine-color-warn-text: #ffa057;
+  --mantine-color-warn-outline: #ffa057;
+  --mantine-color-warn-light: #331e0b;
+  --mantine-color-warn-light-hover: #462100;
+  --mantine-color-purple-filled: #8e4ec6;
+  --mantine-color-purple-filled-hover: #9a5cd0;
+  --mantine-color-purple-text: #d19dff;
+  --mantine-color-purple-outline: #d19dff;
+  --mantine-color-purple-light: #301c3b;
+  --mantine-color-purple-light-hover: #3d224e;
+  --mantine-color-cyan-filled: #00a2c7;
+  --mantine-color-cyan-filled-hover: #23afd0;
+  --mantine-color-cyan-text: #4ccce6;
+  --mantine-color-cyan-outline: #4ccce6;
+  --mantine-color-cyan-light: #082c36;
+  --mantine-color-cyan-light-hover: #003848;
+  --mantine-color-gold-filled: #ffc53d;
+  --mantine-color-gold-filled-hover: #ffd60a;
+  --mantine-color-gold-text: #ffca16;
+  --mantine-color-gold-outline: #ffca16;
+  --mantine-color-gold-light: #302008;
+  --mantine-color-gold-light-hover: #3f2700;
+  /* END GENERATED */
+}
+
+/*
+ * Mono body type at 13.5px/1.55 -- tui-kit canvas identity (its canvas.css
+ * keeps this literal for the same reason -- single-use, not a theme token).
+ */
+body {
+  font-family: var(--mantine-font-family);
+  font-size: 13.5px;
+  line-height: 1.55;
+  background-color: var(--tk-bg);
+}
+
+/* BEGIN GENERATED: base rules (font smoothing) */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* END GENERATED: base rules (font smoothing) */
+
+/*
+ * The graph-paper grid. NOT painted on `body`: PageShell's root and
+ * RailShell's `AppShell.Main` both sit between body and every route, and
+ * both fill the viewport with an opaque `bg.level1` (the same `--tk-bg`),
+ * so a body-level grid is permanently covered and never reaches the
+ * screen. `#page-shell-content` -- PageShell's own capped `ScrollArea`,
+ * the one surface every route (board/search/run detail) actually scrolls
+ * inside -- is the first point in that stack that is genuinely visible.
+ *
+ * `!important` is required on every sub-property: PageShell sets this
+ * element's background via Mantine's `bg` style prop, which lands as an
+ * inline `background` declaration, and only `!important` in a stylesheet
+ * outranks an inline non-important one.
+ *
+ * `background-attachment: fixed` still anchors to the viewport, not to
+ * this element's own scroll box, even though this element -- not
+ * `body` -- is what actually scrolls (confirmed by loading the app: the
+ * grid holds still while the list scrolls past it).
+ *
+ * A Content given its own `bg` carries `data-own-surface` and keeps that
+ * surface: a page that sets rows on the card opts out of the paper.
+ */
+#page-shell-content:not([data-own-surface]) {
+  background-color: var(--tk-bg) !important;
+  background-image:
+    linear-gradient(var(--tk-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tk-grid-line) 1px, transparent 1px) !important;
+  background-size: 28px 28px !important;
+  background-attachment: fixed !important;
+}
+
+/*
+ * The chrome ladder, Supabase model: the app's rail and site header sit on the
+ * CHROME surface (--tk-chrome, the grey frame around the app), PageShell's own
+ * sidebar and header on the CARD surface (white), and the route's content is the
+ * near-white canvas (--tk-bg, gridded above). Chrome is its own token so the
+ * bg/panel/card elevation ladder stays ordered (bg < panel < card) -- panel is the
+ * raised content surface, not the frame. Every kit consumer lays out the same way
+ * by importing this file; without it the kit puts rail, header and sidebar on one
+ * surface and the chrome reads flat.
+ *
+ * `!important` for the same reason as the grid above: the kit sets these
+ * backgrounds as inline styles.
+ */
+.mantine-AppShell-header,
+.mantine-AppShell-navbar {
+  background-color: var(--tk-chrome) !important;
+}
+
+#page-shell-header,
+#page-shell-sidebar {
+  background-color: var(--tk-card) !important;
+}

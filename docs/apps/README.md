@@ -1,0 +1,173 @@
+# app-kit
+
+app-kit ships three source-shipped packages that let a mattstack web app be
+only its product code: a Mantine-based UI kit, a Hono/Bun server frame, and
+the shared brand tokens they both theme from. No `dist`, no build step:
+`exports` in each package.json point straight at `src/*.ts(x)` and `.css`,
+so a workspace consumer gets the same files a build step would produce,
+without running one.
+
+app-kit is part of the mattstack estate, the same toolkit behind
+[rt](https://github.com/m4ttstack/rt), [glance](https://github.com/m4ttstack/glance),
+and [herdr-chat](https://github.com/m4ttstack/herdr-chat). Internally, it's
+the shared UI and server layer mattstack's own apps build on, including
+chat, console, and boxscore, the three Mantine-based apps that live in this
+repo under `apps/`.
+
+## What's inside
+
+| Package             | Name                       | What it is                                                                                                                                       |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/ui`       | `@mattstack/app-kit`       | The Mantine-based component kit plus the mattstack layer: app shell, boot, router helpers, icon registry, config presets. Tokyo theme pre-wired. |
+| `packages/server`   | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
+| `packages/tokyo`    | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
+| `packages/tui-kit`  | `@mattstack/tui-kit`       | The terminal-UI kit for herdr-style panes: components, hooks, and theme, built rather than source-shipped like the other three.                  |
+| `packages/gate-kit` | `@mattstack/gate-kit`      | Gate sheet primitives shared by console and board.                                                                                               |
+
+`packages/tui-kit` lives in this repo alongside the Mantine-based packages
+so all four version in lockstep; it does not depend on
+`packages/ui` or `packages/server`, or vice versa. `packages/tokens` and
+`packages/gate-kit` are also part of this workspace but are private,
+unversioned, and unpublished: `tokens` generates the canonical colour and
+font values both `mantine-tokyo` and `tui-kit` ship, and exists to keep
+those two themes in sync, not to be consumed directly; `gate-kit` is a
+private workspace member consumed only by `apps/console` and `apps/board`.
+
+`@mattstack/app-kit` has nineteen subpath exports: the Mantine-based
+components and shadows (`./core`), hooks, forms, modals, notifications, the
+icon registry, lazy-loaded editors, the app shell (`./app`), router
+helpers, theming (`./design-system`), boot sequencing, test utilities, and
+build presets (`./eslint`, `./vite`, `./tsconfig.base.json`). The full
+subpath-by-subpath table lives in `packages/ui/README.md`.
+
+`@mattstack/app-server` exports four modules split along one rule:
+everything except the top-level `.` export is vitest-safe (never loads
+`hono/bun`); the top-level export (`serveMattstackApp`) is the one that
+does. The full table lives in `packages/server/README.md`.
+
+`apps/chat` is the first app folded into this repo as a workspace
+consumer (`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`);
+its own typecheck/lint/test/build suite is the in-repo proof that the
+packages work for a real consumer, replacing the old standalone `probe/`
+app.
+
+See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
+`packages/server/src`, or consuming either package, needs.
+
+## Repository layout
+
+- `packages/` -- the four platform packages (`ui`, `server`, `tokyo`,
+  `tui-kit`) described above, plus `packages/tokens` (the private
+  generator that keeps `tokyo` and `tui-kit`'s colour/font values in sync)
+  and `packages/gate-kit` (the private gate sheet primitives `console` and
+  `board` share).
+- `apps/` -- the five mattstack apps that consume these packages as
+  workspace members: `chat`, `console`, `boxscore` (Mantine-based, on
+  `@mattstack/app-kit`), and `board`, `deck` (terminal-flavoured, on
+  `@mattstack/tui-kit`). Each has its own root scripts
+  (`bun run <app>:typecheck`, `:test`, `:lint`, `:build`, where each
+  applies) and CI gates.
+- `archive/<app>/*` -- the full branch history each app's old standalone
+  GitHub repo carried before it folded in here (those repos are deleted).
+  Pre-fold-in releases were re-tagged byte-identical under app-prefixed
+  tags (`chat-v0.1.0` style), so old release links keep resolving.
+
+## Installation
+
+None of the four packages publish to npm. The apps that use them are
+folding into this repo as workspace members (see
+`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`); once an app
+lands under `apps/<name>`, it depends on `packages/ui`, `packages/server`,
+`packages/tokyo`, and `packages/tui-kit` with `workspace:*`. `packages/ui`,
+`packages/server`, and `packages/tokyo` are consumed straight from source,
+no install step required; `@mattstack/tui-kit` builds to `dist/`, which
+turbo builds before any board or deck task (`^build`). General consumption
+of these packages from outside this workspace
+is unsupported, except for the packed-tarball path below, which is the
+sanctioned bundle-transition mechanism for apps that have not folded in
+yet.
+
+### Bundle-transition tarballs
+
+Until an app has folded in, it can pick up a workspace change by
+depending on a packed tarball rather than a bare `file:` directory (Bun
+1.3 resolves a bare `file:../packages/ui` dependency as a symlink into
+the source tree, which resolves peers like `react` twice and breaks
+typecheck and tests in the consumer); see the fold-in spec for how each
+app's transition uses this mechanism.
+
+## Quickstart
+
+```tsx
+// src/main.tsx
+import { mountMattstackApp } from '@mattstack/app-kit/app';
+import { App } from './App';
+
+mountMattstackApp(<App />);
+```
+
+```tsx
+// src/App.tsx
+import { MattstackShell } from '@mattstack/app-kit/app';
+import { RailLink } from '@mattstack/app-kit/router';
+
+export function App() {
+  return (
+    <MattstackShell name="chat">
+      <MattstackShell.Rail>
+        <RailLink icon="users" label="Rooms" href="/" active />
+      </MattstackShell.Rail>
+      {/* routed page content */}
+    </MattstackShell>
+  );
+}
+```
+
+```ts
+// src/server/index.ts
+import { serveMattstackApp } from '@mattstack/app-server';
+import pkg from '../../package.json';
+import { routes } from './routes';
+
+await serveMattstackApp({
+  name: 'chat',
+  version: pkg.version,
+  routes,
+  port: 11002,
+  relay: [{ match: t => t.startsWith('chat/'), topic: 'chat' }],
+});
+```
+
+See `packages/ui/README.md` and `packages/server/README.md` for more
+snippets, including the vite and eslint presets.
+
+## Development
+
+```bash
+$ git clone https://github.com/m4ttstack/apps.git
+$ cd apps
+$ bun install                 # workspace install: packages/*, apps/*
+$ bun run check               # every gate CI runs, cached and parallel
+$ bun run storybook           # dev server at :6006 (packages/ui's stories)
+$ bun run chat:typecheck      # typechecks apps/chat against the workspace packages
+$ bun run chat:build          # builds apps/chat against the workspace packages
+```
+
+`bun run test`, `bun run typecheck` and `bun run lint` run those tasks
+across every package through turbo; `bun run chat:test` and friends scope
+one app.
+
+## Contributing
+
+- Read `AGENTS.md` before touching `packages/ui/src` or `packages/server/src`:
+  it covers the import-wall rules, icon and theme extension points, the
+  boot family contract, and the real failure modes a migrating consumer
+  hits.
+- `bun run check` is exactly what CI runs (`.github/workflows/ci.yml`);
+  run it before opening a pull request.
+- `bun run format` (prettier --write) fixes most lint and format failures
+  automatically.
+
+## License
+
+MIT, see [LICENSE](./LICENSE).
