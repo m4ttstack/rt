@@ -21,18 +21,24 @@ export type ScopeInput = {
 
 const PRELOAD = "test-setup.ts";
 
+// A leading "./" scopes bun test's substring filter to that directory (a bare
+// name matches anywhere in the tree, which is exactly the bug this scoping
+// fixes), so unitDirs returns the tokens as written in the script, "./"
+// included: the CI dirs= output line needs them verbatim. Anything that
+// walks the filesystem strips the prefix itself via unitDirPath below.
 export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage()): string[] {
   const script = pkg.scripts.test ?? "";
   const dirs = /^bun test ([\w./][\w./-]*(?: [\w./][\w./-]*)*)$/.exec(script)?.[1]?.trim();
   if (!dirs) throw new Error(`package.json test script is not a bare bun test run over directories: ${script}`);
-  // A leading "./" scopes bun test's substring filter to that directory (a bare
-  // name matches anywhere in the tree); strip it so callers keep working with
-  // plain relative paths.
-  return dirs.split(/\s+/).map((dir) => dir.replace(/^\.\//, ""));
+  return dirs.split(/\s+/);
+}
+
+function unitDirPath(dir: string): string {
+  return join(ROOT, dir.replace(/^\.\//, ""));
 }
 
 export function alwaysRun(): string[] {
-  const files = unitDirs().flatMap((dir) => testFiles(join(ROOT, dir)));
+  const files = unitDirs().flatMap((dir) => testFiles(unitDirPath(dir)));
   return files.filter((f) => /^no-.*\.test\.tsx?$/.test(basename(f))).sort();
 }
 
@@ -101,7 +107,7 @@ export function collectSources(): { sources: Map<string, string>; preloadImports
   const preloadImports = walk([PRELOAD]);
   preloadImports.delete(PRELOAD);
   const roots = [PRELOAD];
-  for (const dir of unitDirs()) roots.push(...testFiles(join(ROOT, dir)));
+  for (const dir of unitDirs()) roots.push(...testFiles(unitDirPath(dir)));
   const sources = new Map<string, string>();
   for (const rel of walk(roots)) sources.set(rel, readFileSync(join(ROOT, rel), "utf8"));
   return { sources, preloadImports };

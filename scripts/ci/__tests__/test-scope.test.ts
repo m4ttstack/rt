@@ -108,8 +108,12 @@ describe("unitDirs", () => {
   test("the real script parses and test:timings, test:watch and test:all delegate to it", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     const dirs = unitDirs(pkg);
-    expect(dirs).toContain("lib");
-    expect(dirs).toContain("commands");
+    // Every dir keeps its "./" prefix: this is what lands in the dirs=
+    // GITHUB_OUTPUT line CI runs as `bun test $DIRS`, and a bare name there
+    // is a substring filter that sweeps in any path containing it.
+    for (const dir of dirs) expect(dir.startsWith("./")).toBe(true);
+    expect(dirs).toContain("./lib");
+    expect(dirs).toContain("./commands");
     expect(pkg.scripts["test:timings"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:watch"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:all"]).toMatch(/\bbun run test\b/);
