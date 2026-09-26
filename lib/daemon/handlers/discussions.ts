@@ -50,6 +50,7 @@ export interface DiscussionHandlerSeams {
   mutator?: (baseURL: string, token: string) => CommentInlineMutator;
   commentMutator?: (baseURL: string, token: string) => CommentMutator;
   refresh?: (repoName: string, iid: number) => Promise<unknown>;
+  readCached?: (repoName: string, iid: number) => { discussions: Discussion[]; fetchedAt: number } | undefined;
 }
 
 function buildTextPosition(
@@ -131,6 +132,7 @@ export function createDiscussionHandlers(
   const mutatorFn = seams.mutator ?? ((baseURL: string, token: string) => new NoteMutator(baseURL, token, providerRequestHook()));
   const commentMutatorFn = seams.commentMutator ?? ((baseURL: string, token: string) => new NoteMutator(baseURL, token, providerRequestHook()));
   const refreshFn = seams.refresh ?? ((repoName: string, iid: number) => refreshDiscussions(deps, repoName, iid));
+  const readCachedFn = seams.readCached ?? ((repoName: string, iid: number) => getDiscussionsFileStore().read(repoName, iid));
 
   return {
     // `force` is a legacy daemon-client-only escape hatch (lib/daemon-client.ts),
@@ -286,7 +288,7 @@ export function createDiscussionHandlers(
         }
         let cached: { discussions: Discussion[]; fetchedAt: number } | undefined;
         try {
-          cached = getDiscussionsFileStore().read(repoName, iid);
+          cached = readCachedFn(repoName, iid);
         } catch (err) {
           log.warn({ err, repoName, iid }, "discussions:reply: cached discussions unreadable after a failed refresh");
         }
