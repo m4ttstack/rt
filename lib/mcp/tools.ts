@@ -22,6 +22,7 @@ import { parseIdentity } from "../settings/identity.ts";
 import { explainError } from "../explain-error.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
+import { mrReadToolDefs } from "./mr-read-tools.ts";
 import { runToolDefs } from "./run-tools.ts";
 import {
   checkOptional, checkPositiveInts, checkRequired, checkStringArray,
@@ -721,5 +722,6 @@ export function mcpTools(): McpToolDef[] {
       },
     },
     ...runToolDefs(),
+    ...mrReadToolDefs(),
   ];
 }
