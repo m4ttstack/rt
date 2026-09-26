@@ -23,6 +23,7 @@ import { explainError } from "../explain-error.ts";
 import { gitToolDefs, realGitToolDeps } from "./git-tools.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { resolveMrTarget, resolveRepoTarget } from "./mr-target.ts";
+import { mrReadToolDefs } from "./mr-read-tools.ts";
 import { runToolDefs } from "./run-tools.ts";
 import {
   checkOptional, checkPositiveInts, checkRequired, checkStringArray,
@@ -57,6 +58,18 @@ async function runMrAction(target: { identity: string; iid: number }, action: Mr
     args,
   }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
   return res.ok ? ok(body) : err(explainError(res.error ?? "request failed"));
+}
+
+/** mr:action writes the MR back to the project-MRs store (or awaits a follow-up
+    fetch that does) before replying, so a read with no maxAgeMs sees its effect.
+    Only an observed outcome is reported as one. */
+async function verifyMerge(target: { identity: string; iid: number }, requested: "merge" | "autoMerge"): Promise<ToolResult> {
+  const back = await readProjectMRs(target.identity);
+  const pr = back.ok ? Object.values(back.data?.mrs ?? {}).find((e) => e.pr.iid === target.iid)?.pr : undefined;
+  if (pr?.state === "merged") return ok({ merged: true });
+  if (requested === "autoMerge" && pr?.autoMergeEnabled === true) return ok({ autoMerge: true });
+  if (typeof pr?.mergeError === "string" && pr.mergeError.trim() !== "") return err(`GitLab reports a merge error on !${target.iid}: ${pr.mergeError}`);
+  return ok({ requested, verified: false, ...(pr ? { state: pr.state } : {}) });
 }
 
 /** Matches input.repo against the daemon's repo registry, either as the raw
@@ -597,6 +610,33 @@ export function mcpTools(): McpToolDef[] {
       },
     },
     {
+      name: "mr_merge",
+      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge, which GitLab may fire at once when the pipeline has already passed. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. The MR is read back after the request, and the result is what was observed: merged: true when it merged; autoMerge: true (whenPipelineSucceeds only) when auto-merge is enabled; an error carrying GitLab's mergeError when one is set; otherwise {requested, verified: false, state} (state when known), meaning GitLab accepted the request but the outcome was not observed, so re-read with mr_view before assuming either way. ${REPO_NAME_RULE}`,
+      inputSchema: {
+        type: "object",
+        properties: { ...MR_TARGET_PROPS, squash: { type: "boolean" }, removeSourceBranch: { type: "boolean" }, whenPipelineSucceeds: { type: "boolean" } },
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkOptional(input, [{ name: "squash", type: "boolean" }, { name: "removeSourceBranch", type: "boolean" }, { name: "whenPipelineSucceeds", type: "boolean" }]);
+        if (bad) return err(bad);
+        if (input.whenPipelineSucceeds === true && (input.squash !== undefined || input.removeSourceBranch !== undefined)) {
+          return err("whenPipelineSucceeds enables auto-merge, which uses the project's merge settings and cannot take squash or removeSourceBranch");
+        }
+        const target = await resolveMrTarget(input);
+        if (!target.ok) return err(target.error);
+        if (input.whenPipelineSucceeds === true) {
+          const set = withLandingHint(await runMrAction(target, "setAutoMerge", [], null), "the MR's state");
+          return set.ok ? verifyMerge(target, "autoMerge") : set;
+        }
+        const merge: { squash?: boolean; shouldRemoveSourceBranch?: boolean } = {};
+        if (typeof input.squash === "boolean") merge.squash = input.squash;
+        if (typeof input.removeSourceBranch === "boolean") merge.shouldRemoveSourceBranch = input.removeSourceBranch;
+        const done = withLandingHint(await runMrAction(target, "merge", [merge], null), "the MR's state");
+        return done.ok ? verifyMerge(target, "merge") : done;
+      },
+    },
+    {
       name: "mr_map",
       description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the repo's registered name: either its serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev) or its short repo-label alias.",
       inputSchema: {
@@ -722,6 +762,7 @@ export function mcpTools(): McpToolDef[] {
       },
     },
     ...runToolDefs(),
+    ...mrReadToolDefs(),
     ...gitToolDefs(realGitToolDeps),
   ];
 }

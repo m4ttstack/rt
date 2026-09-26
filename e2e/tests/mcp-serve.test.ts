@@ -181,6 +181,7 @@ const EXPECTED_TOOL_NAMES = [
   "mr_approve", "mr_comment", "mr_comment_inline", "mr_create", "mr_map", "mr_ready", "mr_rebase", "mr_reply_thread", "mr_resolve_thread", "mr_retry", "mr_update", "mr_upload",
   "rt_verb",
   "run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list",
+  "mr_view", "mr_list", "mr_for_branch", "mr_threads", "mr_pipeline", "mr_job_trace", "mr_merge",
   "git_push", "git_pull", "git_rebase", "branch_sync",
 ];
 
@@ -229,7 +230,7 @@ describe("rt mcp serve e2e", () => {
       const names = listResult.tools.map((t) => t.name).sort();
       expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
 
-      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list", "git_push", "git_pull", "git_rebase", "branch_sync"];
+      const PUBLISHED = ["run_start", "run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot", "run_list", "mr_view", "mr_list", "mr_for_branch", "mr_threads", "mr_pipeline", "mr_job_trace", "mr_merge", "git_push", "git_pull", "git_rebase", "branch_sync"];
       for (const name of PUBLISHED) expect(names, name).toContain(name);
 
       const call = await client.request("tools/call", { name: "gate_list", arguments: {} });
