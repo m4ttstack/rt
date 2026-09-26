@@ -86,6 +86,13 @@ argument.
   `detailPath`) or `redirect` (with `to`, `reason`).
 - `run_decision` takes `selection` as JSON and serializes it itself.
 - `run_list` wraps the daemon's `runs:list` (the Resume step).
+- In-process, `run_start` and `run_stage start` record `claude-session`
+  and `herdr-pane` from the MCP server's own environment
+  (`lib/runs/identity.ts`), which is fixed at session start. That matches
+  the session in every normal case; after a `/clear` the recorded session
+  is the pre-clear one, which run liveness (`lib/runs/store.ts`) reads.
+  Skills always pass `runDb`, so resolution never depends on it; liveness
+  after a `/clear` is accepted as is.
 
 ### GitLab reads (replaces `glab mr view/list`, `glab api`)
 
@@ -101,8 +108,11 @@ argument.
 
 ### Merge
 
-`mr_merge`: merges an MR as `glab mr merge` does (optional `squash`,
-`removeSourceBranch`, `whenPipelineSucceeds`). GitLab still enforces
+`mr_merge`: merges an MR as `glab mr merge` does, through the existing
+`mr:action` `merge` action (glance's merge input carries `squash`, the
+merge method, commit messages and source-branch deletion), so no new
+daemon verb. `whenPipelineSucceeds: true` routes to the existing
+`setAutoMerge` action instead of merging now. GitLab still enforces
 approvals and pipeline rules. This reverses the AGENTS.md line "Merge, and
 anything equally irreversible, stays off the server"; that section is
 rewritten to state the rule above.
@@ -122,9 +132,17 @@ registered with rt (the check `mr_upload` makes).
   named branch; on a conflict it stops and returns the conflicted files,
   leaving the tree mid-rebase for the agent to resolve; `abort: true`
   aborts one in progress.
-- `branch_sync {tree}`: the `rt sync` flow (fetch, rebase onto the target,
-  force-with-lease push) in one call, for rebase-worktree and
-  sync-open-mrs.
+- `branch_sync {tree}`: the `rt sync` flow (`commands/sync.ts`) in one
+  call, for rebase-worktree and sync-open-mrs: fetch; when local has
+  diverged from `origin/<branch>` (GitLab rebased the MR), reset local to
+  origin; rebase onto the target; force-with-lease push. The reset is the
+  one place a tool discards local commits, so `branch_sync` performs it
+  only when every local-only commit is patch-equivalent to one on origin
+  (`git cherry` reports no `+` line), which is exactly the GitLab-rebased
+  case. A local-only commit with no equivalent on origin is unpushed work:
+  the tool refuses and names those commits. `git_pull`'s stricter rule
+  (diverged is an error) stands, because a pull has no reason to discard
+  anything.
 
 `git commit` and `git add` stay on Bash; the classifier approves them.
 Git reads need nothing.
@@ -148,8 +166,9 @@ Shepherd side: `herd_start`, `herd_spawn`, `herd_brief`, `herd_close`,
 Worker side: `herd_milestone`, beside the existing `herd_ask`,
 `herd_answer` and `herd_report`.
 
-- Daemon tools where a `herd:*` command exists; `herd_brief` (CLI-only
-  assembly) goes through `rt_verb`.
+- Daemon tools where a `herd:*` command exists. `herd_brief` (CLI-only
+  assembly) spawns `rt herd brief --json` through `rt_verb`'s runner, and
+  `herd brief` joins the `agentSafe` list.
 - `herd_spawn` runs with no check: the shepherd owns its herd. Its timeout
   is sized to a real spawn (minutes).
 
@@ -163,8 +182,11 @@ prints `--json`:
   `settings list`, `settings explain`, `daemon status`, `pane list`,
   `pane peek`, `setup status`, `team status`, `git status`, `git log`,
   `git branches`.
-- **Routine writes:** `worktree await-ready`, `skills check`,
-  `skills compile`, `skills sync`, `skills bind`, `skills surface`.
+- **Routine writes:** `worktree await-ready`, `herd brief`,
+  `skills check`, `skills compile`, `skills sync`, `skills bind`,
+  `skills surface`. (The upstream "skills sync/publish" means
+  `rt skills sync`, which publishes the pack; `rt team publish` is not a
+  skill call and stays out.)
 
 A leaf whose normal run outlasts `RT_VERB_TIMEOUT_MS` declares its own cap
 on its tree node. AGENTS.md's `agentSafe` definition changes from "writes
@@ -178,7 +200,13 @@ captured screens with the spoof fixtures. That widens to attended herdr
 panes, scoped to rt's own trees:
 
 - A `PreToolUse` hook on `EnterWorktree` and `ExitWorktree` tells the
-  daemon "this pane is about to relocate to <path>".
+  daemon "this pane is about to relocate to <path>". It ships in the
+  mattstack plugin's `hooks/hooks.json` (mattstack-skills, beside
+  `pipeline-gate-stop.sh`), since rt installs no hooks of its own. The hook
+  runs a new hidden rt verb (`rt worktree announce-relocation`) that reads
+  the hook's stdin JSON (session id, tool input path) and `HERDR_PANE_ID`,
+  and sends both to the daemon; the daemon identifies the pane by session
+  id through `resolveLivePane`, with `HERDR_PANE_ID` as the cross-check.
 - The daemon accepts only when that path is a worktree in rt's registry
   (or, for `ExitWorktree`, the session's recorded original directory), and
   only for a dialog that appears on that pane within a few seconds and
@@ -188,7 +216,12 @@ panes, scoped to rt's own trees:
 
 The trust-dialog rules in AGENTS.md apply unchanged: every fixture is a
 captured screen, and the Bash-spoof, MCP-spoof and painted-dialog fixtures
-keep passing.
+keep passing. `readRelocationPrompt` anchors on EnterWorktree-only markers
+today (`BOXED_HEADING_RE`, `ENTER_ECHO_START`). The ExitWorktree dialog has
+never been captured, so the first step of that work is capturing it (and
+an attended-pane EnterWorktree dialog) from a stalled pane and adding both
+as fixtures; the parser changes only after that. If the ExitWorktree
+dialog turns out not to exist, ExitWorktree drops out of the hook.
 
 ## What the skills change
 
@@ -221,12 +254,19 @@ Plus the fixes the audit found:
   blocks (`$IID`, `$PACK_DIRS`, `read_token`): each value comes back from a
   tool and is passed on explicitly.
 
-Kept on Bash on purpose:
+Kept on Bash on purpose, each covered by an exact allow rule so it still
+skips the classifier (the skill writes these in one fixed bare form, which
+is the case prefix rules handle reliably; a `Monitor` command is judged by
+the same Bash permission rules):
 
 - `rt gate answer --by shepherd` (CLI-only per shepherdr's note; shepherd
-  pane only).
-- Long waits under `Monitor` (`rt chat tail`, `rt gate wait`,
-  `rt events wait`), which block past any tool timeout.
+  pane only), and `rt gate wait`: kept by `Bash(rt gate *)`.
+- Long waits under `Monitor` (`rt chat tail`, `rt events wait`), which
+  block past any tool timeout: new rules `Bash(rt chat tail *)` and
+  `Bash(rt events wait *)`.
+
+Like every `BASE_PERMISSIONS` rule, these reach a machine when Install
+runs.
 - Project tooling (`pnpm` checks, the pack's scripts), `git commit`,
   `git add`.
 - GitHub (`gh`) flows (RT-321).
@@ -244,9 +284,10 @@ Kept on Bash on purpose:
    mattstack`.
 3. **claimview pack**: fills, recompile, `rt skills sync --pack
    claimview`. The pack is employer-visible: no mattstack ticket ids in it.
-4. **Cleanup**: drop `Bash(rt runs *)`, `Bash(rt gate *)`,
-   `Bash(rt skills sync *)` and the three `glab` rules from
-   `BASE_PERMISSIONS`, and update AGENTS.md ("Gates and the `rt_verb` MCP
+4. **Cleanup**: in `BASE_PERMISSIONS`, drop `Bash(rt runs *)`,
+   `Bash(rt skills sync *)` and the three `glab` rules, keep
+   `Bash(rt gate *)`, and add `Bash(rt chat tail *)` and
+   `Bash(rt events wait *)`. Also update AGENTS.md ("Gates and the `rt_verb` MCP
    tool", the relocation parser section) and the rt.cool MCP docs page. The
    classifier refuses edits to `BASE_PERMISSIONS`, so Matt applies those
    lines.
