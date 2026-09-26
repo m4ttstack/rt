@@ -1819,6 +1819,15 @@ git commit -m "docs: gitq lives in apps/gitq"
 - [ ] **Step 4: README links** in `mattstack-skills/README.md` and `fast-browser/README.md` point the gitq link at `https://github.com/m4ttstack/rt/tree/main/apps/gitq`.
 - [ ] **Step 5: Memory and docs**: `docs/architecture.md` in rt gains one line that apps, glance and gitq live in this repo; the memory files `project_rt_client_package.md` and `reference_repo_tools_e2e_not_in_test.md` get a dated line that rt-client is no longer published and the apps are in-tree.
 
+### Task 22: npm cleanup (Matt-gated)
+
+Every `@mattstack/*` package on npm was published either for an outside consumer or only to move code between repos that are now one tree. Once Stage C ships, the second kind has no reader left.
+
+- [ ] **Step 1: Inventory** (read-only): for every package name under `packages/*`, `apps/*` and `extensions/*` plus any `@mattstack/*` name `npm search` or the org page lists, record `npm view <name> versions time --json` (versions, publish dates, whether the latest is older than 72 hours) and every in-estate consumer that still installs it from the registry (`grep` for the name in every package.json across `~/Documents/GitHub/*` and the mattstack plugin marketplace). Sort into: keep (an outside consumer exists: the plugin, a standalone install, a published skill pack), unpublish (published only to feed apps, glance or gitq, all now `workspace:*`), undecided.
+- [ ] **Step 2: Matt's call** on the unpublish list, one form question per package.
+- [ ] **Step 3: Unpublish**: `npm unpublish <name> --force` removes a whole package only within 72 hours of its last publish or when it has no dependents and low downloads (npm's policy); otherwise `npm deprecate <name> "folded into m4ttstack/rt; consume it as a workspace package"` is the fallback. Needs Matt's OTP (bw vault). Record what was removed or deprecated in `docs/architecture.md`.
+- [ ] **Step 4**: set `"private": true` on every package that was unpublished or deprecated so nothing republishes it by accident, and drop any `publishConfig`; commit on a branch and merge.
+
 ---
 
 ## Self-review notes
