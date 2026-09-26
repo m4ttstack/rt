@@ -2620,9 +2620,549 @@ Pack: `/Users/matt/.mattstack/teams/claimview/mattstack/packs/claimview`, inside
 
 ---
 
+# Part E: pack authoring
+
+Spec section "Pack authoring": a generated tool list, a lint in `rt skills check` (advisory unless `--strict`), and an advisory LLM audit. rt work first (Tasks 31-33, one PR), then mattstack-skills (Tasks 34-35, certification tail). The lint lands after the Part B and C rewrites so its first run on both packs is clean.
+
+### Task 31: `rt mcp tools --json`
+
+**Files:**
+- Modify: `commands/mcp.ts` (add `mcpToolsPayload` and `mcpToolsList`), `lib/command-tree-def.ts:1476-1489` (a `tools` leaf under `mcp.subcommands`)
+- Test: `commands/__tests__/mcp-tools-list.test.ts`
+
+**Interfaces:**
+- Produces: `mcpToolsPayload(tools: McpToolDef[] = mcpTools()): { tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> }` and `mcpToolsList(args: string[]): Promise<void>` (prints the payload as JSON under `--json`, else one `name` per line). Tasks 33 and 34 read the JSON.
+- `./commands/mcp.ts` is already thunked in `lib/module-registry.ts`; no registry change.
+
+- [ ] **Step 1: Failing test**
+
+```ts
+// commands/__tests__/mcp-tools-list.test.ts
+import { describe, expect, test } from "bun:test";
+import { mcpToolsPayload } from "../mcp.ts";
+import { mcpTools } from "../../lib/mcp/tools.ts";
+
+describe("mcpToolsPayload", () => {
+  test("carries every roster tool with its description and schema, in roster order", () => {
+    const roster = mcpTools();
+    const payload = mcpToolsPayload(roster);
+    expect(payload.tools.map((t) => t.name)).toEqual(roster.map((t) => t.name));
+    for (const [i, t] of payload.tools.entries()) {
+      expect(t.description).toBe(roster[i]!.description);
+      expect(t.inputSchema).toEqual(roster[i]!.inputSchema);
+      expect(Object.keys(t)).toEqual(["name", "description", "inputSchema"]);
+    }
+  });
+  test("is plain JSON (no handlers, no functions)", () => {
+    const text = JSON.stringify(mcpToolsPayload());
+    expect(JSON.parse(text).tools.length).toBe(mcpTools().length);
+    expect(text).not.toContain("handler");
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify failure.** `bun test commands/__tests__/mcp-tools-list.test.ts`: FAIL, no `mcpToolsPayload`.
+
+- [ ] **Step 3: Implement.** In `commands/mcp.ts` (a static import of `lib/mcp/tools.ts` here is fine: `mcpServe` already imports it dynamically, and this module is itself lazy behind the registry thunk):
+
+```ts
+import { mcpTools, type McpToolDef } from "../lib/mcp/tools.ts";
+
+export function mcpToolsPayload(tools: McpToolDef[] = mcpTools()): { tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> } {
+  return { tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) };
+}
+
+export async function mcpToolsList(args: string[]): Promise<void> {
+  const payload = mcpToolsPayload();
+  if (args.includes("--json")) { console.log(JSON.stringify(payload)); return; }
+  for (const t of payload.tools) console.log(t.name);
+}
+```
+
+Check `lib/__tests__/no-eager-tui.test.ts` still passes (it pins that `lib/command-tree.ts` and the registry do not eagerly import command modules; `commands/mcp.ts` importing `lib/mcp/tools.ts` statically is inside a thunked module).
+
+Tree node, beside `serve`:
+
+```ts
+tools: {
+  description: "Every tool the mattstack MCP server publishes: name, description, input schema (the source the docs and the skills reference are generated from)",
+  module: "./commands/mcp.ts",
+  fn: "mcpToolsList",
+  hidden: true,
+  omitBehavior: { exempt: "no positional argument; a listing" },
+  args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the full roster as JSON" }],
+},
+```
+
+- [ ] **Step 4: Run.** `bun test commands/__tests__/mcp-tools-list.test.ts lib/__tests__/picker-conformance.test.ts lib/__tests__/no-eager-tui.test.ts lib/__tests__/command-tree-help.test.ts` then `bun run picker:check`: PASS. `bun cli.ts mcp tools --json` prints one JSON document whose `tools` has 57 entries.
+- [ ] **Step 5: Commit.** `git add commands/mcp.ts lib/command-tree-def.ts commands/__tests__/mcp-tools-list.test.ts` then `git commit -m "mcp: hidden rt mcp tools --json prints the roster"`.
+
+### Task 32: The `rt skills check` lint and `--strict`
+
+**Files:**
+- Create: `lib/skills/mcp-lint.ts`
+- Modify: `commands/skills.ts` (`Flags.strict`, `parseFlags`, `CheckPayload.mcpLint`, `computeCheck`, `skillsCheck` output, `checkPack`'s options), `lib/command-tree-def.ts:2221` (`check` gains `--strict`), `lib/skills/sync.ts` (`checkPack` returns `lintHits`; the recheck step fails on hits), `commands/skills-sync.ts:107-110`
+- Test: `lib/skills/__tests__/mcp-lint.test.ts`; `lib/skills/__tests__/sync.test.ts` (one new case)
+
+**Interfaces:**
+- Produces, in `lib/skills/mcp-lint.ts`:
+
+```ts
+export interface LintRule { id: string; pattern: RegExp; tool: string; note: string }
+export interface LintHit { file: string; line: number; text: string; rule: string; tool: string; note: string }
+export const MCP_LINT_RULES: LintRule[];
+export const KEPT_ON_BASH: RegExp[];
+export function lintSkillText(text: string, file: string): LintHit[];
+export function lintPackDir(dir: string, deps?: { list: (dir: string) => string[]; read: (path: string) => string }): LintHit[];
+export function formatHit(h: LintHit): string;   // "<file>:<line>: `<text>` shells out for <rule>; use the <tool> tool (<note>)"
+```
+
+- `CheckPayload.mcpLint: LintHit[]`; `checkPack(opts & { strict?: boolean })`; `SyncDeps.checkPack: (packName) => Promise<{ drift: boolean; lintHits: number }>`.
+
+- [ ] **Step 1: Failing tests**
+
+```ts
+// lib/skills/__tests__/mcp-lint.test.ts
+import { describe, expect, test } from "bun:test";
+import { KEPT_ON_BASH, lintPackDir, lintSkillText, MCP_LINT_RULES } from "../mcp-lint.ts";
+
+const md = (...lines: string[]) => lines.join("\n");
+
+describe("lintSkillText: one hit per rule", () => {
+  const cases: Array<[string, string, string]> = [
+    ["rt-runs", "```bash\nrt runs stage-start --stage plan\n```", "run_stage"],
+    ["glab", "Run `glab mr view 12 --json`.", "mr_view"],
+    ["git-push", "```sh\ngit push -u origin feat/x\n```", "git_push"],
+    ["git-rebase", "then `git rebase origin/main`", "git_rebase"],
+    ["git-pull", "`git pull` first", "git_pull"],
+    ["rt-herd", "```\nrt herd spawn --job a\n```", "herd_spawn"],
+    ["rt-worktree", "`rt worktree provision --repo x --ticket T-1`", "worktree_provision"],
+    ["rt-sync", "```bash\ncd <tree> && rt sync --json\n```", "branch_sync"],
+    ["run-db-env", "```\nexport RT_RUN_DB=/x\n```", "run_start"],
+    ["subst", "```bash\nIID=$(glab mr list --json | jq .[0].iid)\n```", "mr_for_branch"],
+    ["worktree-add", "`git worktree add ../sibling feat/x`", "worktree_provision"],
+    ["gate-ask", "```\nrt gate ask --questions \"$(jq -c .questions f)\"\n```", "gate_ask"],
+    ["pkill", "`pkill -f <path>` then `kill $PID`", "worktree_stop_holders"],
+  ];
+  for (const [rule, text, tool] of cases) {
+    test(`${rule} hits and names ${tool}`, () => {
+      const hits = lintSkillText(text, "a/SKILL.md");
+      expect(hits.length, text).toBeGreaterThan(0);
+      expect(hits[0]!.rule).toBe(rule);
+      expect(hits.map((h) => h.tool)).toContain(tool);
+      expect(hits[0]!.file).toBe("a/SKILL.md");
+      expect(hits[0]!.line).toBeGreaterThan(0);
+    });
+  }
+  test("every rule in MCP_LINT_RULES has a case above", () => {
+    expect(MCP_LINT_RULES.map((r) => r.id).sort()).toEqual(cases.map((c) => c[0]).sort());
+  });
+});
+
+describe("lintSkillText: no hits", () => {
+  test("the kept-on-Bash list", () => {
+    const kept = md(
+      "```bash", "rt gate answer <id> --answers '<json>' --by shepherd", "rt gate wait <id>", "rt chat tail", "rt events wait 'run:*'",
+      "git rebase --continue", "git rebase --skip", "git commit -m x", "git add -A", "git fetch origin", "git merge-base HEAD origin/main", "```",
+    );
+    expect(lintSkillText(kept, "k.md")).toEqual([]);
+    expect(KEPT_ON_BASH.length).toBeGreaterThan(0);
+  });
+  test("prose that names a tool", () => {
+    const prose = md(
+      "Push with the `git_push` tool (`tree`, `setUpstream: true`).",
+      "Start the run with `run_start`; keep its `runDb`.",
+      "Call `rt_verb` with args [\"herd\", \"status\"].",
+      "Merge with `mr_merge`; GitLab still enforces approvals.",
+      "Provision with `worktree_provision`, then EnterWorktree by path.",
+    );
+    expect(lintSkillText(prose, "p.md")).toEqual([]);
+  });
+  test("plain prose outside code is not linted (the audit covers it)", () => {
+    expect(lintSkillText("Then push the branch and open the MR.", "p.md")).toEqual([]);
+  });
+});
+
+describe("lintPackDir", () => {
+  test("walks skills, attachments and plugin/skills markdown only", () => {
+    const files: Record<string, string> = {
+      "/p/skills/work/SKILL.md": "```\nrt runs snapshot\n```",
+      "/p/attachments/fill/SKILL.md": "`glab mr view 1`",
+      "/p/plugin/skills/x/SKILL.md": "`git push`",
+      "/p/README.md": "`git push`",
+      "/p/skills/work/notes.txt": "`git push`",
+    };
+    const hits = lintPackDir("/p", { list: () => Object.keys(files), read: (p) => files[p] ?? "" });
+    expect(hits.map((h) => h.file).sort()).toEqual(["/p/attachments/fill/SKILL.md", "/p/plugin/skills/x/SKILL.md", "/p/skills/work/SKILL.md"]);
+  });
+});
+```
+
+And in `lib/skills/__tests__/sync.test.ts`, beside the existing drift cases: a `checkPack` dep returning `{ drift: false, lintHits: 2 }` makes `syncPack`'s report not ok, with the recheck step's message containing `mcp lint` and `rt skills check`.
+
+- [ ] **Step 2: Run to verify failure.** `bun test lib/skills/__tests__/mcp-lint.test.ts lib/skills/__tests__/sync.test.ts`: FAIL.
+
+- [ ] **Step 3: Implement the lint**
+
+```ts
+// lib/skills/mcp-lint.ts
+import { readdirSync, readFileSync, statSync } from "fs";
+import { join, sep } from "path";
+
+export interface LintRule { id: string; pattern: RegExp; tool: string; note: string }
+export interface LintHit { file: string; line: number; text: string; rule: string; tool: string; note: string }
+
+// The replacement table, as patterns over code-shaped text (fenced blocks and
+// inline spans). Order matters only for which rule names a line first.
+export const MCP_LINT_RULES: LintRule[] = [
+  { id: "run-db-env", pattern: /\b(export|unset)\s+RT_RUN_DB\b/, tool: "run_start", note: "keep the runDb run_start returns and pass it on every run_* call" },
+  { id: "subst", pattern: /\b[A-Za-z_][A-Za-z0-9_]*=\$\(\s*(rt|glab)\b/, tool: "mr_for_branch", note: "a tool returns the value; nothing needs a shell variable (the tool depends on the inner call: glab mr list is mr_for_branch or mr_list, rt runs is run_*)" },
+  { id: "rt-runs", pattern: /\brt runs\b/, tool: "run_stage", note: "run_start, run_stage, run_field_set, run_field_get, run_decision, run_status, run_snapshot, run_list" },
+  { id: "rt-sync", pattern: /\brt sync\b/, tool: "branch_sync", note: "one call: fetch, cherry-gated reset, rebase, force-with-lease push" },
+  { id: "rt-worktree", pattern: /\brt worktree (provision|dispose)\b/, tool: "worktree_provision", note: "worktree_provision or worktree_dispose" },
+  { id: "rt-herd", pattern: /\brt herd\b/, tool: "herd_spawn", note: "herd_start, herd_spawn, herd_brief, herd_close, herd_status, herd_list, herd_attend, herd_wrap_up, herd_resume, herd_ask, herd_answer, herd_report, herd_milestone" },
+  { id: "gate-ask", pattern: /\brt gate ask\b/, tool: "gate_ask", note: "read the questions file and pass its questions, kind and context" },
+  { id: "glab", pattern: /\bglab\b/, tool: "mr_view", note: "mr_view, mr_list, mr_for_branch, mr_threads, mr_pipeline, mr_job_trace, mr_merge, or an mr_* write" },
+  { id: "git-push", pattern: /\bgit push\b/, tool: "git_push", note: "setUpstream: true for a first push, forceWithLease: true after a rebase" },
+  { id: "git-rebase", pattern: /\bgit rebase\b(?!\s+--(continue|skip)\b)/, tool: "git_rebase", note: "onto: \"origin/<default>\" (it fetches), or abort: true" },
+  { id: "git-pull", pattern: /\bgit pull\b/, tool: "git_pull", note: "fast-forward only" },
+  { id: "worktree-add", pattern: /\bgit worktree add\b/, tool: "worktree_provision", note: "sibling worktrees are never created by hand" },
+  { id: "pkill", pattern: /\bpkill\b|\bkill\s+(-\w+\s+)?\$/, tool: "worktree_stop_holders", note: "ends only the processes rt ties to the tree" },
+];
+
+// Written in one bare form by the skills; each stays on Bash on purpose.
+export const KEPT_ON_BASH: RegExp[] = [
+  /\brt gate answer\b.*--by shepherd\b/,
+  /\brt gate wait\b/,
+  /\brt chat tail\b/,
+  /\brt events wait\b/,
+];
+
+const FENCE = /^\s*(```|~~~)/;
+const INLINE = /`([^`\n]+)`/g;
+
+/** Code-shaped text per line: whole lines inside a fence, inline spans outside one. */
+function codeOn(lines: string[]): Array<{ line: number; text: string }> {
+  const out: Array<{ line: number; text: string }> = [];
+  let fenced = false;
+  lines.forEach((raw, i) => {
+    if (FENCE.test(raw)) { fenced = !fenced; return; }
+    if (fenced) { out.push({ line: i + 1, text: raw }); return; }
+    for (const m of raw.matchAll(INLINE)) out.push({ line: i + 1, text: m[1]! });
+  });
+  return out;
+}
+
+export function lintSkillText(text: string, file: string): LintHit[] {
+  const hits: LintHit[] = [];
+  for (const { line, text: code } of codeOn(text.split("\n"))) {
+    if (KEPT_ON_BASH.some((k) => k.test(code))) continue;
+    const rule = MCP_LINT_RULES.find((r) => r.pattern.test(code));
+    if (rule) hits.push({ file, line, text: code.trim(), rule: rule.id, tool: rule.tool, note: rule.note });
+  }
+  return hits;
+}
+
+const LINTED_ROOTS = ["skills", "attachments", join("plugin", "skills")];
+
+function walk(dir: string): string[] {
+  const out: string[] = [];
+  const visit = (d: string) => {
+    let entries: string[];
+    try { entries = readdirSync(d); } catch { return; }
+    for (const name of entries) {
+      const p = join(d, name);
+      let isDir = false;
+      try { isDir = statSync(p).isDirectory(); } catch { continue; }
+      if (isDir) { if (name !== "node_modules" && name !== ".git") visit(p); } else out.push(p);
+    }
+  };
+  visit(dir);
+  return out;
+}
+
+export function lintPackDir(dir: string, deps: { list: (dir: string) => string[]; read: (path: string) => string } = { list: walk, read: (p) => readFileSync(p, "utf8") }): LintHit[] {
+  const roots = LINTED_ROOTS.map((r) => join(dir, r) + sep);
+  return deps.list(dir)
+    .filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r)))
+    .sort()
+    .flatMap((p) => lintSkillText(deps.read(p), p));
+}
+
+export function formatHit(h: LintHit): string {
+  return `${h.file}:${h.line}: \`${h.text}\` shells out for ${h.rule}; use the ${h.tool} tool (${h.note})`;
+}
+```
+
+- [ ] **Step 4: Wire `check`, `--strict` and sync.** In `commands/skills.ts`: `Flags` gains `strict: boolean` (parsed from `--strict`); `CheckPayload` gains `mcpLint: LintHit[]`; `computeCheck` sets `mcpLint: lintPackDir(resolved.packDir)`; `skillsCheck`'s human output prints `formatHit(h)` for each hit after the verb rows, then `mcp lint: N hits (advisory; --strict fails on them)` or `mcp lint: clean`; `if (flags.strict && payload.mcpLint.length > 0) process.exitCode = 1;` and the `--json` envelope includes `mcpLint`. `checkPack(opts)` accepts `strict?: boolean` and returns the payload unchanged (callers read `mcpLint`). Tree node `check` gains `{ name: "Strict", flag: "--strict", type: "boolean", default: false, hint: "Fail the exit code on mcp lint hits (mattstack-skills CI and rt skills sync use this)" }`. In `lib/skills/sync.ts`: `SyncDeps.checkPack` returns `{ drift: boolean; lintHits: number }`; the recheck step (`:280`) fails with `mcp lint: ${lintHits} hits; run rt skills check --pack ${pack} and fix them before syncing` when `lintHits > 0`, so `report.ok` is false. `commands/skills-sync.ts:107-110` returns `{ drift: payload.drift, lintHits: payload.mcpLint.length }`.
+
+- [ ] **Step 5: Run.** `bun test lib/skills commands/__tests__/skills*` then `bunx tsc --noEmit`: PASS. Then `bun cli.ts skills check --pack-dir /Users/matt/Documents/GitHub/mattstack-skills --strict` (the Part B branch, merged) exits 0 with `mcp lint: clean`; the same with `--pack-dir` at the claimview pack exits 0. If either reports hits, that is a rewrite gap: fix in the owning Part B or C file first (lint over the pre-rewrite `main` of mattstack-skills must show hits, which is the lint's own RED).
+- [ ] **Step 6: Commit.** `git add lib/skills/mcp-lint.ts commands/skills.ts commands/skills-sync.ts lib/skills/sync.ts lib/command-tree-def.ts lib/skills/__tests__/mcp-lint.test.ts lib/skills/__tests__/sync.test.ts` then `git commit -m "skills check: mcp lint from the replacement table; --strict; sync refuses on hits"`.
+
+### Task 33: `rt skills audit --pack <pack>` and the PR
+
+**Files:**
+- Create: `commands/skills-audit.ts`
+- Modify: `lib/module-registry.ts` (thunk `"./commands/skills-audit.ts": () => import("../commands/skills-audit.ts")`), `lib/command-tree-def.ts` (`audit` leaf under `skills.subcommands`, beside `check`)
+- Test: `commands/__tests__/skills-audit.test.ts`
+
+**Interfaces:**
+- Consumes: `buildClaudeArgv(inv: AgentInvocation, bins?)` and `resolveClaudeBin()` from `lib/agent-argv/claude.ts` (the same builder every `rt agent --surface headless` launch uses; `headless: true` emits `-p --output-format json`); `runCapture` (`lib/subprocess.ts`); `lintPackDir`'s file walk (`lib/skills/mcp-lint.ts`); `mcpToolsPayload` (Task 31); `checkPack` for pack resolution (`commands/skills.ts`).
+- Produces: `buildAuditPrompt(files: Array<{ path: string; text: string }>, tools: Array<{ name: string; description: string }>): string`; `buildAuditInvocation(prompt: string, sessionId: string): AgentInvocation`; `skillsAudit(args: string[]): Promise<void>`. Exit 0 with the report on stdout; exit 2 only when no claude binary or no pack resolves. Never a gate.
+
+- [ ] **Step 1: Failing test**
+
+```ts
+// commands/__tests__/skills-audit.test.ts
+import { describe, expect, test } from "bun:test";
+import { buildAuditInvocation, buildAuditPrompt } from "../skills-audit.ts";
+import { buildClaudeArgv } from "../../lib/agent-argv/claude.ts";
+
+const files = [{ path: "/p/skills/ship/SKILL.md", text: "Push the branch, then open the MR." }, { path: "/p/attachments/f/SKILL.md", text: "IID=$(glab mr list)" }];
+const tools = [{ name: "git_push", description: "Push the tree's current branch." }, { name: "mr_create", description: "Create an MR." }];
+const SESSION = "11111111-1111-4111-8111-111111111111";
+
+describe("buildAuditPrompt", () => {
+  test("names every file with its text and every tool with its description", () => {
+    const p = buildAuditPrompt(files, tools);
+    for (const f of files) { expect(p).toContain(f.path); expect(p).toContain(f.text); }
+    for (const t of tools) { expect(p).toContain(t.name); expect(p).toContain(t.description); }
+  });
+  test("asks for the three pattern-proof findings and a per-finding file:line", () => {
+    const p = buildAuditPrompt(files, tools);
+    expect(p).toContain("plain words");
+    expect(p).toContain("shell variables");
+    expect(p).toContain("wrapped");
+    expect(p).toContain("file:line");
+  });
+});
+
+describe("buildAuditInvocation", () => {
+  test("is a headless claude run with the prompt, no bypass, no account", () => {
+    const inv = buildAuditInvocation("PROMPT", SESSION);
+    expect(inv).toMatchObject({ headless: true, prompt: "PROMPT", session: { kind: "start", sessionId: SESSION }, yolo: false });
+    const argv = buildClaudeArgv(inv, { claude: "/bin/claude" });
+    expect(argv[0]).toBe("/bin/claude");
+    expect(argv).toContain("-p");
+    expect(argv.slice(argv.indexOf("--output-format"), argv.indexOf("--output-format") + 2)).toEqual(["--output-format", "json"]);
+    expect(argv).toContain("PROMPT");
+    expect(argv.some((a) => a.includes("dangerously"))).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify failure.** `bun test commands/__tests__/skills-audit.test.ts`: FAIL, module missing.
+
+- [ ] **Step 3: Implement**
+
+```ts
+// commands/skills-audit.ts
+import { randomUUID } from "crypto";
+import { readFileSync } from "fs";
+import { buildClaudeArgv, resolveClaudeBin, type AgentInvocation } from "../lib/agent-argv/claude.ts";
+import { mcpToolsPayload } from "./mcp.ts";
+import { checkPack } from "./skills.ts";
+import { lintPackDir } from "../lib/skills/mcp-lint.ts";
+import { runCapture } from "../lib/subprocess.ts";
+
+const AUDIT_TIMEOUT_MS = 600_000;
+
+export function buildAuditPrompt(files: Array<{ path: string; text: string }>, tools: Array<{ name: string; description: string }>): string {
+  const toolList = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+  const fileBlocks = files.map((f) => `### ${f.path}\n\n${f.text}`).join("\n\n");
+  return [
+    "You are auditing a mattstack skill pack. Agents that load these skills run in Claude Code auto mode, where every shell command a tool could have covered costs a classifier round trip or is blocked outright.",
+    "The mattstack MCP server publishes these tools:",
+    toolList,
+    "Read every file below and report, as a Markdown list with one file:line per finding, three kinds of instruction that no pattern lint can catch:",
+    "1. an instruction in plain words (\"push the branch\", \"open the MR\", \"rebase onto main\") that an agent will turn into a shell command a tool covers; name the tool;",
+    "2. values carried between code blocks through shell variables ($IID, $RT_RUN_DB, read_token) instead of a tool result passed on explicitly;",
+    "3. wrapped commands (cd x && ..., VAR=$(...), pipes, -C <tree>) around an rt, glab or git call.",
+    "Anything on this kept list is fine and must not be reported: rt gate answer --by shepherd, rt gate wait, rt chat tail, rt events wait, git commit, git add, git fetch, git merge-base, git rebase --continue, git rebase --skip, project tooling such as pnpm.",
+    "End with one line: `findings: <n>`.",
+    "## Files",
+    fileBlocks,
+  ].join("\n\n");
+}
+
+// Headless, no permission bypass: the audit only reads the files it was
+// handed in its prompt and needs no tool call to answer.
+export function buildAuditInvocation(prompt: string, sessionId: string): AgentInvocation {
+  return { headless: true, prompt, session: { kind: "start", sessionId }, yolo: false };
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+export async function skillsAudit(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const pack = flag(args, "--pack");
+  const packDir = flag(args, "--pack-dir");
+  if (!pack && !packDir) { console.error("rt skills audit: pass --pack <name> or --pack-dir <dir>"); process.exit(2); }
+  const resolved = await checkPack({ ...(pack ? { pack } : {}), ...(packDir ? { packDir } : {}) });
+  let claude: string;
+  try { claude = resolveClaudeBin(); } catch { console.error("rt skills audit: no claude binary on PATH; the audit needs a Claude login"); process.exit(2); }
+  const paths = lintPackDir(resolved.packDir, { list: (d) => walkMd(d), read: () => "" }).map((h) => h.file);
+  const files = [...new Set(walkMd(resolved.packDir))].map((p) => ({ path: p, text: readFileSync(p, "utf8") }));
+  void paths;
+  const prompt = buildAuditPrompt(files, mcpToolsPayload().tools.map((t) => ({ name: t.name, description: t.description })));
+  const argv = buildClaudeArgv(buildAuditInvocation(prompt, randomUUID()), { claude });
+  const r = await runCapture(argv as [string, ...string[]], { cwd: resolved.packDir, timeoutMs: AUDIT_TIMEOUT_MS, stderr: "pipe" });
+  let text = r.stdout;
+  try { const parsed = JSON.parse(r.stdout) as { result?: string }; if (typeof parsed.result === "string") text = parsed.result; } catch { /* claude printed plain text; show it as is */ }
+  if (r.exitCode !== 0) { console.error(`rt skills audit: claude exited ${r.exitCode}: ${r.stderr.trim().split("\n").slice(-3).join(" ")}`); }
+  if (json) { console.log(JSON.stringify({ pack: resolved.pack, packDir: resolved.packDir, files: files.map((f) => f.path), report: text, advisory: true })); return; }
+  console.log(`rt skills audit (advisory; never a gate): ${resolved.pack}\n`);
+  console.log(text);
+}
+```
+
+`walkMd(dir)` is the markdown-only walk under the three linted roots; export it from `lib/skills/mcp-lint.ts` as `lintedMarkdownFiles(dir): string[]` (extract the filter from `lintPackDir`) and call that instead of the `paths` detour above (delete the `paths` and `void paths` lines once it exists). Tree node under `skills.subcommands`:
+
+```ts
+audit: {
+  description: "Advisory LLM audit of a pack's skills and fills for shell instructions the MCP tools cover (plain-words commands, shell-variable hand-offs, wrapped calls); slow, costs tokens, never a gate",
+  module: "./commands/skills-audit.ts",
+  fn: "skillsAudit",
+  args: [
+    { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name; omit with --pack-dir" },
+    { name: "Pack dir", flag: "--pack-dir", type: "text", placeholder: "/path/to/pack", hint: "Audit this pack directory instead of resolving --pack" },
+    SETUP_JSON_ARG,
+  ],
+},
+```
+
+No required positional, so no `omitBehavior` is needed; `bun run picker:check` confirms. Registry thunk added as named above.
+
+- [ ] **Step 4: Run.** `bun test commands/__tests__/skills-audit.test.ts lib/__tests__/picker-conformance.test.ts lib/__tests__/no-eager-tui.test.ts` then `bun run picker:check` then `bunx tsc --noEmit`: PASS. Then one real run: `bun cli.ts skills audit --pack-dir /Users/matt/Documents/GitHub/mattstack-skills` prints a report ending in `findings: <n>` and exits 0 whatever `n` is.
+- [ ] **Step 5: Commit, PR, deploy.** `git add commands/skills-audit.ts lib/module-registry.ts lib/command-tree-def.ts lib/skills/mcp-lint.ts commands/__tests__/skills-audit.test.ts` then `git commit -m "skills audit: advisory headless-claude pass over a pack with the tool list"`. `bun run test`, `bunx tsc --noEmit`, build `dist/rt` and run `e2e/tests/skills-sync.test.ts` (sync's recheck now carries `lintHits`). PR `skills: mcp tools listing, check lint with --strict, advisory audit (RT-326 pack authoring)`; merge; deploy; from a fresh session `rt_verb {args: ["skills", "check", "--pack", "mattstack", "--strict"]}` returns clean.
+
+### Task 34: The `mcp-tools` reference and the pack-authoring pointers (mattstack-skills)
+
+**Files:**
+- Create: `attachments/mcp-tools/SKILL.md` (hand-written front matter and header), `attachments/mcp-tools/reference.md` (generated), `scripts/gen-mcp-tools.ts`, `tests/test-mcp-tools-reference.sh`
+- Modify: `plugin/skills/creating-a-pack/SKILL.md` (section "## 4. Offer the first rules, once"), `plugin/skills/extending-a-pack/SKILL.md` (section "## 2. Write it (context or fill)"), `plugin/skills/editing-skills/SKILL.md` (the GREEN step), `CERTIFICATION.md` (checklist line)
+- Test: `sh tests/test-mcp-tools-reference.sh`; certification tail
+
+**Interfaces:**
+- Consumes: `rt mcp tools --json` (Task 31).
+- Produces: `attachments/mcp-tools/reference.md`, one `### <name>` section per tool with its description and a fenced JSON schema, headed by a generated-file banner naming the command that regenerates it.
+
+- [ ] **Step 1: Failing test**
+
+```sh
+#!/bin/sh
+# tests/test-mcp-tools-reference.sh: the committed reference is what rt generates today.
+set -u
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
+command -v rt >/dev/null 2>&1 || { echo "skip mcp-tools-reference: no rt on PATH"; exit 0; }
+command -v bun >/dev/null 2>&1 || { echo "skip mcp-tools-reference: no bun on PATH"; exit 0; }
+TMP=$(mktemp)
+rt mcp tools --json | bun "$ROOT/scripts/gen-mcp-tools.ts" > "$TMP" || { echo "FAIL mcp-tools-reference: generation failed"; exit 1; }
+if cmp -s "$TMP" "$ROOT/attachments/mcp-tools/reference.md"; then echo "ok   mcp-tools-reference"; rm -f "$TMP"; exit 0; fi
+echo "FAIL mcp-tools-reference: attachments/mcp-tools/reference.md is stale; run: rt mcp tools --json | bun scripts/gen-mcp-tools.ts > attachments/mcp-tools/reference.md"
+diff "$TMP" "$ROOT/attachments/mcp-tools/reference.md" | head -20
+rm -f "$TMP"
+exit 1
+```
+
+Run: `sh tests/test-mcp-tools-reference.sh`: FAIL (no generator, no reference).
+
+- [ ] **Step 2: The generator**
+
+```ts
+// scripts/gen-mcp-tools.ts: stdin = `rt mcp tools --json`, stdout = reference.md
+const input = JSON.parse(await Bun.stdin.text()) as { tools: Array<{ name: string; description: string; inputSchema: unknown }> };
+const out: string[] = [
+  "# mattstack MCP tools",
+  "",
+  "Generated from `rt mcp tools --json`; do not edit by hand. Regenerate with:",
+  "`rt mcp tools --json | bun scripts/gen-mcp-tools.ts > attachments/mcp-tools/reference.md`",
+  "",
+  "Every tool below is on the mattstack MCP server, which is allowed whole in every mattstack install. Before a skill tells an agent to run a shell command, check whether a tool here covers it.",
+  "",
+];
+for (const t of input.tools) {
+  out.push(`### ${t.name}`, "", t.description, "", "```json", JSON.stringify(t.inputSchema, null, 2), "```", "");
+}
+process.stdout.write(out.join("\n"));
+```
+
+`attachments/mcp-tools/SKILL.md`:
+
+```markdown
+---
+name: mcp-tools
+description: "Reference: every tool on the mattstack MCP server, generated from rt. Read when writing a skill or fill that would otherwise tell an agent to run rt, glab or a git write in Bash."
+disable-model-invocation: true
+---
+
+# mattstack MCP tools
+
+`reference.md` beside this file is generated from `rt mcp tools --json` and
+lists every tool with its input schema. The rule for skill authors: if a
+skill does something as part of its normal flow and it is an rt call, a
+forge call or a git write, it is a tool call, named in the sentence that
+would otherwise carry the command. `rt skills check` lints for the shell
+forms the tools replace; `rt skills audit --pack <pack>` reads for the
+plain-words cases a lint cannot see.
+
+Kept on Bash on purpose: `rt gate answer <id> --answers <json> --by shepherd`,
+`rt gate wait <id>`, `rt chat tail`, `rt events wait`, `git commit`, `git add`,
+`git fetch`, `git merge-base`, `git rebase --continue` and `--skip`, and project tooling.
+```
+
+Generate: `rt mcp tools --json | bun scripts/gen-mcp-tools.ts > attachments/mcp-tools/reference.md` (one pipeline is fine outside an rt worktree session; from one, run the two halves as separate commands with a temp file).
+
+- [ ] **Step 3: Pointers and the GREEN question.** `creating-a-pack` "## 4. Offer the first rules, once" and `extending-a-pack` "## 2. Write it (context or fill)" each gain one paragraph: "Before a fill tells an agent to run a command, open `attachments/mcp-tools/reference.md` (the `mcp-tools` reference): every rt call, forge call and git write a pipeline needs is a tool there, and `rt skills check` flags the shell form. `rt skills audit --pack <pack>` is the slower read for plain-words instructions." `editing-skills`' GREEN step gains the question: "Did the fresh agent run a shell command a tool covers (`rt runs`, `glab`, `git push`, `git rebase`, `rt herd`, `rt worktree provision`)? Then the skill is not green: name the tool in the sentence that named the command." (The superpowers `writing-skills` skill is not this repo's to edit; `editing-skills` is the mattstack wrapper every skill edit here goes through, so the question lives there and in `CERTIFICATION.md`'s checklist.) Add `- [ ] GREEN transcript shows no shell command a mattstack MCP tool covers` to the checklist in `CERTIFICATION.md`.
+- [ ] **Step 4: Run.** `sh tests/test-mcp-tools-reference.sh` exits 0; `sh tests/certify.sh attachments/mcp-tools`, `plugin/skills/creating-a-pack`, `plugin/skills/extending-a-pack`, `plugin/skills/editing-skills` exit 0; `sh tests/repo-purity.sh` exits 0; GREEN on `extending-a-pack` (a fresh agent asked to add a fill that pushes a branch names `git_push`, not `git push`).
+- [ ] **Step 5: Bump, commit** `mcp-tools reference: generated from rt; pack skills point at it; GREEN asks about tool coverage`.
+
+### Task 35: `--strict` in mattstack-skills CI and the sync gate
+
+**Files:**
+- Modify: `.github/workflows/purity.yml` (a lint job), `CERTIFICATION.md` (the `--strict` line), `.claude-plugin/plugin.json` (bump)
+- Test: the workflow itself on the PR; locally `bun cli.ts skills check --pack-dir /Users/matt/Documents/GitHub/mattstack-skills --strict` from the rt checkout
+
+- [ ] **Step 1: Prove the invocation locally first.** From the rt checkout: `bun cli.ts skills check --pack-dir /Users/matt/Documents/GitHub/mattstack-skills --strict` exits 0 and prints `mcp lint: clean`. If `--pack-dir` needs the mattstack root too, add `--mattstack-dir /Users/matt/Documents/GitHub/mattstack-skills` and carry the same flag into the workflow.
+- [ ] **Step 2: The job.** Append to `.github/workflows/purity.yml`:
+
+```yaml
+  mcp-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: m4ttstack/rt
+          path: rt
+      - uses: oven-sh/setup-bun@v2
+      - name: Install rt's dependencies
+        run: bun install --frozen-lockfile
+        working-directory: rt
+      - name: mcp lint (strict)
+        run: bun cli.ts skills check --pack-dir "$GITHUB_WORKSPACE" --strict
+        working-directory: rt
+        env:
+          RT_SKIP_SETUP: "1"
+          RT_BATCH: "1"
+```
+
+(`m4ttstack/rt` is public; if `bun install` in rt needs the private `@mattstack/glance`, pin `repository` plus `ref` to the release tag and vendor nothing: the check reads only `lib/skills/*` and `commands/skills.ts`, so if the install fails on an optional dep, add `--ignore-scripts` and re-run; if it still cannot resolve, the fallback is a `rt` release binary download step, which the task records as the chosen path in the commit body.)
+
+- [ ] **Step 3: Sync gate.** Nothing to add in this repo: `rt skills sync` (Task 32) already refuses on hits. State it in `CERTIFICATION.md`: "`rt skills check --strict` is the merge gate in CI and the sync gate on every machine; a team pack sees hits as advisory until it adopts `--strict` itself."
+- [ ] **Step 4: Run.** Push the branch; the `mcp-lint` job is green. `sh tests/repo-purity.sh` locally.
+- [ ] **Step 5: Bump (minor, e.g. `0.23.0`), commit** `ci: rt skills check --strict as the mcp lint gate`; PR `pack authoring: mcp-tools reference and strict lint (RT-326)`; merge; `rt skills sync --pack mattstack`.
+
+---
+
 # Part D: cleanup, docs, the auto-mode run
 
-### Task 31: `BASE_PERMISSIONS` (Matt applies) and its test
+### Task 36: `BASE_PERMISSIONS` (Matt applies) and its test
 
 **Files:**
 - Modify (by Matt): `lib/setup/base-permissions.ts`
@@ -2665,7 +3205,7 @@ describe("BASE_PERMISSIONS", () => {
 Run: `bun test lib/setup/__tests__/base-permissions.test.ts`: FAIL until Matt's edit lands; PASS after. Then `bun test lib/setup`.
 - [ ] **Step 3: Commit** the test with Matt's edit (one commit, Matt's): `setup: base permissions drop glab and rt runs; keep gate, add the Monitor waits`.
 
-### Task 32: AGENTS.md and the rt.cool MCP page
+### Task 37: AGENTS.md and the rt.cool MCP page
 
 **Files:**
 - Modify: `AGENTS.md` sections "Gates and the `rt_verb` MCP tool" (`:172-200`) and "The relocation prompt parser reads a real capture"
@@ -2676,9 +3216,10 @@ Run: `bun test lib/setup/__tests__/base-permissions.test.ts`: FAIL until Matt's 
 - [ ] **Step 3: Docs.** Invoke `rt:docs`; regenerate the command reference (the `announce-relocation` verb is hidden and must not appear; `agentSafe` leaves list under the MCP page); update the MCP concept page with the tool families and the kept-on-Bash list.
 - [ ] **Step 4:** `bun test lib/__tests__/command-tree-help.test.ts`; commit `docs: AGENTS.md and rt.cool for the MCP tool families`; PR `docs: MCP tools over Bash (RT-326 cleanup)`; merge on green CI (docs-only: no CodeRabbit wait).
 
-### Task 33: The auto-mode run
+### Task 38: The auto-mode run and the strict lint on both packs
 
-- [ ] **Step 1:** On a machine (or a fresh Claude config dir) where Install seeded `permissions.defaultMode: "auto"` and the merged rt, mattstack 0.22 and claimview 0.6.0 are installed, run one real `work` run on the harness repo end to end (provision through ship and watch-ci) and one shepherdr herd with two workers, including an `EnterWorktree` and an `ExitWorktree` in the attended pane.
+- [ ] **Step 0: Strict lint first.** `rt skills check --pack mattstack --strict` and `rt skills check --pack claimview --strict` both exit 0 with `mcp lint: clean` on the installed packs (mattstack 0.23, claimview 0.6.0). A hit here is a rewrite gap: fix it in the owning Part B or C file, re-certify, bump, sync, and re-run before the auto-mode run starts.
+- [ ] **Step 1:** On a machine (or a fresh Claude config dir) where Install seeded `permissions.defaultMode: "auto"` and the merged rt, mattstack 0.23 and claimview 0.6.0 are installed, run one real `work` run on the harness repo end to end (provision through ship and watch-ci) and one shepherdr herd with two workers, including an `EnterWorktree` and an `ExitWorktree` in the attended pane.
 - [ ] **Step 2: Pass criteria**, checked in the transcripts and `rt daemon logs`: every rt, forge and git-write call went through a tool (the only Bash rt calls are `rt gate wait`, `rt gate answer --by shepherd`, `rt chat tail`, `rt events wait`); no call waited on the classifier (no "permission" pause in the pane); the relocation dialog never waited on the person. Record the run ids and the herd id in the RT-326 ticket and close it.
 - [ ] **Step 3:** If any call still hit Bash, that is a skill wording bug: fix it in the owning Part B or C task's file, re-certify, bump, sync, and re-run this task.
 
@@ -2686,9 +3227,11 @@ Run: `bun test lib/setup/__tests__/base-permissions.test.ts`: FAIL until Matt's 
 
 ## Self-review
 
-**Spec coverage.** Run tracking (8 tools, `cwd` on `runWriteVerb`, `run_start` flags and `skillDir`, `runDb` on every call, `run_list`): Tasks 1-3. GitLab reads (6) and `mr_merge` via `mr:action`/`setAutoMerge`: Tasks 4-6. Git writes with every refusal, `branch_sync` with the cherry-gated reset: Tasks 7-10. Worktrees (3), herd (10 incl. `herd_brief` via the verb runner), wider `rt_verb` (25 leaves, `agentTimeoutMs`, `herd brief` agent-safe): Tasks 11-14. Relocation: captures first, parser, `pane:announce-relocation`, the hook verb, the plugin hook, name-mode handled: Tasks 15-18, 26. Skills: engines, stages, review verbs, forge verbs, gate-protocol, shepherdr (cloud lane deleted, worker brief, stop-holders, trust-modal step), plugin skills (pasted comments), doorbell hook, shell state, audit re-run: Tasks 19-27. Claimview: Tasks 28-30. Cleanup (`BASE_PERMISSIONS` by Matt, AGENTS.md both sections, rt.cool), auto-mode run: Tasks 31-33. Release: the mattstack.app release that carries rt, the plugin and the pack together is the existing `rt:release` flow and is not a task here; Task 33 is the gate before it.
+**Spec coverage.** Run tracking (8 tools, `cwd` on `runWriteVerb`, `run_start` flags and `skillDir`, `runDb` on every call, `run_list`): Tasks 1-3. GitLab reads (6) and `mr_merge` via `mr:action`/`setAutoMerge`: Tasks 4-6. Git writes with every refusal, `branch_sync` with the cherry-gated reset: Tasks 7-10. Worktrees (3), herd (10 incl. `herd_brief` via the verb runner), wider `rt_verb` (25 leaves, `agentTimeoutMs`, `herd brief` agent-safe): Tasks 11-14. Relocation: captures first, parser, `pane:announce-relocation`, the hook verb, the plugin hook, name-mode handled: Tasks 15-18, 26. Skills: engines, stages, review verbs, forge verbs, gate-protocol, shepherdr (cloud lane deleted, worker brief, stop-holders, trust-modal step), plugin skills (pasted comments), doorbell hook, shell state, audit re-run: Tasks 19-27. Claimview: Tasks 28-30. Pack authoring (`rt mcp tools --json` pinned to `mcpTools()`, the lint with per-rule hits and the kept-list and tool-prose no-hits, `--strict` in `check` and refused by `sync`, the advisory `rt skills audit` reusing `buildClaudeArgv`'s headless form with prompt and argv tested without a spawn, the generated `mcp-tools` reference with its regeneration test, the `creating-a-pack` and `extending-a-pack` pointers, the GREEN question, `--strict` in CI): Tasks 31-35. Cleanup (`BASE_PERMISSIONS` by Matt, AGENTS.md both sections, rt.cool), the strict lint on both packs and the auto-mode run: Tasks 36-38. Release: the mattstack.app release that carries rt, the plugin and the pack together is the existing `rt:release` flow and is not a task here; Task 38 is the gate before it.
 
-**Placeholder scan.** Task 15's `<the path in the capture>` and Task 30's manifest path are the two deliberate fill-ins that depend on a capture or a machine; each says where the value comes from. No "TBD", no "similar to Task N" without the code repeated.
+Rulings in Part E: the lint reads code-shaped text only (fenced blocks and inline spans), so prose that names a tool never hits and plain-words instructions are left to the audit, as the spec divides them. The GREEN question lives in mattstack-skills' `editing-skills` and `CERTIFICATION.md`, since the superpowers `writing-skills` skill is not this repo's to edit. CI runs the lint by checking out the public `m4ttstack/rt` and running `bun cli.ts skills check --pack-dir ... --strict`, because no rt binary is installed on a GitHub runner.
+
+**Placeholder scan.** Task 15's `<the path in the capture>`, Task 30's manifest path and Task 35's `bun install` fallback are the deliberate fill-ins that depend on a capture, a machine or a runner; each says where the value comes from and what to record. No "TBD", no "similar to Task N" without the code repeated.
 
 **Type consistency.** `McpToolDef` and `ToolResult` come from `shared.ts` (Task 2) and every later tool file imports them from there. `GitToolDeps.sync` returns `{ code, stdout, stderr }` in Tasks 8 and 9 (Task 9 notes the `ExecResult` field check). `RelocationDriveOutcome` (Task 16) is `trust-accept.ts`'s existing export. `Commands["pane:announce-relocation"]` is declared in Task 16 and consumed by Task 17's `buildRelocationAnnouncement`.
 
