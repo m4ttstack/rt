@@ -1,15 +1,29 @@
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { execWithTimeout } from "../setup/probes.ts";
 import { rtSelfArgv } from "../rt-self.ts";
 import { childEnv, runCapture } from "../subprocess.ts";
 import { checkOptional, err, ok, type McpToolDef, type ToolResult } from "./shared.ts";
 import { checkRegisteredTree, realTreeGuardDeps, type TreeGuardDeps } from "./tree-guard.ts";
 
+// Each of these outranks cwd, so git would answer for (and push from) a repo
+// other than the tree the guard approved. git reads an empty value as a path,
+// not as unset, so they are deleted rather than blanked.
+const CWD_OVERRIDES = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"];
+
+export function gitChildEnv(base: Record<string, string | undefined>, extra: Record<string, string>): Record<string, string | undefined> {
+  const env = { ...base };
+  for (const name of CWD_OVERRIDES) delete env[name];
+  return { ...env, ...extra };
+}
+
+export function syncChildEnv(base: Record<string, string | undefined>): Record<string, string | undefined> {
+  return gitChildEnv(base, { GIT_TERMINAL_PROMPT: "0", RT_BATCH: "1", RT_SKIP_SETUP: "1" });
+}
+
 export type GitRunner = (args: string[], cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 export const realGitRunner: GitRunner = async (args, cwd) => {
-  const r = await runCapture(["git", ...args], { cwd, stderr: "pipe", timeoutMs: 120_000, env: { ...childEnv(), GIT_TERMINAL_PROMPT: "0" } });
+  const r = await runCapture(["git", ...args], { cwd, stderr: "pipe", timeoutMs: 120_000, env: gitChildEnv(childEnv(), { GIT_TERMINAL_PROMPT: "0" }) });
   return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr };
 };
 
@@ -33,14 +47,14 @@ async function currentBranch(cwd: string, git: GitRunner): Promise<string | null
     known, which callers must refuse rather than treat as "no default".
     `refs/remotes/<remote>/HEAD` can be missing, or stale after the server's
     default moves (a fetch never updates it), so the remote is asked too and
-    both answers are protected. `primary` is the remote's own answer when it
-    gave one, which is the branch rt sync rebases onto. */
+    both answers are protected. `primary` prefers the remote's answer, the
+    order rt sync resolves its rebase target in. */
 async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<{ names: string[]; primary: string } | null> {
   const prefix = `refs/remotes/${remote}/`;
   const sym = await git(["symbolic-ref", "--quiet", `${prefix}HEAD`], cwd);
   const symRef = sym.code === 0 ? sym.stdout.trim() : "";
   const local = symRef.startsWith(prefix) && symRef.length > prefix.length ? symRef.slice(prefix.length) : null;
-  const ls = await git(["ls-remote", "--symref", remote, "HEAD"], cwd);
+  const ls = await git(["ls-remote", "--symref", "--end-of-options", remote, "HEAD"], cwd);
   const match = ls.code === 0 ? ls.stdout.match(/^ref:\s+refs\/heads\/(\S+)\s+HEAD/m) : null;
   const asked = match ? match[1]! : null;
   const primary = asked ?? local;
@@ -79,7 +93,9 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return err(b.error);
   const branch = b.branch;
-  const args = ["push"];
+  // push.followTags or push.recurseSubmodules in config would send refs
+  // beyond the one refspec.
+  const args = ["push", "--no-follow-tags", "--recurse-submodules=no"];
   // A lease alone checks against origin/<branch> as last fetched, and any
   // fetch (git_rebase fetches first) moves that ref, so the lease passes
   // over remote commits HEAD never saw; --force-if-includes refuses those.
@@ -109,7 +125,8 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     if (remoteDef === null) return err(`refusing to push ${branch}: its upstream is ${full}, whose remote's default branch could not be determined`);
     if (remoteDef.names.includes(remoteBranch)) return err(`refusing to push ${branch}: its upstream ${full} is ${remote}'s default branch; ${asOrigin}`);
   }
-  args.push(remote, `HEAD:refs/heads/${remoteBranch}`);
+  // A remote name comes from config and may start with a dash.
+  args.push("--end-of-options", remote, `HEAD:refs/heads/${remoteBranch}`);
   const r = await git(args, cwd);
   if (r.code !== 0) return err(`git push failed: ${detail(r)}`);
   return ok({ pushed: true, branch, forceWithLease: opts.forceWithLease === true, upstream: `${remote}/${remoteBranch}` });
@@ -121,13 +138,13 @@ export async function gitPull(cwd: string, git: GitRunner): Promise<ToolResult> 
   return ok({ pulled: true, output: r.stdout.trim() });
 }
 
-async function remoteOf(ref: string, cwd: string, git: GitRunner): Promise<string | null> {
+async function remoteOf(ref: string, cwd: string, git: GitRunner): Promise<{ remote: string | null } | { error: string }> {
   const slash = ref.indexOf("/");
-  if (slash <= 0) return null;
+  if (slash <= 0) return { remote: null };
   const remotes = await git(["remote"], cwd);
-  const names = remotes.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  if (remotes.code !== 0) return { error: `git remote failed: ${detail(remotes)}` };
   const head = ref.slice(0, slash);
-  return names.includes(head) ? head : null;
+  return { remote: lines(remotes.stdout).includes(head) ? head : null };
 }
 
 // onto is placed after --end-of-options so git never parses it as an option
@@ -141,7 +158,9 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
   }
   if (typeof opts.onto !== "string" || opts.onto === "") return err('"onto" (a branch or ref) is required unless abort: true');
   if (opts.onto.startsWith("-") || /\s/.test(opts.onto)) return err('"onto" must be a branch or ref name, not an option');
-  const fetched = await remoteOf(opts.onto, cwd, git);
+  const of = await remoteOf(opts.onto, cwd, git);
+  if ("error" in of) return err(of.error);
+  const fetched = of.remote;
   if (fetched !== null) {
     const f = await git(["fetch", fetched], cwd);
     if (f.code !== 0) return err(`git fetch ${fetched} failed: ${detail(f)}`);
@@ -289,7 +308,11 @@ async function localIsNewerRewrite(cwd: string, git: GitRunner, remoteRef: strin
 
 const SYNC_TIMEOUT_MS = 300_000;
 
-export const realSyncRunner = (cwd: string) => execWithTimeout([...rtSelfArgv(), "sync", "--json", "--no-agent"], { cwd, env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" }, timeoutMs: SYNC_TIMEOUT_MS });
+export const realSyncRunner = async (cwd: string): Promise<{ code: number; stdout: string; stderr: string }> => {
+  const [exe, ...rest] = rtSelfArgv();
+  const r = await runCapture([exe!, ...rest, "sync", "--json", "--no-agent"], { cwd, stderr: "pipe", timeoutMs: SYNC_TIMEOUT_MS, env: syncChildEnv(childEnv()) });
+  return { code: r.timedOut ? 124 : r.exitCode, stdout: r.stdout, stderr: r.stderr };
+};
 
 export interface GitToolDeps {
   git: GitRunner;

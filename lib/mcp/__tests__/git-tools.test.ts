@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { branchSyncPreflight, gitPull, gitPush, gitRebase, gitToolDefs, realGitRunner, type GitRunner } from "../git-tools.ts";
+import { branchSyncPreflight, gitChildEnv, gitPull, gitPush, gitRebase, gitToolDefs, realGitRunner, syncChildEnv, type GitRunner } from "../git-tools.ts";
 import type { TreeGuardDeps } from "../tree-guard.ts";
 
 const GIT_PATHS = "rev-parse --git-path rebase-merge --git-path rebase-apply";
@@ -32,19 +32,19 @@ const onFeature: Script = {
 describe("gitPush", () => {
   test("pushes HEAD to the upstream by explicit refspec, force only as --force-with-lease --force-if-includes", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --force-with-lease --force-if-includes origin HEAD:refs/heads/feat/x": {} }, calls));
+    const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "push --no-follow-tags --recurse-submodules=no --force-with-lease --force-if-includes --end-of-options origin HEAD:refs/heads/feat/x": {} }, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push --force-with-lease --force-if-includes origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --force-with-lease --force-if-includes --end-of-options origin HEAD:refs/heads/feat/x");
   });
   test("a forced setUpstream push carries both lease flags before -u", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", { forceWithLease: true, setUpstream: true }, fakeGit({ ...onFeature, "push --force-with-lease --force-if-includes -u origin HEAD:refs/heads/feat/x": {} }, calls));
+    const r = await gitPush("/t", { forceWithLease: true, setUpstream: true }, fakeGit({ ...onFeature, "push --no-follow-tags --recurse-submodules=no --force-with-lease --force-if-includes -u --end-of-options origin HEAD:refs/heads/feat/x": {} }, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push --force-with-lease --force-if-includes -u origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --force-with-lease --force-if-includes -u --end-of-options origin HEAD:refs/heads/feat/x");
   });
   test("an upstream with a different branch name is refused, naming both and setUpstream", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/parent\n" }, "push origin HEAD:refs/heads/feat/parent": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/parent\n" }, "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/feat/parent": {} };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(false);
     expect(r.error).toContain("feat/x");
@@ -54,22 +54,22 @@ describe("gitPush", () => {
   });
   test("setUpstream pushes as origin/<branch> whatever the existing upstream, without reading it", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/main\n" }, "push -u origin HEAD:refs/heads/feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/main\n" }, "push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", { setUpstream: true }, fakeGit(script, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x");
     expect(calls).not.toContain("rev-parse --abbrev-ref --symbolic-full-name @{u}");
     expect((r.body as { upstream: string }).upstream).toBe("origin/feat/x");
   });
   test("an upstream on another remote goes to that remote", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "symbolic-ref --quiet refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref fork HEAD": { stdout: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD\n" }, "push fork HEAD:refs/heads/feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "fork/feat/x\n" }, "symbolic-ref --quiet refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref --end-of-options fork HEAD": { stdout: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD\n" }, "push --no-follow-tags --recurse-submodules=no --end-of-options fork HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --end-of-options fork HEAD:refs/heads/feat/x");
   });
   describe("a same-named upstream that is its own remote's default", () => {
-    const onTrunk = (upstream: string): Script => ({ ...onFeature, ...on("trunk"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${upstream}\n` }, "push fork HEAD:refs/heads/trunk": {}, "push fork+x HEAD:refs/heads/trunk": {} });
+    const onTrunk = (upstream: string): Script => ({ ...onFeature, ...on("trunk"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: `${upstream}\n` }, "push --no-follow-tags --recurse-submodules=no --end-of-options fork HEAD:refs/heads/trunk": {}, "push --no-follow-tags --recurse-submodules=no --end-of-options fork+x HEAD:refs/heads/trunk": {} });
     const refusal = (remote: string) => `refusing to push trunk: its upstream ${remote}/trunk is ${remote}'s default branch; pass setUpstream: true to push it as origin/trunk`;
     test("is refused, read from that remote's local HEAD symref", async () => {
       const calls: string[] = [];
@@ -79,7 +79,7 @@ describe("gitPush", () => {
     });
     test("is refused, read from ls-remote when that remote's HEAD symref is missing", async () => {
       const calls: string[] = [];
-      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref fork HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" } }, calls));
+      const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { code: 128 }, "ls-remote --symref --end-of-options fork HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" } }, calls));
       expect(r.error).toBe(refusal("fork"));
       expect(calls.some((c) => c.startsWith("push"))).toBe(false);
     });
@@ -93,7 +93,7 @@ describe("gitPush", () => {
       const calls: string[] = [];
       const r = await gitPush("/t", {}, fakeGit({ ...onTrunk("fork/trunk"), "symbolic-ref --quiet refs/remotes/fork/HEAD": { stdout: "refs/remotes/fork/main\n" } }, calls));
       expect(r.ok).toBe(true);
-      expect(calls.at(-1)).toBe("push fork HEAD:refs/heads/trunk");
+      expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --end-of-options fork HEAD:refs/heads/trunk");
     });
   });
   test("origin's default resolved via ls-remote when its HEAD symref is missing refuses the current branch develop", async () => {
@@ -101,9 +101,9 @@ describe("gitPush", () => {
     const script: Script = {
       ...on("develop"),
       "symbolic-ref --quiet refs/remotes/origin/HEAD": { code: 128 },
-      "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n<sha>\tHEAD\n" },
+      "ls-remote --symref --end-of-options origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n<sha>\tHEAD\n" },
       "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" },
-      "push origin HEAD:refs/heads/develop": {},
+      "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/develop": {},
     };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(false);
@@ -114,7 +114,7 @@ describe("gitPush", () => {
     const script: Script = {
       ...on("feat/x"),
       "symbolic-ref --quiet refs/remotes/origin/HEAD": { code: 128 },
-      "ls-remote --symref origin HEAD": { code: 128 },
+      "ls-remote --symref --end-of-options origin HEAD": { code: 128 },
     };
     const r = await gitPush("/t", {}, fakeGit(script, calls));
     expect(r.ok).toBe(false);
@@ -122,13 +122,13 @@ describe("gitPush", () => {
     expect(calls.some((c) => c.startsWith("push"))).toBe(false);
   });
   describe("a local origin/HEAD that disagrees with the remote", () => {
-    const LS_ORIGIN = "ls-remote --symref origin HEAD";
+    const LS_ORIGIN = "ls-remote --symref --end-of-options origin HEAD";
     const lsSays = (b: string) => ({ stdout: `ref: refs/heads/${b}\tHEAD\n<sha>\tHEAD\n` });
     const localSays = (b: string) => ({ stdout: `refs/remotes/origin/${b}\n` });
     const DEFAULT_REFUSAL = "the default branch and main/master are never pushed by a tool";
     test("a stale local main does not hide the develop the remote reports", async () => {
       const calls: string[] = [];
-      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("main"), [LS_ORIGIN]: lsSays("develop"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push origin HEAD:refs/heads/develop": {} };
+      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("main"), [LS_ORIGIN]: lsSays("develop"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/develop": {} };
       const r = await gitPush("/t", {}, fakeGit(script, calls));
       expect(r.ok).toBe(false);
       expect(r.error).toBe(`refusing to push develop: ${DEFAULT_REFUSAL}`);
@@ -136,25 +136,25 @@ describe("gitPush", () => {
     });
     test("the local answer stays protected when the remote reports another default", async () => {
       const calls: string[] = [];
-      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: lsSays("trunk"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push origin HEAD:refs/heads/develop": {} };
+      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: lsSays("trunk"), "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/develop": {} };
       const r = await gitPush("/t", {}, fakeGit(script, calls));
       expect(r.error).toBe(`refusing to push develop: ${DEFAULT_REFUSAL}`);
       expect(calls.some((c) => c.startsWith("push"))).toBe(false);
     });
     test("ls-remote failing still protects the local answer", async () => {
       const calls: string[] = [];
-      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: { code: 128, stderr: "fatal: unreachable" }, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push origin HEAD:refs/heads/develop": {} };
+      const script: Script = { ...on("develop"), "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: { code: 128, stderr: "fatal: unreachable" }, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" }, "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/develop": {} };
       const r = await gitPush("/t", {}, fakeGit(script, calls));
       expect(r.error).toBe(`refusing to push develop: ${DEFAULT_REFUSAL}`);
       expect(calls.some((c) => c.startsWith("push"))).toBe(false);
     });
     test("both answers known and equal lets a feature branch push", async () => {
       const calls: string[] = [];
-      const script: Script = { ...onFeature, "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: lsSays("develop"), "push origin HEAD:refs/heads/feat/x": {} };
+      const script: Script = { ...onFeature, "symbolic-ref --quiet refs/remotes/origin/HEAD": localSays("develop"), [LS_ORIGIN]: lsSays("develop"), "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/feat/x": {} };
       const r = await gitPush("/t", {}, fakeGit(script, calls));
       expect(r.ok).toBe(true);
       expect(calls).toContain(LS_ORIGIN);
-      expect(calls.at(-1)).toBe("push origin HEAD:refs/heads/feat/x");
+      expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/feat/x");
     });
   });
   test("a feature branch whose upstream is origin/main (checkout -b feat/x origin/main) is refused as a different branch name", async () => {
@@ -168,10 +168,10 @@ describe("gitPush", () => {
   });
   test("setUpstream pushes -u origin HEAD:refs/heads/<branch>", async () => {
     const calls: string[] = [];
-    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 }, "push -u origin HEAD:refs/heads/feat/x": {} };
+    const script = { ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 }, "push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x": {} };
     const r = await gitPush("/t", { setUpstream: true }, fakeGit(script, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x");
   });
   test("no upstream and no setUpstream is an error naming setUpstream", async () => {
     const r = await gitPush("/t", {}, fakeGit({ ...onFeature, "rev-parse --abbrev-ref --symbolic-full-name @{u}": { code: 128 } }));
@@ -187,7 +187,7 @@ describe("gitPush", () => {
       "hint: have locally.",
       "hint: See the 'Note about fast-forwards' in 'git push --help' for details.",
     ].join("\n");
-    const r = await gitPush("/t", {}, fakeGit({ ...onFeature, "push origin HEAD:refs/heads/feat/x": { code: 1, stderr } }));
+    const r = await gitPush("/t", {}, fakeGit({ ...onFeature, "push --no-follow-tags --recurse-submodules=no --end-of-options origin HEAD:refs/heads/feat/x": { code: 1, stderr } }));
     expect(r.ok).toBe(false);
     expect(r.error).toContain("! [rejected]");
     expect(r.error).not.toContain("hint:");
@@ -221,11 +221,54 @@ describe("gitPush", () => {
     expect(r.error).toContain("detached");
     expect(calls.some((c) => c.startsWith("push"))).toBe(false);
   });
+  test("a dash-leading remote name is passed after --end-of-options to both ls-remote and push", async () => {
+    const calls: string[] = [];
+    const script: Script = {
+      ...onFeature,
+      "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "-evil/feat/x\n" },
+      "symbolic-ref --quiet refs/remotes/-evil/HEAD": { code: 128 },
+      "ls-remote --symref --end-of-options -evil HEAD": { stdout: "ref: refs/heads/main\tHEAD\n" },
+      "push --no-follow-tags --recurse-submodules=no --end-of-options -evil HEAD:refs/heads/feat/x": {},
+    };
+    const r = await gitPush("/t", {}, fakeGit(script, calls));
+    expect(r.ok).toBe(true);
+    expect(calls).toContain("ls-remote --symref --end-of-options -evil HEAD");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no --end-of-options -evil HEAD:refs/heads/feat/x");
+  });
+  test("real git: push.followTags=true sends no tag along with the branch", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "git-push-tags-"));
+    try {
+      const origin = join(dir, "origin.git");
+      const work = join(dir, "work");
+      const id = ["-c", "user.email=t@example.com", "-c", "user.name=t"];
+      const steps: [string[], string][] = [
+        [["init", "-q", "--bare", "-b", "develop", origin], dir],
+        [["init", "-q", "-b", "develop", work], dir],
+        [[...id, "commit", "-q", "--allow-empty", "-m", "a"], work],
+        [["remote", "add", "origin", origin], work],
+        [["push", "-q", "origin", "develop"], work],
+        [["fetch", "-q", "origin"], work],
+        [["remote", "set-head", "origin", "develop"], work],
+        [["checkout", "-q", "-b", "feat/x"], work],
+        [[...id, "tag", "-a", "-m", "t", "v1"], work],
+        [["config", "push.followTags", "true"], work],
+      ];
+      for (const [args, cwd] of steps) expect((await realGitRunner(args, cwd)).code, args.join(" ")).toBe(0);
+      const r = await gitPush(work, { setUpstream: true }, realGitRunner);
+      expect(r.ok, r.error).toBe(true);
+      const heads = await realGitRunner(["ls-remote", "--heads", origin], dir);
+      expect(heads.stdout).toContain("refs/heads/feat/x");
+      const tags = await realGitRunner(["ls-remote", "--tags", origin], dir);
+      expect(tags.stdout).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   test("setUpstream on a branch that shares its name with a tag pushes the stripped branch name", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", { setUpstream: true }, fakeGit({ ...onFeature, ...onTagAmbiguous, "push -u origin HEAD:refs/heads/feat/x": {} }, calls));
+    const r = await gitPush("/t", { setUpstream: true }, fakeGit({ ...onFeature, ...onTagAmbiguous, "push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x": {} }, calls));
     expect(r.ok).toBe(true);
-    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
+    expect(calls.at(-1)).toBe("push --no-follow-tags --recurse-submodules=no -u --end-of-options origin HEAD:refs/heads/feat/x");
     expect((r.body as { upstream: string }).upstream).toBe("origin/feat/x");
   });
 });
@@ -240,6 +283,38 @@ describe("realGitRunner", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+  test("ignores a GIT_DIR in the caller's environment, so git answers for cwd", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "git-runner-env-"));
+    const saved = process.env.GIT_DIR;
+    try {
+      const here = join(dir, "here");
+      const other = join(dir, "other");
+      expect((await realGitRunner(["init", "-q", "-b", "here-branch", here], dir)).code).toBe(0);
+      expect((await realGitRunner(["init", "-q", "-b", "other-branch", other], dir)).code).toBe(0);
+      process.env.GIT_DIR = join(other, ".git");
+      const r = await realGitRunner(["symbolic-ref", "--quiet", "HEAD"], here);
+      expect(r.stdout.trim()).toBe("refs/heads/here-branch");
+    } finally {
+      if (saved === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("child environments", () => {
+  const base = { PATH: "/bin", HOME: "/h", GIT_DIR: "/a", GIT_WORK_TREE: "/b", GIT_INDEX_FILE: "/c", GIT_COMMON_DIR: "/d", GIT_TERMINAL_PROMPT: "1" };
+  test("gitChildEnv drops the variables that override cwd and applies the extras", () => {
+    expect(gitChildEnv(base, { GIT_TERMINAL_PROMPT: "0" })).toEqual({ PATH: "/bin", HOME: "/h", GIT_TERMINAL_PROMPT: "0" });
+  });
+  test("gitChildEnv does not mutate its base", () => {
+    const copy = { ...base };
+    gitChildEnv(copy, {});
+    expect(copy).toEqual(base);
+  });
+  test("the rt sync child runs batch, without setup, prompts or an overriding git dir", () => {
+    expect(syncChildEnv(base)).toEqual({ PATH: "/bin", HOME: "/h", GIT_TERMINAL_PROMPT: "0", RT_BATCH: "1", RT_SKIP_SETUP: "1" });
   });
 });
 
@@ -261,6 +336,13 @@ describe("gitRebase", () => {
     const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ "fetch origin": {}, "rebase --end-of-options origin/develop": {} }, calls));
     expect(r).toEqual({ ok: true, body: { status: "ok", onto: "origin/develop", fetched: "origin" } });
     expect(calls).toEqual(["remote", "fetch origin", "rebase --end-of-options origin/develop"]);
+  });
+  test("git remote failing is an error, not a local ref", async () => {
+    const calls: string[] = [];
+    const r = await gitRebase("/t", { onto: "origin/develop" }, fakeGit({ remote: { code: 128, stderr: "fatal: bad config" }, "rebase --end-of-options origin/develop": {} }, calls));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("fatal: bad config");
+    expect(calls.filter((c) => c.startsWith("rebase") || c.startsWith("fetch"))).toEqual([]);
   });
   test("a local ref is not fetched", async () => {
     const calls: string[] = [];
@@ -377,12 +459,12 @@ describe("branchSyncPreflight", () => {
     });
     test("the remote's answer when it gave one, as rt sync does", async () => {
       const calls: string[] = [];
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n" }, ...against("develop") }, calls));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref --end-of-options origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n" }, ...against("develop") }, calls));
       expect(r).toEqual({ ok: true, diverged: true });
       expect(calls.some((c) => c.includes("^origin/main") || c.endsWith(" origin/main"))).toBe(false);
     });
     test("the local answer when ls-remote fails", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref origin HEAD": { code: 128 }, ...against("main") }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...staleLocalMain, "ls-remote --symref --end-of-options origin HEAD": { code: 128 }, ...against("main") }));
       expect(r).toEqual({ ok: true, diverged: true });
     });
   });
