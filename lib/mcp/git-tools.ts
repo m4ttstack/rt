@@ -29,24 +29,23 @@ async function currentBranch(cwd: string, git: GitRunner): Promise<string | null
   return full.slice(HEADS.length);
 }
 
-/** The remote's default branch: known (its name) or null, meaning unknown,
-    which callers must refuse rather than treat as "no default". The prefix
-    is stripped with startsWith/slice, never a RegExp built from `remote`,
-    since a remote name can carry characters a regex would treat as
-    metacharacters (`+`, `(`) or that make the RegExp constructor throw.
-    `refs/remotes/<remote>/HEAD` can be missing or stale (a shallow clone, a
-    remote added without a fetch), so a miss there falls back to asking the
-    remote itself via `ls-remote --symref`. */
-async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<{ name: string } | null> {
-  const prefix = `${remote}/`;
-  const sym = await git(["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], cwd);
-  if (sym.code === 0) {
-    const s = sym.stdout.trim();
-    if (s.startsWith(prefix)) return { name: s.slice(prefix.length) };
-  }
+/** Every name the remote's default branch may have, or null when none is
+    known, which callers must refuse rather than treat as "no default".
+    `refs/remotes/<remote>/HEAD` can be missing, or stale after the server's
+    default moves (a fetch never updates it), so the remote is asked too and
+    both answers are protected. `primary` is the remote's own answer when it
+    gave one, which is the branch rt sync rebases onto. */
+async function remoteDefault(cwd: string, git: GitRunner, remote = "origin"): Promise<{ names: string[]; primary: string } | null> {
+  const prefix = `refs/remotes/${remote}/`;
+  const sym = await git(["symbolic-ref", "--quiet", `${prefix}HEAD`], cwd);
+  const symRef = sym.code === 0 ? sym.stdout.trim() : "";
+  const local = symRef.startsWith(prefix) && symRef.length > prefix.length ? symRef.slice(prefix.length) : null;
   const ls = await git(["ls-remote", "--symref", remote, "HEAD"], cwd);
   const match = ls.code === 0 ? ls.stdout.match(/^ref:\s+refs\/heads\/(\S+)\s+HEAD/m) : null;
-  return match ? { name: match[1]! } : null;
+  const asked = match ? match[1]! : null;
+  const primary = asked ?? local;
+  if (primary === null) return null;
+  return { names: [...new Set([asked, local].filter((n): n is string => n !== null))], primary };
 }
 
 // git follows a push rejection with several `hint:` lines, which would push
@@ -69,8 +68,8 @@ async function checkPushable(cwd: string, git: GitRunner, branch: string): Promi
   if (PROTECTED.has(branch)) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
   const def = await remoteDefault(cwd, git);
   if (def === null) return { error: `refusing to push ${branch}: origin's default branch could not be determined` };
-  if (branch === def.name) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
-  return { branch, defaultBranch: def.name };
+  if (def.names.includes(branch)) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
+  return { branch, defaultBranch: def.primary };
 }
 
 // A bare `git push` obeys push.default, which under `matching` pushes every
@@ -105,7 +104,7 @@ export async function gitPush(cwd: string, opts: { forceWithLease?: boolean; set
     if (PROTECTED.has(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
     const remoteDef = await remoteDefault(cwd, git, remote);
     if (remoteDef === null) return err(`refusing to push ${branch}: its upstream is ${full}, whose remote's default branch could not be determined`);
-    if (remoteBranch === remoteDef.name) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
+    if (remoteDef.names.includes(remoteBranch)) return err(`refusing to push ${branch}: its upstream is ${full}, the default branch or main/master; ${asOrigin}`);
     // A stacked child tracking origin/<parent> would fast-forward the
     // parent's branch with the child's commits.
     if (remoteBranch !== branch) return err(`refusing to push ${branch}: its upstream is ${full}, a different branch name; ${asOrigin}`);
