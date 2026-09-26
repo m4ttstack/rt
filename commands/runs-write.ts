@@ -67,16 +67,16 @@ async function emitted(env: NodeJS.ProcessEnv, ident: { repo: string; runId: str
   await emitRunUpdated({ repo: ident.repo, runId: ident.runId, stage, kind }, env);
 }
 
-export async function runWriteVerb(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<CliResult> {
+export async function runWriteVerb(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv = process.env, cwd: string = process.cwd()): Promise<CliResult> {
   try {
-    return await dispatch(verb, args, env);
+    return await dispatch(verb, args, env, cwd);
   } catch (err) {
     if (err instanceof Usage) return { out: json({ ok: false, error: err.message }), code: 2 };
     return { out: json({ ok: false, error: `sqlite write failed: ${String(err)}` }), code: 1 };
   }
 }
 
-async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv): Promise<CliResult> {
+async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<CliResult> {
   switch (verb) {
     case "run-start": {
       const repo = required(args, "--repo");
@@ -102,7 +102,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
     }
     case "run-status": {
       const status = required(args, "--status");
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = runStatus(db, status);
         if (!r.ok) return fail(r);
         await emitted(env, runIdentity(db), null, "run-status");
@@ -111,7 +111,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
     }
     case "stage-start": {
       const stage = required(args, "--stage");
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = stageStart(db, stage, env);
         if (!r.ok) return fail(r);
         await emitted(env, runIdentity(db), stage, "stage-start");
@@ -123,7 +123,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
       const stage = required(args, "--stage");
       const reason = flagValue(args, "--reason");
       const detailPath = flagValue(args, "--detail-path");
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = stageEnd(db, stage, verb === "stage-done" ? "done" : "failed", { reason, detailPath });
         if (!r.ok) return fail(r);
         await emitted(env, runIdentity(db), stage, verb);
@@ -134,7 +134,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
       const stage = required(args, "--stage");
       const to = required(args, "--to");
       const reason = flagValue(args, "--reason") ?? `redirected to ${to}`;
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = stageEnd(db, stage, "redirected", { reason, requireRunning: true });
         if (!r.ok) return fail(r);
         await emitted(env, runIdentity(db), stage, "stage-redirect");
@@ -146,7 +146,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
       if (sub === "set") {
         if (!key || value === undefined) throw new Usage("field set needs KEY VALUE");
         const stage = required(args, "--stage");
-        return withRunDbAsync(env, async ({ db, resolved }) => {
+        return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
           const r = fieldSet(db, key, value, stage);
           if (!r.ok) return fail(r);
           await emitted(env, runIdentity(db), stage, "field-set");
@@ -155,7 +155,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
       }
       if (sub === "get") {
         if (!key) throw new Usage("field get needs KEY");
-        return withRunDbAsync(env, async ({ db }) => {
+        return withRunDbAsync(env, cwd, async ({ db }) => {
           const r = fieldGet(db, key);
           return r.ok ? { out: r.value, code: 0 } : { out: "", code: 3 };
         });
@@ -171,7 +171,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
         selection: required(args, "--selection"),
         decidedBy: required(args, "--decided-by"),
       };
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = decisionRecord(db, o);
         if (!r.ok) return fail(r);
         await emitted(env, runIdentity(db), o.scope, "decision");
@@ -179,7 +179,7 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
       });
     }
     case "snapshot":
-      return withRunDbAsync(env, async ({ db, resolved }) => {
+      return withRunDbAsync(env, cwd, async ({ db, resolved }) => {
         const r = snapshot(db);
         return r.ok ? ok(resolved, { run: r.run, stages: r.stages, fields: r.fields, decisions: r.decisions }) : fail(r);
       });
@@ -188,8 +188,8 @@ async function dispatch(verb: WriteVerb, args: string[], env: NodeJS.ProcessEnv)
 
 type RunDbHandle = { db: Database; resolved: RunDbSource };
 
-async function withRunDbAsync(env: NodeJS.ProcessEnv, body: (run: RunDbHandle) => Promise<CliResult>): Promise<CliResult> {
-  const found = resolveRunDb(env, process.cwd());
+async function withRunDbAsync(env: NodeJS.ProcessEnv, cwd: string, body: (run: RunDbHandle) => Promise<CliResult>): Promise<CliResult> {
+  const found = resolveRunDb(env, cwd);
   if (!found.ok) return { out: json({ ok: false, error: found.error }), code: 2 };
   if (!existsSync(found.db)) return { out: json({ ok: false, error: `run DB not found: ${found.db}` }), code: 2 };
   let db: Database | undefined;
