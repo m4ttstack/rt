@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildAuditInvocation, buildAuditPrompt, resolveAuditInputs, skillsAudit } from "../skills-audit.ts";
+import { auditJsonPayload, buildAuditInvocation, buildAuditPrompt, resolveAuditInputs, skillsAudit } from "../skills-audit.ts";
 import { buildClaudeArgv } from "../../lib/agent-argv/claude.ts";
 
 const paths = ["/p/skills/ship/SKILL.md", "/p/attachments/f/SKILL.md"];
@@ -30,17 +30,34 @@ describe("buildAuditPrompt", () => {
 });
 
 describe("buildAuditInvocation", () => {
-  test("is a headless claude run with the prompt, Read allowed, no bypass, no account", () => {
+  const LOCKDOWN = ["--tools=Read", "--allowedTools=Read", "--strict-mcp-config", "--permission-mode=dontAsk", "--setting-sources=user"];
+
+  test("is a headless claude run with the prompt, Read only, no bypass, no account", () => {
     const inv = buildAuditInvocation("PROMPT", SESSION);
-    expect(inv).toMatchObject({ headless: true, prompt: "PROMPT", session: { kind: "start", sessionId: SESSION }, yolo: false, extraArgs: "--allowedTools=Read" });
+    expect(inv).toMatchObject({ headless: true, prompt: "PROMPT", session: { kind: "start", sessionId: SESSION }, yolo: false });
+    expect(inv.extraArgs).toBe(LOCKDOWN.join(" "));
     const argv = buildClaudeArgv(inv, { claude: "/bin/claude" });
     expect(argv[0]).toBe("/bin/claude");
     expect(argv).toContain("-p");
     expect(argv.slice(argv.indexOf("--output-format"), argv.indexOf("--output-format") + 2)).toEqual(["--output-format", "json"]);
-    expect(argv).toContain("--allowedTools=Read");
+    for (const token of LOCKDOWN) expect(argv).toContain(token);
     expect(argv.at(-1)).toBe("PROMPT");
     expect(argv.some((a) => a.includes("dangerously"))).toBe(false);
     expect(inv.account).toBeUndefined();
+  });
+
+  test("every lockdown flag is one --flag or --flag=value token, so no variadic option can take the prompt", () => {
+    const argv = buildClaudeArgv(buildAuditInvocation("PROMPT", SESSION), { claude: "/bin/claude" });
+    const start = argv.indexOf(LOCKDOWN[0]!);
+    expect(argv.slice(start, start + LOCKDOWN.length)).toEqual(LOCKDOWN);
+    expect(argv.slice(start + LOCKDOWN.length)).toEqual(["PROMPT"]);
+  });
+});
+
+describe("auditJsonPayload", () => {
+  test("carries claude's exit code beside the report and stays advisory", () => {
+    const p = auditJsonPayload({ pack: "acme", packDir: "/p" }, ["skills/x/SKILL.md"], "findings: 0", 3);
+    expect(p).toEqual({ pack: "acme", packDir: "/p", files: ["skills/x/SKILL.md"], report: "findings: 0", advisory: true, claudeExit: 3 });
   });
 });
 
@@ -69,8 +86,6 @@ async function runCapturingExit(fn: () => Promise<void>): Promise<{ exitCode: nu
   }
 }
 
-const MISSING_CLAUDE = "/definitely/not/a/real/claude/binary/rt-skills-audit-test";
-
 describe("resolveAuditInputs", () => {
   test("no --pack or --pack-dir: ok:false, one-line message", async () => {
     const r = await resolveAuditInputs([]);
@@ -90,7 +105,7 @@ describe("resolveAuditInputs", () => {
   test("a resolvable pack dir but no claude binary: ok:false, injected resolver never touches real PATH", async () => {
     const dir = mkdtempSync(join(tmpdir(), "rt-skills-audit-"));
     try {
-      const r = await resolveAuditInputs(["--pack-dir", dir], () => MISSING_CLAUDE);
+      const r = await resolveAuditInputs(["--pack-dir", dir], () => null);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.message).toBe("rt skills audit: no claude binary on PATH; the audit needs a Claude login");
     } finally {

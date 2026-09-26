@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
-import { existsSync } from "fs";
 import { relative } from "path";
-import { buildClaudeArgv, resolveClaudeBin } from "../lib/agent-argv/claude.ts";
+import { buildClaudeArgv } from "../lib/agent-argv/claude.ts";
+import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import type { AgentInvocation } from "../lib/agent-argv/types.ts";
 import { mcpToolsPayload } from "./mcp.ts";
 import { checkPack, SkillsUsageError, type CheckPayload } from "./skills.ts";
@@ -31,10 +31,23 @@ export function buildAuditPrompt(paths: string[], tools: Array<{ name: string; d
   ].join("\n\n");
 }
 
-// Headless, no permission bypass, Read alone allowed: the audit reads the
-// pack and writes nothing.
+// The prompt is untrusted skill text telling the model to call MCP writes, so
+// the run gets Read only, no MCP servers, and denies anything not allowed
+// rather than inheriting the user's auto mode and base allow list. Each flag
+// is one --flag=value token: a variadic option would swallow the prompt.
+const AUDIT_LOCKDOWN = "--tools=Read --allowedTools=Read --strict-mcp-config --permission-mode=dontAsk --setting-sources=user";
+
 export function buildAuditInvocation(prompt: string, sessionId: string): AgentInvocation {
-  return { headless: true, prompt, session: { kind: "start", sessionId }, yolo: false, extraArgs: "--allowedTools=Read" };
+  return { headless: true, prompt, session: { kind: "start", sessionId }, yolo: false, extraArgs: AUDIT_LOCKDOWN };
+}
+
+export function auditJsonPayload(
+  resolved: { pack: string; packDir: string },
+  files: string[],
+  report: string,
+  claudeExit: number,
+): { pack: string; packDir: string; files: string[]; report: string; advisory: true; claudeExit: number } {
+  return { pack: resolved.pack, packDir: resolved.packDir, files, report, advisory: true, claudeExit };
 }
 
 function flag(args: string[], name: string): string | undefined {
@@ -56,7 +69,7 @@ export type AuditInputsResult =
  */
 export async function resolveAuditInputs(
   args: string[],
-  resolveClaude: () => string = resolveClaudeBin,
+  resolveClaude: () => string | null = resolveClaudeBin,
 ): Promise<AuditInputsResult> {
   const pack = flag(args, "--pack");
   const packDir = flag(args, "--pack-dir");
@@ -69,7 +82,7 @@ export async function resolveAuditInputs(
     throw err;
   }
   const claude = resolveClaude();
-  if (!existsSync(claude)) return { ok: false, message: "rt skills audit: no claude binary on PATH; the audit needs a Claude login" };
+  if (!claude) return { ok: false, message: "rt skills audit: no claude binary on PATH; the audit needs a Claude login" };
   return { ok: true, resolved, claude };
 }
 
@@ -90,7 +103,7 @@ export async function skillsAudit(args: string[]): Promise<void> {
     // claude printed plain text, not the -p --output-format json envelope
   }
   if (r.exitCode !== 0) console.error(`rt skills audit: claude exited ${r.exitCode}: ${r.stderr.trim().split("\n").slice(-3).join(" ")}`);
-  if (json) { console.log(JSON.stringify({ pack: resolved.pack, packDir: resolved.packDir, files, report: text, advisory: true })); return; }
+  if (json) { console.log(JSON.stringify(auditJsonPayload(resolved, files, text, r.exitCode))); return; }
   console.log(`rt skills audit (advisory; never a gate): ${resolved.pack}\n`);
   console.log(text);
 }
