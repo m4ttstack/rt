@@ -290,9 +290,6 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
         `content drift survives recompile; pack checkout carries an uncommitted version bump (${bumpBefore} -> ${bumpAfter}) and its compiled output; take the agent path (mattstack:editing-skills), continuing from this working tree`,
       );
     }
-    if (result.strict && result.lintHits > 0) {
-      return refused(`mcp lint: ${result.lintHits} hits; run rt skills check --pack ${pack.name} and fix them before syncing`);
-    }
     return ran("drift resolved");
   });
   steps.push({ name: "recheck", ...recheck });

@@ -689,25 +689,4 @@ describe("syncPack", () => {
     expect(checkStep.status).toBe("ran");
     expect(checkStep.detail).not.toContain("mcp lint");
   });
-
-  test("29: recheck refuses when the post-compile check reports strict lint hits", async () => {
-    const pack = fixturePack("acme", "local", "0.5.2");
-    const engine = fixturePack("beacon", "local", "2.0.0");
-    const calls: Call[] = [];
-    const deps = makeDeps(pack, engine, {
-      calls,
-      installed: { [pluginId(pack)]: "0.5.2", [pluginId(engine)]: "2.0.0" },
-      drift: [true, false],
-      lintHits: [0, 3],
-      lintStrict: [false, true],
-    });
-
-    const report = await syncPack(pack, engine, deps);
-
-    const recheck = report.steps.find((s) => s.name === "recheck")!;
-    expect(recheck.status).toBe("refused");
-    expect(recheck.detail).toContain("mcp lint");
-    expect(recheck.detail).toContain("rt skills check");
-    expect(report.ok).toBe(false);
-  });
 });

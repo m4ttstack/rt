@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { KEPT_ON_BASH, lintPackDir, lintSkillText, MCP_LINT_RULES } from "../mcp-lint.ts";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { HEADER_COMMENT } from "../compile.ts";
+import { KEPT_ON_BASH, lintedMarkdownFiles, lintPackDir, lintSkillText, MCP_LINT_RULES } from "../mcp-lint.ts";
 
 const md = (...lines: string[]) => lines.join("\n");
 
@@ -87,5 +91,42 @@ describe("lintPackDir", () => {
     };
     const hits = lintPackDir("/p", { list: () => Object.keys(files), read: (p) => files[p] ?? "" });
     expect(hits.map((h) => h.file).sort()).toEqual(["/p/attachments/fill/SKILL.md", "/p/plugin/skills/x/SKILL.md", "/p/skills/work/SKILL.md"]);
+  });
+
+  test("skips compiled output (it carries the compiler header) and lints the hand-written file beside it", () => {
+    const files: Record<string, string> = {
+      "/p/skills/work/SKILL.md": `---\nname: work\n---\n${HEADER_COMMENT}\n\`git push\`\n`,
+      "/p/skills/hand/SKILL.md": "`git push`",
+      "/p/attachments/work/step.md": `${HEADER_COMMENT}\n\`glab mr view 1\`\n`,
+    };
+    const deps = { list: () => Object.keys(files), read: (p: string) => files[p] ?? "" };
+    expect(lintPackDir("/p", deps).map((h) => h.file)).toEqual(["/p/skills/hand/SKILL.md"]);
+    expect(lintedMarkdownFiles("/p", deps)).toEqual(["/p/skills/hand/SKILL.md"]);
+  });
+
+  test("a file the reader cannot return is skipped, not a crash", () => {
+    const deps = { list: () => ["/p/skills/a/SKILL.md", "/p/skills/b/SKILL.md"], read: (p: string) => (p.includes("/a/") ? null : "`git push`") };
+    expect(lintPackDir("/p", deps).map((h) => h.file)).toEqual(["/p/skills/b/SKILL.md"]);
+  });
+});
+
+describe("lintPackDir on disk", () => {
+  test("never descends a symlinked directory, tolerates missing roots, and skips an unreadable file", () => {
+    const pack = mkdtempSync(join(tmpdir(), "rt-mcp-lint-pack-"));
+    const outside = mkdtempSync(join(tmpdir(), "rt-mcp-lint-outside-"));
+    try {
+      mkdirSync(join(pack, "skills", "real"), { recursive: true });
+      writeFileSync(join(pack, "skills", "real", "SKILL.md"), "`git push`\n");
+      mkdirSync(join(pack, "skills", "locked"), { recursive: true });
+      writeFileSync(join(pack, "skills", "locked", "SKILL.md"), "`git push`\n");
+      chmodSync(join(pack, "skills", "locked", "SKILL.md"), 0o000);
+      writeFileSync(join(outside, "SKILL.md"), "`git push`\n");
+      symlinkSync(outside, join(pack, "skills", "linked"));
+      expect(lintPackDir(pack).map((h) => h.file)).toEqual([join(pack, "skills", "real", "SKILL.md")]);
+    } finally {
+      chmodSync(join(pack, "skills", "locked", "SKILL.md"), 0o644);
+      rmSync(pack, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { lstatSync, readdirSync, readFileSync } from "fs";
 import { join, sep } from "path";
+import { HEADER_COMMENT } from "./compile.ts";
 
 export interface LintRule { id: string; pattern: RegExp; tool: string; note: string }
 export interface LintHit { file: string; line: number; text: string; rule: string; tool: string; note: string }
@@ -63,7 +64,7 @@ export function lintSkillText(text: string, file: string): LintHit[] {
 
 const LINTED_ROOTS = ["skills", "attachments", join("plugin", "skills")];
 
-function walk(dir: string): string[] {
+function walkLintedRoots(dir: string): string[] {
   const out: string[] = [];
   const visit = (d: string) => {
     let entries: string[];
@@ -71,21 +72,42 @@ function walk(dir: string): string[] {
     for (const name of entries) {
       const p = join(d, name);
       let isDir = false;
-      try { isDir = statSync(p).isDirectory(); } catch { continue; }
+      try { isDir = lstatSync(p).isDirectory(); } catch { continue; }
       if (isDir) { if (name !== "node_modules" && name !== ".git") visit(p); } else out.push(p);
     }
   };
-  visit(dir);
+  for (const root of LINTED_ROOTS) {
+    const p = join(dir, root);
+    try { if (lstatSync(p).isDirectory()) visit(p); } catch { /* root absent */ }
+  }
   return out;
 }
 
-export function lintedMarkdownFiles(dir: string, list: (dir: string) => string[] = walk): string[] {
-  const roots = LINTED_ROOTS.map((r) => join(dir, r) + sep);
-  return list(dir).filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r))).sort();
+function readOrNull(path: string): string | null {
+  try { return readFileSync(path, "utf8"); } catch { return null; }
 }
 
-export function lintPackDir(dir: string, deps: { list: (dir: string) => string[]; read: (path: string) => string } = { list: walk, read: (p) => readFileSync(p, "utf8") }): LintHit[] {
-  return lintedMarkdownFiles(dir, deps.list).flatMap((p) => lintSkillText(deps.read(p), p));
+export type LintDeps = { list: (dir: string) => string[]; read: (path: string) => string | null };
+const DISK: LintDeps = { list: walkLintedRoots, read: readOrNull };
+
+/** Compiled output is skipped: its sources are linted already, and a hit there
+    would point the author at a generated file the next compile rewrites. */
+function lintedSources(dir: string, deps: LintDeps): Array<{ path: string; text: string }> {
+  const roots = LINTED_ROOTS.map((r) => join(dir, r) + sep);
+  const out: Array<{ path: string; text: string }> = [];
+  for (const path of deps.list(dir).filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r))).sort()) {
+    const text = deps.read(path);
+    if (text !== null && !text.includes(HEADER_COMMENT)) out.push({ path, text });
+  }
+  return out;
+}
+
+export function lintedMarkdownFiles(dir: string, deps: LintDeps = DISK): string[] {
+  return lintedSources(dir, deps).map((s) => s.path);
+}
+
+export function lintPackDir(dir: string, deps: LintDeps = DISK): LintHit[] {
+  return lintedSources(dir, deps).flatMap((s) => lintSkillText(s.text, s.path));
 }
 
 export function formatHit(h: LintHit): string {
