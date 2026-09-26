@@ -93,6 +93,13 @@ describe("classifyRows", () => {
     expect(c.standalone.map((r) => r.name)).toEqual(["gitq", "fast-browser"]);
     expect(c.tools.map((r) => r.name)).toEqual(["gh", "node"]);
   });
+  test("a tree row lands in none of the three buckets: it has no upstream url or repo to diff against", () => {
+    const treeRow = row({ name: "deck", version: "", url: "", source: "tree" });
+    const c = classifyRows([treeRow, APP_ROW, GH_ROW]);
+    expect(c.apps.map((r) => r.name)).toEqual(["board"]);
+    expect(c.tools.map((r) => r.name)).toEqual(["gh"]);
+    expect(c.standalone).toEqual([]);
+  });
 });
 
 describe("upstreamForToolRow", () => {

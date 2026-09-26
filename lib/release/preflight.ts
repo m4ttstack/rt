@@ -16,12 +16,16 @@ import type { RunResult } from "../subprocess.ts";
 export interface DepsRow {
   name: string;
   version: string;
+  // Absent in the raw JSON for a `source: "tree"` row; classifyRows filters
+  // those out before anything else reads this field, so every row this type
+  // reaches still carries a real url.
   url: string;
   sha256?: string;
   repo?: string;
   subdir?: string;
   status?: string;
   serve?: unknown;
+  source?: string;
 }
 
 export type RowStatus = "ok" | "stale" | "error";
@@ -105,6 +109,9 @@ export function classifyRows(rows: DepsRow[]): { apps: DepsRow[]; standalone: De
   const standalone: DepsRow[] = [];
   const tools: DepsRow[] = [];
   for (const r of rows) {
+    // A tree row carries no url or repo to diff against; none of the three
+    // checks below apply to it, so it lands in no bucket at all.
+    if (r.source === "tree") continue;
     if (r.repo === "m4ttstack/apps" && r.subdir) apps.push(r);
     else if (r.name in STANDALONE_REPOS) standalone.push(r);
     else tools.push(r);

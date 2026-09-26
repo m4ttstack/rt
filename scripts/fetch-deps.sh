@@ -254,13 +254,18 @@ fi
 
 while IFS= read -r line; do
   split_tsv "$line"
-  if [ "${#FIELDS[@]}" -ne 11 ]; then
-    echo "  x deps.lock TSV row has ${#FIELDS[@]} fields, expected 11: $line" >&2
+  if [ "${#FIELDS[@]}" -ne 12 ]; then
+    echo "  x deps.lock TSV row has ${#FIELDS[@]} fields, expected 12: $line" >&2
     exit 1
   fi
   name="${FIELDS[0]}"; version="${FIELDS[1]}"; url="${FIELDS[2]}"; sha="${FIELDS[3]}"
   archive="${FIELDS[4]}"; extract="${FIELDS[5]}"; bundlePath="${FIELDS[6]}"
   status="${FIELDS[8]}"; kind="${FIELDS[9]}"
+  source="${FIELDS[11]}"
+  if [ "$source" = tree ]; then
+    echo "  . $name: built from this checkout by scripts/build-apps.ts, not fetched"
+    continue
+  fi
   if [ "$status" != "bundled" ]; then
     echo "  . $name: pending (not bundled in this build)"
     continue

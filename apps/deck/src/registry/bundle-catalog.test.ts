@@ -6,12 +6,13 @@ import { expect, test } from 'bun:test';
 
 import { parseServeCatalog, readBundleCatalog } from './bundle-catalog.ts';
 
-// Parity anchor: byte-identical twin at repo-tools
-// scripts/lib/__tests__/fixtures/deps-lock-serve.fixture.json, whose test pins
-// the same digest and asserts repo-tools' parser derives expectedCatalog.
-// Change both files together and move the digest in both tests.
+// Parity anchor: byte-identical twin at
+// scripts/lib/__tests__/fixtures/deps-lock-serve.fixture.json (same repo,
+// since the fold-in), whose test pins the same digest and asserts rt's own
+// parser derives expectedCatalog. Change both files together and move the
+// digest in both tests.
 const FIXTURE_SHA256 =
-  '95256df5809898010329ed5c0c331c806a4ba8ad9e860768c1b130a604b14230';
+  '1d651d8275690b5465cf67ea6926287537020673d2c272834da74503db1f1828';
 
 type LockRow = Record<string, unknown>;
 
