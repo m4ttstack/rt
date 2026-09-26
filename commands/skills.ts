@@ -1146,11 +1146,10 @@ export async function skillsCheck(args: string[]): Promise<void> {
         if (line) console.log(line);
       }
       for (const hit of payload.mcpLint) console.log(formatHit(hit));
-      console.log(
-        payload.mcpLint.length > 0
-          ? `mcp lint: ${payload.mcpLint.length} hits (advisory; --strict fails on them)`
-          : "mcp lint: clean",
-      );
+      const policy = flags.strict || payload.strictLint
+        ? "strict: --strict and rt skills sync fail on them"
+        : "advisory; --strict fails on them";
+      console.log(payload.mcpLint.length > 0 ? `mcp lint: ${payload.mcpLint.length} hits (${policy})` : "mcp lint: clean");
     }
 
     if (payload.drift) process.exitCode = 1;
