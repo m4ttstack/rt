@@ -93,11 +93,17 @@ export function createRelocationWatcher(deps: RelocationWatcherDeps): Relocation
 
   /** herdr pane ids are per-server sequential, so a pane id alone can name a
       different server's pane; the session decides and the pane id may only
-      agree with it. The pane id stands in only for a pane that reports no
-      session at all. */
+      agree with it. Two panes can report the same session (a stale one
+      left behind by a crashed pane, a race on registration): with a
+      paneId, only the matching one of those is a hit; without one, more
+      than one match is as unusable as none. The pane id stands in only
+      for a pane that reports no session at all. */
   function paneFor(a: Announce, panes: LivePane[]): LivePane | null {
-    const bySession = resolveLivePane({ sessionId: a.sessionId }, panes);
-    if (bySession) return a.paneId === undefined || a.paneId === bySession.paneRef ? bySession : null;
+    const bySession = panes.filter((p) => p.sessionId === a.sessionId);
+    if (bySession.length > 0) {
+      if (a.paneId === undefined) return bySession.length === 1 ? bySession[0]! : null;
+      return bySession.find((p) => p.paneRef === a.paneId) ?? null;
+    }
     if (a.paneId === undefined) return null;
     const byPane = resolveLivePane({ paneId: a.paneId }, panes);
     return byPane && byPane.sessionId === undefined ? byPane : null;

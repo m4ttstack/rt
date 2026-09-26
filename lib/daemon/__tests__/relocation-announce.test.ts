@@ -123,12 +123,34 @@ describe("relocation watcher", () => {
       expect(await watcher({ snapshot }).w.announce(at("bg:w1:p1", "s-new"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
       expect(await watcher({ snapshot }).w.announce(at(undefined, "s-new"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
     });
+    test("two panes reporting the same session with no paneId: ambiguous, no-pane", async () => {
+      const dup: LivePane = { paneRef: "w1:p2", sockPath: "/main", workspaceId: "w1", agentStatus: "blocked", sessionId: "s-main" };
+      const snapshot = async () => [main, dup];
+      expect(await watcher({ snapshot }).w.announce(at(undefined, "s-main"))).toEqual({ scheduled: false, pane: null, reason: "no-pane" });
+    });
+    test("two panes reporting the same session with a paneId selecting the second: schedules on it", async () => {
+      const dup: LivePane = { paneRef: "w1:p2", sockPath: "/main", workspaceId: "w1", agentStatus: "blocked", sessionId: "s-main" };
+      const snapshot = async () => [main, dup];
+      expect(await watcher({ snapshot }).w.announce(at("w1:p2", "s-main"))).toEqual({ scheduled: true, pane: "w1:p2" });
+    });
   });
   test("an unregistered outcome stops the watch: the human answers", async () => {
     const { w, seen } = watcher({ outcomes: ["unregistered", "accepted"] });
     await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t1", cwd: "/repo" });
     await settle();
     expect(seen.length).toBe(1);
+  });
+  test("the announced path does not exist: realpath throws, so the allowed predicate refuses it and no key is sent", async () => {
+    const { w, seen } = watcher({
+      realpath: (p) => { if (p === "/pool/t1") throw new Error("ENOENT"); return p; },
+    });
+    await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t1", cwd: "/repo" });
+    await settle();
+    expect(seen[0]!("/pool/t1")).toBe(false);
+  });
+  test("snapshot returns null: no-pane, nothing scheduled", async () => {
+    expect(await watcher({ snapshot: async () => null }).w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t1", cwd: "/repo" }))
+      .toEqual({ scheduled: false, pane: null, reason: "no-pane" });
   });
 });
 

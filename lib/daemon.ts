@@ -29,6 +29,7 @@ import type { Logger } from "pino";
 import type { Database } from "bun:sqlite";
 
 import { RT_DIR, DAEMON_PID_PATH } from "./daemon-config.ts";
+import { parsePaneRef } from "../packages/rt-client/src/pane-ref.ts";
 import { buildFlavor, captureProcessFlavor } from "./flavor.ts";
 import {
   getDaemonLogger,
@@ -707,6 +708,30 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             quietMs: () => watchdogConfig().notifyQuietMins * 60_000,
           },
         });
+        // Shared by the reconciler's relocationAccept and the watcher deps
+        // below: a herd job's pane stays on the watchdog's modal ladder, so
+        // both fail closed (true) when the registry read throws, standing
+        // down rather than risking a second seam drive the same dialog.
+        const isHerdOwnedPane = (paneRef: string): boolean => {
+          try {
+            return herdStore.list({ status: "active" }).some((h) => herdStore.jobs(h.id).some((j) => j.pane === paneRef));
+          } catch (err) {
+            log.warn({ err, pane: paneRef }, "relocation: herd registry read failed; standing down for this pane");
+            return true;
+          }
+        };
+        // RT-200: the same key the watchdog reads, resolved per attempt so a
+        // settings flip needs no restart. Fails closed (true, auto-accept)
+        // on an unreadable key.
+        const relocationAutoAcceptEnabled = (): boolean => {
+          try {
+            const v = getSetting<unknown>("panes.relocationAutoAccept").value;
+            return typeof v === "boolean" ? v : true;
+          } catch (err) {
+            log.warn({ err }, "relocation: panes.relocationAutoAccept unreadable; keeping the default");
+            return true;
+          }
+        };
         reconciler = createReconciler({
           store: gatesStore,
           listAgents: () => listAgents({}, getStateDb("daemon")),
@@ -726,28 +751,10 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           injectEscape: createEscapeInjector(),
           resumeAgent,
           markAgentGone: (agentId, at) => markAgentGone(agentId, at, getStateDb("daemon")),
-          // RT-200: the same key the watchdog reads, resolved per attempt so
-          // a settings flip needs no restart. Off maps to "no-dialog": the
-          // normal attention-gate path takes the pane.
           relocationAccept: async (pane: LivePane) => {
-            let enabled = true;
-            try {
-              const v = getSetting<unknown>("panes.relocationAutoAccept").value;
-              if (typeof v === "boolean") enabled = v;
-            } catch { /* unreadable key keeps the default */ }
-            if (!enabled) return "no-dialog";
-            // A herd worker's pane belongs to the watchdog's modal ladder:
-            // two seams driving one dialog can race the loser's Enter onto
-            // whatever paints after it clears, so the reconciler stands
-            // down for panes an active herd job owns.
-            try {
-              for (const herd of herdStore.list({ status: "active" })) {
-                if (herdStore.jobs(herd.id).some((j) => j.pane === pane.paneRef)) return "no-dialog";
-              }
-            } catch {
-              return "no-dialog";
-            }
-            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            if (!relocationAutoAcceptEnabled()) return "no-dialog";
+            if (isHerdOwnedPane(pane.paneRef)) return "no-dialog";
+            const paneId = parsePaneRef(pane.paneRef).paneId;
             const outcome = await relocationDriveGuard(pane.paneRef, () => driveRelocationAccept({
               herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
               log, context: { paneRef: pane.paneRef },
@@ -771,7 +778,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         relocationWatcher = createRelocationWatcher({
           snapshot: snapshotPanes,
           drive: (pane, allowed) => {
-            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            const paneId = parsePaneRef(pane.paneRef).paneId;
             return relocationDriveGuard(pane.paneRef, () => driveRelocationAccept({
               herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
               log, context: { paneRef: pane.paneRef, announced: true },
@@ -779,27 +786,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             }));
           },
           isRegisteredTree: (path) => findTreeByPath(path) !== null,
-          // Mirrors the reconciler's own herd-ownership check above: a herd
-          // job's pane stays on the watchdog's modal ladder, and a registry
-          // read that throws stands down rather than risking a second seam
-          // driving the same dialog.
-          isHerdPane: (paneRef) => {
-            try {
-              return herdStore.list({ status: "active" }).some((h) => herdStore.jobs(h.id).some((j) => j.pane === paneRef));
-            } catch (err) {
-              log.warn({ err, pane: paneRef }, "relocation: herd registry read failed; standing down for this pane");
-              return true;
-            }
-          },
-          enabled: () => {
-            try {
-              const v = getSetting<unknown>("panes.relocationAutoAccept").value;
-              return typeof v === "boolean" ? v : true;
-            } catch (err) {
-              log.warn({ err }, "relocation: panes.relocationAutoAccept unreadable; keeping the default");
-              return true;
-            }
-          },
+          isHerdPane: isHerdOwnedPane,
+          enabled: relocationAutoAcceptEnabled,
           realpath: (p) => realpathSync(p),
           log,
         });

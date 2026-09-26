@@ -1,13 +1,11 @@
 /**
  * e2e: `pane:announce-relocation` over the daemon socket, against a real
- * compiled daemon. Follows e2e/tests/reconciler.test.ts's single-daemon
- * harness recipe.
+ * compiled daemon.
  *
  * The isolated test daemon has no herdr panes reachable, so
- * `snapshotPanes()` resolves to an empty/null snapshot -- `resolveLivePane`
- * then finds no match and the watcher's own `no-pane` branch fires
- * (lib/daemon/relocation-announce.ts), the same branch a real "session id
- * nobody has" would hit.
+ * `snapshotPanes()` resolves to an empty/null snapshot and the watcher's
+ * `no-pane` branch (lib/daemon/relocation-announce.ts) is the only one that
+ * can fire, whatever sessionId or paneId the announcement carries.
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { existsSync } from "fs";

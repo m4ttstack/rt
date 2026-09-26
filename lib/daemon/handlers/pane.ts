@@ -4,7 +4,7 @@
  */
 import type { Database } from "bun:sqlite";
 import type { Logger } from "pino";
-import { basename } from "path";
+import { basename, isAbsolute } from "path";
 import type { AgentStatus, BuddyStatus, ChatPane, Commands, PaneDirectory } from "../../../packages/rt-client/src/commands.ts";
 import { formatPaneRef, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
 import { listCswapAccounts } from "../../cswap.ts";
@@ -410,8 +410,10 @@ export function createPaneHandlers(opts: {
     "pane:announce-relocation": async (rawPayload: unknown): Promise<CommandResult<"pane:announce-relocation">> => {
       const p = rawPayload as Commands["pane:announce-relocation"]["payload"] | undefined;
       if (!p || typeof p.sessionId !== "string" || typeof p.cwd !== "string") return { ok: false, error: "sessionId and cwd are required" };
+      if (p.sessionId.length === 0) return { ok: false, error: "sessionId must not be empty" };
+      if (!isAbsolute(p.cwd)) return { ok: false, error: "cwd must be an absolute path" };
       if (p.tool !== "EnterWorktree") return { ok: false, error: "tool must be EnterWorktree" };
-      if (p.path !== undefined && typeof p.path !== "string") return { ok: false, error: "path must be a string" };
+      if (p.path !== undefined && (typeof p.path !== "string" || p.path.length === 0)) return { ok: false, error: "path must be a non-empty string" };
       if (p.paneId !== undefined && typeof p.paneId !== "string") return { ok: false, error: "paneId must be a string" };
       if (!relocation) return { ok: true, data: { scheduled: false, pane: null, reason: "disabled" } };
       return { ok: true, data: await relocation.announce(p) };
