@@ -39,7 +39,7 @@ export function worktreeToolDefs(deps: { command: typeof rtCommand } = { command
     },
     {
       name: "worktree_dispose",
-      description: `Dispose a worktree by its tree name (not the one this session sits in); it goes to the restorable trash. ${REPO_NAME_RULE}`,
+      description: `Dispose a worktree by its tree name; it goes to the restorable trash. ${REPO_NAME_RULE}`,
       inputSchema: { type: "object", properties: { ...REPO_PROP, tree: { type: "string", description: "The tree name as worktree list prints it." } }, required: ["repoName", "tree"], additionalProperties: false },
       async handler(input) {
         const bad = checkRequired(input, [{ name: "tree", type: "string" }]);

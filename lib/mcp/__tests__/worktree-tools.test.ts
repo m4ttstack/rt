@@ -9,6 +9,10 @@ function fake() {
 }
 
 describe("worktree tools", () => {
+  test("worktree_dispose's description claims no check the handler does not make", () => {
+    const { tool } = fake();
+    expect(tool("worktree_dispose").description).not.toContain("this session sits in");
+  });
   test("provision needs a ticket or a branch", async () => {
     const { tool, calls } = fake();
     const r = await tool("worktree_provision").handler({ repoName: ID }, {} as NodeJS.ProcessEnv);
