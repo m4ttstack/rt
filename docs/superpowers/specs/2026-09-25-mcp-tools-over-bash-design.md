@@ -229,7 +229,7 @@ All three sources move to the tools:
 
 - mattstack-skills engines and includes (`attachments/`), hand-authored
   skills (`plugin/skills/`, `skills/`) and the compiled shepherdr;
-- the claimview pack's own fills and PACK.md, then a recompile.
+- the acme pack's own fills and PACK.md, then a recompile.
 
 Plus the fixes the audit found:
 
@@ -324,8 +324,8 @@ row on the rt.cool MCP page. Three layers fix that.
    - (e) the relocation auto-accept.
 2. **mattstack-skills**: rewrite, certify, bump, `rt skills sync --pack
    mattstack`.
-3. **claimview pack**: fills, recompile, `rt skills sync --pack
-   claimview`. The pack is employer-visible: no mattstack ticket ids in it.
+3. **acme pack**: fills, recompile, `rt skills sync --pack
+   acme`. The pack is employer-visible: no mattstack ticket ids in it.
 4. **Pack authoring**:
    - rt: `rt mcp tools --json`, the `rt skills check` lint and `--strict`,
      and `rt skills audit`;
@@ -363,7 +363,7 @@ row on the rt.cool MCP page. Three layers fix that.
   harness project.
 - **Lint.** The lint is tested per rule: a hit for each pattern, and no
   hit on the kept-on-Bash list or on prose that names a tool. `rt skills
-  check --strict` passes on the rewritten mattstack-skills and claimview
+  check --strict` passes on the rewritten mattstack-skills and acme
   pack. `rt mcp tools --json` matches `mcpTools()`, pinned by a test.
 - **Audit re-run.** The three audit agents run again over the rewritten
   skills and pack. Pass means no rt, glab or git-write Bash call remains
