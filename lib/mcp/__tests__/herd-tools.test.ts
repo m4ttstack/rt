@@ -136,6 +136,19 @@ describe("herd shepherd tools", () => {
     expect(destructive()[0]!.a).toEqual({ herd: "hd-1", job: "j", brief: "/b.md", model: "opus", effort: "high", account: "a", disposable: true });
     expect(destructive()[0]!.o.timeoutMs).toBeGreaterThanOrEqual(180_000);
   });
+  test("herd_spawn refuses a relative brief path, with zero daemon calls", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: "brief.md" }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("brief must be an absolute path");
+    expect(calls).toEqual([]);
+  });
+  test("herd_brief's description names every path confinement", () => {
+    const { tool } = fake();
+    const d = tool("herd_brief").description;
+    expect(d).toContain("out must be an absolute path inside the Claude Code temp root");
+    expect(d).toContain("template, strategies and methodFile must be absolute paths inside the Claude Code temp root or an installed plugin or pack root");
+  });
   test("herd defaults to HERD_ID when omitted", async () => {
     const { tool, calls } = fake();
     await tool("herd_status").handler({}, { HERD_ID: "hd-9" } as NodeJS.ProcessEnv);

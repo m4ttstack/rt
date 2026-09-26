@@ -448,7 +448,13 @@ describe("rt mcp serve e2e", () => {
       expect(call.error).toBeUndefined();
       const result = call.result as { isError?: boolean; content: Array<{ text: string }> };
       expect(result.isError, result.content[0]?.text).toBeUndefined();
-      expect(() => JSON.parse(result.content[0]!.text)).not.toThrow();
+      const body = JSON.parse(result.content[0]!.text) as { ok?: unknown; settings?: unknown };
+      expect(body.ok).toBe(true);
+      expect(Array.isArray(body.settings)).toBe(true);
+      const settings = body.settings as Array<{ key?: unknown }>;
+      expect(settings.length).toBeGreaterThan(0);
+      for (const s of settings) expect(typeof s.key).toBe("string");
+      expect(settings.some((s) => s.key === "rt.worktrees")).toBe(true);
     } finally {
       try { server.stdin.end(); } catch { /* already closed */ }
       const exitedInTime = await Promise.race([

@@ -1,8 +1,7 @@
 /**
- * `rt settings explain --json`: the machine-readable branch added alongside
- * the wider rt_verb agent-safe set (task 13). Before this, --json on
- * explain was accepted as a declared flag but never read, so the command
- * always printed the colored scope-chain table regardless.
+ * `rt settings explain` is agent-safe through rt_verb, which always appends
+ * --json and parses stdout as one JSON value: the --json branch must print
+ * exactly one envelope and no table.
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";

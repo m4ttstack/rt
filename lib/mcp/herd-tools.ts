@@ -8,6 +8,7 @@ import {
   herdAttend, herdClose, herdList, herdMilestone, herdResume, herdSpawn, herdStart, herdStatus, herdWrapUp,
 } from "../../packages/rt-client/src/index.ts";
 import type { Commands } from "../../packages/rt-client/src/index.ts";
+import { isAbsolute } from "path";
 import { resolveRepoTarget } from "./mr-target.ts";
 import { runRtVerb } from "./rt-verb.ts";
 import { checkOptional, checkRequired, checkStringArray, err, fromResponse, ok, requireWorkerEnv, resolveSoleHerd, type McpToolDef } from "./shared.ts";
@@ -81,6 +82,8 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
         if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "job", type: "string" }]) ?? checkOptional(input, [{ name: "brief", type: "string" }, { name: "dir", type: "string" }, { name: "model", type: "string" }, { name: "effort", type: "string" }, { name: "account", type: "string" }, { name: "disposable", type: "boolean" }]);
         if (bad) return err(bad);
+        // This server's cwd is fixed at session start, so a relative brief names no file the caller meant.
+        if (typeof input.brief === "string" && !isAbsolute(input.brief)) return err("brief must be an absolute path");
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
         const owner = await requireShepherd(h.herd, env, deps.status);
@@ -93,7 +96,7 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_brief",
-      description: "Assemble a job brief from the shepherd skill's job template plus a strategy body or method file; fill repeats per template slot as \"slot=value\". Writes to out when given, else returns the brief.",
+      description: "Assemble a job brief from the shepherd skill's job template plus a strategy body or method file; fill repeats per template slot as \"slot=value\". Writes to out when given, else returns the brief. out must be an absolute path inside the Claude Code temp root; template, strategies and methodFile must be absolute paths inside the Claude Code temp root or an installed plugin or pack root.",
       inputSchema: { type: "object", properties: { job: { type: "string" }, template: { type: "string" }, strategy: { type: "string" }, strategies: { type: "string" }, methodFile: { type: "string" }, fill: { type: "array", items: { type: "string" } }, out: { type: "string" } }, required: ["job", "template"], additionalProperties: false },
       async handler(input) {
         const bad = checkRequired(input, [{ name: "job", type: "string" }, { name: "template", type: "string" }]) ?? checkOptional(input, [{ name: "strategy", type: "string" }, { name: "strategies", type: "string" }, { name: "methodFile", type: "string" }, { name: "out", type: "string" }]) ?? checkStringArray(input, "fill");

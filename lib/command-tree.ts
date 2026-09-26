@@ -143,8 +143,9 @@ export interface CommandNode {
    * text (an MR under review). The bar: a read, or a routine write that
    * stays inside rt's own state and the caller's own work -- a pack it
    * compiles, checks, syncs or binds; its own runs, gates and briefs. It
-   * never merges, pushes, or writes another agent's state. Set it only on
-   * a leaf that declares --json. Guarded by lib/__tests__/agent-safe.test.ts.
+   * never merges, pushes only a pack's own publish (skills sync), and never
+   * writes another agent's state. Set it only on a leaf that declares
+   * --json. Guarded by lib/__tests__/agent-safe.test.ts.
    */
   agentSafe?: true;
 
