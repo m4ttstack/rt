@@ -1,0 +1,154 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Glance React — Portable Utility Classes
+ *
+ * Import this file in consuming apps that define their OWN Tailwind
+ * @theme block.  It provides the @utility shorthands used by Glance
+ * components without pulling in a duplicate @import 'tailwindcss' or
+ * @theme block.
+ *
+ * Requirements: Your app's @theme must define:
+ *   --color-filled-emphasis, --color-filled-emphasis-hover, --color-filled-emphasis-pressed
+ *   --color-filled-merge, --color-filled-merge-hover, --color-filled-merge-pressed
+ *   --color-filled-danger, --color-filled-danger-hover, --color-filled-danger-pressed
+ *   (plus all the GDS intent tokens: emphasis, action, positive, negative, etc.)
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Smart default: bare `rounded` inherits from theme --radius ──────────── */
+@utility rounded {
+  border-radius: var(--radius);
+}
+
+/* ── Filled surface utilities ──────────────────────────────────────────────
+ * Solid background + white foreground.
+ * Emphasis and merge use tuned shade curves for optimal contrast.
+ * Usage: <button className="filled-emphasis rounded-md px-4">…</button>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility filled-emphasis {
+  @apply bg-filled-emphasis text-primary-foreground;
+}
+@utility filled-merge {
+  @apply bg-filled-merge text-primary-foreground;
+}
+@utility filled-action {
+  @apply bg-action text-primary-foreground;
+}
+@utility filled-positive {
+  @apply bg-positive text-primary-foreground;
+}
+@utility filled-negative {
+  @apply bg-negative text-primary-foreground;
+}
+@utility filled-caution {
+  @apply bg-caution text-primary-foreground;
+}
+@utility filled-neutral {
+  @apply bg-secondary text-secondary-foreground;
+}
+
+/* ── Subtle surface utilities ──────────────────────────────────────────────
+ * Apply a tinted background + high-contrast foreground in one class.
+ * Usage: <div className="subtle-positive rounded-md p-2">…</div>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility subtle-emphasis {
+  @apply bg-emphasis/25 text-emphasis-bright;
+}
+@utility subtle-action {
+  @apply bg-action/25 text-action-bright;
+}
+@utility subtle-merge {
+  @apply bg-merge/25 text-merge-bright;
+}
+@utility subtle-positive {
+  @apply bg-positive/25 text-positive-bright;
+}
+@utility subtle-negative {
+  @apply bg-negative/25 text-negative-bright;
+}
+@utility subtle-caution {
+  @apply bg-caution/25 text-caution-bright;
+}
+@utility subtle-neutral {
+  @apply bg-neutral text-secondary-foreground;
+}
+
+/* ── Subtle HIGH surface utilities ─────────────────────────────────────────
+ * Higher-contrast versions for stacking on already-tinted surfaces.
+ * e.g. an icon circle sitting on a subtle card background.
+ * Usage: <div className="subtle-emphasis-high rounded-full size-5">…</div>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility subtle-emphasis-high {
+  @apply bg-emphasis/40 text-emphasis-bright;
+}
+@utility subtle-action-high {
+  @apply bg-action/40 text-action-bright;
+}
+@utility subtle-merge-high {
+  @apply bg-merge/40 text-merge-bright;
+}
+@utility subtle-positive-high {
+  @apply bg-positive/40 text-positive-bright;
+}
+@utility subtle-negative-high {
+  @apply bg-negative/40 text-negative-bright;
+}
+@utility subtle-caution-high {
+  @apply bg-caution/40 text-caution-bright;
+}
+@utility subtle-neutral-high {
+  @apply bg-foreground/15 text-secondary-foreground;
+}
+
+/* ── Outline surface utilities ─────────────────────────────────────────────
+ * Apply a colored border + high-contrast foreground in one class.
+ * Pair with `bg-transparent` (already set by the outline variant base).
+ * Usage: <span className="outline-positive border rounded-full px-2">…</span>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility outline-emphasis {
+  @apply border-emphasis/40 text-emphasis-bright;
+}
+@utility outline-action {
+  @apply border-action/40 text-action-bright;
+}
+@utility outline-merge {
+  @apply border-merge/40 text-merge-bright;
+}
+@utility outline-positive {
+  @apply border-positive/40 text-positive-bright;
+}
+@utility outline-negative {
+  @apply border-negative/40 text-negative-bright;
+}
+@utility outline-caution {
+  @apply border-caution/40 text-caution-bright;
+}
+@utility outline-neutral {
+  @apply border-input text-secondary-foreground;
+}
+
+/* ── Ghost surface utilities ───────────────────────────────────────────────
+ * Transparent background with colored text. Consumer adds hover.
+ * Usage: <button className="ghost-emphasis hover:bg-emphasis/15">…</button>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility ghost-emphasis {
+  @apply text-emphasis-bright;
+}
+@utility ghost-action {
+  @apply text-action-bright;
+}
+@utility ghost-merge {
+  @apply text-merge-bright;
+}
+@utility ghost-positive {
+  @apply text-positive-bright;
+}
+@utility ghost-negative {
+  @apply text-negative-bright;
+}
+@utility ghost-caution {
+  @apply text-caution-bright;
+}

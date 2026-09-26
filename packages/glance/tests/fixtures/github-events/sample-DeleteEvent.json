@@ -1,0 +1,25 @@
+{
+  "id": "16878075933",
+  "type": "DeleteEvent",
+  "actor": {
+    "id": 49927862,
+    "login": "m4ttheweric",
+    "display_login": "m4ttheweric",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/m4ttheweric",
+    "avatar_url": "https://avatars.githubusercontent.com/u/49927862?"
+  },
+  "repo": {
+    "id": 1323349710,
+    "name": "m4ttheweric/glance-conformance",
+    "url": "https://api.github.com/repos/m4ttheweric/glance-conformance"
+  },
+  "payload": {
+    "ref": "probe-1785992314612",
+    "ref_type": "branch",
+    "full_ref": "refs/heads/probe-1785992314612",
+    "pusher_type": "user"
+  },
+  "public": true,
+  "created_at": "2026-08-06T04:58:59Z"
+}

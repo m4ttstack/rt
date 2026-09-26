@@ -1,0 +1,123 @@
+{
+  "name": "@mattstack/glance-react",
+  "private": false,
+  "version": "0.4.2",
+  "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/main.js",
+  "module": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "bun": "./lib/main.ts",
+      "import": "./dist/main.js",
+      "default": "./dist/main.js"
+    },
+    "./styles.css": {
+      "bun": "./lib/css/styles.css",
+      "default": "./lib/css/styles.css"
+    },
+    "./tokens.css": {
+      "bun": "./lib/css/tokens.css",
+      "default": "./lib/css/tokens.css"
+    },
+    "./utilities.css": {
+      "bun": "./lib/css/utilities.css",
+      "default": "./lib/css/utilities.css"
+    }
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist",
+    "lib",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m4ttstack/glance.git",
+    "directory": "packages/glance-react"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b ./tsconfig.lib.json && vite build && npx @tailwindcss/cli -i lib/css/styles.css -o dist/styles.css --minify && cat lib/css/palette.css lib/css/tokens.css > dist/tokens.css",
+    "build:app": "tsc -b ./tsconfig.app.json && vite build --config vite.app.config.ts",
+    "dev:app": "vite --config vite.app.config.ts",
+    "dev:app:dist": "TEST_DIST=1 vite --config vite.app.config.ts",
+    "test": "vitest run",
+    "lint": "eslint . --quiet",
+    "format:write": "prettier --write \"**/*.{ts,tsx}\" --cache",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\" --cache",
+    "preview": "vite preview",
+    "prepublishOnly": "bun run check-types && bun run build",
+    "storybook": "node_modules/.bin/storybook dev -p 6006",
+    "build-storybook": "node_modules/.bin/storybook build",
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "dependencies": {
+    "@mattstack/glance": "workspace:*",
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.2.0",
+    "@tailwindcss/vite": "catalog:",
+    "class-variance-authority": "catalog:",
+    "clsx": "catalog:",
+    "lucide-react": "catalog:",
+    "radix-ui": "catalog:",
+    "react-icons": "^5.6.0",
+    "tailwind-merge": "catalog:",
+    "tailwindcss": "catalog:",
+    "tw-animate-css": "catalog:"
+  },
+  "devDependencies": {
+    "@chromatic-com/storybook": "^5.0.1",
+    "@eslint/js": "^9.19.0",
+    "@ianvs/prettier-plugin-sort-imports": "^4.4.1",
+    "@storybook/addon-a11y": "^10.2.17",
+    "@storybook/addon-docs": "^10.2.17",
+    "@storybook/addon-vitest": "^10.2.17",
+    "@storybook/react-vite": "^10.2.17",
+    "@types/node": "^25.4.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@vitest/browser": "^3.0.5",
+    "@vitest/coverage-v8": "^3.0.5",
+    "eslint": "^9.19.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "eslint-plugin-storybook": "^10.2.17",
+    "globals": "^15.14.0",
+    "happy-dom": "^16.8.1",
+    "playwright": "^1.58.2",
+    "prettier": "3.4.2",
+    "storybook": "^10.2.17",
+    "storybook-dark-mode": "^5.0.0",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.23.0",
+    "vite": "catalog:",
+    "vite-plugin-dts": "^4.5.0",
+    "babel-plugin-react-compiler": "catalog:",
+    "vitest": "catalog:",
+    "vite-tsconfig-paths": "catalog:",
+    "@mattstack/typescript-config": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/m4ttstack/glance/tree/main/packages/glance-react",
+  "bugs": {
+    "url": "https://github.com/m4ttstack/glance/issues"
+  }
+}
