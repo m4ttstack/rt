@@ -4,7 +4,8 @@
     "tsconfig.tools.json",
     ".prettierrc",
     "bunfig.toml",
-    "eslint.config.js"
+    "eslint.config.mjs",
+    "test-setup.ts"
   ],
   "globalPassThroughEnv": ["CI"],
   "tasks": {
@@ -84,7 +85,7 @@
     },
     "//#lint:root": {
       "inputs": [
-        "eslint.config.js",
+        "eslint.config.mjs",
         ".storybook/**",
         "stories/**",
         "$TURBO_ROOT$/packages/**",
@@ -142,9 +143,6 @@
       ]
     },
     "//#purity": {
-      "inputs": ["$TURBO_DEFAULT$"]
-    },
-    "//#scripts:test": {
       "inputs": ["$TURBO_DEFAULT$"]
     }
   }

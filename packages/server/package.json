@@ -34,7 +34,7 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "@mattstack/rt-client": "catalog:",
+    "@mattstack/rt-client": "workspace:*",
     "@mattstack/glance": "catalog:",
     "hono": "catalog:"
   }

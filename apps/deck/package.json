@@ -33,7 +33,7 @@
   "dependencies": {
     "@mattstack/app-server": "workspace:*",
     "@mattstack/glance": "catalog:",
-    "@mattstack/rt-client": "catalog:",
+    "@mattstack/rt-client": "workspace:*",
     "@mattstack/tui-kit": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:"

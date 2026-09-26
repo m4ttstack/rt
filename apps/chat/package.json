@@ -32,7 +32,7 @@
     "@mattstack/app-server": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/mantine-tokyo": "workspace:*",
-    "@mattstack/rt-client": "catalog:",
+    "@mattstack/rt-client": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "hono": "catalog:",
     "invadrs": "^0.2.1",
