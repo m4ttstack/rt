@@ -139,7 +139,10 @@ export function NamedSections({
               value={name}
               onTextChange={v => {
                 setName(v);
-                setNameError(null);
+                const n = v.trim();
+                setNameError(
+                  n && Object.hasOwn(value, n) ? `${n} already exists` : null
+                );
               }}
               onKeyDown={e => {
                 if (e.key === 'Enter') add();
