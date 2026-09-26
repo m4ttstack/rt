@@ -711,7 +711,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         // Shared by the reconciler's relocationAccept and the watcher deps
         // below: a herd job's pane stays on the watchdog's modal ladder, so
         // both fail closed (true) when the registry read throws, standing
-        // down rather than risking a second seam drive the same dialog.
+        // down rather than risking a second seam driving the same dialog.
         const isHerdOwnedPane = (paneRef: string): boolean => {
           try {
             return herdStore.list({ status: "active" }).some((h) => herdStore.jobs(h.id).some((j) => j.pane === paneRef));
@@ -720,9 +720,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             return true;
           }
         };
-        // RT-200: the same key the watchdog reads, resolved per attempt so a
-        // settings flip needs no restart. Fails closed (true, auto-accept)
-        // on an unreadable key.
+        // The same key the watchdog reads, resolved per attempt so a settings
+        // flip needs no restart. An unreadable key keeps the default (on).
         const relocationAutoAcceptEnabled = (): boolean => {
           try {
             const v = getSetting<unknown>("panes.relocationAutoAccept").value;
@@ -752,6 +751,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           resumeAgent,
           markAgentGone: (agentId, at) => markAgentGone(agentId, at, getStateDb("daemon")),
           relocationAccept: async (pane: LivePane) => {
+            // Off maps to "no-dialog": the normal attention-gate path takes the pane.
             if (!relocationAutoAcceptEnabled()) return "no-dialog";
             if (isHerdOwnedPane(pane.paneRef)) return "no-dialog";
             const paneId = parsePaneRef(pane.paneRef).paneId;
