@@ -1,6 +1,8 @@
+import { execWithTimeout } from "../setup/probes.ts";
+import { rtSelfArgv } from "../rt-self.ts";
 import { runCapture } from "../subprocess.ts";
 import { checkOptional, err, ok, type McpToolDef, type ToolResult } from "./shared.ts";
-import { checkRegisteredTree, type TreeGuardDeps } from "./tree-guard.ts";
+import { checkRegisteredTree, realTreeGuardDeps, type TreeGuardDeps } from "./tree-guard.ts";
 
 export type GitRunner = (args: string[], cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -128,11 +130,36 @@ export async function gitRebase(cwd: string, opts: { onto?: string; abort?: bool
   return err(`git rebase ${opts.onto} failed: ${detail(r)}`);
 }
 
+// rt sync pushes `origin <local branch>` by name (commands/sync.ts:301), never
+// the tracked upstream, so the local-name refusal is the whole protection here.
+export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
+  const b = await pushableBranch(cwd, git);
+  if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
+  const branch = b.branch;
+  const fetched = await git(["fetch", "origin"], cwd);
+  if (fetched.code !== 0) return { ok: false, error: `git fetch origin failed: ${detail(fetched)}` };
+  const remote = await git(["rev-parse", "--verify", "--quiet", `origin/${branch}`], cwd);
+  if (remote.code !== 0) return { ok: true, diverged: false };
+  const counts = await git(["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], cwd);
+  const [behind, ahead] = counts.stdout.trim().split(/\s+/).map((n) => Number(n));
+  if (!behind || !ahead) return { ok: true, diverged: false };
+  const cherry = await git(["cherry", `origin/${branch}`, "HEAD"], cwd);
+  const unpushed = cherry.stdout.split("\n").filter((l) => l.startsWith("+ ")).map((l) => l.slice(2).trim());
+  if (unpushed.length > 0) return { ok: false, error: `refusing to reset ${branch} to origin: local commits with no equivalent on origin would be lost: ${unpushed.join(", ")}` };
+  return { ok: true, diverged: true };
+}
+
+const SYNC_TIMEOUT_MS = 300_000;
+
+export const realSyncRunner = (cwd: string) => execWithTimeout([...rtSelfArgv(), "sync", "--json", "--no-agent"], { cwd, env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" }, timeoutMs: SYNC_TIMEOUT_MS });
+
 export interface GitToolDeps {
   git: GitRunner;
   guard: TreeGuardDeps;
   sync: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 }
+
+export const realGitToolDeps: GitToolDeps = { git: realGitRunner, guard: realTreeGuardDeps, sync: realSyncRunner };
 
 const TREE_PROP = { tree: { type: "string", description: "Absolute path of a checkout or worktree of a repo registered with rt." } };
 
@@ -167,6 +194,24 @@ export function gitToolDefs(deps: GitToolDeps): McpToolDef[] {
         const bad = checkOptional(input, [{ name: "onto", type: "string" }, { name: "abort", type: "boolean" }]);
         if (bad) return err(bad);
         return gitRebase(path, { onto: input.onto as string | undefined, abort: input.abort === true }, deps.git);
+      }),
+    },
+    {
+      name: "branch_sync",
+      description: "Bring the tree's branch current in one call, the rt sync flow: fetch; if the branch diverged from origin only because GitLab rebased it (every local commit has a patch-equivalent on origin), reset to origin; rebase onto the default branch; push with --force-with-lease. Refuses when a local commit has no equivalent on origin (unpushed work), naming the commits. A rebase conflict returns status conflict with rt sync's bundle and leaves the rebase paused.",
+      inputSchema: { type: "object", properties: { ...TREE_PROP }, required: ["tree"], additionalProperties: false },
+      handler: guarded(async (path) => {
+        const pre = await branchSyncPreflight(path, deps.git);
+        if (!pre.ok) return err(pre.error);
+        const r = await deps.sync(path);
+        let body: unknown = null;
+        try { body = JSON.parse(r.stdout); } catch { body = null; }
+        const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+        if (r.code === 0) return ok({ status: "synced", resetToOrigin: pre.diverged, ...obj });
+        if (r.code === 3) return ok({ status: "conflict", ...obj });
+        if (r.code === 124) return err(`rt sync timed out after ${SYNC_TIMEOUT_MS / 1000}s`);
+        const message = typeof obj.error === "string" ? obj.error : detail(r);
+        return err(`rt sync refused (exit ${r.code}): ${message}`);
       }),
     },
   ];

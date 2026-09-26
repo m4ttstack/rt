@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { gitPull, gitPush, gitRebase, gitToolDefs, type GitRunner } from "../git-tools.ts";
+import { branchSyncPreflight, gitPull, gitPush, gitRebase, gitToolDefs, type GitRunner } from "../git-tools.ts";
 import type { TreeGuardDeps } from "../tree-guard.ts";
 
 type Script = Record<string, { code?: number; stdout?: string; stderr?: string }>;
@@ -191,5 +191,63 @@ describe("gitToolDefs guard", () => {
       expect(r.error, name).toContain("registered");
     }
     expect(calls).toEqual([]);
+  });
+});
+
+describe("branchSyncPreflight", () => {
+  const base: Script = {
+    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+    "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    "fetch origin": {},
+    "rev-parse --verify --quiet origin/feat/x": {},
+  };
+  test("not diverged passes", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t2\n" } }));
+    expect(r).toEqual({ ok: true, diverged: false });
+  });
+  test("diverged with every local commit patch-equivalent on origin passes (the GitLab-rebased case)", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "cherry origin/feat/x HEAD": { stdout: "- abc\n- def\n" } }));
+    expect(r).toEqual({ ok: true, diverged: true });
+  });
+  test("diverged with an unpushed local commit refuses and names it", async () => {
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "3\t2\n" }, "cherry origin/feat/x HEAD": { stdout: "- abc\n+ 0123456\n" } }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain("0123456");
+  });
+  test("no remote branch yet passes; a detached HEAD refuses", async () => {
+    expect(await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 1 } }))).toEqual({ ok: true, diverged: false });
+    expect((await branchSyncPreflight("/t", fakeGit({ "symbolic-ref --quiet --short HEAD": { code: 1 } }))).ok).toBe(false);
+  });
+  test("main, master and the remote default branch refuse before any fetch (rt sync would force-push them)", async () => {
+    for (const branch of ["main", "master", "develop"]) {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" } }, calls));
+      expect(r.ok, branch).toBe(false);
+      expect(calls, branch).not.toContain("fetch origin");
+    }
+  });
+});
+
+describe("branch_sync tool", () => {
+  const guard: TreeGuardDeps = { repoIndex: () => ({ r: "/t" }), treeByPath: () => null, realpath: (p) => p };
+  const clean: Script = {
+    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
+    "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
+  };
+  test("exit 0 is synced, exit 3 is a conflict bundle, exit 4 is a refusal", async () => {
+    for (const [code, stdout, expectOk, status] of [[0, '{"pushed":true}', true, "synced"], [3, '{"conflicts":["a.ts"]}', true, "conflict"], [4, '{"error":"stack member"}', false, ""]] as const) {
+      const tool = gitToolDefs({ git: fakeGit(clean), guard, sync: async () => ({ code, stdout, stderr: "" }) }).find((t) => t.name === "branch_sync")!;
+      const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+      expect(r.ok, String(code)).toBe(expectOk);
+      if (expectOk) expect((r.body as { status: string }).status).toBe(status);
+    }
+  });
+  test("a failed preflight never runs rt sync", async () => {
+    let ran = false;
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "1\t1\n" }, "cherry origin/feat/x HEAD": { stdout: "+ 9999\n" } }), guard, sync: async () => { ran = true; return { code: 0, stdout: "{}", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
   });
 });
