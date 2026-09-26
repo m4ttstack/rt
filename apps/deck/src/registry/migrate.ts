@@ -15,7 +15,7 @@ import { getRecord, listRecords, putRecord } from './records.ts';
 /**
  * The one sanctioned legacy-prefix literal (ruled): every other module that
  * needs it, including convert.ts, imports it from here rather than
- * re-declaring the string — certify.sh's purity grep only excludes this file.
+ * re-declaring the string.
  */
 export const DEFAULT_LEGACY_PREFIX = 'com.matthewgoodwin.';
 

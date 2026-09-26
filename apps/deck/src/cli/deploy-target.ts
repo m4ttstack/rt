@@ -5,11 +5,11 @@ import { getRecord } from '../registry/records.ts';
  * launchd plist execs. bootstrapSelf bakes that absolute path into the self
  * record's command, so it differs per machine (a hand install may use
  * ~/.local/bin, an older standalone install may still sit under
- * ~/.mattstack/deck/bin). `deck restart
- * deck` is `launchctl kickstart -k`, which re-execs the plist's existing
- * program path without re-reading anything, so a binary written anywhere else
- * leaves the restart running the stale build. Reading the record instead of
- * hardcoding either directory keeps deploy correct on every install shape.
+ * ~/.mattstack/deck/bin). `deck restart deck` is `launchctl kickstart -k`,
+ * which re-execs the plist's existing program path without re-reading
+ * anything, so a binary written anywhere else leaves the restart running the
+ * stale build. Reading the record instead of hardcoding either directory
+ * keeps deploy correct on every install shape.
  */
 export function deployTarget(helperOwned = false): string {
   if (helperOwned) {

@@ -1,8 +1,9 @@
 // An app's launcher identity (name, icon, badge) as the mattstack.app bundle
 // ships it at Contents/Resources/apps/<name>/: staged into each app tarball by
-// bundle-apps, materialized by fetch-deps, landed by build.sh, asserted by
-// check-bundle.sh. Imported by the bundle-apps build job, which never installs
-// this repo's dependencies, so every runtime import stays in node builtins.
+// build-apps.ts, materialized by fetch-deps, landed by build.sh, asserted by
+// check-bundle.sh. Every caller reaches it as a bare bun invocation (a direct
+// import from build-apps.ts, or a CLI call from build.sh/check-bundle.sh), so
+// every runtime import stays in node builtins.
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, resolve, sep } from "path";
 import type { DepsLockTool } from "../../lib/bundle-layout.ts";
@@ -232,7 +233,7 @@ export function checkIdentities(
   for (const name of served) {
     if (!existsSync(join(appsDir, name))) {
       problems.push(
-        `${name}: served but ships no identity (its pinned archive predates identity, or its manifest declares no displayName and icon); declare both, bump ${name}'s version and re-run bundle-apps for ${name}`,
+        `${name}: served but ships no identity (its pinned archive predates identity, or its manifest declares no displayName and icon); declare both, bump ${name}'s version and re-run scripts/build-apps.ts for ${name}`,
       );
       continue;
     }

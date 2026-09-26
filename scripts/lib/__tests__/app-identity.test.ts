@@ -268,7 +268,7 @@ test("check names a served row with no identity and a stowaway dir", () => {
   expect(problems).toHaveLength(2);
   expect(problems.join("\n")).toContain("Resources/apps/gitq is not a served app in deps.lock");
   expect(problems.join("\n")).toContain(
-    "chat: served but ships no identity (its pinned archive predates identity, or its manifest declares no displayName and icon); declare both, bump chat's version and re-run bundle-apps for chat",
+    "chat: served but ships no identity (its pinned archive predates identity, or its manifest declares no displayName and icon); declare both, bump chat's version and re-run scripts/build-apps.ts for chat",
   );
 });
 
