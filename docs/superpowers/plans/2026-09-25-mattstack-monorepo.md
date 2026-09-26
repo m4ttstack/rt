@@ -1526,12 +1526,15 @@ git clone --single-branch --branch main https://github.com/m4ttstack/glance.git 
 cd "$SCRATCH"
 git filter-repo --force --invert-paths --path CLAUDE.md --path LICENSE --path bun.lock --path package.json --path .gitignore --path packages/glance-react/.github
 git filter-repo --force \
+  --path-rename docs/:docs/glance/ \
   --path-rename README.md:docs/glance/README.md \
   --path-rename AGENTS.md:packages/glance/AGENTS.md \
-  --path-rename docs/:docs/glance/ \
   --path-rename harness_credentials.example.json:packages/glance/harness_credentials.example.json
+git filter-repo --force --replace-text "$SCRUB_RULES"
 git ls-files | grep -vE '^(packages/|docs/glance/)' || echo "root clean"
 ```
+The directory rename comes first: filter-repo applies renames in order and cascades, so a file rule that targets a directory another rule also renames gets nested twice (`docs/glance/glance/README.md`) when it runs first. `$SCRUB_RULES` is a `--replace-text` file kept outside the repo, built from the purity pattern in `scripts/repo-purity.sh` against the clone's tree (placeholder ticket ids to `ACME-<digits>`, identifiers whose spelling matches a banned term renamed); glance's commit messages and file names matched nothing, so it needs no `--replace-message` pass.
+
 Expected: `root clean`.
 
 - [ ] **Step 2: Merge**
