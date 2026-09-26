@@ -21,7 +21,7 @@
  * teardown are covered by `__tests__/boot-order.test.ts`.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { Server } from "bun";
@@ -119,6 +119,7 @@ import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
 import { createGateEscalation, type GateEscalation } from "./daemon/gate-escalation.ts";
 import { createEscapeInjector } from "./daemon/gate-escape.ts";
 import { createReconciler, type Reconciler } from "./daemon/reconciler.ts";
+import { createRelocationWatcher, type RelocationWatcher } from "./daemon/relocation-announce.ts";
 import { snapshotPanes, type LivePane } from "./daemon/pane-resolve-live.ts";
 import type { CommandResult } from "./daemon/handlers/types.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
@@ -340,6 +341,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let gatePush: GatePush;
   let gateEscalation: GateEscalation;
   let reconciler: Reconciler;
+  let relocationWatcher: RelocationWatcher;
   let gitBadges: GitBadgesStore;
   let gitStatusSweep: GitStatusSweep;
   let identity: {
@@ -763,6 +765,39 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
               category: "reconciler", timestamp: Date.now(), paneId: n.paneId,
             }, getStateDb("daemon"));
           },
+          log,
+        });
+        relocationWatcher = createRelocationWatcher({
+          snapshot: snapshotPanes,
+          drive: (pane, allowed) => {
+            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            return driveRelocationAccept({
+              herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
+              log, context: { paneRef: pane.paneRef, announced: true },
+              isRegisteredTree: allowed,
+            });
+          },
+          isRegisteredTree: (path) => findTreeByPath(path) !== null,
+          // Mirrors the reconciler's own herd-ownership check above: a herd
+          // job's pane stays on the watchdog's modal ladder, and a registry
+          // read that throws stands down rather than risking a second seam
+          // driving the same dialog.
+          isHerdPane: (paneRef) => {
+            try {
+              return herdStore.list({ status: "active" }).some((h) => herdStore.jobs(h.id).some((j) => j.pane === paneRef));
+            } catch {
+              return true;
+            }
+          },
+          enabled: () => {
+            try {
+              const v = getSetting<unknown>("panes.relocationAutoAccept").value;
+              return typeof v === "boolean" ? v : true;
+            } catch {
+              return true;
+            }
+          },
+          realpath: (p) => realpathSync(p),
           log,
         });
         setPhase("events-db");
@@ -1263,6 +1298,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           stateDb: getStateDb("daemon"),
           chatDeliveryChains,
           accountsSweep: accountsSweepFn,
+          relocation: relocationWatcher,
         });
         herdLifecycle = createHerdLifecycle({
           store: herdStore,

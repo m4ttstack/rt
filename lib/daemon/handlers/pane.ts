@@ -14,6 +14,7 @@ import { herdrError, injectAfterTurn, injectIntoPane } from "../inject.ts";
 import { resolvePaneRef } from "../pane-ref-socket.ts";
 import { attendPane } from "../attend.ts";
 import { driveTrustAccept } from "../trust-accept.ts";
+import type { RelocationWatcher } from "../relocation-announce.ts";
 import { BG_SESSION, bgSocketPath, type BgService } from "../bg-service.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { shellQuote } from "../../herdr-launch.ts";
@@ -152,6 +153,8 @@ export function createPaneHandlers(opts: {
   log?: Logger;
   /** How a continuation's detached wait is started; tests capture the promise, the daemon fires and forgets. */
   schedule?: (work: Promise<void>) => void;
+  /** Drives the relocation dialog on the pane an announcement resolves to; omitted, the handler reports `disabled` and drives nothing. */
+  relocation?: RelocationWatcher;
 }):
   // Declared as direct `unknown`-payload members (not `Pick<TypedHandlers, ...>`)
   // rather than the narrower per-command payload types the catalog would
@@ -164,6 +167,7 @@ export function createPaneHandlers(opts: {
   & { "pane:directories": (payload: unknown) => Promise<CommandResult<"pane:directories">> }
   & { "pane:send": (payload: unknown) => Promise<CommandResult<"pane:send">> }
   & { "pane:focus": (payload: unknown) => Promise<CommandResult<"pane:focus">> }
+  & { "pane:announce-relocation": (payload: unknown) => Promise<CommandResult<"pane:announce-relocation">> }
   & { "pane:spawn": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"pane:spawn">> } {
   const { db, repoIndex } = opts;
   const herdr = opts.herdr ?? herdrRequest;
@@ -176,6 +180,7 @@ export function createPaneHandlers(opts: {
   const herdrRunnerFor = opts.herdrRunnerFor;
   const log = opts.log;
   const schedule = opts.schedule ?? ((work: Promise<void>) => { void work; });
+  const relocation = opts.relocation;
 
   async function snapshot(sockPath?: string): Promise<HerdrResult<{ snapshot: HerdrSnapshot }>> {
     return herdr<{ snapshot: HerdrSnapshot }>("session.snapshot", {}, { sockPath });
@@ -400,6 +405,15 @@ export function createPaneHandlers(opts: {
       if (reply.status < 200 || reply.status >= 300 || reply.json?.ok === false)
         return { ok: false, error: reply.json?.error ?? `tray focus failed (${reply.status})` };
       return { ok: true, data: { paneId: payload.paneId, focused: reply.json?.focused ?? true } };
+    },
+
+    "pane:announce-relocation": async (rawPayload: unknown): Promise<CommandResult<"pane:announce-relocation">> => {
+      const p = rawPayload as Commands["pane:announce-relocation"]["payload"] | undefined;
+      if (!p || typeof p.sessionId !== "string" || typeof p.cwd !== "string") return { ok: false, error: "sessionId and cwd are required" };
+      if (p.tool !== "EnterWorktree") return { ok: false, error: "tool must be EnterWorktree" };
+      if (p.path !== undefined && typeof p.path !== "string") return { ok: false, error: "path must be a string" };
+      if (!relocation) return { ok: true, data: { scheduled: false, pane: null, reason: "disabled" } };
+      return { ok: true, data: await relocation.announce(p) };
     },
   };
 }
