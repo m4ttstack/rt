@@ -76,6 +76,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   const declared = `Declared flags: ${[...flagTypes.keys()].join(", ")}`;
   const tempRootFlags = new Set(leaf.node.agentTempRootFlags ?? []);
   const readRootFlags = new Set(leaf.node.agentReadRootFlags ?? []);
+  const deniedFlags = new Set(leaf.node.agentDeniedFlags ?? []);
   let tempRoots: string[] | null = null;
   let readRoots: ReadRoots | null = null;
   // A leaf's path flags write or read a caller-named file with no permission
@@ -105,6 +106,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
     const name = eq < 0 ? arg : arg.slice(0, eq);
     const type = flagTypes.get(name);
     if (!type) return fail(`${verb} does not declare ${name}. ${declared}`);
+    if (deniedFlags.has(name)) return fail(`${name} is not available through rt_verb for ${verb}; run it from a shell, where the permission prompt applies`);
     if (eq < 0) {
       if (type === "boolean") {
         forwarded.push(arg);

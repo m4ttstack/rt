@@ -2254,6 +2254,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills.ts",
         fn: "skillsCompile",
         agentSafe: true,
+        agentDeniedFlags: ["--manifest", "--pack-dir"],
         agentTimeoutMs: 600_000,
         args: [
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name (--team still accepted); omit to pick from the discovered packs, or run from inside a pack tree to compile that tree" },
@@ -2295,6 +2296,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills-sync.ts",
         fn: "skillsSync",
         agentSafe: true,
+        agentDeniedFlags: ["--manifest"],
         agentTimeoutMs: 600_000,
         args: [
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack to sync; auto-selects when only one pack exists" },
@@ -2324,6 +2326,8 @@ export const TREE: Record<string, CommandNode> = {
         args: [
           { name: "Mode", type: "text", placeholder: "list", hint: "list | set <name>... --public|--internal | apply; omit for the palette" },
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name (--team still accepted); omit to pick from the discovered packs, or run from inside a pack tree to act on that tree" },
+          { name: "Public", flag: "--public", type: "boolean", default: false, hint: "set only: move the named skills to the public surface" },
+          { name: "Internal", flag: "--internal", type: "boolean", default: false, hint: "set only: move the named skills to the internal surface" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "apply only: print planned moves without touching disk" },
           SETUP_JSON_ARG,
         ],
@@ -2351,6 +2355,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills.ts",
         fn: "skillsBind",
         agentSafe: true,
+        agentDeniedFlags: ["--manifest"],
         omitBehavior: "picker",
         args: [
           { name: "Verb", type: "text", placeholder: "watch-ci", hint: "Roster verb or pipeline stage" },

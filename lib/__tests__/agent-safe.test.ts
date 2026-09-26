@@ -41,10 +41,23 @@ describe("agent-safe surface", () => {
     expect(fill.hint).toContain("slot");
   });
 
+  test("the skills leaves that recompile, commit or push deny the flags that would point them at a caller-written manifest or pack", () => {
+    const skills = TREE.skills!.subcommands!;
+    expect(skills.sync!.agentDeniedFlags).toEqual(["--manifest"]);
+    expect(skills.bind!.agentDeniedFlags).toEqual(["--manifest"]);
+    expect(skills.compile!.agentDeniedFlags).toEqual(["--manifest", "--pack-dir"]);
+    expect(skills.check!.agentDeniedFlags).toBeUndefined();
+  });
+
+  test("skills surface declares --public and --internal, so set can run through rt_verb", () => {
+    const flags = (TREE.skills!.subcommands!.surface!.args ?? []).filter((a) => a.type === "boolean").map((a) => a.flag);
+    expect(flags).toEqual(expect.arrayContaining(["--public", "--internal"]));
+  });
+
   test("every confined flag names a declared text flag of its leaf", () => {
     for (const { path, node } of listAgentSafe(TREE)) {
       const textFlags = new Set((node.args ?? []).filter((a) => a.flag && a.type === "text").map((a) => a.flag));
-      for (const flag of [...(node.agentTempRootFlags ?? []), ...(node.agentReadRootFlags ?? [])]) {
+      for (const flag of [...(node.agentTempRootFlags ?? []), ...(node.agentReadRootFlags ?? []), ...(node.agentDeniedFlags ?? [])]) {
         expect(textFlags.has(flag), `${path.join(" ")} ${flag}`).toBe(true);
       }
     }

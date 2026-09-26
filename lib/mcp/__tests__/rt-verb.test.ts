@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "f
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import type { CommandNode } from "../../command-tree.ts";
+import { TREE } from "../../command-tree-def.ts";
 import type { ExecResult } from "../../setup/probes.ts";
 import { RT_VERB_TIMEOUT_MS, runRtVerb, type RtVerbDeps } from "../rt-verb.ts";
 
@@ -33,6 +34,14 @@ const tree: Record<string, CommandNode> = {
       brief: {
         description: "b", module: "./m.ts", agentSafe: true, agentTempRootFlags: ["--out"], agentReadRootFlags: ["--template"],
         args: [{ name: "Out", flag: "--out", type: "text" }, { name: "Template", flag: "--template", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
+      publish: {
+        description: "p", module: "./m.ts", agentSafe: true, agentDeniedFlags: ["--manifest"],
+        args: [{ name: "Manifest", flag: "--manifest", type: "text" }, { name: "Pack", flag: "--pack", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
+      check: {
+        description: "c", module: "./m.ts", agentSafe: true,
+        args: [{ name: "Manifest", flag: "--manifest", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
       },
     },
   },
@@ -127,6 +136,36 @@ describe("runRtVerb", () => {
   test("agentReadRootFlags: a symlink inside a read root pointing outside is refused with zero spawn calls", async () => {
     const r = await refused({ args: ["worktree", "brief", "--template", ESCAPE_LINK] });
     expect(r.ok ? "" : r.error).toContain("plugin or pack root");
+  });
+
+  test("agentDeniedFlags: a denied flag is refused in both forms with zero spawn calls", async () => {
+    for (const args of [["worktree", "publish", "--manifest", "/tmp/claude-501/m.jsonc"], ["worktree", "publish", "--manifest=/tmp/claude-501/m.jsonc"]]) {
+      const r = await refused({ args });
+      expect(r.ok ? "" : r.error, args.join(" ")).toContain("--manifest is not available through rt_verb");
+    }
+  });
+
+  test("agentDeniedFlags: the leaf's other flags still run", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "publish", "--pack", "acme"] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "publish", "--pack", "acme", "--json"]);
+  });
+
+  test("agentDeniedFlags: a leaf without the field forwards the same flag", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "check", "--manifest", "/tmp/m.jsonc"] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toContain("/tmp/m.jsonc");
+  });
+
+  test("the real tree forwards skills surface set <name> --public", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["skills", "surface", "set", "review", "--public"] }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toEqual(["/bin/rt", "skills", "surface", "set", "review", "--public", "--json"]);
+    const internal = await runRtVerb({ args: ["skills", "surface", "set", "review", "--internal"] }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+    expect(internal.ok).toBe(true);
   });
 
   test("agentTempRootFlags does not affect a flag it does not name", async () => {
