@@ -68,6 +68,17 @@ describe('standingIssues', () => {
     expect(standingIssues(reported, stored, draft, [])).toEqual([]);
   });
 
+  it('drops an item issue once another entry takes its index', () => {
+    const twins = [
+      { url: 'https://example.test', title: 'a' },
+      { url: 'https://example.test', title: 'b' },
+    ];
+    expect(standingIssues(reported, twins, [twins[1], twins[0]], [])).toEqual(
+      []
+    );
+    expect(standingIssues(reported, twins, [twins[1]], [])).toEqual([]);
+  });
+
   it('never repeats an issue the local check already found', () => {
     expect(standingIssues(reported, stored, stored, reported)).toEqual([]);
   });

@@ -56,10 +56,35 @@ function valueAt(value: unknown, path: (string | number)[]): unknown {
   return at;
 }
 
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+/** Entries carry no identity, so an index in `path` still names the entry
+    it was reported on only while its list keeps its length and every other
+    entry in it is unchanged: a move, a removal or an add renumbers it. */
+function indexesHold(
+  stored: unknown,
+  draft: unknown,
+  path: (string | number)[]
+): boolean {
+  return path.every((seg, k) => {
+    if (typeof seg !== 'number') return true;
+    const before = valueAt(stored, path.slice(0, k));
+    const after = valueAt(draft, path.slice(0, k));
+    return (
+      Array.isArray(before) &&
+      Array.isArray(after) &&
+      before.length === after.length &&
+      before.every((entry, j) => j === seg || same(entry, after[j]))
+    );
+  });
+}
+
 /** Issues the store reported on a layer that the draft has not touched:
     one stays while the value at its path is still the stored one, so a
     field the server refused shows its error even where the local check
-    passes it, and drops once the user edits that value. */
+    passes it, and drops once the user edits that value or renumbers the
+    entry it sits in. */
 export function standingIssues(
   reported: SchemaIssue[],
   stored: unknown,
@@ -71,8 +96,9 @@ export function standingIssues(
   for (const issue of reported) {
     const key = issueText(issue);
     if (seen.has(key)) continue;
-    const before = JSON.stringify(valueAt(stored, issue.path));
-    if (JSON.stringify(valueAt(draft, issue.path)) !== before) continue;
+    if (!same(valueAt(stored, issue.path), valueAt(draft, issue.path)))
+      continue;
+    if (!indexesHold(stored, draft, issue.path)) continue;
     seen.add(key);
     out.push(issue);
   }
