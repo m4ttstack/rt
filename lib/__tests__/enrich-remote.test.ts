@@ -90,4 +90,11 @@ describe("parseRemoteUrl", () => {
     expect(withTokenOnly).toEqual({ host: "https://gitlab.example.com", projectPath: "acme/app" });
     expect(JSON.stringify([withUserAndToken, withTokenOnly])).not.toContain(FAKE);
   });
+
+  test("a gitlab-looking userinfo cannot make another host count as GitLab", () => {
+    const spoof = "https://gitlab.com@evil.example/acme/app.git";
+    expect(parseRemoteUrl(spoof)?.host).toBe("https://evil.example");
+    expect(isGitLabRemote(spoof)).toBe(false);
+    expect(isGitLabRemote(`https://oauth2:${FAKE}@gitlab.example.com/acme/app.git`)).toBe(true);
+  });
 });

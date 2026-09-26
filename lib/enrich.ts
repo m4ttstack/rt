@@ -73,7 +73,9 @@ export function parseRemoteUrl(url: string): { host: string; projectPath: string
  * daemon; keep provider selection routed through it.
  */
 export function isGitLabRemote(url: string | undefined): boolean {
-  return !!url && /gitlab\./i.test(url);
+  if (!url) return false;
+  const parsed = parseRemoteUrl(url);
+  return !!parsed && /gitlab\./i.test(parsed.host);
 }
 
 export function isGitHubRemote(url: string | undefined): boolean {
