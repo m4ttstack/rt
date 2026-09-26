@@ -38,9 +38,7 @@ describe('bundle recipe', () => {
     expect(manifest.name).toBe('boxscore');
     expect(pkg.name).toBe('boxscore');
     expect(manifest.includeInBundle).toBe(true);
-    expect(manifest.bundle?.build).toBe(
-      'bun install --frozen-lockfile && bun run build:binary'
-    );
+    expect(manifest.bundle?.build).toBe('bun run build:binary');
     expect(manifest.bundle?.artifact).toBe('dist-bin/boxscore');
   });
 
