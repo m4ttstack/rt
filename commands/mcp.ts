@@ -17,11 +17,10 @@ export async function mcpToolsList(args: string[]): Promise<void> {
  * uses the low-level Server to serve each tool's raw JSON Schema unchanged.
  */
 export async function mcpServe(_args: string[]): Promise<void> {
-  const [{ Server }, { StdioServerTransport }, { ListToolsRequestSchema, CallToolRequestSchema }, { mcpTools }] = await Promise.all([
+  const [{ Server }, { StdioServerTransport }, { ListToolsRequestSchema, CallToolRequestSchema }] = await Promise.all([
     import("@modelcontextprotocol/sdk/server/index.js"),
     import("@modelcontextprotocol/sdk/server/stdio.js"),
     import("@modelcontextprotocol/sdk/types.js"),
-    import("../lib/mcp/tools.ts"),
   ]);
 
   const tools = mcpTools();
