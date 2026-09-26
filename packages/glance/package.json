@@ -31,7 +31,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/m4ttstack/glance.git",
+    "url": "git+https://github.com/m4ttstack/rt.git",
     "directory": "packages/glance"
   },
   "engines": {
@@ -56,8 +56,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/m4ttstack/glance/tree/main/packages/glance",
+  "homepage": "https://github.com/m4ttstack/rt/tree/main/packages/glance",
   "bugs": {
-    "url": "https://github.com/m4ttstack/glance/issues"
+    "url": "https://github.com/m4ttstack/rt/issues"
   }
 }

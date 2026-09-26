@@ -39,7 +39,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/m4ttstack/glance.git",
+    "url": "git+https://github.com/m4ttstack/rt.git",
     "directory": "packages/glance-react"
   },
   "engines": {
@@ -116,8 +116,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/m4ttstack/glance/tree/main/packages/glance-react",
+  "homepage": "https://github.com/m4ttstack/rt/tree/main/packages/glance-react",
   "bugs": {
-    "url": "https://github.com/m4ttstack/glance/issues"
+    "url": "https://github.com/m4ttstack/rt/issues"
   }
 }
