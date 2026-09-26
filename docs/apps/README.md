@@ -7,12 +7,11 @@ the shared brand tokens they both theme from. No `dist`, no build step:
 so a workspace consumer gets the same files a build step would produce,
 without running one.
 
-app-kit is part of the mattstack estate, the same toolkit behind
-[rt](https://github.com/m4ttstack/rt), [glance](https://github.com/m4ttstack/glance),
-and [herdr-chat](https://github.com/m4ttstack/herdr-chat). Internally, it's
-the shared UI and server layer mattstack's own apps build on, including
-chat, console, and boxscore, the three Mantine-based apps that live in this
-repo under `apps/`.
+app-kit lives in the `rt` monorepo; see the root README for what `rt` is
+and how this workspace fits into it. Internally, app-kit is the shared UI
+and server layer mattstack's own apps build on, including chat, console,
+and boxscore, the three Mantine-based apps that live in this repo under
+`apps/`.
 
 ## What's inside
 
@@ -74,27 +73,13 @@ See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 
 ## Installation
 
-None of the four packages publish to npm. The apps that use them are
-folding into this repo as workspace members (see
-`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`); once an app
-lands under `apps/<name>`, it depends on `packages/ui`, `packages/server`,
-`packages/tokyo`, and `packages/tui-kit` with `workspace:*`. `packages/ui`,
-`packages/server`, and `packages/tokyo` are consumed straight from source,
-no install step required; `@mattstack/tui-kit` builds to `dist/`, which
-turbo builds before any board or deck task (`^build`). General consumption
-of these packages from outside this workspace
-is unsupported, except for the packed-tarball path below, which is the
-sanctioned bundle-transition mechanism for apps that have not folded in
-yet.
-
-### Bundle-transition tarballs
-
-Until an app has folded in, it can pick up a workspace change by
-depending on a packed tarball rather than a bare `file:` directory (Bun
-1.3 resolves a bare `file:../packages/ui` dependency as a symlink into
-the source tree, which resolves peers like `react` twice and breaks
-typecheck and tests in the consumer); see the fold-in spec for how each
-app's transition uses this mechanism.
+See the root README for how the monorepo is installed. None of the four
+packages publish to npm: every app under `apps/<name>` depends on
+`packages/ui`, `packages/server`, `packages/tokyo`, and `packages/tui-kit`
+with `workspace:*`. `packages/ui`, `packages/server`, and `packages/tokyo`
+are consumed straight from source, no install step required;
+`@mattstack/tui-kit` builds to `dist/`, which turbo builds before any board
+or deck task (`^build`).
 
 ## Quickstart
 
@@ -144,8 +129,8 @@ snippets, including the vite and eslint presets.
 ## Development
 
 ```bash
-$ git clone https://github.com/m4ttstack/apps.git
-$ cd apps
+$ git clone https://github.com/m4ttstack/rt.git repo-tools
+$ cd repo-tools
 $ bun install                 # workspace install: packages/*, apps/*
 $ bun run check               # every gate CI runs, cached and parallel
 $ bun run storybook           # dev server at :6006 (packages/ui's stories)
