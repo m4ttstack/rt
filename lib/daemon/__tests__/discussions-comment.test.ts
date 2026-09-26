@@ -8,7 +8,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { CreatedDiscussion, CreatedNote } from "@mattstack/glance";
 import { closeStateDb } from "../../state/index.ts";
-import { createDiscussionHandlers, type CommentMutator, type DiscussionHandlerSeams } from "../handlers/discussions.ts";import { fakeStore } from "./fake-cache-store.ts";
+import { createDiscussionHandlers, type CommentMutator, type DiscussionHandlerSeams } from "../handlers/discussions.ts";
+import { fakeStore } from "./fake-cache-store.ts";
 
 const fakeCtx = { repoIndex: () => ({}), cache: fakeStore({}) };
 const IDENTITY = "remote:gitlab.com%2Fg%2Fsub%2Frepo-tools";
