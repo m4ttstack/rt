@@ -476,4 +476,33 @@ let devBuildChecks: [Check] = [
         c.expectEqual(runScript(script), 0)
         c.expectEqual(entries(rig.builds), ["live", "tree-abc"])
     },
+    Check("discarding a staged build files it in the cache and clears staging, statting no cached tree") { c in
+        let rig = Rig()
+        makeBundle(rig.staged, marker: "new")
+        seedEntry(rig.builds, "e100", cachedAt: "100", marker: "x")
+        seedEntry(rig.builds, "e200", cachedAt: "200", marker: "x")
+        seedEntry(rig.builds, "e300", cachedAt: "300", marker: "x")
+        seedEntry(rig.builds, "e400", cachedAt: "400", marker: "x", tree: rig.dir.appendingPathComponent("gone-tree").path)
+        let script = DevBuild.discardScript(stagedPath: rig.staged.path, logPath: rig.restartLog.path,
+                                            cache: rig.cacheTarget())
+        c.expectEqual(runScript(script), 0)
+        c.expect(!FileManager.default.fileExists(atPath: rig.staged.path), "the staged build is gone from staging")
+        c.expectEqual(marker(rig.builds.appendingPathComponent("tree-abc/bundle")), "new")
+        c.expectEqual(entries(rig.builds), ["e200", "e300", "e400", "tree-abc"])
+    },
+    Check("discarding an unkeyed or uncacheable staged build still clears it") { c in
+        for cached in [false, true] {
+            let rig = Rig()
+            makeBundle(rig.staged, marker: "new")
+            if cached {
+                try FileManager.default.createDirectory(at: rig.builds.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("not a dir".utf8).write(to: rig.builds)
+            }
+            let script = DevBuild.discardScript(stagedPath: rig.staged.path, logPath: rig.restartLog.path,
+                                                cache: cached ? rig.cacheTarget() : nil)
+            c.expectEqual(runScript(script), 0)
+            c.expect(!FileManager.default.fileExists(atPath: rig.staged.path), "cached=\(cached): staged build remains")
+            if cached { c.expect(read(rig.restartLog).contains("could not cache the staged build"), "the failure is logged") }
+        }
+    },
 ]
