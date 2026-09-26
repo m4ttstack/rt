@@ -329,6 +329,48 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
   });
 
+  it('keeps Needs fixing beside the title, out of the filter toolbar', async () => {
+    renderPage();
+    const toolbar = await screen.findByRole('toolbar', {
+      name: 'settings filters',
+    });
+    expect(
+      within(toolbar).getByRole('textbox', { name: 'filter settings' })
+    ).toBeInTheDocument();
+    expect(
+      within(toolbar).queryByRole('checkbox', { name: /^Needs fixing/ })
+    ).toBeNull();
+    const title = screen.getByRole('heading', { name: 'Settings' });
+    expect(
+      within(title.parentElement!).getByRole('checkbox', {
+        name: /^Needs fixing/,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('a def with no description renders empty and still filters', async () => {
+    const bare = def('board.bareKey');
+    delete (bare as Partial<SettingDefWire>).description;
+    defsResponse = serve([...DEFS, bare]);
+    renderPage();
+    expect(
+      await screen.findByRole('button', { name: 'explain board.bareKey' })
+    ).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'filter settings' }),
+      'zzz'
+    );
+    expect(
+      await screen.findByText('No settings match “zzz”')
+    ).toBeInTheDocument();
+    await userEvent.clear(
+      screen.getByRole('textbox', { name: 'filter settings' })
+    );
+    expect(
+      await screen.findByRole('button', { name: 'explain board.bareKey' })
+    ).toBeInTheDocument();
+  });
+
   it('Changed keeps only keys a store sets', async () => {
     renderPage();
     await userEvent.click(

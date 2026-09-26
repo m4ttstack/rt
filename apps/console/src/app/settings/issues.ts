@@ -47,6 +47,93 @@ export function issuesUnder(
     .map(i => ({ ...i, path: i.path.slice(1) }));
 }
 
+function valueAt(value: unknown, path: (string | number)[]): unknown {
+  let at = value;
+  for (const p of path) {
+    if (at === null || typeof at !== 'object') return undefined;
+    at = (at as Record<string | number, unknown>)[p];
+  }
+  return at;
+}
+
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+const kindOf = (v: unknown) =>
+  Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v;
+
+/** Entries carry no identity, so an index in `path` still names the entry
+    it was reported on only while its list keeps its length, every other
+    entry in it is unchanged and the entry itself keeps its kind: a move, a
+    removal, an add or a swap to another kind renumbers or replaces it. */
+function indexesHold(
+  stored: unknown,
+  draft: unknown,
+  path: (string | number)[]
+): boolean {
+  return path.every((seg, k) => {
+    if (typeof seg !== 'number') return true;
+    const before = valueAt(stored, path.slice(0, k));
+    const after = valueAt(draft, path.slice(0, k));
+    return (
+      Array.isArray(before) &&
+      Array.isArray(after) &&
+      before.length === after.length &&
+      kindOf(before[seg]) === kindOf(after[seg]) &&
+      before.every((entry, j) => j === seg || same(entry, after[j]))
+    );
+  });
+}
+
+/** Where a reported issue sits in the draft, or null once its entry is
+    gone. `origin[i]` is the stored index of the draft's top-level entry `i`,
+    known while the form tracks its cards; without it only the
+    identity-free rule in `indexesHold` applies. */
+function draftPath(
+  path: (string | number)[],
+  stored: unknown,
+  draft: unknown,
+  origin?: readonly number[] | null
+): (string | number)[] | null {
+  const [head, ...rest] = path;
+  if (!origin || typeof head !== 'number')
+    return indexesHold(stored, draft, path) ? path : null;
+  const at = origin.indexOf(head);
+  if (at < 0) return null;
+  const before = valueAt(stored, [head]);
+  const after = valueAt(draft, [at]);
+  return kindOf(before) === kindOf(after) && indexesHold(before, after, rest)
+    ? [at, ...rest]
+    : null;
+}
+
+/** Issues the store reported on a layer that the draft has not touched:
+    one stays while the value at its path is still the stored one, so a
+    field the server refused shows its error even where the local check
+    passes it, and drops once the user edits that value or its entry is
+    removed or replaced. */
+export function standingIssues(
+  reported: SchemaIssue[],
+  stored: unknown,
+  draft: unknown,
+  checked: SchemaIssue[],
+  origin?: readonly number[] | null
+): SchemaIssue[] {
+  const seen = new Set(checked.map(issueText));
+  const out: SchemaIssue[] = [];
+  for (const issue of reported) {
+    const path = draftPath(issue.path, stored, draft, origin);
+    if (!path) continue;
+    const moved = { ...issue, path };
+    const key = issueText(moved);
+    if (seen.has(key)) continue;
+    if (!same(valueAt(stored, issue.path), valueAt(draft, path))) continue;
+    seen.add(key);
+    out.push(moved);
+  }
+  return out;
+}
+
 const REQUIRED_RE = /^required property/;
 
 /** A short word where one exists ("required" for a missing required
