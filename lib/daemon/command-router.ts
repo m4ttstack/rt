@@ -29,6 +29,7 @@ import { createBgHandlers } from "./handlers/bg.ts";
 import { createChatHandlers } from "./handlers/chat.ts";
 import { createAgentHandlers } from "./handlers/agent.ts";
 import { createPaneHandlers } from "./handlers/pane.ts";
+import type { RelocationWatcher } from "./relocation-announce.ts";
 import { createEndpointHandlers } from "./handlers/endpoint.ts";
 import { createSettingsHandlers } from "./handlers/settings.ts";
 import { createHomeHandlers } from "./handlers/home.ts";
@@ -139,6 +140,8 @@ export function buildRoutedHandlers(opts: {
   runLiveness?: () => Promise<RunLiveness>;
   /** Runs one credential-health sweep cycle on demand (RT-132), the same closure the daemon's periodic accounts-sweep timer calls, so `rt accounts --recheck` sees an up-to-date credential_health table immediately. Omitted only by tests that don't exercise accounts-recheck. */
   accountsSweep?: () => Promise<void>;
+  /** Drives the relocation dialog for pane:announce-relocation; omitted, the handler reports `disabled`. */
+  relocation?: RelocationWatcher;
 }): Record<string, Handler> {
   const { ctx, broadcast, systemProcessScanner } = opts;
   // The bus owns frame-building + persistence (R020, events-bus.ts); this
@@ -156,6 +159,7 @@ export function buildRoutedHandlers(opts: {
   const paneHandlers = createPaneHandlers({
     db: opts.stateDb, repoIndex: ctx.repoIndex, bg: opts.bgService, log: ctx.log,
     herdrRunnerFor: (socket) => defaultHerdrRunner(socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env),
+    relocation: opts.relocation,
   });
   const agentHandlers = createAgentHandlers({
     db: opts.stateDb, emitEvent, log: ctx.log,
