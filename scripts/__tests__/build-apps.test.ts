@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildTreeRows } from "../build-apps.ts";
+import { buildTreeRows, WORKSPACE_BUILD_ARGS } from "../build-apps.ts";
 
 function fakeApp(root: string, name: string, opts: { skills?: boolean; serve?: boolean } = {}) {
   const dir = join(root, name);
@@ -95,5 +95,10 @@ describe("build-apps", () => {
     });
     expect(calls).toBe(1);
     expect(built).toEqual(["delta"]);
+  });
+
+  test("the workspace build filter excludes glance-react", () => {
+    expect(WORKSPACE_BUILD_ARGS).toContain("--filter=!@mattstack/glance-react");
+    expect(WORKSPACE_BUILD_ARGS).toContain("--filter=./packages/*");
   });
 });

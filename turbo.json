@@ -29,6 +29,9 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "@mattstack/glance-react#typecheck": {
+      "dependsOn": ["^build", "build"]
+    },
     "serve-check": {},
     "chat#serve-check": {
       "dependsOn": ["build"],
