@@ -59,6 +59,18 @@ async function runMrAction(target: { identity: string; iid: number }, action: Mr
   return res.ok ? ok(body) : err(explainError(res.error ?? "request failed"));
 }
 
+/** mr:action writes the MR back to the project-MRs store (or awaits a follow-up
+    fetch that does) before replying, so a read with no maxAgeMs sees its effect.
+    Only an observed outcome is reported as one. */
+async function verifyMerge(target: { identity: string; iid: number }, requested: "merge" | "autoMerge"): Promise<ToolResult> {
+  const back = await readProjectMRs(target.identity);
+  const pr = back.ok ? Object.values(back.data?.mrs ?? {}).find((e) => e.pr.iid === target.iid)?.pr : undefined;
+  if (pr?.state === "merged") return ok({ merged: true });
+  if (requested === "autoMerge" && pr?.autoMergeEnabled === true) return ok({ autoMerge: true });
+  if (typeof pr?.mergeError === "string" && pr.mergeError.trim() !== "") return err(`GitLab reports a merge error on !${target.iid}: ${pr.mergeError}`);
+  return ok({ requested, verified: false, ...(pr ? { state: pr.state } : {}) });
+}
+
 /** Matches input.repo against the daemon's repo registry, either as the raw
     serialized identity or its human-friendly label (repoLabel), and returns
     the matched identity. Shares reverseLookupByName (lib/repo-name-lookup.ts)
@@ -598,7 +610,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_merge",
-      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge and returns autoMerge: true, except that when the pipeline has already passed and the MR is mergeable, GitLab merges it at once and the tool returns merged: true. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Merge the MR now (GitLab still enforces approvals and pipeline rules), optionally squashing and deleting the source branch; whenPipelineSucceeds: true instead enables auto-merge, which GitLab may fire at once when the pipeline has already passed. Auto-merge applies the project's own merge settings, so whenPipelineSucceeds cannot be combined with squash or removeSourceBranch. The MR is read back after the request, and the result is what was observed: merged: true when it merged; autoMerge: true (whenPipelineSucceeds only) when auto-merge is enabled; an error carrying GitLab's mergeError when one is set; otherwise {requested, verified: false, state} (state when known), meaning GitLab accepted the request but the outcome was not observed, so re-read with mr_view before assuming either way. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: { ...MR_TARGET_PROPS, squash: { type: "boolean" }, removeSourceBranch: { type: "boolean" }, whenPipelineSucceeds: { type: "boolean" } },
@@ -613,18 +625,14 @@ export function mcpTools(): McpToolDef[] {
         const target = await resolveMrTarget(input);
         if (!target.ok) return err(target.error);
         if (input.whenPipelineSucceeds === true) {
-          const set = withLandingHint(await runMrAction(target, "setAutoMerge", [], { autoMerge: true }), "the MR's state");
-          if (!set.ok) return set;
-          // The daemon writes the MR back after a void action before replying, so a
-          // cache read with no maxAgeMs already reflects an immediate merge.
-          const back = await readProjectMRs(target.identity);
-          const merged = back.ok && Object.values(back.data?.mrs ?? {}).some((e) => e.pr.iid === target.iid && e.pr.state === "merged");
-          return ok(merged ? { merged: true } : { autoMerge: true });
+          const set = withLandingHint(await runMrAction(target, "setAutoMerge", [], null), "the MR's state");
+          return set.ok ? verifyMerge(target, "autoMerge") : set;
         }
         const merge: { squash?: boolean; shouldRemoveSourceBranch?: boolean } = {};
         if (typeof input.squash === "boolean") merge.squash = input.squash;
         if (typeof input.removeSourceBranch === "boolean") merge.shouldRemoveSourceBranch = input.removeSourceBranch;
-        return withLandingHint(await runMrAction(target, "merge", [merge], { merged: true }), "the MR's state");
+        const done = withLandingHint(await runMrAction(target, "merge", [merge], null), "the MR's state");
+        return done.ok ? verifyMerge(target, "merge") : done;
       },
     },
     {

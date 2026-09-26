@@ -1182,54 +1182,87 @@ describe("mcpTools", () => {
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
     });
 
-    test("mr_merge merges now with squash and removeSourceBranch mapped to glance's input", async () => {
-      const calls: Array<{ name: string; payload: any }> = [];
-      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: async (name: string, payload: unknown) => { calls.push({ name, payload }); return { ok: true, data: {} }; } }));
-      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
-      const res = await tool.handler({ repoName: ID, iid: 4, squash: true, removeSourceBranch: true }, {} as NodeJS.ProcessEnv);
-      expect(res).toEqual({ ok: true, body: { merged: true } });
-      expect(calls[0]!.payload).toMatchObject({ action: "merge", iid: 4, args: [{ squash: true, shouldRemoveSourceBranch: true }] });
-    });
-
-    function autoMergeFake(readBack: () => unknown): Array<{ name: string; payload: any }> {
+    function mergeFake(readBack: () => unknown, action: () => unknown = () => ({ ok: true })): Array<{ name: string; payload: any }> {
       const calls: Array<{ name: string; payload: any }> = [];
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({
         ...realTransport,
         rtCommand: async (name: string, payload: unknown) => {
           calls.push({ name, payload });
-          if (name === "mr:action") return { ok: true, data: {} };
+          if (name === "mr:action") return action();
           if (name === "project-mrs:read") return readBack();
           throw new Error(`unexpected rtCommand("${name}")`);
         },
       }));
       return calls;
     }
-    const cacheWith = (state: string) => ({
+    const cacheWith = (fields: Record<string, unknown>) => ({
       ok: true,
-      data: { mrs: { k: { pr: { iid: 4, state }, fetchedAt: 1 }, other: { pr: { iid: 5, state: "merged" }, fetchedAt: 1 } }, listSyncedAt: 1, source: "mutation", syncedAt: 1 },
+      data: {
+        mrs: {
+          k: { pr: { iid: 4, state: "opened", autoMergeEnabled: false, mergeError: null, ...fields }, fetchedAt: 1 },
+          other: { pr: { iid: 5, state: "merged", autoMergeEnabled: true, mergeError: null }, fetchedAt: 1 },
+        },
+        listSyncedAt: 1,
+        source: "mutation",
+        syncedAt: 1,
+      },
+    });
+    const run = (input: Record<string, unknown>) => mcpTools().find((t) => t.name === "mr_merge")!.handler({ repoName: ID, iid: 4, ...input }, {} as NodeJS.ProcessEnv);
+
+    test("merge now sends glance's input, reads the MR back and returns merged: true when it merged", async () => {
+      const calls = mergeFake(() => cacheWith({ state: "merged" }));
+      const res = await run({ squash: true, removeSourceBranch: true });
+      expect(res).toEqual({ ok: true, body: { merged: true } });
+      expect(calls[0]!.payload).toMatchObject({ action: "merge", iid: 4, args: [{ squash: true, shouldRemoveSourceBranch: true }] });
+      expect(calls[1]).toEqual({ name: "project-mrs:read", payload: { repoName: ID } });
+      expect(calls).toHaveLength(2);
     });
 
-    test("mr_merge with whenPipelineSucceeds on a still-running pipeline returns autoMerge: true", async () => {
-      const calls = autoMergeFake(() => cacheWith("opened"));
-      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
-      const res = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true }, {} as NodeJS.ProcessEnv);
+    test("merge now on an MR still open after the request returns verified: false with its state", async () => {
+      mergeFake(() => cacheWith({ state: "opened", autoMergeEnabled: true }));
+      expect(await run({})).toEqual({ ok: true, body: { requested: "merge", verified: false, state: "opened" } });
+    });
+
+    test("whenPipelineSucceeds read back with autoMergeEnabled returns autoMerge: true", async () => {
+      const calls = mergeFake(() => cacheWith({ autoMergeEnabled: true }));
+      const res = await run({ whenPipelineSucceeds: true });
       expect(res).toEqual({ ok: true, body: { autoMerge: true } });
       expect(calls[0]!.payload).toMatchObject({ action: "setAutoMerge", args: [] });
       expect(calls[1]).toEqual({ name: "project-mrs:read", payload: { repoName: ID } });
     });
 
-    test("mr_merge with whenPipelineSucceeds on an already-green MR that GitLab merged at once returns merged: true", async () => {
-      autoMergeFake(() => cacheWith("merged"));
-      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
-      const res = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true }, {} as NodeJS.ProcessEnv);
-      expect(res).toEqual({ ok: true, body: { merged: true } });
+    test("whenPipelineSucceeds read back merged returns merged: true", async () => {
+      mergeFake(() => cacheWith({ state: "merged", autoMergeEnabled: false }));
+      expect(await run({ whenPipelineSucceeds: true })).toEqual({ ok: true, body: { merged: true } });
     });
 
-    test("mr_merge with whenPipelineSucceeds still returns autoMerge: true when the read-back fails", async () => {
-      autoMergeFake(() => ({ ok: false, error: "daemon not running" }));
-      const tool = mcpTools().find((t) => t.name === "mr_merge")!;
-      const res = await tool.handler({ repoName: ID, iid: 4, whenPipelineSucceeds: true }, {} as NodeJS.ProcessEnv);
-      expect(res).toEqual({ ok: true, body: { autoMerge: true } });
+    test("a mergeError on the read-back MR becomes an error carrying its text", async () => {
+      for (const input of [{}, { whenPipelineSucceeds: true }]) {
+        mergeFake(() => cacheWith({ mergeError: "Merge request is not mergeable" }));
+        const res = await run(input);
+        expect(res.ok).toBe(false);
+        expect(res.error).toContain("Merge request is not mergeable");
+      }
+    });
+
+    test("a failed read-back gives verified: false, not success and not an error", async () => {
+      mergeFake(() => ({ ok: false, error: "daemon not running" }));
+      expect(await run({ whenPipelineSucceeds: true })).toEqual({ ok: true, body: { requested: "autoMerge", verified: false } });
+      mergeFake(() => ({ ok: false, error: "daemon not running" }));
+      expect(await run({})).toEqual({ ok: true, body: { requested: "merge", verified: false } });
+    });
+
+    test("an MR missing from the cache gives verified: false", async () => {
+      mergeFake(() => ({ ok: true, data: { mrs: { other: { pr: { iid: 5, state: "merged", autoMergeEnabled: true, mergeError: null }, fetchedAt: 1 } }, listSyncedAt: 1, source: "mutation", syncedAt: 1 } }));
+      expect(await run({ whenPipelineSucceeds: true })).toEqual({ ok: true, body: { requested: "autoMerge", verified: false } });
+    });
+
+    test("a timed-out mr:action keeps the landing hint and skips the read-back", async () => {
+      const calls = mergeFake(() => cacheWith({ state: "merged" }), () => ({ ok: false, error: "request timed out" }));
+      const res = await run({});
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("the write may still land");
+      expect(calls.map((c) => c.name)).toEqual(["mr:action"]);
     });
 
     test("mr_merge refuses a non-boolean squash", async () => {

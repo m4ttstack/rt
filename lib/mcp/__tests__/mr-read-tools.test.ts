@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mrReadToolDefs, type MrReadDeps } from "../mr-read-tools.ts";
+import { mrReadToolDefs, tailTrace, type MrReadDeps } from "../mr-read-tools.ts";
 
-const pr = (iid: number, state: string, draft = false) => ({ iid, state, draft, sourceBranch: `b${iid}`, title: `t${iid}`, pipeline: { status: "success", id: "gitlab:pipeline:9" } });
+const pr = (iid: number, state: string, draft = false) => ({
+  iid, state, draft, sourceBranch: `b${iid}`, targetBranch: "main", title: `t${iid}`, description: "long body",
+  author: { id: "gitlab:1", username: "alice", name: "Alice", avatarUrl: null },
+  webUrl: `https://gitlab.com/acme/acme-dev/-/merge_requests/${iid}`, detailedMergeStatus: "mergeable",
+  pipeline: { status: "success", id: "gitlab:pipeline:9", jobs: [] },
+});
 
 function fake(overrides: Partial<MrReadDeps> = {}, data: Record<string, unknown> = {}): { deps: MrReadDeps; calls: string[] } {
   const calls: string[] = [];
@@ -26,7 +31,7 @@ function fake(overrides: Partial<MrReadDeps> = {}, data: Record<string, unknown>
     },
     discussions: async (repo, iid) => { calls.push(`disc:${repo}:${iid}`); return { ok: true, data: { discussions: [], fetchedAt: 1 } } as any; },
     byBranch: async (repo, branches) => { calls.push(`branch:${repo}:${branches.join(",")}`); return { ok: true, data: { byBranch: {}, syncedAt: 1 } } as any; },
-    command: (async (name: string) => { calls.push(`cmd:${name}`); return { ok: true, data: name === "mr:fetch-job-trace" ? "log text" : { id: 7 } }; }) as any,
+    command: (async (name: string) => { calls.push(`cmd:${name}`); return { ok: true, data: name === "mr:fetch-job-trace" ? "log text" : { type: "trace", content: "full log" } }; }) as any,
     ...overrides,
   };
   return { deps, calls };
@@ -113,6 +118,19 @@ describe("mr read tools", () => {
     const res = await tool(deps, "mr_list").handler({ repoName: ID, state: "closed" }, {} as NodeJS.ProcessEnv);
     expect((res.body as any).mrs.map((m: any) => m.iid)).toEqual([4]);
   });
+  test("mr_list returns a summary per MR, not the full MR", async () => {
+    const { deps } = fake();
+    const res = await tool(deps, "mr_list").handler({ repoName: ID }, {} as NodeJS.ProcessEnv);
+    expect((res.body as any).mrs[0]).toEqual({
+      iid: 1, title: "t1", state: "opened", draft: false, sourceBranch: "b1", targetBranch: "main", author: "alice",
+      webUrl: "https://gitlab.com/acme/acme-dev/-/merge_requests/1", pipelineStatus: "success", detailedMergeStatus: "mergeable",
+    });
+  });
+  test("mr_list gives a null pipelineStatus for an MR with no pipeline", async () => {
+    const { deps } = fake({}, { mrs: { a: { pr: { ...pr(1, "opened"), pipeline: null }, fetchedAt: 1 } } });
+    const res = await tool(deps, "mr_list").handler({ repoName: ID }, {} as NodeJS.ProcessEnv);
+    expect((res.body as any).mrs[0].pipelineStatus).toBeNull();
+  });
   test("mr_for_branch passes the branches through", async () => {
     const { deps, calls } = fake();
     await tool(deps, "mr_for_branch").handler({ repoName: ID, branches: ["x", "y"] }, {} as NodeJS.ProcessEnv);
@@ -124,12 +142,42 @@ describe("mr read tools", () => {
     await tool(deps, "mr_threads").handler({ repoName: ID, iid: 1, refresh: true }, {} as NodeJS.ProcessEnv);
     expect(calls).toEqual([`disc:${ID}:1`, "cmd:discussions:refresh", `disc:${ID}:1`]);
   });
-  test("mr_pipeline reads live by default and adds job detail for a jobId", async () => {
+  test("mr_pipeline reads live by default and replaces a trace job's log with a pointer to mr_job_trace", async () => {
     const { deps, calls } = fake();
     const res = await tool(deps, "mr_pipeline").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv);
     expect((res.body as any).pipeline.status).toBe("success");
-    expect((res.body as any).job).toEqual({ id: 7 });
+    expect((res.body as any).job).toEqual({ type: "trace", traceVia: "mr_job_trace" });
+    expect(JSON.stringify(res.body)).not.toContain("full log");
     expect(calls).toEqual([`mrs:${ID}:5000`, "cmd:mr:fetch-job-detail"]);
+  });
+  test("mr_pipeline passes a bridge job's detail through unchanged", async () => {
+    const bridge = { type: "bridge", downstreamPipeline: { id: "gitlab:pipeline:10", status: "failed", createdAt: null, webUrl: null, jobs: [] } };
+    const { deps } = fake({ command: (async () => ({ ok: true, data: bridge })) as any });
+    const res = await tool(deps, "mr_pipeline").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv);
+    expect((res.body as any).job).toEqual(bridge);
+  });
+  test("mr_pipeline sends the head pipeline's numeric id as pipelineId", async () => {
+    const payloads: unknown[] = [];
+    const { deps } = fake({ command: (async (_name: string, payload: unknown) => { payloads.push(payload); return { ok: true, data: { type: "trace", content: "" } }; }) as any });
+    await tool(deps, "mr_pipeline").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv);
+    expect(payloads).toEqual([{ repoName: ID, iid: 1, jobId: 7, pipelineId: 9 }]);
+  });
+  test("mr_pipeline omits pipelineId when the MR has no pipeline or a non-numeric id", async () => {
+    for (const pipeline of [null, { status: "success", id: "gitlab:pipeline:abc", jobs: [] }]) {
+      const payloads: unknown[] = [];
+      const { deps } = fake(
+        { command: (async (_name: string, payload: unknown) => { payloads.push(payload); return { ok: true, data: { type: "trace", content: "" } }; }) as any },
+        { mrs: { a: { pr: { ...pr(1, "opened"), pipeline }, fetchedAt: 1 } } },
+      );
+      await tool(deps, "mr_pipeline").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv);
+      expect(payloads).toEqual([{ repoName: ID, iid: 1, jobId: 7 }]);
+    }
+  });
+  test("mr_pipeline and mr_job_trace descriptions say jobId is not checked against the MR", () => {
+    const { deps } = fake();
+    for (const name of ["mr_pipeline", "mr_job_trace"]) {
+      expect(tool(deps, name).description).toContain("may name any job in the MR's project");
+    }
   });
   test("mr_pipeline on an unknown iid errors naming it and the daemon's open-MR cache", async () => {
     const { deps } = fake();
@@ -137,10 +185,39 @@ describe("mr read tools", () => {
     expect(res.ok).toBe(false);
     expect(res.error).toContain("no MR !9 in the daemon's open-MR cache for");
   });
-  test("mr_job_trace returns the trace text", async () => {
+  test("mr_job_trace returns the trace text with its line count", async () => {
     const { deps } = fake();
     const res = await tool(deps, "mr_job_trace").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv);
-    expect(res.body).toEqual({ trace: "log text" });
+    expect(res.body).toEqual({ trace: "log text", truncated: false, totalLines: 1 });
+  });
+  test("mr_job_trace keeps the last tailLines lines, default 200, and strips ANSI sequences", async () => {
+    const raw = Array.from({ length: 250 }, (_, i) => `\x1b[32;1mline ${i}\x1b[0m`).join("\n") + "\n";
+    const { deps } = fake({ command: (async () => ({ ok: true, data: raw })) as any });
+    const byDefault = (await tool(deps, "mr_job_trace").handler({ repoName: ID, iid: 1, jobId: 7 }, {} as NodeJS.ProcessEnv)).body as any;
+    expect(byDefault.totalLines).toBe(250);
+    expect(byDefault.truncated).toBe(true);
+    expect(byDefault.trace.split("\n")).toHaveLength(200);
+    expect(byDefault.trace.startsWith("line 50\n")).toBe(true);
+    expect(byDefault.trace).not.toContain("\x1b");
+    const three = (await tool(deps, "mr_job_trace").handler({ repoName: ID, iid: 1, jobId: 7, tailLines: 3 }, {} as NodeJS.ProcessEnv)).body as any;
+    expect(three).toEqual({ trace: "line 247\nline 248\nline 249", truncated: true, totalLines: 250 });
+  });
+  test("mr_job_trace caps the kept lines at 64 KiB from the end on a whole character", () => {
+    const line = "é".repeat(1000);
+    const out = tailTrace(Array.from({ length: 100 }, () => line).join("\n"), 200);
+    expect(out.truncated).toBe(true);
+    expect(out.totalLines).toBe(100);
+    expect(Buffer.byteLength(out.trace, "utf8")).toBeLessThanOrEqual(64 * 1024);
+    expect(out.trace).not.toContain("�");
+    expect(out.trace.endsWith(line)).toBe(true);
+  });
+  test("mr_job_trace refuses a non-positive or fractional tailLines before any daemon call", async () => {
+    const { deps, calls } = fake();
+    for (const tailLines of [0, -5, 2.5, "10"]) {
+      const res = await tool(deps, "mr_job_trace").handler({ repoName: ID, iid: 1, jobId: 7, tailLines }, {} as NodeJS.ProcessEnv);
+      expect(res.error).toBe('"tailLines" must be a positive integer');
+    }
+    expect(calls).toEqual([]);
   });
   test("mr_job_trace refuses a non-positive jobId", async () => {
     const { deps, calls } = fake();
