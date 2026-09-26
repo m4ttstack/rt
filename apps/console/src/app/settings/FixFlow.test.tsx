@@ -271,7 +271,11 @@ describe('Needs fixing on the page', () => {
 describe('Fix in the explain modal', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  function openFix(d: SettingDefWire, rows: ExplainRowWire[]) {
+  function openFix(
+    d: SettingDefWire,
+    rows: ExplainRowWire[],
+    setError: string | null = null
+  ) {
     vi.stubGlobal('fetch', async () => ({
       ok: true,
       status: 200,
@@ -286,7 +290,7 @@ describe('Fix in the explain modal', () => {
             defs: [d],
             loading: false,
             error: null,
-            set: vi.fn(async () => null),
+            set: vi.fn(async () => setError),
             unset: vi.fn(async () => null),
             move: vi.fn(async () => null),
             prune: vi.fn(async () => null),
@@ -405,6 +409,48 @@ describe('Fix in the explain modal', () => {
     );
     await within(layer).findByTestId('item-0');
     expect(url()).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a refused save keeps the reported issue on its layer', async () => {
+    const value = [{ ...RULE, url: 'https://example.test/{id}' }, RULE];
+    openFix(
+      bridges({
+        effective: { scope: 'user', file: USER_FILE, value },
+        issues: [
+          {
+            scope: 'user',
+            file: USER_FILE,
+            kind: 'nonconforming',
+            path: [0, 'url'],
+            message: 'expected string, got number',
+          },
+        ],
+      }),
+      [
+        { scope: 'default', file: null, present: false },
+        { scope: 'user', file: USER_FILE, present: true, value },
+      ],
+      'store refused the write'
+    );
+    const layer = await screen.findByTestId('layer-user');
+    const url = () =>
+      within(within(layer).getByTestId('item-0')).getByRole('textbox', {
+        name: 'url',
+      });
+    await within(layer).findByTestId('item-0');
+    await userEvent.type(url(), 'x');
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await screen.findByText('store refused the write');
+    await userEvent.click(
+      within(layer).getByRole('button', { name: 'Cancel' })
+    );
+    await userEvent.click(
+      within(layer).getByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    await within(layer).findByTestId('item-0');
+    expect(url()).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('a value the form cannot draw opens in JSON, never in cards', async () => {

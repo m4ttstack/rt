@@ -453,16 +453,19 @@ function ExplainBody({
   // re-reads the stack; prune goes through the same path as any other write.
   const tracked: RowStore & Pick<ConsoleStore, 'prune'> = {
     set: async (...a) => {
-      wrote(rung(a[1], a[3]));
-      return after(await store.set(...a));
+      const err = await store.set(...a);
+      if (!err) wrote(rung(a[1], a[3]));
+      return after(err);
     },
     unset: async (...a) => {
-      wrote(rung(a[1], a[2]));
-      return after(await store.unset(...a));
+      const err = await store.unset(...a);
+      if (!err) wrote(rung(a[1], a[2]));
+      return after(err);
     },
     move: async (...a) => {
-      wrote(a[1], a[2]);
-      return after(await store.move(...a));
+      const err = await store.move(...a);
+      wrote(...(err ? [a[2]] : [a[1], a[2]]));
+      return after(err);
     },
     prune: async (...a) => after(await store.prune(...a)),
   };
