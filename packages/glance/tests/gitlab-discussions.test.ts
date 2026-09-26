@@ -49,6 +49,28 @@ function fetcherWith(discussions: unknown[]): MRDetailFetcher {
   return fetcher;
 }
 
+/**
+ * A fetcher whose REST calls are answered per page, keyed by the `page`
+ * query param, with the raw request URLs recorded in `urls`.
+ */
+function fetcherWithPages(
+  pages: Record<string, { discussions: unknown[]; nextPage: string }>
+): { fetcher: MRDetailFetcher; urls: string[] } {
+  const fetcher = new MRDetailFetcher('https://gitlab.com', 'tok');
+  const urls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    urls.push(url);
+    const page = new URL(url).searchParams.get('page') ?? '1';
+    const entry = pages[page];
+    if (!entry) throw new Error(`unexpected page ${page}`);
+    return new Response(JSON.stringify(entry.discussions), {
+      status: 200,
+      headers: { 'content-type': 'application/json', 'x-next-page': entry.nextPage }
+    });
+  }) as unknown as typeof fetch;
+  return { fetcher, urls };
+}
+
 describe('MRDetailFetcher: discussion resolution state', () => {
   test('a fully resolved thread reports resolved: true', async () => {
     const f = fetcherWith([
@@ -131,5 +153,28 @@ describe('MRDetailFetcher: discussion resolution state', () => {
     expect(byId.d7).toEqual([true, true]);
     expect(byId.d8).toEqual([true, false]);
     expect(byId.d9).toEqual([false, null]);
+  });
+});
+
+describe('MRDetailFetcher: discussion pagination', () => {
+  test('walks x-next-page and returns discussions from every page in order', async () => {
+    const { fetcher, urls } = fetcherWithPages({
+      '1': { discussions: [{ id: 'd1', notes: [note(1, true, true)] }], nextPage: '2' },
+      '2': { discussions: [{ id: 'd2', notes: [note(2, true, false)] }], nextPage: '' }
+    });
+
+    const detail = await fetcher.fetchDetail(42, 7);
+
+    expect(detail.discussions.map(d => d.id)).toEqual(['d1', 'd2']);
+    expect(urls[1]).toContain('page=2');
+    expect(urls[1]).toContain('per_page=100');
+  });
+
+  test('a non-advancing page rejects instead of looping forever', async () => {
+    const { fetcher } = fetcherWithPages({
+      '1': { discussions: [{ id: 'd1', notes: [note(1, true, true)] }], nextPage: '1' }
+    });
+
+    await expect(fetcher.fetchDetail(42, 7)).rejects.toThrow(/non-advancing page/);
   });
 });

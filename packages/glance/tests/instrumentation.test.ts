@@ -54,6 +54,22 @@ describe('safeEmit', () => {
     expect(() => safeEmit(() => { throw new Error('boom'); }, info)).not.toThrow();
     expect(() => safeEmit(undefined, info)).not.toThrow();
   });
+
+  test('swallows a rejecting async hook without an unhandled rejection', async () => {
+    const info: RequestInfo = { op: 'x', transport: 'graphql', method: 'POST', path: '/api/graphql', durationMs: 1, status: 200 };
+    let unhandled: unknown = null;
+    const onUnhandledRejection = (reason: unknown) => { unhandled = reason; };
+    process.on('unhandledRejection', onUnhandledRejection);
+    try {
+      expect(() => safeEmit(async () => { throw new Error('boom'); }, info)).not.toThrow();
+      // The rejection is scheduled on a microtask; a timer tick lets Node/Bun
+      // report it as unhandled before the assertion below checks for one.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toBeNull();
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
+  });
 });
 
 describe('runQuery onRequest', () => {
