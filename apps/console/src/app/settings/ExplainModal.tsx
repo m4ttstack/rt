@@ -181,6 +181,12 @@ function LayerLine({
         )}
       </Suggested>
     );
+  else if (editing && composite)
+    value = (
+      <Text fz={12} c={text.muted}>
+        editing below
+      </Text>
+    );
   else if (!row.present)
     value = (
       <Text fz={12} c={text.muted}>
@@ -304,11 +310,12 @@ function LayerLine({
             {row.invalid}
           </Text>
         )}
-        {row.nonconforming?.map((issue, i) => (
-          <Text key={i} fz={12} ff="monospace" c="var(--tk-text-warn-small)">
-            {issueText(issue)}
-          </Text>
-        ))}
+        {!(editing && composite) &&
+          (reported ?? row.nonconforming ?? []).map((issue, i) => (
+            <Text key={i} fz={12} ff="monospace" c="var(--tk-text-warn-small)">
+              {issueText(issue)}
+            </Text>
+          ))}
         {store && !allowed && (
           <Text fz={12} c={text.muted}>
             {`not allowed at this layer (allowed: ${def.scopes.join(', ')})`}
@@ -537,12 +544,20 @@ function ExplainBody({
     const mark = isRung(row.scope) ? `${row.scope}@${repo}` : row.scope;
     return written.has(mark) && written.get(mark) === storeDef.issues;
   };
-  const reportedFor = (row: ExplainRowWire): SchemaIssue[] => [
-    ...(row.nonconforming ?? []),
-    ...(stale(row) ? [] : (def.issues ?? []))
-      .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
-      .map(i => ({ path: i.path, message: i.message })),
-  ];
+  const reportedFor = (row: ExplainRowWire): SchemaIssue[] => {
+    const seen = new Set<string>();
+    return [
+      ...(row.nonconforming ?? []),
+      ...(stale(row) ? [] : (def.issues ?? []))
+        .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
+        .map(i => ({ path: i.path, message: i.message })),
+    ].filter(i => {
+      const id = JSON.stringify([i.path, i.message]);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
 
   return (
     <Stack gap={0}>
@@ -555,6 +570,9 @@ function ExplainBody({
             query=""
             suggestions={suggestions}
             fullDescription
+            hideIssue={issue =>
+              !isDiverged(issue) && rows.some(r => onLayer(r)(issue))
+            }
           />
         )}
       </Suggested>

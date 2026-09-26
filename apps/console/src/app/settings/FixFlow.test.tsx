@@ -315,7 +315,8 @@ describe('Fix in the explain modal', () => {
   function openFix(
     d: SettingDefWire,
     rows: ExplainRowWire[],
-    setError: string | null = null
+    setError: string | null = null,
+    fix: string | null = 'user'
   ) {
     vi.stubGlobal('fetch', async () => ({
       ok: true,
@@ -326,7 +327,7 @@ describe('Fix in the explain modal', () => {
       <QueryClientProvider client={new QueryClient()}>
         <ExplainModal
           settingKey={d.key}
-          fix="user"
+          fix={fix}
           store={{
             defs: [d],
             loading: false,
@@ -341,6 +342,52 @@ describe('Fix in the explain modal', () => {
       </QueryClientProvider>
     );
   }
+
+  it('a layer issue shows once, on its layer, not again on the row above', async () => {
+    openFix(
+      bridges(),
+      [
+        { scope: 'default', file: null, present: false },
+        {
+          scope: 'user',
+          file: USER_FILE,
+          present: true,
+          value: [RULE, RULE, { ...RULE, url: 3 }],
+          nonconforming: [
+            { path: [2, 'url'], message: 'expected string, got number' },
+          ],
+        },
+      ],
+      null,
+      null
+    );
+    const layer = await screen.findByTestId('layer-user');
+    await waitFor(() =>
+      expect(screen.getAllByText(/expected string, got number/)).toHaveLength(1)
+    );
+    expect(
+      within(layer).getByText(/expected string, got number/)
+    ).toBeInTheDocument();
+  });
+
+  it('while a layer is edited, its stored value steps aside for the editor', async () => {
+    openFix(bridges(), [
+      { scope: 'default', file: null, present: false },
+      {
+        scope: 'user',
+        file: USER_FILE,
+        present: true,
+        value: [RULE, RULE, { ...RULE, url: 3 }],
+        nonconforming: [
+          { path: [2, 'url'], message: 'expected string, got number' },
+        ],
+      },
+    ]);
+    const layer = await screen.findByTestId('layer-user');
+    await within(layer).findByTestId('item-2');
+    expect(within(layer).queryByTestId('layer-value-user')).toBeNull();
+    expect(within(layer).getAllByText(/expected string, got number/)).toHaveLength(2);
+  });
 
   it('opens the layer in the form when the form can draw it, the field highlighted, Save off', async () => {
     const value = [RULE, RULE, { ...RULE, url: 3 }];

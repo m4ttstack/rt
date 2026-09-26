@@ -39,12 +39,16 @@ const DIVERGED_WRAP_STYLE = { width: '100%', minWidth: 0 } as const;
 export function IssueLines({
   def,
   onFix,
+  hide,
 }: {
   def: SettingDefWire;
   onFix?: (issue: WireIssue | null) => void;
+  /** Issues another part of the view already shows (the explain modal's
+      layer lines), left out here so the text is not repeated. */
+  hide?: (issue: WireIssue) => boolean;
 }) {
   const { text } = useSchemeColors();
-  const issues = def.issues ?? [];
+  const issues = (def.issues ?? []).filter(i => !hide?.(i));
   const merged = def.mergedIssues ?? [];
   if (issues.length === 0 && merged.length === 0) return null;
   const line = (key: string, label: string, fix?: () => void) => (
