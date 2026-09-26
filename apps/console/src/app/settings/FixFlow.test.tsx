@@ -30,8 +30,10 @@ vi.mock('../config/useSettings', () => ({
 const { SettingsPage } = await import('./SettingsPage');
 const { ExplainModal } = await import('./ExplainModal');
 const { schemaFields } = await import('./testSchemas');
+const { SettingsRepoContext } = await import('./useConsoleSettings');
 
 const REPO = 'gitlab.example.com/acme/app';
+const OTHER_REPO = 'gitlab.example.com/acme/web';
 const USER_FILE = '/home/user/settings.user.jsonc';
 const RULE = {
   pattern: 'gate/opened/*',
@@ -451,6 +453,78 @@ describe('Fix in the explain modal', () => {
     );
     await within(layer).findByTestId('item-0');
     expect(url()).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('a write in one repo keeps the reported issue on another repo’s rung', async () => {
+    const value = { dev: { fixedPort: 3000 } };
+    const issue = (repo: string) => ({
+      scope: 'team.repo',
+      file: '/home/team/settings.team.jsonc',
+      repo,
+      kind: 'nonconforming',
+      path: ['dev', 'fixedPort'],
+      message: 'expected number, got string',
+    });
+    const d = roles();
+    d.issues = [issue(REPO), issue(OTHER_REPO)];
+    const rows: ExplainRowWire[] = [
+      { scope: 'default', file: null, present: false },
+      { scope: 'team', file: '/home/team/settings.team.jsonc', present: false },
+      {
+        scope: 'team.repo',
+        file: '/home/team/settings.team.jsonc',
+        present: true,
+        value,
+      },
+    ];
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => structuredClone({ def: d, rows }),
+    }));
+    const store = {
+      defs: [d],
+      loading: false,
+      error: null,
+      set: vi.fn(async () => null),
+      unset: vi.fn(async () => null),
+      move: vi.fn(async () => null),
+      prune: vi.fn(async () => null),
+    };
+    const modal = (repo: string) => (
+      <SettingsRepoContext.Provider value={repo}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ExplainModal
+            settingKey={d.key}
+            fix="team.repo"
+            store={store}
+            onClose={vi.fn()}
+          />
+        </QueryClientProvider>
+      </SettingsRepoContext.Provider>
+    );
+    const { rerender } = renderWithProviders(modal(REPO));
+    const layer = await screen.findByTestId('layer-team.repo');
+    const port = () =>
+      within(layer).getByRole('textbox', { name: 'fixedPort' });
+    await userEvent.type(
+      await within(layer).findByRole('textbox', { name: 'fixedPort' }),
+      '1'
+    );
+    await userEvent.click(within(layer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(layer).queryByRole('button', { name: 'Save' })).toBeNull()
+    );
+    rerender(modal(OTHER_REPO));
+    await userEvent.click(
+      await within(layer).findByRole('button', {
+        name: 'set rt.roles at team · repo',
+      })
+    );
+    expect(
+      await within(layer).findByRole('textbox', { name: 'fixedPort' })
+    ).toBeInTheDocument();
+    expect(port()).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('a value the form cannot draw opens in JSON, never in cards', async () => {

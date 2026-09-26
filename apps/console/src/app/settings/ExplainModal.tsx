@@ -447,8 +447,9 @@ function ExplainBody({
   const [written, setWritten] = useState<ReadonlySet<string>>(new Set());
   const wrote = (...scopes: string[]) =>
     setWritten(w => new Set([...w, ...scopes]));
-  const rung = (scope: string, repo?: string) =>
-    repo ? `${scope}.repo` : scope;
+  // A rung is written per repo, so its mark carries the repo it landed in.
+  const rung = (scope: string, target?: string) =>
+    target ? `${scope}.repo@${target}` : scope;
   // A failed move can still have written its target, so every settled write
   // re-reads the stack; prune goes through the same path as any other write.
   const tracked: RowStore & Pick<ConsoleStore, 'prune'> = {
@@ -501,7 +502,10 @@ function ExplainBody({
   // reported, and those are the ones Fix was opened from.
   const reportedFor = (row: ExplainRowWire): SchemaIssue[] => [
     ...(row.nonconforming ?? []),
-    ...(written.has(row.scope) ? [] : (def.issues ?? []))
+    ...(written.has(isRung(row.scope) ? `${row.scope}@${repo}` : row.scope)
+      ? []
+      : (def.issues ?? [])
+    )
       .filter(i => i.kind === 'nonconforming' && onLayer(row)(i))
       .map(i => ({ path: i.path, message: i.message })),
   ];
