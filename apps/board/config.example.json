@@ -1,0 +1,55 @@
+{
+  "gitlabHost": "https://gitlab.com",
+  "projects": ["group/project"],
+  "rtRepos": {
+    "your-group/your-project": "your-rt-repo-name"
+  },
+  "members": [
+    {
+      "username": "your-gitlab-username",
+      "name": "Your Name"
+    },
+    {
+      "username": "teammate-username"
+    }
+  ],
+  "defaultMember": "your-gitlab-username",
+  "staleAfterDays": 30,
+  "title": "MR Board",
+  "botUsernames": ["some-integration-bot"],
+  "reviewsWorkspace": "reviews",
+  "respondsWorkspace": "responses",
+  "doctorsWorkspace": "doctors",
+  "claudeCommand": "",
+  "triage": {
+    "enabled": false,
+    "cooldownMinutes": 30,
+    "maxConcurrent": 2,
+    "dailyAttemptBudget": 3,
+    "fixClasses": {
+      "retryFlake": true,
+      "inheritedNoteDraft": true,
+      "cleanApiRebase": false,
+      "mechanicalLint": false,
+      "codeFix": false
+    },
+    "doctorSkill": "",
+    "notify": "rt"
+  },
+  "slack": {
+    "channel": "your-review-channel",
+    "singleTemplate": "{title}: {url}",
+    "multiHeader": "{count} MR's ready for review :pray:",
+    "multiItem": "- {title}: {url}",
+    "autoResolveIntervalMinutes": 15,
+    "emoji": {
+      "looking": "eyes",
+      "commented": "speech_balloon",
+      "approved": "white_check_mark"
+    }
+  },
+  "switchboard": {
+    "url": ""
+  },
+  "tabs": [{ "id": "team", "label": "Team", "source": { "kind": "authors" } }]
+}

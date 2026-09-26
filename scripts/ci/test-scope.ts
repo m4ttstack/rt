@@ -21,6 +21,11 @@ export type ScopeInput = {
 
 const PRELOAD = "test-setup.ts";
 
+// A leading "./" scopes bun test's substring filter to that directory (a bare
+// name matches anywhere in the tree), so unitDirs returns the tokens as
+// written in the script, "./" included: the CI dirs= output line needs them
+// verbatim. Anything that walks the filesystem strips the prefix itself via
+// unitDirPath below.
 export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage()): string[] {
   const script = pkg.scripts.test ?? "";
   const dirs = /^bun test ([\w./][\w./-]*(?: [\w./][\w./-]*)*)$/.exec(script)?.[1]?.trim();
@@ -28,9 +33,19 @@ export function unitDirs(pkg: { scripts: Record<string, string> } = readPackage(
   return dirs.split(/\s+/);
 }
 
+function unitDirPath(dir: string): string {
+  return join(ROOT, dir.replace(/^\.\//, ""));
+}
+
 export function alwaysRun(): string[] {
-  const files = unitDirs().flatMap((dir) => testFiles(join(ROOT, dir)));
+  const files = unitDirs().flatMap((dir) => testFiles(unitDirPath(dir)));
   return files.filter((f) => /^no-.*\.test\.tsx?$/.test(basename(f))).sort();
+}
+
+// The always= GITHUB_OUTPUT line: "./" prefixed for the same reason as
+// unitDirs, a bare path there is a substring filter over the whole tree.
+export function alwaysRunPaths(): string[] {
+  return alwaysRun().map((f) => `./${f}`);
 }
 
 function readPackage() {
@@ -54,6 +69,35 @@ function isFixture(f: string): boolean {
   return /(^|\/)(fixtures|__fixtures__)\//.test(f);
 }
 
+const APPS_PACKAGES = ["gate-kit", "server", "tokens", "tokyo", "tui-kit", "ui"];
+const APPS_ROOT_FILES = new Set([
+  "turbo.json",
+  "eslint.config.mjs",
+  ".prettierrc",
+  ".prettierignore",
+  "tsconfig.tools.json",
+  "vitest.config.ts",
+  "scripts/turbo.sh",
+  "scripts/set-platform-version.ts",
+]);
+
+// The apps' trees run under turbo in `static`; the unit shards never read
+// them. Safe to skip only because //#turbo:test (scripts/turbo.sh, run every
+// static) covers the two rt tests that glob apps/packages content
+// (scripts/__tests__/turbo-inputs.test.ts and turbo-graph.test.ts) -- without
+// that root task, an apps-only PR would bypass the guards written for it.
+function isAppsTree(f: string): boolean {
+  return (
+    f.startsWith("apps/") ||
+    APPS_PACKAGES.some((p) => f.startsWith(`packages/${p}/`)) ||
+    f.startsWith("docs/apps/") ||
+    f.startsWith("stories/") ||
+    f.startsWith(".storybook/") ||
+    f.startsWith("probe/") ||
+    APPS_ROOT_FILES.has(f)
+  );
+}
+
 function readBy(sources: Map<string, string>, f: string): string | undefined {
   const name = basename(f);
   for (const [source, text] of sources) {
@@ -75,10 +119,14 @@ export function decide(input: ScopeInput): Decision {
   if (input.event !== "pull_request") return { mode: "full", reason: `${input.event} is not a pull request` };
   if (input.changed.length === 0) return { mode: "skip", reason: "no changed files" };
 
-  const skippable = input.changed.every((f) => (isDocs(f) || isSwift(f)) && !isFixture(f));
+  const skippable = input.changed.every((f) => isAppsTree(f) || ((isDocs(f) || isSwift(f)) && !isFixture(f)));
   if (skippable) {
-    const read = input.changed.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
-    if (!read) return { mode: "skip", reason: "only docs or swift, none of it read by a unit test" };
+    // Only the finite named apps root files are ever read by hardcoded path;
+    // an ordinary apps source file's basename (index.ts, README.md) is common
+    // enough to false-positive against unrelated rt tests.
+    const checkable = input.changed.filter((f) => !isAppsTree(f) || APPS_ROOT_FILES.has(f));
+    const read = checkable.map((f) => [f, readBy(input.sources, f)] as const).find(([, by]) => by);
+    if (!read) return { mode: "skip", reason: "only docs, swift or apps trees, none of it read by a unit test" };
     return { mode: "full", reason: `${read[0]} is read by ${read[1]}` };
   }
 
@@ -98,7 +146,7 @@ export function collectSources(): { sources: Map<string, string>; preloadImports
   const preloadImports = walk([PRELOAD]);
   preloadImports.delete(PRELOAD);
   const roots = [PRELOAD];
-  for (const dir of unitDirs()) roots.push(...testFiles(join(ROOT, dir)));
+  for (const dir of unitDirs()) roots.push(...testFiles(unitDirPath(dir)));
   const sources = new Map<string, string>();
   for (const rel of walk(roots)) sources.set(rel, readFileSync(join(ROOT, rel), "utf8"));
   return { sources, preloadImports };
@@ -161,7 +209,7 @@ if (import.meta.main) {
   const scope = event === "pull_request" ? collectSources() : { sources: new Map<string, string>(), preloadImports: new Set<string>() };
   const decision = decide({ event, changed, ...scope });
   const dirs = unitDirs().join(" ");
-  const always = alwaysRun().join(" ");
+  const always = alwaysRunPaths().join(" ");
   console.log(`mode=${decision.mode} (${decision.reason})`);
   console.log(`dirs=${dirs}`);
   console.log(`always=${always}`);

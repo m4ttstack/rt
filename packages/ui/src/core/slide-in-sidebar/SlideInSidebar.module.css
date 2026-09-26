@@ -1,0 +1,9 @@
+/*
+ * The inline variant's collapse choreography: the outer rail animates its
+ * width (and border) between the configured width and 0, the content fades
+ * out in step, and the floating trigger rides the moving edge. One shared
+ * transition class keeps the three movements in lockstep.
+ */
+.slide {
+  transition: all 300ms ease-in-out;
+}

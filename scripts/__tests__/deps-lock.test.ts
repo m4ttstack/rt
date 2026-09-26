@@ -22,8 +22,8 @@ function tool(overrides: Partial<DepsLockTool> = {}): DepsLockTool {
 }
 
 describe("deps-lock.ts TSV emitter", () => {
-  test("emits 11 tab-separated fields in the documented order", () => {
-    expect(toTsvRow(tool()).split("\t")).toHaveLength(11);
+  test("emits 12 tab-separated fields in the documented order", () => {
+    expect(toTsvRow(tool()).split("\t")).toHaveLength(12);
   });
   test("emits fields in the documented column order", () => {
     const t = tool({
@@ -51,6 +51,7 @@ describe("deps-lock.ts TSV emitter", () => {
       "bundled",
       "helper",
       "true",
+      "",
     ]);
   });
   test("throws rather than emit a field containing a tab", () => {
@@ -62,12 +63,23 @@ describe("deps-lock.ts TSV emitter", () => {
   test("throws rather than emit a field containing a carriage return", () => {
     expect(() => toTsvRow(tool({ extract: "a\rb" }))).toThrow(/tab or newline/);
   });
-  test("a served app row still emits 11 fields and serve never reaches the TSV", () => {
+  test("a served app row still emits 12 fields and serve never reaches the TSV", () => {
     const cols = toTsvRow(tool({
       name: "board", bundlePath: "Contents/Helpers/board", exec: ["Contents/Helpers/board"],
       serve: { port: 11006, args: ["serve"] },
     })).split("\t");
-    expect(cols).toHaveLength(11);
+    expect(cols).toHaveLength(12);
     expect(cols).not.toContain("11006");
+  });
+  test("a tree row's 12th field is its source, url and sha256 emit empty", () => {
+    const { url: _u, sha256: _s, ...rest } = tool({ name: "board", source: "tree" });
+    const cols = toTsvRow(rest as DepsLockTool).split("\t");
+    expect(cols).toHaveLength(12);
+    expect(cols[2]).toBe("");
+    expect(cols[3]).toBe("");
+    expect(cols[11]).toBe("tree");
+  });
+  test("a fetched row's 12th field is empty", () => {
+    expect(toTsvRow(tool()).split("\t")[11]).toBe("");
   });
 });

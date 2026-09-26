@@ -162,6 +162,17 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     );
   }
 
+  // fetch-deps does not cover the tree rows (board, boxscore, chat, console, gitq): without
+  // building them here, build.sh dev either bundles stale binaries from a worktree's
+  // rt-tray/deps or refuses for lacking them.
+  const install = await seams.exec(["bun", "install", "--frozen-lockfile"], { cwd: scratch, timeoutMs: 1_800_000 });
+  if (install.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `bun install failed: ${tail(install)}`);
+
+  const buildApps = await seams.exec(["bun", "scripts/build-apps.ts", "--arch", "arm64"], { cwd: scratch, timeoutMs: 1_800_000 });
+  if (buildApps.exitCode !== 0) {
+    throw new UserActionableError("dev-app-build-apps-failed", `scripts/build-apps.ts failed: ${tail(buildApps)}`);
+  }
+
   const identityEnv = buildIdentity
     ? [
         `MS_BUILD_TREE=${buildIdentity.tree}`,

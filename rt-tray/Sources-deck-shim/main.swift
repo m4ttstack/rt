@@ -1,5 +1,5 @@
 // deck-dev-shim: the dev bundle's Contents/Helpers/deck. It runs deck from
-// the linked mattstack-apps checkout under bun when it can, and the pinned
+// its registered source checkout under bun when it can, and the pinned
 // release (Contents/Helpers/deck-pinned) otherwise. The dev flavor only;
 // the prod bundle ships the pinned binary under this name.
 //

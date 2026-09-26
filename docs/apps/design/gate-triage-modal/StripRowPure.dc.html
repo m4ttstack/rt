@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; }
+    .stage {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      width: 720px; height: 340px; position: relative; overflow: hidden;
+      font-family: var(--font-sans); font-size: 13.5px; line-height: 1.55;
+      background: var(--bg); padding: 24px; box-sizing: border-box;
+    }
+    .stage.dark {
+      --bg: #16161e; --panel: #232a47; --card: #2c3352; --chrome: #232a47;
+      --fg: #e3e7f6; --muted: #7e86ad; --muted-text: #969ec2;
+      --border: #3b4261; --border-soft: #313853;
+      --accent: #7aa2f7; --purple: #bb9af7; --amber: #e0af68;
+      --gate-muted: #aab3d8; --gate-edge: #505879;
+    }
+    .stage.light {
+      --bg: #f7f8fa; --panel: #fbfbfc; --card: #ffffff; --chrome: #f3f4f7;
+      --fg: #222; --muted: #8990b3; --muted-text: #565d80;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --accent: #2e7de9; --purple: #7847bd; --amber: #8c6c3e;
+      --gate-muted: #565d80; --gate-edge: #c8cad6;
+    }
+    .modal {
+      box-sizing: border-box; width: 100%;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--panel);
+      padding: 1rem 1.1rem 1.2rem;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      display: flex; flex-direction: column; gap: 0.6rem;
+      color: var(--fg);
+    }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; }
+    .head-left { display: flex; align-items: baseline; gap: 8px; }
+    .modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
+    .queue-pos { font-family: var(--font-mono); font-size: 0.7rem; font-variant-numeric: tabular-nums; color: var(--gate-muted); font-weight: 500; }
+    .pips { display: inline-flex; align-items: center; gap: 5px; align-self: center; }
+    .pip { width: 6px; height: 6px; border-radius: 2px; }
+    .pip.done { background: #4ade5b; }
+    .pip.active { background: var(--amber); }
+    .pip.todo { background: transparent; border: 1px solid var(--gate-edge); box-sizing: border-box; }
+    .modal-x { background: none; border: none; color: var(--muted); font-size: 0.9rem; padding: 0.2rem 0.4rem; }
+    .ghost { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--gate-muted); font-family: var(--font-sans); font-size: 0.7rem; padding: 2px 8px; flex-shrink: 0; }
+    .kind { flex-shrink: 0; font: 600 0.66rem/1.4 var(--font-sans); text-transform: uppercase; letter-spacing: 0.03em; color: var(--gate-muted); }
+    /* the MR row, byte-values from style.css */
+    .strip { display: flex; flex-direction: column; gap: 0; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--chrome); }
+    .row-1 { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+    .tui-title { font-weight: 500; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+    .tui-ticket { color: var(--purple); opacity: 0.75; flex-shrink: 0; font-size: 0.72rem; }
+    .row-2 { display: flex; align-items: center; gap: 0.55rem; color: var(--muted-text); font-size: 0.6rem; margin-top: 0.15rem; }
+    .author { color: var(--purple); font-size: 0.7rem; }
+    .sep { opacity: 0.5; }
+    .mono { font-family: var(--font-mono); }
+    .card-sliver { border: 1px solid var(--gate-edge); border-bottom: none; border-radius: 10px 10px 0 0; background: var(--card); height: 42px; margin: 0 auto; width: 30rem; max-width: 100%; padding: 0.9rem 1.1rem 0; box-sizing: border-box; display: flex; justify-content: space-between; }
+    .q { font-size: 0.95rem; font-weight: 600; }
+    .qp { font-size: 0.72rem; color: var(--gate-muted); }
+    a { color: #7aa2f7; }
+  </style>
+</helmet>
+<div class="stage {{scheme}}">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="head-left">
+        <span class="modal-title">triage</span>
+        <span class="queue-pos">gate 2 of 5</span>
+        <span class="pips"><i class="pip done"></i><i class="pip active"></i><i class="pip todo"></i><i class="pip todo"></i><i class="pip todo"></i></span>
+        <span class="kind">respond-plan</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 4px">
+        <button class="ghost">focus pane</button>
+        <button class="ghost">skip gate</button>
+        <button class="modal-x">✕</button>
+      </div>
+    </div>
+    <div class="strip">
+          <div class="row-1">
+            <span class="tui-title">themed gate controls</span>
+            <span class="tui-ticket">BOARD-28</span>
+          </div>
+          <div class="row-2">
+            <span class="author">Paul</span>
+            <span class="mono">!31</span>
+            <span class="sep">|</span>
+            <span class="mono">board-28-themed-gate-controls</span>
+            <span>2h</span>
+            <span class="mono">widgets · pane-1</span>
+          </div>
+    </div>
+    <div class="card-sliver"><span class="q">Thread 1: naming</span><span class="qp">Question 1 of 2</span></div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"scheme":{"editor":"enum","default":"dark","options":["dark","light"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { scheme: this.props.scheme ?? 'dark' };
+  }
+}
+</script>
+</body>
+</html>

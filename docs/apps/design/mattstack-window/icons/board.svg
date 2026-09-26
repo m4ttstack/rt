@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- console's web recipe: 32-unit tile, squircle rx=7.2, pink tile / dark
+       glyph. Merge pictograph with ~8-unit margins on the 32 grid (meg's
+       own target for the family) and a 3.2 stroke, matching console's
+       current values. -->
+  <rect width="32" height="32" rx="7.2" fill="#ff84ad"/>
+  <circle cx="21" cy="10" r="2.4" fill="#1d1830"/>
+  <line x1="21" y1="12.4" x2="21" y2="19.6" stroke="#1d1830" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="21" cy="22" r="2.4" fill="#1d1830"/>
+  <circle cx="11" cy="22" r="2.4" fill="#1d1830"/>
+  <path d="M11 19.6 V17 Q11 14 14 14 H21" fill="none" stroke="#1d1830" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

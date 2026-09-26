@@ -1,0 +1,240 @@
+import { readFileSync } from 'fs';
+import { Database } from 'bun:sqlite';
+
+import {
+  dropPrunedState,
+  getStateDb,
+  insertAgentState,
+  mintHandle,
+  pruneStates,
+  readPrunedStates,
+  readReport,
+  readStates,
+  reportPathForHandle,
+  resurrectState,
+  updateByHandle,
+} from './state/index.ts';
+
+export type ReviewStatus = 'queued' | 'reviewing' | 'done' | 'error';
+export type ReviewOutcome = 'comment' | 'approve';
+
+export interface ReviewState {
+  mrUrl: string;
+  iid: number;
+  status: ReviewStatus;
+  message?: string;
+  tabId?: string;
+  workspaceId?: string;
+  /** The review's verdict, emitted by the skill on `done`. The board consumes
+      this and drops the matching reaction on the MR's slack message. */
+  outcome?: ReviewOutcome;
+  /** Claude Code session id, captured by the status CLI on any write. Lets the
+      board relaunch the same conversation via `claude --resume <sessionId>`
+      (see launchLegacyResume) when no agentId is on file. */
+  sessionId?: string;
+  /** rt agent record id from the launch/resume result. When present, a resume
+      goes through resumeAgentPane instead of the legacy claude --resume path. */
+  agentId?: string;
+  /** rt herdr pane id the agent landed in, from the launch/resume result. */
+  paneId?: string;
+  /** Facility gate id from the most recent `gate open`, so `gate wait` /
+      `gate answer` can find it by state path alone. */
+  gateId?: string;
+  /** The kind `gateId` was opened with (e.g. "review-post") -- the wrapper's
+      own re-entry reads this to know what a `--resumed-gate` id names. */
+  gateKind?: string;
+  /** Id of the gate the board has already resumed a parked-then-answered
+      session for. The exactly-once dedup marker for `handleAnsweredEvent`/
+      `bootResumePass` (gates/resume.ts) -- a gate id matching this is never
+      resumed twice, whether the resume is retried by a boot pass or the
+      live event fires again. `released` can never stand in for this: it
+      stays false forever for the board's unattended gates. */
+  resumedGateId?: string;
+  /** Stamp of the last operator reopen of a finished pane ("resume review"),
+      written with the SAME clock value the write's updatedAt gets. While
+      reopenedAt >= updatedAt the done+tabId shape is a deliberately reopened
+      pane, so the gate sweep's close-missed-done must not fire on it; any
+      later write bumps updatedAt past it and the exemption lapses on its
+      own -- nothing ever clears this field. */
+  reopenedAt?: number;
+  /** Stamp of the operator dismissing this lane's line from the row. While
+      it is at least as new as `updatedAt` the row skips the lane entirely;
+      any later write (a relaunch, the pane's own status CLI) outranks it and
+      the lane speaks again. Never clears a thing: the run stays readable. */
+  dismissedAt?: number;
+  startedAt: number;
+  updatedAt: number;
+  /** Whether the agent has written its full review markdown yet. Computed at
+      read time from the db report column; never persisted to the state JSON. */
+  reportReady?: boolean;
+}
+
+/** Deterministic handle for an MR's review row, so a repeat launch resolves
+    the same row. */
+export function reviewFilePath(mrUrl: string): string {
+  return mintHandle('review', mrUrl);
+}
+
+/** Sibling markdown file holding the agent's full written review, derived
+    from the handle so the server and the review agent resolve the same
+    location without passing it around. Still the pane's scratch handoff. */
+export function reviewReportPath(handle: string): string {
+  return reportPathForHandle(handle);
+}
+
+/** Sibling `.json` structured report a review pane can write beside its
+    `.md` one, for the sheet UI. Read straight off disk rather than ingested
+    into the db like the markdown (see readReviewReport): it reflects
+    whatever the pane last wrote at read time. `root` defaults to the real
+    board state root; tests pass their own tmp dir, matching mintHandle. */
+export function readReviewReportJson(
+  mrUrl: string,
+  db: Database = getStateDb()
+): string | null {
+  // Resolve the exact row first: slugging alone is lossy (`a/b` and `a-b`
+  // mint the same handle), so a path derived straight from the request's
+  // URL could serve a different MR's report. Only a row keyed by this
+  // exact mr_url names a report this URL may read, and the path comes
+  // from that row's stored handle, never from the request.
+  const row = db
+    .query(
+      "SELECT handle FROM agent_states WHERE lane = 'review' AND mr_url = ?"
+    )
+    .get(mrUrl) as { handle: string } | null;
+  if (!row) return null;
+  const reportPath = reviewReportPath(row.handle);
+  // This derived path coincides with mintHandle's own <slug>.json handle
+  // path. Handles are db rows, not files, so that coincidence is safe:
+  // pruneStates unlinking <slug>.json is this report's intended cleanup,
+  // not a collision with live handle state. If handles ever become files
+  // again, this derivation has to change with them.
+  const jsonPath = /\.md$/.test(reportPath)
+    ? reportPath.replace(/\.md$/, '.json')
+    : `${reportPath}.json`;
+  try {
+    return readFileSync(jsonPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** The written review markdown for an MR, or null if the agent hasn't saved one. */
+export function readReviewReport(
+  mrUrl: string,
+  db: Database = getStateDb()
+): string | null {
+  return readReport('review', mrUrl, db);
+}
+
+/** Read-merge-write a review row. First write stamps startedAt; every write
+    stamps updatedAt. Tries updateByHandle first; when no row exists it
+    requires `patch.mrUrl` and `patch.iid` to insert a fresh row, else there
+    is no identity to key the row by and the caller is doing something wrong. */
+export function writeReviewState(
+  handle: string,
+  patch: Partial<ReviewState> & { status: ReviewStatus },
+  now: number = Date.now(),
+  db: Database = getStateDb()
+): ReviewState {
+  const updated = updateByHandle(handle, patch, now, db);
+  if (updated) return updated as ReviewState;
+  if (patch.mrUrl === undefined || patch.iid === undefined) {
+    throw new Error(
+      `review state write with no prior row and no identity: ${handle}`
+    );
+  }
+  const next: ReviewState = {
+    mrUrl: patch.mrUrl,
+    iid: patch.iid,
+    status: patch.status,
+    message: patch.message,
+    tabId: patch.tabId,
+    workspaceId: patch.workspaceId,
+    outcome: patch.outcome,
+    sessionId: patch.sessionId,
+    agentId: patch.agentId,
+    paneId: patch.paneId,
+    gateId: patch.gateId,
+    gateKind: patch.gateKind,
+    resumedGateId: patch.resumedGateId,
+    reopenedAt: patch.reopenedAt,
+    dismissedAt: patch.dismissedAt,
+    startedAt: now,
+    updatedAt: now,
+  };
+  insertAgentState('review', patch.mrUrl, patch.iid, next, handle, db);
+  return next;
+}
+
+/** Read all review states, keyed by mrUrl. Pruning is by board membership (see
+    pruneReviewStates), not age... a review persists as long as its MR is shown. */
+export function readReviewStates(
+  db: Database = getStateDb()
+): Map<string, ReviewState> {
+  return readStates('review', db) as Map<string, ReviewState>;
+}
+
+/** Tombstone review states (and unlink their sibling `.md` reports) whose MR
+    is no longer on the board... so a review is live exactly as long as its MR
+    is shown, then goes dark once the MR merges/closes/goes stale. `keepUrls`
+    is the current board MR set; callers gate this on a healthy snapshot so a
+    failed fetch can't hide live state. Tombstones stay resurrectable: see
+    readPrunedReviewStates/resurrectReviewState. */
+export function pruneReviewStates(
+  keepUrls: ReadonlySet<string>,
+  db: Database = getStateDb()
+): void {
+  pruneStates('review', keepUrls, db);
+}
+
+/** Tombstoned review rows keyed by mrUrl. The triage latch pass checks these
+    for a board MR whose review state was pruned while it was off the board:
+    an armed latch there means the row must come back to life. */
+export function readPrunedReviewStates(
+  db: Database = getStateDb()
+): Map<string, ReviewState> {
+  return readPrunedStates('review', db) as Map<string, ReviewState>;
+}
+
+/** Revive a tombstoned review row, state untouched. False means the claim
+    was lost: the row is already live again (or gone), so the caller's
+    tombstone snapshot must not be acted on. */
+export function resurrectReviewState(
+  mrUrl: string,
+  db: Database = getStateDb()
+): boolean {
+  return resurrectState('review', mrUrl, db);
+}
+
+/** Discard a review tombstone whose MR carries no armed latch: nothing left
+    to resurrect for, and dropping it keeps the MR out of the latch pass's
+    discussion reads on every later tick. */
+export function dropPrunedReviewState(
+  mrUrl: string,
+  db: Database = getStateDb()
+): void {
+  dropPrunedState('review', mrUrl, db);
+}
+
+/** Attach each MR's review state (matched by webUrl) as a `review` field. Non-mutating. */
+export function attachReviews<T extends { webUrl?: string | null }>(
+  mrs: T[],
+  reviews: Map<string, ReviewState>
+): Array<T & { review?: ReviewState }> {
+  return mrs.map(mr =>
+    mr.webUrl && reviews.has(mr.webUrl)
+      ? { ...mr, review: reviews.get(mr.webUrl) }
+      : mr
+  );
+}
+
+/** Validate an incoming POST /review body. Returns null on any shape mismatch. */
+export function parseReviewRequestBody(
+  body: unknown
+): { mrUrl: string; iid: number } | null {
+  if (!body || typeof body !== 'object') return null;
+  const { mrUrl, iid } = body as { mrUrl?: unknown; iid?: unknown };
+  if (typeof mrUrl !== 'string' || !mrUrl) return null;
+  if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
+  return { mrUrl, iid };
+}

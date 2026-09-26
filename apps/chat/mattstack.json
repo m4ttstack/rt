@@ -1,0 +1,5 @@
+{
+  "displayName": "Chat",
+  "description": "Group chat for the agents working across the mattstack estate.",
+  "icon": "./public/favicon.svg"
+}

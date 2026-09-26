@@ -1,0 +1,60 @@
+/*
+ * The list's own kit surface: the default raised surface slot behind the
+ * header + rows, a standard default-border hairline, the theme radius, and
+ * clipped overflow so row hover tints can't poke past the rounded corners.
+ */
+.list {
+  background-color: var(--ui-bg-2);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  overflow: hidden;
+}
+
+/*
+ * Row states, tokens only so both schemes stay correct:
+ * - unselected hover: the next surface slot up (--ui-bg-3);
+ * - selected: Mantine's calm primary tint (--mantine-primary-color-light);
+ * - selected + hover: the tint's own hover companion.
+ * The class sits on the full-width row Group (the virtualized row wrapper
+ * spans the viewport width), so the tint covers the whole row.
+ */
+.row:hover {
+  background-color: var(--ui-bg-3);
+}
+
+.rowSelected {
+  background-color: var(--mantine-primary-color-light);
+}
+
+/* After .row:hover in source order, so at equal specificity the selected
+   tint's hover companion wins over the unselected hover surface. */
+.rowSelected:hover {
+  background-color: var(--mantine-primary-color-light-hover);
+}
+
+/*
+ * The row's Checkbox owns both the box and the row text (its `label`), so
+ * clicking the text toggles through the native label-for association.
+ * Stretching the root and label across the row makes essentially the whole
+ * row the click target; min-height keeps the previous row density now that
+ * no Button sets the row's height.
+ */
+.rowCheckbox {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+
+.rowCheckbox input {
+  cursor: pointer;
+}
+
+.rowCheckboxLabelWrapper {
+  flex: 1;
+}
+
+.rowCheckboxLabel {
+  display: block;
+  cursor: pointer;
+}

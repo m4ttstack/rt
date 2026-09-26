@@ -1,0 +1,11 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Runs board" },
+    { "file": "RunDetail.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 1150, "title": "Run detail" },
+    { "file": "RowStates.dc.html", "x": 0, "y": 1040, "w": 1160, "h": 560, "title": "Row anatomy & states" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -170, "w": 420, "text": "Run views redesign — board rows lead with stage + progress; detail gets a summary card (ticket title, MR/CI, liveness) replacing the Handoff pane; timeline gains its surface; four icon buttons collapse into one labeled menu. Data shown is neutral demo data; real pages read enrich + liveness from rt." }
+  ],
+  "launch": { "view": "canvas" }
+}
