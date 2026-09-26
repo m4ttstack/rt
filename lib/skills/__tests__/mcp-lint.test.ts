@@ -129,4 +129,21 @@ describe("lintPackDir on disk", () => {
       rmSync(outside, { recursive: true, force: true });
     }
   });
+
+  test("a verb dir whose SKILL.md carries the compiler header is skipped whole, vendored files included", () => {
+    const pack = mkdtempSync(join(tmpdir(), "rt-mcp-lint-compiled-"));
+    try {
+      mkdirSync(join(pack, "skills", "verb", "references"), { recursive: true });
+      mkdirSync(join(pack, "skills", "verb", "parts", "fix"), { recursive: true });
+      mkdirSync(join(pack, "skills", "other"), { recursive: true });
+      writeFileSync(join(pack, "skills", "verb", "SKILL.md"), `---\nname: verb\n---\n${HEADER_COMMENT}\n\`git push\`\n`);
+      writeFileSync(join(pack, "skills", "verb", "references", "engine.md"), "`git push -u`\n");
+      writeFileSync(join(pack, "skills", "verb", "parts", "fix", "notes.md"), "`glab mr view`\n");
+      writeFileSync(join(pack, "skills", "other", "SKILL.md"), "`git push`\n");
+      expect(lintPackDir(pack).map((h) => h.file)).toEqual([join(pack, "skills", "other", "SKILL.md")]);
+      expect(lintedMarkdownFiles(pack)).toEqual([join(pack, "skills", "other", "SKILL.md")]);
+    } finally {
+      rmSync(pack, { recursive: true, force: true });
+    }
+  });
 });

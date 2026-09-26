@@ -91,12 +91,26 @@ export type LintDeps = { list: (dir: string) => string[]; read: (path: string) =
 const DISK: LintDeps = { list: walkLintedRoots, read: readOrNull };
 
 /** Compiled output is skipped: its sources are linted already, and a hit there
-    would point the author at a generated file the next compile rewrites. */
+    would point the author at a generated file the next compile rewrites. A
+    compiled verb dir also holds vendored files that carry no header, so the
+    header on its SKILL.md marks the whole subtree as output. */
 function lintedSources(dir: string, deps: LintDeps): Array<{ path: string; text: string }> {
   const roots = LINTED_ROOTS.map((r) => join(dir, r) + sep);
+  const texts = new Map<string, string | null>();
+  const read = (path: string): string | null => {
+    if (!texts.has(path)) texts.set(path, deps.read(path));
+    return texts.get(path)!;
+  };
+  const compiledVerbDir = (path: string): boolean => {
+    const root = roots.find((r) => path.startsWith(r))!;
+    const segments = path.slice(root.length).split(sep);
+    if (segments.length < 2) return false;
+    return read(join(root, segments[0]!, "SKILL.md"))?.includes(HEADER_COMMENT) ?? false;
+  };
   const out: Array<{ path: string; text: string }> = [];
   for (const path of deps.list(dir).filter((p) => p.endsWith(".md") && roots.some((r) => p.startsWith(r))).sort()) {
-    const text = deps.read(path);
+    if (compiledVerbDir(path)) continue;
+    const text = read(path);
     if (text !== null && !text.includes(HEADER_COMMENT)) out.push({ path, text });
   }
   return out;
