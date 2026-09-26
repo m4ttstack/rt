@@ -20,12 +20,10 @@ done; everything below is rt-side work.
 
 ## What changes on the rt side
 
-**a. Recipe path.** `plan-matrix.ts` and `bundle-apps.yml` read the
-per-app recipe from `apps/<name>/mattstack.deck.json` in the one repo,
-not a root-level recipe. Nothing new needs authoring; the recipe files
-already exist at those app roots. (`plan-matrix.ts` and `bundle-apps.yml`
-are gone: `scripts/build-apps.ts`, run from `release.yml`'s `build-apps`
-job, reads the same per-app recipes directly from this checkout instead.)
+**a. Recipe path.** `scripts/build-apps.ts` reads the per-app recipe from
+`apps/<name>/mattstack.deck.json` in this one repo, not a root-level
+recipe. Nothing new needs authoring; the recipe files already exist at
+those app roots.
 
 **b. Version source.** Version reads come from `apps/<name>/package.json`,
 not the repo root's package.json (the repo root has no meaningful

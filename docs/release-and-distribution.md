@@ -225,9 +225,9 @@ The apps are built in-tree by `build-apps`, and deps.lock's tree rows carry
 no url. Board, boxscore, chat, console and deck live at `apps/*` in this
 checkout and are `source: "tree"` rows in `rt-tray/deps.lock`: no url, no
 sha256, nothing to pin. `release.yml`'s `build-apps` job builds them all
-from the tagged commit: it runs the workspace build via turbo first (so the
-platform packages under `packages/*` are current), then
-`scripts/build-apps.ts`, which runs each app's own compile recipe.
+from the tagged commit: `bun install --frozen-lockfile`, then
+`scripts/build-apps.ts`, which itself builds the platform packages under
+`packages/*` via turbo before running each app's own compile recipe.
 `build-apps` holds no signing key; signing happens later, in the same
 Helpers loop every other bundled binary goes through. A change merged to
 main ships in the very next release by construction: there is no separate
@@ -243,15 +243,51 @@ stays on the same standalone pin-freshness policy as fast-browser (see
 `packages/*` (catalog rules, turbo, per-app scripts, UI authoring); read it
 before adding an app or changing how one builds.
 
+### Adding a served app
+
+1. **The app must answer `--version` with a bare semver and exit 0.**
+   `build-apps` smoke-tests the built artifact under an isolated HOME
+   right after compiling it; a server that just starts listening hangs
+   the probe. Apps on `@mattstack/app-server` get this from
+   `serveMattstackApp` (0.1.2 or later): pass `version` from
+   `package.json`, never a hardcoded string, or the tag and the binary
+   disagree.
+2. **A compiled Bun server needs embedded assets.** The console pattern:
+   `build:binary` runs `vite build && mattstack-embed-assets && bun build
+   --compile`; the server passes `embedded: () => import('./embedded/manifest'
+   as string)`; tsconfig excludes the generated manifest; `.gitignore`
+   carries `dist-bin` and the manifest path.
+3. **`serve: { port, args }` on the deps.lock row marks it a served app.**
+   `parseDepsLock` requires the row's bundlePath and exec to be exactly
+   `Contents/Helpers/<name>`, a port from 1024 to 65535 used by no other
+   row, and args with no whitespace. Relax a `serve` rule only after a
+   release whose parser already accepts the relaxed form has shipped:
+   after a Sparkle update a still-running daemon re-reads the replaced
+   bundle's lock with its old parser, and a lock it rejects sends every
+   bundled tool lookup back to PATH until the daemon restarts.
+4. **Identity and skills ride the build alongside the binary.**
+   `build-apps` stages every built row's identity into `<name>-identity`
+   (name, displayName, description, icon, badge, validated svg-rooted and
+   under 64 KB); an app whose manifest declares no displayName or icon
+   (deck itself) stages nothing. `build.sh` lands identity at
+   `Contents/Resources/apps/<name>/` only for the deps.lock rows that
+   carry `serve`. When the deps.lock row sets `skills: true`, `build-apps`
+   also copies `apps/<name>/skills` into `<name>-skills`, landed at
+   `Contents/Helpers/skills/<name>/`. Skill directory names must be
+   dot-free (codesign reads a dotted directory as a nested bundle) and
+   carry a `SKILL.md`; `check-bundle.sh` asserts both.
+
 Workflow lint: the checks workflow runs actionlint over `checks.yml`,
 `e2e.yml`, `purity.yml`, and `renovate.yml`. `release.yml` is grandfathered
 (pre-existing SC2086/SC2129 style findings only).
 
 ### Two channels ship skills — pick deliberately
 
-- **The app tarball → `rt skills link --from`**: the repo's `skills/` dir
-  rides the bundle to `Contents/Helpers/skills/<name>/`, reconciled into
-  `~/.claude/skills` by frontmatter name. `skills/.skillsignore` (rt's
+- **A bundled binary → `rt skills link --from`**: the `<name>-skills`
+  directory `build-apps` stages (a tree row) or `fetch-deps.sh`
+  materializes (a downloaded tool) rides the bundle to
+  `Contents/Helpers/skills/<name>/`, reconciled into `~/.claude/skills`
+  by frontmatter name. `skills/.skillsignore` (rt's
   own skills) keeps maintainer-only skills off user machines; a plain
   `rt skills link` in a checkout ignores it, because that is the author.
   Right for skills addressed by their bare name (`rt:chat` rides rt's

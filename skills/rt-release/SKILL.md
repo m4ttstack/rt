@@ -39,7 +39,7 @@ left as-is or reduced to a pointer here.
 ## Fast path: one served-app fix
 
 When the diff since the last tag touches only served-app directories
-(`apps/board`, `apps/boxscore`, `apps/chat`, `apps/console`, `apps/gitq`),
+(`apps/board`, `apps/boxscore`, `apps/chat`, `apps/console`),
 `RELEASE_NOTES.md` and `website/`, the release is one verb, `rt release app
 <name>` (bare `rt release app` on a terminal picks the app; from source,
 `bun run cli.ts release app <name>`). It qualifies origin/main against that
@@ -127,10 +127,8 @@ why.
    (`~/Documents/GitHub/gitq`), and its `rt-tray/deps.lock` row is a
    `repo`/`url`/`sha256` pin like fast-browser's, so a change there needs
    the pin bumped through 2c's standalone-row policy before it reaches
-   users; the served-app path gate (Fast path, above) already matches an
-   `apps/gitq/` diff for when gitq folds into this tree, but does not
-   today, and merging that pin bump never republishes a binary on its
-   own.
+   users. gitq releases take the full process through 2c, never the Fast
+   path above.
 
 2c. **The other vendored layers: plugins, standalone apps, tools, the
    extension.** None of them build from this tree, so each keeps its own
@@ -275,7 +273,7 @@ why.
    **Path fast path:** when `git diff --name-only <last-tag>..HEAD` stays
    inside the served-app directories, `RELEASE_NOTES.md` and `website/`,
    skip the local walkthrough and tag on the rehearsal alone. `apps/deck/`,
-   every tool row, fast-browser and any rt file keep the full gate.
+   every tool row, gitq, fast-browser and any rt file keep the full gate.
 
    `rt release app` goes one step further: it tags with no rehearsal at
    all, because its own gate admits nothing but the served-app path, notes
@@ -362,8 +360,8 @@ why.
    summary names the leg that halted the run); declining a leg's
    confirmation prompt only skips that one leg and moves on. A sha256
    mismatch on the prod dmg is exactly this kind of abort: it stops the
-   dev bundle, daemon, and served-suite legs from running unprompted
-   even under `--yes`.
+   dev bundle, checkout-sync, daemon, and served-suite legs from running
+   unprompted even under `--yes`.
 
    - **Prod app**: resolves the released tag (default latest),
      downloads the dmg, verifies it against SHA256SUMS, mounts it

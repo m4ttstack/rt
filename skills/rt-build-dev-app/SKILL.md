@@ -16,8 +16,8 @@ yourself rather than handing him a bundle to swap in.
 | What changed | How it goes live |
 |---|---|
 | `rt-tray/**` in repo-tools (tray, shims, `build.sh`, `deps.lock`) | this skill; a daemon shim (`Sources-daemon-shim`) change also needs the #rt announce and `rt daemon restart` afterwards |
-| board, console, chat, boxscore (`~/Documents/GitHub/mattstack-apps`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then the app row's deploy button or `deck cmd <app> deploy` |
-| deck source (`mattstack-apps/apps/deck`) | no rebuild: the same pull, then the deck row's deploy button or `deck cmd deck deploy` |
+| board, console, chat, boxscore (`~/Documents/GitHub/repo-tools/apps/<name>`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then the app row's deploy button or `deck cmd <app> deploy` |
+| deck source (`repo-tools/apps/deck`) | no rebuild: the same pull, then the deck row's deploy button or `deck cmd deck deploy` |
 | rt CLI or daemon source (`lib/`, `commands/`) | no rebuild: pull the dev daemon's source checkout on `main`, announce in #rt, then `rt daemon restart` |
 
 ## Trying work in progress: `--local`

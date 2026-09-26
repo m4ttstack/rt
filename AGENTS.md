@@ -30,9 +30,9 @@ the two string forms, where each applies, and the identity-only verb guards.
 ## Monorepo layout
 
 rt is the root package. `apps/*` (board, boxscore, chat, console, deck) and
-the apps platform packages under `packages/*` came from the apps repo and
-keep their own contract in `apps/AGENTS.md` (catalog rules, turbo, per-app
-scripts, UI authoring). Turborepo (`turbo.json`, `scripts/turbo.sh`) runs
+the apps platform packages under `packages/*` keep their own contract in
+`apps/AGENTS.md` (catalog rules, turbo, per-app scripts, UI authoring).
+Turborepo (`turbo.json`, `scripts/turbo.sh`) runs
 their gates and rt's static gates; `bun run check` is what `checks.yml`'s
 `static` job runs. rt's unit suite is `bun run test` and never walks the apps'
 vitest packages: the `test` script names rt's directories one by one, and
@@ -83,8 +83,8 @@ handlers, or `skills/rt-chat/`, read in this order:
 - `packages/rt-client/README.md` "Chat": the wrappers, relay and health probe
   the web viewer is built on.
 
-The viewer is its own repo, `~/Documents/GitHub/chat` (`ARCHITECTURE.md`
-there). `lib/chat-viewer-url.ts` builds the `/r/<room>#m-<id>` links the CLI
+The viewer lives at `apps/chat` (`apps/chat/ARCHITECTURE.md`).
+`lib/chat-viewer-url.ts` builds the `/r/<room>#m-<id>` links the CLI
 prints; that route shape is a contract with the viewer's route table.
 
 ## rt-ui
@@ -369,8 +369,8 @@ The dev app (`/Applications/mattstack-dev.app`) takes code from three places.
   merge, check `git branch --show-current` is `main`, pull, then
   `deck restart <app>` (or the deck row's deploy button for deck itself);
   `rt release update-machine` also re-registers and restarts them, as its
-  shared-checkout-sync and served-suite legs. Deck runs through the dev
-  shim (`rt-tray/Sources-deck-shim`), which falls
+  `checkout-sync` (labelled "shared checkout sync") and served-suite legs.
+  Deck runs through the dev shim (`rt-tray/Sources-deck-shim`), which falls
   back to `Contents/Helpers/deck-pinned` when source cannot run; `api.json`'s
   `runMode` says which is serving. A pin older than `runMode` (deck 1.0.6
   today) reads as `standalone`; the last `deck-dev-shim:` line in
@@ -381,9 +381,11 @@ The dev app (`/Applications/mattstack-dev.app`) takes code from three places.
 - **Manifest keys in `mattstack.deck.json` are read only at register or
   adopt.** After a manifest change, run `deck register --dir <absolute path>`.
 - **Tray and shim changes need a dev app rebuild**: in a scratch tree at the
-  target commit, `scripts/fetch-deps.sh arm64` then `bun scripts/build-apps.ts`
-  then `rt-tray/build.sh dev`,
-  never in the shared checkout's `rt-tray/`. Then replace
+  target commit, `scripts/fetch-deps.sh arm64`, then `bun install
+  --frozen-lockfile` (`build-apps` runs turbo over `packages/*` and needs
+  `node_modules` in the scratch tree), then `bun scripts/build-apps.ts`,
+  then `rt-tray/build.sh dev`, never in the shared checkout's `rt-tray/`.
+  Then replace
   `/Applications/mattstack-dev.app` by moving the old one aside, the way the
   dev-bundle leg of the `rt:release` skill does.
 
@@ -481,10 +483,10 @@ name` on the next bump, rolls the migration back, and makes every later
 `packages/rt-client` and `packages/settings-kit` publish nowhere; every
 consumer inside this monorepo (rt itself, board, console, chat, boxscore,
 deck) links the workspace package directly, and the root `postinstall`
-builds both `dist/` directories. gitq, still its own repo, consumes
-`packages/rt-client` from outside the workspace, so it is not covered by
-that build. There is no npm version to announce or renumber for either
-package.
+builds both `dist/` directories. gitq, still its own repo, stays on the
+last published npm `rt-client` (its `package.json` pins `^0.14.0`); a
+change in this tree never reaches it until gitq folds in (Stage C). There
+is no npm version to announce or renumber for either package.
 
 ### `packages/rt-client/dist/` goes stale without warning
 
@@ -492,8 +494,8 @@ package.
 package, and `dist/` is what their `import` condition resolves; the root
 `postinstall` and turbo's `^build` rebuild it. So any change or merge that
 touches rt-client's source leaves every in-workspace consumer resolving the
-previous build until the next install or turbo run (gitq's own install is
-a separate, un-triggered refresh). The source is right, the shipped
+previous build until the next install or turbo run (gitq stays on its
+pinned npm version regardless). The source is right, the shipped
 artifact is not, and nothing about the working tree looks wrong. Run
 `bun run build` in `packages/rt-client` after touching it, and after any
 merge that does.
