@@ -12,6 +12,8 @@ import {
   test,
 } from 'bun:test';
 
+import { getDef } from '@mattstack/rt-client';
+
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
 (
@@ -73,6 +75,9 @@ const def = () => ({
   hasDefault: true,
   defaultValue: DEFAULT,
   effective: effective(),
+  storeVersion: 1,
+  schema: getDef(KEY)!.schema,
+  layerSchema: getDef(KEY)!.layerSchema,
 });
 
 const realFetch = globalThis.fetch;

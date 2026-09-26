@@ -4,7 +4,9 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { rowSummary } from './CompositeControls';
 import { SettingRow } from './SettingRow';
+import { schemaFields } from './testSchemas';
 
 function def(key: string, over: Partial<SettingDefWire>): SettingDefWire {
   return {
@@ -20,6 +22,8 @@ function def(key: string, over: Partial<SettingDefWire>): SettingDefWire {
     hasDefault: false,
     defaultValue: null,
     effective: { scope: null, file: null },
+    storeVersion: 1,
+    ...schemaFields(key),
     ...over,
   };
 }
@@ -862,6 +866,7 @@ describe('composite rows', () => {
     await userEvent.click(screen.getByRole('button', { name: /1 field/ }));
     expect(screen.getByText('/stores/local.jsonc')).toBeInTheDocument();
     expect(screen.getByText(/"triggers"/)).toBeInTheDocument();
+    expect(screen.getByTestId('json-block')).toBeInTheDocument();
   });
 
   it('an unset read-only composite summarises as unset, with no toggle', () => {
@@ -899,5 +904,109 @@ describe('composite rows', () => {
     await userEvent.click(screen.getByRole('button', { name: /2 prefixes/ }));
     expect(screen.getByText(/"RT"/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('an invalid row offers no Edit as JSON in its row menu', async () => {
+    const s = store();
+    renderWithProviders(
+      <SettingRow
+        def={def('rt.repoRoots', {
+          effective: {
+            scope: 'machine',
+            file: '/m',
+            invalid: 'expected array',
+          },
+        })}
+        store={s}
+        subhead={null}
+        query=""
+      />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'rt.repoRoots actions' })
+    );
+    expect(
+      await screen.findByRole('menuitem', { name: 'Remove from machine' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Edit as JSON' })).toBeNull();
+  });
+
+  it("a stored row's menu offers Edit as JSON plus Remove together", async () => {
+    renderWithProviders(
+      <SettingRow def={PREFIXES} store={store()} subhead={null} query="" />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'board.ticketPrefixes actions' })
+    );
+    expect(
+      await screen.findByRole('menuitem', { name: 'Edit as JSON' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Remove from team' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('rowSummary', () => {
+  const MERGED = {
+    'gitlab.example.com': { provider: 'gitlab' },
+    'github.example.com': { provider: 'github' },
+  };
+  const AUTHORED = { 'github.example.com': { provider: 'github' } };
+
+  it("counts a deep map's authored layer, not the merged value, when authored is present", () => {
+    const d = def('gitq.forges', {
+      type: 'object',
+      merge: 'deep',
+      effective: {
+        scope: 'user',
+        file: '/home/user/settings.user.jsonc',
+        value: MERGED,
+        authored: AUTHORED,
+      },
+    });
+    expect(rowSummary(d)).toBe('1 entry');
+  });
+
+  it('falls back to effective.value when a deep map has no authored layer', () => {
+    const d = def('gitq.forges', {
+      type: 'object',
+      merge: 'deep',
+      effective: {
+        scope: 'user',
+        file: '/home/user/settings.user.jsonc',
+        value: MERGED,
+      },
+    });
+    expect(rowSummary(d)).toBe('2 entries');
+  });
+});
+
+describe('a deep composite editor whose explain read fails', () => {
+  it('shows the error instead of a permanent skeleton', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'explain failed: 500' }),
+    }));
+    renderWithProviders(
+      <SettingRow
+        def={def('gitq.forges', {
+          type: 'object',
+          merge: 'deep',
+          effective: {
+            scope: 'user',
+            file: '/home/user/settings.user.jsonc',
+            value: { 'gitlab.example.com': { provider: 'gitlab' } },
+          },
+        })}
+        store={store()}
+        subhead={null}
+        query=""
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /1 entry/ }));
+    expect(await screen.findByText('explain failed: 500')).toBeInTheDocument();
+    expect(screen.queryByLabelText('new host')).toBeNull();
   });
 });

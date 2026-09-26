@@ -11,7 +11,12 @@ import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 
-import { getSetting, setSetting } from '@mattstack/rt-client';
+import {
+  getDef,
+  getSetting,
+  setSetting,
+  validateWrite,
+} from '@mattstack/rt-client';
 
 // rt-client doesn't export its user-store path helper; this literal is
 // duplicated from rt-client/src/settings/paths.ts#userSettingsPath (which
@@ -20,6 +25,20 @@ import { getSetting, setSetting } from '@mattstack/rt-client';
 // dependency from here on rt-client's internals, only its public API.
 function userStorePath(): string {
   return join(process.env.HOME!, '.mattstack', 'user', 'settings.user.jsonc');
+}
+
+/** Writes a value straight into the user store, past rt-client's write
+    gate, for tests that need a malformed value on disk. */
+function seedUserStore(key: string, value: unknown): void {
+  const path = userStorePath();
+  mkdirSync(dirname(path), { recursive: true });
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  writeFileSync(path, JSON.stringify({ ...current, [key]: value }, null, 2));
 }
 
 // Point the module at a throwaway file BEFORE importing it.
@@ -477,7 +496,7 @@ test("store key present: a file-write failure's store revert overlays the curren
 });
 
 test('a resolver throw on the ownership probe degrades to unowned rather than crashing the write', async () => {
-  setSetting('deck.apps', { poison: '${repoRoot}' }, 'user');
+  seedUserStore('deck.apps', { poison: '${repoRoot}' });
   reloadSettings(); // load()'s own fallback already tolerates this; unaffected by the probe fix
 
   await expect(setPublished('nihongo', false)).resolves.toBeUndefined();
@@ -505,4 +524,26 @@ test('store key present: renameAppSettings carries published/publicFollowsOverri
   expect(stored?.['old-name']).toBeUndefined();
   expect(stored?.['new-name']?.publicFollowsOverride).toBe(true);
   expect(getPublicFollowsOverride('new-name')).toBe(true);
+});
+
+test('store key present: every deck.apps write passes validateWrite', async () => {
+  setSetting(
+    'deck.apps',
+    { 'acme-app': { published: true, publicFollowsOverride: false } },
+    'user'
+  );
+  reloadSettings();
+
+  await setPublished('acme-app', false);
+  await setPassword('acme-app', 'correct horse');
+  setOverride('acme-app', { devPort: 5173, basePort: 4100 });
+  setPublicFollowsOverride('acme-app', true);
+  clearOverride('acme-app');
+  renameAppSettings('acme-app', 'acme-web');
+  await clearPassword('acme-web');
+
+  const stored = getSetting('deck.apps').value;
+  expect(
+    validateWrite(getDef('deck.apps')!, stored, { scope: 'user' })
+  ).toEqual({ ok: true });
 });

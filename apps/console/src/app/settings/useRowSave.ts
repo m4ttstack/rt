@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  SettingDefWire,
-  SettingsScopeState,
-} from '@mattstack/settings-kit/react';
-import { targetScope } from '@mattstack/settings-kit/shapes';
+import type { SettingDefWire } from '@mattstack/settings-kit/react';
 
-export type RowStore = Pick<SettingsScopeState, 'set' | 'unset' | 'move'>;
+import { useSettingsRepo, type ConsoleStore } from './useConsoleSettings';
+import { targetAt, writeTarget, type WriteTarget } from './view';
+
+export type RowStore = Pick<ConsoleStore, 'set' | 'unset' | 'move'>;
 export type SaveStatus = 'idle' | 'saving' | 'saved';
 
 const SAVED_FLASH_MS = 1400;
 
-/** Save-on-commit, no staging: `undefined` means "clear this layer". */
+/** Save-on-commit, no staging: `undefined` means "clear this layer". A
+    write with no repo passes no repo argument at all. */
 export function useRowSave(store: RowStore, def: SettingDefWire) {
+  const repo = useSettingsRepo();
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -32,19 +33,36 @@ export function useRowSave(store: RowStore, def: SettingDefWire) {
     return true;
   };
 
-  const scope = targetScope(def);
+  const setTo = (t: WriteTarget, value: unknown) =>
+    t.repo === undefined
+      ? store.set(def.key, t.scope, value)
+      : store.set(def.key, t.scope, value, t.repo);
+  const unsetAt = (t: WriteTarget) =>
+    t.repo === undefined
+      ? store.unset(def.key, t.scope)
+      : store.unset(def.key, t.scope, t.repo);
+  const at = (layer: string) => {
+    const t = targetAt(layer, repo);
+    return t ?? `${layer} is not a writable layer here`;
+  };
+
+  const target = writeTarget(def, repo);
   return {
     status,
     error,
+    target,
     save: (value: unknown) =>
-      run(() =>
-        value === undefined
-          ? store.unset(def.key, scope)
-          : store.set(def.key, scope, value)
-      ),
-    setAt: (at: string, value: unknown) =>
-      run(() => store.set(def.key, at, value)),
-    clear: (at: string) => run(() => store.unset(def.key, at)),
+      run(() => (value === undefined ? unsetAt(target) : setTo(target, value))),
+    setAt: (layer: string, value: unknown) =>
+      run(async () => {
+        const t = at(layer);
+        return typeof t === 'string' ? t : setTo(t, value);
+      }),
+    clear: (layer: string) =>
+      run(async () => {
+        const t = at(layer);
+        return typeof t === 'string' ? t : unsetAt(t);
+      }),
     move: (from: string, to: string) =>
       run(() => store.move(def.key, from, to)),
   };

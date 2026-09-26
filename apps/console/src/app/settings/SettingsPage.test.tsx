@@ -5,6 +5,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { schemaFields } from './testSchemas';
+
 vi.mock('../config/useSettings', () => ({
   useAgentModels: () => ({
     data: { models: [{ value: 'opus', label: 'Opus' }] },
@@ -27,6 +29,8 @@ function def(key: string, over: Partial<SettingDefWire> = {}): SettingDefWire {
     hasDefault: false,
     defaultValue: null,
     effective: { scope: null, file: null },
+    storeVersion: 1,
+    ...schemaFields(key),
     ...over,
   };
 }
@@ -72,11 +76,29 @@ const serve = (defs: SettingDefWire[]) => () => ({
 });
 
 let defsResponse: () => unknown = serve(DEFS);
+const REPO = 'gitlab.example.com/acme/app';
+let repoDefs: SettingDefWire[] | null = null;
 
 beforeEach(() => {
   defsResponse = serve(DEFS);
+  repoDefs = null;
   window.history.replaceState(null, '', '/settings');
-  vi.stubGlobal('fetch', async () => defsResponse());
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.startsWith('/api/settings/repos'))
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          repos: [
+            { identity: REPO, label: 'acme/app' },
+            { identity: 'gitlab.example.com/acme/web', label: 'acme/web' },
+          ],
+        }),
+      };
+    if (repoDefs && url.includes(`repo=${encodeURIComponent(REPO)}`))
+      return serve(repoDefs)();
+    return defsResponse();
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -472,5 +494,111 @@ describe('SettingsPage', () => {
     expect(marked()).toEqual(['#daemon']);
     f.scrollTo(60);
     expect(marked()).toEqual(['#agents']);
+  });
+});
+
+describe('repo picker', () => {
+  const ROLES = (
+    effective: SettingDefWire['effective'],
+    issues?: SettingDefWire['issues']
+  ) =>
+    def('rt.roles', {
+      type: 'object',
+      scopes: ['user', 'team', 'machine'],
+      merge: 'deep',
+      repoScoped: true,
+      repos: [{ identity: REPO, scopes: ['team'] }],
+      effective,
+      issues,
+    });
+
+  it('lists All repos plus each repo, and picking one keeps it in ?repo=', async () => {
+    defsResponse = serve([...DEFS, ROLES({ scope: null, file: null })]);
+    repoDefs = [
+      ...DEFS,
+      ROLES({
+        scope: 'team.repo',
+        file: '/home/team/settings.team.jsonc',
+        value: { dev: { fixedPort: 3000 } },
+      }),
+    ];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    expect(screen.getByText('all repos · set in 1 repo')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: 'repo' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'acme/app' })
+    );
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get('repo')).toBe(REPO)
+    );
+    expect(await screen.findByText('team · repo')).toBeInTheDocument();
+    expect(screen.getByText('for acme/app')).toBeInTheDocument();
+  });
+
+  it('the Changed count follows the picked repo', async () => {
+    defsResponse = serve([...DEFS, ROLES({ scope: null, file: null })]);
+    repoDefs = [
+      ...DEFS,
+      ROLES({
+        scope: 'team.repo',
+        file: '/home/team/settings.team.jsonc',
+        value: {},
+      }),
+    ];
+    window.history.replaceState(
+      null,
+      '',
+      `/settings?repo=${encodeURIComponent(REPO)}`
+    );
+    renderPage();
+    const changed = await screen.findByRole('checkbox', { name: /^Changed/ });
+    const count = (n: number) =>
+      expect(
+        changed.closest('label') ?? changed.parentElement!
+      ).toHaveTextContent(`Changed ${n}`);
+    await waitFor(() =>
+      count(
+        DEFS.filter(
+          d => d.effective.scope !== null && d.effective.scope !== 'default'
+        ).length + 1
+      )
+    );
+  });
+
+  it('the Needs fixing count follows the picked repo', async () => {
+    defsResponse = serve([...DEFS, ROLES({ scope: null, file: null })]);
+    repoDefs = [
+      ...DEFS,
+      ROLES(
+        {
+          scope: 'team.repo',
+          file: '/home/team/settings.team.jsonc',
+          value: { dev: { fixedPort: '3000' } },
+        },
+        [
+          {
+            scope: 'team.repo',
+            file: '/home/team/settings.team.jsonc',
+            repo: REPO,
+            kind: 'nonconforming',
+            path: ['dev', 'fixedPort'],
+            message: 'expected number, got string',
+          },
+        ]
+      ),
+    ];
+    renderPage();
+    const chip = await screen.findByRole('checkbox', { name: /^Needs fixing/ });
+    const count = (n: number) =>
+      expect(chip.closest('label') ?? chip.parentElement!).toHaveTextContent(
+        `Needs fixing ${n}`
+      );
+    count(0);
+    await userEvent.click(screen.getByRole('combobox', { name: 'repo' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'acme/app' })
+    );
+    await waitFor(() => count(1));
   });
 });

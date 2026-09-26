@@ -13,7 +13,6 @@ import { sectionStatus } from '../../sections.ts';
 import { postAction } from '../api.ts';
 import {
   addToList,
-  COMPOSITE_SHAPES,
   filterDefs,
   formatValue,
   getLeaf,
@@ -26,6 +25,7 @@ import {
   rosterSummary,
   rowKind,
   scopeLabel,
+  shapeOf,
   slugTabId,
   targetScope,
   type CompositeShape,
@@ -1055,7 +1055,7 @@ function SettingRow({
   const kind = rowKind(def);
   const row = useRowSave(store, def);
   const value = def.effective.value;
-  const shape = COMPOSITE_SHAPES[def.key];
+  const shape = shapeOf(def);
   const set = isSet(def);
   const malformed =
     shape !== undefined &&

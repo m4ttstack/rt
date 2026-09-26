@@ -20,6 +20,7 @@ const DEFS: Record<string, Record<string, unknown>> = {
     scopes: ['machine'],
     merge: 'replace',
     description: 'Scan roots.',
+    schema: { type: 'array', items: { type: 'string' } },
   },
   'rt.cron': {
     key: 'rt.cron',

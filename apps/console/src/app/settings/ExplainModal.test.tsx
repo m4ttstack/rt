@@ -9,6 +9,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ExplainModal, type ExplainStore } from './ExplainModal';
+import { schemaFields } from './testSchemas';
+import { SettingsRepoContext } from './useConsoleSettings';
 
 const KEY = 'board.agent.model';
 
@@ -26,6 +28,7 @@ const DEF: SettingDefWire = {
   hasDefault: false,
   defaultValue: null,
   effective: { scope: 'machine', file: '/stores/local.jsonc', value: 'm-old' },
+  storeVersion: 1,
 };
 
 const ROWS: ExplainRowWire[] = [
@@ -63,6 +66,7 @@ function store(over: Partial<ExplainStore> = {}): ExplainStore {
     set: vi.fn(async () => null as string | null),
     unset: vi.fn(async () => null as string | null),
     move: vi.fn(async () => null as string | null),
+    prune: vi.fn(async () => null as string | null),
     ...over,
   };
 }
@@ -280,5 +284,362 @@ describe('ExplainModal', () => {
   it('is closed without a key', () => {
     renderModal(store(), null);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('a composite layer shows its whole value, never cut at 40 characters', async () => {
+    const LONG = {
+      triggers: [
+        {
+          name: 'nightly-sync',
+          event: 'cron/tick',
+          run: ['rt', 'sync', '--all'],
+        },
+      ],
+    };
+    const CRON: SettingDefWire = {
+      ...DEF,
+      key: 'rt.cron',
+      type: 'object',
+      scopes: ['machine'],
+      merge: 'deep',
+      effective: { scope: 'machine', file: '/stores/local.jsonc', value: LONG },
+    };
+    explainGet.mockResolvedValue(
+      ok({
+        def: CRON,
+        rows: [
+          { scope: 'default', file: null, present: false },
+          {
+            scope: 'machine',
+            file: '/stores/local.jsonc',
+            present: true,
+            value: LONG,
+          },
+        ],
+      })
+    );
+    renderModal(store({ defs: [CRON] }), 'rt.cron');
+    const layer = await screen.findByTestId('layer-machine');
+    expect(layer).toHaveTextContent('"name": "nightly-sync"');
+    expect(layer).toHaveTextContent('"--all"');
+    expect(layer.textContent).not.toContain('…');
+  });
+
+  it('Set at an unset objectList layer opens the form, not JSON', async () => {
+    const BRIDGES: SettingDefWire = {
+      ...DEF,
+      key: 'rt.notify.eventBridges',
+      type: 'array',
+      scopes: ['user', 'machine'],
+      merge: 'replace',
+      effective: { scope: 'default', file: null, value: [] },
+      ...schemaFields('rt.notify.eventBridges'),
+    };
+    explainGet.mockResolvedValue(
+      ok({
+        def: BRIDGES,
+        rows: [
+          { scope: 'default', file: null, present: false },
+          { scope: 'user', file: '/stores/user.jsonc', present: false },
+          { scope: 'machine', file: '/stores/local.jsonc', present: false },
+        ],
+      })
+    );
+    renderModal(store({ defs: [BRIDGES] }), 'rt.notify.eventBridges');
+
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'set rt.notify.eventBridges at user',
+      })
+    );
+    const layer = screen.getByTestId('layer-user');
+    expect(
+      within(layer).getByText('Editing the user layer')
+    ).toBeInTheDocument();
+    expect(
+      within(layer).getByRole('button', { name: 'Add item' })
+    ).toBeInTheDocument();
+    expect(within(layer).queryByRole('textbox', { name: 'JSON' })).toBeNull();
+  });
+
+  it('rt.worktreeReadyApproval has no pencil or text editor, only Remove', async () => {
+    const APPROVAL: SettingDefWire = {
+      ...DEF,
+      key: 'rt.worktreeReadyApproval',
+      scopes: ['user', 'team', 'machine'],
+      repoScoped: true,
+      description:
+        'Per-repo user approval of a team-authored ready shell ladder.',
+      effective: {
+        scope: 'user',
+        file: '/home/user/settings.user.jsonc',
+        value: '3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d',
+      },
+    };
+    explainGet.mockResolvedValue(
+      ok({
+        def: APPROVAL,
+        rows: [
+          { scope: 'default', file: null, present: false },
+          {
+            scope: 'team',
+            file: '/home/team/settings.team.jsonc',
+            present: false,
+          },
+          {
+            scope: 'user',
+            file: '/home/user/settings.user.jsonc',
+            present: true,
+            value: '3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d',
+          },
+          { scope: 'machine', file: '/stores/local.jsonc', present: false },
+        ],
+      })
+    );
+    renderModal(store({ defs: [APPROVAL] }), APPROVAL.key);
+
+    const layer = await screen.findByTestId('layer-user');
+    expect(
+      within(layer).queryByRole('button', {
+        name: `set ${APPROVAL.key} at user`,
+      })
+    ).toBeNull();
+    expect(within(layer).queryByRole('textbox')).toBeNull();
+    expect(
+      within(layer).getByRole('button', {
+        name: `remove ${APPROVAL.key} from user`,
+      })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('with a repo picked', () => {
+  const REPO = 'gitlab.example.com/acme/app';
+  const REPO_KEY = 'rt.roles';
+
+  const REPO_DEF: SettingDefWire = {
+    key: REPO_KEY,
+    type: 'string',
+    scopes: ['team', 'user', 'machine'],
+    merge: 'replace',
+    secret: false,
+    teamLocked: false,
+    repoScoped: true,
+    writable: true,
+    description: 'Per-repo dev role definitions.',
+    hasDefault: false,
+    defaultValue: null,
+    effective: { scope: 'team', file: '/stores/team.jsonc', value: 'global' },
+    storeVersion: 1,
+  };
+
+  const REPO_ROWS: ExplainRowWire[] = [
+    { scope: 'default', file: null, present: false },
+    {
+      scope: 'team',
+      file: '/stores/team.jsonc',
+      present: true,
+      value: 'global',
+    },
+    {
+      scope: 'team.repo',
+      file: '/stores/team-repo.jsonc',
+      present: true,
+      value: 'override',
+    },
+    { scope: 'user', file: '/stores/user.jsonc', present: false },
+    { scope: 'user.repo', file: '/stores/user-repo.jsonc', present: false },
+    { scope: 'machine', file: '/stores/local.jsonc', present: false },
+    {
+      scope: 'machine.repo',
+      file: '/stores/machine-repo.jsonc',
+      present: false,
+    },
+  ];
+
+  it('names a repo rung distinctly from its global layer', async () => {
+    explainGet.mockResolvedValue(ok({ def: REPO_DEF, rows: REPO_ROWS }));
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderWithProviders(
+      <SettingsRepoContext.Provider value={REPO}>
+        <QueryClientProvider client={queryClient}>
+          <ExplainModal
+            settingKey={REPO_KEY}
+            store={store({ defs: [REPO_DEF] })}
+            onClose={vi.fn()}
+          />
+        </QueryClientProvider>
+      </SettingsRepoContext.Provider>
+    );
+
+    const globalRemove = await screen.findByRole('button', {
+      name: `remove ${REPO_KEY} from team`,
+    });
+    const rungRemove = screen.getByRole('button', {
+      name: `remove ${REPO_KEY} from team · repo`,
+    });
+    expect(globalRemove).not.toBe(rungRemove);
+
+    expect(
+      screen.getByRole('button', { name: `set ${REPO_KEY} at team` })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: `set ${REPO_KEY} at team · repo` })
+    ).toBeInTheDocument();
+  });
+
+  it('clearing a repo-rung scalar unsets that rung, not the global layer', async () => {
+    explainGet.mockResolvedValue(ok({ def: REPO_DEF, rows: REPO_ROWS }));
+    const s = store({ defs: [REPO_DEF] });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderWithProviders(
+      <SettingsRepoContext.Provider value={REPO}>
+        <QueryClientProvider client={queryClient}>
+          <ExplainModal settingKey={REPO_KEY} store={s} onClose={vi.fn()} />
+        </QueryClientProvider>
+      </SettingsRepoContext.Provider>
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: `set ${REPO_KEY} at team · repo`,
+      })
+    );
+    const layer = screen.getByTestId('layer-team.repo');
+    const input = within(layer).getByRole('textbox', { name: REPO_KEY });
+    await userEvent.clear(input);
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() =>
+      expect(s.unset).toHaveBeenCalledWith(REPO_KEY, 'team', REPO)
+    );
+  });
+
+  it('Fix opens the repo-rung layer in the form, Save off, and the explain fetch carries the repo', async () => {
+    const ROLES: SettingDefWire = {
+      ...REPO_DEF,
+      merge: 'deep',
+      type: 'object',
+      ...schemaFields('rt.roles'),
+    };
+    explainGet.mockResolvedValue(
+      ok({
+        def: ROLES,
+        rows: [
+          { scope: 'default', file: null, present: false },
+          { scope: 'team', file: '/stores/team.jsonc', present: false },
+          {
+            scope: 'team.repo',
+            file: '/stores/team-repo.jsonc',
+            present: true,
+            value: { dev: { fixedPort: '3000' } },
+            nonconforming: [
+              {
+                path: ['dev', 'fixedPort'],
+                message: 'expected number, got string',
+              },
+            ],
+          },
+          { scope: 'user', file: '/stores/user.jsonc', present: false },
+          {
+            scope: 'user.repo',
+            file: '/stores/user-repo.jsonc',
+            present: false,
+          },
+          { scope: 'machine', file: '/stores/local.jsonc', present: false },
+          {
+            scope: 'machine.repo',
+            file: '/stores/machine-repo.jsonc',
+            present: false,
+          },
+        ],
+      })
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderWithProviders(
+      <SettingsRepoContext.Provider value={REPO}>
+        <QueryClientProvider client={queryClient}>
+          <ExplainModal
+            settingKey={REPO_KEY}
+            fix="team.repo"
+            store={store({ defs: [ROLES] })}
+            onClose={vi.fn()}
+          />
+        </QueryClientProvider>
+      </SettingsRepoContext.Provider>
+    );
+
+    const layer = await screen.findByTestId('layer-team.repo');
+    expect(
+      within(layer).getByText('Editing the team · repo layer')
+    ).toBeInTheDocument();
+    expect(within(layer).getByRole('button', { name: 'Save' })).toBeDisabled();
+    await waitFor(() =>
+      expect(
+        explainGet.mock.calls.some((call: unknown[]) =>
+          (call[0] as string).includes(`repo=${encodeURIComponent(REPO)}`)
+        )
+      ).toBe(true)
+    );
+  });
+
+  it('with all repos, lists each repo that sets the key and switches to it', async () => {
+    const REPO = 'gitlab.example.com/acme/app';
+    const ROLES: SettingDefWire = {
+      ...DEF,
+      key: 'rt.roles',
+      type: 'object',
+      scopes: ['user', 'team', 'machine'],
+      merge: 'deep',
+      repoScoped: true,
+      repos: [{ identity: REPO, scopes: ['team'] }],
+      effective: { scope: null, file: null },
+    };
+    // settings-kit 0.4.0's /explain never sets `repos` (only /defs does), so
+    // the mock omits it here to exercise ExplainBody's carry-over from the
+    // /defs-sourced store def.
+    const EXPLAINED_ROLES: SettingDefWire = { ...ROLES, repos: undefined };
+    explainGet.mockImplementation(async (url: string) =>
+      ok({
+        def: EXPLAINED_ROLES,
+        rows: url.includes('repo=')
+          ? [
+              { scope: 'default', file: null, present: false },
+              {
+                scope: 'team.repo',
+                file: '/home/team/settings.team.jsonc',
+                present: true,
+                value: { dev: { fixedPort: 3000 } },
+              },
+            ]
+          : [{ scope: 'default', file: null, present: false }],
+      })
+    );
+    const onPickRepo = vi.fn();
+    const queryClient = new QueryClient();
+    renderWithProviders(
+      <QueryClientProvider client={queryClient}>
+        <ExplainModal
+          settingKey="rt.roles"
+          store={store({ defs: [ROLES] })}
+          onClose={vi.fn()}
+          onPickRepo={onPickRepo}
+        />
+      </QueryClientProvider>
+    );
+    const section = await screen.findByTestId(`repo-${REPO}`);
+    expect(within(section).getByText('acme/app')).toBeInTheDocument();
+    expect(within(section).getByText('team · repo')).toBeInTheDocument();
+    expect(section).toHaveTextContent('"fixedPort": 3000');
+    await userEvent.click(
+      within(section).getByRole('button', { name: 'Show acme/app' })
+    );
+    expect(onPickRepo).toHaveBeenCalledWith(REPO);
   });
 });

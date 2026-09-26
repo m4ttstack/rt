@@ -11,6 +11,7 @@ const CodeMirrorLazy = lazy(() => import('./CodeMirror.Base'));
 
 export type CodeMirrorProps = CodeMirrorBaseProps;
 export type { CodeMirrorLanguage, CodeMirrorRef };
+export type { JsonPathIssue, JsonSchemaCheck } from './CodeMirror.Base';
 
 /**
  * A CodeMirror 6 text/code editor, lazily loaded behind `React.lazy` so

@@ -1,7 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { autocompletion } from '@codemirror/autocomplete';
 import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
+import { syntaxHighlighting } from '@codemirror/language';
+import { linter, lintGutter } from '@codemirror/lint';
 import { Annotation, Compartment, EditorState } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import {
@@ -12,6 +15,15 @@ import {
 import type { ViewUpdate } from '@codemirror/view';
 import { useComputedColorScheme } from '@mantine/core';
 import { basicSetup } from 'codemirror';
+
+import { kitHighlightStyle } from './highlightStyle';
+import {
+  jsonDiagnostics,
+  jsonSchemaCompletion,
+  type JsonSchemaCheck,
+} from './jsonSchema';
+
+export type { JsonPathIssue, JsonSchemaCheck } from './jsonSchema';
 
 // Tags a transaction as originating from the `value`-sync effect (below)
 // rather than from the user editing the document, so the update listener
@@ -57,6 +69,13 @@ export interface CodeMirrorBaseProps {
    * theme entirely. Omitted (default): follows the computed color scheme.
    */
   theme?: 'light' | 'dark' | Extension;
+  /** A JSON Schema for `language="json"`: completes property names and
+      enum, const and boolean values. Reconfigures live. */
+  jsonSchema?: Record<string, unknown>;
+  /** Lints `language="json"`: a parse error, else each returned issue
+      underlined at its path. The caller supplies the checker so the kit
+      needs no validator and the messages match the caller's own. */
+  jsonCheck?: JsonSchemaCheck;
 }
 
 /** Imperative handle exposed via `ref`: the live `EditorView`, or `null` before/after mount. */
@@ -68,7 +87,9 @@ export interface CodeMirrorRef {
  * Scheme-aware editor chrome. Colors reference the kit's CSS vars, so the
  * palette flips with the color scheme on its own; the `dark` flag flips
  * CodeMirror's OWN defaults (caret, selection, active line) that don't go
- * through our vars. The frame polish (padding, theme radius) rides along.
+ * through our vars -- overridden below instead, since `@codemirror/view`'s
+ * own dark active-line color is a fixed, too-heavy teal wash. The frame
+ * polish (padding, theme radius) rides along.
  */
 const editorTheme = (height: string, dark: boolean): Extension =>
   EditorView.theme(
@@ -88,6 +109,50 @@ const editorTheme = (height: string, dark: boolean): Extension =>
         color: 'var(--mantine-color-dimmed)',
         border: 'none',
       },
+      '.cm-activeLine': {
+        backgroundColor:
+          'color-mix(in srgb, var(--mantine-color-text) var(--tk-wash), transparent)',
+      },
+      '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
+        {
+          backgroundColor:
+            'color-mix(in srgb, var(--tk-fill-accent) var(--tk-wash), transparent)',
+        },
+      // A squiggle/dot rendered from a raw hex data-uri (CodeMirror's own
+      // lint theme) can't reference a CSS var, so the underline and gutter
+      // marker are redrawn as plain CSS shapes on the bad/warn role tokens
+      // instead -- legible in dark, where the stock red squiggle is not.
+      '.cm-lintRange-error': {
+        backgroundImage: 'none',
+        textDecoration: 'underline wavy var(--tk-text-bad-vivid)',
+        textDecorationSkipInk: 'none',
+      },
+      '.cm-lintRange-warning': {
+        backgroundImage: 'none',
+        textDecoration: 'underline wavy var(--tk-text-warn-vivid)',
+        textDecorationSkipInk: 'none',
+      },
+      '.cm-lint-marker-error': {
+        content: 'none',
+        backgroundColor: 'var(--tk-text-bad-vivid)',
+        borderRadius: '50%',
+      },
+      '.cm-lint-marker-warning': {
+        content: 'none',
+        backgroundColor: 'var(--tk-text-warn-vivid)',
+        borderRadius: '50%',
+      },
+      // A zero-width or all-whitespace diagnostic range renders as a
+      // `cm-lintPoint` widget instead of a `cm-lintRange` mark (see
+      // @codemirror/lint's own LintState.init) -- reachable for a JSON
+      // parse error anchored at a lezer error node, which is often
+      // zero-width. Same token, different selector.
+      '.cm-lintPoint-error': {
+        '&:after': { borderBottomColor: 'var(--tk-text-bad-vivid)' },
+      },
+      '.cm-lintPoint-warning': {
+        '&:after': { borderBottomColor: 'var(--tk-text-warn-vivid)' },
+      },
     },
     { dark }
   );
@@ -104,11 +169,52 @@ function languageExtensionFor(
 }
 
 /**
+ * Reads the schema/checker through refs rather than taking them as direct
+ * arguments -- a caller that builds a fresh schema object or checker
+ * function every render must not tear down and rebuild the completion/lint
+ * extensions on every keystroke, which would close an open completion popup
+ * and restart the lint debounce. The refs are read at call time instead, so
+ * a changed schema/checker still takes effect on the next completion or
+ * lint run without a reconfigure; only presence/absence (see the reconfigure
+ * effect below) triggers one.
+ */
+function schemaExtensions(
+  language: CodeMirrorLanguage | undefined,
+  schemaRef: { current: Record<string, unknown> | undefined },
+  checkRef: { current: JsonSchemaCheck | undefined }
+): Extension[] {
+  if (language !== 'json') return [];
+  const out: Extension[] = [];
+  if (schemaRef.current)
+    out.push(
+      autocompletion({
+        override: [
+          ctx =>
+            schemaRef.current
+              ? jsonSchemaCompletion(schemaRef.current)(ctx)
+              : null,
+        ],
+      })
+    );
+  if (checkRef.current)
+    out.push(
+      linter(
+        view =>
+          checkRef.current ? jsonDiagnostics(view.state, checkRef.current) : [],
+        { delay: 250 }
+      ),
+      lintGutter()
+    );
+  return out;
+}
+
+/**
  * Resolves the `theme` prop into the extension the theme compartment holds.
- * Omitted -> the auto scheme theme (follows the computed color scheme).
- * `'light'` / `'dark'` -> the kit's own chrome, forced to that scheme.
- * An `Extension` -> used as-is, replacing the kit's theme (and its chrome)
- * entirely.
+ * Omitted -> the auto scheme theme (follows the computed color scheme) plus
+ * the kit's role-token syntax highlighting. `'light'` / `'dark'` -> the
+ * kit's own chrome (and highlighting), forced to that scheme. An
+ * `Extension` -> used as-is, replacing the kit's theme (and its chrome and
+ * highlighting) entirely.
  */
 function resolveThemeExtension(
   theme: 'light' | 'dark' | Extension | undefined,
@@ -116,10 +222,16 @@ function resolveThemeExtension(
   computedColorScheme: 'light' | 'dark'
 ): Extension {
   if (theme === undefined) {
-    return editorTheme(height, computedColorScheme === 'dark');
+    return [
+      editorTheme(height, computedColorScheme === 'dark'),
+      syntaxHighlighting(kitHighlightStyle),
+    ];
   }
   if (theme === 'light' || theme === 'dark') {
-    return editorTheme(height, theme === 'dark');
+    return [
+      editorTheme(height, theme === 'dark'),
+      syntaxHighlighting(kitHighlightStyle),
+    ];
   }
   return theme;
 }
@@ -157,6 +269,8 @@ const CodeMirrorBase = /* @__PURE__ */ forwardRef<
     onCreateEditor,
     onUpdate,
     theme,
+    jsonSchema,
+    jsonCheck,
   }: CodeMirrorBaseProps,
   ref
 ) {
@@ -165,6 +279,7 @@ const CodeMirrorBase = /* @__PURE__ */ forwardRef<
   const languageCompartment = useRef(new Compartment()).current;
   const readOnlyCompartment = useRef(new Compartment()).current;
   const themeCompartment = useRef(new Compartment()).current;
+  const schemaCompartment = useRef(new Compartment()).current;
 
   // Resolved 'light' | 'dark' (never 'auto'), read synchronously on first
   // render -- same anti-flicker approach as the kit's useColorScheme.
@@ -180,6 +295,10 @@ const CodeMirrorBase = /* @__PURE__ */ forwardRef<
   onChangeRef.current = onChange;
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  const jsonSchemaRef = useRef(jsonSchema);
+  jsonSchemaRef.current = jsonSchema;
+  const jsonCheckRef = useRef(jsonCheck);
+  jsonCheckRef.current = jsonCheck;
 
   useImperativeHandle(
     ref,
@@ -210,6 +329,9 @@ const CodeMirrorBase = /* @__PURE__ */ forwardRef<
       basicSetup,
       keymap.of([indentWithTab]),
       languageCompartment.of(languageExtensionFor(language)),
+      schemaCompartment.of(
+        schemaExtensions(language, jsonSchemaRef, jsonCheckRef)
+      ),
       readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
       updateListener,
       // User-supplied extensions, read once at creation -- see the
@@ -285,6 +407,21 @@ const CodeMirrorBase = /* @__PURE__ */ forwardRef<
       ),
     });
   }, [readOnly, readOnlyCompartment]);
+
+  // Reconfigure schema completion and lint when the language changes, or
+  // when jsonSchema/jsonCheck go from absent to present (or back) -- not on
+  // every render a caller passes a fresh schema object or checker function,
+  // which schemaExtensions reads through the refs above instead. See
+  // schemaExtensions' own doc comment for why.
+  const hasJsonSchema = jsonSchema !== undefined;
+  const hasJsonCheck = jsonCheck !== undefined;
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: schemaCompartment.reconfigure(
+        schemaExtensions(language, jsonSchemaRef, jsonCheckRef)
+      ),
+    });
+  }, [language, hasJsonSchema, hasJsonCheck, schemaCompartment]);
 
   return <div ref={parentRef} data-testid="codemirror-editor" />;
 });

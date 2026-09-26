@@ -25,7 +25,6 @@ import {
 } from '@mattstack/settings-kit/react';
 import {
   asRosterEntries,
-  COMPOSITE_SHAPES,
   formatValue,
   getLeaf,
   isSet,
@@ -33,7 +32,9 @@ import {
   rowKind,
   selectOptions,
   setLeaf,
+  shapeOf,
   type ConfigDef,
+  type LeafType,
   type RosterEntry,
 } from './shapes';
 
@@ -114,12 +115,12 @@ function LeavesControl({
 }: {
   def: ConfigDef;
   value: unknown;
-  fields: Record<string, 'string' | 'number'>;
+  fields: Record<string, LeafType>;
   row: ReturnType<typeof useRowSave>;
 }) {
   return (
     <Group gap="sm">
-      {Object.entries(fields).map(([path, type]) => {
+      {Object.entries(fields).map(([path]) => {
         const leaf = getLeaf(value, path);
         const label = `${def.key}.${path}`;
         return (
@@ -128,13 +129,7 @@ function LeavesControl({
             label={path}
             size="xs"
             w={110}
-            value={
-              type === 'number'
-                ? typeof leaf === 'number'
-                  ? leaf
-                  : ''
-                : String(leaf ?? '')
-            }
+            value={typeof leaf === 'number' ? leaf : ''}
             disabled={row.busy}
             aria-label={label}
             onChange={v =>
@@ -207,9 +202,9 @@ function SettingRow({
   const kind = rowKind(def);
   const row = useRowSave(store, def);
   const value = def.effective.value;
-  const shape = COMPOSITE_SHAPES[def.key];
+  const shape = shapeOf(def);
   const malformed =
-    shape !== undefined && value !== undefined && !matchesShape(shape, value);
+    shape !== undefined && value !== undefined && !matchesShape(def, value);
 
   let control;
   if (def.secret || kind === 'readonly' || malformed) {

@@ -1,33 +1,44 @@
 /**
  * The shape layer boxscore's settings page needs for its composite (array/
- * object) rt keys. Mirrors board's `config-shapes.ts` pattern: rt validates
- * only a key's top-level type, so every control here is typed to make a
- * value the next daemon reload would reject unproducible.
+ * object) rt keys. Composite rows take their editor from the kind
+ * settings-kit recognizes in the def's schema; boxscore draws string lists
+ * and string or number leaves, plus its own roster editor.
  */
 import type { SettingDefWire } from '@mattstack/settings-kit/react';
+import { matchesSchema, recognize } from '@mattstack/settings-kit/shapes';
 
 export type ConfigDef = SettingDefWire;
 
-export type LeafType = 'string' | 'number';
+export type LeafType = 'number';
 
 export type CompositeShape =
   | { kind: 'stringList' }
   | { kind: 'leaves'; fields: Record<string, LeafType> }
   | { kind: 'roster' };
 
-export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
+/** Keys whose editor boxscore owns regardless of their schema. */
+const APP_EDITORS: Record<string, CompositeShape> = {
   'mattstack.roster': { kind: 'roster' },
-  'boxscore.projects': { kind: 'stringList' },
-  'boxscore.linearDoneStates': { kind: 'stringList' },
-  'boxscore.excludeFilePatterns': { kind: 'stringList' },
-  'boxscore.ignoredMrs': { kind: 'stringList' },
-  'boxscore.botPatterns': { kind: 'stringList' },
-  'boxscore.hiddenMembers': { kind: 'stringList' },
-  'boxscore.sizeBand': {
-    kind: 'leaves',
-    fields: { tooSmall: 'number', tooLarge: 'number' },
-  },
 };
+
+export function shapeOf(
+  def: Pick<ConfigDef, 'key' | 'schema'>
+): CompositeShape | undefined {
+  const own = APP_EDITORS[def.key];
+  if (own) return own;
+  const r = recognize(def.schema);
+  if (r.kind === 'stringList') return { kind: 'stringList' };
+  if (r.kind !== 'leaves' || Object.keys(r.fields).length === 0)
+    return undefined;
+  const fields: Record<string, LeafType> = {};
+  for (const [path, type] of Object.entries(r.fields)) {
+    // LeavesControl (SettingsPage.tsx) only ever draws a NumberInput; a
+    // string leaf here would render in one and lose its type on save.
+    if (type !== 'number') return undefined;
+    fields[path] = type;
+  }
+  return { kind: 'leaves', fields };
+}
 
 /** boxscore.defaultRange is a plain string key; it renders as a select over
     the range presets rather than a free-text field. */
@@ -38,7 +49,7 @@ const SELECT_KEYS: Record<string, readonly string[]> = {
 export type RowKind = 'scalar' | 'select' | CompositeShape['kind'] | 'readonly';
 
 export function rowKind(def: ConfigDef): RowKind {
-  const shape = COMPOSITE_SHAPES[def.key];
+  const shape = shapeOf(def);
   if (shape?.kind === 'roster') return 'roster';
   if (def.secret || !def.writable) return 'readonly';
   if (SELECT_KEYS[def.key]) return 'select';
@@ -60,28 +71,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function matchesLeaf(type: LeafType, v: unknown): boolean {
-  return typeof v === type;
-}
-
-/** Whether a stored value still matches the shape the control expects. A
-    mismatch (e.g. hand-edited store file) renders read-only rather than a
-    control that would crash or silently mangle the value on save. */
-export function matchesShape(shape: CompositeShape, value: unknown): boolean {
-  switch (shape.kind) {
-    case 'stringList':
-      return Array.isArray(value) && value.every(x => typeof x === 'string');
-    case 'leaves':
-      return (
-        isRecord(value) &&
-        Object.entries(shape.fields).every(([path, type]) => {
-          const v = value[path];
-          return v === undefined || matchesLeaf(type, v);
-        })
-      );
-    case 'roster':
-      return Array.isArray(value);
-  }
+/** Whether a stored value still fits the schema the control writes. A
+    mismatch (a hand-edited store file) renders read-only rather than a
+    control that would mangle the value on save. The roster is checked by
+    its own editor. */
+export function matchesShape(def: ConfigDef, value: unknown): boolean {
+  if (APP_EDITORS[def.key]?.kind === 'roster') return Array.isArray(value);
+  return def.schema === undefined || matchesSchema(def, value);
 }
 
 export function getLeaf(obj: unknown, path: string): unknown {

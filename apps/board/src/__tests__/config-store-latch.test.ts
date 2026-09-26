@@ -1,9 +1,15 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { getSetting, setSetting } from '@mattstack/rt-client';
+import {
+  getDef,
+  validateWrite,
+  type getSetting,
+  type setSetting,
+  type SettingScope,
+} from '@mattstack/rt-client';
 import {
   applyRosterEdit,
   DEFAULT_SLACK_EMOJI,
@@ -18,6 +24,19 @@ import {
 
 type GetSettingFn = typeof getSetting;
 type SetSettingFn = typeof setSetting;
+
+// validateWrite's merged-result check reads the stores under HOME; an empty
+// temp HOME keeps it from reading the real ones.
+const origHome = process.env.HOME;
+let home: string;
+beforeAll(() => {
+  home = mkdtempSync(join(tmpdir(), 'board-latch-home-'));
+  process.env.HOME = home;
+});
+afterAll(() => {
+  process.env.HOME = origHome;
+  rmSync(home, { recursive: true, force: true });
+});
 
 /** A resolve stand-in returning `values[key]` (or undefined for an absent
     key), matching getSetting's shape without touching any real store --
@@ -36,11 +55,17 @@ function throwingResolve(message = 'rt daemon unreachable'): GetSettingFn {
   }) as GetSettingFn;
 }
 
-/** Records every setSetting call instead of writing anywhere real. */
+/** Records every setSetting call instead of writing anywhere real, and
+    holds each one to the write gate setSetting applies. */
 function fakeWrite(
   calls: Array<{ key: string; value: unknown; scope: string }>
 ): SetSettingFn {
   return ((key: string, value: unknown, scope: string) => {
+    const def = getDef(key);
+    expect(def).toBeDefined();
+    expect(
+      validateWrite(def!, value, { scope: scope as SettingScope })
+    ).toEqual({ ok: true });
     calls.push({ key, value, scope });
   }) as SetSettingFn;
 }

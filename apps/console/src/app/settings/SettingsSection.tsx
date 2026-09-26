@@ -10,6 +10,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
 import { useAgentModels } from '../config/useSettings';
+import type { WireIssue } from './issues';
 import { SettingRow } from './SettingRow';
 import type { RowStore } from './useRowSave';
 import type { Section, StoreScope } from './view';
@@ -80,6 +81,7 @@ function AgentsSection({
   filtering,
   initialProvider,
   onExplain,
+  onFix,
 }: {
   section: Section;
   store: RowStore;
@@ -87,6 +89,7 @@ function AgentsSection({
   filtering: boolean;
   initialProvider: Provider;
   onExplain: (key: string) => void;
+  onFix?: (key: string, issue: WireIssue | null) => void;
 }) {
   const all = section.subsections.flatMap(s => s.defs);
   const [chosen, setChosen] = useState<Provider>(initialProvider);
@@ -128,6 +131,7 @@ function AgentsSection({
           query={query}
           suggestions={def.key.endsWith('.model') ? suggestions : undefined}
           onExplain={onExplain}
+          onFix={onFix}
         />
       ))}
     </Box>
@@ -141,6 +145,7 @@ export function SettingsSection({
   filtering,
   agentProvider,
   onExplain,
+  onFix,
 }: {
   section: Section;
   store: RowStore;
@@ -148,6 +153,7 @@ export function SettingsSection({
   filtering: boolean;
   agentProvider: Provider;
   onExplain: (key: string) => void;
+  onFix?: (key: string, issue: WireIssue | null) => void;
 }) {
   const { text } = useSchemeColors();
   if (section.group.id === 'agents')
@@ -159,6 +165,7 @@ export function SettingsSection({
         filtering={filtering}
         initialProvider={agentProvider}
         onExplain={onExplain}
+        onFix={onFix}
       />
     );
   return (
@@ -202,6 +209,7 @@ export function SettingsSection({
               subhead={sub.scope}
               query={query}
               onExplain={onExplain}
+              onFix={onFix}
             />
           ))}
         </Box>

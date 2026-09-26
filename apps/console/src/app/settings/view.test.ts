@@ -4,16 +4,24 @@ import type {
 } from '@mattstack/settings-kit/react';
 import { describe, expect, it } from 'vitest';
 
+import { schemaFields } from './testSchemas';
 import {
   applyFilter,
   badgeScope,
   buildSections,
   fieldSource,
   firstSentence,
+  isRung,
+  layerLabel,
   leafWrite,
+  needsFixing,
   NO_FILTER,
+  rungBase,
+  rungOf,
   sourceText,
   splitKey,
+  targetAt,
+  writeTarget,
 } from './view';
 
 function def(key: string, over: Partial<SettingDefWire> = {}): SettingDefWire {
@@ -30,6 +38,8 @@ function def(key: string, over: Partial<SettingDefWire> = {}): SettingDefWire {
     hasDefault: false,
     defaultValue: null,
     effective: { scope: null, file: null },
+    storeVersion: 1,
+    ...schemaFields(key),
     ...over,
   };
 }
@@ -207,5 +217,115 @@ describe('leaf provenance and writes', () => {
       debounceSec: 45,
     });
     expect(leafWrite(rows, 'team', 'enabled', true)).toEqual({ enabled: true });
+  });
+});
+
+describe('layer rungs and write targets', () => {
+  const REPO = 'gitlab.example.com/acme/app';
+  const roles = (scope: string | null) =>
+    def('rt.roles', {
+      type: 'object',
+      scopes: ['user', 'team', 'machine'],
+      repoScoped: true,
+      effective: { scope, file: '/t' },
+    });
+
+  it('rungBase maps a repo rung to its store and passes store scopes through', () => {
+    expect(rungBase('team.repo')).toBe('team');
+    expect(rungBase('machine')).toBe('machine');
+    expect(rungBase('default')).toBeNull();
+    expect(isRung('user.repo')).toBe(true);
+    expect(isRung('user')).toBe(false);
+    expect(rungOf('team', REPO)).toBe('team.repo');
+    expect(rungOf('team', null)).toBe('team');
+  });
+
+  it('with a repo picked, a repo-scoped key writes the repo section of its winning layer', () => {
+    expect(writeTarget(roles('team.repo'), REPO)).toEqual({
+      scope: 'team',
+      repo: REPO,
+    });
+    // A value inherited from the global team layer gets a repo override
+    // there, never a write to the global layer.
+    expect(writeTarget(roles('team'), REPO)).toEqual({
+      scope: 'team',
+      repo: REPO,
+    });
+    expect(writeTarget(roles(null), REPO)).toEqual({
+      scope: 'user',
+      repo: REPO,
+    });
+  });
+
+  it('without a repo, or for a key that is not repo-scoped, the target has no repo', () => {
+    expect(writeTarget(roles('team'), null)).toEqual({ scope: 'team' });
+    expect(
+      writeTarget(
+        def('rt.logLevel', {
+          scopes: ['machine'],
+          effective: { scope: 'machine', file: '/m', value: 'info' },
+        }),
+        REPO
+      )
+    ).toEqual({ scope: 'machine' });
+  });
+
+  it('targetAt writes a rung only when a repo is picked', () => {
+    expect(targetAt('team.repo', REPO)).toEqual({ scope: 'team', repo: REPO });
+    expect(targetAt('team.repo', null)).toBeNull();
+    expect(targetAt('user', REPO)).toEqual({ scope: 'user' });
+    expect(targetAt('default', REPO)).toBeNull();
+  });
+
+  it('badgeScope always shows a repo rung, even under a matching subhead', () => {
+    expect(badgeScope(roles('team.repo'), 'team')).toBe('team.repo');
+  });
+
+  it('the scope filter matches a repo rung by its store', () => {
+    const f = { ...NO_FILTER, scope: 'team' as const };
+    expect(applyFilter([roles('team.repo')], f)).toHaveLength(1);
+  });
+
+  it('layerLabel names a rung distinctly from its global layer', () => {
+    expect(layerLabel('team.repo')).toBe('team · repo');
+    expect(layerLabel('team')).toBe('team');
+    expect(layerLabel('machine.repo')).toBe('machine · repo');
+  });
+});
+
+describe('needs fixing', () => {
+  const broken = def('rt.notify.eventBridges', {
+    type: 'array',
+    issues: [
+      {
+        scope: 'user',
+        file: '/home/user/settings.user.jsonc',
+        kind: 'nonconforming',
+        path: [2, 'url'],
+        message: 'expected string, got number',
+      },
+    ],
+  });
+  const mergedOnly = def('rt.homeSnapshot', {
+    type: 'object',
+    mergedIssues: [
+      { path: ['enabled'], message: 'expected boolean, got string' },
+    ],
+  });
+  const fine = def('rt.logLevel', {});
+
+  it('counts a key with any layer issue or merged issue', () => {
+    expect(
+      [broken, mergedOnly, fine].filter(needsFixing).map(d => d.key)
+    ).toEqual(['rt.notify.eventBridges', 'rt.homeSnapshot']);
+  });
+
+  it('the filter keeps only keys that need fixing', () => {
+    expect(
+      applyFilter([broken, mergedOnly, fine], {
+        ...NO_FILTER,
+        needsFixing: true,
+      }).map(d => d.key)
+    ).toEqual(['rt.notify.eventBridges', 'rt.homeSnapshot']);
   });
 });

@@ -6,7 +6,6 @@ import { DEFAULT_SLACK_EMOJI as KIT_SLACK_EMOJI } from '@mattstack/settings-kit/
 import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
 import {
   addToList,
-  COMPOSITE_SHAPES,
   filterDefs,
   getLeaf,
   groupByScope,
@@ -18,9 +17,12 @@ import {
   rowKind,
   scopeLabel,
   setLeaf,
+  shapeOf,
   slugTabId,
   type ConfigDef,
 } from '../board/config-shapes.ts';
+
+const REGISTRY = new Map(allDefs().map(d => [d.key, d]));
 
 function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
   return {
@@ -35,37 +37,65 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
     hasDefault: false,
     defaultValue: undefined,
     effective: { scope: null, file: null },
+    storeVersion: 1,
+    schema: REGISTRY.get(over.key)?.schema,
     ...over,
   };
 }
 
 /** Composite board.* registry keys with no edit UI yet -- rowKind's
-    "readonly" fallback (no COMPOSITE_SHAPES entry) is the intended
-    rendering for these, not a coverage gap. */
+    "readonly" fallback (no shapeOf editor) is the intended rendering for
+    these, not a coverage gap. */
 // board.rtRepos is retired: the board derives it from board.projects and
 // board.gitlabHost (config.ts deriveRtRepos). The registry row goes with the
 // next @mattstack/rt-client publish; until board picks that up, the key is
 // still registered and must not be offered for editing.
 const DELIBERATELY_READONLY_COMPOSITES: string[] = ['board.rtRepos'];
 
-describe('COMPOSITE_SHAPES', () => {
-  test('covers every composite board.* key in the registry except the deliberately-readonly ones', () => {
-    const composites = allDefs()
+describe('shapeOf', () => {
+  test('gives every composite board.* registry key a board editor or a widget', () => {
+    const missing = allDefs()
       .filter(
         d =>
           d.key.startsWith('board.') &&
-          (d.type === 'object' || d.type === 'array')
+          (d.type === 'object' || d.type === 'array') &&
+          !DELIBERATELY_READONLY_COMPOSITES.includes(d.key)
       )
-      .map(d => d.key)
-      .filter(k => !DELIBERATELY_READONLY_COMPOSITES.includes(k))
-      .sort();
-    expect(Object.keys(COMPOSITE_SHAPES).sort()).toEqual(composites);
+      .filter(d => shapeOf(d) === undefined)
+      .map(d => d.key);
+    expect(missing).toEqual([]);
   });
 
-  test('names no key the registry lacks', () => {
-    const known = new Set(allDefs().map(d => d.key));
-    for (const key of Object.keys(COMPOSITE_SHAPES))
-      expect(known.has(key)).toBe(true);
+  test('previously shaped keys keep their widget, fields and fallbacks', () => {
+    expect(shapeOf(REGISTRY.get('board.projects')!)).toEqual({
+      kind: 'stringList',
+    });
+    expect(shapeOf(REGISTRY.get('board.cwds')!)).toEqual({
+      kind: 'leaves',
+      fields: { review: 'string', respond: 'string', doctor: 'string' },
+      fallbacks: {},
+    });
+    expect(shapeOf(REGISTRY.get('board.slack')!)).toMatchObject({
+      kind: 'leaves',
+      fallbacks: {
+        'emoji.looking': 'eyes',
+        'emoji.commented': 'speech_balloon',
+        'emoji.approved': 'white_check_mark',
+      },
+    });
+    expect(shapeOf(REGISTRY.get('board.tabs')!)).toEqual({ kind: 'tabs' });
+    expect(shapeOf(REGISTRY.get('board.members')!)).toEqual({
+      kind: 'roster',
+    });
+  });
+
+  test('a schema board has no widget for is undefined', () => {
+    expect(
+      shapeOf({ key: 'board.mystery', schema: { type: 'object' } })
+    ).toBeUndefined();
+    expect(
+      shapeOf({ key: 'board.mystery', schema: undefined })
+    ).toBeUndefined();
   });
 });
 
@@ -142,7 +172,7 @@ describe('scopeLabel', () => {
 
 describe('matchesShape', () => {
   test('stringList accepts only arrays of strings', () => {
-    const s = COMPOSITE_SHAPES['board.projects']!;
+    const s = shapeOf(REGISTRY.get('board.projects')!)!;
     expect(matchesShape(s, [])).toBe(true);
     expect(matchesShape(s, ['a/b'])).toBe(true);
     expect(matchesShape(s, ['a', 1])).toBe(false);
@@ -150,7 +180,8 @@ describe('matchesShape', () => {
   });
 
   test('board.rtRepos is no longer a configurable key: the board derives it', () => {
-    expect(COMPOSITE_SHAPES['board.rtRepos']).toBeUndefined();
+    const retired = REGISTRY.get('board.rtRepos');
+    expect(retired === undefined || shapeOf(retired) === undefined).toBe(true);
   });
 
   test('pairList accepts arrays of objects carrying both string fields', () => {
@@ -161,7 +192,7 @@ describe('matchesShape', () => {
   });
 
   test('leaves accepts a plain object whose known leaves have the right type; unknown keys pass through', () => {
-    const s = COMPOSITE_SHAPES['board.triage']!;
+    const s = shapeOf(REGISTRY.get('board.triage')!)!;
     expect(matchesShape(s, {})).toBe(true);
     expect(
       matchesShape(s, {
@@ -309,7 +340,7 @@ describe('rosterSummary', () => {
 });
 
 describe('tabs shape', () => {
-  const s = COMPOSITE_SHAPES['board.tabs']!;
+  const s = shapeOf(REGISTRY.get('board.tabs')!)!;
   const team = { id: 'team', label: 'Team', source: { kind: 'authors' } };
   const acme = {
     id: 'acme',

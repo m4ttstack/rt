@@ -19,7 +19,6 @@ import {
   SWITCH_SIZE,
 } from './controlStyles';
 import { unitOf } from './units';
-import { isStoreScope } from './view';
 
 const OPTION_LABELS: Record<string, Record<string, string>> = {
   'agent.provider': { claude: 'Claude', codex: 'Codex' },
@@ -31,10 +30,14 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
     Select are controlled and unkeyed, so a save never drops their focus. */
 export function ScalarControl({
   def,
+  writeScope,
   onSave,
   suggestions,
 }: {
   def: SettingDefWire;
+  /** The layer emptying the field would write to (a rung's own scope
+      string, e.g. "team.repo"), from the caller's own write target. */
+  writeScope: string;
   onSave: (value: unknown) => void;
   suggestions?: string[];
 }) {
@@ -44,10 +47,12 @@ export function ScalarControl({
   const [resets, setResets] = useState(0);
   const abandoned = useRef(false);
   const seed = JSON.stringify([def.effective.scope, value, resets]);
-  // A default or unset value has no store layer to unset; emptying the field
-  // just restores the text the value still resolves to.
+  // A value that does not come from the layer emptying the field would
+  // write to has no store layer here to unset; emptying it just restores
+  // the text the value still resolves to (LeavesBody follows the same
+  // rule for a leaf field).
   const clear = () =>
-    isStoreScope(def.effective.scope)
+    def.effective.scope === writeScope
       ? onSave(undefined)
       : setResets(n => n + 1);
 

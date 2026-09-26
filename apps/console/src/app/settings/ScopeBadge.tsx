@@ -1,6 +1,6 @@
 import { Badge, Box } from '@mattstack/app-kit/core';
 
-import type { StoreScope } from './view';
+import { layerLabel, rungBase, type LayerScope, type StoreScope } from './view';
 
 export const SCOPE_COLOR: Record<StoreScope, string> = {
   team: 'purple',
@@ -24,17 +24,18 @@ export function ScopeDot({ scope }: { scope: StoreScope }) {
   );
 }
 
-export function ScopeBadge({ scope }: { scope: StoreScope }) {
+export function ScopeBadge({ scope }: { scope: LayerScope }) {
+  const base = rungBase(scope)!;
   return (
     <Badge
       variant="light"
-      color={SCOPE_COLOR[scope]}
+      color={SCOPE_COLOR[base]}
       radius="sm"
       tt="none"
       fw={500}
       lts={0}
-      c={`var(--tk-text-${SCOPE_COLOR[scope]}-small)`}
-      leftSection={<ScopeDot scope={scope} />}
+      c={`var(--tk-text-${SCOPE_COLOR[base]}-small)`}
+      leftSection={<ScopeDot scope={base} />}
       style={{
         '--badge-height': '17px',
         '--badge-fz': '12px',
@@ -43,7 +44,7 @@ export function ScopeBadge({ scope }: { scope: StoreScope }) {
       }}
       styles={{ section: { marginInlineEnd: 4 } }}
     >
-      {scope}
+      {layerLabel(scope)}
     </Badge>
   );
 }

@@ -20,6 +20,7 @@ function def(over: Partial<SettingDefWire>): SettingDefWire {
     hasDefault: true,
     defaultValue: 30,
     effective: { scope: null, file: null },
+    storeVersion: 1,
     ...over,
   };
 }
