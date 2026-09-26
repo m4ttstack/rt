@@ -1,0 +1,11 @@
+node_modules
+dist
+storybook-static
+logs
+*.log
+bun.lock
+
+# Copied verbatim from repo-tools' design canvas (see design/README.md's
+# provenance table) -- build.py regenerates the artboards from a shared CSS
+# block, so this project's Prettier config never touches its output.
+design

@@ -1,0 +1,18 @@
+{
+  "name": "board",
+  "displayName": "Board",
+  "description": "Your team's open GitLab MRs that are ready for review, on one shareable page.",
+  "icon": "./src/favicon.svg",
+  "port": 11006,
+  "includeInBundle": true,
+  "badge": "/api/badge",
+  "dev": {
+    "start": "caffeinate -s bun src/server.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart board"
+  },
+  "bundle": {
+    "build": "bun run build",
+    "artifact": "dist/board"
+  }
+}

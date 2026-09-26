@@ -362,9 +362,9 @@ check_helpers() { # app
             *)
                 if [ -f "$p" ] && [ -x "$p" ]; then
                     # The dev deck binary is the shim: a real HOME would let it
-                    # find the registry and try to run mattstack-apps from
-                    # source, so the probe runs isolated to force the pinned
-                    # fallback instead.
+                    # find the registry and try to run deck from its source
+                    # checkout, so the probe runs isolated to force the
+                    # pinned fallback instead.
                     if [ "$exe" = mattstack-dev ] && [ "$name" = deck ]; then
                         env -i HOME="$(mktemp -d)" PATH=/usr/bin:/bin "$p" --version >/dev/null 2>&1
                     else

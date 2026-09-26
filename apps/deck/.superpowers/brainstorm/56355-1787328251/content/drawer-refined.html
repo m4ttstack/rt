@@ -1,0 +1,107 @@
+<style>
+  .dwrap { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size:12.5px; color:#4c505e; }
+  .dw { background:#f3f4f7; border:1px solid #c8cad1; border-left:3px solid #2e7de9; border-radius:8px; width:340px; padding:0; overflow:hidden; }
+  .dw .head { padding:14px 16px 12px; border-bottom:1px solid #dcdee5; }
+  .dw .name { display:flex; justify-content:space-between; align-items:center; }
+  .dw .name b { font-size:15px; color:#343b58; }
+  .dw .name b span { color:#9aa0b0; font-weight:400; }
+  .dw .x { color:#9aa0b0; }
+  .dw .status { color:#7a7f8d; margin-top:4px; }
+  .dw .actions { margin-top:10px; display:flex; gap:8px; }
+  .btn { border:1px solid #c8cad1; background:#eaebef; border-radius:5px; padding:3px 10px; font-size:11px; color:#343b58; display:inline-block; white-space:nowrap; }
+  .btn.quiet { border-color:transparent; background:transparent; color:#8990a3; }
+  .btn.danger { color:#c64343; border-color:#e4b6bd; background:transparent; }
+  .dw .body { padding:4px 16px 14px; }
+  .dw h5 { font-size:10px; letter-spacing:.09em; color:#8990a3; text-transform:uppercase; margin:16px 0 8px; font-weight:600; }
+  .dw .row { display:flex; align-items:center; padding:4px 0; gap:10px; }
+  .dw .row .lbl { width:70px; flex-shrink:0; color:#8990a3; }
+  .dw .row .val { flex:1; color:#343b58; }
+  .dw .row .val .dim2 { color:#9aa0b0; }
+  .dw .row .ctl { flex-shrink:0; }
+  .sw { display:inline-block; width:26px; height:14px; border-radius:999px; background:#2e7de9; position:relative; vertical-align:middle; }
+  .sw::after { content:""; position:absolute; right:2px; top:2px; width:10px; height:10px; border-radius:50%; background:#fff; }
+  .sw.off { background:#b8bcc7; } .sw.off::after { right:auto; left:2px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; margin-right:6px; }
+  .dot.g { background:#587539; } .dot.r { background:#c64343; }
+  .chip { display:inline-block; background:#dcdee5; border-radius:999px; padding:1px 8px; font-size:10.5px; color:#4c505e; margin-right:4px; }
+  .chip i { font-style:normal; color:#9aa0b0; margin-left:4px; }
+  .logbox { background:#e1e2e7; border-radius:5px; padding:8px 10px; color:#7a7f8d; font-size:10.5px; line-height:1.55; }
+  .dw .foot { border-top:1px solid #dcdee5; padding:10px 16px; display:flex; justify-content:flex-end; }
+  .cap { font-size:11px; color:#8990a3; margin:6px 0 0; font-family:inherit; }
+</style>
+
+<h2>The drawer, rebuilt</h2>
+<p class="subtitle">One row anatomy everywhere: dim label (fixed column) · value · one real control on the right. No bare text-links, no right-edge word salad. Header is identity only; the two everyday actions are real buttons directly under the status; remove is quarantined in a footer. Shown for the busiest app and the plainest app side by side.</p>
+
+<div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;" class="dwrap">
+
+  <div>
+    <div class="dw">
+      <div class="head">
+        <div class="name"><b>orbit<span>.mattstack ↗</span></b><span class="x">✕</span></div>
+        <div class="status"><span class="dot g"></span>200 in 18ms · running pid 5311</div>
+        <div class="actions"><span class="btn">↻ restart</span><span class="btn">✎ edit</span></div>
+      </div>
+      <div class="body">
+        <h5>dev port</h5>
+        <div class="row"><span class="lbl">override</span><span class="val">3007 <span class="dim2">· normally 11007</span></span><span class="ctl"><span class="btn">revert</span></span></div>
+        <div class="row"><span class="lbl"></span><span class="val dim2" style="color:#9aa0b0;">public follows dev</span><span class="ctl"><span class="sw off"></span></span></div>
+        <h5>access</h5>
+        <div class="row"><span class="lbl">password</span><span class="val">••••••</span><span class="ctl"><span class="btn quiet">change</span><span class="btn quiet" style="color:#c64343;">clear</span></span></div>
+        <div class="row"><span class="lbl">emails</span><span class="val"><span class="chip">matt@… <i>✕</i></span><span class="chip">bee@… <i>✕</i></span></span><span class="ctl"><span class="btn quiet">+ add</span></span></div>
+        <h5>stderr</h5>
+        <div class="logbox">[vite] hmr connect failed ×3<br>listening on :3007</div>
+        <div class="row" style="padding-top:6px;"><span class="btn quiet" style="padding-left:0;">open full log →</span></div>
+      </div>
+      <div class="foot"><span class="btn danger">remove app…</span></div>
+    </div>
+    <p class="cap">busy case — override active, access set, stderr present</p>
+  </div>
+
+  <div>
+    <div class="dw" style="border-left-color:#c8cad1;">
+      <div class="head">
+        <div class="name"><b>atlas<span>.mattstack ↗</span></b><span class="x">✕</span></div>
+        <div class="status"><span class="dot g"></span>200 in 34ms · running pid 5123</div>
+        <div class="actions"><span class="btn">↻ restart</span><span class="btn">✎ edit</span></div>
+      </div>
+      <div class="body">
+        <h5>dev port</h5>
+        <div class="row"><span class="lbl">override</span><span class="val dim2" style="color:#9aa0b0;">none</span><span class="ctl"><span class="btn quiet">set…</span></span></div>
+        <h5>access</h5>
+        <div class="row"><span class="lbl">password</span><span class="val dim2" style="color:#9aa0b0;">not set</span><span class="ctl"><span class="btn quiet">set…</span></span></div>
+        <div class="row"><span class="lbl">emails</span><span class="val dim2" style="color:#9aa0b0;">anyone with password</span><span class="ctl"><span class="btn quiet">+ add</span></span></div>
+        <h5>stderr</h5>
+        <div class="row"><span class="val dim2" style="color:#9aa0b0;">no recent output</span></div>
+      </div>
+      <div class="foot"><span class="btn danger">remove app…</span></div>
+    </div>
+    <p class="cap">plain case — sections stay put, states go quiet (no layout shift between apps)</p>
+  </div>
+
+</div>
+
+<h3 style="margin-top:26px;">What changed from the messy version</h3>
+<ul style="font-size:14px; line-height:1.8; margin-left:18px;">
+  <li><strong>Header = identity only.</strong> The "esc" hint, restart, and status jostling in the header are gone; status gets its own line, actions their own button row.</li>
+  <li><strong>Edit promoted, remove quarantined.</strong> Restart + edit are the everyday pair, together at top. Remove sits alone in a bordered footer — can't fat-finger it.</li>
+  <li><strong>One row grammar.</strong> Label (fixed 70px, dim) · value · control. Your eye lands on the same x-positions in every section.</li>
+  <li><strong>Emails are chips with ✕</strong>, not "matt@… +1 · edit". Everything is manipulable where it's displayed.</li>
+  <li><strong>"open full log" moved out of the section header</strong> to a quiet link-button under the preview.</li>
+  <li><strong>Empty states are words, not absences</strong> — "none", "not set", "no recent output" — so both drawers have identical skeletons.</li>
+</ul>
+
+<div class="options" style="margin-top:18px;">
+  <div class="option" data-choice="drawer-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>Drawer works — go A′</h3><p>Lock the drawer direction; next round is the full-board composite and the interaction details (open/close, keyboard, mobile).</p></div>
+  </div>
+  <div class="option" data-choice="drawer-iterate" onclick="toggleSelect(this)">
+    <div class="letter">↻</div>
+    <div class="content"><h3>Closer, but iterate the drawer again</h3><p>Tell me what's still off.</p></div>
+  </div>
+  <div class="option" data-choice="switch-inline" onclick="toggleSelect(this)">
+    <div class="letter">C′</div>
+    <div class="content"><h3>Seeing it refined, I prefer the inline table</h3><p>We drop the drawer and refine C′ to this same standard.</p></div>
+  </div>
+</div>

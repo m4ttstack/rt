@@ -5,7 +5,10 @@ import { join } from "path";
 import { parse } from "yaml";
 
 const wf = parse(readFileSync(join(import.meta.dir, "..", "..", ".github", "workflows", "release.yml"), "utf8"));
-const stepNames = (job: string): string[] => wf.jobs[job].steps.map((s: any) => s.name ?? s.uses);
+// A step with neither name nor uses (a bare run: step) carries nothing to
+// pin against; dropping it keeps every other step's relative order intact.
+const stepNames = (job: string): string[] =>
+  wf.jobs[job].steps.map((s: any) => s.name ?? s.uses).filter((n: string | undefined): n is string => n !== undefined);
 const names = stepNames("release");
 // findIndex returns -1 for an absent step, and -1 satisfies every
 // toBeLessThan — assert presence before the caller compares order.
@@ -16,11 +19,16 @@ const idx = (n: string) => {
 };
 
 describe("release.yml", () => {
-  test("triggers on v* tags and manual dispatch; one job, arch-pinned", () => {
+  test("triggers on v* tags and manual dispatch; two jobs, arch-pinned, the signing key stays out of build-apps", () => {
     expect(wf.on.push.tags).toEqual(["v*"]);
     expect(wf.on).toHaveProperty("workflow_dispatch");
-    expect(Object.keys(wf.jobs)).toEqual(["release"]);
+    expect(Object.keys(wf.jobs)).toEqual(["build-apps", "release"]);
     expect(wf.jobs.release["runs-on"]).toBe("macos-15");
+    expect(wf.jobs.release.needs).toBe("build-apps");
+    expect(wf.jobs["build-apps"].permissions).toEqual({ contents: "read" });
+    const buildAppsCheckout = wf.jobs["build-apps"].steps.find((s: any) => String(s.uses ?? "").startsWith("actions/checkout"));
+    expect(buildAppsCheckout.with["persist-credentials"]).toBe(false);
+    expect(wf.jobs["build-apps"].steps.some((s: any) => /certificate/i.test(s.name ?? ""))).toBe(false);
   });
   test("arm64 only — no x64 compile, no tarballs", () => {
     const text = JSON.stringify(wf);
@@ -28,9 +36,10 @@ describe("release.yml", () => {
     expect(text).not.toContain("tar.gz");
     expect(text).toContain("bun-darwin-arm64");
   });
-  test("the train is ordered: compile → deps → build → contract → version assert → notarize app → zip → clean-room → dmg → notarize dmg → appcast → checksums → release", () => {
+  test("the train is ordered: compile → deps → land tree rows → build → contract → version assert → notarize app → zip → clean-room → dmg → notarize dmg → appcast → checksums → release", () => {
     expect(idx("Compile rt")).toBeLessThan(idx("Fetch bundled dependencies"));
-    expect(idx("Fetch bundled dependencies")).toBeLessThan(idx("Build mattstack.app"));
+    expect(idx("Fetch bundled dependencies")).toBeLessThan(idx("Land the tree rows"));
+    expect(idx("Land the tree rows")).toBeLessThan(idx("Build mattstack.app"));
     expect(idx("Build mattstack.app")).toBeLessThan(idx("Assert the bundle contract"));
     expect(idx("Assert the bundle contract")).toBeLessThan(idx("Assert tag matches the stamped version"));
     expect(idx("Assert tag matches the stamped version")).toBeLessThan(idx("Notarize and staple the app"));
@@ -103,6 +112,13 @@ describe("release.yml", () => {
     expect(wf.concurrency.group).toBe("release-${{ github.ref }}");
     const install = wf.jobs.release.steps.find((s: any) => s.name === "Install dependencies");
     expect(install.run).toContain("--frozen-lockfile");
+  });
+  test("the release job's install skips third-party lifecycle scripts; build-apps still runs them", () => {
+    const install = wf.jobs.release.steps.find((s: any) => s.name === "Install dependencies");
+    expect(install.run).toContain("bun install --frozen-lockfile --ignore-scripts");
+    expect(install.run).toContain("bun run postinstall");
+    const buildAppsInstall = wf.jobs["build-apps"].steps.find((s: any) => s.run === "bun install --frozen-lockfile");
+    expect(buildAppsInstall).toBeDefined();
   });
   test("no RT_SANDBOX_PRESIGN escape hatch in CI", () => {
     expect(JSON.stringify(wf)).not.toContain("RT_SANDBOX_PRESIGN");

@@ -1,0 +1,5 @@
+{
+  "displayName": "Board",
+  "description": "Your team's open GitLab MRs that are ready for review, on one shareable page.",
+  "icon": "./src/favicon.svg"
+}

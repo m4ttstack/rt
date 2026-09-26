@@ -27,39 +27,31 @@ that catalog actually changed — an unchanged one is a no-op that pushes nothin
 >
 > This skill still owns the docs/notes/tag half of a release. The build,
 > signing, notarization, clean-room, and appcast half — plus the cross-repo
-> coordination a release needs (deck, board, gitq, fast-browser, console) — is
-> `~/.claude/skills/mattstack-release/SKILL.md`. Read that one before cutting a
-> real release; read this one for the notes and the tag.
+> coordination a release needs (deck, board, console, chat and boxscore
+> build from this tree; gitq and fast-browser are the two vendored apps in
+> their own repos) — is `~/.claude/skills/mattstack-release/SKILL.md`. Read
+> that one before cutting a real release; read this one for the notes and
+> the tag.
 
 This supersedes the local `.claude/commands/release.md` command; that file can be
 left as-is or reduced to a pointer here.
 
 ## Fast path: one served-app fix
 
-When the release exists to ship a fix in ONE served app (board, chat,
-console, boxscore), already merged on apps main, and rt's main has gained
-nothing since the last tag but serve-only pins, `RELEASE_NOTES.md` and
-`website/`, the whole release is one verb, `rt release app <name>` (bare `rt release app` on a terminal
-picks the app; from source, `bun run cli.ts release app <name>`). It covers
-steps 2-10 for that app: it bumps the app's version (`package.json` and
-`bun.lock` in one commit) straight onto apps main, dispatches `bundle-apps.yml`, checks the bot deps.lock PR (the
-workflow's own, only that row's pin, the published asset's sha256,
-`codesign --verify --strict` plus the signing identity and team), merges it
-on green CI without waiting on CodeRabbit, writes the notes, tags the next
-patch without the step 8 rehearsal, and runs `rt release verify`. Of step
-1's preflight it runs only the gate: the last tag read from origin, then
-the diff since it. Preflight's other rows (picker conformance, tool,
-catalog and extension drift, rt-client parity) it does not run; a pin-only
-release leaves those layers where the last tag put them. Pins already
-merged for other served apps ride along with a notes section each, and
-every app whose code moved since its pin is listed as held, in the plan and
-in the notes.
+When the diff since the last tag touches only served-app directories
+(`apps/board`, `apps/boxscore`, `apps/chat`, `apps/console`),
+`RELEASE_NOTES.md` and `website/`, the release is one verb, `rt release app
+<name>` (bare `rt release app` on a terminal picks the app; from source,
+`bun run cli.ts release app <name>`). It qualifies origin/main against that
+path gate, writes the notes with a section per app that moved, commits
+them, tags the next patch without the step 8 rehearsal, and runs `rt
+release verify`.
 
-1. `rt release app <name> --dry-run` and read the plan: versions, both tags,
-   held apps, the commands.
+1. `rt release app <name> --dry-run` and read the plan: the qualify
+   result, the next tag, the commands.
 2. Run it. On a terminal it asks y/N on the notes itself. From an agent,
    run `rt release app <name> --json` in the background (it waits on the
-   bundle run and the PR's CI) and read the envelope when it exits. When
+   tag's release.yml run) and read the envelope when it exits. When
    the notes are not yet committed on main it stops at them (status
    `awaiting-approval`), with the notes, their `notesHash` and a `resume`
    command; when an earlier run already committed them it goes straight on
@@ -67,9 +59,9 @@ in the notes.
    run that `resume` command, `rt release app <name> --json --yes-notes
    <notesHash>`, the same way (the flag takes only that hash); it commits, tags and waits on release.yml
    (25-50 minutes). If that run stops at `awaiting-approval` again, the
-   notes changed after Matt approved (for example another pin merged) and
-   nothing was committed: show Matt the new notes, and run the new
-   `resume` only once he approves them.
+   notes changed after Matt approved (for example another served-app
+   commit landed) and nothing was committed: show Matt the new notes, and
+   run the new `resume` only once he approves them.
 3. Read the final envelope's `status`:
    - `released`: go on to step 4.
    - `pending`: tagged, but not verified yet. Either release.yml is still
@@ -85,9 +77,10 @@ in the notes.
 4. Then finish with steps 11 and 12.
 
 Use the full process below for a deck fix, for a main carrying anything
-outside the pin allowlist, and for a pin moved below the version the last
-tag shipped (a revert); the verb refuses all three, naming why. Use it too
-when Matt wants several apps bumped and bundled in one release.
+outside the served-app path gate (`apps/deck/`, a tool row, fast-browser,
+or any rt file), and to release several served apps together in one pass
+when Matt wants that; the verb refuses anything outside its gate, naming
+why.
 
 ## Process
 
@@ -97,10 +90,9 @@ when Matt wants several apps bumped and bundled in one release.
    git/tag state (on `main`, tree clean, commits since the last tag), the
    picker conformance gate, the settings schema lock against the last
    tag, the candidate's own settings check against the real stores,
-   per-app pin freshness, the standalone
-   gitq/fast-browser rows, tool-row drift against upstreams, plugin
-   catalog pin drift, Chrome extension currency, rt-client npm-vs-source
-   parity, and the gate (fast path vs full) the pending diff implies.
+   the standalone gitq/fast-browser rows, tool-row drift against
+   upstreams, plugin catalog pin drift, Chrome extension currency, and
+   the gate (fast path vs full) the pending diff implies.
    Exit 0 means every layer verified current. A stale row prints pinned
    vs current; an unverifiable row (`!`) is not a pass — rerun or check
    that layer by hand before proceeding. Abort on a stale `git state`
@@ -118,76 +110,30 @@ when Matt wants several apps bumped and bundled in one release.
    migration, never the store; a diverged name is resolved with Matt
    (console's Needs fixing, or `rt settings migrate --prune --force <key>`
    once he has chosen the value to keep). Every other stale row is
-   handled by the policy in steps 2b-2c: cut the layer's release, or the
+   handled by the policy in step 2c: cut the layer's release, or the
    user ratifies holding the pin and the release notes record it.
 
 2. **Determine version bump.** From `git log --pretty=%s <last-tag>..HEAD`:
    any `feat(` or a new module/file is a minor bump; only `fix(` / `chore(` /
    `docs(` / `ci(` / `test(` is a patch bump; if ambiguous, ask.
 
-2b. **Pin freshness: the bundled apps ship at their deps.lock pins, not at
-   apps main.** v2.9.0 shipped a ten-day-stale app layer this way (every
-   app pinned at the Sep 7 fold-in while board's half of the gate-seam epic
-   sat merged and unreleased), and nothing in the process said so.
-   Preflight's `app` rows do the compare for each apps-monorepo row in
-   `rt-tray/deps.lock` (board, chat, console, deck): the pinned release's
-   published date against the subdir's latest commit on `m4ttstack/apps`
-   main; a stale row means the subdir moved since the pin.
-
-   The policy is content lockstep, independent numbering: an app whose
-   subdir moved since its pin gets a release cut from the same main this
-   tag builds against. Nothing in that pipeline is tag-triggered, so
-   never hand-push an app tag; a hand-pushed tag builds nothing. The
-   pipeline: bump the app's version in `apps/<app>/package.json` AND in
-   its `"apps/<app>"` workspace entry in the apps repo's root `bun.lock`,
-   together in one direct commit to apps main (a bare version bump needs
-   no PR; a bump that skips `bun.lock` breaks the next frozen-lockfile
-   install), then
-
-   ```
-   gh workflow run bundle-apps.yml --repo m4ttstack/rt -f apps=<comma-list>
-   ```
-
-   (`bundle-apps.yml` lives in rt, not the apps repo). The workflow reads
-   each app's package.json version, mints the app-prefixed tag itself,
-   creates the apps release with the tarball, and opens ONE combined
-   deps.lock PR on rt covering every app it was dispatched for; verify
-   each changed row's sha256 against the published asset before merging.
-   Merge-on-green, here and for any release-day PR, means zero pending
-   checks AND at least one pass; any fail blocks. A failed check in a
-   suite the diff cannot touch (a deps.lock pin failing a UI test) is
-   rerun-first: `gh run rerun <run-id> --failed`, then re-gate. A green
-   CodeRabbit row is only a review if it actually reviewed: the org is
-   rate-capped, and a rate-limited pass reports success having read
-   nothing (check for a real review body or inline comments). For
-   release-bound code changes, a rate-limited CodeRabbit means a
-   strong-model subagent reviews the diff instead; docs-only diffs may
-   merge on CI alone when the user has said so. An
-   unchanged app keeps its pin, no empty releases. Holding a stale pin
-   anyway is allowed but is a decision the user makes and the release
-   notes record, never a silent default. Version numbers stay per-app;
-   rt's own tag plus the committed deps.lock is the compatibility record.
-
-   Since 2026-09-18 (rt#347) bundle-apps signs every artifact with the
-   Developer ID cert under the stable identifier
-   `com.mattstack.helper.<app>`, so deployed binaries keep their macOS
-   TCC grants across updates on BOTH channels (the bundle's embedded
-   helpers, which build.sh re-signs with the same identifier convention,
-   and the raw-artifact channel: fetch-deps copies and each app's
-   self-update). Two consequences: an app pin minted before that date
-   points at ad-hoc-signed bytes, and re-cutting it through the signing
-   workflow is a REAL release even with no source change (the artifact
-   changes; note it as "signed build" in the app release); and a user's
-   first deploy of a signed build prompts for TCC once more (the
-   identity switches from ad-hoc to stable), then never again. Verify a
-   signed artifact with `codesign -dvv` (Identifier plus a Developer ID
-   Application authority); the workflow's dry_run input proves the
-   signing path with no publish side effects.
+2b. **Apps ship at HEAD, except gitq.** Board, boxscore, chat, console and
+   deck are `source: "tree"` rows in `rt-tray/deps.lock` and are built from
+   the tagged commit by `release.yml`'s `build-apps` job
+   (`scripts/build-apps.ts`), so there is no pin to go stale and nothing to
+   bump for them; a change merged to main is in the next release by
+   construction, and their `package.json` versions are labels nothing
+   reads. gitq is different: it still lives in its own repo
+   (`~/Documents/GitHub/gitq`), and its `rt-tray/deps.lock` row is a
+   `repo`/`url`/`sha256` pin like fast-browser's, so a change there needs
+   the pin bumped through 2c's standalone-row policy before it reaches
+   users. gitq releases take the full process through 2c, never the Fast
+   path above.
 
 2c. **The other vendored layers: plugins, standalone apps, tools, the
-   extension.** Step 2b covers only the four apps-monorepo rows; v2.10.1
-   shipped a marketplace catalog whose mattstack plugin pin was 263
-   commits stale because nothing checked the rest. Preflight reports all
+   extension.** None of them build from this tree, so each keeps its own
+   pin; v2.10.1 shipped a marketplace catalog whose mattstack plugin pin was
+   263 commits stale because nothing checked the rest. Preflight reports all
    of them; this step is what a stale row means and what to do about it:
 
    - **Plugin catalog** (`catalog` rows): preflight re-resolves each
@@ -202,8 +148,8 @@ when Matt wants several apps bumped and bundled in one release.
      gitq compares against its repo's latest GitHub release;
      fast-browser against `m4ttstack/fast-browser`'s main
      `package.json`, because that repo publishes to npm and has no
-     GitHub releases. Same lockstep policy as 2b; a stale hold is the
-     user's recorded decision.
+     GitHub releases. A stale pin can be held, but only as the user's
+     recorded decision, noted in the release notes.
    - **Tool rows** (`tool` rows: bun, sparkle, age, zstd, git-lfs, gh,
      glab, jq, node, sops, cloudflared, portless): hand-pinned; Renovate
      does NOT watch deps.lock, so preflight's sweep is the only drift
@@ -213,9 +159,6 @@ when Matt wants several apps bumped and bundled in one release.
      holds by the user's call, never silently, and a sparkle bump never
      rides another release's tag: it changes the updater itself and gets
      its own tested release.
-   - **rt-client** (`rt-client parity` row): npm must equal
-     `packages/rt-client/package.json`; an unpublished source bump means
-     consumers install stale (publish is release-class, from main only).
    - **NOT vendored, never stale here**: herdr and claude install via
      their own live installers (the `VENDOR_INSTALLERS` allowlist in
      `lib/setup/tools-install.ts`: herdr.dev/install.sh,
@@ -261,10 +204,10 @@ when Matt wants several apps bumped and bundled in one release.
 
    When the `schema lock` row lists `storeVersion bumps for the release
    notes`, add a "Settings store versions" section naming each key and its
-   new store name (`rt.roles@2`), and say that the apps repo's rt-client
-   bump follows in this release train. Do not run `rt settings migrate
-   --write` on any machine before the apps have moved: writing `key@N` is
-   what starts divergence for writers still on the old name.
+   new store name (`rt.roles@2`). Do not run `rt settings migrate
+   --write` on any machine before every app has moved to a build that
+   reads the new name: writing `key@N` is what starts divergence for
+   writers still on the old name.
 
 6. **Show the user and get approval.** Print the proposed tag, the full
    `RELEASE_NOTES.md` body, and the docs diff (`git diff --staged --stat` for
@@ -327,25 +270,16 @@ when Matt wants several apps bumped and bundled in one release.
    never came up". A closed job's pane may never have run its cleanup;
    verify, don't assume.
 
-   **Pin-only fast path** (user-ratified 2026-09-18; preflight's
-   `gate:` line computes this call): when `git diff
-   --stat <last-tag>..HEAD` touches ONLY `rt-tray/deps.lock` (plus
-   `RELEASE_NOTES.md` and `website/`) AND every changed row is an app deck
-   merely serves (board, chat, console, gitq, boxscore), skip the local
-   walkthrough and tag on the rehearsal alone: CI still builds, notarizes,
-   and clean-room installs, and those apps play no part in the setup flow
-   the walkthrough exercises. Rows that DO participate in onboarding keep
-   the full gate no matter how small the diff: deck (the deck.managed
-   adopt is walkthrough territory, and a deck pin is exactly what the
-   walkthrough gated on 2026-09-18), fast-browser (fastbrowser.setup ran
-   a real setup regression to ground in v2.9.0), and every tool row (bun,
-   sparkle, age, zstd, git-lfs, and the rest all run during install). Any changed file outside that list also means the full gate.
+   **Path fast path:** when `git diff --name-only <last-tag>..HEAD` stays
+   inside the served-app directories, `RELEASE_NOTES.md` and `website/`,
+   skip the local walkthrough and tag on the rehearsal alone. `apps/deck/`,
+   every tool row, gitq, fast-browser and any rt file keep the full gate.
 
-   `rt release app` goes one step further (ratified with its design on
-   2026-09-25): it tags with no rehearsal at all, because its own gate
-   admits nothing but serve-only pins, notes and `website/` since a tag
-   whose pipeline run already published. Every other pin-only release
-   still tags on the rehearsal.
+   `rt release app` goes one step further: it tags with no rehearsal at
+   all, because its own gate admits nothing but the served-app path, notes
+   and `website/`, and its qualify step has already confirmed the newest
+   tag verified. Every other path-gate release still tags on the
+   rehearsal.
 
    When a walkthrough fails on `deck.managed`, read
    `~/.mattstack/deck/logs/agent.log` from the guest-home tarball FIRST;
@@ -426,8 +360,8 @@ when Matt wants several apps bumped and bundled in one release.
    summary names the leg that halted the run); declining a leg's
    confirmation prompt only skips that one leg and moves on. A sha256
    mismatch on the prod dmg is exactly this kind of abort: it stops the
-   dev bundle, daemon, and served-suite legs from running unprompted
-   even under `--yes`.
+   dev bundle, checkout-sync, daemon, and served-suite legs from running
+   unprompted even under `--yes`.
 
    - **Prod app**: resolves the released tag (default latest),
      downloads the dmg, verifies it against SHA256SUMS, mounts it
@@ -443,13 +377,18 @@ when Matt wants several apps bumped and bundled in one release.
      `~/.local/bin/rt` existing, and a launched prod app's daemon
      seizes `rt.sock` from the dev daemon.
    - **Dev bundle**: in a scratch tree at the released commit,
-     `scripts/fetch-deps.sh arm64` then `rt-tray/build.sh dev` (never
-     rebuilds the blessed bundle in place), kills every process
-     matching the running dev app and waits for them to actually exit,
-     replaces `/Applications/mattstack-dev.app` the same move-aside way
-     as the prod app, opens it, and polls briefly for a fresh pid
+     `scripts/fetch-deps.sh arm64`, then `bun install --frozen-lockfile`,
+     then `bun scripts/build-apps.ts --arch arm64`, then `rt-tray/build.sh
+     dev` (never rebuilds the blessed bundle in place), kills every
+     process matching the running dev app and waits for them to actually
+     exit, replaces `/Applications/mattstack-dev.app` the same move-aside
+     way as the prod app, opens it, and polls briefly for a fresh pid
      (`open` hands off to LaunchServices and returns before the app is
      actually up).
+   - **Shared checkout sync**: the shared `~/Documents/GitHub/repo-tools`
+     checkout that served-suite registers apps from; this leg refuses
+     unless it is on `main`, then `git pull --ff-only` and `bun install
+     --frozen-lockfile`.
    - **Daemon**: announces in #rt first (the dev daemon serves other
      sessions) and refuses to restart at all if the announce failed,
      then `rt daemon restart` and confirms `rt daemon status`'s
@@ -457,10 +396,10 @@ when Matt wants several apps bumped and bundled in one release.
      (either can be the shorter abbreviation, so the match works in
      both directions; a prod daemon's null sourceRev is reported as a
      mismatch, never a silent pass).
-   - **Served suite**: the `~/Documents/GitHub/mattstack-apps` checkout
-     is shared, so this leg checks `git branch --show-current` first
-     and aborts, touching nothing, if it is off main. On main: pull,
-     then `deck restart --managed`, then poll each managed app's pid
+   - **Served suite**: re-registers board, console, chat, boxscore, and
+     deck with `deck register --dir ~/Documents/GitHub/repo-tools/apps/<name>`
+     when their registry `dev.workingDirectory` differs from that path,
+     then `deck restart --managed`, then polls each managed app's pid
      for a bit (a `deck restart` is a kickstart, not a readiness
      guarantee) via `launchctl print
      gui/<uid>/com.mattstack.deck.<app>` and, if the pid didn't change,
@@ -470,8 +409,8 @@ when Matt wants several apps bumped and bundled in one release.
      leaves them alone.
    - **Verify**: prod Info.plist version equals the tag, dev app pid is
      fresh, daemon's sourceRev prefix-matches the released commit,
-     `deck --version` matches the deps.lock pin, and every managed
-     app's start time postdates the restart.
+     `deck --version` matches `apps/deck/package.json` at the tag, and
+     every managed app's start time postdates the restart.
 
 ## Guardrails
 

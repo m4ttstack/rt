@@ -1,0 +1,26 @@
+/*
+ * A run list sits on one card surface so its header, empty line, and rows
+ * never float on the page's graph paper. Rows carry no border of their own;
+ * the sibling selector draws the dividers, which an inline style cannot.
+ */
+.panel {
+  background: var(--tk-card);
+  border: 1px solid var(--tk-border);
+  border-radius: var(--mantine-radius-lg);
+}
+
+.divided > * + * {
+  border-top: 1px solid var(--tk-soft-on-card);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  width: 100%;
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-xxl);
+}
+
+.inset {
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-xxl);
+}
