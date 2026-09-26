@@ -17,6 +17,7 @@ const ESCAPE_LINK = join(FAKE_PLUGIN_ROOT, "escape.md");
 const BRIEF = join(FAKE_TEMP_ROOT, "brief.md");
 const BRIEF_BODY = "# Job j\n\nShip the widget.\n";
 const OUTSIDE_MD = join(OUTSIDE, "notes.md");
+const DASH_BRIEF = join(FAKE_TEMP_ROOT, "dash-brief.md");
 for (const f of [TEMPLATE, STRATEGIES, METHOD, OUTSIDE_MD]) writeFileSync(f, "body");
 writeFileSync(BRIEF, BRIEF_BODY);
 writeFileSync(SECRET, "PRIVATE KEY");
@@ -47,7 +48,7 @@ function fake(opts: { statusError?: string; statusData?: unknown; pluginListErro
     tempRoots: () => tempRoots,
     readRoots: () => readRoots,
   };
-  const destructive = () => calls.filter((c) => ["spawn", "close", "wrapUp", "resume"].includes(c.fn));
+  const destructive = () => calls.filter((c) => ["spawn", "close", "wrapUp", "resume", "attend"].includes(c.fn));
   return { calls, destructive, tool: (n: string) => herdToolDefs(deps).find((t) => t.name === n)! };
 }
 const SESSION = { CLAUDE_CODE_SESSION_ID: "s1", HERDR_PANE_ID: "p1", HERDR_WORKSPACE_ID: "w1" } as NodeJS.ProcessEnv;
@@ -59,10 +60,11 @@ const SHEPHERD_ONLY: Array<[string, Record<string, unknown>]> = [
   ["herd_spawn", { herd: "hd-1", job: "j" }],
   ["herd_close", { herd: "hd-1", job: "j" }],
   ["herd_wrap_up", { herd: "hd-1", closePanes: true }],
+  ["herd_attend", { herd: "hd-1", job: "j" }],
 ];
 
 describe("herd tools refuse a caller that does not own the herd", () => {
-  test("herd_spawn, herd_close, herd_wrap_up and herd_resume refuse in a worker pane, with zero daemon calls", async () => {
+  test("herd_spawn, herd_close, herd_wrap_up, herd_attend and herd_resume refuse in a worker pane, with zero daemon calls", async () => {
     for (const [name, input] of [...SHEPHERD_ONLY, ["herd_resume", { herd: "hd-1" }] as [string, Record<string, unknown>]]) {
       const { tool, calls } = fake();
       const r = await tool(name).handler(input, WORKER);
@@ -72,7 +74,7 @@ describe("herd tools refuse a caller that does not own the herd", () => {
     }
   });
 
-  test("herd_spawn, herd_close and herd_wrap_up refuse without a Claude Code session, with zero destructive calls", async () => {
+  test("herd_spawn, herd_close, herd_wrap_up and herd_attend refuse without a Claude Code session, with zero destructive calls", async () => {
     for (const [name, input] of SHEPHERD_ONLY) {
       const { tool, destructive } = fake();
       const r = await tool(name).handler(input, NO_SESSION_ENV);
@@ -82,7 +84,7 @@ describe("herd tools refuse a caller that does not own the herd", () => {
     }
   });
 
-  test("herd_spawn, herd_close and herd_wrap_up refuse a session that is not the herd's shepherd, with zero destructive calls", async () => {
+  test("herd_spawn, herd_close, herd_wrap_up and herd_attend refuse a session that is not the herd's shepherd, with zero destructive calls", async () => {
     for (const [name, input] of SHEPHERD_ONLY) {
       const { tool, destructive } = fake();
       const r = await tool(name).handler(input, OTHER_SESSION);
@@ -93,7 +95,7 @@ describe("herd tools refuse a caller that does not own the herd", () => {
     }
   });
 
-  test("herd_spawn, herd_close and herd_wrap_up run for the herd's own shepherd session", async () => {
+  test("herd_spawn, herd_close, herd_wrap_up and herd_attend run for the herd's own shepherd session", async () => {
     for (const [name, input] of SHEPHERD_ONLY) {
       const { tool, destructive } = fake();
       const r = await tool(name).handler(input, SESSION);
@@ -160,6 +162,48 @@ describe("herd shepherd tools", () => {
       expect(r.error, brief).toContain(cause);
       expect(calls, brief).toEqual([]);
     }
+  });
+  test("herd_spawn refuses a brief whose content starts with a dash (it would be parsed as a claude option), with zero daemon calls", async () => {
+    for (const body of ["--settings={}\n", "  \n\t--dangerously-skip-permissions\n# JOB"]) {
+      writeFileSync(DASH_BRIEF, body);
+      const { tool, calls } = fake();
+      const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: DASH_BRIEF }, SESSION);
+      expect(r.ok, JSON.stringify(body)).toBe(false);
+      expect(r.error).toContain("must not start with");
+      expect(calls).toEqual([]);
+    }
+  });
+  test("herd_spawn passes a brief that opens with a heading", async () => {
+    writeFileSync(DASH_BRIEF, "# JOB\n\n- first bullet\n");
+    const { tool, destructive } = fake();
+    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", brief: DASH_BRIEF }, SESSION);
+    expect(r.ok).toBe(true);
+    expect(destructive()[0]!.a.brief).toBe("# JOB\n\n- first bullet\n");
+  });
+  test("herd_spawn refuses dir outright, so it never reaches the payload", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", dir: FAKE_TEMP_ROOT }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("dir");
+    expect(calls).toEqual([]);
+    const schema = tool("herd_spawn").inputSchema as { properties: Record<string, unknown>; additionalProperties: boolean };
+    expect(schema.properties.dir).toBeUndefined();
+    expect(schema.additionalProperties).toBe(false);
+  });
+  test("herd_spawn refuses an account, model or effort that is not a plain token, with zero daemon calls", async () => {
+    for (const [k, v] of [["account", "--help"], ["model", "-x"], ["effort", "high --dangerously-skip-permissions"], ["model", ""], ["account", "a/b"]] as const) {
+      const { tool, calls } = fake();
+      const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", [k]: v }, SESSION);
+      expect(r.ok, `${k}=${v}`).toBe(false);
+      expect(r.error, `${k}=${v}`).toContain(k);
+      expect(calls, `${k}=${v}`).toEqual([]);
+    }
+  });
+  test("herd_spawn passes plain-token account, model and effort values", async () => {
+    const { tool, destructive } = fake();
+    const r = await tool("herd_spawn").handler({ herd: "hd-1", job: "j", account: "matt@acme.com", model: "claude-opus-4-6[1m]", effort: "high" }, SESSION);
+    expect(r.ok).toBe(true);
+    expect(destructive()[0]!.a).toMatchObject({ account: "matt@acme.com", model: "claude-opus-4-6[1m]", effort: "high" });
   });
   test("herd_spawn's description says brief is a path whose contents become the prompt", () => {
     const { tool } = fake();
@@ -253,11 +297,13 @@ describe("herd shepherd tools", () => {
     expect(calls).toEqual([]);
   });
   test("herd_attend needs HERDR_WORKSPACE_ID", async () => {
-    const { tool, calls } = fake();
-    const r = await tool("herd_attend").handler({ herd: "hd-1", job: "j" }, {} as NodeJS.ProcessEnv);
+    const { tool, destructive } = fake();
+    const r = await tool("herd_attend").handler({ herd: "hd-1", job: "j" }, { CLAUDE_CODE_SESSION_ID: "s1" } as NodeJS.ProcessEnv);
     expect(r.ok).toBe(false);
+    expect(r.error).toContain("HERDR_WORKSPACE_ID");
+    expect(destructive()).toEqual([]);
     await tool("herd_attend").handler({ herd: "hd-1", job: "j" }, SESSION);
-    expect(calls[0]!.a).toEqual({ herd: "hd-1", job: "j", callerWorkspace: "w1" });
+    expect(destructive()[0]!.a).toEqual({ herd: "hd-1", job: "j", callerWorkspace: "w1" });
   });
   test("herd_wrap_up forwards the wrap-up form's answers", async () => {
     const { tool, destructive } = fake();

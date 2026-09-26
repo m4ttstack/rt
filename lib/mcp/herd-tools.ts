@@ -32,7 +32,9 @@ export const realHerdToolDeps: HerdToolDeps = {
 const SPAWN_TIMEOUT_MS = 300_000;
 const HERD_PROP = { herd: { type: "string", description: "Herd id; defaults to HERD_ID, else the sole active herd." } };
 const NO_SESSION = "CLAUDE_CODE_SESSION_ID is not set; this tool runs inside a Claude Code session";
-const IN_WORKER = "HERD_JOB is set, so this is a herd worker pane; only the shepherd session runs this tool";
+/** account, model and effort reach cswap and claude as argv; a leading `-` would be parsed as an option. */
+const LAUNCH_TOKEN = /^[A-Za-z0-9._@:][A-Za-z0-9._@:[\]-]*$/;
+const IN_WORKER ="HERD_JOB is set, so this is a herd worker pane; only the shepherd session runs this tool";
 
 /**
  * Every tool runs with no permission prompt, so a pane reading untrusted
@@ -76,12 +78,20 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_spawn",
-      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). brief is an absolute path to a .md brief file (herd_brief's out) inside the Claude Code temp root or an installed plugin or pack root; its contents become the worker's prompt. Omitted, the job's stored brief is reused. Only the herd's shepherd session may call it. Takes minutes.",
-      inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" }, brief: { type: "string", description: "Absolute path to the brief file; its contents are sent, not the path." }, dir: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, account: { type: "string" }, disposable: { type: "boolean" } }, required: ["job"], additionalProperties: false },
+      description: "Spawn a worker pane for a job (provisions its worktree, launches claude with the brief). brief is an absolute path to a .md brief file (herd_brief's out) inside the Claude Code temp root or an installed plugin or pack root; its contents become the worker's prompt and must not start with \"-\"; omitted, the job's stored brief is reused. account, model and effort are plain tokens. Only the herd's shepherd session may call it. Takes minutes.",
+      inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" }, brief: { type: "string", description: "Absolute path to the brief file; its contents are sent, not the path." }, model: { type: "string" }, effort: { type: "string" }, account: { type: "string" }, disposable: { type: "boolean" } }, required: ["job"], additionalProperties: false },
       async handler(input, env) {
         if (env.HERD_JOB) return err(IN_WORKER);
-        const bad = checkRequired(input, [{ name: "job", type: "string" }]) ?? checkOptional(input, [{ name: "brief", type: "string" }, { name: "dir", type: "string" }, { name: "model", type: "string" }, { name: "effort", type: "string" }, { name: "account", type: "string" }, { name: "disposable", type: "boolean" }]);
+        // The server does not enforce additionalProperties, and a caller-chosen dir would land the worker in a folder whose
+        // .claude/settings.json the caller wrote, with the daemon auto-accepting its trust dialog.
+        if ("dir" in input) return err("dir is not accepted: herd_spawn always provisions the job's own worktree");
+        const bad = checkRequired(input, [{ name: "job", type: "string" }]) ?? checkOptional(input, [{ name: "brief", type: "string" }, { name: "model", type: "string" }, { name: "effort", type: "string" }, { name: "account", type: "string" }, { name: "disposable", type: "boolean" }]);
         if (bad) return err(bad);
+        for (const k of ["account", "model", "effort"] as const) {
+          if (typeof input[k] === "string" && !LAUNCH_TOKEN.test(input[k] as string)) {
+            return err(`${k} must be a plain token (letters, digits, . _ @ : [ ] -, not starting with -); got ${JSON.stringify(input[k])}`);
+          }
+        }
         // herd:spawn takes the brief TEXT (the CLI reads --brief <file> itself), so the file is read here, after confinement.
         let brief: string | undefined;
         if (typeof input.brief === "string") {
@@ -93,6 +103,8 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
           } catch (e) {
             return err(`brief: cannot read ${input.brief}: ${(e as Error).message}`);
           }
+          // The brief becomes claude's last argv token with no `--` before it, so leading text of `-` is parsed as an option.
+          if (brief.trimStart().startsWith("-")) return err("brief: the brief's content must not start with \"-\" (it would be read as a claude option); open it with a heading or prose");
         }
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
@@ -100,7 +112,7 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
         if (owner) return err(owner);
         const payload: Commands["herd:spawn"]["payload"] = { herd: h.herd, job: input.job as string };
         if (brief !== undefined) payload.brief = brief;
-        for (const k of ["dir", "model", "effort", "account"] as const) if (typeof input[k] === "string") payload[k] = input[k] as string;
+        for (const k of ["model", "effort", "account"] as const) if (typeof input[k] === "string") payload[k] = input[k] as string;
         if (typeof input.disposable === "boolean") payload.disposable = input.disposable;
         return fromResponse(await deps.spawn(payload, { timeoutMs: SPAWN_TIMEOUT_MS }));
       },
@@ -169,14 +181,17 @@ export function herdToolDefs(deps: HerdToolDeps = realHerdToolDeps): McpToolDef[
     },
     {
       name: "herd_attend",
-      description: "Open a job's pane in a tab of this shepherd's workspace.",
+      description: "Open a job's pane in a tab of this shepherd's workspace. Only the herd's shepherd session may call it.",
       inputSchema: { type: "object", properties: { ...HERD_PROP, job: { type: "string" } }, required: ["job"], additionalProperties: false },
       async handler(input, env) {
+        if (env.HERD_JOB) return err(IN_WORKER);
         const bad = checkRequired(input, [{ name: "job", type: "string" }]);
         if (bad) return err(bad);
-        if (!env.HERDR_WORKSPACE_ID) return err("HERDR_WORKSPACE_ID is not set; this tool runs from a herdr pane");
         const h = await herdFor(input, env);
         if ("error" in h) return err(h.error);
+        const owner = await requireShepherd(h.herd, env, deps.status);
+        if (owner) return err(owner);
+        if (!env.HERDR_WORKSPACE_ID) return err("HERDR_WORKSPACE_ID is not set; this tool runs from a herdr pane");
         return fromResponse(await deps.attend({ herd: h.herd, job: input.job as string, callerWorkspace: env.HERDR_WORKSPACE_ID }));
       },
     },
