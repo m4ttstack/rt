@@ -2,16 +2,20 @@
  * rt release app <name>: a served-app patch release end to end: qualify
  * origin/main for the path fast path, write and commit the notes, tag, and
  * verify the publish. Every step first detects whether it already happened,
- * so a rerun resumes: an unverified newest tag is re-checked instead of
- * stacking a new one on top of it, an already-committed notes commit is
- * reused, and an existing local or remote tag is confirmed rather than
- * recreated.
+ * so a rerun resumes: qualify always checks the newest tag's own verify
+ * status before doing anything else. A clean newest tag that already covers
+ * origin/main means nothing moved to release, so qualify declines; an
+ * unverified one that already covers origin/main is re-checked instead of
+ * refused; and before ever cutting a new tag, the newest tag must itself
+ * have verified, or qualify refuses rather than stacking on top of it. An
+ * already-committed notes commit is reused, and an existing local or remote
+ * tag is confirmed rather than recreated.
  */
 import { join } from "path";
 import { createHash } from "crypto";
 import type { RunResult } from "../subprocess.ts";
 import { checkGate, compareVersions, keepsFastPath, movedServedApps } from "./preflight.ts";
-import { runVerify, type VerifySeams } from "./verify.ts";
+import { runVerify, type VerifyReport, type VerifySeams } from "./verify.ts";
 
 export const RT_REPO = "m4ttstack/rt";
 
@@ -125,6 +129,9 @@ class StepFailure extends Error {
 
 const errMessage = (err: unknown): string => String((err as Error)?.message ?? err);
 
+const unverifiedSummary = (report: VerifyReport): string =>
+  report.rows.filter((r) => r.status !== "ok").map((r) => `${r.label}: ${r.status}`).join(", ");
+
 /** Every escaping error becomes a StepFailure carrying this step's id and resume, so the --json envelope is never empty. */
 async function inStep<T>(id: StepId, resume: string | null, fn: () => Promise<T>): Promise<T> {
   try {
@@ -184,10 +191,14 @@ async function refreshMain(seams: ReleaseAppSeams): Promise<{ headSha: string }>
 }
 
 /**
- * The newest tag already sitting at origin/main HEAD, or at its own notes
- * commit with nothing but more notes committed after it, is a release that
- * already happened: a rerun re-verifies exactly it and never stacks a new
- * tag on top of one that has not verified yet.
+ * Structural detection only, ignoring verify status: "released" when
+ * origin/main is exactly the newest tag's release, either because its
+ * commit sits at HEAD or because its own notes commit is the newest thing
+ * on main with nothing but more notes committed after it; "notes" whenever
+ * there is a new served-app diff to gate. `qualify` still has to consult the
+ * newest tag's own verify status on top of this either way: a "released"
+ * match whose tag already verified clean means nothing moved to release; a
+ * "notes" match never cuts a new tag until the newest one has verified.
  */
 async function resolvePhase(seams: ReleaseAppSeams, headSha: string, newestTag: string): Promise<Phase> {
   const peeled = await peelTag(seams, newestTag);
@@ -208,22 +219,39 @@ interface Ctx {
   nextTag: string;
   moved: string[];
   phase: Phase;
+  /** The qualify step's own "ok" detail, phrased with whatever verify actually found. */
+  qualifyDetail: string;
 }
 
 async function qualify(seams: ReleaseAppSeams, name: string): Promise<Ctx> {
   if (!keepsFastPath(name)) throw new StepFailure("qualify", `${name} is not a served-only app; use the full release process`, null);
   const { headSha } = await refreshMain(seams);
   const lastTag = newestReleaseTag(await remoteTags(seams));
-  const phase = await resolvePhase(seams, headSha, lastTag);
-  if (phase === "released") {
-    return { name, headSha, lastTag, nextTag: lastTag, moved: [], phase };
+  const structural = await resolvePhase(seams, headSha, lastTag);
+  const verify = await runVerify(seams, { tag: lastTag, noWait: true, skipLatest: true });
+
+  if (structural === "released") {
+    if (verify.clean) throw new StepFailure("qualify", `${name} has not moved since ${lastTag}`, null);
+    return {
+      name, headSha, lastTag, nextTag: lastTag, moved: [], phase: "released",
+      qualifyDetail: `${lastTag} has not moved since; its publish has not verified yet (${unverifiedSummary(verify)}), so re-checking it before any new release`,
+    };
   }
+
+  if (!verify.clean) {
+    throw new StepFailure("qualify", `${lastTag} has not verified yet (${unverifiedSummary(verify)}); run rt release verify ${lastTag} first`, `rt release verify ${lastTag}`);
+  }
+
   const gate = await checkGate(seams, lastTag, "origin/main");
   if (gate.path !== "fast") throw new StepFailure("qualify", `not a fast-path diff since ${lastTag}: ${gate.reason}`, null);
   const files = (await git(seams, ["diff", "--name-only", `${lastTag}..origin/main`])).split("\n").map((f) => f.trim()).filter(Boolean);
   const moved = movedServedApps(files);
   if (!moved.includes(name)) throw new StepFailure("qualify", `${name} has not moved since ${lastTag} (moved: ${moved.join(", ") || "none"})`, null);
-  return { name, headSha, lastTag, nextTag: nextPatchTag(lastTag), moved, phase };
+  const nextTag = nextPatchTag(lastTag);
+  return {
+    name, headSha, lastTag, nextTag, moved, phase: "notes",
+    qualifyDetail: `origin/main is on the fast path since ${lastTag}; ${moved.join(", ")} moved; releasing ${name} as ${nextTag}`,
+  };
 }
 
 export async function notesSectionsFor(seams: ReleaseAppSeams, lastTag: string, apps: string[]): Promise<NotesSection[]> {
@@ -397,19 +425,23 @@ export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppO
   nextTag = ctx.nextTag;
 
   if (ctx.phase === "released") {
-    rec("qualify", "ok", `${ctx.lastTag} has not moved since; its publish has not verified as done, so re-checking it before any new release`);
+    rec("qualify", "ok", ctx.qualifyDetail);
     try {
-      notes = await git(seams, ["show", "origin/main:RELEASE_NOTES.md"]);
+      notes = await git(seams, ["show", `${ctx.lastTag}:RELEASE_NOTES.md`]);
       hash = notesHash(notes);
     } catch {
       // no RELEASE_NOTES.md at this ref; the report simply carries no notes text
     }
     rec("notes", "done", `${ctx.lastTag} already ships these notes`);
     rec("tag", "done", `${ctx.lastTag} is on origin`);
+    if (opts.dryRun) {
+      rec("verify", "planned", `would re-verify ${ctx.lastTag}`, `rt release verify ${ctx.lastTag}`);
+      return report("planned");
+    }
     return finishVerify(seams, ctx.lastTag, rec, report);
   }
 
-  rec("qualify", "ok", `origin/main is on the fast path since ${ctx.lastTag}; ${ctx.moved.join(", ")} moved; releasing ${opts.name} as ${ctx.nextTag}`);
+  rec("qualify", "ok", ctx.qualifyDetail);
 
   const sections = await inStep("notes", rerun, () => notesSectionsFor(seams, ctx.lastTag, ctx.moved));
   notes = renderNotes({ sections, lastTag: ctx.lastTag, nextTag: ctx.nextTag });
@@ -447,7 +479,15 @@ export async function runReleaseApp(seams: ReleaseAppSeams, rawOpts: ReleaseAppO
         rec("notes", "stopped", `the notes for ${ctx.nextTag} (hash ${hash}) need approval; nothing committed`);
         return report("awaiting-approval", `${rerun}${opts.json ? " --json" : ""} --yes-notes ${hash}`);
       }
-      if (!(await seams.confirm(`Commit these notes and tag ${ctx.nextTag}?`))) {
+      let confirmed: boolean;
+      try {
+        confirmed = await inStep("notes", rerun, () => seams.confirm(`Commit these notes and tag ${ctx.nextTag}?`));
+      } catch (err) {
+        if (!(err instanceof StepFailure)) throw err;
+        rec("notes", "failed", err.message);
+        return report("failed", err.resume);
+      }
+      if (!confirmed) {
         rec("notes", "stopped", "declined at the prompt; nothing committed");
         return report("declined", rerun);
       }

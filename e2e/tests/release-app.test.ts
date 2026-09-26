@@ -2,13 +2,30 @@
  * e2e: `rt release app <name> --json` resolves a plan, or stops for notes
  * approval, from a real rt checkout without touching anything remote. Git is
  * real, pointed at a local bare repo built fresh per test: the served apps
- * live under `apps/<name>/` in this same repo, so no separate apps clone or
- * `gh` shim is needed for any of these scenarios.
+ * live under `apps/<name>/` in this same repo, so no separate apps clone is
+ * needed. `gh` is a shim answering only the read-only snapshot qualify takes
+ * of the last tag's publish (never a mutating call) before it looks at the
+ * diff at all.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createTestHome, rt } from "../harness.ts";
+
+const LAST = "v0.1.0";
+
+const FAKE_GH = `#!/bin/bash
+case "$*" in
+  "api repos/m4ttstack/rt/actions/workflows/release.yml/runs?event=push&branch=${LAST}&per_page=5")
+    printf '%s' '{"workflow_runs":[{"id":1,"html_url":"https://github.com/m4ttstack/rt/actions/runs/1"}]}' ;;
+  "run view 1 --repo m4ttstack/rt --json status,conclusion")
+    printf '%s' '{"status":"completed","conclusion":"success"}' ;;
+  "release view ${LAST} --repo m4ttstack/rt --json body,assets,isDraft,isPrerelease,publishedAt")
+    printf '%s' '{"body":"v0.1.0 notes\\n","assets":[{"name":"mattstack-0.1.0.dmg"},{"name":"mattstack-0.1.0.zip"},{"name":"appcast.xml"},{"name":"SHA256SUMS"}],"isDraft":false,"isPrerelease":false,"publishedAt":"2026-09-25T00:00:00Z"}' ;;
+  *)
+    echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
+esac
+`;
 
 interface ReleaseAppBody {
   contract: number;
@@ -24,6 +41,7 @@ describe("rt release app", () => {
   let home: string;
   let cleanup: () => void;
   let seq = 0;
+  let fakeBin: string;
 
   const git = (cwd: string, ...args: string[]) => {
     const r = Bun.spawnSync(["git", ...args], { cwd, env: { HOME: home, PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1" }, stderr: "pipe" });
@@ -33,11 +51,15 @@ describe("rt release app", () => {
 
   beforeAll(() => {
     ({ path: home, cleanup } = createTestHome());
+    fakeBin = join(home, "fake-bin");
+    mkdirSync(fakeBin);
+    writeFileSync(join(fakeBin, "gh"), FAKE_GH);
+    chmodSync(join(fakeBin, "gh"), 0o755);
   });
 
   afterAll(() => cleanup());
 
-  /** A fresh origin: `v0.1.0` on main, then one more commit writing `extraFiles`. */
+  /** A fresh origin: `v0.1.0` on main (its own release verifying clean), then one more commit writing `extraFiles`. */
   function makeOrigin(extraFiles: Record<string, string>): { bare: string; checkout: string } {
     const n = seq++;
     const seed = join(home, `seed-${n}`);
@@ -47,7 +69,7 @@ describe("rt release app", () => {
     git(seed, "init", "-q", "-b", "main");
     git(seed, "add", "-A");
     git(seed, "commit", "-q", "-m", "first");
-    git(seed, "tag", "-a", "v0.1.0", "-m", "v0.1.0");
+    git(seed, "tag", "-a", LAST, "-m", LAST);
 
     for (const [path, content] of Object.entries(extraFiles)) {
       const full = join(seed, path);
@@ -64,17 +86,22 @@ describe("rt release app", () => {
     return { bare, checkout };
   }
 
+  function runCli(args: string[], checkout: string) {
+    const bunDir = join(process.execPath, "..");
+    return rt(args, { home, cwd: checkout, env: { PATH: `${fakeBin}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin` } });
+  }
+
   test("a fast-path diff plans notes, tag and verify one patch up, and changes nothing", async () => {
     const { bare, checkout } = makeOrigin({ "apps/board/x.ts": "export {};\n", "RELEASE_NOTES.md": "v0.1.1 notes\n" });
     const refsBefore = git(home, "ls-remote", bare);
 
-    const result = await rt(["release", "app", "board", "--dry-run", "--json"], { home, cwd: checkout });
+    const result = await runCli(["release", "app", "board", "--dry-run", "--json"], checkout);
 
     expect(result.exitCode).toBe(0);
     const body = JSON.parse(result.stdout) as ReleaseAppBody;
     expect(body.contract).toBe(1);
     expect(body.status).toBe("planned");
-    expect(body.lastTag).toBe("v0.1.0");
+    expect(body.lastTag).toBe(LAST);
     expect(body.nextTag).toBe("v0.1.1");
     expect(body.steps.map((s) => s.id)).toEqual(["qualify", "notes", "tag", "verify"]);
     expect(body.notes).toContain("### board");
@@ -87,7 +114,7 @@ describe("rt release app", () => {
     const { bare, checkout } = makeOrigin({ "apps/board/x.ts": "export {};\n", "lib/x.ts": "export {};\n" });
     const refsBefore = git(home, "ls-remote", bare);
 
-    const result = await rt(["release", "app", "board", "--dry-run", "--json"], { home, cwd: checkout });
+    const result = await runCli(["release", "app", "board", "--dry-run", "--json"], checkout);
 
     expect(result.exitCode).toBe(1);
     const body = JSON.parse(result.stdout) as ReleaseAppBody;
@@ -103,7 +130,7 @@ describe("rt release app", () => {
     const refsBefore = git(home, "ls-remote", bare);
     const notesBefore = readFileSync(join(checkout, "RELEASE_NOTES.md"), "utf8");
 
-    const result = await rt(["release", "app", "board", "--json"], { home, cwd: checkout });
+    const result = await runCli(["release", "app", "board", "--json"], checkout);
 
     expect(result.exitCode).toBe(0);
     const body = JSON.parse(result.stdout) as ReleaseAppBody;

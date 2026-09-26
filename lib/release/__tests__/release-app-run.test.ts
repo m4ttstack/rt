@@ -418,13 +418,44 @@ describe("runReleaseApp: resume", () => {
     for (const run of w.runs.values()) if (run.tag === LAST) run.conclusion = "failure";
     const r = await runReleaseApp(w.seams(), opts());
     expect(r.nextTag).toBe(LAST);
-    expect(r.steps[0]!.detail).toContain("has not verified");
+    expect(r.steps[0]!.detail).toContain("release run: stale");
     expect(lastStep(r)).toMatchObject({ id: "verify", status: "failed" });
     expect(r.resume).toBe(`rt release verify ${LAST}`);
     expect(mutations(w.calls)).toEqual([]);
   });
 
-  test("after a failed publish a rerun only re-verifies the pushed tag", async () => {
+  test("nothing moved and the newest tag already verified: declined, not re-verified", async () => {
+    const w = new World();
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(r.status).toBe("declined");
+    expect(lastStep(r).detail).toContain(`board has not moved since ${LAST}`);
+    expect(mutations(w.calls)).toEqual([]);
+  });
+
+  test("a dry run in the released phase plans a re-verify without running it", async () => {
+    const w = new World();
+    for (const run of w.runs.values()) if (run.tag === LAST) run.conclusion = "failure";
+    const before = w.calls.length;
+    const r = await runReleaseApp(w.seams(), opts({ dryRun: true }));
+    expect(r.status).toBe("planned");
+    expect(r.steps.map((s) => s.id)).toEqual(["qualify", "notes", "tag", "verify"]);
+    const verifyStep = r.steps.find((s) => s.id === "verify")!;
+    expect(verifyStep.status).toBe("planned");
+    expect(verifyStep.detail).toContain(`would re-verify ${LAST}`);
+    expect(mutations(w.calls.slice(before))).toEqual([]);
+  });
+
+  test("a new app commit on top of an unverified newest tag stops at qualify, never cutting a new tag", async () => {
+    const w = new World();
+    for (const run of w.runs.values()) if (run.tag === LAST) run.status = "in_progress";
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const r = await runReleaseApp(w.seams(), opts());
+    expect(lastStep(r)).toMatchObject({ id: "qualify", status: "failed" });
+    expect(r.resume).toBe(`rt release verify ${LAST}`);
+    expect(mutations(w.calls)).toEqual([]);
+  });
+
+  test("a rerun while the pushed tag is still unverified re-verifies it again, never stacking a new tag", async () => {
     const w = new World();
     w.land(["apps/board/x.ts"], { subject: "board: fix a" });
     const hash = await toApproval(w);
@@ -434,11 +465,49 @@ describe("runReleaseApp: resume", () => {
     expect(first.resume).toBe(`rt release verify ${NEXT}`);
 
     const before = w.calls.length;
-    for (const run of w.runs.values()) if (run.tag === NEXT) run.conclusion = "success";
     const second = await runReleaseApp(w.seams(), opts());
-    expect(second.status).toBe("released");
     expect(second.nextTag).toBe(NEXT);
-    expect(second.steps.map((s) => s.status)).toEqual(["ok", "done", "done", "ok"]);
+    expect(lastStep(second)).toMatchObject({ id: "verify", status: "failed" });
     expect(mutations(w.calls.slice(before))).toEqual([]);
+  });
+
+  test("once the pushed tag is fully verified, a further rerun declines: nothing new to release", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const hash = await toApproval(w);
+    w.releaseConclusion = "failure";
+    const first = await runReleaseApp(w.seams(), opts({ yesNotes: hash }));
+    expect(lastStep(first)).toMatchObject({ id: "verify", status: "failed" });
+
+    for (const run of w.runs.values()) if (run.tag === NEXT) run.conclusion = "success";
+    const before = w.calls.length;
+    const second = await runReleaseApp(w.seams(), opts());
+    expect(second.status).toBe("declined");
+    expect(lastStep(second).detail).toContain(`board has not moved since ${NEXT}`);
+    expect(mutations(w.calls.slice(before))).toEqual([]);
+  });
+
+  test("notes-only drift after the newest tag still reports the tagged commit's notes, not main's", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const hash = await toApproval(w);
+    await runReleaseApp(w.seams(), opts({ yesNotes: hash }));
+    for (const run of w.runs.values()) if (run.tag === NEXT) run.conclusion = "failure";
+    w.land(["RELEASE_NOTES.md"], { notes: "hand edit after tag\n", subject: "docs: tweak" });
+
+    const r = await runReleaseApp(w.seams(), opts());
+    const taggedNotes = w.commits.get(w.remoteTags.get(NEXT)!)!.notes;
+    expect(r.status).toBe("failed");
+    expect(r.notes).toBe(taggedNotes);
+    expect(r.notes).not.toBe("hand edit after tag\n");
+  });
+
+  test("a throwing confirm prompt is a failed notes step, not an uncaught crash", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const seams = w.seams({ isTTY: true, confirm: async () => { throw new Error("prompt crashed"); } });
+    const r = await runReleaseApp(seams, opts());
+    expect(lastStep(r)).toMatchObject({ id: "notes", status: "failed" });
+    expect(lastStep(r).detail).toContain("prompt crashed");
   });
 });

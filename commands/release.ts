@@ -209,10 +209,11 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
   if (failed) process.exitCode = 1;
 }
 
-async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams> {
+/** `workDirPath` reads whatever `workDir()` lazily created, or null if the run never touched it, so the caller can remove it when done. */
+async function createRealReleaseAppSeams(json: boolean): Promise<{ seams: ReleaseAppSeams; workDirPath: () => string | null }> {
   const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
   let workDir: string | null = null;
-  return {
+  const seams: ReleaseAppSeams = {
     repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
     exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 60_000, ...opts }),
     fetchJson,
@@ -232,6 +233,7 @@ async function createRealReleaseAppSeams(json: boolean): Promise<ReleaseAppSeams
     // --json owns stdout for the envelope, so progress goes to stderr there.
     log: (line) => void (json ? process.stderr : process.stdout).write(`${line}\n`),
   };
+  return { seams, workDirPath: () => workDir };
 }
 
 export interface ReleaseAppCommandDeps {
@@ -278,35 +280,49 @@ function releaseAppSummary(report: ReleaseAppReport): string {
 
 export async function releaseApp(args: string[], _ctx: CommandContext = {}, deps: ReleaseAppCommandDeps = {}): Promise<void> {
   const json = args.includes("--json");
-  const seams = deps.seams ?? (await createRealReleaseAppSeams(json));
+  const real = deps.seams ? null : await createRealReleaseAppSeams(json);
+  const seams = deps.seams ?? real!.seams;
+  const cleanupWorkDir = () => {
+    const dir = real?.workDirPath();
+    if (!dir) return;
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
+    }
+  };
   const usage = () => exitUserError(new UserActionableError("usage", RELEASE_APP_USAGE), json, "release app");
 
-  let yesNotes: string | null;
   try {
-    yesNotes = flagValue(args, "--yes-notes") ?? null;
-  } catch {
-    return usage();
-  }
-  if (yesNotes !== null && !/^[0-9a-f]{12}$/.test(yesNotes)) return usage();
-  const yesAt = args.indexOf("--yes-notes");
-  let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
-  if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
-    const options = releaseAppOptions(seams);
-    if (options.length) {
-      const picked = await (deps.pickApp ?? pickReleaseApp)(options);
-      if (!picked) return;
-      name = picked;
+    let yesNotes: string | null;
+    try {
+      yesNotes = flagValue(args, "--yes-notes") ?? null;
+    } catch {
+      return usage();
     }
-  }
-  if (!name || !/^[a-z0-9][a-z0-9-]*$/.test(name)) usage();
+    if (yesNotes !== null && !/^[0-9a-f]{12}$/.test(yesNotes)) return usage();
+    const yesAt = args.indexOf("--yes-notes");
+    let name = args.find((a, i) => !a.startsWith("--") && !(yesAt >= 0 && i === yesAt + 1));
+    if (!name && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+      const options = releaseAppOptions(seams);
+      if (options.length) {
+        const picked = await (deps.pickApp ?? pickReleaseApp)(options);
+        if (!picked) return;
+        name = picked;
+      }
+    }
+    if (!name || !/^[a-z0-9][a-z0-9-]*$/.test(name)) usage();
 
-  const report = await (deps.run ?? runReleaseApp)(seams, {
-    name: name!,
-    dryRun: args.includes("--dry-run"),
-    json,
-    yesNotes,
-  });
-  if (json) console.log(JSON.stringify(envelope(report)));
-  else console.log(releaseAppSummary(report));
-  if (report.status === "failed" || report.status === "declined" || report.status === "pending") process.exitCode = 1;
+    const report = await (deps.run ?? runReleaseApp)(seams, {
+      name: name!,
+      dryRun: args.includes("--dry-run"),
+      json,
+      yesNotes,
+    });
+    if (json) console.log(JSON.stringify(envelope(report)));
+    else console.log(releaseAppSummary(report));
+    if (report.status === "failed" || report.status === "declined" || report.status === "pending") process.exitCode = 1;
+  } finally {
+    cleanupWorkDir();
+  }
 }
