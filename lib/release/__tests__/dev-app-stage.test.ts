@@ -214,6 +214,38 @@ describe("stageLocalDevApp", () => {
     expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
   });
 
+  test("after fetch-deps, the scratch copy installs and builds the tree rows before build.sh", async () => {
+    const { seams, calls, cwds } = fakeSeams({ sourceDeps: "none" });
+    await stageLocalDevApp(seams, "/src/tree");
+    const fetch = calls.indexOf("bash scripts/fetch-deps.sh arm64");
+    const install = calls.indexOf("bun install --frozen-lockfile");
+    const buildApps = calls.indexOf("bun scripts/build-apps.ts --arch arm64");
+    const build = calls.findIndex((c) => c.includes("rt-tray/build.sh dev"));
+    expect(fetch).toBeGreaterThan(-1);
+    expect(install).toBeGreaterThan(fetch);
+    expect(cwds[install]).toBe("/scratch");
+    expect(buildApps).toBeGreaterThan(install);
+    expect(cwds[buildApps]).toBe("/scratch");
+    expect(build).toBeGreaterThan(buildApps);
+  });
+
+  test("a failed bun install in the scratch copy fails the stage and never runs build-apps or build.sh", async () => {
+    const { seams, calls } = fakeSeams({ sourceDeps: "none", failCmd: "bun install --frozen-lockfile" });
+    const err = await stageLocalDevApp(seams, "/src/tree").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserActionableError);
+    expect((err as Error).message).toContain("bun install failed");
+    expect(calls.some((c) => c.includes("build-apps.ts"))).toBe(false);
+    expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
+  });
+
+  test("a failed scripts/build-apps.ts in the scratch copy fails the stage and never builds", async () => {
+    const { seams, calls } = fakeSeams({ sourceDeps: "none", failCmd: "bun scripts/build-apps.ts" });
+    const err = await stageLocalDevApp(seams, "/src/tree").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserActionableError);
+    expect((err as Error).message).toContain("scripts/build-apps.ts failed");
+    expect(calls.some((c) => c.includes("rt-tray/build.sh dev"))).toBe(false);
+  });
+
   test("a failed build is a UserActionableError and never touches the staged build", async () => {
     const { seams, calls } = fakeSeams({ buildExit: 1 });
     await expect(stageLocalDevApp(seams, "/src/tree")).rejects.toThrow(UserActionableError);

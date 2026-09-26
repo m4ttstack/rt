@@ -8,19 +8,25 @@ const lock = parseDepsLock(
 );
 
 describe("live deps.lock buildable set", () => {
-  test("every managed app row carries its m4ttstack repo (monorepo apps carry their subdir)", () => {
-    const want: Record<string, { repo: string; subdir?: string }> = {
-      deck: { repo: "m4ttstack/apps", subdir: "apps/deck" },
-      board: { repo: "m4ttstack/apps", subdir: "apps/board" },
-      gitq: { repo: "m4ttstack/gitq" },
-      console: { repo: "m4ttstack/apps", subdir: "apps/console" },
-      chat: { repo: "m4ttstack/apps", subdir: "apps/chat" },
+  test("gitq still pins its own repo; the apps-monorepo rows are built from this checkout instead", () => {
+    const gitq = lock.tools.find((t) => t.name === "gitq");
+    expect(gitq?.repo).toBe("m4ttstack/gitq");
+    expect(gitq?.subdir).toBeUndefined();
+
+    const wantTree: Record<string, { skills?: boolean }> = {
+      deck: { skills: true },
+      board: { skills: true },
+      console: {},
+      chat: {},
+      boxscore: {},
     };
-    for (const [name, w] of Object.entries(want)) {
+    for (const [name, w] of Object.entries(wantTree)) {
       const row = lock.tools.find((t) => t.name === name);
       expect(row, name).toBeDefined();
-      expect(row!.repo, name).toBe(w.repo);
-      expect(row!.subdir, name).toBe(w.subdir);
+      expect(row!.source, name).toBe("tree");
+      expect(row!.repo, name).toBeUndefined();
+      expect(row!.subdir, name).toBeUndefined();
+      expect(row!.skills, name).toBe(w.skills);
     }
   });
 

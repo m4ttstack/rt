@@ -1,0 +1,802 @@
+import { getReviewDisplayState } from '@mattstack/glance';
+import type { ReviewStatus } from './client/types.ts';
+import type { TabConfig } from './config.ts';
+import type { BoardMR, BoardSyncError } from './data.ts';
+import { hasChangesRequested } from './data.ts';
+import { projectKeyOf } from './triage/stack.ts';
+
+export type GroupKey = 'age' | 'author' | 'status' | 'review' | 'needs';
+export type SortKey = 'oldest' | 'progress';
+
+export type SlackFilter = 'all' | 'posted';
+export type DraftFilter = 'all' | 'hide';
+
+export const GROUP_KEYS: readonly GroupKey[] = [
+  'age',
+  'author',
+  'status',
+  'review',
+  'needs',
+];
+export const SORT_KEYS: readonly SortKey[] = ['oldest', 'progress'];
+export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ['all', 'posted'];
+export const DRAFT_FILTER_KEYS: readonly DraftFilter[] = ['all', 'hide'];
+
+/** Sentinel that sorts after any ISO date, so null timestamps land last. */
+const LATEST = '9999';
+
+/** The board's own seat, as a tab: every row from every other tab that
+    needs the default member's move. Appended after the configured tabs by
+    the client whenever the board has a default member. Lives here, not in
+    config.ts, because config.ts is server-only and this is bundled for the
+    browser. */
+export const NEEDS_ME_TAB: TabConfig = {
+  id: 'needs-me',
+  label: 'Needs me',
+  source: { kind: 'needs-me' },
+};
+
+/** True when every reviewer thread has been resolved and none awaits action — the
+    MR was reviewed and its comments are handled, distinct from an untouched "needs
+    review". Relies on the `threadSummary` the server attaches; undefined summary
+    means the board has no per-thread breakdown (never fetched), so this is false
+    and the MR falls back to "needs review". */
+export function commentsAllResolved(mr: BoardMR): boolean {
+  const s = mr.threadSummary;
+  return (
+    mr.reviewerComments === 0 &&
+    !!s &&
+    s.resolved > 0 &&
+    s.awaiting + s.replied === 0
+  );
+}
+
+/** Daemon data older than this reads as stale, in the footer and the banner alike. */
+const STALE_AFTER_MS = 10 * 60_000;
+/** A stale banner turns from warn to bad past this. */
+const ESCALATE_AFTER_MS = 30 * 60_000;
+
+function clockLabel(at: number): string {
+  const d = new Date(at);
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Board freshness is the daemon's syncedAt, not the board's own poll loop --
+    a poll can succeed against data the daemon hasn't refreshed in a while, so
+    "just fetched" and "actually fresh" are different claims. Stale past 10
+    minutes; unknown (no daemon read reached this board) is treated as stale
+    too, since there's nothing to vouch for it. */
+export function dataAgeLabel(
+  dataSyncedAt: number | null,
+  now: number
+): { text: string; stale: boolean } {
+  // <= 0 covers a cold shell record's syncedAt (no daemon read has landed
+  // yet) -- epoch zero is not a real sync time, and rendering it as
+  // "data as of 1:00" (local-timezone midnight) is misleading, not stale-but-honest.
+  if (dataSyncedAt === null || dataSyncedAt <= 0)
+    return { text: 'data age unknown', stale: true };
+  return {
+    text: `data as of ${clockLabel(dataSyncedAt)}`,
+    stale: now - dataSyncedAt > STALE_AFTER_MS,
+  };
+}
+
+/** "25m" under an hour, "1h 43m" from an hour. */
+export function ageText(ms: number): string {
+  const mins = Math.max(0, Math.floor(ms / 60_000));
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+const SYNC_ERROR_PHRASE: Record<BoardSyncError['kind'], string> = {
+  timeout: 'timing out',
+  'server-error': 'returning server errors',
+  'rate-limited': 'rate-limiting rt',
+  auth: "rejecting rt's token",
+  other: 'sync failing',
+};
+
+export interface FreshnessBanner {
+  text: string;
+  intent: 'warn' | 'bad';
+  title?: string;
+}
+
+/** The top-of-board freshness warning, or null while the data is fresh.
+    The board's own refresh failing outranks rt's GitLab sync failing, which
+    outranks bare age. A sync error stays quiet until the data actually goes
+    stale, so one failed cycle never flashes a banner. */
+export function freshnessBanner(input: {
+  fetchError: string | null;
+  dataSyncedAt: number | null;
+  syncError?: BoardSyncError | null;
+  now: number;
+}): FreshnessBanner | null {
+  const { fetchError, syncError, now } = input;
+  const syncedAt =
+    input.dataSyncedAt !== null && input.dataSyncedAt > 0
+      ? input.dataSyncedAt
+      : null;
+  const age = syncedAt === null ? null : now - syncedAt;
+  const ageClause =
+    syncedAt === null
+      ? null
+      : `${ageText(now - syncedAt)} old (as of ${clockLabel(syncedAt)})`;
+
+  if (fetchError)
+    return {
+      text: ageClause
+        ? `⚠ board can't refresh... data is ${ageClause}`
+        : "⚠ board can't refresh",
+      intent: 'bad',
+      title: fetchError,
+    };
+
+  if (syncError && (age === null || age > STALE_AFTER_MS)) {
+    const outage = age ?? now - syncError.since;
+    const cause = `⚠ GitLab ${SYNC_ERROR_PHRASE[syncError.kind]} since ${clockLabel(syncError.since)}`;
+    return {
+      text: ageClause ? `${cause}... board data is ${ageClause}` : cause,
+      intent:
+        syncError.kind === 'auth' || outage > ESCALATE_AFTER_MS
+          ? 'bad'
+          : 'warn',
+      title:
+        syncError.projects > 1
+          ? `${syncError.message} (${syncError.projects} projects failing)`
+          : syncError.message,
+    };
+  }
+
+  if (age !== null && age > STALE_AFTER_MS)
+    return {
+      text: `⚠ board data is ${ageClause}... rt sync is behind`,
+      intent: age > ESCALATE_AFTER_MS ? 'bad' : 'warn',
+    };
+
+  return null;
+}
+
+/** Keyed, not classed: RowView keys its icon and CSS on the key, so an
+    unmapped flag fails to compile instead of rendering grey. */
+export type FlagKey =
+  | 'draft'
+  | 'auto-merge'
+  | 'conflicts'
+  | 'ci-failing'
+  | 'ci-running'
+  | 'stood-down'
+  | 'stacked';
+
+export interface StatusFlag {
+  key: FlagKey;
+  text: string;
+  title?: string;
+}
+
+/** GitLab-native facts on the header line: draft first, armed auto-merge,
+    then mechanical blockers (conflicts / CI) most severe first, then the
+    one board-local fact (auto-doctor stood down), plus the stacked marker
+    for MRs targeting a parent branch instead of the default branch. */
+export function statusFlags<M extends BoardMR & { standDown?: boolean }>(
+  mr: M,
+  opts?: { nested?: boolean }
+): StatusFlag[] {
+  const b = mr.blockers;
+  const flags: StatusFlag[] = [];
+  if (mr.isDraft)
+    flags.push({
+      key: 'draft',
+      text: 'draft',
+      title: 'draft, right-click to mark ready',
+    });
+  if (mr.autoMergeButton.isActive)
+    flags.push({ key: 'auto-merge', text: 'auto-merge' });
+  if (b.hasConflicts) flags.push({ key: 'conflicts', text: 'conflicts' });
+  if (b.pipelineFailing) flags.push({ key: 'ci-failing', text: 'ci failing' });
+  if (b.pipelineRunning) flags.push({ key: 'ci-running', text: 'ci running' });
+  if (mr.standDown)
+    flags.push({
+      key: 'stood-down',
+      text: 'auto-doctor off',
+      title: 'auto-doctor stood down for this MR, right-click to re-enable',
+    });
+  // A row nested under its parent already shows the relationship; the flag
+  // only earns its place when the parent is not visible above the row.
+  if (mr.isStacked && !opts?.nested)
+    flags.push({
+      key: 'stacked',
+      text: 'stacked',
+      title: `stacked on ${mr.targetBranch}`,
+    });
+  return flags;
+}
+
+/** The behind-target meta token: "N behind" when the source branch trails
+    the target by N commits. Null when not behind... and when glance reports
+    null, which is "not measured on this fetch path", never zero
+    (MRDashboardProps.behindTarget documents the distinction). */
+export function behindToken(
+  mr: BoardMR
+): { text: string; title: string } | null {
+  const n = mr.behindTarget;
+  if (n == null || n <= 0) return null;
+  return {
+    text: `${n} behind`,
+    title: `${n} commit${n === 1 ? '' : 's'} behind target`,
+  };
+}
+
+/** The pipeline below is generic over the row type so a caller feeding it
+    `BoardMRWithReview[]` gets the same type back out, instead of every
+    consumer re-asserting what `groupMRs` erased. */
+export interface StackNode<M extends BoardMR = BoardMR> {
+  mr: M;
+  /** Stacked MRs whose parent is `mr`, in the input list's order. */
+  children: StackNode<M>[];
+}
+
+/** Resolve child -> parent links across a set of MRs: a stacked MR whose
+    target branch is another MR's source branch (same project) is that MR's
+    child. Same-project matching and cycle handling mirror triage/stack.ts: a
+    branch cycle is malformed data, so its members are left parentless rather
+    than vanishing into an unwalkable loop. Shared by nestStacks (which draws
+    the tree) and groupMRs (which pulls a child into its parent's group), so
+    the two can never disagree about who is whose child. */
+export function stackParents<M extends BoardMR>(mrs: M[]): Map<M, M> {
+  const branchKey = (mr: BoardMR, branch: string) =>
+    `${projectKeyOf(mr.webUrl ?? '')}::${branch}`;
+  const bySource = new Map<string, M>();
+  for (const m of mrs) {
+    if (m.webUrl) bySource.set(branchKey(m, m.sourceBranch), m);
+  }
+
+  const parentOf = new Map<M, M>();
+  for (const m of mrs) {
+    if (!m.isStacked || !m.webUrl) continue;
+    const parent = bySource.get(branchKey(m, m.targetBranch));
+    if (parent && parent !== m) parentOf.set(m, parent);
+  }
+  // Sever cycles: every MR whose parent walk revisits a node renders flat.
+  // Collected first, deleted after, so one member's severed link can't hide
+  // the cycle from the other members' walks.
+  const cyclic: M[] = [];
+  for (const m of parentOf.keys()) {
+    const seen = new Set<M>([m]);
+    for (let p = parentOf.get(m); p; p = parentOf.get(p)) {
+      if (seen.has(p)) {
+        cyclic.push(m);
+        break;
+      }
+      seen.add(p);
+    }
+  }
+  for (const m of cyclic) parentOf.delete(m);
+  return parentOf;
+}
+
+/** Shape one group's (already sorted) list into stack trees: a stacked MR
+    whose parent is in the same list nests under it; everything else stays a
+    root in input order. Run per group AFTER grouping -- groupMRs has already
+    pulled every child into its parent's group, so a stack that spans buckets
+    arrives here intact. */
+export function nestStacks<M extends BoardMR>(mrs: M[]): StackNode<M>[] {
+  const parentOf = stackParents(mrs);
+
+  const nodes = new Map<M, StackNode<M>>(
+    mrs.map(m => [m, { mr: m, children: [] }])
+  );
+  const roots: StackNode<M>[] = [];
+  for (const m of mrs) {
+    const parent = parentOf.get(m);
+    if (parent) nodes.get(parent)!.children.push(nodes.get(m)!);
+    else roots.push(nodes.get(m)!);
+  }
+  return roots;
+}
+
+/** Every MR (any depth) whose ancestor chain runs through `mr` -- the set
+    POST /triage/stand-down also has to clean up (pane nudge, doctor-state
+    reset, held-draft dismissal) when it's toggled on, since a stand-down
+    cascades DOWN to descendants but only the submitted MR's own flag gets
+    set. Nearest descendants first (breadth-first), not that callers rely on
+    the order today. */
+export function descendantsOf<M extends BoardMR>(mr: M, mrs: M[]): M[] {
+  const parentOf = stackParents(mrs);
+  const out: M[] = [];
+  const queue = [mr];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const [child, parent] of parentOf) {
+      if (parent === cur) {
+        out.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return out;
+}
+
+/** Whether `mr` has at least one resolved descendant among `mrs` -- the
+    question the stand-down toggle's copy needs ("ignore this MR" vs "ignore
+    this stack"), since a stand-down only ever cascades DOWN to descendants
+    (triage/run.ts's isStoodDown walks ancestors from the OTHER side). Not
+    `mr.isStacked`: that's true for a leaf child too, and toggling a leaf
+    cascades nowhere. */
+export function hasStackDescendants<M extends BoardMR>(
+  mr: M,
+  mrs: M[]
+): boolean {
+  return descendantsOf(mr, mrs).length > 0;
+}
+
+export type StandDownTarget<M extends BoardMR> =
+  | { ok: true; mr: M; descendants: M[] }
+  | { ok: false; status: 400 | 403; error: string };
+
+/** POST /triage/stand-down's resolve-and-authorize step, pulled out as a
+    pure function so it's unit-testable without a live rt daemon (server.ts
+    itself boots a real HTTP server on import, so nothing there is
+    plain-importable in a test -- see triage-manual-doctor.test.ts for the
+    same reason resolveDispatchIdentity lives outside server.ts). The
+    client-side row-menu gate (own MRs only) is not a security boundary on
+    its own; this is the real one. An unknown mrUrl 400s rather than
+    creating a persistent memory row for something that isn't a real board
+    MR. `defaultMember` is never `'all'` for a real owner: an "all" board
+    (no single seat) always refuses, since no real username is ever the
+    literal string "all". */
+export function resolveStandDownTarget<M extends BoardMR>(
+  mrUrl: string,
+  mrs: M[],
+  defaultMember: string
+): StandDownTarget<M> {
+  const mr = mrs.find(m => m.webUrl === mrUrl);
+  if (!mr) return { ok: false, status: 400, error: `unknown MR "${mrUrl}"` };
+  if (mr.author.username !== defaultMember)
+    return { ok: false, status: 403, error: 'not your MR' };
+  return { ok: true, mr, descendants: descendantsOf(mr, mrs) };
+}
+
+/** Depth-first flattening of one stack tree, for views that render a chain as
+    consecutive indented items rather than nested markup. */
+export function flattenStack<M extends BoardMR>(
+  node: StackNode<M>,
+  depth = 0
+): Array<{ mr: M; depth: number }> {
+  return [
+    { mr: node.mr, depth },
+    ...node.children.flatMap(c => flattenStack(c, depth + 1)),
+  ];
+}
+
+/** GitLab counts approvals per rule, and one approver can fill several
+    rules, so `given` (approvers) and `required` (rule slots) are different
+    units. Every "n/m approved" reads this pair so the two never mix. */
+export function approvalSlots(mr: BoardMR): {
+  filled: number;
+  required: number;
+} {
+  const { required, remaining } = mr.reviews;
+  return { filled: Math.max(required - remaining, 0), required };
+}
+
+/** Approval ratio in [0,1]; used by the "progress" sort. */
+function progress(mr: BoardMR): number {
+  const { filled, required } = approvalSlots(mr);
+  if (required > 0) return filled / required;
+  return mr.reviews.given > 0 ? 1 : 0;
+}
+
+export function filterByMember<M extends BoardMR>(
+  mrs: M[],
+  member: string
+): M[] {
+  return member === 'all' ? mrs : mrs.filter(m => m.author.username === member);
+}
+
+/** Same predicate as the "posted in slack" chip, so the filtered view is
+    exactly the rows carrying it. */
+export function filterBySlack<
+  T extends { webUrl?: string | null; slack?: { posted?: boolean } | null },
+>(mrs: T[], filter: SlackFilter): T[] {
+  return filter === 'all' ? mrs : mrs.filter(m => !!m.slack?.posted);
+}
+
+/** Same "your own drafts only" rows the DRAFT chip marks -- drafts from
+    anyone else never reach the board (see buildBoard), so this is exactly
+    the show/hide toggle for that chip. */
+export function filterByDraft<T extends { isDraft?: boolean }>(
+  mrs: T[],
+  filter: DraftFilter
+): T[] {
+  return filter === 'all' ? mrs : mrs.filter(m => !m.isDraft);
+}
+
+/** Usernames the member filter may legitimately hold on a given tab. An
+    authors tab answers with the configured roster; a codeowners tab answers
+    with the authors of the rows it shows, since its roster is inferred from
+    them. The poll's re-validation uses this: checking a picked author against
+    the config roster alone would drop an inferred one on the next refresh. */
+export function rosterUsernamesFor(
+  mrs: BoardMR[],
+  tab: TabConfig | undefined,
+  configUsernames: string[],
+  tabs: readonly TabConfig[] = []
+): Set<string> {
+  if (!tab || tab.source.kind === 'authors') return new Set(configUsernames);
+  return new Set(
+    filterByTab(mrs, tab, new Set(configUsernames), tabs).map(
+      mr => mr.author.username
+    )
+  );
+}
+
+/** An authors tab narrows to roster members -- further per-member filtering
+    stays downstream in filterByMember. Without this narrowing, a
+    codeowner-tagged stranger (never a roster member, but let through the
+    server's visibility gate for the codeowners tab) would leak onto the
+    authors tab too. A codeowners tab narrows to rows tagged with its section;
+    excludeMembers additionally drops the roster's own authors, so the tab
+    reads as the outside-the-team queue for that section. The needs-me tab
+    is the union of every other tab in `tabs`; who actually needs the seat's
+    move is the client's needOf, applied on top. */
+export function filterByTab<M extends BoardMR>(
+  mrs: M[],
+  tab: TabConfig,
+  members: Set<string>,
+  tabs: readonly TabConfig[] = []
+): M[] {
+  const source = tab.source;
+  switch (source.kind) {
+    case 'authors':
+      return mrs.filter(mr => members.has(mr.author.username));
+    case 'codeowners':
+      return mrs.filter(
+        mr =>
+          mr.codeownerSections.includes(source.section) &&
+          (!source.excludeMembers || !members.has(mr.author.username))
+      );
+    case 'needs-me': {
+      const others = tabs.filter(t => t.source.kind !== 'needs-me');
+      const shown = new Set(others.flatMap(t => filterByTab(mrs, t, members)));
+      return mrs.filter(mr => shown.has(mr));
+    }
+  }
+}
+
+/** Return a new array ordered by the chosen sort. Never mutates the input. */
+export function sortMRs<M extends BoardMR>(mrs: M[], sort: SortKey): M[] {
+  // Order by last activity (updatedAt), the same axis the row's age token and
+  // the age grouping use, so "oldest" means stalest-first and the visible ages
+  // read in order.
+  const byOldest = (a: BoardMR, b: BoardMR) =>
+    (a.updatedAt ?? LATEST).localeCompare(b.updatedAt ?? LATEST);
+  const copy = [...mrs];
+  switch (sort) {
+    case 'oldest':
+      copy.sort(byOldest);
+      break;
+    case 'progress':
+      copy.sort((a, b) => progress(b) - progress(a) || byOldest(a, b));
+      break;
+  }
+  return copy;
+}
+
+export interface Group<M extends BoardMR = BoardMR> {
+  label: string;
+  mrs: M[];
+}
+
+/** Age band by last activity: by day for the first week, then weekly. Uses the
+    same date as the row's "last updated" token and the stale gate, so a group
+    label always matches the age shown on its rows. */
+function ageBucket(
+  lastActivity: string | null,
+  now: number
+): { label: string; order: number } {
+  if (!lastActivity) return { label: 'Unknown', order: 1000 };
+  const days = Math.floor((now - Date.parse(lastActivity)) / 86_400_000);
+  if (days <= 0) return { label: 'Today', order: 0 };
+  if (days === 1) return { label: 'Yesterday', order: 1 };
+  if (days <= 6) return { label: `${days} days ago`, order: days };
+  if (days <= 13) return { label: 'Last week', order: 7 };
+  if (days <= 20) return { label: '2 weeks ago', order: 8 };
+  return { label: 'Older', order: 9 };
+}
+
+/** Every assigned reviewer has approved. */
+function allReviewersApproved(mr: BoardMR): boolean {
+  const reviewers = mr.reviews.reviewers ?? [];
+  return (
+    reviewers.length > 0 &&
+    reviewers.every(
+      r => getReviewDisplayState(r.reviewState ?? null) === 'approved'
+    )
+  );
+}
+
+/** Coarse review-readiness bucket, most-blocking first: GitLab's own review
+    state, conversation states included. The row's pill says the same thing
+    (see `statusPhrase`), so a row can never sit under a group header its own
+    badge contradicts. */
+export function statusBucket(mr: BoardMR): { label: string; order: number } {
+  // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
+  // not their own groups, so an MR with conflicts still shows under its review
+  // state instead of being hidden in a "conflicts" bucket.
+  if (hasChangesRequested(mr)) return { label: 'changes requested', order: 0 };
+  if (mr.reviews.isApproved) return { label: 'approved', order: 4 };
+  // A rule no assigned reviewer covers (a codeowner section) can still be owed.
+  if (allReviewersApproved(mr) && approvalSlots(mr).filled > 0)
+    return { label: 'needs review', order: 2 };
+  if (mr.reviewerComments > 0) return { label: 'commented', order: 1 };
+  // Reviewed and all threads resolved, just not formally approved — further along
+  // than an untouched MR, so it sits between "needs review" and "approved".
+  if (commentsAllResolved(mr)) return { label: 'comments resolved', order: 3 };
+  return { label: 'needs review', order: 2 };
+}
+
+/** An MR carrying the app-initiated review status the client attaches at
+    render time. */
+type ReviewedMR = BoardMR & { review?: { status: ReviewStatus } };
+
+/** Bucket by the review a member kicked off through the board, most-active
+    first. MRs with no launched review fall to "not reviewed". Orthogonal to
+    `statusBucket`, which reflects GitLab's own review state. */
+function reviewBucket(mr: ReviewedMR): { label: string; order: number } {
+  switch (mr.review?.status) {
+    case 'reviewing':
+      return { label: 'reviewing', order: 0 };
+    case 'queued':
+      return { label: 'queued', order: 1 };
+    case 'done':
+      return { label: 'review ready', order: 2 };
+    case 'error':
+      return { label: 'review failed', order: 3 };
+    default:
+      return { label: 'not reviewed', order: 4 };
+  }
+}
+
+/** Group by a keyed bucket, ordering groups by the bucket's `order`. */
+function groupBy<M extends BoardMR>(
+  mrs: M[],
+  bucket: (mr: M) => { label: string; order: number }
+): Group<M>[] {
+  const map = new Map<string, { order: number; mrs: M[] }>();
+  for (const mr of mrs) {
+    const b = bucket(mr);
+    const entry = map.get(b.label) ?? { order: b.order, mrs: [] };
+    entry.mrs.push(mr);
+    map.set(b.label, entry);
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[1].order - b[1].order)
+    .map(([label, entry]) => ({ label, mrs: entry.mrs }));
+}
+
+/** One group per member, in config order; members with no MRs are skipped. */
+function groupByAuthor<M extends BoardMR>(
+  mrs: M[],
+  memberOrder: string[]
+): Group<M>[] {
+  const rank = new Map(memberOrder.map((u, i) => [u, i]));
+  const byUser = new Map<string, M[]>();
+  for (const mr of mrs) {
+    const u = mr.author.username;
+    const list = byUser.get(u) ?? [];
+    list.push(mr);
+    byUser.set(u, list);
+  }
+  return [...byUser.entries()]
+    .sort((a, b) => (rank.get(a[0]) ?? 999) - (rank.get(b[0]) ?? 999))
+    .map(([username, list]) => ({
+      label: list[0]!.author.name || username,
+      mrs: list,
+    }));
+}
+
+/** Move every stacked child into the group holding the root of its stack, so
+    a stack always renders as one nested cluster instead of being scattered
+    across buckets by facts (age, CI state, reviewer) that differ per MR while
+    the branch chain does not. The root's own bucket decides for the whole
+    stack; groups emptied by the move are dropped, and group order and the
+    order within each group are otherwise untouched. */
+function pullStacksIntoParentGroups<M extends BoardMR>(
+  groups: Group<M>[],
+  mrs: M[]
+): Group<M>[] {
+  const parentOf = stackParents(mrs);
+  if (parentOf.size === 0) return groups;
+
+  const groupOf = new Map<M, number>();
+  groups.forEach((g, i) => {
+    for (const m of g.mrs) groupOf.set(m, i);
+  });
+  // Walk to the root, not just the immediate parent: in a 3-deep stack the
+  // middle MR may itself be moving, so only the root's bucket is settled.
+  // stackParents has already severed cycles, so the walk terminates.
+  const rootGroupOf = (mr: M): number => {
+    let cur = mr;
+    for (;;) {
+      const p = parentOf.get(cur);
+      if (!p) return groupOf.get(cur)!;
+      cur = p;
+    }
+  };
+
+  const moved: M[][] = groups.map(() => []);
+  for (const g of groups) {
+    for (const m of g.mrs) moved[rootGroupOf(m)]!.push(m);
+  }
+  return groups
+    .map((g, i) => ({ label: g.label, mrs: moved[i]! }))
+    .filter(g => g.mrs.length > 0);
+}
+
+/**
+ * Partition MRs into ordered display groups. Groups are ordered naturally for
+ * the dimension; ordering WITHIN each group is the caller's job (apply sortMRs
+ * to each group's `mrs`).
+ */
+export function groupMRs<M extends ReviewedMR>(
+  mrs: M[],
+  group: GroupKey,
+  memberOrder: string[],
+  now: number,
+  /** The needs-me bucket for a row (the client's needOf); a row it does not
+      claim, or a caller without one, lands in "other". */
+  needBucket?: (mr: M) => { label: string; order: number } | null
+): Group<M>[] {
+  const grouped = (): Group<M>[] => {
+    switch (group) {
+      case 'age':
+        return groupBy(mrs, mr => ageBucket(mr.updatedAt, now));
+      case 'author':
+        return groupByAuthor(mrs, memberOrder);
+      case 'status':
+        return groupBy(mrs, statusBucket);
+      case 'review':
+        return groupBy(mrs, reviewBucket);
+      case 'needs':
+        return groupBy(
+          mrs,
+          mr => needBucket?.(mr) ?? { label: 'other', order: 99 }
+        );
+    }
+  };
+  return pullStacksIntoParentGroups(grouped(), mrs);
+}
+
+export interface ViewState {
+  member: string;
+  group: GroupKey;
+  sort: SortKey;
+  tab: string;
+  slack: SlackFilter;
+  drafts: DraftFilter;
+}
+
+export const DEFAULT_VIEW: ViewState = {
+  member: 'all',
+  group: 'age',
+  sort: 'oldest',
+  tab: '',
+  slack: 'all',
+  drafts: 'all',
+};
+
+/** URL query params win, then stored localStorage values, then defaults. Invalid
+    values are dropped. `validTabs` mirrors `validMembers`: an unknown or empty
+    tab (including "no tabs known yet", the state before /data.json's first
+    reply) resolves to the first configured tab, matching DEFAULT_VIEW.tab when
+    validTabs is empty. */
+export function parseViewState(
+  search: string,
+  stored: Partial<ViewState> | null,
+  validMembers: string[],
+  defaultMember: string = 'all',
+  validTabs: string[] = []
+): ViewState {
+  const params = new URLSearchParams(search);
+  const members = ['all', ...validMembers];
+  const memberFallback = members.includes(defaultMember)
+    ? defaultMember
+    : 'all';
+
+  const resolve = <T extends string>(
+    key: keyof ViewState,
+    valid: readonly T[],
+    fallback: T
+  ): T => {
+    const fromUrl = params.get(key);
+    if (fromUrl && valid.includes(fromUrl as T)) return fromUrl as T;
+    const fromStore = stored?.[key];
+    if (typeof fromStore === 'string' && valid.includes(fromStore as T))
+      return fromStore as T;
+    return fallback;
+  };
+
+  return {
+    member: resolve('member', members, memberFallback),
+    group: resolve('group', GROUP_KEYS, 'age'),
+    sort: resolve('sort', SORT_KEYS, 'oldest'),
+    tab: resolve('tab', validTabs, validTabs[0] ?? ''),
+    slack: resolve('slack', SLACK_FILTER_KEYS, 'all'),
+    drafts: resolve('drafts', DRAFT_FILTER_KEYS, 'all'),
+  };
+}
+
+/** Settings-modal peering state for one roster member. A null peered list means
+    the GET /peer/boards fetch hasn't resolved: render nothing rather than a
+    wrong "invitable". Comparison is canonical (trimmed, lowercased) so a roster
+    handle typed with different case never hides a board that is already peered. */
+export function memberPeerState(
+  username: string,
+  peered: string[] | null
+): 'peered' | 'invitable' | 'unknown' {
+  if (peered === null) return 'unknown';
+  const canonical = username.trim().toLowerCase();
+  return peered.some(p => p.trim().toLowerCase() === canonical)
+    ? 'peered'
+    : 'invitable';
+}
+
+/** Drop one handle from the peered list by canonical comparison, mirroring
+    the relay's own canonicalization, so a case difference between roster and
+    relay never strands a removed row until reload. */
+export function dropPeer(
+  peered: string[] | null,
+  username: string
+): string[] | null {
+  if (peered === null) return null;
+  const canonical = username.trim().toLowerCase();
+  return peered.filter(p => p.trim().toLowerCase() !== canonical);
+}
+
+/** Peered handles with no roster row: test boards, departed teammates, or a
+    handle invited free-text and later dropped from the roster. These are the
+    registrations only the remove action can reach, so the settings modal
+    lists them separately. Canonical comparison, same as memberPeerState. */
+export function offRosterPeers(
+  peered: string[] | null,
+  members: ReadonlyArray<{ username: string }>,
+  defaultMember: string
+): string[] {
+  if (peered === null) return [];
+  const roster = new Set(members.map(m => m.username.trim().toLowerCase()));
+  roster.add(defaultMember.trim().toLowerCase());
+  return peered.filter(p => !roster.has(p.trim().toLowerCase()));
+}
+
+/** What the settings modal's join row should say and whether it starts folded.
+    `switchboardConfigured` is the client's read of `data.peering !== null`; a
+    configured board whose token is missing also reports null peering, and gets
+    the open join row, which is exactly right. */
+export function joinRowState(
+  switchboardConfigured: boolean,
+  peering: 'ok' | 'unauthorized' | null
+): { label: string; collapsed: boolean; warning?: string } {
+  if (peering === 'unauthorized') {
+    return {
+      label: 're-join with a new invite',
+      collapsed: false,
+      warning: 'peering token rejected -- re-join with a new invite',
+    };
+  }
+  if (switchboardConfigured)
+    return { label: 're-join with a new invite', collapsed: true };
+  return { label: 'join peer boards', collapsed: false };
+}
+
+/** Query string (with leading "?") carrying only non-default values; "" when all default. */
+export function serializeViewState(v: ViewState): string {
+  const params = new URLSearchParams();
+  if (v.member !== DEFAULT_VIEW.member) params.set('member', v.member);
+  if (v.group !== DEFAULT_VIEW.group) params.set('group', v.group);
+  if (v.sort !== DEFAULT_VIEW.sort) params.set('sort', v.sort);
+  if (v.tab !== DEFAULT_VIEW.tab) params.set('tab', v.tab);
+  if (v.slack !== DEFAULT_VIEW.slack) params.set('slack', v.slack);
+  if (v.drafts !== DEFAULT_VIEW.drafts) params.set('drafts', v.drafts);
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}

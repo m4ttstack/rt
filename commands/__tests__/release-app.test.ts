@@ -1,14 +1,26 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { releaseApp } from "../release.ts";
-import { appAssetUrl, type ReleaseAppOptions, type ReleaseAppReport, type ReleaseAppSeams } from "../../lib/release/release-app.ts";
+import type { ReleaseAppOptions, ReleaseAppReport, ReleaseAppSeams } from "../../lib/release/release-app.ts";
 import type { SelectOption } from "../../lib/pick-wrappers.ts";
+
+const helperTool = (name: string, extra: Record<string, unknown>) => ({
+  name, version: "", license: "MIT", archive: "raw", extract: "",
+  bundlePath: `Contents/Helpers/${name}`, exec: [`Contents/Helpers/${name}`],
+  exposeByDefault: false, entitlements: "jit", status: "bundled", kind: "helper",
+  ...extra,
+});
+
+const servedTreeTool = (name: string, port: number) => helperTool(name, { source: "tree", serve: { port, args: [] } });
 
 const LOCK = JSON.stringify({
   schema: 1, arch: "arm64", tools: [
-    { name: "jq", version: "1.8.2", url: "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64" },
-    { name: "deck", version: "1.1.1", repo: "m4ttstack/apps", subdir: "apps/deck", url: appAssetUrl("deck", "1.1.1") },
-    { name: "board", version: "0.1.7", repo: "m4ttstack/apps", subdir: "apps/board", url: appAssetUrl("board", "0.1.7") },
-    { name: "chat", version: "0.1.3", repo: "m4ttstack/apps", subdir: "apps/chat", url: appAssetUrl("chat", "0.1.3") },
+    helperTool("jq", { version: "1.8.2", url: "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64", sha256: "0".repeat(64), entitlements: "none" }),
+    helperTool("deck", { source: "tree" }),
+    servedTreeTool("board", 11006),
+    servedTreeTool("chat", 11002),
+    servedTreeTool("console", 11001),
+    servedTreeTool("boxscore", 11005),
+    helperTool("gitq", { version: "0.2.1", repo: "m4ttstack/gitq", url: "https://github.com/m4ttstack/gitq/releases/download/v0.2.1/gitq-darwin-arm64", sha256: "0".repeat(64), exposeByDefault: true }),
   ],
 });
 
@@ -23,8 +35,6 @@ function seams(): ReleaseAppSeams {
     workDir: () => "/work",
     readFile: (path) => (path === "/repo/rt-tray/deps.lock" ? LOCK : null),
     writeFile: () => {},
-    download: async () => {},
-    sha256File: async () => "",
     confirm: async () => false,
     log: () => {},
   };
@@ -32,8 +42,8 @@ function seams(): ReleaseAppSeams {
 
 function report(status: ReleaseAppReport["status"], extra: Partial<ReleaseAppReport> = {}): ReleaseAppReport {
   return {
-    app: "board", status, lastTag: "v2.13.1", tag: "v2.13.2", appVersion: "0.1.8", appTag: "board-v0.1.8",
-    steps: [], notes: null, notesHash: null, heldApps: [], verify: null, resume: null, ...extra,
+    app: "board", status, lastTag: "v2.13.1", nextTag: "v2.13.2",
+    steps: [], notes: null, notesHash: null, resume: null, ...extra,
   };
 }
 
@@ -85,20 +95,16 @@ afterEach(() => {
 });
 
 describe("rt release app: the omitted-name picker", () => {
-  test("on a TTY it offers the eligible apps with their pinned versions and releases the pick", async () => {
+  test("the served tree apps plus gitq are offered, deck excluded", async () => {
     const h = await invoke([], { tty: true, pick: "chat" });
     expect(h.picks).toEqual([[
-      { value: "board", label: "board", hint: "0.1.7" },
-      { value: "chat", label: "chat", hint: "0.1.3" },
+      { value: "board", label: "board" },
+      { value: "chat", label: "chat" },
+      { value: "console", label: "console" },
+      { value: "boxscore", label: "boxscore" },
+      { value: "gitq", label: "gitq", hint: "0.2.1" },
     ]]);
-    expect(h.runs.map((r) => r.name)).toEqual(["chat"]);
-  });
-
-  test("cancelling the picker releases nothing and exits clean", async () => {
-    const h = await invoke([], { tty: true, pick: null });
-    expect(h.runs).toEqual([]);
-    expect(h.exitCalled).toBeUndefined();
-    expect(h.exitCode).toBe(0);
+    expect(h.runs).toEqual([{ name: "chat", dryRun: false, json: false, yesNotes: null }]);
   });
 
   test("off a TTY it is the usage error, never a picker", async () => {
@@ -174,19 +180,19 @@ describe("rt release app: flags and output", () => {
   test("a failed step exits 1 and names the step and the resume command", async () => {
     const h = await invoke(["board"], {
       result: report("failed", {
-        steps: [{ id: "pr", label: "deps.lock PR", status: "failed", detail: "CI failed" }],
+        steps: [{ id: "tag", label: "tag", status: "failed", detail: "push rejected" }],
         resume: "rt release app board",
       }),
     });
     expect(h.exitCode).toBe(1);
-    expect(h.logs.join("\n")).toContain("stopped at deps.lock PR");
+    expect(h.logs.join("\n")).toContain("stopped at tag");
     expect(h.logs.join("\n")).toContain("resume: rt release app board");
   });
 
-  test("a released report prints the tag and exits 0", async () => {
+  test("a released report prints the next tag and exits 0", async () => {
     const h = await invoke(["board"]);
     expect(h.exitCode).toBe(0);
-    expect(h.logs.join("\n")).toContain("released v2.13.2 with board 0.1.8");
+    expect(h.logs.join("\n")).toContain("released v2.13.2");
   });
 
   test("a name that is not a plain app name is a usage error", async () => {

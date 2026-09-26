@@ -1,0 +1,4428 @@
+/* ── palette + page canvas: now @mattstack/tui-kit ────────────────────
+   The tokyo day / tokyo night token block that used to open this file
+   (`:root` + `:root.dark`) is gone, and so are `* { box-sizing }`, the `body`
+   graph-paper ground, and the `.tui` / `.tui-wide` column measure. All of it
+   is served from `@mattstack/tui-kit/theme.css` + `/canvas.css`, imported by
+   `src/client/main.tsx` and linked as `/app.css` ahead of this file.
+
+   The 17 alias names every rule below still writes -- `--bg`, `--panel`,
+   `--card`, `--chrome`, `--fg`, `--muted`, `--muted-text`, `--border`,
+   `--border-soft`, `--border-on-card`, `--border-soft-on-card`,
+   `--border-control`, `--border-control-on-card`, `--page`, `--cyan`,
+   `--font-mono`, `--font-sans` -- are the kit's alias contract. The Radix
+   repaint moved every one of their values, so treat the names as the
+   contract, not the values behind them.
+   Dark still flips on the `dark` class the shell's inline script toggles on
+   <html>; the kit does it with `color-scheme` + `light-dark()` instead of
+   redeclaring the block.
+
+   This file stays unlayered, so it outranks the kit's `@layer soribashi.*`
+   rules on any conflict -- nothing here needs `!important` to win.
+   ─────────────────────────────────────────────────────────────────── */
+
+/* ── app scale ────────────────────────────────────────────────────────
+   One knob for the whole app: every font-size below is rem (none may be a
+   px literal, or it silently opts out of the knob), so the root size
+   scales all of it together. 17px is a ~6% step over the browser's 16px
+   default. The kit canvas body base is 13.5px by identity; re-expressed
+   here in rem (13.5/16) so body text rides the same knob. */
+html {
+  font-size: 17px;
+  /* Radix amber, held under the --orange name: the conflicts flag and the
+     doctor lane (row and menu) read amber, distinct from ci-running and
+     decide, which read the warn hue via --text-warn-vivid. */
+  --orange: light-dark(#ab6400, #ffca16);
+}
+body {
+  font-size: 0.84375rem;
+}
+
+/* ── header ───────────────────────────────────────────────────────── */
+/* The header is a zone, not a card, so it takes --chrome and the soft border
+   rather than a card's fill. Flat, not a mix: --chrome sits BELOW --bg on the
+   near-white ramp, so an alpha wash reads as an arbitrary tint rather than the
+   lift it was under the old grey ground. The sidebar and tab strip paint the
+   same flat --chrome, which is what makes the three read as one frame. */
+.tui-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--chrome);
+  position: relative;
+}
+/* One surface, not a patchwork. The MR groups are the kit's Panel recipe,
+   which paints its own near-white fill; on this ramp that landed between --bg
+   and --card and read as a third grey next to the header and sidebar. This
+   file is unlayered, so it outranks the recipe's @layer soribashi rule without
+   !important. */
+[data-part='panel'] {
+  background: var(--chrome);
+}
+
+/* Cross-app switcher, plus the theme picker pulled out of the controls row
+   (it's a personal display preference, not a board filter, and was the
+   heaviest single item competing for that row's width): both pinned to the
+   header card's top-right corner via absolute positioning, since
+   `.tui-header` wraps (`flex-wrap: wrap`) -- on the real board the controls
+   row wraps below the title, so a flex sibling would land after the
+   controls rather than in the corner. The header's extra right padding
+   above reserves room so the title/controls never run under this corner. */
+.tui-app-launcher {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.7rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* The corner is chrome, not a control the eye should land on: the theme
+   picker drops the segmented recipe's frame and its saturated active fill
+   for muted glyphs and a soft neutral pick, so it sits quieter than the
+   filters in the row below and does not compete with the app mark. */
+.tui-app-launcher [data-part='segmented'] {
+  background: transparent;
+  border-color: transparent;
+}
+.tui-app-launcher [data-part='segmented-option'] {
+  color: color-mix(in srgb, var(--text-4) 70%, transparent);
+  background: transparent;
+  padding-inline: 0.3rem;
+}
+.tui-app-launcher [data-part='segmented-option']:hover {
+  color: var(--text-3);
+}
+.tui-app-launcher [data-part='segmented-option'][data-active] {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.tui-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+.tui-sub {
+  margin: 0.15rem 0 0;
+}
+.tui-comment {
+  color: var(--text-3);
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+.tui-controls {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Push the header toolbar to the right edge, even when it wraps below the
+   title. The toolbar itself stays one row -- `.tui-controls`'s own
+   flex-wrap would otherwise split it mid-row (e.g. the theme picker
+   stranded alone under everything else) once its buttons no longer fit
+   beside the title. `flex-shrink: 0` keeps `.tui-header`'s own wrap (title
+   moves above) as the first release valve, ahead of this row scrolling
+   itself; `flex-start` (rather than `flex-end`) is what makes any overflow
+   that remains spill off the end, the direction `overflow-x: auto` can
+   actually scroll to -- flex-end overflow spills off the *start* instead,
+   which is invisible with no way to reach it. */
+.tui-controls-header {
+  margin-left: auto;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+/* Uniform control height: the text segmented (0.8em) and icon segmented would
+   otherwise differ by ~1px and read as misaligned. `flex-shrink: 0` is what
+   makes the nowrap/overflow-x pair above actually scroll instead of
+   squeezing each segmented's own text/icons down to an unreadable clip. */
+.tui-controls-header > * {
+  height: 28px;
+  flex-shrink: 0;
+}
+.tui-controls-header [data-part='segmented-option'] {
+  height: 100%;
+}
+.tui-author {
+  color: var(--text-purple);
+  white-space: nowrap;
+}
+.tui-avatar {
+  width: 20px;
+  height: 20px;
+}
+/* Board-domain button shell. The CopyButton recipe absorbed this shape for its
+   own instances (which no longer carry the class), but three plain board
+   buttons still borrow it: the header refresh, and the selection bar's post +
+   clear. `.tui-copy.copied` is gone with the recipe -- only CopyButton ever
+   flashed it, and it now stamps `data-copied` instead. */
+.tui-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+}
+.tui-copy:hover {
+  color: var(--text-1);
+  border-color: var(--fill-accent);
+}
+.tui-refresh:disabled {
+  cursor: default;
+  color: var(--text-accent-small);
+  border-color: var(--fill-accent);
+}
+/* Posted-to-slack and hide-drafts filters: off is a muted mono glyph like
+   their neighbours; on is the segmented control's active state (accent
+   fill, white glyph, the chip's checkmark badge kept). A label on a
+   saturated fill takes white for accent and purple, the dark neutral
+   #1c2024 for ok, warn, cyan and bad; the pick holds in both schemes since
+   a saturated fill does not lighten in light mode. The hover rule below
+   outranks `.tui-copy:hover`, which would otherwise flip the glyph to
+   --text-1 on accent. */
+.tui-slack-filter[data-active],
+.tui-draft-filter[data-active],
+.tui-drawer-action[data-active] {
+  background: var(--fill-accent);
+  border-color: var(--fill-accent);
+  color: #ffffff;
+}
+.tui-slack-filter[data-active]:hover,
+.tui-draft-filter[data-active]:hover,
+.tui-drawer-action[data-active]:hover {
+  color: #ffffff;
+}
+.tui-refresh.spinning svg {
+  animation: tui-spin 0.8s linear infinite;
+}
+@keyframes tui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── selection ────────────────────────────────────────────────────── */
+.tui-selbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--fill-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chrome) 94%, transparent);
+  backdrop-filter: blur(6px);
+}
+.tui-selbar-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.tui-selbar-count {
+  color: var(--text-accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tui-selbar-note {
+  color: var(--text-3);
+  font-size: 0.78rem;
+}
+/* A textarea, not an input: the header is multi-line, and it wraps into view
+   instead of scrolling out of it. Height is driven from JS off scrollHeight;
+   resize is off because the box sizes itself. max-height caps the growth so a
+   long header can't push the board off screen -- past that it scrolls, which is
+   why overflow-y is auto rather than hidden. */
+.tui-selbar-input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  color: var(--text-1);
+  line-height: 1.45;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow-y: auto;
+  max-height: 30vh;
+}
+.tui-selbar-input:focus {
+  outline: none;
+  border-color: var(--fill-accent);
+}
+.tui-selbar-actions {
+  display: flex;
+  gap: 0.45rem;
+  margin-left: auto;
+  align-items: center;
+}
+/* Roomier than the bare icon buttons in the header: these carry a label beside
+   the icon, and without the gap the two collide. */
+.tui-selbar-actions .tui-copy,
+.tui-selbar-actions [data-part='copybutton'] {
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Keyboard focus: one accent ring for the controls that lacked one. Menu
+   items and the panel title already carry their own focus-visible styles.
+   `.tui-review-open` has left this list: the clickable chips are Chip's
+   `as="button"` form now, and the recipe carries this exact ring itself. */
+.tui-copy:focus-visible,
+.tui-copy-inline:focus-visible,
+.tui-side-item:focus-visible,
+.tui-side-gear:focus-visible,
+.tui-burger:focus-visible,
+.tui-invite-btn:focus-visible,
+.tui-draft-act:focus-visible,
+.tui-modal-x:focus-visible,
+.tui-join-toggle:focus-visible,
+.tui-drawer-action:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 2px;
+}
+/* ── the row ─────────────────────────────────────────────────────────
+   Fixed height, four lines, one content edge: line 0 state, line 1 title,
+   line 2 facts, line 3 status. The gutter holds the status dot (and the
+   checkbox on hover / in select mode) level with the title; the attention
+   bar is flush to the row's left edge. Nothing on a row may grow it. */
+.tui-rows {
+  --row-pad: 12px;
+  --gutter-w: 40px;
+  --pick-h: 20px;
+  /* Line 0's height plus its gap: how far the gutter sits below the row's
+     top padding. */
+  --pick-offset: 22px;
+  /* pad 12 + line 0 (20 + 2) + line 1 20 + line 2 (4 + 16) + line 3 (8 + 20)
+     + pad 12. The row clips overflow, so a changed margin below silently
+     cuts line 3 instead of growing the row: keep this sum current. */
+  --row-h: 114px;
+  /* The gutter markers are drawn shapes, not the kit's glyphs, so the stack
+     rail can meet them at their true center and edge; the rail math below
+     reads both sizes. */
+  --dot-size: 8px;
+  --check-size: 13px;
+}
+.tui-row {
+  display: grid;
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr);
+  align-items: start;
+  height: var(--row-h);
+  box-sizing: border-box;
+  padding: var(--row-pad) 16px var(--row-pad) 0;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+/* The one row feature allowed to grow the row: a note adds its band under
+   line 3 and the row takes whatever that band needs (B10). Everything else
+   still lives inside the fixed four lines. */
+.tui-row[data-note] {
+  height: auto;
+  min-height: var(--row-h);
+}
+.tui-row + .tui-row {
+  border-top: 1px solid var(--border-soft);
+}
+.tui-row:hover {
+  background: color-mix(in srgb, var(--fill-accent-hover) 6%, transparent);
+}
+/* `?gate=<id>` deep link: the row a notification click resolves to gets a
+   brief outline ring, same accent as the keyboard focus rings above. */
+.tui-row-flash {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: -2px;
+}
+.tui-row-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+}
+.tui-row-bar[data-tone='warn'] {
+  background: var(--fill-warn);
+}
+.tui-row-bar[data-tone='bad'] {
+  background: var(--fill-bad);
+}
+/* Gutter: the dot at rest, the checkbox under the pointer or while a
+   selection exists. Both stay in the flow (opacity, not display) so the
+   stack rail's pseudo-elements keep their anchor; the rail's segment math
+   (below, "stacks") reads --gutter-w, --pick-h, --pick-offset and
+   --row-pad. The kit stamps `data-part="statusdot"` / `"selectbox"` on
+   the two recipes' roots. */
+.tui-row-pick {
+  position: relative;
+  /* Own stacking context, so a stack rail segment can sit under the dot. */
+  isolation: isolate;
+  height: var(--pick-h);
+  margin-top: var(--pick-offset);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tui-row-pick > [data-part='statusdot'] {
+  position: absolute;
+  transition: opacity 0.12s;
+}
+.tui-row-pick > [data-part='selectbox'] {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.tui-row:hover .tui-row-pick > [data-part='statusdot'],
+.tui-row-pick:focus-within > [data-part='statusdot'],
+.tui-rows[data-selecting] .tui-row-pick > [data-part='statusdot'] {
+  opacity: 0;
+}
+.tui-row:hover .tui-row-pick > [data-part='selectbox'],
+.tui-row-pick:focus-within > [data-part='selectbox'],
+.tui-rows[data-selecting] .tui-row-pick > [data-part='selectbox'] {
+  opacity: 1;
+}
+.tui-row-body {
+  min-width: 0;
+}
+/* The kit renders the dot as a text glyph with an optical nudge; a glyph's
+   ink lands where the font puts it, so the board draws the circle itself
+   and the rail can hit its center. */
+.tui-row [data-part='statusdot-dot'] {
+  display: block;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: 50%;
+  background: var(--sd-color);
+  font-size: 0;
+  top: 0;
+}
+/* Same for the checkbox: the kit's box glyph becomes a drawn square, the
+   design's 13px with a 1.5px stroke; checked fills it with a card-colored
+   inset ring. */
+.tui-row-pick > [data-part='selectbox'] {
+  font-size: 0;
+}
+.tui-row-pick > [data-part='selectbox']::before {
+  content: '';
+  box-sizing: border-box;
+  width: var(--check-size);
+  height: var(--check-size);
+  border: 1.5px solid currentColor;
+  border-radius: 1.5px;
+}
+.tui-row-pick > [data-part='selectbox'][data-checked]::before {
+  background: currentColor;
+  box-shadow: inset 0 0 0 2px var(--card);
+}
+
+/* Line 0: the lead. Identity (author or ticket) comes first, then the
+   flags, then the behind count; the Slack marks and the pill hold the
+   corner. Clips from the right. */
+.tui-row-0 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 20px;
+  margin-bottom: 2px;
+}
+.tui-row-lead {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+.tui-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--flag);
+}
+.tui-flag[data-flag='draft'] {
+  --flag: color-mix(in srgb, var(--text-4) 75%, transparent);
+}
+.tui-flag[data-flag='auto-merge'] {
+  --flag: var(--text-ok-vivid);
+}
+.tui-flag[data-flag='conflicts'] {
+  --flag: var(--orange);
+}
+.tui-flag[data-flag='ci-failing'] {
+  --flag: var(--text-bad);
+}
+.tui-flag[data-flag='ci-running'] {
+  --flag: var(--text-warn-vivid);
+}
+.tui-flag[data-flag='stood-down'] {
+  --flag: color-mix(in srgb, var(--text-4) 75%, transparent);
+}
+.tui-flag[data-flag='stacked'] {
+  --flag: var(--text-cyan-vivid);
+}
+.tui-behind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--text-4);
+}
+.tui-behind svg {
+  color: color-mix(in srgb, var(--text-4) 75%, transparent);
+}
+/* The header line's identity slot: the author in the mixed view, the
+   ticket when the author is the group header. Muted, not purple: the line's
+   color belongs to the flags. */
+.tui-author-tag,
+.tui-ticket-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--text-3);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tui-ticket-tag {
+  font-weight: 500;
+}
+.tui-ticket-tag svg {
+  color: color-mix(in srgb, var(--text-3) 75%, transparent);
+}
+.tui-ticket-tag:hover {
+  color: var(--text-1);
+  text-decoration: underline;
+}
+.tui-author-tag .tui-avatar {
+  width: 12px;
+  height: 12px;
+}
+.tui-row-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tui-mark {
+  display: inline-flex;
+  align-items: center;
+}
+/* The stage mark is the reaction emoji as Slack shows it (the team reads
+   these off the Slack message), so it keeps its own color. */
+.tui-mark[data-slack-stage] {
+  font-size: 13px;
+  line-height: 1;
+}
+.tui-phrase {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pill-text);
+  background: color-mix(in srgb, var(--pill) 17%, transparent);
+}
+.tui-phrase[data-hue='amber'] {
+  --pill: var(--fill-warn);
+  --pill-text: var(--text-warn-small);
+}
+.tui-phrase[data-hue='cyan'] {
+  --pill: var(--fill-cyan);
+  --pill-text: var(--text-cyan-small);
+}
+.tui-phrase[data-hue='green'] {
+  --pill: var(--fill-ok);
+  --pill-text: var(--text-ok-small);
+}
+.tui-phrase[data-hue='red'] {
+  --pill: var(--fill-bad);
+  --pill-text: var(--text-bad-small);
+}
+.tui-phrase[data-hue='accent'] {
+  --pill: var(--fill-accent);
+  --pill-text: var(--text-accent-small);
+}
+.tui-phrase[data-hue='purple'] {
+  --pill: var(--fill-purple);
+  --pill-text: var(--text-purple-small);
+}
+
+/* Line 1: the title, alone. */
+.tui-row-1 {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 20px;
+}
+.tui-title {
+  font-weight: 500;
+  font-size: var(--type-body);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Line 2: facts. Junctions step in weight or color; no glyphs. 0.76rem is
+   the design's facts and status size (docs/design/mr-row/build.mjs), one
+   step under --type-meta so line 1 keeps its lead. */
+.tui-row-2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3);
+  font-size: 0.76rem;
+  line-height: 16px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.tui-mr-iid {
+  color: color-mix(in srgb, var(--text-1) 70%, var(--text-3));
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.tui-branch {
+  min-width: 0;
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-diff {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tui-adds {
+  color: color-mix(in srgb, var(--text-ok-vivid) 70%, var(--text-3));
+}
+.tui-dels {
+  color: color-mix(in srgb, var(--text-bad-vivid) 70%, var(--text-3));
+}
+.tui-rail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* The threads token: the drawer's entry, read at full weight. Newness is
+   accent and bold with a dot; the qualifiers are their own color so no
+   glyph separates them from the count. */
+.tui-threads {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.tui-threads svg {
+  color: var(--text-3);
+}
+.tui-threads[data-new] {
+  color: var(--text-accent-small);
+  font-weight: 700;
+}
+.tui-threads[data-new] svg {
+  color: var(--text-accent-small);
+}
+.tui-threads[data-new] .tui-threads-count::after,
+.tui-threads[data-new] .tui-threads-await::after,
+.tui-threads[data-new] .tui-threads-replied::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--fill-accent);
+  vertical-align: middle;
+}
+.tui-threads-await {
+  color: var(--text-warn-vivid);
+  font-weight: 600;
+}
+.tui-threads-replied {
+  color: var(--text-accent-small);
+  font-weight: 600;
+}
+.tui-threads:hover .tui-threads-count,
+.tui-threads:hover .tui-threads-await,
+.tui-threads:hover .tui-threads-replied {
+  text-decoration: underline;
+}
+.tui-age {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--text-4) 75%, transparent);
+}
+
+/* Line 3: the status line. */
+.tui-status {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  margin-top: 8px;
+  font-size: 0.76rem;
+  line-height: 20px;
+  color: var(--text-3);
+  min-width: 0;
+}
+.tui-status-word {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-status[data-tone='bad'] .tui-status-word {
+  color: var(--text-bad);
+}
+.tui-status[data-tone='warn'] .tui-status-word {
+  color: var(--text-warn-vivid);
+}
+.tui-status[data-tone='work'] .tui-status-word,
+.tui-status[data-tone='work'] .tui-status-ring {
+  color: var(--text-purple);
+}
+.tui-status[data-tone='go'] .tui-status-word {
+  color: var(--text-ok-vivid);
+}
+.tui-status[data-tone='quiet'] .tui-status-word {
+  font-weight: 500;
+}
+.tui-status[data-tone='clear'] .tui-status-word {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--text-ok-vivid) 40%, var(--text-3));
+}
+/* Muted on every tone: the word carries the temperature, the detail never
+   competes with it. */
+.tui-status-detail {
+  margin-left: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-status-ring {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  margin-left: 8px;
+  align-self: center;
+  animation: tui-status-rot 1s linear infinite;
+}
+@keyframes tui-status-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tui-status-more {
+  margin-left: 8px;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--text-4) 70%, transparent);
+}
+/* Centered like the tools, not baseline-aligned: the line's baseline would
+   otherwise follow whichever verb is first, and a secondary appearing left
+   of the primary under the pointer would shift the primary by a pixel. */
+.tui-status-verbs {
+  margin-left: auto;
+  padding-left: 10px;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* Verbs are subtle buttons: nothing at rest but the word, a tint under the
+   pointer. An agent verb wears its lane's color and the bot mark, so the
+   reader knows which agent a click starts before reading the word; a decide
+   verb reads the warn hue; a secondary verb (hover only) is muted; navigation
+   (open, read, view) stays quiet text, and merge, the one plain verb that
+   changes the MR, takes the strongest gray. */
+.tui-status-verb {
+  margin: 0;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--radius-px5);
+  background: none;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--text-4);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tui-status-verb:hover {
+  background: color-mix(
+    in srgb,
+    var(--verb-wash, var(--muted)) 12%,
+    transparent
+  );
+}
+.tui-status-verb[data-lane],
+.tui-status-verb[data-decide],
+.tui-status-verb[data-secondary] {
+  color: var(--verb);
+  font-weight: 600;
+}
+.tui-status-verb[data-lane='review'] {
+  --verb: var(--text-accent);
+  --verb-wash: var(--fill-accent);
+}
+.tui-status-verb[data-lane='respond'] {
+  --verb: var(--text-ok-vivid);
+  --verb-wash: var(--fill-ok);
+}
+.tui-status-verb[data-lane='doctor'] {
+  --verb: var(--orange);
+  --verb-wash: var(--fill-warn);
+}
+.tui-status-verb[data-decide] {
+  --verb: var(--text-warn-vivid);
+  --verb-wash: var(--fill-warn);
+}
+.tui-status-verb[data-secondary] {
+  --verb: var(--text-4);
+  --verb-wash: var(--muted);
+}
+.tui-status-verb[data-verb='merge'] {
+  color: var(--text-1);
+}
+/* An armed merge is a decision waiting on its second click: merge's own
+   neutral, with the wash held on at rest and deeper than the hover tint, so
+   it reads as a different state, not a hover. */
+.tui-status-verb[data-armed] {
+  --verb-wash: var(--muted);
+  background: color-mix(in srgb, var(--verb-wash) 30%, transparent);
+}
+.tui-status-sun {
+  display: inline-flex;
+  margin-left: 10px;
+  color: var(--text-warn-small);
+  /* Sits on the text baseline the way the inline icon did (its -2.5px
+     vertical-align), which a flex item cannot express directly. */
+  transform: translateY(2.5px);
+}
+/* The row tools (ticket, copy) ride the status line's right end. Centered,
+   not baseline-aligned: an icon-only box has no text baseline, so under the
+   line's baseline alignment its bottom edge would push the verb down the
+   moment the tools appear. */
+.tui-status-tools {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* The copy tool is a verb in icon form, so it wears the verb's box: nothing
+   at rest, the same tint under the pointer, the same corner. */
+.tui-copy-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 14px icon + 2px: the verb's own 18px box, so the two tints line up. */
+  padding: 2px 5px;
+  border-radius: var(--radius-px5);
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  opacity: 0.8;
+  transition:
+    opacity 0.1s ease,
+    background-color 0.1s ease;
+}
+.tui-copy-inline:hover {
+  opacity: 1;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--muted-text) 12%, transparent);
+}
+.tui-copy-inline[data-copied] {
+  opacity: 1;
+  color: var(--text-ok-small);
+}
+/* ── the row's note (B10) ─────────────────────────────────────────────
+   The seat's own line, under everything the row already says. A band, not
+   a status line: it carries no tone and never takes a lane's hue, and its
+   cyan is the one hue the row does not spend on a verb. */
+.tui-row-note {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 5px 10px 5px 8px;
+  border-radius: var(--radius-px5);
+  /* Opaque, mixed into the panel the rows sit on, never an alpha wash: a
+     translucent band would take the row's hover tint and the ground's grid
+     with it, so the same note would read a different color under the
+     pointer than at rest. */
+  background: color-mix(in srgb, var(--fill-cyan) 16%, var(--panel));
+  color: var(--text-1);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  cursor: text;
+  text-align: left;
+}
+.tui-row-note > svg {
+  flex: 0 0 auto;
+  color: var(--text-cyan-small);
+}
+.tui-row-note-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* The quick clear rides ABOVE the band rather than in it: absolute, so it
+   reserves no room at rest (the note would otherwise end early for a button
+   that isn't there), and opaque with a shadow so it reads over whatever
+   words it lands on. */
+.tui-row-note-dismiss {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  margin: 0;
+  border: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-px5);
+  /* Translucent, so the words it lands on still read underneath, with a
+     shadow to lift it off them. */
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 16%);
+  font: 600 0.72rem / 16px var(--font-sans);
+  color: var(--text-4);
+  cursor: pointer;
+  display: none;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease;
+}
+/* It belongs to the note, not the row: the band's own hover brings it in,
+   dim enough to stay out of the reading, and only the pointer on the verb
+   itself brings it up to full. */
+.tui-row-note:is(:hover, :focus-within) .tui-row-note-dismiss {
+  display: block;
+  opacity: 0.4;
+}
+/* Keyed off the band too, or the dim rule above (two classes and a
+   pseudo-class) would outrank this one and the verb would never come up. */
+.tui-row-note:is(:hover, :focus-within) .tui-row-note-dismiss:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--text-1);
+}
+/* Editing: the band keeps its place and its color; the text becomes the
+   same auto-growing textarea the selection bar and the launch note use. */
+.tui-row-note[data-editing] {
+  display: block;
+  cursor: default;
+  outline: 1px solid var(--fill-accent);
+}
+.tui-row-note-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.tui-row-note-lead > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--text-cyan-small);
+}
+.tui-row-note-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-1);
+  resize: none;
+  overflow: hidden;
+}
+.tui-row-note-input:focus-visible {
+  outline: none;
+}
+.tui-row-note-hint {
+  margin-top: 2px;
+  font-size: 0.66rem;
+  color: var(--text-4);
+}
+/* In-flow tools take the auto margin and the verbs give theirs up, so the
+   verb keeps its corner and the tools stack to its left. Coarse pointers
+   have no hover, so they get this at rest. */
+.tui-status-tools {
+  margin-left: auto;
+  padding-left: 16px;
+}
+/* The tools wear the verb's box, so one gap runs the whole group: the 6px
+   that separates two verbs separates the last tool from the first verb. */
+.tui-status-tools + .tui-status-verbs {
+  margin-left: 0;
+  padding-left: 6px;
+}
+/* Under a pointer, secondary verbs and the tools wait out of sight at rest
+   but never out of the tab order: clipped to a point, not display: none,
+   so focus-within can reveal them for keyboard users. Clipped tools are out
+   of flow, so the verbs hold the auto margin until the reveal. */
+@media (hover: hover) {
+  .tui-status-verb[data-secondary],
+  .tui-status-tools {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .tui-status-tools + .tui-status-verbs {
+    margin-left: auto;
+    padding-left: 16px;
+  }
+  .tui-row:is(:hover, :focus-within) .tui-status-verb[data-secondary],
+  .tui-row:is(:hover, :focus-within) .tui-status-tools {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  .tui-row:is(:hover, :focus-within) .tui-status-tools + .tui-status-verbs {
+    margin-left: 0;
+    padding-left: 6px;
+  }
+}
+
+/* The row at narrow widths. */
+@media (max-width: 720px) {
+  /* The row keeps its fixed height; only the two elastic spans give way. */
+  .tui-branch {
+    max-width: 16ch;
+  }
+  .tui-status-detail {
+    display: none;
+  }
+}
+/* Phone width: the branch and behind-target are unreadable at this width
+   anyway; the reaction stage yields to the logo; the pill tightens. */
+@media (max-width: 480px) {
+  /* The +N active count reads only through its title, which a phone cannot
+     hover; it yields before the status word does. */
+  .tui-branch,
+  .tui-behind,
+  .tui-mark[data-slack-stage],
+  .tui-status-more {
+    display: none;
+  }
+  .tui-row-2 {
+    gap: 8px;
+  }
+  .tui-phrase {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+    letter-spacing: 0.02em;
+  }
+  /* The avatar alone names the author; the title attribute keeps the name. */
+  .tui-author-tag {
+    font-size: 0;
+    gap: 0;
+  }
+}
+
+/* ── comments drawer ──────────────────────────────────────────────── */
+/* General MR-comments section in the drawer (notes that aren't resolvable threads). */
+.tui-cd-comments-head {
+  font-size: 0.72rem;
+  color: var(--text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0.7rem 0 0.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+}
+/* Each general MR comment sits in its own card, matching the thread cards above. */
+.tui-cd-comments .tui-cd-note {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 0.7rem;
+}
+.tui-cd-comments .tui-cd-note + .tui-cd-note {
+  border-top-color: var(--border);
+}
+.tui-comments-empty {
+  color: var(--text-3);
+}
+.tui-comment-icon {
+  flex-shrink: 0;
+}
+.tui-cd-thread.resolved .tui-comment-icon {
+  color: var(--text-ok-small);
+}
+.tui-cd-thread.replied .tui-comment-icon {
+  color: var(--text-accent-small);
+}
+.tui-cd-thread.awaiting .tui-comment-icon {
+  color: var(--text-warn-small);
+}
+
+.tui-cd-panel {
+  color: var(--text-3);
+  font-size: 0.76rem;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.tui-cd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 0.5rem;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+.tui-cd-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  min-width: 0;
+}
+.tui-cd-iid {
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+.tui-cd-open {
+  color: var(--text-accent-small);
+  font-size: 0.76rem;
+  text-decoration: none;
+  padding: 0 1rem 0.7rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.tui-cd-open:hover {
+  text-decoration: underline;
+}
+.tui-cd-body {
+  padding: 0.8rem 1rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.tui-cd-thread {
+  /* Card sits on --card so it contrasts with the --panel drawer. */
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  border-left: 3px solid var(--border);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.tui-cd-thread.resolved {
+  border-left-color: var(--fill-ok);
+}
+.tui-cd-thread.replied {
+  border-left-color: var(--fill-accent);
+}
+.tui-cd-thread.awaiting {
+  border-left-color: var(--fill-warn);
+}
+.tui-cd-thread-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.4rem 0.7rem;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+}
+.tui-cd-thread-open {
+  color: var(--text-accent-small);
+  font-weight: 400;
+  font-size: 0.68rem;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.tui-cd-thread-open:hover {
+  text-decoration: underline;
+}
+.tui-cd-thread-verbs {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.tui-cd-verb {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--text-accent-small);
+  cursor: pointer;
+}
+.tui-cd-verb:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.tui-cd-verb:disabled {
+  color: var(--text-4);
+  cursor: default;
+}
+.tui-cd-verb:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 2px;
+}
+.tui-cd-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.6rem;
+  border-top: 1px solid var(--border-soft);
+}
+.tui-cd-reply-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font: 400 0.74rem/1.5 var(--font-sans);
+  color: var(--text-1);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+.tui-cd-reply-input:focus {
+  outline: none;
+  border-color: var(--fill-accent);
+}
+.tui-cd-reply-input::placeholder {
+  color: var(--text-3);
+  opacity: 0.8;
+}
+.tui-cd-reply-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.tui-cd-reply-hint {
+  margin-right: auto;
+  font-size: 0.66rem;
+  color: var(--text-4);
+}
+.tui-cd-error {
+  margin: 0;
+  padding: 0 0.7rem 0.6rem;
+  font-size: 0.68rem;
+  color: var(--text-bad-small);
+}
+.tui-cd-note {
+  padding: 0.55rem 0.7rem;
+}
+.tui-cd-note + .tui-cd-note {
+  border-top: 1px solid var(--border-soft);
+}
+.tui-cd-note-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.25rem;
+}
+.tui-cd-note-author {
+  font-weight: 500;
+  font-size: 0.72rem;
+}
+/* MR author (responding to feedback) vs reviewers/commenters (giving it). */
+.tui-cd-note-author.author {
+  color: var(--text-accent-small);
+}
+.tui-cd-note-author.commenter {
+  color: var(--text-purple-small);
+}
+.tui-cd-note-time {
+  color: var(--text-4);
+  font-size: 0.66rem;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.tui-cd-note-time:hover {
+  color: var(--text-accent-small);
+}
+.tui-cd-note-body {
+  font: 400 0.74rem/1.5 var(--font-sans);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+/* 18em is twelve lines at the body's 1.5 line-height. */
+.tui-cd-note-clamp[data-clamped='true'] {
+  max-height: 18em;
+  overflow: hidden;
+}
+.tui-cd-note-clamp[data-clamped='true'][data-overflow] {
+  mask-image: linear-gradient(
+    to bottom,
+    currentColor calc(100% - 3em),
+    transparent
+  );
+}
+.tui-cd-more {
+  display: inline-block;
+  margin-top: 0.35rem;
+}
+/* Rendered markdown inside a note. */
+/* Collapse the prose block's outer edges. These reach THROUGH the Markdown
+   recipe's root: mr-board used to render ReactMarkdown's output as the direct
+   children of .tui-cd-note-body, but the recipe wraps that output in a div of
+   its own, which a bare `> :first-child` would match instead of the first
+   paragraph -- silently restoring the last paragraph's 0.5rem bottom margin
+   and pushing every following note down 8px. `unstyled` does not help here:
+   it suppresses the recipe's CLASS, not its wrapper element. */
+.tui-cd-note-body [data-part='markdown'] > :first-child {
+  margin-top: 0;
+}
+.tui-cd-note-body [data-part='markdown'] > :last-child {
+  margin-bottom: 0;
+}
+.tui-cd-note-body p {
+  margin: 0 0 0.5rem;
+}
+.tui-cd-note-body a {
+  color: var(--text-accent-small);
+}
+.tui-cd-note-body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+}
+.tui-cd-note-body pre {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.tui-cd-note-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.82em;
+}
+.tui-cd-note-body ul,
+.tui-cd-note-body ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.2rem;
+}
+.tui-cd-note-body li {
+  margin: 0.1rem 0;
+}
+.tui-cd-note-body blockquote {
+  margin: 0 0 0.5rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-3);
+}
+.tui-cd-note-body h1,
+.tui-cd-note-body h2,
+.tui-cd-note-body h3,
+.tui-cd-note-body h4,
+.tui-cd-note-body h5,
+.tui-cd-note-body h6 {
+  margin: 0.4rem 0 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.tui-cd-note-body table {
+  border-collapse: collapse;
+  margin: 0 0 0.5rem;
+  font-size: 0.95em;
+}
+.tui-cd-note-body th,
+.tui-cd-note-body td {
+  border: 1px solid var(--border-soft);
+  padding: 0.2rem 0.4rem;
+}
+.tui-cd-note-body img {
+  max-width: 100%;
+}
+
+/* ── chrome ───────────────────────────────────────────────────────── */
+.tui-banner {
+  color: var(--text-warn-small);
+  border: 1px solid color-mix(in srgb, var(--fill-warn) 45%, transparent);
+  border-radius: 6px;
+  padding: 0.45rem 0.8rem;
+  font: 500 0.82rem/1.5 var(--font-sans);
+  margin-bottom: 1rem;
+  background: color-mix(in srgb, var(--fill-warn) 7%, transparent);
+}
+.tui-banner[data-intent='bad'] {
+  color: var(--text-bad-small);
+  border-color: color-mix(in srgb, var(--fill-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--fill-bad) 7%, transparent);
+}
+.tui-banner-btn {
+  margin-left: 0.6rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+.tui-banner-btn:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.tui-empty {
+  color: var(--text-2);
+  font: 500 0.9rem/1.5 var(--font-sans);
+  text-align: center;
+  margin-top: 3.5rem;
+}
+.tui-hidden-note {
+  color: var(--text-2);
+  font: 500 0.82rem/1.5 var(--font-sans);
+  text-align: center;
+  margin-top: 1.2rem;
+}
+.tui-loading {
+  color: var(--text-2);
+  text-align: center;
+  margin-top: 4rem;
+}
+.tui-footer {
+  color: var(--text-3);
+  font: 500 0.76rem/1.5 var(--font-sans);
+  text-align: center;
+  margin-top: 2.2rem;
+  opacity: 0.8;
+}
+/* Daemon data older than 10 minutes (or unknown) -- the warn hue, so "trust
+   this less" reads the same way everywhere the hue appears. */
+.tui-footer-stale {
+  color: var(--text-warn-vivid);
+  opacity: 1;
+}
+
+/* team sidebar layout */
+.tui-app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  align-items: start;
+  transition:
+    grid-template-columns 180ms ease,
+    gap 180ms ease;
+}
+.tui-app.tui-wide {
+  max-width: 1400px;
+}
+/* No <Sidebar> rendered (a codeowners tab, scoped by section rather than
+   roster) -- drop the 220px track, or grid auto-placement strands the lone
+   .tui-main child in that empty first column instead of the 1fr one. */
+@media (prefers-reduced-motion: reduce) {
+  .tui-app {
+    transition: none;
+  }
+}
+/* Caption for a roster that is not the configured team (a codeowners tab's is
+   inferred from the MRs in view). */
+.tui-side-note {
+  margin: 0 0 4px;
+  padding: 0 4px;
+  color: var(--text-4);
+  font-size: 0.6875rem;
+  font-family: var(--font-sans);
+}
+.tui-main {
+  min-width: 0;
+}
+/* The roster gets the same framed-panel backdrop as the MR groups -- bare
+   transparent buttons on the page grid disappear in dark mode. Item hover/
+   active fills step up to --card so they still read against it. */
+.tui-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 20px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+}
+/* Pending-decision callout above the roster: renders as the kit's filled
+   accent button (Sidebar.tsx), the same accent blue the rest of the chrome
+   speaks. Sized/weighted up from the kit's md button so it reads as a
+   banner rather than another roster row. */
+.tui-dq-open {
+  width: 100%;
+  margin-bottom: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--fill-accent) 45%, transparent);
+}
+
+/* Roster header: the All row plus a manage-roster gear beside it. */
+.tui-side-head {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+.tui-side-head .tui-side-item {
+  width: auto;
+  flex: 1;
+}
+.tui-side-gear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.tui-side-gear:hover {
+  background: var(--card);
+  color: var(--text-1);
+  border-color: var(--border);
+}
+.tui-side-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.tui-side-item:hover {
+  background: var(--card);
+}
+.tui-side-item.active {
+  border-color: var(--border);
+  background: var(--card);
+}
+.tui-side-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Wraps the count (+ optional "syncing" flag) as one flex item, so the row
+   keeps its two-item space-between layout instead of the flag floating
+   mid-row on its own. */
+.tui-side-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tui-side-count {
+  color: var(--text-4);
+  font-family: var(--font-sans);
+  font-size: 0.85em;
+}
+.tui-side-empty {
+  opacity: 0.45;
+}
+
+/* ── mobile: burger + drawer ──────────────────────────────────────── */
+.tui-burger {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+  cursor: pointer;
+  padding: 5px 7px;
+}
+.tui-burger:hover {
+  border-color: var(--fill-accent);
+}
+/* Only the title shares a band with the absolutely-positioned corner
+   (theme picker + app launcher), so the clearance belongs here rather than
+   on `.tui-header`'s padding -- padding there would also indent the
+   controls row, which wraps below the corner and had to scroll for it. */
+.tui-header-title {
+  min-width: 0;
+  padding-right: 10rem;
+}
+/* The left drawer IS the burger menu, which only exists below 720px (see the
+   media query below for the unhide). That is a BOARD LAYOUT decision, not a
+   property of "a left drawer", so the SideDrawer recipe does not carry it and
+   this residual gate stays here. It wins over the recipe's own
+   `display: flex` because style.css is UNLAYERED and every recipe rule sits
+   inside `@layer soribashi.recipes`. */
+[data-part='sidedrawer-overlay'][data-side='left'] {
+  display: none;
+}
+.tui-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+/* Inside the drawer the roster sits on the drawer's own panel: drop the
+   backdrop so it doesn't read as a box in a box. Fully qualified rather than
+   bare [data-part="sidedrawer"]: the comments drawer is the same recipe. */
+[data-part='sidedrawer'][data-side='left'] .tui-sidebar {
+  position: static;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.tui-drawer-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+/* Labeled, full-width control rows in the drawer. */
+.tui-ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tui-ctl-label {
+  flex-shrink: 0;
+  width: 48px;
+  color: var(--text-3);
+  font-size: 0.78rem;
+}
+.tui-drawer-controls [data-part='segmented'] {
+  flex: 1;
+}
+.tui-drawer-controls [data-part='segmented-option'] {
+  flex: 1;
+}
+.tui-drawer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.tui-drawer-action:hover {
+  border-color: var(--fill-accent);
+}
+.tui-drawer-action[data-copied] {
+  color: var(--text-ok);
+  border-color: var(--fill-ok);
+}
+
+@media (max-width: 720px) {
+  .tui-app {
+    grid-template-columns: 1fr;
+  }
+  .tui-app > .tui-sidebar {
+    display: none;
+  } /* roster moves into the drawer */
+  .tui-controls-header {
+    display: none;
+  } /* controls move into the drawer */
+  .tui-burger {
+    display: inline-flex;
+  }
+  .tui-header {
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1.1rem;
+  }
+  [data-part='sidedrawer-overlay'][data-side='left'] {
+    display: flex;
+  }
+}
+
+/* ── settings modal ───────────────────────────────────────────────── */
+/* The frame itself (overlay / panel / head) is the Modal recipe's now. These
+   two are NOT dead with it: Board.tsx's mobile drawer head and CommentsDrawer's
+   head each render their own .tui-modal-title / .tui-modal-x inside a
+   SideDrawer's children, where no Modal slot reaches. */
+.tui-modal-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-accent);
+}
+.tui-modal-x {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 5px;
+}
+.tui-modal-x:hover {
+  color: var(--text-1);
+  background: var(--card);
+}
+.tui-modal-sub {
+  color: var(--text-3);
+  font-size: 0.76rem;
+  margin: 0.2rem 0 0.9rem;
+}
+.tui-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tui-modal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border-radius: 6px;
+}
+.tui-modal-row:hover {
+  background: var(--card);
+}
+.tui-modal-row.out {
+  opacity: 0.5;
+}
+.tui-modal-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-check-box {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--fill-ok);
+  margin: 0;
+}
+.tui-check-box:disabled {
+  cursor: default;
+}
+.tui-modal-count {
+  flex-shrink: 0;
+  color: var(--text-4);
+  font-family: var(--font-sans);
+  font-size: 0.85em;
+}
+/* right side of a roster row: the peering affordance, then the MR count */
+.tui-modal-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── peering: invite / re-invite / join ───────────────────────────────── */
+/* "already has a board" marker, in the quiet small-caps register of .tui-modal-count */
+.tui-peered {
+  flex-shrink: 0;
+  color: var(--text-4);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* small action button, in the .tui-draft-act family but sized for a list row */
+.tui-invite-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+}
+.tui-invite-btn:hover:not(:disabled) {
+  background: var(--card);
+}
+.tui-invite-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* One green, TWO producers, signalled differently -- both selectors are
+   load-bearing. The CopyButton recipe ("copy invite") stamps `data-copied`
+   after a successful write; the ARMED RE-INVITE is a plain board button that
+   sets the `copied` CLASS itself while it waits for its confirm click. Drop
+   the class half and the armed state goes unstyled -- and no capture arms a
+   re-invite, so the pixel gate would not catch it. */
+.tui-invite-btn.copied,
+.tui-invite-btn[data-copied] {
+  color: var(--text-ok-small);
+  border-color: var(--fill-ok);
+}
+/* free-text handle entry, and the join input: field + button on one line */
+.tui-invite-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0.7rem;
+}
+.tui-invite-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+}
+.tui-invite-input::placeholder {
+  color: var(--text-3);
+}
+/* the issued invite: the string itself, its copy button, and what it's good for */
+.tui-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tui-invite-code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-invite-note {
+  flex-basis: 100%;
+  color: var(--text-4);
+  font-size: 0.72rem;
+}
+.tui-invite-error {
+  color: var(--text-bad-small);
+  margin: 0.6rem 0 0;
+}
+/* join / re-join sits below the roster, separated the way the modal separates
+   its own sections: a hairline rule, not a heading. */
+.tui-join-row {
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+.tui-join-label {
+  color: var(--text-3);
+  font-size: 0.76rem;
+}
+.tui-join-warning {
+  color: var(--text-bad-small);
+  margin: 0 0 0.5rem;
+}
+/* collapsed affordance: a text button, so a healthy board isn't nagged by a form */
+.tui-join-toggle {
+  padding: 0;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  text-decoration: underline;
+}
+.tui-join-toggle:hover {
+  color: var(--text-1);
+}
+
+/* ── stacked chains ───────────────────────────────────────────────── */
+/* A chain reads as one unit: a single thread rail spans the children
+   (cyan, the stacked flag's hue), the row dividers inside the
+   chain go quiet, and the boundary dividers move to the wrapper since the
+   wrapper breaks .tui-row + .tui-row adjacency. */
+/* Opaque rail color (cyan over the panel tone): the rail is drawn as
+   overlapping per-row segments, and translucent segments double up into
+   darker patches at every joint. */
+.tui-stack-rows {
+  position: relative;
+  --stack-rail: color-mix(in srgb, var(--cyan) 38%, var(--panel));
+  --stack-indent: 20px;
+}
+.tui-row + .tui-stack-rows,
+.tui-stack-rows + .tui-row,
+.tui-stack-rows + .tui-stack-rows {
+  border-top: 1px solid var(--border-soft);
+}
+.tui-stack-children .tui-row {
+  border-top: none;
+}
+/* One indent level regardless of depth: chain order alone carries the
+   hierarchy, so a deep stack never marches off the right edge. */
+/* Padding, not margin: the row box (and its attention bar) stays flush to
+   the list edge; only the gutter and body step in. */
+.tui-row-nested {
+  padding-left: var(--stack-indent);
+}
+/* Every segment lives on a tui-row-pick pseudo-element: the gutter is a
+   --pick-h box sitting --pick-offset below every row's --row-pad, so the
+   dot's center is always half a pick below the pick's top. Segments run to
+   the row's edges (the row clips there) and butt end to end. */
+.tui-stack-rows {
+  --dot-x: calc(var(--gutter-w) / 2);
+  --pick-below: calc(
+    var(--row-h) - var(--row-pad) - var(--pick-offset) - var(--pick-h)
+  );
+}
+/* Parent: a stub from under its dot down through its bottom edge. */
+.tui-stack-rows > .tui-row > .tui-row-pick::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  background: var(--stack-rail);
+  left: calc(50% - 1px);
+  top: calc((var(--pick-h) + var(--dot-size)) / 2);
+  bottom: calc(-1 * var(--pick-below));
+}
+/* The stub starts under whichever marker is showing, like the arm below. */
+.tui-stack-rows > .tui-row:hover > .tui-row-pick::after,
+.tui-stack-rows > .tui-row > .tui-row-pick:focus-within::after,
+.tui-rows[data-selecting] .tui-stack-rows > .tui-row > .tui-row-pick::after {
+  top: calc((var(--pick-h) + var(--check-size)) / 2);
+}
+/* A row carrying a note is taller than --row-h, so its rail segment cannot
+   be measured from that constant. The row clips, so an overshoot lands on
+   the row's own bottom edge exactly. */
+.tui-stack-rows > .tui-row[data-note] > .tui-row-pick::after,
+.tui-row-nested[data-note] .tui-row-pick::before {
+  bottom: -400px;
+}
+/* Children: the rail continues at the parent's dot x, which in the nested
+   pick's coordinates is that x less the indent. The last child's segment
+   stops at its own dot's center, where the arm meets it. */
+.tui-row-nested .tui-row-pick::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  background: var(--stack-rail);
+  left: calc(var(--dot-x) - var(--stack-indent) - 1px);
+  top: calc(-1 * (var(--row-pad) + var(--pick-offset)));
+  bottom: calc(-1 * var(--pick-below));
+}
+.tui-row-nested:last-child .tui-row-pick::before {
+  bottom: auto;
+  height: calc(var(--row-pad) + var(--pick-offset) + var(--pick-h) / 2);
+}
+/* Arm from the rail to the child's dot, on the dot's center line. It starts
+   at the rail's own x so the corner joins cleanly, and runs under the dot
+   (the gutter isolates its stacking) to the dot's center. */
+.tui-row-nested .tui-row-pick::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  height: 2px;
+  background: var(--stack-rail);
+  left: calc(var(--dot-x) - var(--stack-indent) - 1px);
+  width: calc(var(--stack-indent) + 1px - var(--dot-size) / 2);
+  top: calc(var(--pick-h) / 2 - 1px);
+}
+/* The arm ends at whichever marker is showing: the dot at rest, the wider
+   checkbox under the pointer or while a selection exists. */
+.tui-row-nested:hover .tui-row-pick::after,
+.tui-row-nested .tui-row-pick:focus-within::after,
+.tui-rows[data-selecting] .tui-row-nested .tui-row-pick::after {
+  width: calc(var(--stack-indent) + 1px - var(--check-size) / 2);
+}
+
+/* The decision queue's sheet scope. */
+.tui-gate-sheet {
+  /* Card ground needs its own edge in dark: --border and --border-soft sit
+     too close to --card there, so this scope re-points them (and
+     --border-control) onto the kit's on-card roles. In light the on-card
+     roles equal the base ones, so this is a no-op. */
+  --border: var(--border-on-card);
+  --border-soft: var(--border-soft-on-card);
+  --border-control: var(--border-control-on-card);
+  /* One scale for the whole surface: four text sizes, three rhythm steps,
+     one button geometry. Every rule below consumes these. */
+  --gate-font-display: var(--type-display);
+  --gate-font-title: var(--type-title);
+  --gate-font-body: var(--type-body);
+  --gate-font-meta: var(--type-meta);
+  --gate-font-small: var(--type-small);
+  --gate-font-micro: var(--type-micro);
+  --gate-gap: var(--spacing-rem95);
+  --gate-gap-inner: var(--spacing-rem80);
+  --gate-gap-row: var(--spacing-px10);
+  --gate-pad-card: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl);
+  --gate-pad-chrome: var(--spacing-px8) var(--spacing-px10);
+  --gate-radius-card: var(--radius-xl);
+  --gate-radius-control: var(--radius-lg);
+  --gate-radius-btn: var(--radius-md);
+}
+/* A question card always renders at its natural height inside its scrolling
+   column; only its context (prose or a thread card, see
+   `.tui-gate-question-context` / `.tui-thread-card`) carries its own
+   viewport-relative cap. */
+.tui-gate-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-inner);
+  border: 1px solid var(--border);
+  border-radius: var(--gate-radius-card);
+  background: var(--card);
+  margin: 0;
+  padding: var(--gate-pad-card);
+  min-inline-size: 0;
+}
+/* Bleeds through the card padding to the frame, a shade under the ground,
+   sealed with a soft rule. */
+.tui-gate-question-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -1rem -1.1rem 0;
+  padding: 0.6rem 1.1rem;
+  background: var(--surface-wash-fg-4-card);
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: calc(var(--gate-radius-card) - 1px)
+    calc(var(--gate-radius-card) - 1px) 0 0;
+}
+.tui-gate-question-label {
+  font-size: var(--gate-font-title);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-1);
+}
+.tui-gate-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-row);
+  min-width: 0;
+}
+.tui-gate-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--gate-gap-row);
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--gate-radius-control);
+  background: transparent;
+  font-size: var(--gate-font-body);
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.tui-gate-choice:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.tui-gate-choice[data-checked] {
+  border-color: var(--fill-accent);
+  background: color-mix(in srgb, var(--fill-accent) 10%, transparent);
+}
+/* A recorded answer reads as the pick it was, not as a live control. */
+.tui-gate-question[data-readonly]
+  :is(.tui-gate-choice, .tui-gate-choice-input) {
+  cursor: default;
+}
+.tui-gate-question[data-readonly] .tui-gate-choice:not([data-checked]):hover {
+  background: transparent;
+}
+.tui-gate-choice:has(> input:focus-visible) {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 1px;
+}
+/* tui-kit's own RadioGroup recipe (packages/tui-kit/src/recipes/Field/Field.tsx)
+   draws no themed control at all -- its per-option `<input>` is bare native
+   with zero rules on the input itself (Field.module.css only lays out the
+   option row), so there is no existing look to reuse here. This draws the
+   control by hand instead: appearance:none plus a checked fill from the
+   tokens already used across this block. Every choice input carries
+   data-type "radio" or "checkbox", so one class covers both shapes. */
+.tui-gate-choice-input {
+  appearance: none;
+  margin: 0;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--border-control);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.tui-gate-choice-input[data-type='checkbox'] {
+  border-radius: 3px;
+}
+.tui-gate-choice-input[data-checked] {
+  border-color: var(--fill-accent);
+  background: var(--fill-accent);
+}
+.tui-gate-choice-input:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 2px;
+}
+.tui-gate-choice-label {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* Wraps so a narrow column moves the chip under the label instead of
+   squeezing the label to one letter per line. */
+.tui-gate-choice-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+/* An option's own `description`, one line under its label -- matching the
+   pane's AskUserQuestion layout (label line, one-liner beneath). It reads
+   in --text-2, not the muted step: on a respond gate's fix option it is the
+   planned change, the thing being chosen. Absent on options with no
+   description, so the row above stays the whole label. */
+.tui-gate-choice-subtitle {
+  font-size: var(--gate-font-meta);
+  line-height: 1.4;
+  color: var(--text-2);
+}
+/* A question's own `context` field, rendered with its card above its
+   choices. It is the material the choice is made on, so it reads in ink.
+   A viewport-relative cap keeps an unusually long one from pushing the
+   choices below it out of view; it scrolls internally past the cap. */
+.tui-gate-question-context {
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-gate-question-context [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-gate-question-context [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+/* The small uppercase tags: a thread's severity, a reply's verb, a
+   finding's disposition. Grey unless a hue names what needs the eye. */
+.tui-respond-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font: 700 9px / 1.2 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.tui-respond-pill[data-hue='amber'],
+.tui-respond-chip[data-hue='amber'] {
+  color: var(--text-warn-small);
+  background: color-mix(in srgb, var(--fill-warn) 17%, transparent);
+}
+.tui-respond-pill[data-hue='green'],
+.tui-respond-chip[data-hue='green'] {
+  color: var(--text-ok-small);
+  background: color-mix(in srgb, var(--fill-ok) 17%, transparent);
+}
+.tui-respond-pill[data-hue='accent'],
+.tui-respond-chip[data-hue='accent'] {
+  color: var(--text-accent-small);
+  background: color-mix(in srgb, var(--fill-accent) 17%, transparent);
+}
+.tui-respond-pill-sha {
+  text-transform: none;
+}
+/* A structured thread's head: file:line and its severity lead. */
+.tui-gate-question[data-gate-ctx='thread'] .tui-gate-question-head {
+  justify-content: flex-start;
+  align-items: center;
+}
+/* Same role as `.tui-gate-question-context`, for a structured thread's
+   claim / points / verdict / reply instead of plain prose: the whole card
+   scrolls as a unit once it hits its own viewport-relative cap, rather
+   than the choices below it losing any ground. */
+.tui-thread-card {
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-thread-card [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-thread-card [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-thread-points {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tui-thread-points li::marker {
+  color: var(--text-2);
+}
+.tui-thread-verdict {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.tui-thread-verdict-k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+/* The post step's outcome chip holds the card head's right edge; the
+   edited mark rides beside it at the same size. */
+.tui-respond-chip:is(.tui-thread-outcome, .tui-thread-edited) {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.tui-respond-chip.tui-thread-outcome {
+  margin-left: auto;
+}
+.tui-thread-nothing {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-3);
+}
+/* Post and hold are one choice, side by side; resolve is independent of
+   both, so it takes its own row. */
+.tui-post-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-row);
+}
+.tui-post-controls > .tui-gate-choices {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.tui-post-controls > .tui-gate-choices > .tui-gate-choice {
+  flex: 1 1 220px;
+}
+/* The resolve tick is painted with the on-fill token through a mask, so it
+   follows the fill it sits on in either scheme. */
+.tui-check {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.tui-check-tick {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--on-fill-accent);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+  opacity: 0;
+}
+.tui-check > [data-checked] + .tui-check-tick {
+  opacity: 1;
+}
+.tui-thread-verdict-call {
+  font-weight: 700;
+  color: var(--text-2);
+}
+.tui-thread-verdict-call[data-call='valid'] {
+  color: var(--text-ok-small);
+}
+.tui-thread-verdict-call[data-call='valid-low-value'] {
+  color: var(--text-warn-small);
+}
+/* pushback: the claim is wrong and the reply says so. needs-clarification:
+   a hold, with the question for the reviewer in the note. */
+.tui-thread-verdict-call[data-call='pushback'] {
+  color: var(--text-bad-small);
+}
+.tui-thread-verdict-call[data-call='needs-clarification'] {
+  color: var(--text-accent-small);
+}
+.tui-thread-verdict-note {
+  color: var(--text-2);
+}
+/* The reply box: green when it holds the exact text that will be posted,
+   neutral when it only holds the intent of a reply. */
+.tui-thread-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fill-ok) 12%, transparent);
+}
+.tui-thread-reply[data-kind='direction'] {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.tui-thread-reply-k {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-ok-small);
+}
+.tui-thread-reply[data-kind='direction'] .tui-thread-reply-k {
+  color: var(--text-2);
+}
+/* The margins undo the padding plus border, so the words sit exactly where
+   the resting reply drew them and opening the box moves nothing. */
+.tui-thread-reply-input {
+  width: calc(100% + 18px);
+  box-sizing: border-box;
+  margin: -4px -9px;
+  padding: 3px 8px;
+  font: inherit;
+  color: var(--text-1);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+}
+/* Drawn over the border, inside the box: outside it, the ring would crowd
+   the label above and the reply fill's edge. */
+.tui-thread-reply-input:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: -2px;
+}
+.tui-thread-reply-actions {
+  display: flex;
+  gap: 12px;
+}
+.tui-thread-reply-action {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-4);
+  cursor: pointer;
+}
+.tui-thread-reply-action:hover {
+  color: var(--text-accent-small);
+  text-decoration: underline;
+}
+/* A respond-post reply option carries the full reply text, so the box
+   tops its checkbox against the first line instead of centring it. */
+[data-gate-ctx='replies'] .tui-gate-choice {
+  align-items: flex-start;
+}
+.tui-reply-choice-file {
+  font-weight: 500;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.tui-reply-choice-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.tui-reply-choice-text [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-reply-choice-text [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+/* The recommended choice is marked only while its question has no pick,
+   so the eye lands on it before the pointer does; once anything is picked,
+   the pick is the only highlighted choice. A recorded answer never marks
+   it. */
+:is(.tui-gate-question, .tui-sheet-dock-question):not(
+    :has([data-checked]),
+    [data-readonly]
+  )
+  .tui-gate-choice[data-recommended] {
+  border-color: color-mix(in srgb, var(--fill-accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--fill-accent) 7%, transparent);
+}
+.tui-gate-note {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: var(--gate-font-body);
+  color: var(--text-1);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tui-gate-note::placeholder {
+  color: var(--text-2);
+}
+.tui-gate-note:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 1px;
+}
+.tui-gate-error {
+  margin-right: auto;
+  color: var(--text-bad-small);
+  font-size: var(--gate-font-meta);
+}
+.tui-gate-summary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.tui-gate-summary-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: var(--gate-font-body);
+}
+.tui-gate-summary-row dt {
+  color: var(--text-2);
+}
+.tui-gate-summary-row dd {
+  margin: 0;
+  color: var(--text-1);
+}
+.tui-gate-chip {
+  font-size: 0.75rem;
+  color: var(--tui-text, inherit);
+}
+.tui-gate-summary-note {
+  font-size: 0.6875rem;
+  color: var(--text-3);
+  white-space: pre-wrap;
+}
+/* The words that posted in the developer's name, one role stronger than the
+   note beside them. */
+.tui-gate-summary-reply {
+  margin-top: 4px;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The identity card each sheet leads its rail with. Only the top line is a
+   row (invader, lead, links); everything below spans the card's full
+   width, so nothing wraps under a prefix or an avatar column. */
+.tui-id-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.tui-id-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 2px;
+}
+/* The invader and name travel as one inline unit wherever a sheet names a
+   person, a card's lead line or a heading alike. */
+.tui-person {
+  white-space: nowrap;
+}
+/* Only the invader is centred on the line; the name stays inline text so
+   it shares the sentence's baseline. */
+.tui-person-avatar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 22px;
+  height: 22px;
+  margin: -3px 7px 0 0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.tui-id-card-lead {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--text-1);
+}
+.tui-id-card-lead strong {
+  font-weight: 700;
+}
+.tui-id-card-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-1);
+}
+.tui-id-card-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.tui-id-card-ref {
+  font-weight: 500;
+  color: var(--text-accent);
+}
+.tui-id-card-branch {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-respond-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tui-respond-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font: 500 11px / 1.2 var(--font-sans);
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.tui-triage-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 560px;
+  min-height: 0;
+  padding: 1.6rem 0 0.8rem;
+}
+.tui-triage-done-badge {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--text-ok-vivid);
+  background: color-mix(in srgb, var(--fill-ok) 17%, transparent);
+}
+.tui-triage-done-heading {
+  margin: 0.2rem 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.tui-triage-done-counts {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-3);
+}
+.tui-triage-done-badge,
+.tui-triage-done-heading {
+  animation: tui-done-rise 220ms ease-out both;
+}
+.tui-triage-done-heading {
+  animation-delay: 50ms;
+}
+@keyframes tui-done-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tui-triage-done-badge,
+  .tui-triage-done-heading {
+    animation: none;
+  }
+}
+.tui-triage-done-recap {
+  align-self: stretch;
+  min-height: 0;
+  margin-top: 0.8rem;
+}
+/* Rows share the list's columns through subgrid, so every title starts at
+   the same x whatever width its ref and kind take. */
+.tui-triage-done-list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  column-gap: 10px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.tui-triage-done-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  row-gap: 2px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.tui-triage-done-row:first-child {
+  padding-top: 4px;
+  border-top: none;
+}
+.tui-triage-done-row:last-child {
+  padding-bottom: 0;
+}
+.tui-triage-done-ref {
+  white-space: nowrap;
+  font: 500 var(--gate-font-meta) / 1.4 var(--font-mono);
+  color: var(--text-2);
+}
+/* Pinned to its column so a row without an MR (no ref) leaves the ref
+   column empty instead of sliding its kind under the refs. */
+.tui-triage-done-row > .tui-respond-chip {
+  grid-column: 2;
+  justify-self: start;
+}
+.tui-triage-done-title,
+.tui-triage-done-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+.tui-triage-done-subject {
+  font: var(--gate-font-meta) / 1.4 var(--font-mono);
+}
+.tui-triage-done-outcome {
+  grid-column: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+}
+.tui-triage-done-outcome[data-pending],
+.tui-triage-done-by {
+  color: var(--text-4);
+}
+.tui-triage-done-action {
+  margin-top: 0.5rem;
+}
+/* The header's slack filter glyph (Controls.tsx's SlackPostedMark); rows
+   carry their own `.tui-mark` marks instead. */
+.tui-slack-posted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+}
+.tui-slack-posted svg {
+  display: block;
+}
+/* held-draft drawer: the verbatim note text plus the post/dismiss gate */
+.tui-draft-modal {
+  max-width: 680px;
+}
+.tui-draft-body {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  margin: 0;
+  color: var(--text-1);
+}
+.tui-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.9rem;
+}
+.tui-draft-note {
+  margin-right: auto;
+  color: var(--text-3);
+  font-size: 0.76rem;
+}
+.tui-draft-error {
+  margin-right: auto;
+  color: var(--text-bad-small);
+  font-size: 0.76rem;
+}
+.tui-draft-act {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+}
+.tui-draft-act:hover:not(:disabled) {
+  background: var(--card);
+}
+.tui-draft-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tui-draft-act-post {
+  color: var(--text-warn);
+  border-color: var(--fill-warn);
+}
+/* armed = the in-drawer confirm step; filled so "this will send" is unmissable */
+.tui-draft-act-post.armed {
+  background: var(--fill-warn);
+  color: #1c2024;
+}
+.tui-draft-act-post.armed:hover:not(:disabled) {
+  background: var(--fill-warn-hover);
+  opacity: 0.9;
+}
+/* clickable badge (a saved review exists): `.tui-review-open`'s font reset,
+   pointer cursor, hover wash and focus ring are Chip's `as="button"` form,
+   keyed on the element (`:is(button, a)`) inside the recipe. */
+
+/* center the near-fullscreen review modal (the shared overlay top-aligns
+   with 8vh padding, which would clip a 94vh box) */
+.tui-review-overlay {
+  align-items: center;
+  padding: 1rem;
+}
+/* review modal: near-fullscreen reading surface. Fixed header, scrolling body,
+   and a capped text measure so prose stays readable on a wide screen. */
+.tui-review-modal {
+  width: 96vw;
+  max-width: 1100px;
+  height: 94vh;
+  max-height: 94vh;
+  padding: 1.4rem 1.8rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tui-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 0.8rem;
+  padding-right: 0.4rem;
+}
+/* The Markdown recipe absorbed `.tui-md`'s own typography, but NOT this: it is
+   a CONTEXTUAL rule keyed on an ancestor (the review modal's scrolling body),
+   capping the reading measure only there. A recipe has no ancestor to key off,
+   so it survives, rewritten onto the recipe's data-part. */
+.tui-review-body [data-part='markdown'] {
+  max-width: 820px;
+  margin: 0 auto;
+  padding-bottom: 1.5rem;
+}
+
+/* ── row action menu (right-click): what the ContextMenu recipe left behind ──
+   The menu's whole shell is `[data-part="contextmenu"]` now -- the fixed box,
+   the 200px measure, the 90ms entry animation, the measured viewport clamp,
+   the label/item/hint/separator parts and the item's hover/focus wash and
+   disabled dim all live in the kit. Three groups survive here, none of which a
+   menu shell could own:
+
+   1. NOTE MODE (`.tui-menu-noting`, `.tui-menu-note`, `.tui-menu-note-hint`).
+      An application mode, not menu chrome: it knows about launch notes, the
+      alt key, and the board's auto-grow textarea. RowMenu renders it INSIDE
+      the recipe's surface, passing `.tui-menu-noting` as `className` (the
+      builder folds a consumer class into the root slot). This file is
+      UNLAYERED and the recipe sits in `@layer soribashi.recipes`, so the
+      width/padding below win over `.root`'s at any specificity.
+   2. THE ONE ANCESTOR-SCOPED RULE, rewritten rather than kept: its old
+      descendant `.tui-menu-label` was absorbed, so it is re-anchored on the
+      recipe's self-identifying part -- still scoped by the note-mode class the
+      board keeps stamping.
+   3. TRAILING BOARD CHROME (`.tui-menu-check`, `.tui-menu-spin`). Both are
+      arbitrary nodes the caller hands to an item's `trailing` prop, which the
+      shell never inspects; they are `.tui-menu-*`-named for history only. */
+
+/* Note mode: the menu swaps to a labelled textarea. Wider than the item list
+   so a sentence fits without clipping; the textarea grows to its content
+   (height driven from JS, like the selection bar's header box). */
+.tui-menu-noting {
+  width: 320px;
+  padding: 6px;
+}
+.tui-menu-noting [data-part='contextmenu-label'] {
+  margin-bottom: 6px;
+}
+.tui-menu-note {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  line-height: 1.5;
+  color: var(--text-1);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  overflow-y: auto;
+  max-height: 40vh;
+}
+.tui-menu-note:focus {
+  outline: none;
+  border-color: var(--fill-accent);
+}
+.tui-menu-note::placeholder {
+  color: var(--text-3);
+  opacity: 0.8;
+}
+.tui-menu-note-hint {
+  font-family: var(--font-sans);
+  font-size: 0.625rem;
+  color: var(--text-4);
+  padding: 6px 3px 2px;
+}
+/* Item labels: every item leads with one icon that says where the click
+   lands; an agent action wears the bot mark in its lane's color, the same
+   grammar as the status line's verbs. */
+.tui-menu-icon-label,
+.tui-menu-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.tui-menu-icon-label svg {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.tui-menu-emoji {
+  font-size: 13px;
+  line-height: 1;
+  width: 13px;
+  text-align: center;
+}
+/* A bulk item that cannot run keeps its words on one line with the reason
+   wrapped under them, indented past the 13px icon and 9px gap. The
+   recipe's :disabled rule dims the whole item. */
+.tui-menu-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tui-menu-reason {
+  max-width: 15rem;
+  padding-left: 22px;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: normal;
+}
+/* A selection no bulk action fits: one line where the items would be,
+   padded like an item so the menu keeps its shape. */
+.tui-menu-empty {
+  padding: 7px 8px;
+  color: var(--text-3);
+}
+.tui-menu-agent {
+  font-weight: 600;
+  color: var(--lane);
+}
+.tui-menu-agent[data-lane='review'] {
+  --lane: var(--text-accent);
+}
+.tui-menu-agent[data-lane='respond'] {
+  --lane: var(--text-ok-vivid);
+}
+.tui-menu-agent[data-lane='doctor'] {
+  --lane: var(--orange);
+}
+/* Trailing nodes a slack-mark item hands the shell: the set mark, and the
+   in-flight spinner that replaces it while the reaction is being written. */
+.tui-menu-check {
+  color: var(--text-ok-small);
+  font-size: 0.75rem;
+}
+.tui-menu-spin {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-top-color: var(--fill-accent);
+  border-radius: 50%;
+  display: inline-block;
+  animation: tui-spin 0.7s linear infinite;
+}
+
+/* rows are clickable (open MR); local rows also right-click for actions */
+.tui-row[data-local='1'] {
+  cursor: context-menu;
+}
+
+/* ── board settings (ConfigModal) ─────────────────────────────────────────── */
+.tui-config-modal {
+  max-width: min(920px, 94vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tui-config-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+  margin-right: -0.4rem;
+}
+.tui-config-filter {
+  width: 100%;
+  margin: 0.6rem 0 0.5rem;
+}
+.tui-config-group {
+  margin: 0.9rem 0 0.25rem;
+  color: var(--text-4);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.tui-config-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tui-config-row {
+  position: relative;
+  padding: 7px 8px 8px 14px;
+  border-radius: 6px;
+}
+.tui-config-row + .tui-config-row {
+  border-top: 1px solid var(--border-soft);
+}
+/* the bar means "present in a store": board.* rows carry no registry
+   defaults, so the alternative is the app-side fallback, not a default */
+.tui-config-row.set::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fill-accent);
+}
+.tui-config-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-disclosure-head {
+  cursor: pointer;
+  user-select: none;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.tui-disclosure-head:hover {
+  background: color-mix(in srgb, var(--fill-accent-hover) 8%, transparent);
+}
+.tui-disclosure-head:focus-visible {
+  outline: 1px solid var(--fill-accent);
+  outline-offset: 1px;
+}
+.tui-disclosure-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--text-2);
+  transition:
+    transform 180ms ease,
+    color 120ms ease;
+}
+.tui-disclosure-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+.tui-disclosure-head.open .tui-disclosure-chevron {
+  transform: rotate(90deg);
+}
+.tui-disclosure-head:hover .tui-disclosure-chevron {
+  color: var(--text-1);
+}
+.tui-config-tip {
+  display: inline-flex;
+}
+.tui-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms ease;
+}
+.tui-disclosure.open {
+  grid-template-rows: 1fr;
+}
+.tui-disclosure-body {
+  min-height: 0;
+  overflow: hidden;
+}
+.tui-disclosure.open .tui-disclosure-body {
+  padding-top: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tui-disclosure,
+  .tui-disclosure-chevron {
+    transition: none;
+  }
+}
+.tui-config-keyname {
+  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+}
+.tui-config-badge {
+  margin-left: auto;
+  color: var(--text-4);
+  font-size: 0.66rem;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tui-config-clear {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0 4px;
+  font: inherit;
+  line-height: 1;
+}
+.tui-config-clear:hover:not(:disabled) {
+  color: var(--text-1);
+}
+.tui-config-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tui-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+  background: none;
+  color: var(--text-4);
+  font: 600 10px/1 var(--font-sans);
+  cursor: help;
+}
+.tui-info:hover,
+.tui-info:focus-visible {
+  color: var(--text-1);
+  border-color: var(--fg);
+}
+.tui-info-card {
+  max-width: 400px;
+  font-family: var(--font-sans);
+  background: var(--fg);
+  color: var(--bg);
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+.tui-config-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-config-control > .tui-invite-input {
+  flex: 1;
+  max-width: 440px;
+}
+.tui-config-control .tui-invite-input.dirty {
+  border-color: var(--fill-accent);
+}
+.tui-config-control select {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  color: var(--text-1);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.tui-config-status {
+  min-width: 4.5em;
+  color: var(--text-ok-vivid);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.tui-config-status.busy {
+  color: var(--text-4);
+}
+.tui-config-error {
+  margin: 4px 0 0;
+  color: var(--text-bad-small, #d66);
+  font-size: 0.78rem;
+}
+.tui-config-value {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.tui-config-flag {
+  margin-left: 6px;
+  color: var(--text-warn-vivid);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+}
+.tui-config-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-accent-small);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+.tui-config-leaves {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  flex: 1;
+}
+.tui-config-leaf {
+  display: contents;
+}
+.tui-config-leaves-error {
+  grid-column: 1 / -1;
+}
+.tui-config-leaf-label {
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  color: var(--text-3);
+}
+.tui-config-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  flex: 1;
+}
+.tui-config-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.tui-config-chip button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+.tui-config-chip button:hover:not(:disabled) {
+  color: var(--text-bad-small);
+}
+.tui-config-chips .tui-invite-input {
+  flex: 0 1 150px;
+  min-width: 90px;
+}
+.tui-config-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.tui-config-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4em;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── board tabs ──────────────────────────────────────────────────────────── */
+/* A strip above the content it scopes, not another control in the header row. */
+.tui-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+/* The buttons carry the surface, not the strip: a tab sitting straight on the
+   page's grid-paper background is hard to read. The fill is the fg tint
+   mixed OVER --bg, not over transparent: light's chrome was near-identical
+   to the page ground, and a translucent wash let the grid pattern show
+   through the pill. */
+.tui-tab {
+  padding: 7px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--fg) 5%, var(--page));
+  color: var(--text-3);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+/* The active tab is marked by the accent underline and --text-1 text, not
+   by a lighter fill: a white active tab against the strip was the loudest
+   seam on the page. */
+.tui-tab:hover {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--fg) 8%, var(--page));
+}
+.tui-tab.active {
+  color: var(--text-1);
+  border-bottom-color: var(--fill-accent, var(--fg));
+}
+/* A tab's live count: the group header's count in miniature, so the strip
+   reads the way the groups below it do. */
+.tui-tab-count {
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-accent-small);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tui-tab {
+    transition: none;
+  }
+}
+
+/* Roster editing lives in board settings beside the key it edits; the roster
+   panel stays the quick check-in/out surface. */
+.tui-roster-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.tui-roster-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--page);
+}
+.tui-roster-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+}
+.tui-roster-who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8125rem;
+}
+.tui-roster-who .tui-invite-input {
+  flex: 1;
+  min-width: 0;
+}
+.tui-roster-handle {
+  color: var(--text-4);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+}
+.tui-roster-out {
+  color: var(--text-4);
+  font-size: 0.6875rem;
+}
+.tui-roster-add {
+  display: flex;
+  gap: 6px;
+}
+.tui-roster-add .tui-modal-input {
+  flex: 1;
+  min-width: 0;
+}
+.tui-modal-input {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.tui-modal-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
+}
+.tui-modal-btn:hover:not(:disabled) {
+  color: var(--text-1);
+}
+.tui-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tui-modal-btn.danger {
+  color: var(--text-bad-small);
+  border-color: currentcolor;
+}
+.tui-modal-error {
+  margin: 4px 0 0;
+  color: var(--text-bad-small);
+  font-size: 0.75rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tui-modal-btn {
+    transition: none;
+  }
+}
+.tui-tabs-list {
+  gap: 12px;
+  padding: 10px;
+  max-height: 60vh;
+}
+.tui-tabs-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.tui-tabs-item-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tui-tabs-item-head .tui-invite-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+.tui-tabs-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 14px;
+  align-items: center;
+}
+.tui-tabs-field {
+  display: contents;
+}
+.tui-tabs-field > span {
+  color: var(--text-4);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.tui-tabs-field .tui-invite-input {
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
+}
+.tui-tabs-check {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  gap: 8px;
+}
+.tui-tabs-fields > .tui-modal-error {
+  grid-column: 2;
+  margin: -4px 0 0;
+}
+.tui-tabs-add {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.tui-tabs-add .tui-modal-input {
+  flex: 1 1 180px;
+}
+.tui-tabs-kind {
+  flex: 0 0 auto;
+}
+.tui-tabs-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--fill-bad);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fill-bad) 8%, var(--panel));
+}
+.tui-tabs-drop .tui-modal-error {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.tui-tabs-drop .tui-modal-input {
+  flex: 1 1 200px;
+}
+
+/* the full-screen frame every decision-queue face renders in */
+.tui-gate-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  gap: 0;
+  background: var(--card);
+  color: var(--text-1);
+  font-size: var(--gate-font-body);
+  display: flex;
+  flex-direction: column;
+}
+.tui-gate-sheet-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tui-gate-sheet-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.tui-gate-sheet-trail {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.tui-gate-sheet-title {
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--text-1);
+}
+.tui-gate-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-gate-sheet-actions [data-part='button'] {
+  font-weight: 500;
+}
+.tui-gate-queue-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tui-gate-queue-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tui-gate-queue-pip {
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+}
+.tui-gate-queue-pip[data-state='done'] {
+  background: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.tui-gate-queue-pip[data-state='active'] {
+  background: var(--fill-accent);
+}
+.tui-gate-queue-pip[data-state='todo'] {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+/* Fixed width and tabular digits: the count never changes the nav's
+   width, so the chevrons stay put under the pointer from gate to gate. */
+.tui-gate-queue-where {
+  min-width: 8ch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.tui-gate-queue-pos {
+  line-height: 1.2;
+  font-size: var(--gate-font-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.tui-gate-sheet-tag {
+  font-size: var(--gate-font-meta);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.tui-gate-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.tui-gate-sheet-close:hover {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.tui-sheet-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+/* The finished queue's recap reads as one centred column. */
+.tui-triage-sheet-body {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap);
+}
+.tui-triage-sheet-body > .tui-triage-done {
+  margin: auto;
+}
+.tui-sheet-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 28px;
+}
+.tui-sheet-rail {
+  width: 470px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The rail splits in two: reference material scrolls, the decision docks.
+   The submit is the one control a long report must never push off-screen,
+   so the scroll lives on the half above it rather than on the rail. */
+.tui-sheet-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* The rail itself carries no padding: the scroller owns it, so it fills
+     the rail edge to edge and its scrollbar rides the rail's own edge
+     instead of floating inside a gutter. */
+  padding: 22px 26px 14px;
+}
+
+/* MR card */
+/* An MR card's external homes, riding its top-right edge. */
+.tui-mr-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.tui-mr-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.tui-mr-link:hover {
+  color: var(--text-1);
+  border-color: var(--fill-accent);
+}
+.tui-person-name {
+  color: var(--text-purple);
+}
+.tui-mr-card-diff {
+  display: inline-flex;
+  gap: 6px;
+}
+.tui-mr-card-diff-add {
+  color: var(--color-gray-okText);
+}
+.tui-mr-card-diff-del {
+  color: var(--text-bad-small);
+}
+
+/* findings list */
+.tui-sheet-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+.tui-sheet-main > .tui-sheet-list-head:first-child {
+  margin-top: 0;
+}
+.tui-sheet-list-title {
+  font-weight: 700;
+}
+.tui-sheet-list-tally {
+  color: var(--text-3);
+  font-size: var(--gate-font-meta);
+  white-space: nowrap;
+}
+/* A respond sheet decides each thread on its own card, all of them in
+   the main column, which scrolls; a card's context shows at full height. */
+.tui-respond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tui-respond-list .tui-thread-card {
+  max-height: none;
+  overflow: visible;
+}
+/* The rail's secondary actions: sending the plan back, or a pane notice's
+   other answers, are rarer than the primary button, so they read as links
+   under it. */
+.tui-sheet-revise,
+.tui-sheet-text-action {
+  align-self: center;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tui-sheet-revise:hover,
+.tui-sheet-text-action:hover:enabled {
+  color: var(--text-accent-small);
+  text-decoration: underline;
+}
+.tui-sheet-text-action:disabled {
+  cursor: default;
+  color: var(--text-4);
+}
+.tui-sheet-text-actions {
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--gate-font-meta);
+  color: var(--text-4);
+}
+.tui-sheet-dock-next {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.tui-sheet-revise-reason {
+  min-height: 88px;
+  resize: vertical;
+}
+.tui-respond-replies,
+.tui-sheet-dock-question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tui-sheet-dock-prompt {
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+}
+.tui-review-find-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* Bottom fade cues more findings below the fold -- sticky so it tracks the
+   scrolling main region's visible edge rather than the list's own end. */
+.tui-review-find-list::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: 46px;
+  margin-top: -46px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--card));
+}
+.tui-review-find-list[data-at-end]::after {
+  display: none;
+}
+.tui-review-tier-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tui-review-tier-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.tui-review-tier-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-mutedText);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.tui-review-tier-pill[data-tier='Critical'] {
+  color: var(--text-bad-small);
+  background: color-mix(in srgb, var(--fill-bad) 15%, transparent);
+}
+/* warnText already has headroom on white, so this darkening is paying for
+   the pill's own background, not for contrast. */
+.tui-review-tier-pill[data-tier='Important'] {
+  color: color-mix(in srgb, var(--color-gray-warnText) 86%, #000);
+  background: color-mix(in srgb, var(--fill-warn) 9%, transparent);
+}
+.tui-review-allnone-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.tui-review-allnone-sep {
+  color: var(--text-4);
+  font-size: 12px;
+}
+/* rest at full strength (--text-1, a clickable control rather than small
+   secondary text); hover = accent + underline; mousedown deepens; a no-op
+   end (already all / already none) drops to gray and stops taking clicks. */
+.tui-review-allnone {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.tui-review-allnone:hover {
+  color: var(--text-accent-small);
+  text-decoration: underline;
+}
+.tui-review-allnone:active {
+  color: color-mix(in srgb, var(--text-accent-small) 80%, var(--text-1));
+}
+/* Inert (already all / already none). WCAG exempts inactive controls, but
+   a 0.55 veil on the dim token read as broken rather than spent, so the
+   de-emphasis now comes off the text token at a lighter veil. */
+.tui-review-allnone[data-noop] {
+  color: var(--text-1);
+  opacity: 0.72;
+  pointer-events: none;
+}
+/* The label wraps the checkbox, so the entire block toggles the finding --
+   it needs to say so. The horizontal padding gives the wash a body and the
+   matching negative margin keeps the text on the same left edge it had
+   without it. */
+.tui-review-finding-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  margin: 0 -10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+/* Above the list's sticky bottom fade: that gradient paints --card over
+   whatever it covers, so without this the last row's hover wash showed
+   through it as a half-veiled rectangle. */
+.tui-review-finding-row:hover,
+.tui-review-finding-row:active,
+.tui-review-finding-row:focus-within {
+  position: relative;
+  z-index: 1;
+}
+.tui-review-finding-row:hover {
+  background: color-mix(in srgb, var(--fill-accent-hover) 6%, transparent);
+}
+.tui-review-finding-row:active {
+  background: color-mix(in srgb, var(--fill-accent) 11%, transparent);
+}
+/* Keyboard parity: the checkbox inside takes focus, and the row it belongs
+   to is what the eye needs to find. */
+.tui-review-finding-row:focus-within {
+  background: color-mix(in srgb, var(--fill-accent) 6%, transparent);
+  outline: 2px solid var(--fill-accent);
+  outline-offset: -2px;
+}
+.tui-review-finding-row:focus-within .tui-gate-choice-input:focus-visible {
+  outline: none;
+}
+.tui-review-finding-row .tui-gate-choice-input {
+  margin-top: 3px;
+}
+/* The mock's checked box carries a white checkmark; the shared control is
+   a bare accent fill, so the glyph rides a sheet-scoped background image. */
+.tui-review-finding-row .tui-gate-choice-input[data-checked] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 11px 11px;
+}
+.tui-review-finding-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+/* Line 1 is the title and its disposition pill alone; the anchor, the
+   body, and the fix each get their own line below it. */
+.tui-review-finding-line1 {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.tui-review-finding-title {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+.tui-review-finding-anchor {
+  font-family: var(--font-mono);
+  font-size: var(--gate-font-meta);
+  color: var(--text-accent-small);
+  overflow-wrap: anywhere;
+}
+/* The finding's full text is the decision material itself, so it reads in
+   ink; only the fix line below it stays on the muted token. */
+.tui-review-finding-text {
+  color: var(--text-1);
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tui-review-finding-text [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-review-finding-text [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-review-finding-fix {
+  color: var(--text-3);
+  font-size: var(--gate-font-meta);
+}
+
+/* Hairline above the record cluster, spanning the left column. */
+.tui-review-divider {
+  margin: 22px 0 0;
+  border: none;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* review record cluster: STRENGTHS / DEPTH / NOTES sharing one right-aligned
+   label column and one text edge. */
+.tui-review-record {
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tui-review-record-row {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+}
+.tui-review-record-label {
+  width: 78px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-4);
+  padding-top: 2px;
+}
+.tui-review-record-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.tui-review-record-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.tui-review-record-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-2);
+  display: inline-flex;
+}
+.tui-review-record-icon-ok {
+  color: var(--text-ok);
+}
+/* Strengths' two-line entries: a dark lead, a dim detail underneath --
+   never inline with a separator dot. */
+.tui-review-record-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tui-review-record-lead {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.tui-review-record-detail {
+  color: var(--text-3);
+  font-size: var(--gate-font-meta);
+}
+.tui-review-full-report {
+  margin-top: 22px;
+}
+
+/* right rail */
+.tui-sheet-context-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--card);
+}
+.tui-sheet-context-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-4);
+}
+.tui-sheet-context-lead {
+  margin: 0;
+  font-weight: 700;
+  color: var(--text-1);
+}
+/* The verdict's rationale is the reason the reader is here, not a
+   footnote: it reads at full foreground alongside the checks, while the
+   genuinely secondary lines (fix gists, strengths detail, option
+   subtitles) stay on the muted text token. */
+.tui-sheet-context-reasoning {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--gate-font-meta);
+}
+.tui-sheet-context-reasoning [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-sheet-context-reasoning [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-sheet-context-meta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--gate-font-meta);
+}
+.tui-review-tier-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.tui-sheet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--card);
+}
+.tui-sheet-card-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-4);
+}
+.tui-sheet-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tui-sheet-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.tui-sheet-card-chip {
+  flex-shrink: 0;
+  width: 46px;
+  justify-content: center;
+  text-align: center;
+}
+/* A post row's resolve chip gets its own fixed slot, kept empty when the
+   thread is not resolving, so every row's text starts at one edge. */
+.tui-sheet-card-chip + .tui-sheet-card-chip,
+.tui-sheet-card-chip-slot {
+  flex-shrink: 0;
+  width: 64px;
+}
+.tui-sheet-card-text {
+  color: var(--text-1);
+  font-size: var(--gate-font-meta);
+  line-height: 1.4;
+}
+/* The docked decision is its own plane: one step off the rail's card, bled
+   to the rail's edges with a hairline above it, so the scrolling reference
+   material above reads as passing behind it. */
+.tui-sheet-dock {
+  background: var(--surface-wash-fg-4-card);
+  border-top: 1px solid var(--border-soft);
+  padding: 14px 26px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tui-sheet-dock-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.tui-sheet-submit {
+  min-height: 44px;
+  border-radius: 8px;
+}
+/* Sits with the verdict heading rather than under the submit: a full-width
+   lg button spent a whole row of docked height on the least-used control. */
+.tui-sheet-reset {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-4);
+  cursor: pointer;
+}
+.tui-sheet-reset:hover {
+  color: var(--text-accent-small);
+  text-decoration: underline;
+}
+.tui-sheet-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* CAS-loss face: the rail swaps entirely to this instead of appearing to
+   accept a selection that can no longer be posted. */
+.tui-sheet-lost {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 26px;
+}
+/* A stage gate's pick can be any option's label, so the chip column sizes
+   to the widest pick (clipping a long one) instead of the fixed verb width,
+   and every row's text still starts at one edge. */
+.tui-sheet-card-list[data-card='answers'] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 10px;
+}
+.tui-sheet-card-list[data-card='answers'] > .tui-sheet-card-row {
+  display: contents;
+}
+/* The question already heads its card in the main column; the dock only
+   needs enough of it to tell the rows apart. */
+.tui-sheet-card-list[data-card='answers'] .tui-sheet-card-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-sheet-card-list[data-card='answers'] .tui-sheet-card-chip {
+  display: block;
+  width: auto;
+  min-width: 46px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A stage gate's context is often line-shaped plain text: markdown treats
+   its single newlines as soft breaks and runs the lines together, so the
+   rail card honors them instead. */
+.tui-stage-sheet .tui-sheet-context-reasoning {
+  overflow-wrap: anywhere;
+}
+.tui-stage-sheet .tui-sheet-context-reasoning :is(p, li) {
+  white-space: pre-wrap;
+}
+/* A pane's screen reads as the terminal drew it: its own line breaks and
+   indentation, never reflowed as prose. */
+.tui-pane-screen {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--gate-font-meta);
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tui-pane-earlier {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+}
+.tui-pane-earlier > .tui-disclosure-head {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--gate-font-meta);
+  color: var(--text-2);
+}
+.tui-pane-earlier .tui-pane-screen {
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--gate-radius-control);
+  color: var(--text-2);
+}
+
+/* The sheet in narrower windows. Above 1100px none of this applies. */
+@media (max-width: 1100px) {
+  .tui-sheet-rail {
+    width: clamp(300px, 38vw, 470px);
+  }
+  .tui-sheet-rail-scroll {
+    padding: 20px 20px 14px;
+  }
+  .tui-sheet-dock {
+    padding: 14px 20px 18px;
+  }
+  .tui-sheet-lost {
+    padding: 20px;
+  }
+  /* Side by side, the winning answer squeezes to a word per line. */
+  .tui-sheet-lost .tui-gate-summary {
+    gap: 8px;
+  }
+  .tui-sheet-lost .tui-gate-summary-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tui-sheet-list-head,
+  .tui-gate-question-head {
+    flex-wrap: wrap;
+  }
+  .tui-gate-question-head {
+    row-gap: 6px;
+  }
+  .tui-gate-question-label,
+  .tui-sheet-card-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .tui-sheet-body .tui-respond-chip {
+    white-space: nowrap;
+  }
+  .tui-gate-choice-label-row > .tui-gate-recommended {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+/* Stacked: the items being decided, then the rail's reference cards, all in
+   one scroll. The rail flattens so its dock (or lost panel) is a child of
+   the scroller itself: pinned to the scroller's bottom edge for the whole
+   scroll, not only while the rail's own box is on screen. */
+@media (max-width: 720px) {
+  /* The nav stays centred while the lead fits beside it; past that the
+     lead keeps its width and the tag gives way. */
+  .tui-gate-sheet-head {
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(40px, 1fr);
+    padding: 12px 16px;
+  }
+  /* Filling its column, not sizing to its content, is what lets the tag
+     shrink at all. */
+  .tui-gate-sheet-trail {
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+  .tui-gate-sheet-tag {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tui-gate-sheet-close {
+    flex-shrink: 0;
+  }
+  /* --sheet-dock-h is the pinned panel's measured height (reserveDock), so
+     a control that takes focus never scrolls in behind it; the fallback
+     covers the first frame, before the panel has been measured. */
+  .tui-sheet-body {
+    flex-direction: column;
+    overflow-y: auto;
+    scroll-padding-bottom: calc(var(--sheet-dock-h, 50%) + 12px);
+  }
+  .tui-sheet-main {
+    flex: none;
+    overflow-y: visible;
+    padding: 18px 16px 14px;
+  }
+  .tui-sheet-rail {
+    display: contents;
+  }
+  .tui-sheet-rail-scroll {
+    flex: none;
+    overflow-y: visible;
+    padding: 0 16px 18px;
+  }
+  /* A scroller's automatic minimum height is zero, so without flex: none
+     the scroll body would shrink the panel away to fit the page. */
+  .tui-sheet-dock,
+  .tui-sheet-lost {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex: none;
+    margin-top: auto;
+    max-height: 50%;
+    overflow-y: auto;
+    padding: 12px 16px 16px;
+  }
+  .tui-sheet-lost {
+    background: var(--surface-wash-fg-4-card);
+    border-top: 1px solid var(--border-soft);
+  }
+  /* Past the cap only the summary rows (or the verdict's choices) give way,
+     scrolling inside the panel down to a floor of one line of rows, or a
+     choice's minimum height, while each row keeps its own; the heading,
+     submit and quiet actions keep their size, and the panel itself scrolls
+     only when those alone overflow the cap. A scroller clips at its padding
+     box, so the inset padding keeps a focus ring whole. */
+  :is(.tui-sheet-dock, .tui-sheet-lost) > * {
+    flex-shrink: 0;
+  }
+  .tui-sheet-dock > :is(.tui-sheet-card-list, .tui-gate-choices),
+  .tui-sheet-lost > .tui-gate-answered {
+    flex-shrink: 1;
+    min-height: calc(1lh + 6px);
+    overflow-y: auto;
+    margin: -3px;
+    padding: 3px;
+  }
+  .tui-sheet-dock > .tui-gate-choices {
+    min-height: 50px;
+  }
+  .tui-sheet-dock > .tui-gate-choices > * {
+    flex-shrink: 0;
+  }
+  /* The summary's disclosure head bleeds 6px past its text, plus a 2px
+     focus ring: 8px. */
+  .tui-sheet-lost > .tui-gate-answered {
+    min-height: calc(1lh + 16px);
+    margin: -8px;
+    padding: 8px;
+  }
+  /* Its cells clip their own text, so auto rows would squeeze to fit the
+     cap instead of scrolling. */
+  .tui-sheet-dock > .tui-sheet-card-list[data-card='answers'] {
+    grid-auto-rows: max-content;
+  }
+}
+/* Too narrow for the lead, the queue nav and the close on one line: the
+   nav takes a row of its own, and the lead wraps only once the tag has
+   given way entirely. */
+@media (max-width: 600px) {
+  .tui-gate-sheet-head {
+    grid-template-columns: minmax(0, max-content) minmax(40px, 1fr);
+    grid-template-areas: 'lead trail' 'nav nav';
+    row-gap: 10px;
+  }
+  .tui-gate-sheet-lead {
+    grid-area: lead;
+    flex-wrap: wrap;
+  }
+  .tui-gate-queue-nav {
+    grid-area: nav;
+    justify-self: center;
+  }
+  .tui-gate-sheet-trail {
+    grid-area: trail;
+  }
+}

@@ -4,11 +4,11 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { parseDepsLock, servedAppCatalog } from "../../../lib/bundle-layout.ts";
 
-// Parity anchor: byte-identical twin at mattstack-apps
+// Parity anchor: byte-identical twin at
 // apps/deck/src/registry/__fixtures__/deps-lock-serve.fixture.json, read by
 // deck's readBundleCatalog test. Change both files together and move this
 // digest in both tests, or the two parsers drift apart silently.
-const FIXTURE_SHA256 = "95256df5809898010329ed5c0c331c806a4ba8ad9e860768c1b130a604b14230";
+const FIXTURE_SHA256 = "1d651d8275690b5465cf67ea6926287537020673d2c272834da74503db1f1828";
 
 interface Fixture {
   lock: unknown;

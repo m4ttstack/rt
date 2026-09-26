@@ -1,6 +1,7 @@
 {
   "name": "@mattstack/rt-client",
   "version": "0.33.0",
+  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -55,9 +56,6 @@
     "build": "bun build src/index.ts --outdir dist --target node --format esm --packages external && bun build src/settings/identity-codec.ts --outfile dist/settings/identity-codec.js --target browser --format esm && bun build src/gate.ts --outfile dist/gate.js --target browser --format esm && tsc -p tsconfig.json",
     "check-types": "tsc --noEmit -p tsconfig.json",
     "prepack": "bun run build"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

@@ -1,0 +1,18 @@
+{
+  "name": "console",
+  "displayName": "Console",
+  "description": "The mattstack pipeline console: what's running, what needs you, and what a run did.",
+  "icon": "./public/favicon.svg",
+  "port": 11001,
+  "includeInBundle": true,
+  "badge": "/api/badge",
+  "bundle": {
+    "build": "bun run build:binary",
+    "artifact": "dist-bin/console"
+  },
+  "dev": {
+    "start": "bun run src/server/index.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart console"
+  }
+}

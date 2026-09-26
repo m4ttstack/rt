@@ -16,8 +16,8 @@ yourself rather than handing him a bundle to swap in.
 | What changed | How it goes live |
 |---|---|
 | `rt-tray/**` in repo-tools (tray, shims, `build.sh`, `deps.lock`) | this skill; a daemon shim (`Sources-daemon-shim`) change also needs the #rt announce and `rt daemon restart` afterwards |
-| board, console, chat, boxscore (`~/Documents/GitHub/mattstack-apps`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then the app row's deploy button or `deck cmd <app> deploy` |
-| deck source (`mattstack-apps/apps/deck`) | no rebuild: the same pull, then the deck row's deploy button or `deck cmd deck deploy` |
+| board, console, chat, boxscore (`~/Documents/GitHub/repo-tools/apps/<name>`), gitq (`~/Documents/GitHub/gitq`) | no rebuild: in that checkout confirm `git branch --show-current` is `main` (never switch it), pull, then the app row's deploy button or `deck cmd <app> deploy` |
+| deck source (`repo-tools/apps/deck`) | no rebuild: the same pull, then the deck row's deploy button or `deck cmd deck deploy` |
 | rt CLI or daemon source (`lib/`, `commands/`) | no rebuild: pull the dev daemon's source checkout on `main`, announce in #rt, then `rt daemon restart` |
 
 ## Trying work in progress: `--local`
@@ -73,8 +73,11 @@ worktree, else from `~/Documents/GitHub/repo-tools`.
 
 ## What the script already does
 
-Scratch copy (or clone), `rt-tray/build.sh dev`, then a swap with rollback
-that reopens the app and restarts deck and its managed apps (they run the
+Scratch copy (or clone); for `--local`, after `fetch-deps.sh` it also runs
+`bun install` and `scripts/build-apps.ts` in the scratch copy to build the
+tree rows (board, boxscore, chat, console, gitq), since fetch-deps does not
+cover them; then `rt-tray/build.sh dev`, then a swap with rollback that
+reopens the app and restarts deck and its managed apps (they run the
 bundle's `Helpers/bun`, so they must move to the new bundle). Doing any of
 this by hand is how the app ends up built in a shared checkout, opened from a
 worktree path (a new identity for Login Items and TCC), or with managed apps

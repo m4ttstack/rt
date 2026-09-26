@@ -13,6 +13,7 @@ export type DepsLockArchive = "raw" | "tar.gz" | "tar.xz" | "zip" | "npm" | "go-
 export type DepsLockEntitlements = "none" | "jit";
 export type DepsLockStatus = "bundled" | "pending";
 export type DepsLockKind = "helper" | "buildtool";
+export type DepsLockSource = "tree";
 
 export interface DepsLockServe {
   port: number;
@@ -23,8 +24,10 @@ export interface DepsLockTool {
   name: string;
   version: string;
   license: string;
-  url: string;
-  sha256: string;
+  /** Absent only on a `source: "tree"` row. */
+  url?: string;
+  /** Absent only on a `source: "tree"` row. */
+  sha256?: string;
   archive: DepsLockArchive;
   /** Path inside the archive to copy into bundlePath; "" for a raw binary. */
   extract: string;
@@ -52,6 +55,10 @@ export interface DepsLockTool {
    * args, on port. A row without it is a tool.
    */
   serve?: DepsLockServe;
+  /** "tree": built from this checkout by scripts/build-apps.ts, never downloaded; url and sha256 are absent. */
+  source?: DepsLockSource;
+  /** The app's skills/ directory ships at Contents/Helpers/skills/<name>. Tree rows only. */
+  skills?: boolean;
 }
 
 export interface DepsLock {
@@ -66,7 +73,8 @@ export const RT_BUNDLE_PATH = "Contents/MacOS/rt";
 
 const ARCHIVES = new Set<DepsLockArchive>(["raw", "tar.gz", "tar.xz", "zip", "npm", "go-src", "make-src"]);
 const SHA256 = /^[0-9a-f]{64}$/;
-const REQUIRED_STRING_FIELDS = ["name", "version", "license", "url", "sha256", "extract", "bundlePath"] as const;
+const REQUIRED_STRING_FIELDS = ["name", "version", "license", "extract", "bundlePath"] as const;
+const FETCHED_STRING_FIELDS = ["url", "sha256"] as const;
 const SERVE_ARG = /^\S+$/;
 const MIN_SERVE_PORT = 1024;
 const MAX_SERVE_PORT = 65535;
@@ -122,6 +130,26 @@ export function parseDepsLock(text: string): DepsLock {
         throw new Error(`deps.lock: tools[${i}].${field} must be a string`);
       }
     }
+    const row = t as unknown as Record<string, unknown>;
+    if (row.source === undefined) {
+      for (const field of FETCHED_STRING_FIELDS) {
+        if (typeof row[field] !== "string") throw new Error(`deps.lock: tools[${i}].${field} must be a string`);
+      }
+    } else if (row.source === "tree") {
+      for (const field of FETCHED_STRING_FIELDS) {
+        if (row[field] !== undefined) throw new Error(`deps.lock: tools[${i}] tree row must not carry ${field}`);
+      }
+      for (const field of ["repo", "subdir"] as const) {
+        if (row[field] !== undefined) throw new Error(`deps.lock: tools[${i}] tree row must not carry ${field}`);
+      }
+      if (row.kind !== "helper") throw new Error(`deps.lock: tools[${i}] tree row must be a helper`);
+    } else {
+      throw new Error(`deps.lock: tools[${i}] has unknown source ${String(row.source)}`);
+    }
+    if (row.skills !== undefined) {
+      if (typeof row.skills !== "boolean") throw new Error(`deps.lock: tools[${i}].skills must be boolean`);
+      if (row.source !== "tree") throw new Error(`deps.lock: tools[${i}].skills is only valid on a tree row`);
+    }
     const name = t.name;
     if (!name) throw new Error(`deps.lock: tools[${i}] has no name`);
     if (seen.has(name)) throw new Error(`deps.lock: duplicate tool ${name}`);
@@ -166,9 +194,11 @@ export function parseDepsLock(text: string): DepsLock {
     });
     if (t.serve !== undefined) validateServe(t, servedPorts);
 
-    if (t.status === "bundled") {
+    if (row.source === "tree") {
+      // Built from this checkout, not fetched: no pin to require or forbid here.
+    } else if (t.status === "bundled") {
       if (!t.url) throw new Error(`deps.lock: bundled tool ${name} needs a url`);
-      if (!SHA256.test(t.sha256)) throw new Error(`deps.lock: bundled tool ${name} needs a 64-hex sha256`);
+      if (!SHA256.test(t.sha256 ?? "")) throw new Error(`deps.lock: bundled tool ${name} needs a 64-hex sha256`);
       if (!t.version) throw new Error(`deps.lock: bundled tool ${name} needs a version`);
     } else if (t.status === "pending" && t.url !== "") {
       throw new Error(`deps.lock: pending tool ${name} must not carry a url`);

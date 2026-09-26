@@ -6,13 +6,12 @@ import {
   upstreamForToolRow,
   checkGitState,
   checkGate,
+  movedServedApps,
   keepsFastPath,
-  checkAppPins,
   checkStandaloneRows,
   checkToolRows,
   checkCatalog,
   checkExtension,
-  checkRtClient,
   checkSchemaLock,
   runPreflight,
   type PreflightSeams,
@@ -86,12 +85,17 @@ describe("pinnedTagFromUrl", () => {
 });
 
 describe("classifyRows", () => {
-  test("splits app, standalone, and tool rows", () => {
+  test("splits standalone repos from everything else", () => {
     const rows = [APP_ROW, GITQ_ROW, FB_ROW, GH_ROW, NODE_ROW];
     const c = classifyRows(rows);
-    expect(c.apps.map((r) => r.name)).toEqual(["board"]);
     expect(c.standalone.map((r) => r.name)).toEqual(["gitq", "fast-browser"]);
-    expect(c.tools.map((r) => r.name)).toEqual(["gh", "node"]);
+    expect(c.tools.map((r) => r.name)).toEqual(["board", "gh", "node"]);
+  });
+  test("a tree row is dropped: it has no upstream url or repo to diff against", () => {
+    const treeRow = row({ name: "deck", version: "", url: "", source: "tree" });
+    const c = classifyRows([treeRow, APP_ROW, GH_ROW]);
+    expect(c.tools.map((r) => r.name)).toEqual(["board", "gh"]);
+    expect(c.standalone).toEqual([]);
   });
 });
 
@@ -145,200 +149,60 @@ describe("checkGitState", () => {
   });
 });
 
-describe("checkGate", () => {
-  const lockAt = (boardVer: string, deckVer: string) => JSON.stringify({
-    schema: 1, arch: "arm64", tools: [
-      { ...APP_ROW, version: boardVer, url: `https://github.com/m4ttstack/apps/releases/download/board-v${boardVer}/board-darwin-arm64.tgz` },
-      { name: "deck", version: deckVer, repo: "m4ttstack/apps", subdir: "apps/deck", url: `https://github.com/m4ttstack/apps/releases/download/deck-v${deckVer}/deck-darwin-arm64.tgz` },
-    ],
-  });
-
-  const gateExec = (files: string[], oldLock: string): PreflightSeams["exec"] =>
-    (argv) => {
+function seamsWithDiff(files: string[]): PreflightSeams {
+  return seams({
+    exec: (argv) => {
       const cmd = argv.join(" ");
       if (cmd.includes("diff")) return ok(files.join("\n"));
-      if (cmd.includes("show")) return ok(oldLock);
       return failExec();
-    };
-
-  test("serve-only deps.lock rows imply the fast path", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock", "RELEASE_NOTES.md", "website/docs/x.md"], lockAt("0.1.3", "1.0.5")),
-      readFile: () => lockAt("0.1.4", "1.0.5"),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("fast");
-    expect(g.reason).toContain("board");
+    },
   });
+}
 
-  test("a deck row change forces the full gate", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], lockAt("0.1.4", "1.0.4")),
-      readFile: () => lockAt("0.1.4", "1.0.5"),
-    });
-    const g = await checkGate(s, "v2.10.2");
+describe("checkGate by path", () => {
+  const gate = (files: string[]) => checkGate(seamsWithDiff(files), "v2.13.0");
+  test("a served app plus notes and website is fast", async () => {
+    expect((await gate(["apps/board/src/a.ts", "RELEASE_NOTES.md", "website/docs/x.md"])).path).toBe("fast");
+  });
+  test("deck alone is full", async () => {
+    expect((await gate(["apps/deck/src/main.ts"])).path).toBe("full");
+  });
+  test("a served app plus rt code is full", async () => {
+    const g = await gate(["apps/board/src/a.ts", "lib/daemon.ts"]);
     expect(g.path).toBe("full");
-    expect(g.reason).toContain("deck");
+    expect(g.reason).toContain("lib/daemon.ts");
   });
-
-  test("any file outside the pin allowlist forces the full gate", async () => {
-    const s = seams({ exec: gateExec(["lib/team/invite.ts"], lockAt("0.1.4", "1.0.5")), readFile: () => lockAt("0.1.4", "1.0.5") });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toContain("lib/team/invite.ts");
+  test("notes alone is full: no served app moved", async () => {
+    expect((await gate(["RELEASE_NOTES.md"])).path).toBe("full");
   });
-
-  test("a boxscore row change stays on the fast path (ratified serve-only set)", async () => {
-    const withBoxscore = (v: string) => JSON.stringify({
-      schema: 1, arch: "arm64", tools: [
-        { name: "boxscore", version: v, repo: "m4ttstack/apps", subdir: "apps/boxscore", url: `https://github.com/m4ttstack/apps/releases/download/boxscore-v${v}/boxscore-darwin-arm64.tgz` },
-      ],
-    });
-    const s = seams({ exec: gateExec(["rt-tray/deps.lock"], withBoxscore("0.1.0")), readFile: () => withBoxscore("0.1.1") });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("fast");
+  test("no diff is full", async () => {
+    expect((await gate([])).path).toBe("full");
   });
-
-  test("a named ref diffs against that ref and reads its committed deps.lock, not the working tree", async () => {
+  test("a named ref diffs against that ref", async () => {
     const calls: string[] = [];
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
         calls.push(cmd);
-        if (cmd === "git diff --name-only v2.10.2..origin/main") return ok("rt-tray/deps.lock\n");
-        if (cmd === "git show v2.10.2:rt-tray/deps.lock") return ok(lockAt("0.1.3", "1.0.5"));
-        if (cmd === "git show origin/main:rt-tray/deps.lock") return ok(lockAt("0.1.4", "1.0.5"));
+        if (cmd === "git diff --no-renames --name-only v2.10.2..origin/main") return ok("apps/board/src/a.ts\n");
         return failExec();
       },
-      readFile: () => lockAt("0.1.3", "1.0.4"),
     });
     const g = await checkGate(s, "v2.10.2", "origin/main");
     expect(g.path).toBe("fast");
-    expect(g.reason).toContain("board");
-    expect(calls).toContain("git show origin/main:rt-tray/deps.lock");
+    expect(calls).toContain("git diff --no-renames --name-only v2.10.2..origin/main");
   });
-
-  test("keepsFastPath names exactly the serve-only rows", () => {
-    for (const name of ["board", "chat", "console", "gitq", "boxscore"]) expect(keepsFastPath(name)).toBe(true);
+  test("keepsFastPath names exactly the serve-only apps", () => {
+    for (const name of ["board", "boxscore", "chat", "console", "gitq"]) expect(keepsFastPath(name)).toBe(true);
     for (const name of ["deck", "fast-browser", "bun"]) expect(keepsFastPath(name)).toBe(false);
   });
-
-  test("a row absent from the old lock forces the full gate even when serve-only", async () => {
-    const oldLock = lockAt("0.1.4", "1.0.5");
-    const newLock = JSON.stringify({
-      schema: 1, arch: "arm64",
-      tools: [...(JSON.parse(lockAt("0.1.4", "1.0.5")) as { tools: DepsRow[] }).tools,
-        { name: "boxscore", version: "0.1.0", repo: "m4ttstack/apps", subdir: "apps/boxscore", url: "https://github.com/m4ttstack/apps/releases/download/boxscore-v0.1.0/boxscore-darwin-arm64.tgz" }],
-    });
-    const s = seams({ exec: gateExec(["rt-tray/deps.lock"], oldLock), readFile: () => newLock });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toContain("new row");
-  });
-
-  const servedLock = (ver: string, serve?: { port: number; args: string[] }) => JSON.stringify({
-    schema: 1, arch: "arm64", tools: [
-      { ...APP_ROW, version: ver, url: `https://github.com/m4ttstack/apps/releases/download/board-v${ver}/board-darwin-arm64.tgz`, ...(serve ? { serve } : {}) },
-    ],
-  });
-
-  test("a serve edit forces the full gate even on a serve-only row", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], servedLock("0.1.3", { port: 11006, args: [] })),
-      readFile: () => servedLock("0.1.4", { port: 11016, args: [] }),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toBe("serve changed on row(s): board");
-  });
-
-  test("adding serve to an existing row forces the full gate", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], servedLock("0.1.3")),
-      readFile: () => servedLock("0.1.4", { port: 11006, args: [] }),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toContain("serve");
-  });
-
-  test("an unchanged serve keeps a serve-only pin bump on the fast path", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], servedLock("0.1.3", { port: 11006, args: [] })),
-      readFile: () => servedLock("0.1.4", { port: 11006, args: [] }),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("fast");
-  });
-
-  const catalogLock = (boardVer: string, extra: object[]) => JSON.stringify({
-    schema: 1, arch: "arm64", tools: [
-      { ...APP_ROW, version: boardVer, url: `https://github.com/m4ttstack/apps/releases/download/board-v${boardVer}/board-darwin-arm64.tgz`, status: "bundled", serve: { port: 11006, args: [] } },
-      ...extra,
-    ],
-  });
-  const CHAT_SERVED = {
-    name: "chat", version: "0.1.2", repo: "m4ttstack/apps", subdir: "apps/chat", status: "bundled", serve: { port: 11002, args: [] },
-    url: "https://github.com/m4ttstack/apps/releases/download/chat-v0.1.2/chat-darwin-arm64.tgz",
-  };
-
-  test("a row deleted beside a serve-only pin bump forces the full gate", async () => {
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], catalogLock("0.1.5", [CHAT_SERVED])),
-      readFile: () => catalogLock("0.1.6", []),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toBe("row(s) removed from deps.lock: chat");
-  });
-
-  test("a pending row flipping to bundled forces the full gate even with serve unchanged", async () => {
-    const boxscore = (status: string, v: string) => ({
-      name: "boxscore", version: v, repo: "m4ttstack/apps", subdir: "apps/boxscore", status, serve: { port: 11005, args: [] },
-      url: v ? `https://github.com/m4ttstack/apps/releases/download/boxscore-v${v}/boxscore-darwin-arm64.tgz` : "",
-    });
-    const s = seams({
-      exec: gateExec(["rt-tray/deps.lock"], catalogLock("0.1.5", [boxscore("pending", "")])),
-      readFile: () => catalogLock("0.1.5", [boxscore("bundled", "0.1.0")]),
-    });
-    const g = await checkGate(s, "v2.10.2");
-    expect(g.path).toBe("full");
-    expect(g.reason).toBe("status changed on row(s): boxscore");
+  test("a served app plus the release notes is fast", async () => {
+    expect((await gate(["apps/board/x.ts", "RELEASE_NOTES.md"])).path).toBe("fast");
   });
 });
 
-describe("checkAppPins", () => {
-  const appExec = (published: string, lastCommit: string): PreflightSeams["exec"] =>
-    (argv) => {
-      const cmd = argv.join(" ");
-      if (cmd.includes("releases/tags")) return ok(`${published}\n`);
-      if (cmd.includes("commits?path=")) return ok(`${lastCommit}\n`);
-      return failExec();
-    };
-
-  test("ok when the pinned release postdates the subdir's last commit", async () => {
-    const rows = await checkAppPins(seams({ exec: appExec("2026-09-18T20:00:00Z", "2026-09-18T18:00:00Z") }), [APP_ROW]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.status).toBe("ok");
-  });
-
-  test("stale when the subdir moved after the pin", async () => {
-    const rows = await checkAppPins(seams({ exec: appExec("2026-09-18T20:00:00Z", "2026-09-19T02:00:00Z") }), [APP_ROW]);
-    expect(rows[0]!.status).toBe("stale");
-    expect(rows[0]!.detail).toContain("2026-09-19");
-  });
-
-  test("error row when the API is unreachable", async () => {
-    const rows = await checkAppPins(seams(), [APP_ROW]);
-    expect(rows[0]!.status).toBe("error");
-  });
-
-  test("error, never ok, when a date comes back as the literal null (draft release, empty commits)", async () => {
-    const rows = await checkAppPins(seams({ exec: appExec("null", "2026-09-19T02:00:00Z") }), [APP_ROW]);
-    expect(rows[0]!.status).toBe("error");
-    const rows2 = await checkAppPins(seams({ exec: appExec("2026-09-18T20:00:00Z", "null") }), [APP_ROW]);
-    expect(rows2[0]!.status).toBe("error");
-  });
+test("movedServedApps names each served app directory in the diff once", () => {
+  expect(movedServedApps(["apps/chat/a.ts", "apps/chat/b.ts", "apps/gitq/x.ts", "apps/deck/y.ts", "lib/z.ts"])).toEqual(["chat", "gitq"]);
 });
 
 describe("checkStandaloneRows", () => {
@@ -491,36 +355,6 @@ describe("checkExtension", () => {
   });
 });
 
-describe("checkRtClient", () => {
-  test("ok when npm matches the source package.json", async () => {
-    const s = seams({
-      readFile: (p) => (p.endsWith("packages/rt-client/package.json") ? JSON.stringify({ version: "0.20.0" }) : null),
-      fetchJson: () => Promise.resolve({ version: "0.20.0" }),
-    });
-    expect((await checkRtClient(s)).status).toBe("ok");
-  });
-
-  test("stale on an unpublished source bump", async () => {
-    const s = seams({
-      readFile: (p) => (p.endsWith("packages/rt-client/package.json") ? JSON.stringify({ version: "0.21.0" }) : null),
-      fetchJson: () => Promise.resolve({ version: "0.20.0" }),
-    });
-    const r = await checkRtClient(s);
-    expect(r.status).toBe("stale");
-    expect(r.detail).toContain("unpublished");
-  });
-
-  test("direction compares semver numerically, not lexicographically", async () => {
-    const s = seams({
-      readFile: (p) => (p.endsWith("packages/rt-client/package.json") ? JSON.stringify({ version: "0.9.0" }) : null),
-      fetchJson: () => Promise.resolve({ version: "0.28.0" }),
-    });
-    const r = await checkRtClient(s);
-    expect(r.status).toBe("stale");
-    expect(r.detail).toContain("npm ahead");
-  });
-});
-
 describe("runPreflight", () => {
   test("aggregates rows, counts, and the clean flag", async () => {
     const s = seams({
@@ -548,7 +382,7 @@ describe("runPreflight", () => {
     expect(report.gate?.path).toBe("full");
     const picker = report.rows.find((r) => r.id === "picker")!;
     expect(picker.status).toBe("stale");
-    // git ok + rt-client ok, picker stale, extension error (exec fails)
+    // git ok, picker stale, extension error (exec fails)
     expect(report.staleCount).toBeGreaterThanOrEqual(1);
     expect(report.errorCount).toBeGreaterThanOrEqual(1);
     expect(report.clean).toBe(false);

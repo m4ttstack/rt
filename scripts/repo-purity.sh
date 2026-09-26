@@ -29,21 +29,30 @@ A7=$(printf '%s%s' 'adjus' 'ter')
 A8=$(printf "%s%s" "hog" "warts")
 A9=$(printf "%s%s" "CV" "I")
 # A carrier name reached HEAD in a hyphenated form the first scrub missed,
-# because it had only caught the spaced form — a word list is only as good as
+# because it had only caught the spaced form: a word list is only as good as
 # its variants. Kept fragmented, like the rest, so this file stays clean of the
 # very term it bans.
 A10=$(printf "%s%s" "progres" "sive")
+# A10 is also a plain English word ("progressively"), so it alone gets word
+# boundaries: (^|non-word)term(non-word|$). A POSIX bracket-expression
+# boundary rather than \b, since \b is a GNU extension grep -E does not
+# portably support and this must behave the same under macOS grep (local)
+# and GNU grep (CI, ubuntu).
+A10B="(^|[^[:alnum:]])$A10([^[:alnum:]]|\$)"
 # A second carrier name, caught in the same picker-branch scrub as A10.
 A11=$(printf '%s%s' 'gei' 'co')
 
-PATTERN="$A1|$A2|$A3|$A4|$A5|$A6|$A7|$A8|$A9|$A10|$A11"
+PATTERN="$A1|$A2|$A3|$A4|$A5|$A6|$A7|$A8|$A9|$A10B|$A11"
 
-# Lockfiles are excluded: their base64 integrity hashes collide with the short
-# patterns often enough to be pure noise, and nothing is authored in them.
+# Lockfiles and PNGs are excluded: base64 integrity hashes and binary bytes
+# collide with the short patterns often enough to be pure noise, and nothing
+# is authored in either.
 HITS=$(cd "$ROOT" \
   && git ls-files -z \
-  | grep -zvE '(bun\.lock|package-lock\.json)$' \
-  | xargs -0 grep -niE "$PATTERN" 2>/dev/null \
+    -- ':(exclude)*bun.lock' \
+       ':(exclude)*package-lock.json' \
+       ':(exclude)*.png' \
+  | xargs -0 grep -IniE "$PATTERN" 2>/dev/null \
   | grep -v '^scripts/repo-purity.sh:' || true)
 if [ -n "$HITS" ]; then
   echo "FAIL repo-purity:"
