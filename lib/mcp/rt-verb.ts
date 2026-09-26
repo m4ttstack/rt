@@ -134,6 +134,7 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
 
   let cwd: string | undefined;
   if (input.cwd !== undefined) {
+    if (leaf.node.agentNoCwd) return fail(`${verb} resolves its pack from cwd; pass --pack instead`);
     if (typeof input.cwd !== "string" || !isAbsolute(input.cwd) || !deps.isDir(input.cwd)) {
       return fail("cwd must be an absolute path to an existing directory");
     }

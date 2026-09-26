@@ -160,6 +160,9 @@ export interface CommandNode {
 
   /** Declared flags rt_verb refuses outright: they let a caller-written file (a manifest, a pack tree) drive a leaf that recompiles, commits or pushes a shared pack. */
   agentDeniedFlags?: string[];
+
+  /** rt_verb refuses a caller-chosen cwd: this leaf resolves its pack from the enclosing tree, so a cwd in a caller-written stub pack reproduces a denied --pack-dir. */
+  agentNoCwd?: true;
 }
 
 /** See CommandNode.omitBehavior. */

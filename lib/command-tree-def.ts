@@ -2254,6 +2254,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills.ts",
         fn: "skillsCompile",
         agentSafe: true,
+        agentNoCwd: true,
         agentDeniedFlags: ["--manifest", "--pack-dir"],
         agentTimeoutMs: 600_000,
         args: [
@@ -2296,6 +2297,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills-sync.ts",
         fn: "skillsSync",
         agentSafe: true,
+        agentNoCwd: true,
         agentDeniedFlags: ["--manifest"],
         agentTimeoutMs: 600_000,
         args: [
@@ -2319,6 +2321,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills.ts",
         fn: "skillsSurface",
         agentSafe: true,
+        agentNoCwd: true,
         omitBehavior: "picker",
         // Same inline-frame constraint as commitNode above: the palette owns
         // the top region, so suppress the dispatcher header.
@@ -2355,6 +2358,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/skills.ts",
         fn: "skillsBind",
         agentSafe: true,
+        agentNoCwd: true,
         agentDeniedFlags: ["--manifest"],
         omitBehavior: "picker",
         args: [

@@ -34,7 +34,7 @@ const HERD_PROP = { herd: { type: "string", description: "Herd id; defaults to H
 const NO_SESSION = "CLAUDE_CODE_SESSION_ID is not set; this tool runs inside a Claude Code session";
 /** account, model and effort reach cswap and claude as argv; a leading `-` would be parsed as an option. */
 const LAUNCH_TOKEN = /^[A-Za-z0-9._@:][A-Za-z0-9._@:[\]-]*$/;
-const IN_WORKER ="HERD_JOB is set, so this is a herd worker pane; only the shepherd session runs this tool";
+const IN_WORKER = "HERD_JOB is set, so this is a herd worker pane; only the shepherd session runs this tool";
 
 /**
  * Every tool runs with no permission prompt, so a pane reading untrusted

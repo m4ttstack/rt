@@ -36,7 +36,7 @@ const tree: Record<string, CommandNode> = {
         args: [{ name: "Out", flag: "--out", type: "text" }, { name: "Template", flag: "--template", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
       },
       publish: {
-        description: "p", module: "./m.ts", agentSafe: true, agentDeniedFlags: ["--manifest"],
+        description: "p", module: "./m.ts", agentSafe: true, agentDeniedFlags: ["--manifest"], agentNoCwd: true,
         args: [{ name: "Manifest", flag: "--manifest", type: "text" }, { name: "Pack", flag: "--pack", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
       },
       check: {
@@ -157,6 +157,34 @@ describe("runRtVerb", () => {
     const r = await runRtVerb({ args: ["worktree", "check", "--manifest", "/tmp/m.jsonc"] }, deps(ok("{}"), calls));
     expect(r.ok).toBe(true);
     expect(calls[0]!.argv).toContain("/tmp/m.jsonc");
+  });
+
+  test("agentNoCwd: a cwd is refused with zero spawn calls; the same call without cwd runs", async () => {
+    const r = await refused({ args: ["worktree", "publish", "--pack", "acme"], cwd: "/work" });
+    expect(r.ok ? "" : r.error).toContain("rt worktree publish resolves its pack from cwd; pass --pack instead");
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const ran = await runRtVerb({ args: ["worktree", "publish", "--pack", "acme"] }, deps(ok("{}"), calls));
+    expect(ran.ok).toBe(true);
+    expect((calls[0]!.opts as { cwd?: string }).cwd).toBeUndefined();
+  });
+
+  test("agentNoCwd: an unflagged leaf still accepts cwd", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "check"], cwd: "/work" }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect((calls[0]!.opts as { cwd?: string }).cwd).toBe("/work");
+  });
+
+  test("the real tree refuses cwd on skills bind, compile, sync and surface with zero spawn calls, and runs them without it", async () => {
+    for (const args of [["skills", "bind", "work", "domain", "acme:x"], ["skills", "compile"], ["skills", "sync", "--pack", "acme"], ["skills", "surface", "list"]]) {
+      const calls: { argv: string[]; opts: unknown }[] = [];
+      const r = await runRtVerb({ args, cwd: "/work" }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+      expect(r.ok ? "" : r.error, args.join(" ")).toContain("resolves its pack from cwd; pass --pack instead");
+      expect(calls, args.join(" ")).toEqual([]);
+      const without = await runRtVerb({ args }, { ...deps(ok('{"ok":true}'), calls), tree: TREE });
+      expect(without.ok, args.join(" ")).toBe(true);
+      expect(calls.length, args.join(" ")).toBe(1);
+    }
   });
 
   test("the real tree forwards skills surface set <name> --public", async () => {

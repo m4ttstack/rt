@@ -49,6 +49,12 @@ describe("agent-safe surface", () => {
     expect(skills.check!.agentDeniedFlags).toBeUndefined();
   });
 
+  test("the skills leaves that resolve a pack from cwd refuse an rt_verb cwd; skills check stays open", () => {
+    const skills = TREE.skills!.subcommands!;
+    for (const leaf of ["bind", "compile", "sync", "surface"]) expect(skills[leaf]!.agentNoCwd, leaf).toBe(true);
+    expect(skills.check!.agentNoCwd).toBeUndefined();
+  });
+
   test("skills surface declares --public and --internal, so set can run through rt_verb", () => {
     const flags = (TREE.skills!.subcommands!.surface!.args ?? []).filter((a) => a.type === "boolean").map((a) => a.flag);
     expect(flags).toEqual(expect.arrayContaining(["--public", "--internal"]));
