@@ -176,8 +176,9 @@ export async function refreshDiscussions(
   overrides: RefreshOverrides = {},
 ): Promise<RefreshResult> {
   const fileStore = overrides.fileStore ?? getDiscussionsFileStore();
+  // An MR the syncs have not picked up yet (opened seconds ago) still gets its
+  // discussions stored; only the new-comment notification needs its meta.
   const meta = resolveMRMeta(deps.ctx, repoName, iid, overrides.projectStore);
-  if (!meta) throw new Error(`MR not cached: ${repoName}#${iid}`);
 
   const prevEntry = fileStore.read(repoName, iid);
   const isFirstFetch = prevEntry === undefined;
@@ -202,12 +203,12 @@ export async function refreshDiscussions(
   });
 
   const currentUserId = overrides.currentUserId !== undefined ? overrides.currentUserId : getCurrentUserId();
-  const isMrAuthor = currentUserId !== null && meta.authorNumericId === currentUserId;
-  const newNotes = isFirstFetch
+  const isMrAuthor = currentUserId !== null && meta?.authorNumericId === currentUserId;
+  const newNotes = isFirstFetch || !meta
     ? []
     : collectNewNotes(prevIds, discussions, currentUserId, isMrAuthor);
 
-  if (newNotes.length > 0) {
+  if (meta && newNotes.length > 0) {
     const mrTitle = meta.title;
     const webUrl  = meta.webUrl;
 

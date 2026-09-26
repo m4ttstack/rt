@@ -240,9 +240,23 @@ describe("refreshDiscussions (lifted)", () => {
     expect(notified).toEqual(["new_comment"]);
   });
 
-  test("throws for an MR in neither store", async () => {
-    const overrides = { fileStore: createDiscussionsFileStore(tmpDb()), projectStore: pmrsStore(), fetchDiscussions: async () => [] };
-    await expect(refreshDiscussions({ ctx: fakeCtx({}), broadcast: () => {} }, "repo", 1, overrides)).rejects.toThrow("MR not cached");
+  test("an MR in neither store still fetches and persists its discussions, without notifying", async () => {
+    const fileStore = createDiscussionsFileStore(tmpDb());
+    fileStore.write("repo", 1, { discussions: [{ id: "d1", notes: [scopedNote(1, 111, "me")] } as any], fetchedAt: 1 });
+    const notified: string[] = [];
+    const broadcasts: string[] = [];
+    const res = await refreshDiscussions({ ctx: fakeCtx({}), broadcast: (type) => { broadcasts.push(type); } }, "repo", 1, {
+      fileStore,
+      projectStore: pmrsStore(),
+      currentUserId: 111,
+      notify: (kind: string) => { notified.push(kind); },
+      fetchDiscussions: async () => [{ id: "d1", notes: [scopedNote(1, 111, "me"), scopedNote(2, 777, "luke")] } as any],
+    });
+    expect(res.discussions[0]!.notes.length).toBe(2);
+    expect(fileStore.read("repo", 1)!.discussions[0]!.notes.length).toBe(2);
+    expect(broadcasts).toEqual(["discussions:update"]);
+    expect(res.newNotes).toEqual([]);
+    expect(notified).toEqual([]);
   });
 });
 
