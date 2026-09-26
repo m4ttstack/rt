@@ -28,9 +28,13 @@ function containedInAnyRoot(real: string, roots: readonly string[]): boolean {
 /**
  * The target usually does not exist yet, so containment compares the
  * realpath of its PARENT (which must exist) joined with its basename,
- * never the target itself. A final component that is already a symlink is
- * refused outright: resolving through it would check one path and let a
- * write land through another.
+ * never the target itself. An existing final component is refused unless
+ * it is a plain regular file with nlink 1: a symlink resolves through to
+ * wherever it points; a hardlink (nlink > 1, same device as any root under
+ * /private/tmp) shares its inode with a file that can sit anywhere else on
+ * that device, /private/tmp and the home dir included, so a write through
+ * one path lands through the other; a FIFO or device node would hang the
+ * child's write instead of creating a file.
  */
 export function checkTempRootPath(path: unknown, roots: readonly string[]): { ok: true } | { ok: false; error: string } {
   const allowed = roots.length > 0
@@ -46,8 +50,13 @@ export function checkTempRootPath(path: unknown, roots: readonly string[]): { ok
   } catch {
     finalStat = null;
   }
-  if (finalStat?.isSymbolicLink()) {
-    return { ok: false, error: `path must not be an existing symlink (got "${path}")` };
+  if (finalStat) {
+    if (finalStat.isSymbolicLink()) {
+      return { ok: false, error: `path must not be an existing symlink (got "${path}")` };
+    }
+    if (!finalStat.isFile() || finalStat.nlink !== 1) {
+      return { ok: false, error: `path must not already exist as a non-regular file or a hardlinked file (got "${path}")` };
+    }
   }
 
   const parent = dirname(path);

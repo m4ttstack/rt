@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync } from "fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import type { CommandNode } from "../../command-tree.ts";
@@ -8,6 +8,10 @@ import { RT_VERB_TIMEOUT_MS, runRtVerb, type RtVerbDeps } from "../rt-verb.ts";
 
 /** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
 const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-out-")));
+
+afterAll(() => {
+  rmSync(FAKE_TEMP_ROOT, { recursive: true, force: true });
+});
 
 const tree: Record<string, CommandNode> = {
   worktree: {

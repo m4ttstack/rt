@@ -1,11 +1,15 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync } from "fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { herdToolDefs, type HerdToolDeps } from "../herd-tools.ts";
 
 /** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
 const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-herd-brief-out-")));
+
+afterAll(() => {
+  rmSync(FAKE_TEMP_ROOT, { recursive: true, force: true });
+});
 
 function fake(tempRoots: string[] = [FAKE_TEMP_ROOT]) {
   const calls: Array<{ fn: string; a: any; o: any }> = [];

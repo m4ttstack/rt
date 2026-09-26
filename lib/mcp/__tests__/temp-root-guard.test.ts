@@ -1,12 +1,21 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "child_process";
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
-import { join } from "path";
 import { checkTempRootPath } from "../temp-root-guard.ts";
 
+const createdDirs: string[] = [];
+
 function realTempDir(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  createdDirs.push(dir);
+  return dir;
 }
+
+afterAll(() => {
+  for (const dir of createdDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("checkTempRootPath", () => {
   test("a not-yet-existing target under the root is ok", () => {
@@ -44,6 +53,51 @@ describe("checkTempRootPath", () => {
     const r = checkTempRootPath(link, [root]);
     expect(r.ok).toBe(false);
     expect(r.ok ? "" : r.error).toContain("symlink");
+  });
+
+  test("a hardlinked existing file is refused even though it is a plain regular file (the same-device escape: a hardlink shares its inode with a file that can sit anywhere else on that device)", () => {
+    const root = realTempDir("rt-temp-root-guard-");
+    const victimDir = realTempDir("rt-temp-root-guard-victim-");
+    const victim = join(victimDir, "zshrc");
+    writeFileSync(victim, "original content");
+    const hardlink = join(root, "b.md");
+    linkSync(victim, hardlink);
+    const r = checkTempRootPath(hardlink, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("hardlinked");
+  });
+
+  test("a directory at the final component is refused (not a regular file)", () => {
+    const root = realTempDir("rt-temp-root-guard-");
+    const dirTarget = join(root, "adir");
+    mkdirSync(dirTarget);
+    const r = checkTempRootPath(dirTarget, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("non-regular file");
+  });
+
+  test("a FIFO at the final component is refused (would hang the child's write)", () => {
+    const root = realTempDir("rt-temp-root-guard-");
+    const fifo = join(root, "pipe");
+    execFileSync("mkfifo", [fifo]);
+    const r = checkTempRootPath(fifo, [root]);
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("non-regular file");
+  });
+
+  test("a `..` traversal through a symlinked component lands outside the root and is refused, pinning today's realpath behavior", () => {
+    const root = realTempDir("rt-temp-root-guard-");
+    mkdirSync(join(root, "a", "b"), { recursive: true });
+    symlinkSync(join(root, "a", "b"), join(root, "L"));
+    const outsideSibling = realTempDir("rt-temp-root-guard-sibling-");
+    // Built by string concatenation, not path.join/resolve, so the literal
+    // "L/../.." components survive to reach checkTempRootPath's own
+    // dirname()+realpathSync() -- path.join would collapse them first and
+    // the trap would never be exercised.
+    const trap = `${root}/L/../../${basename(outsideSibling)}/pwn.md`;
+    expect(dirname(trap)).toBe(`${root}/L/../../${basename(outsideSibling)}`);
+    const r = checkTempRootPath(trap, [root]);
+    expect(r.ok).toBe(false);
   });
 
   test("a symlinked PARENT directory that resolves inside a root is ok (macOS's /tmp -> /private/tmp shape)", () => {
