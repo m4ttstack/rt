@@ -539,6 +539,16 @@ describe('SettingsPage', () => {
   });
 });
 
+describe('page overflow', () => {
+  it('the settings content is size-contained, so no descendant can widen the page', async () => {
+    renderPage();
+    const heading = await screen.findByRole('heading', { name: 'Board' });
+    let el: HTMLElement | null = heading;
+    while (el && el.style.contain !== 'inline-size') el = el.parentElement;
+    expect(el).not.toBeNull();
+  });
+});
+
 describe('repo picker', () => {
   const ROLES = (
     effective: SettingDefWire['effective'],
@@ -576,6 +586,43 @@ describe('repo picker', () => {
     );
     expect(await screen.findByText('team · repo')).toBeInTheDocument();
     expect(screen.getByText('for acme/app')).toBeInTheDocument();
+  });
+
+  it('switching repo keeps the current list on screen while the repo loads', async () => {
+    defsResponse = serve([...DEFS, ROLES({ scope: null, file: null })]);
+    let release: () => void = () => {};
+    const held = new Promise<void>(r => (release = r));
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.startsWith('/api/settings/repos'))
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            repos: [{ identity: REPO, label: 'acme/app' }],
+          }),
+        };
+      if (url.includes(`repo=${encodeURIComponent(REPO)}`)) {
+        await held;
+        return serve([...DEFS, ROLES({ scope: null, file: null })])();
+      }
+      return defsResponse();
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Board' });
+    await userEvent.click(screen.getByRole('combobox', { name: 'repo' }));
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'acme/app' })
+    );
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get('repo')).toBe(REPO)
+    );
+    expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
+    expect(document.querySelector('.mantine-Skeleton-root')).toBeNull();
+    const list = screen.getByTestId('settings-list');
+    expect(list).toHaveAttribute('aria-busy', 'true');
+    expect(list).toHaveAttribute('inert');
+    release();
+    await waitFor(() => expect(list).not.toHaveAttribute('inert'));
   });
 
   it('the Changed count follows the picked repo', async () => {

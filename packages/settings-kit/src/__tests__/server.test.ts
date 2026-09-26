@@ -449,6 +449,30 @@ describe("schema on the wire", () => {
     expect(repoIssue.repo).toBe("gitlab.example.com/acme/app");
   });
 
+  test("with no ?repo=, a repo-scoped key also reports every repo section's issues, each stamped with its repo", async () => {
+    const body = (await (await handle(get("/api/settings/defs")))!.json()) as any;
+    const roles = body.defs.find((d: any) => d.key === "rt.roles");
+    expect(roles.effective.scope).toBe("user");
+    const repoIssues = roles.issues.filter((i: any) => i.scope === "team.repo");
+    expect(repoIssues).toEqual([
+      {
+        scope: "team.repo",
+        file: "/home/team/settings.team.jsonc",
+        kind: "nonconforming",
+        path: ["dev", "port"],
+        message: "expected string, got number",
+        repo: "gitlab.example.com/acme/app",
+      },
+    ]);
+    expect(roles.issues.filter((i: any) => i.scope === "user")).toHaveLength(1);
+  });
+
+  test("with ?repo=, the requested repo's issues are not duplicated by the all-repos sweep", async () => {
+    const body = (await (await handle(get("/api/settings/defs?repo=gitlab.example.com%2Facme%2Fapp")))!.json()) as any;
+    const roles = body.defs.find((d: any) => d.key === "rt.roles");
+    expect(roles.issues.filter((i: any) => i.scope === "team.repo")).toHaveLength(1);
+  });
+
   test("GET /repos lists store identities with labels", async () => {
     const body = (await (await handle(get("/api/settings/repos")))!.json()) as any;
     expect(body.repos).toEqual([{ identity: "gitlab.example.com/acme/app", label: "acme/app" }]);

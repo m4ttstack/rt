@@ -11,7 +11,12 @@ import type { SettingDefWire } from '@mattstack/settings-kit/react';
 import { checkValue, type SchemaIssue } from '@mattstack/settings-kit/shapes';
 
 import { canDraw, type FormShape } from './formShape';
-import { issueText, standingIssues } from './issues';
+import {
+  footerSummary,
+  issueText,
+  standingIssues,
+  type CardKey,
+} from './issues';
 import { CardsFooter, ItemCards } from './ItemCards';
 import { JsonDraft } from './JsonDraft';
 import { NamedSections } from './NamedSections';
@@ -111,9 +116,26 @@ export function DraftEditor({
     parsed.ok && JSON.stringify(parsed.value) !== JSON.stringify(start);
   const fits = parsed.ok && form !== null && canDraw(form, parsed.value);
 
+  // The form's touched fields at the switch to JSON, so an untouched new
+  // card reads the same there; any edit to the JSON text counts as a touch.
+  const formTouched = useRef<ReadonlyMap<CardKey, ReadonlySet<string>> | null>(
+    null
+  );
+  const [jsonTouched, setJsonTouched] = useState<{
+    text: string;
+    touched: ReadonlyMap<CardKey, ReadonlySet<string>>;
+  } | null>(null);
+  const onTouched = (t: ReadonlyMap<CardKey, ReadonlySet<string>>) => {
+    formTouched.current = t;
+  };
+
   const toJson = () => {
     setOrigin(null);
-    setText(pretty(draft));
+    const next = pretty(draft);
+    setText(next);
+    setJsonTouched(
+      formTouched.current ? { text: next, touched: formTouched.current } : null
+    );
     setMode('json');
   };
   const toForm = () => {
@@ -219,6 +241,7 @@ export function DraftEditor({
           footerEnd={footerEnd}
           issueTestId="draft-issue"
           onOrder={origin ? setOrigin : undefined}
+          onTouched={onTouched}
         />
       )}
       {mode === 'form' && form?.kind === 'objectMap' && (
@@ -231,20 +254,25 @@ export function DraftEditor({
           issues={issues}
           footerEnd={footerEnd}
           issueTestId="draft-issue"
+          onTouched={onTouched}
         />
       )}
       {mode === 'json' && (
         <CardsFooter
           leading={null}
-          summary={{
-            touchedText: null,
-            noteText: null,
-            fallbackText: parsed.ok
-              ? issues[0]
-                ? issueText(issues[0])
-                : null
-              : `JSON: ${parsed.message}`,
-          }}
+          summary={
+            parsed.ok && jsonTouched && jsonTouched.text === text
+              ? footerSummary(issues, jsonTouched.touched)
+              : {
+                  touchedText: null,
+                  noteText: null,
+                  fallbackText: parsed.ok
+                    ? issues[0]
+                      ? issueText(issues[0])
+                      : null
+                    : `JSON: ${parsed.message}`,
+                }
+          }
           issueTestId="draft-issue"
           footerEnd={footerEnd}
         />

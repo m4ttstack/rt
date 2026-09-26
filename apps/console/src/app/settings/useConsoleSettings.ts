@@ -95,6 +95,9 @@ function withRepo(repo?: string): { repo: string } | Record<string, never> {
   return repo ? { repo } : {};
 }
 
+const STILL_LOADING =
+  'settings are still loading for the picked repo; try again once the list appears';
+
 /** Every registered def under `prefix`, resolved for `repo` when one is
     picked. A write patches its def at once and then re-reads the list
     without raising `loading`, since it can change the def's issues and the
@@ -109,6 +112,10 @@ export function useConsoleSettings(
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const quiet = useRef(false);
+  // The repo the defs on screen were read for. A repo switch keeps the old
+  // list on screen while the new one loads, and a write from it would land
+  // in the newly picked repo, so every write waits until the two agree.
+  const loadedFor = useRef<string | null | undefined>(undefined);
   const kit = useSettingsScope(MOVE_ONLY_PREFIX);
 
   useEffect(() => {
@@ -121,6 +128,7 @@ export function useConsoleSettings(
       .then(body => {
         if (!alive) return;
         setDefs(body.defs.map(withDescription));
+        loadedFor.current = repo;
         setUnregistered(body.unregistered ?? []);
         setError(null);
       })
@@ -147,6 +155,7 @@ export function useConsoleSettings(
       key: string,
       body: Record<string, unknown>
     ): Write => {
+      if (loadedFor.current !== repo) return STILL_LOADING;
       try {
         const res = await fetch(`${BASE}/${path}`, {
           method: 'POST',
@@ -200,11 +209,12 @@ export function useConsoleSettings(
   const { move: kitMove } = kit;
   const move = useCallback(
     async (key: string, from: string, to: string) => {
+      if (loadedFor.current !== repo) return STILL_LOADING;
       const err = await kitMove(key, from, to);
       reread();
       return err;
     },
-    [kitMove, reread]
+    [kitMove, reread, repo]
   );
 
   return useMemo(

@@ -154,6 +154,36 @@ describe('useConsoleSettings', () => {
     ).toEqual(REPO_DEF.effective);
   });
 
+  it('refuses a write while the list for a newly picked repo is still loading', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>(r => (release = r));
+    const base = globalThis.fetch;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.includes('/defs') && url.includes('repo=')) await held;
+      return base(url, init);
+    });
+    const { result, rerender } = renderHook(
+      ({ repo }: { repo: string | null }) => useConsoleSettings(repo),
+      { initialProps: { repo: null as string | null } }
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    rerender({ repo: REPO });
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    let err: string | null = null;
+    await act(async () => {
+      err = await result.current.set('rt.logLevel', 'user', 'debug');
+    });
+    expect(err).toMatch(/still loading/);
+    expect(calls.some(c => c.url === '/api/settings/set')).toBe(false);
+    release();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      err = await result.current.set('rt.logLevel', 'user', 'debug');
+    });
+    expect(err).toBeNull();
+    expect(calls.some(c => c.url === '/api/settings/set')).toBe(true);
+  });
+
   it('re-reads defs after a write without raising loading', async () => {
     const seen: boolean[] = [];
     const { result } = renderHook(() => {

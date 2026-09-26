@@ -125,11 +125,6 @@ describe('UnregisteredNote', () => {
     const file = screen.getByTitle(longFile);
     expect(file.style.flex).toBe('1 1 0%');
     expect(file.style.minWidth).toBe('0px');
-    // A nowrap, truncated Text's min-content is its full untruncated width;
-    // minWidth: 0 alone does not stop that width reaching an ancestor
-    // querying intrinsic size (a page-wide ScrollArea, say). `contain`
-    // stops it at the source.
-    expect(file.style.contain).toBe('inline-size');
     const row = file.closest('.mantine-Group-root') as HTMLElement;
     expect(row.style.minWidth).toBe('0px');
   });

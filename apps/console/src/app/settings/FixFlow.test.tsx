@@ -268,6 +268,45 @@ describe('Needs fixing on the page', () => {
       ]);
     });
   });
+
+  it('closing the modal after a Fix that switched repo keeps that repo picked', async () => {
+    renderPage();
+    const line = await screen.findByText(
+      'team · acme/app · dev.fixedPort: expected number, got string'
+    );
+    await userEvent.click(
+      within(line.closest('[data-testid="issue-line"]')!).getByRole('button', {
+        name: 'Fix',
+      })
+    );
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => {
+      const p = new URLSearchParams(window.location.search);
+      expect(p.get('explain')).toBeNull();
+      expect(p.get('fix')).toBeNull();
+      expect(p.get('repo')).toBe(REPO);
+    });
+  });
+
+  it('closing the modal after a Fix with no repo switch returns to the page as it was', async () => {
+    renderPage();
+    const line = await screen.findByText(
+      'user · [2].url: expected string, got number'
+    );
+    await userEvent.click(
+      within(line.closest('[data-testid="issue-line"]')!).getByRole('button', {
+        name: 'Fix',
+      })
+    );
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => {
+      const p = new URLSearchParams(window.location.search);
+      expect(p.get('explain')).toBeNull();
+      expect(p.get('repo')).toBeNull();
+    });
+  });
 });
 
 describe('Fix in the explain modal', () => {
@@ -276,7 +315,8 @@ describe('Fix in the explain modal', () => {
   function openFix(
     d: SettingDefWire,
     rows: ExplainRowWire[],
-    setError: string | null = null
+    setError: string | null = null,
+    fix: string | null = 'user'
   ) {
     vi.stubGlobal('fetch', async () => ({
       ok: true,
@@ -287,7 +327,7 @@ describe('Fix in the explain modal', () => {
       <QueryClientProvider client={new QueryClient()}>
         <ExplainModal
           settingKey={d.key}
-          fix="user"
+          fix={fix}
           store={{
             defs: [d],
             loading: false,
@@ -302,6 +342,54 @@ describe('Fix in the explain modal', () => {
       </QueryClientProvider>
     );
   }
+
+  it('a layer issue shows once, on its layer, not again on the row above', async () => {
+    openFix(
+      bridges(),
+      [
+        { scope: 'default', file: null, present: false },
+        {
+          scope: 'user',
+          file: USER_FILE,
+          present: true,
+          value: [RULE, RULE, { ...RULE, url: 3 }],
+          nonconforming: [
+            { path: [2, 'url'], message: 'expected string, got number' },
+          ],
+        },
+      ],
+      null,
+      null
+    );
+    const layer = await screen.findByTestId('layer-user');
+    await waitFor(() =>
+      expect(screen.getAllByText(/expected string, got number/)).toHaveLength(1)
+    );
+    expect(
+      within(layer).getByText(/expected string, got number/)
+    ).toBeInTheDocument();
+  });
+
+  it('while a layer is edited, its stored value steps aside for the editor', async () => {
+    openFix(bridges(), [
+      { scope: 'default', file: null, present: false },
+      {
+        scope: 'user',
+        file: USER_FILE,
+        present: true,
+        value: [RULE, RULE, { ...RULE, url: 3 }],
+        nonconforming: [
+          { path: [2, 'url'], message: 'expected string, got number' },
+        ],
+      },
+    ]);
+    const layer = await screen.findByTestId('layer-user');
+    await within(layer).findByTestId('item-2');
+    expect(within(layer).queryByTestId('layer-value-user')).toBeNull();
+    expect(
+      within(layer).getAllByText(/expected string, got number/)
+    ).toHaveLength(2);
+  });
 
   it('opens the layer in the form when the form can draw it, the field highlighted, Save off', async () => {
     const value = [RULE, RULE, { ...RULE, url: 3 }];
