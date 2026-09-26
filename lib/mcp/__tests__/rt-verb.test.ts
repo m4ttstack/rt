@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { join } from "path";
 import type { CommandNode } from "../../command-tree.ts";
 import type { ExecResult } from "../../setup/probes.ts";
 import { RT_VERB_TIMEOUT_MS, runRtVerb, type RtVerbDeps } from "../rt-verb.ts";
+
+/** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
+const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-verb-out-")));
 
 const tree: Record<string, CommandNode> = {
   worktree: {
@@ -11,11 +17,15 @@ const tree: Record<string, CommandNode> = {
       list: { description: "l", module: "./m.ts", agentSafe: true, args: [{ name: "Repo", flag: "--repo", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }] },
       dispose: { description: "d", module: "./m.ts" },
       slow: { description: "s", module: "./m.ts", agentSafe: true, agentTimeoutMs: 600_000, args: [{ name: "JSON", flag: "--json", type: "boolean" }] },
+      brief: {
+        description: "b", module: "./m.ts", agentSafe: true, agentTempRootFlags: ["--out"],
+        args: [{ name: "Out", flag: "--out", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }],
+      },
     },
   },
 };
 
-function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = []): RtVerbDeps {
+function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [], tempRoots: string[] = [FAKE_TEMP_ROOT]): RtVerbDeps {
   return {
     tree,
     selfArgv: () => ["/bin/rt"],
@@ -24,6 +34,7 @@ function deps(result: ExecResult, calls: { argv: string[]; opts: unknown }[] = [
       calls.push({ argv, opts });
       return result;
     },
+    tempRoots: () => tempRoots,
   };
 }
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
@@ -54,6 +65,35 @@ describe("runRtVerb", () => {
     const r = await runRtVerb({ args: ["worktree", "slow"] }, deps({ code: 124, stdout: "", stderr: "" }));
     expect(r.ok ? "" : r.error).toContain("timed out after 600s");
     expect(r.ok ? "" : r.error).not.toContain("30s");
+  });
+
+  test("agentTempRootFlags: a value inside the temp root passes through, both --name value and --name=value", async () => {
+    const out = join(FAKE_TEMP_ROOT, "brief.md");
+    const a = await runRtVerb({ args: ["worktree", "brief", "--out", out] }, deps(ok("{}")));
+    expect(a.ok).toBe(true);
+    const b = await runRtVerb({ args: ["worktree", "brief", `--out=${out}`] }, deps(ok("{}")));
+    expect(b.ok).toBe(true);
+  });
+
+  test("agentTempRootFlags: a value outside the temp root is refused with zero spawn calls, both flag forms", async () => {
+    const outside = join(realpathSync(homedir()), ".zshrc");
+    const a = await refused({ args: ["worktree", "brief", "--out", outside] });
+    expect(a.ok ? "" : a.error).toContain("temp root");
+    const b = await refused({ args: ["worktree", "brief", `--out=${outside}`] });
+    expect(b.ok ? "" : b.error).toContain("temp root");
+  });
+
+  test("agentTempRootFlags: a relative value is refused with zero spawn calls", async () => {
+    const r = await refused({ args: ["worktree", "brief", "--out", "relative/brief.md"] });
+    expect(r.ok).toBe(false);
+  });
+
+  test("agentTempRootFlags does not affect a flag it does not name", async () => {
+    const outside = join(realpathSync(homedir()), ".zshrc");
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    const r = await runRtVerb({ args: ["worktree", "list", "--repo", outside] }, deps(ok("{}"), calls));
+    expect(r.ok).toBe(true);
+    expect(calls[0]!.argv).toContain(outside);
   });
 
   test("does not double --json and canonicalizes aliases", async () => {

@@ -1,13 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { join } from "path";
 import { herdToolDefs, type HerdToolDeps } from "../herd-tools.ts";
 
-function fake() {
+/** A real directory standing in for the Claude Code temp root -- checkTempRootPath realpaths the parent, so the root must actually exist on disk. */
+const FAKE_TEMP_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "rt-herd-brief-out-")));
+
+function fake(tempRoots: string[] = [FAKE_TEMP_ROOT]) {
   const calls: Array<{ fn: string; a: any; o: any }> = [];
   const rec = (fn: string) => (async (a: unknown, o: unknown) => { calls.push({ fn, a, o }); return { ok: true, data: { fn } }; }) as any;
   const deps: HerdToolDeps = {
     start: rec("start"), spawn: rec("spawn"), close: rec("close"), status: rec("status"), list: rec("list"),
     attend: rec("attend"), wrapUp: rec("wrapUp"), resume: rec("resume"), milestone: rec("milestone"),
     verb: (async (input: unknown) => { calls.push({ fn: "verb", a: input, o: undefined }); return { ok: true, body: { brief: "x" } }; }) as any,
+    tempRoots: () => tempRoots,
   };
   return { calls, tool: (n: string) => herdToolDefs(deps).find((t) => t.name === n)! };
 }
@@ -37,9 +44,26 @@ describe("herd shepherd tools", () => {
   });
   test("herd_brief spawns rt herd brief through the verb runner with repeated --fill", async () => {
     const { tool, calls } = fake();
-    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", strategy: "direct-tdd", strategies: "/s.md", fill: ["goal=ship", "fence=src/"], out: "/o.md" }, SESSION);
+    const out = join(FAKE_TEMP_ROOT, "o.md");
+    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", strategy: "direct-tdd", strategies: "/s.md", fill: ["goal=ship", "fence=src/"], out }, SESSION);
     expect(r.ok).toBe(true);
-    expect(calls[0]!.a).toEqual({ args: ["herd", "brief", "--job", "j", "--template", "/t.md", "--strategy", "direct-tdd", "--strategies", "/s.md", "--fill", "goal=ship", "--fill", "fence=src/", "--out", "/o.md"] });
+    expect(calls[0]!.a).toEqual({ args: ["herd", "brief", "--job", "j", "--template", "/t.md", "--strategy", "direct-tdd", "--strategies", "/s.md", "--fill", "goal=ship", "--fill", "fence=src/", "--out", out] });
+  });
+
+  test("herd_brief refuses an out path outside the Claude Code temp root, calling the verb runner zero times", async () => {
+    const { tool, calls } = fake();
+    const out = join(realpathSync(homedir()), ".zshrc");
+    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", methodFile: "/m.md", out }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("temp root");
+    expect(calls).toEqual([]);
+  });
+
+  test("herd_brief refuses a relative out path, calling the verb runner zero times", async () => {
+    const { tool, calls } = fake();
+    const r = await tool("herd_brief").handler({ job: "j", template: "/t.md", methodFile: "/m.md", out: "relative/brief.md" }, SESSION);
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
   });
   test("herd_attend needs HERDR_WORKSPACE_ID", async () => {
     const { tool, calls } = fake();

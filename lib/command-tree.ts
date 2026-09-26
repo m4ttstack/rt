@@ -150,6 +150,9 @@ export interface CommandNode {
 
   /** rt_verb's cap for this leaf when its normal run outlasts RT_VERB_TIMEOUT_MS. */
   agentTimeoutMs?: number;
+
+  /** Value flags whose path rt_verb confines to the Claude Code temp root before spawning (see lib/mcp/temp-root-guard.ts): a leaf that writes to a caller-named path this freely must not let an agent point it outside its own sandbox. */
+  agentTempRootFlags?: string[];
 }
 
 /** See CommandNode.omitBehavior. */
