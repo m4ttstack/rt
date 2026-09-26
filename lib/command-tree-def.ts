@@ -1663,7 +1663,7 @@ export const TREE: Record<string, CommandNode> = {
         ],
       },
       app: {
-        description: "Patch-release one served app end to end: bump it, bundle it, merge its pin, write the notes, tag, and verify the publish",
+        description: "Patch-release one served app end to end: qualify the path gate, write the notes, tag and verify",
         module: "./commands/release.ts",
         fn: "releaseApp",
         omitBehavior: "picker",

@@ -1,6 +1,6 @@
 // Prints rt-tray/deps.lock as TSV so build.sh / fetch-deps.sh / check-bundle.sh
 // never parse JSON in bash. Usage:
-//   bun scripts/lib/deps-lock.ts [--kind K] [--status S]
+//   bun scripts/lib/deps-lock.ts [--kind K] [--status S] [--source S]
 //   bun scripts/lib/deps-lock.ts --arch   (prints just the lock's arch, no rows)
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -20,8 +20,8 @@ export function toTsvRow(t: DepsLockTool): string {
   return [
     tsvField(t.name, t.name, "name"),
     tsvField(t.version, t.name, "version"),
-    tsvField(t.url, t.name, "url"),
-    tsvField(t.sha256, t.name, "sha256"),
+    tsvField(t.url ?? "", t.name, "url"),
+    tsvField(t.sha256 ?? "", t.name, "sha256"),
     tsvField(t.archive, t.name, "archive"),
     tsvField(t.extract, t.name, "extract"),
     tsvField(t.bundlePath, t.name, "bundlePath"),
@@ -29,6 +29,7 @@ export function toTsvRow(t: DepsLockTool): string {
     tsvField(t.status, t.name, "status"),
     tsvField(t.kind, t.name, "kind"),
     String(t.exposeByDefault),
+    tsvField(t.source ?? "", t.name, "source"),
   ].join("\t");
 }
 
@@ -45,6 +46,7 @@ if (import.meta.main) {
   };
   const kind = opt("--kind");
   const status = opt("--status");
+  const source = opt("--source");
   const wantArch = args.includes("--arch");
 
   const lockPath = opt("--lock") ?? join(import.meta.dir, "..", "..", "rt-tray", "deps.lock");
@@ -56,6 +58,7 @@ if (import.meta.main) {
     for (const t of lock.tools) {
       if (kind && t.kind !== kind) continue;
       if (status && t.status !== status) continue;
+      if (source && t.source !== source) continue;
       console.log(toTsvRow(t));
     }
   }

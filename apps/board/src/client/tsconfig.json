@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "./**/*",
+    "../../node_modules/@mattstack/tui-kit/types/css-modules.d.ts"
+  ],
+  // Both __tests__ dirs are their own programs: they need `types: ["bun"]`
+  // for `bun:test`, which this one cannot have (see
+  // src/client/__tests__/tsconfig.json and src/client/board/__tests__/tsconfig.json).
+  "exclude": ["__tests__", "board/__tests__"]
+}

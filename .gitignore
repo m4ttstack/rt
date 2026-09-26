@@ -37,3 +37,17 @@ rt-tray/.build-xcode/
 .lane-b-status.md
 
 ui/dist/
+
+# apps and packages (imported from the apps repo)
+dist-ssr
+*.local
+storybook-static
+*storybook.log
+.turbo
+FEEDBACK-*.md
+packages/ui/scripts/treeshake-probe/dist
+probe/src/server/embedded/manifest.ts
+probe/dist-bin
+probe/vendor
+probe/bun.lock
+docs/apps/design/gate-triage-modal/gate-triage-modal.html

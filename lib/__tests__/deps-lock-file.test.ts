@@ -55,8 +55,8 @@ describe("rt-tray/deps.lock", () => {
   });
   // An unknown row key is tolerated, so a misspelled serve would quietly turn
   // an app into a tool; only an exact list catches that. It names serve rows
-  // whatever their status, so bundle-apps flipping a pending row to bundled
-  // needs no edit here.
+  // whatever their status, so flipping a row from pending to bundled is a
+  // hand edit and needs no change here.
   const SERVE_ROWS: Record<string, { port: number; args: string[] }> = {
     board: { port: 11006, args: [] },
     console: { port: 11001, args: [] },

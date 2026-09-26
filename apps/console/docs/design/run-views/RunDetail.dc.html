@@ -1,0 +1,123 @@
+<script src="./support.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  .rd-root * { box-sizing: border-box; margin: 0; }
+  .rd-root { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .rd-kbd { display:inline-block; border:1px solid #dee2e6; border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:10px; color:#495057; background:#f8f9fa; }
+  .rd-fact-label { font-size:10px; color:#868e96; text-transform:uppercase; letter-spacing:.06em; }
+  .rd-copy { color:#adb5bd; font-size:11px; }
+</style>
+<div class="rd-root" style="width:1440px;height:1150px;background:#f1f3f5;color:#212529;overflow:hidden;">
+  <div style="background:#f8f9fa;border-bottom:1px solid #dee2e6;padding:10px 28px;font-size:12px;color:#495057;">console</div>
+
+  <div style="padding:24px 40px 0 40px;">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;">
+      <div style="font-size:24px;font-weight:700;">acme/payments <span style="color:#adb5bd;font-weight:400;">/</span> <span style="color:#495057;font-weight:500;font-size:20px;">20260825-104347-e8f9</span></div>
+      <div style="font-size:11px;color:#868e96;">&gt;_ rt runs show · live · updated 3s ago</div>
+    </div>
+
+    <!-- SUMMARY CARD (replaces the Handoff pane) -->
+    <div style="margin-top:18px;background:#fff;border:1px solid #dee2e6;border-radius:10px;padding:20px 24px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:18px;font-weight:700;color:#2e7de9;">DEMO-1265</span>
+            <span class="rd-kbd">t</span>
+            <span style="font-size:16px;font-weight:500;">Add shield toggle to side-rail dropdown</span>
+          </div>
+          <div style="margin-top:6px;font-size:12px;color:#868e96;">feature pipeline · started 10:43 · 2h 48m elapsed</div>
+        </div>
+        <div style="flex:none;display:flex;align-items:center;gap:10px;">
+          <span style="display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 14px;font-size:12px;font-weight:600;background:#e5f4ff;color:#2e7de9;">watch-ci · running</span>
+        </div>
+      </div>
+
+      <!-- fact strip: every handoff value folds in here with its copy hotkey -->
+      <div style="margin-top:18px;display:grid;grid-template-columns:1.1fr 1.5fr 1.2fr 1.6fr;gap:0;border-top:1px solid #f1f3f5;padding-top:14px;">
+        <div style="padding-right:18px;border-right:1px solid #f1f3f5;">
+          <div class="rd-fact-label">MR · CI</div>
+          <div style="margin-top:4px;font-size:13px;"><span style="color:#2e7de9;font-weight:600;">!4321</span> <span class="rd-kbd">m</span></div>
+          <div style="margin-top:3px;font-size:11px;color:#007197;">● pipeline running · 12m</div>
+        </div>
+        <div style="padding:0 18px;border-right:1px solid #f1f3f5;">
+          <div class="rd-fact-label">Branch</div>
+          <div style="margin-top:4px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">demo-1265-add-shield-toggle <span class="rd-kbd">b</span> <span class="rd-copy">⧉</span></div>
+          <div style="margin-top:3px;font-size:11px;color:#868e96;">5 commits @ bfbb576 <span class="rd-kbd">c</span></div>
+        </div>
+        <div style="padding:0 18px;border-right:1px solid #f1f3f5;">
+          <div class="rd-fact-label">Worktree</div>
+          <div style="margin-top:4px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">…/.worktrees/harbor <span class="rd-kbd">w</span> <span class="rd-copy">⧉</span></div>
+          <div style="margin-top:3px;font-size:11px;color:#868e96;">acme/payments</div>
+        </div>
+        <div style="padding-left:18px;">
+          <div class="rd-fact-label">Liveness</div>
+          <div style="margin-top:4px;font-size:12px;color:#587539;">● driven — agent working in pane w2:p1</div>
+          <div style="margin-top:3px;font-size:11px;color:#868e96;">last pipeline event 4m ago</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIMELINE — now on its own surface (the missing background) -->
+    <div style="margin-top:18px;background:#fff;border:1px solid #dee2e6;border-radius:10px;padding:22px 26px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;">Pipeline</div>
+      <div style="display:flex;gap:0;">
+        <div style="width:2px;background:#587539;margin-left:11px;margin-right:-13px;margin-top:10px;margin-bottom:46px;"></div>
+        <div style="flex:1;">
+          <!-- done stages, condensed -->
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">provision</span>
+            <span style="font-size:11px;color:#868e96;">branch, worktree · 2m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">plan</span>
+            <span style="font-size:11px;color:#868e96;">direct-tdd · verdict yes · 9m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">gates</span>
+            <span style="font-size:11px;color:#868e96;">conventions read · 1m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">evidence</span>
+            <span style="font-size:11px;color:#868e96;">before/after screenshots · 3m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">implement</span>
+            <span style="font-size:11px;color:#868e96;">5 commits @ bfbb576 · 1h 12m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">self-review</span>
+            <span style="font-size:11px;color:#868e96;">0 critical · 1 important fixed · 24m</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#587539;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">✓</span>
+            <span style="font-size:13px;font-weight:600;width:110px;">ship</span>
+            <span style="font-size:11px;color:#2e7de9;">MR !4321 · 5m</span>
+          </div>
+          <!-- current stage: expanded, tinted -->
+          <div style="margin-top:6px;background:#e5f4ff;border:1px solid #a9cefa;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:10px;">
+            <span style="width:22px;height:22px;border-radius:50%;background:#2e7de9;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">◔</span>
+            <span style="font-size:13px;font-weight:700;width:110px;">watch-ci</span>
+            <span style="font-size:12px;color:#115cbc;">running 12m — 3 of 5 CI jobs green</span>
+            <span style="flex:1;"></span>
+            <span style="font-size:11px;color:#2e7de9;">open pipeline ↗</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid #f1f3f5;">
+        <div style="font-size:11px;color:#868e96;">Outside the pipeline — work: DEMO-1265 · stage-plan decision · execution-strategy@1 → direct-tdd</div>
+      </div>
+    </div>
+
+    <!-- Effective inputs stays as-is below -->
+    <div style="margin-top:18px;background:#fff;border:1px solid #dee2e6;border-radius:10px;padding:18px 26px;color:#868e96;font-size:12px;">
+      Effective inputs — what was this run actually told? <span style="color:#adb5bd;">(unchanged; collapsed by default)</span>
+    </div>
+  </div>
+</div>

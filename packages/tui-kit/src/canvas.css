@@ -1,0 +1,19 @@
+/* tui-kit page canvas (optional): the graph-paper ground, the base type, and
+   the column measure. Import from an app entry (never @import from a
+   raw-served stylesheet). Components do not require it; importing it opts the
+   page in — it styles body directly, exactly reproducing the board canvas. */
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh;
+  /* 13.5px and the 28px grid are canvas-identity constants, not theme tokens:
+     single-use by census, so they stay literal. */
+  font: 13.5px/1.55 var(--font-sans);
+  background: var(--bg); color: var(--fg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.tui { max-width: 980px; margin: 0 auto; padding: 2.5rem 1.25rem 2rem; }
+.tui-wide { max-width: 1160px; }

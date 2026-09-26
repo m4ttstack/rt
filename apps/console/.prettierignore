@@ -1,0 +1,25 @@
+node_modules
+dist
+dist-bin
+storybook-static
+logs
+*.log
+bun.lock
+
+# Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
+# regenerated on every build:binary run.
+src/server/embedded/generated/**
+
+# Vendored from mantine-kit: the sync process byte-compares these against
+# upstream, so a local prettier reformat reads as permanent drift.
+src/ui/**
+skills/**
+
+# Design artboards and their generated renders. Whitespace inside them is
+# load-bearing -- the compile drawer's body renders under `white-space:
+# pre-wrap`, so reflowing it changes what the reference PNG shows.
+design/wiring/artboards/**
+design/wiring/render/**
+
+# Committed design-reference sources stay byte-identical to the published canvas
+docs/design/**

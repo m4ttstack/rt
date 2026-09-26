@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197;
+      --dot-ok: #1f9d3a; --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff;
+      --dot-ok: #4ade5b; --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .aicon:hover { background: var(--bg4); color: var(--fg); }
+    .badge { display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; white-space: nowrap; }
+    .alert { border-radius: 6px; padding: 6px 9.6px; display: flex; gap: 6px; align-items: flex-start; }
+    .code { font-size: 11.2px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+    .seam { color: var(--purple); }
+    .fm { color: var(--cyan); }
+  </style>
+</helmet>
+
+<!-- Drawer, position right, size 720, shadow xl (-6px 0 32px rgba(0,0,0,0.3)). -->
+<div class="app {{schemeClass}}" style="width: 720px; height: 900px; background: var(--bg2); border-left: 1px solid var(--border); box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column;">
+
+  <div class="row" style="flex: none; padding: 11.2px; gap: 7.2px; border-bottom: 1px solid var(--border);">
+    <div class="stack" style="gap: 2px; flex: 1; min-width: 0;">
+      <div class="row" style="gap: 4.8px;">
+        <span style="font-size: 14.72px; font-weight: 700;">work</span>
+        <span class="sm muted truncate">mattstack:work</span>
+      </div>
+      <div class="row" style="gap: 6px; color: var(--muted);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+        <span class="xs muted">rt skills compile --verb work --preview</span>
+        <span class="xs" style="opacity: 0.75;">as of 3:28:41 PM</span>
+      </div>
+    </div>
+    <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+
+  <div class="stack" style="flex: 1; min-height: 0; padding: 11.2px; gap: 9.6px;">
+
+    <!-- The honest limit, stated where it is read, not in a tooltip. -->
+    <div class="alert" style="background: color-mix(in srgb, var(--accent) var(--wash), transparent); color: var(--accent);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 2px; flex: none;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      <span class="xs">What a fresh compile would produce. Nothing is written to disk, and this is not a diff against the artifact that is there — <span style="font-weight: 600;">rt skills check</span> named the files below as differing.</span>
+    </div>
+
+    <div class="stack" style="gap: 4.8px;">
+      <span class="xs muted">Files check flagged</span>
+      <div class="row" style="gap: 4.8px;">
+        <span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">SKILL.md</span>
+      </div>
+    </div>
+
+    <div class="stack" style="gap: 4.8px;">
+      <span class="xs muted">Slots</span>
+      <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px;">
+        <div class="row" style="padding: 5px 9.6px; gap: 9.6px;">
+          <span class="sm" style="width: 104px; flex: none; font-weight: 600;">tiering</span>
+          <span class="badge-outline">inlined</span>
+          <span class="xs muted truncate" style="flex: 1;">mattstack:model-tiering · 48 lines at 1-48</span>
+        </div>
+        <div class="row" style="padding: 5px 9.6px; gap: 9.6px; border-top: 1px solid var(--border-soft);">
+          <span class="sm" style="width: 104px; flex: none; font-weight: 600;">policy</span>
+          <span class="badge-outline">referenced</span>
+          <span class="xs muted truncate" style="flex: 1;">demo:work-policy · public, invoked rather than inlined — no seam</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack" style="gap: 7.2px; flex: 1; min-height: 0;">
+      <div class="row" style="justify-content: space-between;">
+        <span class="xs muted">Compiled body</span>
+        <button class="aicon" aria-label="Copy body"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+
+      <div class="stack" style="flex: 1; min-height: 0; overflow: auto; gap: 11.2px;">
+
+        <div class="stack" style="gap: 4.8px;">
+          <div class="row" style="gap: 4.8px;">
+            <span class="xs muted" style="flex: none;">step</span>
+            <span class="sm" style="font-weight: 600; flex: none;">mattstack:work</span>
+            <span class="badge-outline">0.8.0</span>
+            <span class="xs truncate" style="flex: 1; color: var(--muted); opacity: 0.75;">attachments/pipeline/work/SKILL.md:17-135</span>
+          </div>
+          <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; padding: 9.6px;"><div class="code"># work — the do-a-unit-of-work orchestrator
+
+You run one unit of work through the pipeline the consumer's manifest
+names, resolving each stage against the bindings this pack compiled in.
+
+## Reading the pipeline
+
+Call `resolve-pipeline.sh` once at the start. It prints the ordered
+stage list for this pack; never infer stages from directory names.</div></div>
+        </div>
+
+        <div class="stack" style="gap: 4.8px;">
+          <div class="row" style="gap: 4.8px;">
+            <span class="xs muted" style="flex: none;">slot tiering</span>
+            <span class="sm" style="font-weight: 600; flex: none;">mattstack:model-tiering</span>
+            <span class="badge-outline">0.8.0</span>
+            <span class="xs truncate" style="flex: 1; color: var(--muted); opacity: 0.75;">attachments/model-tiering/SKILL.md:1-48</span>
+          </div>
+          <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; padding: 9.6px;"><div class="code">## Model tiering
+
+Pick the tier from the work type before any stage runs; never infer it
+from the ticket title.</div></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>

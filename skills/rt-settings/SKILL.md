@@ -28,13 +28,17 @@ or "just sed the jsonc" — is the bug this contract exists to prevent.
    `board.*` row never has one). An explicit `getSetting` of an undeclared key
    THROWS; an undeclared key found in a store file warns and is skipped.
    A new key is the registry row first, then delivery: rt itself sees the
-   row immediately, but every consumer app holds a COPY of rt-client in its
-   node_modules (deck bundles it into a compiled binary) that stays stale
-   until that copy is refreshed — and a plain `bun install` against a
-   published-version pin refreshes NOTHING; the add-a-key checklist in the
+   row immediately. Board, console and deck link rt-client as an in-tree
+   `workspace:*` package, so the next `bun install` (root `postinstall`
+   rebuilds rt-client's `dist/`) or turbo build picks up the new key; deck
+   additionally bundles rt-client into its compiled binary, so it needs a
+   rebuild at the next release to ship it. gitq, still its own repo, is
+   pinned to the last published npm version and only sees the key after a
+   version bump, publish and install there; the add-a-key checklist in the
    routed doc carries the real per-consumer delivery steps. A key that
    resolves undefined — or throws unknown-key — in one app while
-   `rt settings` knows it is a stale copy, not a missing value.
+   `rt settings` knows it is a stale `dist/` (rebuild rt-client) or, for
+   gitq, a stale published install, not a missing value.
 3. Scopes, weakest → strongest: `default < team < user < team.repo <
    user.repo < machine < machine.repo` — most-specific wins; machine
    outranks user outranks team. Pick the scope by whose intent it is: team

@@ -1,0 +1,30 @@
+{
+  // A third program, for the client-layer tests only. It exists because the
+  // other two each declare exactly one of the two things these files need, and
+  // neither can take on the other:
+  //
+  //  - the ROOT project has `types: ["bun"]` (so `bun:test` resolves) but no
+  //    DOM lib, and `@mattstack/tui-kit/hooks` ships the pure layer-stack and
+  //    scroll-lock functions in the same module as the React hooks that touch
+  //    `document`/HTMLElement -- as SOURCE, so the whole module is re-checked
+  //    here. Giving the server program a DOM it does not have was the wrong
+  //    trade; it is DOM-free again.
+  //  - the CLIENT project has the DOM lib but `types: ["node"]`, deliberately:
+  //    `@soribashi/factory` also ships types as source, and its two
+  //    `@ts-expect-error` directives read as unused under any tsconfig that
+  //    declares `import.meta.env` (which `bun` does), so adding "bun" there
+  //    re-raises the two TS2578 errors docs/tui-kit-devloop.md records. Adding
+  //    "node" alongside "bun" does not help; the ambient sets merge.
+  //
+  // Both at once is only safe here because `@mattstack/tui-kit/hooks` imports
+  // nothing but React -- it never reaches `@soribashi/factory`, so there is no
+  // TS2578 to raise. A test that imported a RECIPE would not belong in this
+  // program.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"]
+  },
+  "include": ["./**/*"],
+  "exclude": []
+}

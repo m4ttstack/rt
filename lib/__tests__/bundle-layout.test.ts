@@ -265,6 +265,30 @@ describe("parseDepsLock repo field and pending-url rule", () => {
   });
 });
 
+describe("tree rows", () => {
+  const tree = { name: "board", version: "", license: "MIT", source: "tree", archive: "raw", extract: "",
+    bundlePath: "Contents/Helpers/board", exec: ["Contents/Helpers/board"], exposeByDefault: false,
+    entitlements: "jit", status: "bundled", kind: "helper", skills: true, serve: { port: 11006, args: [] } };
+  const lock = (t: unknown) => JSON.stringify({ schema: 1, arch: "arm64", tools: [t] });
+
+  test("a tree row needs no url or sha256", () => {
+    expect(parseDepsLock(lock(tree)).tools[0]!.source).toBe("tree");
+  });
+  test("a tree row with a url is rejected", () => {
+    expect(() => parseDepsLock(lock({ ...tree, url: "https://x" }))).toThrow(/tree row must not carry url/);
+  });
+  test("a tree row with repo or subdir is rejected", () => {
+    expect(() => parseDepsLock(lock({ ...tree, repo: "m4ttstack/rt" }))).toThrow(/tree row must not carry repo/);
+  });
+  test("a fetched row still needs url and sha256", () => {
+    const { source: _s, ...fetched } = tree;
+    expect(() => parseDepsLock(lock(fetched))).toThrow(/url must be a string/);
+  });
+  test("skills must be a boolean when present", () => {
+    expect(() => parseDepsLock(lock({ ...tree, skills: "yes" }))).toThrow(/skills must be boolean/);
+  });
+});
+
 describe("bundleRootFromExec", () => {
   test("finds the .app root from Contents/MacOS/<bin>", () => {
     const root = fakeApp();

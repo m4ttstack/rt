@@ -1,0 +1,507 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
+
+function linkedDir(manifest: object): string {
+  const dir = mkdtempSync(join(tmpdir(), 'status-link-'));
+  writeFileSync(join(dir, 'mattstack.deck.json'), JSON.stringify(manifest));
+  return dir;
+}
+
+const dir = mkdtempSync(join(tmpdir(), 'local-status-'));
+process.env.LOCAL_REGISTRY_PATH = join(dir, 'registry.json');
+process.env.LOCAL_APPS_ROUTES_PATH = join(dir, 'routes.json');
+process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, 'settings.json');
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
+// ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
+process.env.HOME = dir;
+
+const { buildStatus } = await import('./status.ts');
+const { putRecord, reloadRegistry } = await import('../registry/records.ts');
+const { setCatalogReport } = await import('../registry/catalog-report.ts');
+const { setBundledResourcesDir } =
+  await import('../registry/bundled-identity.ts');
+
+function bundleResources(name: string): string {
+  const root = mkdtempSync(join(tmpdir(), 'status-resources-'));
+  const dir = join(root, 'apps', name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'mattstack.deck.json'),
+    JSON.stringify({ name, displayName: 'My App', icon: './icon.svg' })
+  );
+  writeFileSync(
+    join(dir, 'icon.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+  );
+  return root;
+}
+
+afterEach(() => setBundledResourcesDir(undefined));
+
+beforeEach(() => {
+  rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
+  // deck.platform reads through rt-client, which resolves HOME at call time
+  // (not overridable via a LOCAL_*_PATH var); a fresh dir per test keeps this
+  // file's own store writes (none today) from ever leaking test-to-test.
+  process.env.HOME = mkdtempSync(join(tmpdir(), 'local-status-home-'));
+  reloadRegistry();
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'myapp.localhost', port: 19999, pid: 0 }])
+  );
+  setCatalogReport([]);
+});
+
+const opts = {
+  local: true,
+  port: 7940,
+  canaryPort: 7942,
+  proxyFreshness: 'unknown' as const,
+  autoHeal: null,
+};
+
+test('a route with a registry record carries managedBy and issues on its row', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+    issues: [
+      {
+        source: 'portless',
+        message: 'alias failed',
+        at: '2026-08-10T00:00:00Z',
+      },
+    ],
+  });
+  const status = await buildStatus(opts);
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.managedBy).toBe('rt');
+  expect(row.issues).toHaveLength(1);
+});
+
+test('a route with no record is managedBy null (legacy, pre-migrate)', async () => {
+  const status = await buildStatus(opts);
+  expect(status.apps[0]!.managedBy).toBeNull();
+  expect(status.apps[0]!.issues).toEqual([]);
+});
+
+test('a row carries its oauth rule, defaulting to off', async () => {
+  const status = await buildStatus(opts);
+  expect(status.apps[0]!.oauth).toEqual({ mode: 'off' });
+});
+
+test("the platform's own record marks its row self, wherever its port is", async () => {
+  putRecord({
+    name: 'deck',
+    managedBy: 'deck',
+    port: 19999,
+    kind: 'service',
+    label: 'com.mattstack.deck',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus(opts);
+  expect(status.apps.find(a => a.name === 'myapp')!.self).toBe(true);
+});
+
+test("deck's own row carries the catalog report with no platform record, and no other row does", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'deck.localhost', port: 7940, pid: 0 },
+      { hostname: 'myapp.localhost', port: 19999, pid: 0 },
+    ])
+  );
+  setCatalogReport([
+    { name: 'board', error: 'this bundle ships no Helpers/board' },
+  ]);
+
+  const status = await buildStatus(opts);
+
+  expect(status.apps.find(a => a.name === 'deck')!.issues).toEqual([
+    {
+      source: 'launchd',
+      message:
+        'bundled apps deck cannot serve: board (this bundle ships no Helpers/board)',
+      at: expect.any(String),
+    },
+  ]);
+  expect(status.apps.find(a => a.name === 'myapp')!.issues).toEqual([]);
+});
+
+test("the catalog report joins the platform record's own launchd issue, one issue per source", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port: 7940, pid: 0 }])
+  );
+  putRecord({
+    name: 'deck',
+    managedBy: 'deck',
+    port: 7940,
+    kind: 'service',
+    label: 'com.mattstack.deck',
+    createdAt: '2026-08-10T00:00:00Z',
+    issues: [
+      {
+        source: 'launchd',
+        message: 'bootstrap install failed',
+        at: '2026-08-10T00:00:00Z',
+      },
+    ],
+  });
+  setCatalogReport([
+    { name: 'board', error: 'catalog port 11006 is held by mine' },
+  ]);
+
+  const status = await buildStatus(opts);
+
+  expect(status.apps.find(a => a.name === 'deck')!.issues).toEqual([
+    {
+      source: 'launchd',
+      message:
+        'bootstrap install failed; bundled apps deck cannot serve: board (catalog port 11006 is held by mine)',
+      at: '2026-08-10T00:00:00Z',
+    },
+  ]);
+});
+
+function plistXml(label: string, extra: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>${label}</string>${extra}</dict></plist>`;
+}
+
+/** Runs `body` against a scratch LaunchAgents dir holding `plists` (label to
+    extra plist keys) and a seamed `launchctl list` of `pids`. */
+async function withAgents(
+  plists: Record<string, string>,
+  pids: string,
+  body: () => Promise<void>
+): Promise<void> {
+  const saved = {
+    LOCAL_AGENTS_DIR: process.env.LOCAL_AGENTS_DIR,
+    LOCAL_LAUNCHCTL_PIDS: process.env.LOCAL_LAUNCHCTL_PIDS,
+  };
+  const agents = mkdtempSync(join(tmpdir(), 'status-agents-'));
+  for (const [label, extra] of Object.entries(plists))
+    writeFileSync(join(agents, `${label}.plist`), plistXml(label, extra));
+  process.env.LOCAL_AGENTS_DIR = agents;
+  process.env.LOCAL_LAUNCHCTL_PIDS = pids;
+  try {
+    await body();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("deck's own row shows the launchd job running it and its pid; no other row does", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'deck.localhost', port: 7940, pid: 0 },
+      { hostname: 'myapp.localhost', port: 19999, pid: 0 },
+    ])
+  );
+
+  await withAgents({}, '', async () => {
+    const status = await buildStatus({
+      ...opts,
+      selfService: async () => ({ label: 'com.mattstack.deck.dev', pid: 4242 }),
+    });
+
+    expect(status.apps.find(a => a.name === 'deck')!.service).toEqual({
+      label: 'com.mattstack.deck.dev',
+      short: 'deck',
+      pid: 4242,
+      lastExitStatus: null,
+      unmanaged: null,
+      stderr: [],
+    });
+    expect(status.apps.find(a => a.name === 'myapp')!.service).toBeNull();
+  });
+});
+
+test("with no launchd job running deck, its row borrows no service, not even one whose label contains 'deck'", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port: 7940, pid: 0 }])
+  );
+
+  await withAgents(
+    {
+      'com.mattstack.deck.board':
+        '<key>WorkingDirectory</key><string>/apps/board</string>',
+    },
+    'com.mattstack.deck.board=777',
+    async () => {
+      const status = await buildStatus({
+        ...opts,
+        selfService: async () => null,
+      });
+      expect(status.apps.find(a => a.name === 'deck')!.service).toBeNull();
+    }
+  );
+});
+
+test("a hand agent running deck keeps its own launchd reading on deck's row", async () => {
+  const port = 19998;
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: 'deck.localhost', port, pid: 0 }])
+  );
+  const stderrPath = join(dir, 'hand-deck.err.log');
+  writeFileSync(stderrPath, 'bind failed\n');
+
+  await withAgents(
+    {
+      'com.mattstack.deck': `<key>StandardErrorPath</key><string>${stderrPath}</string>`,
+    },
+    'com.mattstack.deck=4242',
+    async () => {
+      const status = await buildStatus({
+        ...opts,
+        port,
+        selfService: async () => ({ label: 'com.mattstack.deck', pid: 4242 }),
+      });
+      expect(status.apps.find(a => a.name === 'deck')!.service).toMatchObject({
+        label: 'com.mattstack.deck',
+        short: 'deck',
+        pid: 4242,
+        stderr: ['bind failed'],
+      });
+    }
+  );
+});
+
+test('a pre-rename self-record (managedBy local) still marks its row self', async () => {
+  // Local -> Deck rename: an upgrading machine's self-row may still carry
+  // the pre-rename managedBy id until `deck setup` next runs and migrates
+  // it (registry/bootstrap.ts).
+  putRecord({
+    name: 'local',
+    managedBy: 'local',
+    port: 19999,
+    kind: 'service',
+    label: 'com.mattstack.local',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus(opts);
+  expect(status.apps.find(a => a.name === 'myapp')!.self).toBe(true);
+});
+
+test('registered rows carry their record shape for the edit dialog', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'user',
+    port: 19999,
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/myapp',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus(opts);
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.record).toEqual({
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/myapp',
+  });
+});
+
+test('through a public host that record shape is redacted — command/workingDirectory never transit', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'user',
+    port: 19999,
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/secret-dir',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({
+    ...opts,
+    local: false,
+    requestHost: 'myapp.example.dev',
+  });
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  // kind is not sensitive; the local-only shape is nulled out.
+  expect(row.record).toEqual({
+    kind: 'service',
+    command: null,
+    workingDirectory: null,
+  });
+  // Assert on the WHOLE serialized document, not named keys: the regression this
+  // guards against moved the leak one level deeper, where a key-by-key check
+  // would have sailed straight past it.
+  expect(JSON.stringify(status)).not.toContain('/tmp/secret-dir');
+});
+
+test("an owned row's url follows its displayTld, whichever route it joined on", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: 'myapp.localhost', port: 19999, pid: 0 },
+      { hostname: 'myapp.mattstack', port: 19999, pid: 0 },
+    ])
+  );
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus(opts);
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.displayTld).toBe('mattstack');
+  expect(row.url).toBe('https://myapp.mattstack');
+});
+
+test("a user row's url stays on localhost", async () => {
+  const status = await buildStatus(opts);
+  expect(status.apps[0]!.url).toBe('https://myapp.localhost');
+});
+
+test("a user app's commands are present regardless of dev mode", async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'user',
+    port: 19999,
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/myapp',
+    commands: { build: 'bun run build' },
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({ ...opts, devMode: false });
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.commands).toEqual(['build']);
+});
+
+test('legacy record-level commands never produce buttons; the unlinked state shows in dev mode (no grandfathering)', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    commands: { restart: 'bun run restart' },
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const dev = await buildStatus({ ...opts, devMode: true });
+  expect(dev.apps.find(a => a.name === 'myapp')!.commands).toBeUndefined();
+  expect(dev.apps.find(a => a.name === 'myapp')!.devLink).toBe('unlinked');
+  const prod = await buildStatus({ ...opts, devMode: false });
+  expect(prod.apps.find(a => a.name === 'myapp')!.commands).toBeUndefined();
+  expect(prod.apps.find(a => a.name === 'myapp')!.devLink).toBeUndefined();
+});
+
+test('a slim linked row lists manifest dev keys minus start, dev only, with devLink linked', async () => {
+  const dir = linkedDir({
+    name: 'myapp',
+    dev: { start: 'bun x', build: 'bun run build' },
+  });
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    dev: { workingDirectory: dir },
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const dev = await buildStatus({ ...opts, devMode: true });
+  const devRow = dev.apps.find(a => a.name === 'myapp')!;
+  expect(devRow.commands).toEqual(['build']);
+  expect(devRow.devLink).toBe('linked');
+  const prod = await buildStatus({ ...opts, devMode: false });
+  const prodRow = prod.apps.find(a => a.name === 'myapp')!;
+  expect(prodRow.commands).toBeUndefined();
+  expect(prodRow.devLink).toBeUndefined();
+});
+
+test('a slim row with no dev link yet gets devLink unlinked and no commands', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({ ...opts, devMode: true });
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.devLink).toBe('unlinked');
+  expect(row.commands).toBeUndefined();
+});
+
+test('a slim row with a broken link gets devLink broken', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    dev: { workingDirectory: '/nonexistent/myapp-dir' },
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({ ...opts, devMode: true });
+  const row = status.apps.find(a => a.name === 'myapp')!;
+  expect(row.devLink).toBe('broken');
+  expect(row.commands).toBeUndefined();
+});
+
+test('the top-level devMode flag mirrors opts.devMode, for the board to show', async () => {
+  expect((await buildStatus({ ...opts, devMode: true })).devMode).toBe(true);
+  expect((await buildStatus({ ...opts, devMode: false })).devMode).toBe(false);
+  expect((await buildStatus(opts)).devMode).toBe(false);
+});
+
+test('a non-local caller on a local-looking host gets no controls and a redacted record', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'user',
+    port: 19999,
+    kind: 'service',
+    command: ['bun', 's.ts'],
+    workingDirectory: '/tmp/secret-dir',
+    label: 'com.mattstack.deck.myapp',
+    createdAt: '2026-08-10T00:00:00Z',
+  });
+  const status = await buildStatus({
+    ...opts,
+    local: false,
+    requestHost: 'deck.mattstack',
+  });
+  expect(status.canManage).toBe(false);
+  expect(status.canRestart).toBe(false);
+  expect(JSON.stringify(status)).not.toContain('/tmp/secret-dir');
+});
+
+test('a managed row with only a bundled identity carries its icon URL', async () => {
+  putRecord({
+    name: 'myapp',
+    managedBy: 'rt',
+    port: 19999,
+    kind: 'service',
+    createdAt: '2026-09-24T00:00:00Z',
+  });
+  setBundledResourcesDir(bundleResources('myapp'));
+  const row = (await buildStatus(opts)).apps.find(a => a.name === 'myapp')!;
+  expect(row.icon).toBe('/api/apps/myapp/icon');
+  setBundledResourcesDir(null);
+  const bare = (await buildStatus(opts)).apps.find(a => a.name === 'myapp')!;
+  expect(bare.icon).toBeNull();
+});

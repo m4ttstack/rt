@@ -1,17 +1,19 @@
 /**
  * rt release update-machine... the rt:release skill's step 12 as one verb:
- * bring this developer's own machine (prod app, dev bundle, daemon, and the
- * served suite) up to a released tag, in that order, with a verification
- * sweep at the end.
+ * bring this developer's own machine (prod app, dev bundle, checkout sync,
+ * daemon, and the served suite) up to a released tag, in that order, with a
+ * verification sweep at the end.
  *
  * Every external effect goes through UpdateMachineSeams so this module stays
  * pure and testable; the real seams (network, exec, prompts, chat) live in
  * the command shell.
  */
+import { homedir } from "os";
+import { join } from "path";
 import type { RunResult } from "../subprocess.ts";
 import { UserActionableError } from "../setup/errors.ts";
 
-export type LegId = "prod-app" | "dev-bundle" | "daemon" | "served-suite" | "verify";
+export type LegId = "prod-app" | "dev-bundle" | "checkout-sync" | "daemon" | "served-suite" | "verify";
 export type LegStatus = "ok" | "skipped" | "aborted" | "error" | "planned";
 
 export interface LegResult {
@@ -39,8 +41,8 @@ export interface UpdateMachineOptions {
 export interface UpdateMachineSeams {
   /** This rt checkout's root, for reading its own rt-tray/deps.lock (the deck version pin). */
   repoRoot: string;
-  /** The shared ~/Documents/GitHub/mattstack-apps checkout the served suite runs from. */
-  appsCheckoutPath: string;
+  /** The shared ~/Documents/GitHub/repo-tools checkout the dev daemon and deck's from-source apps run from. */
+  sharedCheckoutPath: string;
   /** A scratch directory for the downloaded dmg and the dev-bundle clone; empty when no mutating leg will run. */
   workDir: string;
   /** Numeric uid for the launchd gui/<uid>/... domain (process.getuid() in the real seam). */
@@ -73,9 +75,13 @@ function bundleDeck(devNotRunning: boolean): string {
 
 const PROD_APP_LABEL = "prod app update";
 const DEV_BUNDLE_LABEL = "dev bundle rebuild";
+const CHECKOUT_SYNC_LABEL = "shared checkout sync";
 const DAEMON_LABEL = "daemon restart";
 const SERVED_SUITE_LABEL = "served suite restart";
 const VERIFY_LABEL = "verification sweep";
+
+/** deck's from-source apps this machine serves; each one's registry entry is re-pointed at the shared checkout when it still names the old one. */
+const REGISTERED_APPS = ["board", "console", "chat", "boxscore", "deck"] as const;
 
 interface ReleaseContext {
   tag: string;
@@ -203,14 +209,25 @@ async function daemonRevCheck(
   return { ok: true, exact: false };
 }
 
-function deckPinFromDepsLock(raw: string | null): string | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as { tools: { name: string; version: string }[] };
-    return parsed.tools.find((t) => t.name === "deck")?.version ?? null;
-  } catch {
-    return null;
+/** The tag exists in the shared checkout only after checkout-sync's pull; a caller
+ *  whose checkout-sync leg was skipped or halted still gets a readable error here,
+ *  never a crash. */
+export async function deckVersionAtTag(seams: UpdateMachineSeams, tag: string): Promise<string> {
+  const show = await seams.exec(["git", "show", `${tag}:apps/deck/package.json`], { cwd: seams.sharedCheckoutPath });
+  if (show.exitCode !== 0) throw new Error(`git show ${tag}:apps/deck/package.json failed: ${execTail(show)}`);
+  return (JSON.parse(show.stdout) as { version: string }).version;
+}
+
+async function runCheckoutSyncLeg(seams: UpdateMachineSeams): Promise<LegResult> {
+  const branch = (await seams.exec(["git", "branch", "--show-current"], { cwd: seams.sharedCheckoutPath })).stdout.trim();
+  if (branch !== "main") {
+    return abortedLeg("checkout-sync", CHECKOUT_SYNC_LABEL, `${seams.sharedCheckoutPath} is on branch "${branch}", not main; refusing to touch a shared checkout`);
   }
+  const pull = await seams.exec(["git", "pull", "--ff-only"], { cwd: seams.sharedCheckoutPath });
+  if (pull.exitCode !== 0) return errorLeg("checkout-sync", CHECKOUT_SYNC_LABEL, `git pull failed: ${execTail(pull)}`);
+  const install = await seams.exec(["bun", "install", "--frozen-lockfile"], { cwd: seams.sharedCheckoutPath });
+  if (install.exitCode !== 0) return errorLeg("checkout-sync", CHECKOUT_SYNC_LABEL, `bun install failed: ${execTail(install)}`);
+  return okLeg("checkout-sync", CHECKOUT_SYNC_LABEL, "main pulled and installed");
 }
 
 /**
@@ -443,6 +460,14 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, o
   if (fetchDeps.exitCode !== 0) {
     return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `fetch-deps.sh failed: ${execTail(fetchDeps)}`);
   }
+
+  // The clone is fresh, so the workspace has never been installed.
+  const install = await seams.exec(["bun", "install", "--frozen-lockfile"], { cwd: bundleDir });
+  if (install.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `bun install failed: ${execTail(install)}`);
+
+  const buildApps = await seams.exec(["bun", "scripts/build-apps.ts", "--arch", "arm64"], { cwd: bundleDir });
+  if (buildApps.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `scripts/build-apps.ts failed: ${execTail(buildApps)}`);
+
   const build = await seams.exec(["rt-tray/build.sh", "dev"], { cwd: bundleDir });
   if (build.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `build.sh dev failed: ${execTail(build)}`);
 
@@ -569,21 +594,38 @@ async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pro
   );
 }
 
-async function runServedSuiteLeg(seams: UpdateMachineSeams, deck: string): Promise<{ result: LegResult; witness: RestartWitness | null }> {
-  const branch = (await seams.exec(["git", "branch", "--show-current"], { cwd: seams.appsCheckoutPath })).stdout.trim();
-  if (branch !== "main") {
-    return {
-      result: abortedLeg(
-        "served-suite",
-        SERVED_SUITE_LABEL,
-        `${seams.appsCheckoutPath} is on branch "${branch}", not main; refusing to touch a shared checkout`,
-      ),
-      witness: null,
-    };
-  }
+interface DeckRegistryFile {
+  apps?: Record<string, { dev?: { workingDirectory?: string } }>;
+}
 
-  const pull = await seams.exec(["git", "pull"], { cwd: seams.appsCheckoutPath });
-  if (pull.exitCode !== 0) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `git pull failed: ${execTail(pull)}`), witness: null };
+function parseDeckRegistry(raw: string | null): DeckRegistryFile {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as DeckRegistryFile;
+  } catch {
+    return {};
+  }
+}
+
+/** deck registers a linked app by its source checkout; a row still pointing at the
+ *  old apps checkout serves stale source until it is re-pointed at the shared one. */
+async function reregisterMovedApps(seams: UpdateMachineSeams, deck: string): Promise<LegResult | null> {
+  const registryPath = join(process.env.HOME ?? homedir(), ".mattstack", "deck", "registry.json");
+  const registry = parseDeckRegistry(seams.readFile(registryPath));
+  for (const app of REGISTERED_APPS) {
+    const wanted = `${seams.sharedCheckoutPath}/apps/${app}`;
+    if (registry.apps?.[app]?.dev?.workingDirectory === wanted) continue;
+    const register = await seams.exec([deck, "register", "--dir", wanted]);
+    if (register.exitCode !== 0) {
+      return errorLeg("served-suite", SERVED_SUITE_LABEL, `deck register --dir ${wanted} failed for ${app}: ${execTail(register)}`);
+    }
+  }
+  return null;
+}
+
+async function runServedSuiteLeg(seams: UpdateMachineSeams, deck: string): Promise<{ result: LegResult; witness: RestartWitness | null }> {
+  const registerFailure = await reregisterMovedApps(seams, deck);
+  if (registerFailure) return { result: registerFailure, witness: null };
 
   const namesResult = await managedAppNames(seams, deck);
   if ("error" in namesResult) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, namesResult.error), witness: null };
@@ -649,12 +691,11 @@ async function runVerifyLeg(
 
   const deck = bundleDeck(devNotRunning);
   const deckVersion = (await seams.exec([deck, "--version"])).stdout.trim();
-  const depsLockRaw = seams.readFile(`${seams.repoRoot}/rt-tray/deps.lock`);
-  const pin = deckPinFromDepsLock(depsLockRaw);
-  if (!pin) {
-    problems.push(depsLockRaw ? "rt-tray/deps.lock has no readable deck pin" : "rt-tray/deps.lock not readable (run from the rt checkout, or deps.lock unreadable)");
-  } else if (deckVersion !== pin) {
-    problems.push(`deck --version is ${deckVersion || "unknown"}, deps.lock pins ${pin}`);
+  try {
+    const deckAtTag = await deckVersionAtTag(seams, ctx.tag);
+    if (deckVersion !== deckAtTag) problems.push(`deck --version is ${deckVersion || "unknown"}, the tree at ${ctx.tag} has ${deckAtTag}`);
+  } catch (err) {
+    problems.push((err as Error).message);
   }
 
   let staleNote = "";
@@ -689,10 +730,12 @@ function describePlannedLeg(id: LegId, tag: string): string {
       return `download and sha256-verify the ${tag} dmg, then move-aside-replace ${PROD_APP_PATH} (never launched)`;
     case "dev-bundle":
       return `build the dev bundle at ${tag} in a scratch tree, kill and wait out the running copy, move-aside-replace ${DEV_APP_PATH}, and relaunch it`;
+    case "checkout-sync":
+      return "pull the shared rt checkout (main only) and bun install --frozen-lockfile";
     case "daemon":
       return `announce in #${CHAT_ROOM}, then restart the rt daemon and confirm its source rev matches ${tag}`;
     case "served-suite":
-      return "pull mattstack-apps (main only) and deck restart --managed, restarting stragglers by name";
+      return "re-register any managed app whose registry entry does not match the shared checkout, then deck restart --managed, restarting stragglers by name";
     case "verify":
       return "confirm prod version, dev pid, daemon source rev, deck version, and every managed app's freshness";
   }
@@ -719,9 +762,16 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   }
 
   if (options.plan) {
-    const legs: LegResult[] = (["prod-app", "dev-bundle", "daemon", "served-suite", "verify"] as LegId[]).map((id) => ({
+    const legs: LegResult[] = (["prod-app", "dev-bundle", "checkout-sync", "daemon", "served-suite", "verify"] as LegId[]).map((id) => ({
       id,
-      label: { "prod-app": PROD_APP_LABEL, "dev-bundle": DEV_BUNDLE_LABEL, daemon: DAEMON_LABEL, "served-suite": SERVED_SUITE_LABEL, verify: VERIFY_LABEL }[id],
+      label: {
+        "prod-app": PROD_APP_LABEL,
+        "dev-bundle": DEV_BUNDLE_LABEL,
+        "checkout-sync": CHECKOUT_SYNC_LABEL,
+        daemon: DAEMON_LABEL,
+        "served-suite": SERVED_SUITE_LABEL,
+        verify: VERIFY_LABEL,
+      }[id],
       status: "planned",
       detail: describePlannedLeg(id, tag),
     }));
@@ -758,6 +808,7 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   // Read here, not in the dev-bundle leg: a declined or failed one never reaches its own pgrep.
   let devNotRunning = (await pgrepPids(seams, DEV_APP_ANCHOR)).length === 0;
   await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx, () => { devNotRunning = true; }));
+  await runGatedLeg("checkout-sync", CHECKOUT_SYNC_LABEL, () => runCheckoutSyncLeg(seams));
   if (devNotRunning) {
     legs.push(skippedLeg("daemon", DAEMON_LABEL,
       `not run: ${DEV_NOT_RUNNING}; mattstack.app keeps running the previous build until it is relaunched`));

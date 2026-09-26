@@ -1,0 +1,70 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+
+    // Mirrors workshop/vite.config.ts's `resolve.alias` exactly (bare
+    // specifier -> `src`, every subpath echoed) so `tsc` and Vite resolve
+    // `@mattstack/tui-kit/*` imports identically. tsc has no notion of Vite's
+    // alias config; without this, workshop/src/main.tsx's
+    // `@mattstack/tui-kit/theme` import is a real module at runtime (Vite
+    // resolves it) but a TS2307 under `tsc --noEmit` (nothing here maps it) —
+    // the two resolvers would disagree about the same specifier.
+    "paths": {
+      "@mattstack/tui-kit": ["./src/index.ts"],
+      "@mattstack/tui-kit/*": ["./src/*"]
+    },
+
+    // ONE program, node ambient globals included — the same answer soribashi's
+    // tsconfig.base.json reaches, and here it is not a preference.
+    //
+    // The tempting shape is "src/ is browser code, so keep node types out of
+    // it and give scripts/ + test/ their own config". It buys duplication and
+    // nothing else: scripts/census.ts imports `node:fs|os|path`,
+    // test/theme.test.ts reads `fs`/`path`, and two files read
+    // `import.meta.dir` — all of which need `process`/node globals typed.
+    //
+    // HISTORICAL NOTE: this setting used to ALSO be forced by src/ itself.
+    // While soribashi was consumed via `file:`, every package set `"types":
+    // "./src/index.ts"`, so `tsc` type-checked factory's own .ts files as part
+    // of any program including src/, and four of them read
+    // `process.env.NODE_ENV` (use-styles.ts, slot.tsx, is-dev.ts,
+    // validate-vocabulary-props.ts) — `skipLibCheck` did not help, since it
+    // skips .d.ts and those were .ts. The published `@soribashi/core` ships
+    // compiled `.d.ts`, so src/ no longer drags soribashi's source into the
+    // program and that half of the reasoning is retired. The scripts/test half
+    // above still stands on its own.
+    //
+    // Given that, a second config would buy duplication and nothing else.
+    // "node" rather than "bun": nothing in the kit imports `bun:*` any more
+    // (this task migrated the last `bun:test` file to vitest),
+    // scripts/census.ts is a plain node-API script, and `import.meta.dirname`
+    // — which Bun implements too — is typed by @types/node. Keeping the array
+    // explicit rather than deleting it also pins the TS 7 behaviour soribashi
+    // documents: @types auto-discovery is no longer reliable, so the list is
+    // the contract.
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*",
+    "types/**/*",
+    "test/**/*",
+    "scripts/**/*.ts",
+    "vitest.config.ts",
+    "vitest.node.config.ts",
+    "vitest.browser.config.ts",
+    "soribashi.config.ts",
+    "workshop/src/**/*",
+    "workshop/vite.config.ts"
+  ]
+}
