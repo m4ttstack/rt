@@ -8,8 +8,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { CreatedDiscussion, CreatedNote } from "@mattstack/glance";
 import { closeStateDb } from "../../state/index.ts";
-import { createDiscussionHandlers, type CommentMutator, type DiscussionHandlerSeams } from "../handlers/discussions.ts";
-import { fakeStore } from "./fake-cache-store.ts";
+import { createDiscussionHandlers, type CommentMutator, type DiscussionHandlerSeams } from "../handlers/discussions.ts";import { fakeStore } from "./fake-cache-store.ts";
 
 const fakeCtx = { repoIndex: () => ({}), cache: fakeStore({}) };
 const IDENTITY = "remote:gitlab.com%2Fg%2Fsub%2Frepo-tools";
@@ -128,5 +127,52 @@ describe("mr:comment", () => {
     ));
     await h["mr:comment"]({ repoName: IDENTITY, iid: 7, body: "x" });
     expect(refreshFinished).toBe(true);
+  });
+});
+
+describe("discussions:reply", () => {
+  const origHome = process.env.HOME;
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "rt-reply-"));
+    process.env.HOME = home;
+    closeStateDb();
+  });
+  afterEach(() => {
+    process.env.HOME = origHome;
+    closeStateDb();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test("replies into the thread and returns the created note's id beside the refreshed list", async () => {
+    let args: unknown[] = [];
+    const list = [{ id: "d1", resolvable: true, resolved: false, notes: [] }];
+    const h = createDiscussionHandlers(fakeCtx, () => {}, makeSeams(
+      { createNote: async (...a) => { args = a; return note(301, true); } },
+      async () => ({ discussions: list, fetchedAt: 5 }),
+    ));
+    const res = await h["discussions:reply"]({ repoName: IDENTITY, iid: 7, discussionId: "d1", body: "reply" });
+    expect(args).toEqual([99, 7, "reply", "d1"]);
+    expect(res).toEqual({ ok: true, data: { discussions: list, fetchedAt: 5, noteId: 301 } });
+  });
+
+  test("a refresh failure after the reply landed is still ok, so the caller never posts it twice", async () => {
+    const h = createDiscussionHandlers(fakeCtx, () => {}, makeSeams(
+      { createNote: async () => note(302, true) },
+      async () => { throw new Error("gitlab 502"); },
+    ));
+    const res = await h["discussions:reply"]({ repoName: IDENTITY, iid: 7, discussionId: "d1", body: "reply" });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.noteId).toBe(302);
+      expect(Array.isArray(res.data.discussions)).toBe(true);
+    }
+  });
+
+  test("a failed post is ok:false", async () => {
+    const h = createDiscussionHandlers(fakeCtx, () => {}, makeSeams({ createNote: async () => { throw new Error("403"); } }));
+    const res = await h["discussions:reply"]({ repoName: IDENTITY, iid: 7, discussionId: "d1", body: "reply" });
+    expect(res.ok).toBe(false);
   });
 });

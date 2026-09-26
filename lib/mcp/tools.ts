@@ -455,8 +455,7 @@ export function mcpTools(): McpToolDef[] {
         if (!res.ok) return fromResponse(res);
         const discussionId = input.discussionId as string;
         const thread = res.data?.discussions.find((d) => d.id === discussionId);
-        const reply = thread?.notes.at(-1);
-        return ok({ discussionId, noteId: reply?.id ?? null, resolved: thread?.resolved ?? null });
+        return ok({ discussionId, noteId: res.data?.noteId ?? null, resolved: thread?.resolved ?? null });
       },
     },
     {

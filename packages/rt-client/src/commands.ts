@@ -746,7 +746,9 @@ export interface Commands {
 
   "discussions:refresh": { payload: { repoName: string; iid: number }; data: DiscussionsWriteData };
   "discussions:resolve": { payload: { repoName: string; iid: number; discussionId: string; resolved?: boolean }; data: DiscussionsWriteData };
-  "discussions:reply": { payload: { repoName: string; iid: number; discussionId: string; body: string }; data: DiscussionsWriteData };
+  /** `noteId` is the posted reply. A refresh failure after the post still
+      answers ok, with the cached discussions, so a caller never re-posts. */
+  "discussions:reply": { payload: { repoName: string; iid: number; discussionId: string; body: string }; data: DiscussionsWriteData & { noteId: number } };
   "discussions:diffs": { payload: { repoName: string; iid: number }; data: DiscussionsDiffsData };
 
   /** Positioned inline MR comment with server-side DiffNote verification:

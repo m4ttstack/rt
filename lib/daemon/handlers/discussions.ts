@@ -29,7 +29,7 @@ import { getDiscussionsFileStore } from "../discussions-file-store.ts";
 import { grants, loadRepoTracking } from "../../repo-tracking.ts";
 import { lazyChildLogger } from "../../daemon-logger.ts";
 import type { HandlerContext, HandlerMap, CommandResult } from "./types.ts";
-import type { Commands } from "../../../packages/rt-client/src/commands.ts";
+import type { Commands, Discussion } from "../../../packages/rt-client/src/commands.ts";
 
 const log = lazyChildLogger("discussions");
 
@@ -40,9 +40,9 @@ export type CommentInlineMutator = Pick<NoteMutator, "fetchDiffRefs" | "createPo
 export type CommentMutator = Pick<NoteMutator, "createDiscussion" | "createNote">;
 
 /**
- * Injectable plumbing for `mr:comment-inline` and `mr:comment`. Every field
- * defaults to the real daemon plumbing (same as `discussions:reply` uses
- * inline); tests override only what a case needs.
+ * Injectable plumbing for `discussions:reply`, `mr:comment-inline` and
+ * `mr:comment`. Every field defaults to the real daemon plumbing; tests
+ * override only what a case needs.
  */
 export interface DiscussionHandlerSeams {
   repoContext?: (repoName: string, repoPath?: string) => Promise<{ provider: { baseURL: string }; projectPath: string; projectId: number }>;
@@ -271,13 +271,26 @@ export function createDiscussionHandlers(
 
       const repoPath = ctx.repoIndex()[repoName];
       try {
-        const repoCtx = await getRepoContext(repoName, repoPath);
-        const secrets = await loadSecrets();
-        if (!secrets.gitlabToken) return { ok: false, error: "no gitlabToken in secrets" };
-        const mutator = new NoteMutator(repoCtx.provider.baseURL, secrets.gitlabToken, providerRequestHook());
-        await mutator.createNote(repoCtx.projectId, iid, body, discussionId);
-        const res = await refreshDiscussions(deps, repoName, iid);
-        return { ok: true, data: { discussions: res.discussions, fetchedAt: res.fetchedAt } };
+        const repoCtx = await repoContextFn(repoName, repoPath);
+        const token = await gitlabTokenFn();
+        if (!token) return { ok: false, error: "no gitlabToken in secrets" };
+        const created = await commentMutatorFn(repoCtx.provider.baseURL, token).createNote(repoCtx.projectId, iid, body, discussionId);
+        // A refresh failure must never turn a landed reply into ok:false: the
+        // caller would retry and post it twice.
+        const refreshed = await refreshFn(repoName, iid).catch((err) => {
+          log.warn({ err, repoName, iid }, "discussions:reply: post-reply discussions refresh failed");
+          return undefined;
+        }) as { discussions?: Discussion[]; fetchedAt?: number } | undefined;
+        if (refreshed?.discussions) {
+          return { ok: true, data: { discussions: refreshed.discussions, fetchedAt: refreshed.fetchedAt ?? Date.now(), noteId: created.id } };
+        }
+        let cached: { discussions: Discussion[]; fetchedAt: number } | undefined;
+        try {
+          cached = getDiscussionsFileStore().read(repoName, iid);
+        } catch (err) {
+          log.warn({ err, repoName, iid }, "discussions:reply: cached discussions unreadable after a failed refresh");
+        }
+        return { ok: true, data: { discussions: cached?.discussions ?? [], fetchedAt: cached?.fetchedAt ?? 0, noteId: created.id } };
       } catch (err) {
         return { ok: false, error: String(err) };
       }
