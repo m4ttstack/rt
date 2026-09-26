@@ -14,11 +14,10 @@ function flagged(tree: Record<string, CommandNode>, prefix: string[] = []): { pa
 describe("agent-safe surface", () => {
   test("every agent-safe leaf is listed here, so each addition is reviewed", () => {
     expect(listAgentSafe(TREE).map((e) => e.path.join(" ")).sort()).toEqual([
-      "endpoint lookup",
-      "herd status",
-      "skills writing-style show",
-      "worktree list",
-      "worktree triage",
+      "daemon status", "endpoint lookup", "events list", "gate list", "gate subscriptions", "git branches", "git log", "git status",
+      "herd brief", "herd gates", "herd status", "pane list", "pane peek", "repos status", "runs find", "runs show",
+      "settings explain", "settings get", "settings list", "setup status", "skills bind", "skills check", "skills compile",
+      "skills surface", "skills sync", "skills writing-style show", "team status", "worktree await-ready", "worktree list", "worktree triage",
     ]);
   });
 

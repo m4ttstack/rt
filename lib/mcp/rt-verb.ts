@@ -110,15 +110,16 @@ export async function runRtVerb(input: { args?: unknown; cwd?: unknown }, deps: 
   }
 
   const rest = forwarded.includes("--json") ? forwarded : [...forwarded, "--json"];
+  const cap = leaf.node.agentTimeoutMs ?? RT_VERB_TIMEOUT_MS;
   const res = await deps.spawn([...deps.selfArgv(), ...leaf.path, ...rest], {
     cwd,
     env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" },
-    timeoutMs: RT_VERB_TIMEOUT_MS,
+    timeoutMs: cap,
   });
 
   const parsed = parseJson(res.stdout);
   if (res.code === 0) return parsed.ok ? { ok: true, body: parsed.value } : fail(`${verb} returned non-JSON output: ${tail(res.stdout)}`);
-  if (res.code === 124) return fail(`${verb} timed out after ${RT_VERB_TIMEOUT_MS / 1000}s`);
+  if (res.code === 124) return fail(`${verb} timed out after ${cap / 1000}s`);
   const envelopeMessage = parsed.ok ? errorText(parsed.value) : null;
   if (res.code === 2 && envelopeMessage) return fail(envelopeMessage);
   const detail = envelopeMessage ?? (tail(res.stderr) || tail(res.stdout));

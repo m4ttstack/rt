@@ -10,6 +10,7 @@ const tree: Record<string, CommandNode> = {
     subcommands: {
       list: { description: "l", module: "./m.ts", agentSafe: true, args: [{ name: "Repo", flag: "--repo", type: "text" }, { name: "JSON", flag: "--json", type: "boolean" }] },
       dispose: { description: "d", module: "./m.ts" },
+      slow: { description: "s", module: "./m.ts", agentSafe: true, agentTimeoutMs: 600_000, args: [{ name: "JSON", flag: "--json", type: "boolean" }] },
     },
   },
 };
@@ -41,6 +42,12 @@ describe("runRtVerb", () => {
     expect(r).toEqual({ ok: true, body: { worktrees: [] } });
     expect(calls[0]!.argv).toEqual(["/bin/rt", "worktree", "list", "--repo", "x", "--json"]);
     expect(calls[0]!.opts).toEqual({ cwd: "/work", env: { RT_BATCH: "1", RT_SKIP_SETUP: "1" }, timeoutMs: RT_VERB_TIMEOUT_MS });
+  });
+
+  test("a leaf's agentTimeoutMs replaces the default cap", async () => {
+    const calls: { argv: string[]; opts: unknown }[] = [];
+    await runRtVerb({ args: ["worktree", "slow"] }, deps(ok("{}"), calls));
+    expect((calls[0]!.opts as { timeoutMs: number }).timeoutMs).toBe(600_000);
   });
 
   test("does not double --json and canonicalizes aliases", async () => {

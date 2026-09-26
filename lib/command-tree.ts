@@ -149,6 +149,9 @@ export interface CommandNode {
    * lib/__tests__/agent-safe.test.ts.
    */
   agentSafe?: true;
+
+  /** rt_verb's cap for this leaf when its normal run outlasts RT_VERB_TIMEOUT_MS. */
+  agentTimeoutMs?: number;
 }
 
 /** See CommandNode.omitBehavior. */

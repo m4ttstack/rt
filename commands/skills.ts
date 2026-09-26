@@ -1989,6 +1989,7 @@ type BindFlags = {
   dryRun: boolean;
   packDir: string | null;
   mattstackDir: string | null;
+  json: boolean;
 };
 
 function parseBindFlags(args: string[]): BindFlags {
@@ -1997,6 +1998,7 @@ function parseBindFlags(args: string[]): BindFlags {
   let dryRun = false;
   let packDir: string | null = null;
   let mattstackDir: string | null = null;
+  let json = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
@@ -2007,12 +2009,13 @@ function parseBindFlags(args: string[]): BindFlags {
       case "--dry-run": dryRun = true; break;
       case "--pack-dir": packDir = requireFlagValue("--pack-dir", args[++i]); break;
       case "--mattstack-dir": mattstackDir = args[++i] ?? null; break;
+      case "--json": json = true; break;
       default:
         throw new SkillsUsageError(`unrecognized argument "${a}"`);
     }
   }
 
-  return { team, manifest, dryRun, packDir, mattstackDir };
+  return { team, manifest, dryRun, packDir, mattstackDir, json };
 }
 
 type PickedBind = { verbName: string; slotName: string; fill: string; flagArgs: string[] };
@@ -2024,14 +2027,14 @@ type PickedBind = { verbName: string; slotName: string; fill: string; flagArgs: 
  * skillsBind falls through to its existing error -- the non-TTY / --json paths
  * never call this and stay byte-for-byte unchanged.
  */
-/** Split `skills bind` args into positionals and flag args (bind's flags: --dry-run boolean, plus the value-taking --pack/--team/--manifest/--pack-dir/--mattstack-dir). Keeps the &lt;verb&gt; &lt;slot&gt; &lt;fill&gt; count right even when flags are interleaved. */
+/** Split `skills bind` args into positionals and flag args (bind's flags: --dry-run/--json boolean, plus the value-taking --pack/--team/--manifest/--pack-dir/--mattstack-dir). Keeps the &lt;verb&gt; &lt;slot&gt; &lt;fill&gt; count right even when flags are interleaved. */
 function separateBindArgs(args: string[]): { positionals: string[]; flagArgs: string[] } {
   const valued = new Set(["--pack", "--team", "--manifest", "--pack-dir", "--mattstack-dir"]);
   const positionals: string[] = [];
   const flagArgs: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
-    if (a === "--dry-run") {
+    if (a === "--dry-run" || a === "--json") {
       flagArgs.push(a);
     } else if (valued.has(a)) {
       flagArgs.push(a);
@@ -2203,7 +2206,8 @@ export async function skillsBind(args: string[]): Promise<void> {
     const summary = `${verbName}.${slotName}: ${oldValue} -> ${fill}`;
 
     if (bindFlags.dryRun) {
-      console.log(summary);
+      if (bindFlags.json) console.log(JSON.stringify({ ok: true, dryRun: true, verb: verbName, slot: slotName, from: oldValue, to: fill }));
+      else console.log(summary);
       return;
     }
 
@@ -2238,7 +2242,11 @@ export async function skillsBind(args: string[]): Promise<void> {
     if (fragmentWrite) writeFileSync(fragmentWrite.path, fragmentWrite.text);
     writeFileSync(resolved.manifestPath, manifestAfter);
 
-    console.log(fragmentWrite ? `${summary} (fragment updated: ${fragmentWrite.path})` : summary);
+    if (bindFlags.json) {
+      console.log(JSON.stringify({ ok: true, verb: verbName, slot: slotName, from: oldValue, to: fill, fragmentUpdated: fragmentWrite?.path ?? null }));
+    } else {
+      console.log(fragmentWrite ? `${summary} (fragment updated: ${fragmentWrite.path})` : summary);
+    }
 
     const surfaceFlags: SurfaceFlags = {
       team: resolved.team,

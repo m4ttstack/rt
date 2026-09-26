@@ -43,11 +43,13 @@ const eventsSubcommands: Record<string, CommandNode> = {
     description: "Read matching events from the journal (non-blocking)",
     module: "./commands/events.ts",
     fn: "eventsList",
+    agentSafe: true,
     omitBehavior: "list",
     args: [
       { name: "Pattern", type: "text", placeholder: "job/**", hint: "Glob pattern to match" },
       { name: "After", flag: "--after", type: "text", placeholder: "0", hint: "Only events with id greater than this cursor" },
       { name: "Limit", flag: "--limit", type: "text", placeholder: "100", hint: "Cap the number of returned events" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Accepted and ignored; output is always JSON" },
     ],
   },
 };
@@ -118,6 +120,7 @@ const gateSubcommands: Record<string, CommandNode> = {
     description: "List gates",
     module: "./commands/gate.ts",
     fn: "gateList",
+    agentSafe: true,
     omitBehavior: "list",
     args: [
       { name: "Open only", flag: "--open", type: "boolean", default: false, hint: "Only open (unanswered, unparked) gates" },
@@ -125,6 +128,7 @@ const gateSubcommands: Record<string, CommandNode> = {
       { name: "Kind", flag: "--kind", type: "text", placeholder: "approval", hint: "Filter by kind" },
       { name: "Limit", flag: "--limit", type: "text", placeholder: "100", hint: "Cap the number of returned gates" },
       { name: "Cursor", flag: "--cursor", type: "text", placeholder: "42", hint: "Resume paging from a previous response's cursor" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Accepted and ignored; output is always JSON" },
     ],
   },
   park: {
@@ -174,10 +178,12 @@ const gateSubcommands: Record<string, CommandNode> = {
     description: "List gate subscriptions",
     module: "./commands/gate.ts",
     fn: "gateSubscriptions",
+    agentSafe: true,
     omitBehavior: "list",
     args: [
       { name: "Session", flag: "--session", type: "text", placeholder: "!7", hint: "Filter by subscriber session" },
       { name: "Live only", flag: "--live", type: "boolean", default: false, hint: "Only live (non-dead) subscriptions" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Accepted and ignored; output is always JSON" },
     ],
   },
 };
@@ -312,6 +318,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     description: "Open gates across a herd's workers",
     module: "./commands/herd.ts",
     fn: "gates",
+    agentSafe: true,
     omitBehavior: "list",
     args: [
       { name: "Herd", flag: "--herd", type: "text", placeholder: "hd-1a2b3c4d", hint: "Herd id (default: HERD_ID, else the single active herd)" },
@@ -400,6 +407,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     description: "Assemble a job brief from the shepherd skill's template + strategy body (paths passed explicitly)",
     module: "./commands/herd.ts",
     fn: "brief",
+    agentSafe: true,
     omitBehavior: { exempt: "agent-facing; the shepherd passes every path and fill explicitly" },
     args: [
       { name: "Job", flag: "--job", type: "text", placeholder: "acme-1483-facts", hint: "Job name; fills the template's job slot" },
@@ -419,10 +427,12 @@ const runsSubcommands: Record<string, CommandNode> = {
     description: "One run: stages, fields, decisions",
     module: "./commands/runs.ts",
     fn: "runsShow",
+    agentSafe: true,
     omitBehavior: "picker",
     args: [
       { name: "Run", type: "text", placeholder: "20260821-010101-abcd", hint: "Run id (repo auto-resolved; --repo to pin)" },
       { name: "Repo", flag: "--repo", type: "text", placeholder: "myrepo", hint: "Registry repo name" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the raw result as JSON" },
     ],
   },
   abandon: {
@@ -440,6 +450,7 @@ const runsSubcommands: Record<string, CommandNode> = {
     description: "Runs whose claude-session field matches; read-side, no daemon",
     module: "./commands/runs-find.ts",
     fn: "runsFind",
+    agentSafe: true,
     args: [
       { name: "Session", flag: "--session", type: "text", placeholder: "abcd1234-...", hint: "Claude Code session id to match against the claude-session field" },
       { name: "Running", flag: "--running", type: "boolean", default: false, hint: "Keep only status = running matches" },
@@ -789,6 +800,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/git/inspect.ts",
         fn: "statusCommand",
         context: "worktree",
+        agentSafe: true,
         args: [
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable snapshot" },
         ],
@@ -810,6 +822,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/git/inspect.ts",
         fn: "logCommand",
         context: "worktree",
+        agentSafe: true,
         args: [
           { name: "Max", flag: "--max", type: "text", placeholder: "20", hint: "How many commits to list" },
           { name: "File", flag: "--file", type: "text", placeholder: "src/app.ts", hint: "Only commits touching this path" },
@@ -821,6 +834,7 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/git/inspect.ts",
         fn: "branchesCommand",
         context: "worktree",
+        agentSafe: true,
         args: [
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable branch list" },
         ],
@@ -1335,6 +1349,8 @@ export const TREE: Record<string, CommandNode> = {
         description: "Wait for a claimed tree's background ready steps to settle (no tree + TTY → picker)",
         module: "./commands/worktree.ts",
         fn: "worktreeAwaitReady",
+        agentSafe: true,
+        agentTimeoutMs: 600_000,
         omitBehavior: "picker",
         fullscreen: true,
         args: [
@@ -1422,6 +1438,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "Show daemon status",
         module: "./commands/daemon.ts",
         fn: "showStatus",
+        agentSafe: true,
         args: [
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the verdict as JSON instead of the formatted lines" },
         ],
@@ -1731,6 +1748,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "Read a resolved setting (value + provenance) through the settings resolver",
         module: "./commands/settings-keys.ts",
         fn: "settingsGet",
+        agentSafe: true,
         omitBehavior: { exempt: "agent-facing; the key is passed explicitly (discover the set with rt settings list)" },
         args: [
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key (see rt settings list)" },
@@ -1767,6 +1785,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "List every registered setting resolved through the settings resolver",
         module: "./commands/settings-keys.ts",
         fn: "settingsList",
+        agentSafe: true,
         args: [
           { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
@@ -1776,10 +1795,12 @@ export const TREE: Record<string, CommandNode> = {
         description: "Show the full scope chain for one setting, weakest first",
         module: "./commands/settings-keys.ts",
         fn: "settingsExplain",
+        agentSafe: true,
         omitBehavior: { exempt: "agent-facing; the key is passed explicitly (discover the set with rt settings list)" },
         args: [
           { name: "Key", type: "text", placeholder: "rt.worktrees", hint: "Namespaced settings key (see rt settings list)" },
           { name: "Repo", flag: "--repo", type: "text", placeholder: "acme-dev", hint: "Registered repo (name, path, or identity); enables repo-scoped rungs" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable output" },
         ],
       },
       check: {
@@ -2067,12 +2088,14 @@ export const TREE: Record<string, CommandNode> = {
         description: "Claude panes with their chat handle, status and rooms joined in (needs herdr)",
         module: "./commands/pane.ts",
         fn: "paneList",
+        agentSafe: true,
         args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit JSON instead of one line per pane" }],
       },
       peek: {
         description: "The last lines of a pane's visible screen",
         module: "./commands/pane.ts",
         fn: "panePeek",
+        agentSafe: true,
         omitBehavior: { exempt: "agent-facing; the pane id is passed explicitly (discover panes with rt pane list)" },
         args: [
           { name: "Pane", type: "text", placeholder: "w7A:pY", hint: "herdr pane id" },
@@ -2174,6 +2197,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "All registered repos with git badges from the daemon sweep",
         module: "./commands/repos.ts",
         fn: "reposStatus",
+        agentSafe: true,
         args: [
           { name: "Refresh", flag: "--refresh", type: "boolean", default: false, hint: "Run a sweep now instead of reading the cache" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable rows (the mission-control rail feed)" },
@@ -2208,6 +2232,8 @@ export const TREE: Record<string, CommandNode> = {
         description: "Compile pack verbs from step sources + manifest bindings into committed SKILL.md files",
         module: "./commands/skills.ts",
         fn: "skillsCompile",
+        agentSafe: true,
+        agentTimeoutMs: 600_000,
         args: [
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name (--team still accepted); omit to pick from the discovered packs, or run from inside a pack tree to compile that tree" },
           { name: "Verb", flag: "--verb", type: "text", placeholder: "watch-ci", hint: "Compile only this verb (repeatable); omit for every verb in the roster" },
@@ -2222,6 +2248,8 @@ export const TREE: Record<string, CommandNode> = {
         description: "Report compiled skills that no longer match their sources",
         module: "./commands/skills.ts",
         fn: "skillsCheck",
+        agentSafe: true,
+        agentTimeoutMs: 600_000,
         args: [
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name (--team still accepted); omit to pick from the discovered packs, or run from inside a pack tree to check that tree" },
           { name: "Verb", flag: "--verb", type: "text", placeholder: "watch-ci", hint: "Check only this verb (repeatable); omit for every compiled verb" },
@@ -2234,6 +2262,8 @@ export const TREE: Record<string, CommandNode> = {
         description: "Bring a pack's compiled skills and installed plugin caches current (recompile and plugin-update chain; refuses on content drift)",
         module: "./commands/skills-sync.ts",
         fn: "skillsSync",
+        agentSafe: true,
+        agentTimeoutMs: 600_000,
         args: [
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack to sync; auto-selects when only one pack exists" },
           { name: "Manifest", flag: "--manifest", type: "text", placeholder: "/path/to/skills.jsonc", hint: "Manifest path; omit to auto-find the newest ~/.mattstack/repos/*/skills.jsonc naming this pack" },
@@ -2254,6 +2284,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "List, set, or apply the pack's public/internal skill surface (bare invocation opens a multi-toggle palette)",
         module: "./commands/skills.ts",
         fn: "skillsSurface",
+        agentSafe: true,
         omitBehavior: "picker",
         // Same inline-frame constraint as commitNode above: the palette owns
         // the top region, so suppress the dispatcher header.
@@ -2287,6 +2318,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "Write bindings.<engineRef>.<slot> = <fill> into the manifest (jsonc-parser, comments preserved) and, for a team pack, into the pack's pack/skills.jsonc fragment too, validate the fill against the slot's contract, and recompile (a stage bind recompiles the whole pack)",
         module: "./commands/skills.ts",
         fn: "skillsBind",
+        agentSafe: true,
         omitBehavior: "picker",
         args: [
           { name: "Verb", type: "text", placeholder: "watch-ci", hint: "Roster verb or pipeline stage" },
@@ -2295,6 +2327,7 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name (--team still accepted); omit to pick from the discovered packs, or run from inside a pack tree to act on that tree" },
           { name: "Manifest", flag: "--manifest", type: "text", placeholder: "/path/to/skills.jsonc", hint: "Manifest path; omit to auto-find the newest ~/.mattstack/repos/*/skills.jsonc naming this pack" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Print what would change without writing" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the result as JSON instead of a plain summary line" },
         ],
       },
       "writing-style": {
@@ -2418,6 +2451,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "The same checklist as a post-install health view",
         module: "./commands/setup.ts",
         fn: "setupStatus",
+        agentSafe: true,
         args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable plan" }],
       },
       apply: {
@@ -2683,6 +2717,7 @@ export const TREE: Record<string, CommandNode> = {
         description: "Team summary (name, remote, last push, sync state, members)",
         module: "./commands/team.ts",
         fn: "teamStatus",
+        agentSafe: true,
         args: [
           { name: "Team", flag: "--team", type: "text", placeholder: "acme", hint: "Which cloned team to summarize; omit when only one is cloned" },
           SETUP_JSON_ARG,
