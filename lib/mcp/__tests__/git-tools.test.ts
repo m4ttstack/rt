@@ -18,8 +18,13 @@ function fakeGit(script: Script, calls: string[] = []): GitRunner {
     return { code: hit.code ?? 0, stdout: hit.stdout ?? "", stderr: hit.stderr ?? "" };
   };
 }
+const FULL_HEAD = "symbolic-ref --quiet HEAD";
+const SHORT_HEAD = "symbolic-ref --quiet --short HEAD";
+const on = (branch: string): Script => ({ [FULL_HEAD]: { stdout: `refs/heads/${branch}\n` }, [SHORT_HEAD]: { stdout: `${branch}\n` } });
+// What `git symbolic-ref` prints on feat/x when a tag feat/x also exists.
+const onTagAmbiguous: Script = { [FULL_HEAD]: { stdout: "refs/heads/feat/x\n" }, [SHORT_HEAD]: { stdout: "heads/feat/x\n" } };
 const onFeature: Script = {
-  "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+  ...on("feat/x"),
   "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
   "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/feat/x\n" },
 };
@@ -73,7 +78,7 @@ describe("gitPush", () => {
   test("origin's default resolved via ls-remote when its HEAD symref is missing refuses the current branch develop", async () => {
     const calls: string[] = [];
     const script: Script = {
-      "symbolic-ref --quiet --short HEAD": { stdout: "develop\n" },
+      ...on("develop"),
       "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
       "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/develop\tHEAD\n<sha>\tHEAD\n" },
       "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/develop\n" },
@@ -86,7 +91,7 @@ describe("gitPush", () => {
   test("an upstream's remote default resolved via ls-remote when its HEAD symref is missing refuses origin/trunk", async () => {
     const calls: string[] = [];
     const script: Script = {
-      "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+      ...on("feat/x"),
       "rev-parse --abbrev-ref --symbolic-full-name @{u}": { stdout: "origin/trunk\n" },
       "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
       "ls-remote --symref origin HEAD": { stdout: "ref: refs/heads/trunk\tHEAD\n<sha>\tHEAD\n" },
@@ -98,7 +103,7 @@ describe("gitPush", () => {
   test("origin's default unknown when both the symref and ls-remote fail refuses with a named error", async () => {
     const calls: string[] = [];
     const script: Script = {
-      "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+      ...on("feat/x"),
       "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { code: 128 },
       "ls-remote --symref origin HEAD": { code: 128 },
     };
@@ -152,7 +157,7 @@ describe("gitPush", () => {
   });
   test("refuses a detached HEAD", async () => {
     const calls: string[] = [];
-    const r = await gitPush("/t", {}, fakeGit({ "symbolic-ref --quiet --short HEAD": { code: 1 } }, calls));
+    const r = await gitPush("/t", {}, fakeGit({ [FULL_HEAD]: { code: 1 } }, calls));
     expect(r.ok).toBe(false);
     expect(r.error).toContain("detached");
     expect(calls.some((c) => c.startsWith("push"))).toBe(false);
@@ -160,10 +165,31 @@ describe("gitPush", () => {
   test("refuses main, master and the remote default branch", async () => {
     for (const branch of ["main", "master", "develop"]) {
       const calls: string[] = [];
-      const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls));
+      const r = await gitPush("/t", { forceWithLease: true }, fakeGit({ ...onFeature, ...on(branch) }, calls));
       expect(r.ok, branch).toBe(false);
       expect(calls.some((c) => c.startsWith("push")), branch).toBe(false);
     }
+  });
+  test("reads the full HEAD ref, so main is refused whatever the short form prints", async () => {
+    const calls: string[] = [];
+    const r = await gitPush("/t", {}, fakeGit({ ...onFeature, [FULL_HEAD]: { stdout: "refs/heads/main\n" }, [SHORT_HEAD]: { stdout: "heads/main\n" } }, calls));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("refusing to push main:");
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("a HEAD outside refs/heads is refused like a detached HEAD", async () => {
+    const calls: string[] = [];
+    const r = await gitPush("/t", {}, fakeGit({ ...onFeature, [FULL_HEAD]: { stdout: "refs/remotes/origin/feat/x\n" } }, calls));
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("detached");
+    expect(calls.some((c) => c.startsWith("push"))).toBe(false);
+  });
+  test("setUpstream on a branch that shares its name with a tag pushes the stripped branch name", async () => {
+    const calls: string[] = [];
+    const r = await gitPush("/t", { setUpstream: true }, fakeGit({ ...onFeature, ...onTagAmbiguous, "push -u origin HEAD:refs/heads/feat/x": {} }, calls));
+    expect(r.ok).toBe(true);
+    expect(calls.at(-1)).toBe("push -u origin HEAD:refs/heads/feat/x");
+    expect((r.body as { upstream: string }).upstream).toBe("origin/feat/x");
   });
 });
 
@@ -249,7 +275,7 @@ describe("gitToolDefs guard", () => {
 describe("branchSyncPreflight", () => {
   const base: Script = {
     [GIT_PATHS]: { stdout: "/t/.git/rebase-merge\n/t/.git/rebase-apply\n" },
-    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" },
+    ...on("feat/x"),
     "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
     "config --get-all remote.origin.push": { code: 1 },
     "config --get push.default": { code: 1 },
@@ -319,7 +345,7 @@ describe("branchSyncPreflight", () => {
     const broken = await branchSyncPreflight("/t", fakeGit({ ...base, "rev-parse --verify --quiet origin/feat/x": { code: 128, stderr: "fatal: bad object" }, "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" } }));
     expect(broken.ok).toBe(false);
     expect((broken as { error: string }).error).toContain("fatal: bad object");
-    const detached = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { code: 1 } }));
+    const detached = await branchSyncPreflight("/t", fakeGit({ ...base, [FULL_HEAD]: { code: 1 } }));
     expect(detached.ok).toBe(false);
     expect((detached as { error: string }).error).toContain("detached");
   });
@@ -329,7 +355,7 @@ describe("branchSyncPreflight", () => {
       ["/repo/.git/worktrees/t/rebase-merge\n/repo/.git/worktrees/t/rebase-apply\n", "/repo/.git/worktrees/t/rebase-apply"],
     ] as const) {
       const calls: string[] = [];
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [GIT_PATHS]: { stdout: gitPaths }, "symbolic-ref --quiet --short HEAD": { code: 1 } }, calls), (p) => p === present);
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [GIT_PATHS]: { stdout: gitPaths }, [FULL_HEAD]: { code: 1 } }, calls), (p) => p === present);
       expect(r.ok, present).toBe(false);
       expect((r as { error: string }).error, present).toBe("a rebase is in progress; finish it with git rebase --continue or git_rebase {abort: true}");
       expect(calls, present).not.toContain("fetch origin");
@@ -342,24 +368,66 @@ describe("branchSyncPreflight", () => {
   test("main, master and the remote default branch refuse before any fetch (rt sync would force-push them)", async () => {
     for (const branch of ["main", "master", "develop"]) {
       const calls: string[] = [];
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" } }, calls));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...on(branch), "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" } }, calls));
       expect(r.ok, branch).toBe(false);
       expect(calls, branch).not.toContain("fetch origin");
     }
+  });
+  test("a full HEAD ref of refs/heads/main refuses whatever the short form prints", async () => {
+    const calls: string[] = [];
+    const r = await branchSyncPreflight("/t", fakeGit({ ...base, [FULL_HEAD]: { stdout: "refs/heads/main\n" }, [SHORT_HEAD]: { stdout: "main\n" } }, calls));
+    expect(r.ok).toBe(false);
+    expect(calls).not.toContain("fetch origin");
+  });
+
+  describe("a branch name ambiguous with another ref", () => {
+    test("a short HEAD that differs from the stripped full ref refuses before any fetch", async () => {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...onTagAmbiguous }, calls));
+      expect(r.ok).toBe(false);
+      expect((r as { error: string }).error).toContain("ambiguous");
+      expect(calls).not.toContain("fetch origin");
+    });
+    test("the short HEAD read failing refuses", async () => {
+      const calls: string[] = [];
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, [SHORT_HEAD]: { code: 128, stderr: "fatal: bad" } }, calls));
+      expect(r.ok).toBe(false);
+      expect(calls).not.toContain("fetch origin");
+    });
+    test("real git: a branch sharing its name with a tag refuses before any fetch", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "git-ambiguous-"));
+      try {
+        const setup = [
+          ["init", "-q", "-b", "develop"],
+          ["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "a"],
+          ["checkout", "-q", "-b", "feat/x"],
+          ["tag", "feat/x"],
+        ];
+        for (const args of setup) expect((await realGitRunner(args, dir)).code, args.join(" ")).toBe(0);
+        const calls: string[] = [];
+        const recording: GitRunner = (args, cwd) => { calls.push(args.join(" ")); return realGitRunner(args, cwd); };
+        const r = await branchSyncPreflight(dir, recording);
+        expect(r.ok).toBe(false);
+        expect((r as { error: string }).error).toContain("ambiguous");
+        expect(calls.some((c) => c.startsWith("fetch"))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("branch names rt sync cannot pass safely", () => {
     test("a branch with shell metacharacters, whitespace or a leading dash refuses before any config read or fetch", async () => {
       for (const branch of ["x$(touch${IFS}PWNED)", "a;id|sh", "a b", "--mirror", "--all", "-f"]) {
         const calls: string[] = [];
-        const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls));
+        const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...on(branch) }, calls));
         expect(r.ok, branch).toBe(false);
         expect((r as { error: string }).error, branch).toContain("cannot pass safely");
         expect(calls.filter((c) => c.startsWith("config") || c.startsWith("fetch")), branch).toEqual([]);
       }
     });
     test("a branch of letters, digits, dots, slashes, dashes and underscores passes", async () => {
-      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: "feat/x-1.2_y\n" }, "rev-parse --verify --quiet origin/feat/x-1.2_y": { code: 1 } }));
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, ...on("feat/x-1.2_y"), "rev-parse --verify --quiet origin/feat/x-1.2_y": { code: 1 } }));
       expect(r).toEqual({ ok: true, diverged: false });
     });
   });
@@ -414,7 +482,7 @@ describe("branch_sync tool", () => {
   const guard: TreeGuardDeps = { repoIndex: () => ({ r: "/t" }), treeByPath: () => null, realpath: (p) => p };
   const clean: Script = {
     [GIT_PATHS]: { stdout: "/t/.git/rebase-merge\n/t/.git/rebase-apply\n" },
-    "symbolic-ref --quiet --short HEAD": { stdout: "feat/x\n" }, "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
+    ...on("feat/x"), "symbolic-ref --quiet --short refs/remotes/origin/HEAD": { stdout: "origin/develop\n" },
     "config --get-all remote.origin.push": { code: 1 }, "config --get push.default": { code: 1 },
     "fetch origin": {}, "rev-parse --verify --quiet origin/feat/x": {},
     "rev-list --left-right --count origin/feat/x...HEAD": { stdout: "0\t1\n" },
@@ -451,12 +519,22 @@ describe("branch_sync tool", () => {
     for (const branch of ["x$(touch${IFS}PWNED)", "--mirror", "--all", "-f"]) {
       let ran = false;
       const calls: string[] = [];
-      const tool = gitToolDefs({ git: fakeGit({ ...clean, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+      const tool = gitToolDefs({ git: fakeGit({ ...clean, ...on(branch) }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
       const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
       expect(r.ok, branch).toBe(false);
       expect(ran, branch).toBe(false);
       expect(calls, branch).not.toContain("fetch origin");
     }
+  });
+  test("a branch name ambiguous with a tag never reaches rt sync", async () => {
+    let ran = false;
+    const calls: string[] = [];
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, ...onTagAmbiguous }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("ambiguous");
+    expect(ran).toBe(false);
+    expect(calls).not.toContain("fetch origin");
   });
   test("a push redirect never runs rt sync", async () => {
     let ran = false;

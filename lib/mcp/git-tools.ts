@@ -14,10 +14,19 @@ export const realGitRunner: GitRunner = async (args, cwd) => {
 };
 
 const PROTECTED = new Set(["main", "master"]);
+const DETACHED = "refusing to push a detached HEAD";
 
+const HEADS = "refs/heads/";
+
+// The short form prints `heads/<b>` when a tag or other ref shares the name,
+// and that string names a different ref in a refspec, so the name is always
+// the full ref with its prefix stripped.
 async function currentBranch(cwd: string, git: GitRunner): Promise<string | null> {
-  const r = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
-  return r.code === 0 ? r.stdout.trim() : null;
+  const r = await git(["symbolic-ref", "--quiet", "HEAD"], cwd);
+  if (r.code !== 0) return null;
+  const full = r.stdout.trim();
+  if (!full.startsWith(HEADS) || full.length === HEADS.length) return null;
+  return full.slice(HEADS.length);
 }
 
 /** The remote's default branch: known (its name) or null, meaning unknown,
@@ -52,7 +61,11 @@ function detail(r: { stderr: string; stdout: string }): string {
     develop or trunk is protected exactly like one defaulting to main. */
 export async function pushableBranch(cwd: string, git: GitRunner): Promise<{ branch: string; defaultBranch: string } | { error: string }> {
   const branch = await currentBranch(cwd, git);
-  if (branch === null) return { error: "refusing to push a detached HEAD" };
+  if (branch === null) return { error: DETACHED };
+  return checkPushable(cwd, git, branch);
+}
+
+async function checkPushable(cwd: string, git: GitRunner, branch: string): Promise<{ branch: string; defaultBranch: string } | { error: string }> {
   if (PROTECTED.has(branch)) return { error: `refusing to push ${branch}: the default branch and main/master are never pushed by a tool` };
   const def = await remoteDefault(cwd, git);
   if (def === null) return { error: `refusing to push ${branch}: origin's default branch could not be determined` };
@@ -196,7 +209,16 @@ export async function branchSyncPreflight(cwd: string, git: GitRunner, exists: (
   const rebasing = await rebaseInProgress(cwd, git, exists);
   if ("error" in rebasing) return { ok: false, error: rebasing.error };
   if (rebasing.inProgress) return { ok: false, error: "a rebase is in progress; finish it with git rebase --continue or git_rebase {abort: true}" };
-  const b = await pushableBranch(cwd, git);
+  const current = await currentBranch(cwd, git);
+  if (current === null) return { ok: false, error: DETACHED.replace("push", "sync") };
+  // rt sync reads the short form and pushes `origin <that>`, so a short name
+  // that differs from the branch lands on whatever ref it resolves to.
+  const short = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
+  if (short.code !== 0) return { ok: false, error: `git symbolic-ref --short HEAD failed: ${detail(short)}` };
+  if (short.stdout.trim() !== current) {
+    return { ok: false, error: `refusing to sync ${JSON.stringify(current)}: the branch name is ambiguous with a tag or other ref of the same name, which rt sync cannot sync safely` };
+  }
+  const b = await checkPushable(cwd, git, current);
   if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
   const { branch, defaultBranch } = b;
   if (!SHELL_SAFE_BRANCH.test(branch)) {
