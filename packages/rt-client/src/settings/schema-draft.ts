@@ -64,6 +64,7 @@ function draftStep(key: string, was: LockEntry, now: LockEntry, deep: boolean): 
   if (kept.length < ops.length) notes.push("deep-merge key: a layer stays partial, so the new default belongs in the registry default, not in each layer");
   for (const o of ops) {
     if (o.op === "rename") notes.push(`drafted a rename of ${[...o.path, o.from].join(".")} to ${o.to}: confirm it is a rename, not a removal plus an addition`);
+    else if (o.op === "delete") notes.push(`drafted a delete of ${[...o.path, o.name].join(".")}: its stored values are dropped; if it was renamed, write a renameProperty instead`);
   }
   return { kind: "step", key, version, schemaSource, upSource: upSourceFor(kept), notes };
 }

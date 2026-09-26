@@ -50,7 +50,21 @@ describe("draftMigrations", () => {
     const next: Lock = { "t.k": { storeVersion: 2, schema: obj({ a: str }, [], { additionalProperties: false }) } };
     const d = onlyStep(draftMigrations(prev, next));
     expect(evalUp(d.upSource)({ a: "x", b: "y" })).toEqual({ a: "x" });
-    expect(d.notes).toEqual([]);
+    expect(d.notes).toEqual([
+      "drafted a delete of b: its stored values are dropped; if it was renamed, write a renameProperty instead",
+    ]);
+  });
+
+  test("a property renamed while another is added to the same object: the drafted delete of the old name carries a note, since a rename plus an add looks the same as a plain delete plus an add", () => {
+    const prev: Lock = { "t.k": { storeVersion: 1, schema: obj({ pattern: str, a: str }, ["pattern", "a"]) } };
+    const next: Lock = {
+      "t.k": { storeVersion: 2, schema: obj({ match: str, a: str, b: { type: "number", default: 5 } }, ["a", "b"]) },
+    };
+    const d = onlyStep(draftMigrations(prev, next));
+    expect(evalUp(d.upSource)({ pattern: "p", a: "x" })).toEqual({ a: "x", b: 5 });
+    expect(d.notes.join("\n")).toContain(
+      "drafted a delete of pattern: its stored values are dropped; if it was renamed, write a renameProperty instead",
+    );
   });
 
   test("a rename where the old property was the only required one and the new one is optional: the step still renames it", () => {
