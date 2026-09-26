@@ -9,15 +9,10 @@
  * `claude.permissions` unions in without importing a step, and there is
  * never a second copy of the list to drift from this one.
  *
- * `Bash(glab *)` already subsumes the two narrower `glab mr` entries below
- * it; they stay anyway, deliberately, so a future narrowing of the wildcard
- * doesn't silently drop them.
- *
- * `rt runs` and `rt gate` are the pipeline skills' run bookkeeping and
- * decision surface, called from Bash in board-launched panes nobody watches;
- * without them every such call prompts on a fresh Mac. Both write only the
- * caller's own run and gates, and the mattstack MCP server (allowed above)
- * already exposes the gate verbs, so they add no reach.
+ * `rt gate`, `rt chat tail` and `rt events wait` are the long waits and the
+ * shepherd's CLI-only answer that skills still run in Bash, each in one bare
+ * form; everything else a skill runs routinely is a tool on the mattstack
+ * server.
  *
  * No git entries, on purpose. An allow rule resolves before the auto-mode
  * classifier, so `Bash(git push *)` would wave through a forced push and
@@ -30,11 +25,8 @@ export const BASE_PERMISSIONS: string[] = [
   "mcp__plugin_fast-browser_fast-browser",
   "mcp__plugin_mattstack_mattstack",
   "EnterWorktree",
-  "Bash(glab *)",
-  "Bash(glab mr approve *)",
-  "Bash(glab mr note *)",
   "Bash(claude plugin update *)",
-  "Bash(rt skills sync *)",
-  "Bash(rt runs *)",
   "Bash(rt gate *)",
+  "Bash(rt chat tail *)",
+  "Bash(rt events wait *)",
 ];
