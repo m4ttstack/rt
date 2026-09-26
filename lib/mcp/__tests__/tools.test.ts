@@ -662,6 +662,44 @@ describe("mcpTools", () => {
     });
   });
 
+  describe("mr_reply_thread result", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    function fakeDaemon(reply: () => unknown) {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async () => reply(),
+      }));
+    }
+
+    const note = (id: number, body: string) => ({ id, body, author: { id: "u", username: "a", name: "A", avatarUrl: "" }, createdAt: "t", system: false, type: "DiscussionNote", resolvable: true, resolved: false, position: null });
+
+    test("returns only the posted reply, never the MR's whole discussion list", async () => {
+      fakeDaemon(() => ({
+        ok: true,
+        data: {
+          fetchedAt: 1,
+          discussions: [
+            { id: "other", resolvable: true, resolved: false, notes: [note(1, "unrelated")] },
+            { id: "d1", resolvable: true, resolved: false, notes: [note(2, "original"), note(3, "my reply")] },
+          ],
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "mr_reply_thread")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, discussionId: "d1", body: "my reply" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { discussionId: "d1", noteId: 3, resolved: false } });
+    });
+
+    test("a thread missing from the refreshed list still reports the discussion, with a null noteId", async () => {
+      fakeDaemon(() => ({ ok: true, data: { fetchedAt: 1, discussions: [] } }));
+      const tool = mcpTools().find((t) => t.name === "mr_reply_thread")!;
+      const res = await tool.handler({ repoName: "remote:x", iid: 7, discussionId: "d1", body: "x" }, {} as NodeJS.ProcessEnv);
+      expect(res).toEqual({ ok: true, body: { discussionId: "d1", noteId: null, resolved: null } });
+    });
+  });
+
   describe("mr_update", () => {
     afterEach(() => {
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));

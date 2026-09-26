@@ -434,7 +434,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_reply_thread",
-      description: `GitLab only. Reply to an existing MR discussion thread. ${REPO_NAME_RULE}`,
+      description: `GitLab only. Reply to an existing MR discussion thread. Returns discussionId, noteId (the posted reply) and the thread's resolved state. ${REPO_NAME_RULE}`,
       inputSchema: {
         type: "object",
         properties: { ...MR_TARGET_PROPS, discussionId: { type: "string" }, body: { type: "string" } },
@@ -452,7 +452,11 @@ export function mcpTools(): McpToolDef[] {
           discussionId: input.discussionId as string,
           body: input.body as string,
         }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
-        return fromResponse(res);
+        if (!res.ok) return fromResponse(res);
+        const discussionId = input.discussionId as string;
+        const thread = res.data?.discussions.find((d) => d.id === discussionId);
+        const reply = thread?.notes.at(-1);
+        return ok({ discussionId, noteId: reply?.id ?? null, resolved: thread?.resolved ?? null });
       },
     },
     {
