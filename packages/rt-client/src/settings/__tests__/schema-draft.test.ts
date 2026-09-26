@@ -22,6 +22,7 @@ const obj = (properties: Record<string, unknown>, required: string[] = [], extra
   ...extra,
 });
 const str = { type: "string" };
+const bool = { type: "boolean" };
 const onlyStep = (drafts: Draft[]) => {
   expect(drafts).toHaveLength(1);
   const d = drafts[0]!;
@@ -83,10 +84,24 @@ describe("draftMigrations", () => {
     expect(d.notes.join("\n")).toContain("confirm it is a rename");
   });
 
-  test("a key renamed with an equal schema: a renamedFrom entry and no step", () => {
+  test("a key renamed with an equal schema: a renamedFrom entry with a confirm note", () => {
     const prev: Lock = { "t.old": { storeVersion: 1, schema: obj({ a: str }, ["a"]) } };
     const next: Lock = { "t.new": { storeVersion: 1, schema: obj({ a: str }, ["a"]) } };
-    expect(draftMigrations(prev, next)).toEqual([{ kind: "rename", key: "t.new", from: "t.old", notes: [] }]);
+    expect(draftMigrations(prev, next)).toEqual([{
+      kind: "rename",
+      key: "t.new",
+      from: "t.old",
+      notes: ["confirm t.new is a rename of t.old, not a removal plus an unrelated addition"],
+    }]);
+  });
+
+  test("two removed keys of the same schema and one added key of that schema: no rename is drafted for either", () => {
+    const prev: Lock = {
+      "t.old1": { storeVersion: 1, schema: bool },
+      "t.old2": { storeVersion: 1, schema: bool },
+    };
+    const next: Lock = { "t.new": { storeVersion: 1, schema: bool } };
+    expect(draftMigrations(prev, next)).toEqual([]);
   });
 
   test("anything else (an enum value removed): a step that throws TODO until written", () => {

@@ -32,11 +32,15 @@ const requiredOf = (s: JsonSchema) => new Set(Array.isArray(s.required) ? (s.req
 export function draftMigrations(prev: Lock, next: Lock, isDeep: (key: string) => boolean = () => false): Draft[] {
   const drafts: Draft[] = [];
   const added = Object.keys(next).filter((k) => !(k in prev));
-  for (const [old, was] of Object.entries(prev)) {
-    if (old in next) continue;
-    const heir = added.find((k) => equivalentSchemas(was.schema, next[k]!.schema));
-    if (heir === undefined || next[heir]!.renamedFrom?.includes(old)) continue;
-    const notes = next[heir]!.storeVersion === was.storeVersion ? [] : [`set storeVersion: ${was.storeVersion} on ${heir}; a renamed key keeps the old key's version`];
+  const removed = Object.entries(prev).filter(([old]) => !(old in next));
+  for (const [old, was] of removed) {
+    const addedMatches = added.filter((k) => equivalentSchemas(was.schema, next[k]!.schema));
+    if (addedMatches.length !== 1) continue;
+    const heir = addedMatches[0]!;
+    const removedMatches = removed.filter(([, w]) => equivalentSchemas(w.schema, next[heir]!.schema));
+    if (removedMatches.length !== 1 || next[heir]!.renamedFrom?.includes(old)) continue;
+    const notes = [`confirm ${heir} is a rename of ${old}, not a removal plus an unrelated addition`];
+    if (next[heir]!.storeVersion !== was.storeVersion) notes.push(`set storeVersion: ${was.storeVersion} on ${heir}; a renamed key keeps the old key's version`);
     drafts.push({ kind: "rename", key: heir, from: old, notes });
   }
   const breaking = new Set(classifyLockDiff(prev, next).filter((c) => c.kind === "breaking").map((c) => c.key));
