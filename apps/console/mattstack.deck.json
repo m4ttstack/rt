@@ -7,7 +7,7 @@
   "includeInBundle": true,
   "badge": "/api/badge",
   "bundle": {
-    "build": "bun install --frozen-lockfile && bun run build:binary",
+    "build": "bun run build:binary",
     "artifact": "dist-bin/console"
   },
   "dev": {

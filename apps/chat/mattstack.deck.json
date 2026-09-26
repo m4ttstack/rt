@@ -6,7 +6,7 @@
   "port": 11002,
   "includeInBundle": true,
   "bundle": {
-    "build": "bun install --frozen-lockfile && bun run build:binary",
+    "build": "bun run build:binary",
     "artifact": "dist-bin/chat"
   },
   "dev": {
