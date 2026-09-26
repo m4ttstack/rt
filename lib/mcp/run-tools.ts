@@ -57,7 +57,7 @@ export function packRootFrom(skillDir: string, realpath: (p: string) => string):
 }
 
 const RUN_DB_PROPS = {
-  runDb: { type: "string", description: "The runDb run_start returned. Always pass it; omitted, cwd is required and the run is the newest running one whose worktree holds it." },
+  runDb: { type: "string", description: "The runDb run_start returned. Always pass it; omitted, cwd is required and the run is this session's run, else the newest running one whose worktree holds cwd." },
   cwd: { type: "string", description: "Absolute worktree path, used only when runDb is omitted." },
 };
 
@@ -77,6 +77,7 @@ function checkRunDb(runDb: string, env: NodeJS.ProcessEnv, realpath: (p: string)
   let real: string;
   try { real = realpath(runDb); } catch { return { ok: false, error: `runDb ${runDb} does not resolve` }; }
   const rawRoot = typeof env.RT_RUNS_ROOT === "string" && env.RT_RUNS_ROOT !== "" ? env.RT_RUNS_ROOT : runsRoot();
+  if (!rawRoot) return { ok: false, error: "no runs root is configured" };
   let root = rawRoot;
   try { root = realpath(rawRoot); } catch { /* root need not exist yet; compare against it unresolved */ }
   if (real !== root && !real.startsWith(root.endsWith("/") ? root : `${root}/`)) return { ok: false, error: `runDb must be under the runs root (${root})` };
@@ -94,7 +95,10 @@ function runTarget(input: Record<string, unknown>, env: NodeJS.ProcessEnv, realp
     if (!db.ok) return { error: db.error };
     return { env: { ...env, RT_RUN_DB: db.real }, cwd: typeof input.cwd === "string" ? input.cwd : "/" };
   }
-  if (typeof input.cwd === "string") return { env, cwd: input.cwd };
+  if (typeof input.cwd === "string") {
+    const { RT_RUN_DB: _unchecked, ...rest } = env;
+    return { env: rest, cwd: input.cwd };
+  }
   return { error: NO_RUN };
 }
 

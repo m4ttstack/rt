@@ -173,6 +173,25 @@ describe("run tools pass runDb as RT_RUN_DB and cwd through", () => {
     expect(calls[0]!.env.RT_RUN_DB).toBeUndefined();
     expect(calls[1]).toMatchObject({ verb: "snapshot", args: [], cwd: "/tree" });
   });
+  test("cwd alone drops an RT_RUN_DB inherited by the server, so it cannot bypass confinement", async () => {
+    const { deps, calls } = fakeDeps();
+    await tool(deps, "run_snapshot").handler({ cwd: "/tree" }, { RT_RUN_DB: "/elsewhere/other.db" } as NodeJS.ProcessEnv);
+    expect(calls[0]!.env.RT_RUN_DB).toBeUndefined();
+  });
+  test("an empty runs root refuses every runDb", async () => {
+    const { deps, calls } = fakeDeps();
+    const saved = process.env.RT_RUNS_ROOT;
+    process.env.RT_RUNS_ROOT = "";
+    try {
+      const res = await tool(deps, "run_snapshot").handler({ runDb: "/anywhere/state.db" }, { RT_RUNS_ROOT: "" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("no runs root");
+      expect(calls).toEqual([]);
+    } finally {
+      if (saved === undefined) delete process.env.RT_RUNS_ROOT;
+      else process.env.RT_RUNS_ROOT = saved;
+    }
+  });
   test("neither runDb nor cwd is refused without touching the run store", async () => {
     const { deps, calls } = fakeDeps();
     for (const name of ["run_stage", "run_field_set", "run_field_get", "run_decision", "run_status", "run_snapshot"]) {
