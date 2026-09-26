@@ -4,7 +4,7 @@ import { relative } from "path";
 import { buildClaudeArgv, resolveClaudeBin } from "../lib/agent-argv/claude.ts";
 import type { AgentInvocation } from "../lib/agent-argv/types.ts";
 import { mcpToolsPayload } from "./mcp.ts";
-import { checkPack } from "./skills.ts";
+import { checkPack, SkillsUsageError, type CheckPayload } from "./skills.ts";
 import { lintedMarkdownFiles } from "../lib/skills/mcp-lint.ts";
 import { runCapture } from "../lib/subprocess.ts";
 
@@ -42,14 +42,42 @@ function flag(args: string[], name: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-export async function skillsAudit(args: string[]): Promise<void> {
-  const json = args.includes("--json");
+export type AuditInputsResult =
+  | { ok: true; resolved: CheckPayload; claude: string }
+  | { ok: false; message: string };
+
+/**
+ * Everything skillsAudit needs before it spawns claude, as data rather than
+ * thrown errors: checkPack's SkillsUsageError (unknown --pack, a --pack-dir
+ * that does not exist, an ambiguous non-TTY pick) is exactly as much a
+ * "no pack resolves" outcome as the no-flags case, so it is caught here
+ * rather than left to crash the process with a stack trace. Anything else
+ * checkPack throws is a real bug and propagates.
+ */
+export async function resolveAuditInputs(
+  args: string[],
+  resolveClaude: () => string = resolveClaudeBin,
+): Promise<AuditInputsResult> {
   const pack = flag(args, "--pack");
   const packDir = flag(args, "--pack-dir");
-  if (!pack && !packDir) { console.error("rt skills audit: pass --pack <name> or --pack-dir <dir>"); process.exit(2); }
-  const resolved = await checkPack({ ...(pack ? { pack } : {}), ...(packDir ? { packDir } : {}) });
-  const claude = resolveClaudeBin();
-  if (!existsSync(claude)) { console.error("rt skills audit: no claude binary on PATH; the audit needs a Claude login"); process.exit(2); }
+  if (!pack && !packDir) return { ok: false, message: "rt skills audit: pass --pack <name> or --pack-dir <dir>" };
+  let resolved: CheckPayload;
+  try {
+    resolved = await checkPack({ ...(pack ? { pack } : {}), ...(packDir ? { packDir } : {}) });
+  } catch (err) {
+    if (err instanceof SkillsUsageError) return { ok: false, message: `rt skills audit: ${err.message}` };
+    throw err;
+  }
+  const claude = resolveClaude();
+  if (!existsSync(claude)) return { ok: false, message: "rt skills audit: no claude binary on PATH; the audit needs a Claude login" };
+  return { ok: true, resolved, claude };
+}
+
+export async function skillsAudit(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const inputs = await resolveAuditInputs(args);
+  if (!inputs.ok) { console.error(inputs.message); process.exit(2); }
+  const { resolved, claude } = inputs;
   const files = lintedMarkdownFiles(resolved.packDir).map((p) => relative(resolved.packDir, p));
   const prompt = buildAuditPrompt(files, mcpToolsPayload().tools.map((t) => ({ name: t.name, description: t.description })));
   const argv = buildClaudeArgv(buildAuditInvocation(prompt, randomUUID()), { claude });

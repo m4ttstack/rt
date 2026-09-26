@@ -68,7 +68,7 @@ import type { AttachmentSource, CompileResult, Side, StageEntry, StepSource, Ver
  * prints these as a one-line "rt skills: <message>" and exits 1 with no
  * stack trace; anything else propagates to the top-level crash handler.
  */
-class SkillsUsageError extends Error {}
+export class SkillsUsageError extends Error {}
 
 async function withCleanErrors(fn: () => Promise<void>): Promise<void> {
   try {

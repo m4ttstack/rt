@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { buildAuditInvocation, buildAuditPrompt } from "../skills-audit.ts";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { buildAuditInvocation, buildAuditPrompt, resolveAuditInputs, skillsAudit } from "../skills-audit.ts";
 import { buildClaudeArgv } from "../../lib/agent-argv/claude.ts";
 
 const paths = ["/p/skills/ship/SKILL.md", "/p/attachments/f/SKILL.md"];
@@ -38,5 +41,77 @@ describe("buildAuditInvocation", () => {
     expect(argv.at(-1)).toBe("PROMPT");
     expect(argv.some((a) => a.includes("dangerously"))).toBe(false);
     expect(inv.account).toBeUndefined();
+  });
+});
+
+/** Mocks process.exit to throw a sentinel so the real test process never
+    dies, and reads the spies' recorded calls before mockRestore() (bun's
+    mockRestore() clears .mock.calls). Matches commands/__tests__/deps.test.ts. */
+async function runCapturingExit(fn: () => Promise<void>): Promise<{ exitCode: number | undefined; errors: string[] }> {
+  const errors: string[] = [];
+  const exitSpy = spyOn(process, "exit").mockImplementation(() => {
+    throw new Error("process.exit sentinel");
+  });
+  const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  });
+  const logSpy = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await fn();
+    return { exitCode: undefined, errors };
+  } catch {
+    const exitCode = exitSpy.mock.calls.at(-1)?.[0] as number | undefined;
+    return { exitCode, errors };
+  } finally {
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+    logSpy.mockRestore();
+  }
+}
+
+const MISSING_CLAUDE = "/definitely/not/a/real/claude/binary/rt-skills-audit-test";
+
+describe("resolveAuditInputs", () => {
+  test("no --pack or --pack-dir: ok:false, one-line message", async () => {
+    const r = await resolveAuditInputs([]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toBe("rt skills audit: pass --pack <name> or --pack-dir <dir>");
+  });
+
+  test("a --pack-dir that does not exist: ok:false, checkPack's SkillsUsageError caught rather than thrown", async () => {
+    const r = await resolveAuditInputs(["--pack-dir", "/definitely/does/not/exist/rt-skills-audit-test"]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.message.startsWith("rt skills audit: ")).toBe(true);
+      expect(r.message).toContain("not an existing directory");
+    }
+  });
+
+  test("a resolvable pack dir but no claude binary: ok:false, injected resolver never touches real PATH", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rt-skills-audit-"));
+    try {
+      const r = await resolveAuditInputs(["--pack-dir", dir], () => MISSING_CLAUDE);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.message).toBe("rt skills audit: no claude binary on PATH; the audit needs a Claude login");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("skillsAudit exit paths", () => {
+  test("no --pack or --pack-dir exits 2 with a clean one-line message", async () => {
+    const { exitCode, errors } = await runCapturingExit(() => skillsAudit([]));
+    expect(exitCode).toBe(2);
+    expect(errors).toEqual(["rt skills audit: pass --pack <name> or --pack-dir <dir>"]);
+  });
+
+  test("an unresolvable --pack-dir exits 2, not the uncaught SkillsUsageError's exit 1 + stack trace", async () => {
+    const { exitCode, errors } = await runCapturingExit(() =>
+      skillsAudit(["--pack-dir", "/definitely/does/not/exist/rt-skills-audit-test"]),
+    );
+    expect(exitCode).toBe(2);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("not an existing directory");
   });
 });
