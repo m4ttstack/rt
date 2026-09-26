@@ -124,10 +124,15 @@ describe('named sections', () => {
       screen.getByLabelText('new host'),
       'github.example.com'
     );
+    expect(
+      screen.getByText('github.example.com already exists')
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Add entry' }));
     expect(
       screen.getByText('github.example.com already exists')
     ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('new host'), '2');
+    expect(screen.queryByText(/already exists/)).toBeNull();
   });
 
   it('removes an entry', async () => {

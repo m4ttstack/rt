@@ -11,6 +11,22 @@ import { ItemCards } from './ItemCards';
 import { SettingRow } from './SettingRow';
 import { schemaFields } from './testSchemas';
 
+vi.mock('@mattstack/app-kit/lazy', () => ({
+  CodeMirror: ({
+    value,
+    onChange,
+  }: {
+    value?: string;
+    onChange?: (v: string) => void;
+  }) => (
+    <textarea
+      aria-label="JSON"
+      value={value}
+      onChange={e => onChange?.(e.currentTarget.value)}
+    />
+  ),
+}));
+
 const RULE = {
   pattern: 'gate/opened/*',
   subjectPrefix: 'run:',
@@ -251,6 +267,21 @@ describe('item cards', () => {
     const card = screen.getByTestId('item-1');
     expect(within(card).queryByText('required')).toBeNull();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('an untouched new card reads the same in JSON as in the form until the JSON is edited', async () => {
+    await open([RULE]);
+    await userEvent.click(screen.getByRole('button', { name: 'Add item' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));
+    expect(
+      screen.getByText('#2 has 4 empty required fields')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/required property/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.type(screen.getByRole('textbox', { name: 'JSON' }), ' ');
+    expect(
+      screen.getByText(/required property "pattern" is missing/)
+    ).toBeInTheDocument();
   });
 
   it('typing into and clearing a required field shows "required" on its row', async () => {

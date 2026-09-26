@@ -70,6 +70,7 @@ export function SettingRow({
   onExplain,
   onFix,
   fullDescription = false,
+  hideIssue,
 }: {
   def: SettingDefWire;
   store: RowStore;
@@ -79,6 +80,7 @@ export function SettingRow({
   onExplain?: (key: string) => void;
   onFix?: (key: string, issue: WireIssue | null) => void;
   fullDescription?: boolean;
+  hideIssue?: (issue: WireIssue) => boolean;
 }) {
   const { text } = useSchemeColors();
   const row = useRowSave(store, def);
@@ -281,7 +283,11 @@ export function SettingRow({
           )}
         </Stack>
       )}
-      <IssueLines def={def} onFix={onFix && (issue => onFix(def.key, issue))} />
+      <IssueLines
+        def={def}
+        onFix={onFix && (issue => onFix(def.key, issue))}
+        hide={hideIssue}
+      />
       {body && <Collapse expanded={open}>{body}</Collapse>}
     </Box>
   );

@@ -387,7 +387,12 @@ export function SettingsPage() {
             bg={bg.level3}
             scrollAreaProps={{ viewportRef: frame }}
           >
-            <Box px={32} pb={32}>
+            {/* The page's one overflow guard: Mantine's ScrollArea content
+                wrapper is `min-width: min-content`, so without size
+                containment here any unbreakable descendant (a long path, a
+                JSON value, a nowrap label) widens the page and scrolls it
+                sideways instead of truncating or wrapping in place. */}
+            <Box px={32} pb={32} style={{ contain: 'inline-size' }}>
               {store.error && (
                 <Alert
                   color="bad"
@@ -398,7 +403,9 @@ export function SettingsPage() {
                   <Text fz={12}>{store.error}</Text>
                 </Alert>
               )}
-              {store.loading ? (
+              {/* Skeletons only before the first list: a repo switch keeps the
+                  list it has on screen until the new one arrives. */}
+              {store.loading && store.defs.length === 0 ? (
                 <Stack gap="md" pt={28}>
                   {[220, 280, 180, 240].map(w => (
                     <Group key={w} justify="space-between">
@@ -432,23 +439,33 @@ export function SettingsPage() {
                   </Button>
                 </Stack>
               ) : (
-                visible.map(s => (
-                  <SettingsSection
-                    key={s.group.id}
-                    section={s}
-                    store={store}
-                    query={query}
-                    filtering={filtering}
-                    agentProvider={agentProvider}
-                    onExplain={explain.open}
-                    onFix={(key, issue) =>
-                      explain.open(key, {
-                        fix: issue?.scope,
-                        repo: issue?.repo,
-                      })
-                    }
-                  />
-                ))
+                <Box
+                  data-testid="settings-list"
+                  inert={store.loading}
+                  aria-busy={store.loading || undefined}
+                  style={{
+                    opacity: store.loading ? 0.55 : undefined,
+                    transition: 'opacity 120ms',
+                  }}
+                >
+                  {visible.map(s => (
+                    <SettingsSection
+                      key={s.group.id}
+                      section={s}
+                      store={store}
+                      query={query}
+                      filtering={filtering}
+                      agentProvider={agentProvider}
+                      onExplain={explain.open}
+                      onFix={(key, issue) =>
+                        explain.open(key, {
+                          fix: issue?.scope,
+                          repo: issue?.repo,
+                        })
+                      }
+                    />
+                  ))}
+                </Box>
               )}
               {filtering && visible.length > 0 && hiddenGroups > 0 && (
                 <Group gap={8} pt={20}>
