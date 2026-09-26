@@ -295,10 +295,14 @@ row on the rt.cool MCP page. Three layers fix that.
    `glab ...`, `git push`, `git rebase`, `rt herd ...`, `rt worktree
    provision|dispose`, `rt sync`, `export RT_RUN_DB`, a `VAR=$(...)`
    around an rt or glab call). They live in rt beside the roster, and
-   the kept-on-Bash list is allowlisted. A hit is an error in the check
-   output. It fails `check`'s exit only under a `--strict` flag, which
-   mattstack-skills' own CI and `rt skills sync` use; a team pack sees
-   the finding first and adopts `--strict` when it is ready.
+   the kept-on-Bash list is allowlisted. A line the author means to keep
+   (a "never do this" example, a mention of the `glab` CLI) carries an
+   inline `<!-- mcp-lint: allow -->` marker. A hit is an error in the check
+   output. It fails `check`'s exit only under `--strict`. mattstack-skills'
+   CI runs `--strict`, and `rt skills sync --pack mattstack` refuses on
+   hits. Any other pack's sync prints its hits as warnings and proceeds,
+   until that pack opts in with `"strictLint": true` in its manifest. A
+   team is never blocked from publishing by a rule it has not seen yet.
 3. **An on-demand LLM audit.** `rt skills audit --pack <pack>` runs a
    headless Claude with the tool list over the pack's skills and fills.
    It reports what patterns cannot catch: an instruction in plain words
