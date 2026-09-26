@@ -3187,10 +3187,11 @@ Generate: `rt mcp tools --json | bun scripts/gen-mcp-tools.ts > attachments/mcp-
       - uses: actions/checkout@v4
         with:
           repository: m4ttstack/rt
-          # The rt release that ships the mcp lint (Task 33's PR). Bumped on
-          # purpose when a rule changes, never floated: rt main must not be
-          # able to turn this repo red without a change here.
-          ref: v2.14.0
+          # The merge commit of the rt PR that shipped the mcp lint (Task 33).
+          # A sha, never a floating branch: rt main must not be able to turn
+          # this repo red without a change here. Moved to a release tag as a
+          # deliberate bump once one exists.
+          ref: <merge sha of Task 33's PR>
           path: rt
       - uses: oven-sh/setup-bun@v2
       - name: Install rt's dependencies
@@ -3204,7 +3205,7 @@ Generate: `rt mcp tools --json | bun scripts/gen-mcp-tools.ts > attachments/mcp-
           RT_BATCH: "1"
 ```
 
-`m4ttstack/rt` is public and its one scoped dependency, `@mattstack/glance` (`^0.27.0` in `package.json`), is public on npm (`npm view @mattstack/glance version` prints 0.27.0), so `bun install --frozen-lockfile` needs no token and no fallback. `ref` is the first rt release tag cut after Task 33 merges (v2.13.1 is current; the plan names v2.14.0 and the implementer substitutes the real tag). When a later rt release changes a rule, this pin is bumped in the same PR that fixes the hits, so the two land together.
+`m4ttstack/rt` is public and its one scoped dependency, `@mattstack/glance` (`^0.27.0` in `package.json`), is public on npm (`npm view @mattstack/glance version` prints 0.27.0), so `bun install --frozen-lockfile` needs no token and no fallback. `ref` is the full merge commit sha of Task 33's PR on rt `main` (read it with `gh pr view <number> --json mergeCommit -q .mergeCommit.oid` and paste the 40 characters); no rt release is cut before this task, so a tag would not resolve on the job's first run. When the next rt release ships, or a later release changes a rule, the pin moves to that tag or sha in the same PR that fixes any hits, so the two land together. Record the sha in the commit body.
 
 - [ ] **Step 3: Sync gate.** Nothing to add in this repo: `rt skills sync --pack mattstack` (Task 32) already refuses on hits for this pack. State it in `CERTIFICATION.md`: "`rt skills check --strict` is the merge gate in CI and `rt skills sync` refuses on hits for the mattstack pack; a team pack sees hits as advisory on sync until its manifest sets `\"strictLint\": true`. A deliberate don't that quotes a shell form carries `<!-- mcp-lint: allow -->`."
 - [ ] **Step 4: Run.** Push the branch; the `mcp-lint` job is green. `sh tests/repo-purity.sh` locally.
@@ -3283,7 +3284,7 @@ Run: `bun test lib/setup/__tests__/base-permissions.test.ts`: FAIL until Matt's 
 
 Rulings in Part E: the lint reads code-shaped text only (fenced blocks and inline spans), so prose that names a tool never hits and plain-words instructions are left to the audit, as the spec divides them; the `<!-- mcp-lint: allow -->` marker excuses its own line or the one code line under a marker-only line, never a whole block. `rt skills sync` refuses on hits only for the mattstack pack or a manifest with `"strictLint": true`; other packs see hits as advisory. The audit prompt carries file paths, not text (a 19k-line pack in one argv token would hit ARG_MAX; `claudeArgs` and `runCapture` have no stdin route), and the headless run reads them with `--allowedTools Read` and no bypass. The GREEN question lives in mattstack-skills' `editing-skills` and `CERTIFICATION.md`, since the superpowers `writing-skills` skill is not this repo's to edit. CI runs the lint by checking out the public `m4ttstack/rt` and running `bun cli.ts skills check --pack-dir ... --strict`, because no rt binary is installed on a GitHub runner.
 
-**Placeholder scan.** Task 15's `<the path in the capture>`, Task 30's manifest path and Task 35's `bun install` fallback are the deliberate fill-ins that depend on a capture, a machine or a runner; each says where the value comes from and what to record. No "TBD", no "similar to Task N" without the code repeated.
+**Placeholder scan.** Task 15's `<the path in the capture>`, Task 30's manifest path and Task 35's `<merge sha of Task 33's PR>` are the deliberate fill-ins that depend on a capture, a machine or a merge that has not happened yet; each says where the value comes from and what to record. No "TBD", no "similar to Task N" without the code repeated.
 
 **Type consistency.** `McpToolDef` and `ToolResult` come from `shared.ts` (Task 2) and every later tool file imports them from there. `GitToolDeps.sync` returns `{ code, stdout, stderr }` in Tasks 8 and 9 (Task 9 notes the `ExecResult` field check). `RelocationDriveOutcome` (Task 16) is `trust-accept.ts`'s existing export. `Commands["pane:announce-relocation"]` is declared in Task 16 and consumed by Task 17's `buildRelocationAnnouncement`.
 
