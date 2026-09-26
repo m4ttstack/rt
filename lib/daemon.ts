@@ -119,7 +119,7 @@ import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
 import { createGateEscalation, type GateEscalation } from "./daemon/gate-escalation.ts";
 import { createEscapeInjector } from "./daemon/gate-escape.ts";
 import { createReconciler, type Reconciler } from "./daemon/reconciler.ts";
-import { createRelocationWatcher, type RelocationWatcher } from "./daemon/relocation-announce.ts";
+import { createPaneDriveGuard, createRelocationWatcher, type RelocationWatcher } from "./daemon/relocation-announce.ts";
 import { snapshotPanes, type LivePane } from "./daemon/pane-resolve-live.ts";
 import type { CommandResult } from "./daemon/handlers/types.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
@@ -342,6 +342,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let gateEscalation: GateEscalation;
   let reconciler: Reconciler;
   let relocationWatcher: RelocationWatcher;
+  const relocationDriveGuard = createPaneDriveGuard();
   let gitBadges: GitBadgesStore;
   let gitStatusSweep: GitStatusSweep;
   let identity: {
@@ -747,11 +748,11 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
               return "no-dialog";
             }
             const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
-            const outcome = await driveRelocationAccept({
+            const outcome = await relocationDriveGuard(pane.paneRef, () => driveRelocationAccept({
               herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
               log, context: { paneRef: pane.paneRef },
               isRegisteredTree: (path) => findTreeByPath(path) !== null,
-            });
+            }));
             if (outcome === "accepted") return "accepted";
             // "unchecked" is a screen nobody could read: evidence of
             // nothing, so it keeps the normal attention-gate path rather
@@ -771,11 +772,11 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           snapshot: snapshotPanes,
           drive: (pane, allowed) => {
             const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
-            return driveRelocationAccept({
+            return relocationDriveGuard(pane.paneRef, () => driveRelocationAccept({
               herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
               log, context: { paneRef: pane.paneRef, announced: true },
               isRegisteredTree: allowed,
-            });
+            }));
           },
           isRegisteredTree: (path) => findTreeByPath(path) !== null,
           // Mirrors the reconciler's own herd-ownership check above: a herd

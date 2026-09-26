@@ -1,9 +1,32 @@
 import { describe, expect, test } from "bun:test";
-import { createRelocationWatcher, type RelocationWatcherDeps } from "../relocation-announce.ts";
+import { createPaneDriveGuard, createRelocationWatcher, type RelocationWatcherDeps } from "../relocation-announce.ts";
+import { driveRelocationAccept } from "../trust-accept.ts";
 import type { LivePane } from "../pane-resolve-live.ts";
 import { createPaneHandlers } from "../handlers/pane.ts";
 
-const pane: LivePane = { paneRef: "7", sockPath: "/s", workspaceId: "w", agentStatus: "blocked", sessionId: "s1", cwd: "/repo" };
+const TREE_A = "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/aragorn";
+const TREE_B = "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/boromir";
+// trust-dialog.test.ts's ATTENDED_ENTER capture from the echo down, path substituted in the echo and reason lines (same length keeps the rule widest).
+const attended = (path: string) => [
+  `⏺ Entering worktree(${path})`,
+  "",
+  "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+  " Tool use",
+  "",
+  `   Entering worktree(${path})`,
+  "   │ Creates an isolated worktree (via git or configured hooks) and switches the session into it",
+  "",
+  ` │ permission-root relocation to "${path}" — a model-supplied`,
+  " │ worktree outside .claude/worktrees/",
+  "",
+  " Do you want to proceed?",
+  " ❯ 1. Yes",
+  "   2. No",
+  "",
+  " Esc to cancel · Tab to amend",
+].join("\n");
+
+const pane: LivePane ={ paneRef: "7", sockPath: "/s", workspaceId: "w", agentStatus: "blocked", sessionId: "s1", cwd: "/repo" };
 const log = { info() {}, warn() {}, debug() {} };
 
 function watcher(over: Partial<RelocationWatcherDeps> & { outcomes?: Array<"no-dialog" | "accepted" | "unregistered" | "stuck">; seen?: Array<(p: string) => boolean> } = {}) {
@@ -99,6 +122,49 @@ describe("relocation watcher", () => {
     await w.announce({ sessionId: "s1", tool: "EnterWorktree", path: "/pool/t1", cwd: "/repo" });
     await settle();
     expect(seen.length).toBe(1);
+  });
+});
+
+describe("per-pane single-flight drive guard", () => {
+  test("a second drive on a pane already in flight reports no-dialog without running; other panes and later drives run", async () => {
+    const guard = createPaneDriveGuard();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const ran: string[] = [];
+    const first = guard("w1:p1", async () => { ran.push("first"); await held; return "accepted" as const; });
+    expect(await guard("w1:p1", async () => { ran.push("second"); return "accepted" as const; })).toBe("no-dialog");
+    expect(await guard("bg:w1:p1", async () => { ran.push("other"); return "accepted" as const; })).toBe("accepted");
+    release();
+    expect(await first).toBe("accepted");
+    expect(await guard("w1:p1", async () => { ran.push("later"); return "stuck" as const; })).toBe("stuck");
+    expect(ran).toEqual(["first", "other", "later"]);
+  });
+  test("a drive that throws still frees the pane", async () => {
+    const guard = createPaneDriveGuard();
+    await expect(guard("w1:p1", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    expect(await guard("w1:p1", async () => "accepted" as const)).toBe("accepted");
+  });
+  test("two concurrent real drives on one dialog press enter once", async () => {
+    const guard = createPaneDriveGuard();
+    const screen = attended(TREE_A);
+    let cleared = false;
+    const keys: string[][] = [];
+    const herdr = (async (method: string, params: { keys?: string[] }) => {
+      if (method === "pane.read") return { ok: true, result: { read: { text: cleared ? "$ \n" : screen } } };
+      if (method === "pane.send_keys") {
+        keys.push(params.keys!);
+        await Bun.sleep(5);
+        if (params.keys!.includes("enter")) cleared = true;
+        return { ok: true, result: {} };
+      }
+      return { ok: false, code: "invalid_request", message: method };
+    }) as never;
+    const drive = () => guard("w1:p1", () => driveRelocationAccept({
+      herdr, sock: {}, pane: "w1:p1", context: {}, settleMs: 1, stepMs: 1, isRegisteredTree: (p) => p === TREE_A,
+    }));
+    const outcomes = await Promise.all([drive(), drive()]);
+    expect(outcomes.sort()).toEqual(["accepted", "no-dialog"]);
+    expect(keys).toEqual([["enter"]]);
   });
 });
 

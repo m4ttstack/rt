@@ -31,6 +31,25 @@ export interface RelocationWatcher {
   announce(a: Announce): Promise<Scheduled>;
 }
 
+export type PaneDriveGuard = <R>(paneRef: string, run: () => Promise<R>) => Promise<R | "no-dialog">;
+
+/** One relocation drive per pane at a time, shared by every seam that drives
+    the dialog: a second walker's Enter can land after the first closed the
+    dialog, submitting whatever the person had typed. A pane already in
+    flight reports no-dialog without reading or pressing. */
+export function createPaneDriveGuard(): PaneDriveGuard {
+  const inFlight = new Set<string>();
+  return async (paneRef, run) => {
+    if (inFlight.has(paneRef)) return "no-dialog";
+    inFlight.add(paneRef);
+    try {
+      return await run();
+    } finally {
+      inFlight.delete(paneRef);
+    }
+  };
+}
+
 const WINDOW_MS = 8_000;
 const POLL_MS = 500;
 
