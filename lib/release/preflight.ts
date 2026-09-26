@@ -220,7 +220,13 @@ export async function checkSchemaLock(seams: PreflightSeams, tag: string | null)
     const bumps = Object.entries(committed)
       .filter(([k, e]) => prev[k] !== undefined && e.storeVersion > prev[k]!.storeVersion)
       .map(([k, e]) => `${k} ${prev[k]!.storeVersion} -> ${e.storeVersion}`);
-    const notes = bumps.length > 0 ? `; storeVersion bumps for the release notes: ${bumps.join(", ")}` : "";
+    const renameBumps = Object.entries(committed).flatMap(([k, e]) =>
+      (e.renamedFrom ?? [])
+        .filter((old) => prev[old] !== undefined && e.storeVersion > prev[old]!.storeVersion)
+        .map((old) => `${old} -> ${k} ${prev[old]!.storeVersion} -> ${e.storeVersion}`),
+    );
+    const allBumps = [...bumps, ...renameBumps];
+    const notes = allBumps.length > 0 ? `; storeVersion bumps for the release notes: ${allBumps.join(", ")}` : "";
     return ok
       ? { id, label, status: "ok", detail: `no unmigrated breaking change since ${tag}${notes}` }
       : { id, label, status: "stale", detail: problems.join("; ") };

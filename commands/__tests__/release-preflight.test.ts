@@ -143,6 +143,30 @@ describe("rt release preflight schema-lock row", () => {
     expect(row?.detail).toContain(`storeVersion bumps for the release notes: ${key} 1 -> 2`);
   });
 
+  test("a key renamed and bumped since the tag lists the old name's storeVersion in the release notes", async () => {
+    const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
+    const oldKey = Object.keys(tagLock)[0]!;
+    const oldEntry = tagLock[oldKey]!;
+    const heirKey = `${oldKey}.renamed`;
+    const { [oldKey]: _removed, ...rest } = tagLock;
+    const committed = {
+      ...rest,
+      [heirKey]: {
+        storeVersion: oldEntry.storeVersion + 1,
+        schema: { type: "boolean" },
+        renamedFrom: [oldKey],
+        migrateFrom: { [String(oldEntry.storeVersion)]: oldEntry.schema },
+      },
+    };
+
+    const row = await schemaRow(fakeSeams("0.20.0", COMMITTED_LOCK, JSON.stringify(committed)));
+
+    expect(row?.status).toBe("ok");
+    expect(row?.detail).toContain(
+      `storeVersion bumps for the release notes: ${oldKey} -> ${heirKey} ${oldEntry.storeVersion} -> ${oldEntry.storeVersion + 1}`,
+    );
+  });
+
   test("a bump since the tag with no migrateFrom entry is stale", async () => {
     const tagLock = JSON.parse(COMMITTED_LOCK) as Record<string, { storeVersion: number; schema: Record<string, unknown> }>;
     const key = Object.keys(tagLock)[0]!;
