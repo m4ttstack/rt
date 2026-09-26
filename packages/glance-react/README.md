@@ -276,7 +276,9 @@ bun run build          # production build → dist/
 
 ### Releasing
 
-Versions are bumped by hand in `package.json` and published with `npm publish`,
+Versions are bumped by hand in `package.json` and published with `bun publish`
+(never `npm publish`: glance-react depends on `@mattstack/glance` as
+`workspace:*`, which bun rewrites to a real version and npm ships verbatim),
 gated by the `prepublishOnly` script (`check-types` then `build`).
 
 ## License

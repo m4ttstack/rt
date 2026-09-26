@@ -197,8 +197,8 @@ $ bun storybook          # component playground on :6006
 The live conformance suite exercises real GitLab and GitHub projects instead
 of mocks. It is opt-in: copy `harness_credentials.example.json` to
 `harness_credentials.json` (gitignored; see the file's own comments for what
-each token needs) at the repository root, then run with `GLANCE_LIVE=1 bun
-test`. GitHub's second identity comes from
+each token needs) in `packages/glance`, then run with `GLANCE_LIVE=1 bun
+test` from `packages/glance`. GitHub's second identity comes from
 `gh auth token` via the `GLANCE_HARNESS_GITHUB_APPROVER` environment variable
 rather than the credentials file, so nothing GitHub-shaped needs to sit on
 disk.

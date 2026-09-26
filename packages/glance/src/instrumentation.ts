@@ -22,7 +22,12 @@ export type OnRequestHook = (info: RequestInfo) => void;
 export function safeEmit(hook: OnRequestHook | undefined, info: RequestInfo): void {
   if (!hook) return;
   try {
-    hook(info);
+    // A hook is typed to return void, but nothing stops a consumer from
+    // passing an async function; catch a rejection the same as a throw.
+    const result = hook(info) as unknown;
+    if (result != null && typeof (result as PromiseLike<unknown>).then === 'function') {
+      Promise.resolve(result as PromiseLike<unknown>).catch(() => {});
+    }
   } catch {
     // A broken observer must never fail an API call.
   }

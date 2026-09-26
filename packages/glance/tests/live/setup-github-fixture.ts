@@ -60,7 +60,16 @@ async function ensureRepo(): Promise<void> {
   if (res.status !== 404) {
     throw new Error(`check repo failed: ${res.status} ${await res.text()}`);
   }
-  const createRes = await api('POST', '/user/repos', {
+  // `/user/repos` always creates under the authenticated user, never under
+  // OWNER. When OWNER names an org (or a different user), creating there
+  // instead would leave putFile targeting a SLUG that was never created.
+  const meRes = await api('GET', '/user');
+  if (!meRes.ok) {
+    throw new Error(`check authenticated user failed: ${meRes.status} ${await meRes.text()}`);
+  }
+  const me = (await meRes.json()) as { login: string };
+  const createPath = me.login.toLowerCase() === OWNER.toLowerCase() ? '/user/repos' : `/orgs/${OWNER}/repos`;
+  const createRes = await api('POST', createPath, {
     name: REPO,
     description: 'Live conformance fixture for @mattstack/glance. Safe to force-push.',
     private: false,

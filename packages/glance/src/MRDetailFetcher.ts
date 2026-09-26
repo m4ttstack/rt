@@ -71,26 +71,38 @@ export class MRDetailFetcher {
 
   async fetchDetail(projectId: number, mrIid: number): Promise<MRDetail> {
     const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions`;
-    const url = `${this.baseURL}${path}?per_page=100`;
-    const started = performance.now();
-    const res = await fetch(url, {
-      headers: { "PRIVATE-TOKEN": this.token },
-    });
+    const raw: RESTDiscussion[] = [];
+    let page = 1;
+    for (;;) {
+      const url = `${this.baseURL}${path}?per_page=100&page=${page}`;
+      const started = performance.now();
+      const res = await fetch(url, {
+        headers: { "PRIVATE-TOKEN": this.token },
+      });
 
-    safeEmit(this.onRequest, {
-      op: 'fetchMRDiscussions',
-      transport: 'rest',
-      method: 'GET',
-      path,
-      durationMs: performance.now() - started,
-      status: res.status,
-    });
+      safeEmit(this.onRequest, {
+        op: 'fetchMRDiscussions',
+        transport: 'rest',
+        method: 'GET',
+        path,
+        durationMs: performance.now() - started,
+        status: res.status,
+      });
 
-    if (!res.ok) {
-      throw new Error(`MR discussions fetch failed: ${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        throw new Error(`MR discussions fetch failed: ${res.status} ${res.statusText}`);
+      }
+
+      raw.push(...((await res.json()) as RESTDiscussion[]));
+
+      const next = res.headers.get("x-next-page");
+      if (!next) break;
+      const nextPage = Number(next);
+      if (!Number.isInteger(nextPage) || nextPage <= page) {
+        throw new Error(`fetchMRDiscussions: non-advancing page '${next}' for ${path}`);
+      }
+      page = nextPage;
     }
-
-    const raw = (await res.json()) as RESTDiscussion[];
 
     const discussions: Discussion[] = raw.map((d) => ({
       id: d.id,
