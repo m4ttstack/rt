@@ -16,7 +16,8 @@
  *   3. Writes the snapshot to the discussions file store.
  *   4. Broadcasts `discussions:update`.
  *   5. If any new non-system notes appeared from someone other than the
- *      current user, broadcasts `discussions:new-comments` with per-note
+ *      current user in a thread they qualify for, broadcasts
+ *      `discussions:new-comments` with per-note
  *      metadata AND a generic `notification` event so any connected tray
  *      / desktop surface can pick it up.
  */
@@ -63,8 +64,8 @@ const isBot = (n: Note) => BOT_USERNAME.test(n.author.username ?? "");
 /**
  * MR metadata for notifications and terminal-state checks: branch entry
  * first (it carries the enriched mr-info shape), then the project store
- * (raw PullRequest shape). Null when the MR is in neither store — callers
- * refuse rather than blind-fetch, so ungranted repos can't leak API calls.
+ * (raw PullRequest shape). Null when the MR is in neither store, as for one
+ * opened after the last sync.
  */
 export function resolveMRMeta(
   ctx: Pick<HandlerContext, "cache">,
@@ -176,8 +177,9 @@ export async function refreshDiscussions(
   overrides: RefreshOverrides = {},
 ): Promise<RefreshResult> {
   const fileStore = overrides.fileStore ?? getDiscussionsFileStore();
+  // Null for an MR the syncs have not picked up yet (opened seconds ago); its
+  // discussions are still fetched and stored.
   const meta = resolveMRMeta(deps.ctx, repoName, iid, overrides.projectStore);
-  if (!meta) throw new Error(`MR not cached: ${repoName}#${iid}`);
 
   const prevEntry = fileStore.read(repoName, iid);
   const isFirstFetch = prevEntry === undefined;
@@ -202,14 +204,15 @@ export async function refreshDiscussions(
   });
 
   const currentUserId = overrides.currentUserId !== undefined ? overrides.currentUserId : getCurrentUserId();
-  const isMrAuthor = currentUserId !== null && meta.authorNumericId === currentUserId;
+  // Without meta, authorship is unknown, so only threads I posted in qualify.
+  const isMrAuthor = currentUserId !== null && meta?.authorNumericId === currentUserId;
   const newNotes = isFirstFetch
     ? []
     : collectNewNotes(prevIds, discussions, currentUserId, isMrAuthor);
 
   if (newNotes.length > 0) {
-    const mrTitle = meta.title;
-    const webUrl  = meta.webUrl;
+    const mrTitle = meta?.title ?? `!${iid}`;
+    const webUrl  = meta?.webUrl ?? null;
 
     deps.broadcast("discussions:new-comments", {
       repoName,

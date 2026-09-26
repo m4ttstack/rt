@@ -240,9 +240,54 @@ describe("refreshDiscussions (lifted)", () => {
     expect(notified).toEqual(["new_comment"]);
   });
 
-  test("throws for an MR in neither store", async () => {
-    const overrides = { fileStore: createDiscussionsFileStore(tmpDb()), projectStore: pmrsStore(), fetchDiscussions: async () => [] };
-    await expect(refreshDiscussions({ ctx: fakeCtx({}), broadcast: () => {} }, "repo", 1, overrides)).rejects.toThrow("MR not cached");
+  test("an MR in neither store still stores its discussions and notifies a reply in my thread", async () => {
+    const fileStore = createDiscussionsFileStore(tmpDb());
+    fileStore.write("repo", 1, { discussions: [{ id: "d1", notes: [scopedNote(1, 111, "me")] } as any], fetchedAt: 1 });
+    const notified: Array<{ title: string; url?: string }> = [];
+    const broadcasts: any[] = [];
+    const res = await refreshDiscussions({ ctx: fakeCtx({}), broadcast: (type, data) => { broadcasts.push({ type, data }); } }, "repo", 1, {
+      fileStore,
+      projectStore: pmrsStore(),
+      currentUserId: 111,
+      notify: (_kind: string, title: string, _msg: string, url?: string) => { notified.push({ title, url }); },
+      fetchDiscussions: async () => [{ id: "d1", notes: [scopedNote(1, 111, "me"), scopedNote(2, 777, "luke")] } as any],
+    });
+    expect(fileStore.read("repo", 1)!.discussions[0]!.notes.length).toBe(2);
+    expect(res.newNotes.map((n) => n.noteId)).toEqual([2]);
+    expect(broadcasts.map((b) => b.type)).toEqual(["discussions:update", "discussions:new-comments"]);
+    expect(broadcasts[1].data.mrTitle).toBe("!1");
+    expect(broadcasts[1].data.webUrl).toBeNull();
+    expect(notified).toEqual([{ title: "New comment on !1", url: undefined }]);
+  });
+
+  test("an MR in neither store stays silent for threads I am not in", async () => {
+    const fileStore = createDiscussionsFileStore(tmpDb());
+    fileStore.write("repo", 1, { discussions: [{ id: "d1", notes: [scopedNote(1, 777, "luke")] } as any], fetchedAt: 1 });
+    const notified: string[] = [];
+    const res = await refreshDiscussions({ ctx: fakeCtx({}), broadcast: () => {} }, "repo", 1, {
+      fileStore,
+      projectStore: pmrsStore(),
+      currentUserId: 111,
+      notify: (kind: string) => { notified.push(kind); },
+      fetchDiscussions: async () => [{ id: "d1", notes: [scopedNote(1, 777, "luke"), scopedNote(2, 888, "leia")] } as any],
+    });
+    expect(res.newNotes).toEqual([]);
+    expect(notified).toEqual([]);
+  });
+
+  test("a first fetch of an MR in neither store is stored and silent", async () => {
+    const fileStore = createDiscussionsFileStore(tmpDb());
+    const notified: string[] = [];
+    const res = await refreshDiscussions({ ctx: fakeCtx({}), broadcast: () => {} }, "repo", 1, {
+      fileStore,
+      projectStore: pmrsStore(),
+      currentUserId: 111,
+      notify: (kind: string) => { notified.push(kind); },
+      fetchDiscussions: async () => [{ id: "d1", notes: [scopedNote(1, 111, "me"), scopedNote(2, 777, "luke")] } as any],
+    });
+    expect(fileStore.read("repo", 1)!.discussions[0]!.notes.length).toBe(2);
+    expect(res.newNotes).toEqual([]);
+    expect(notified).toEqual([]);
   });
 });
 
