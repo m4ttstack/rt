@@ -1,0 +1,429 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * Phase 1 controller ruling: a consumption failure is never fixed by deleting
+ * the token here. Every name below is a real prior-run failure, waived with
+ * the one-line reason that justifies keeping it definition-only for now.
+ * Deletion is Phase 2 material.
+ */
+const RAMP_HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan', 'gold'];
+const RAMP_PUBLIC_NAMES = [
+  '--page',
+  '--raised',
+  '--border-control',
+  ...[1, 2, 3, 4].flatMap(i => [`--surface-${i}`, `--text-${i}`]),
+  ...[1, 2, 3].map(i => `--line-${i}`),
+  ...RAMP_HUES.flatMap(h => [
+    `--fill-${h}`,
+    `--fill-${h}-hover`,
+    `--text-${h}`,
+    `--text-${h}-small`,
+  ]),
+];
+const RAMP_WAIVER =
+  'ramp name emitted ahead of the apps-wide migration; the storybook specimens and the ramp contrast gate read it, no kit recipe does yet.';
+
+// Wired by the recipes during the migration, so these are no longer
+// definition-only and must not carry a waiver.
+const RAMP_NOW_CONSUMED = new Set([
+  '--page',
+  ...[1, 2, 3, 4].map(i => `--text-${i}`),
+  '--fill-accent',
+  '--text-accent',
+  '--text-accent-small',
+  '--fill-ok',
+  '--text-ok-small',
+  '--fill-bad',
+  '--text-bad-small',
+]);
+
+const ON_FILL_WAIVER =
+  "on-fill label; Button's filled variant reads --color-<family>-onFill directly (intent-resolver.ts), not this bare alias -- Segmented's accent-only active state is the one recipe that reads it today, so the other six hues stay unconsumed here.";
+const TEXT_VIVID_WAIVER =
+  'vivid hue text, step 11 unconditionally; emitted ahead of its consumer -- no kit recipe reads it yet.';
+
+const RETIRED_ALIAS_WAIVER =
+  'pre-migration alias kept in the public CSS contract; every recipe moved to the ramp name, so nothing in this repo reads it any more.';
+
+const WAIVED_TUI: Record<string, string> = {
+  ...Object.fromEntries(
+    ['--accent-text', '--green', '--red', '--surface-wash-accent-fg-70'].map(
+      name => [name, RETIRED_ALIAS_WAIVER]
+    )
+  ),
+  ...Object.fromEntries(
+    RAMP_PUBLIC_NAMES.filter(name => !RAMP_NOW_CONSUMED.has(name)).map(name => [
+      name,
+      RAMP_WAIVER,
+    ])
+  ),
+  ...Object.fromEntries(
+    RAMP_HUES.filter(h => h !== 'accent').map(h => [
+      `--on-fill-${h}`,
+      ON_FILL_WAIVER,
+    ])
+  ),
+  ...Object.fromEntries(
+    RAMP_HUES.map(h => [`--text-${h}-vivid`, TEXT_VIVID_WAIVER])
+  ),
+  '--border-control-on-card':
+    "on-card contrast role read by apps/board's gate control edges (its --gate-control-edge alias); no kit recipe reads it yet.",
+  '--border-soft-on-card':
+    "soft rule for card grounds, read by apps/board's gate chrome (its --gate-soft-edge alias); no kit recipe reads it yet.",
+  '--surface-overlay':
+    "modal/overlay chrome role read by apps/board's decision-queue modal (its --gate-modal-ground alias); no kit recipe reads it yet.",
+  '--text-muted-on-card':
+    "on-card contrast role read by apps/board's gate muted text (its --gate-muted alias); no kit recipe reads it yet.",
+  '--surface-inset':
+    "inset-ground role read by apps/board's gate key chips (its --gate-key-bg alias); no kit recipe reads it yet.",
+  '--spacing-rem95':
+    "spacing rung read by apps/board's gate column gap (its --gate-gap alias); no kit recipe reads this rung yet.",
+  '--type-display':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-body':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-small':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-micro':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--muted-text':
+    "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
+  '--red-text':
+    "new text-role alias mirroring tokyo's --tk-red-text naming; no recipe paints error/bad text through it yet -- Phase 3 apps are the intended consumer.",
+  '--color-gray-okText':
+    'AA-compliant ok text companion to --color-gray-accentText, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
+  '--color-gray-warnText':
+    'AA-compliant warn text companion to --color-gray-accentText, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
+  '--color-gray-badgeText':
+    'darkened small-badge text companion, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
+  '--chrome':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); guaranteed for consumer apps regardless of this repo's own recipe usage.",
+  '--dot-ok':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); consumed via inline style in StatusDot.tsx, outside this test's CSS-module scope.",
+  '--dot-warn':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); consumed via inline style in StatusDot.tsx, outside this test's CSS-module scope.",
+  '--dot-bad':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); consumed via inline style in StatusDot.tsx, outside this test's CSS-module scope.",
+  '--purple':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); referenced only from Chip.test.tsx today.",
+  '--gold':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); no kit recipe or wash mixes it yet.",
+  '--terminal-bg':
+    'scheme-invariant public alias for consumer terminal/log surfaces, documented in docs/css-contract.md; not consumed by any recipe in this repo.',
+  '--terminal-fg':
+    'scheme-invariant public alias for consumer terminal/log surfaces, documented in docs/css-contract.md; not consumed by any recipe in this repo.',
+  '--terminal-border':
+    'scheme-invariant public alias for consumer terminal/log surfaces, documented in docs/css-contract.md; not consumed by any recipe in this repo.',
+  '--breakpoint-2xl':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-3xl':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-lg':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-md':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-sm':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-xl':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--breakpoint-xs':
+    "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
+  '--font-size-base':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-md':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; referenced only from *.visual.test.tsx / workshop pages today.",
+  '--font-size-px9':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-px12':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem60':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem65':
+    'orphaned by a board lane font-size change that left this rung unreferenced; pending that lane re-referencing it or dropping the token.',
+  '--font-size-rem68':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem72':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem75':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem82':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-xxl':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--radius-xs':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the radius scale; this repo's currently-ported recipes do not reference this rung.",
+  '--spacing-px10':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the spacing scale; this repo's currently-ported recipes do not reference this rung.",
+  '--spacing-rem35':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the spacing scale; this repo's currently-ported recipes do not reference this rung.",
+  '--spacing-rem80':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the spacing scale; this repo's currently-ported recipes do not reference this rung.",
+  '--spacing-rem140':
+    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the spacing scale; this repo's currently-ported recipes do not reference this rung.",
+  '--surface-wash-accent-7':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-amber-7':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-amber-45':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-cyan-border-45':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-cyan-panel-38':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-fg-8':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-panel-55':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+  '--surface-wash-panel-94':
+    "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
+};
+
+const TK_RAMP_NAMES = [
+  ...[1, 2, 3, 4].flatMap(i => [`--tk-surface-${i}`, `--tk-text-${i}`]),
+  ...[1, 2, 3].map(i => `--tk-line-${i}`),
+  ...RAMP_HUES.flatMap(h => [
+    `--tk-fill-${h}`,
+    `--tk-fill-${h}-hover`,
+    `--tk-text-${h}`,
+    `--tk-text-${h}-small`,
+    `--tk-text-${h}-vivid`,
+  ]),
+];
+const TK_RAMP_WAIVER =
+  'ramp name mirrored from the tui theme for app-kit consumers ahead of the migration; no packages/ui component wires it yet.';
+
+// The four text-slot mirrors (--tk-text-1..4) are referenced by tokyo-theme.css's
+// own --ui-text-* remap block, so they are never a real defined-but-unreferenced
+// failure and stay out of this waiver set.
+const TK_TEXT_SLOT_NAMES = new Set([
+  '--tk-text-1',
+  '--tk-text-2',
+  '--tk-text-3',
+  '--tk-text-4',
+]);
+
+// Read by packages/ui/src/app/AppLauncher.module.css, so these are never a
+// real defined-but-unreferenced failure and stay out of this waiver set.
+const TK_APP_LAUNCHER_NAMES = new Set([
+  '--tk-fill-accent',
+  '--tk-fill-accent-hover',
+  '--tk-text-accent-vivid',
+]);
+
+// Read by packages/ui/src/lazy/codemirror/highlightStyle.ts and
+// CodeMirror.Base.tsx, so these are never a real defined-but-unreferenced
+// failure and stay out of this waiver set.
+const TK_CODEMIRROR_NAMES = new Set([
+  '--tk-text-accent',
+  '--tk-text-bad-vivid',
+  '--tk-text-warn-vivid',
+  '--tk-text-purple',
+  '--tk-text-cyan',
+  '--tk-text-gold',
+]);
+
+const TK_ON_FILL_NAMES = RAMP_HUES.map(h => `--tk-on-fill-${h}`);
+const TK_ON_FILL_WAIVER =
+  "app-kit's variantColorResolver builds this name at runtime from the intent, so no static reference to any single hue exists; the filled label is genuinely wired.";
+
+const WAIVED_TOKYO: Record<string, string> = {
+  ...Object.fromEntries(
+    TK_RAMP_NAMES.filter(
+      name =>
+        !TK_TEXT_SLOT_NAMES.has(name) &&
+        !TK_APP_LAUNCHER_NAMES.has(name) &&
+        !TK_CODEMIRROR_NAMES.has(name)
+    ).map(name => [name, TK_RAMP_WAIVER])
+  ),
+  ...Object.fromEntries(
+    TK_ON_FILL_NAMES.map(name => [name, TK_ON_FILL_WAIVER])
+  ),
+  '--tk-overlay':
+    "modal/overlay chrome role (dark sits level with the card so a dialog has an edge against the page, light sits above it), mirrored from the tui theme's --surface-overlay; no packages/ui component wires this surface yet.",
+  '--tk-soft-on-card':
+    "soft rule for card grounds (dark's --tk-border-soft is darker than the card it frames), mirrored from the tui theme's --border-soft-on-card; no packages/ui component wires it yet.",
+  '--tk-red-text':
+    "AA-compliant red TEXT role (>=4.5:1), mirrors --tk-muted-text/--tk-accent-text; packages/ui's --mantine-color-error still reads the raw --tk-red for the error surface, and no component paints red as inline text yet -- Phase 3 material.",
+  '--tk-green':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this hue yet.",
+  '--tk-amber':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this hue yet.",
+  '--tk-purple':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this hue yet.",
+  '--tk-cyan':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this hue yet.",
+  '--tk-dot-ok':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
+  '--tk-dot-warn':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
+  '--tk-dot-bad':
+    "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
+  '--tk-border-on-card':
+    'on-card contrast role for tui-kit border["on-card"]; no packages/ui component reads it yet.',
+  '--tk-control-edge':
+    'on-card contrast role for tui-kit border["control-on-card"]; no packages/ui component reads it yet.',
+  '--tk-muted-on-card':
+    'on-card contrast role for tui-kit text["muted-on-card"]; no packages/ui component reads it yet.',
+  '--tk-inset':
+    'on-card contrast role for tui-kit surface.inset; no packages/ui component reads it yet.',
+  '--tk-green-text':
+    'AA-compliant ok text companion to --tk-accent-text, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-amber-text':
+    'AA-compliant warn text companion to --tk-accent-text, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-badge-text':
+    'darkened small-badge text companion, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-muted':
+    "raw neutral fill, kept for parity with tui-kit's --muted until the step-5 audit",
+  '--tk-border-soft':
+    "soft rule, kept for parity with tui-kit's --border-soft; no packages/ui component wires it yet",
+};
+
+const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
+
+function definedVars(css: string): string[] {
+  return [...css.matchAll(/^\s*(--[a-z0-9-]+):/gim)].map(m => m[1] as string);
+}
+
+/**
+ * A `var(--x)` occurrence is never itself a definition line (definitions
+ * always start the line with `--name:`), so any match here is a real
+ * reference "beyond the definition" -- including one inside the same file
+ * that defines the name, which is the intended reading of the consumption
+ * rule for tokyo-theme.css's own rules.
+ */
+function referencedVars(css: string): Set<string> {
+  return new Set(
+    [...css.matchAll(/var\((--[a-z0-9-]+)/gi)].map(m => m[1] as string)
+  );
+}
+
+function walk(
+  dir: string,
+  predicate: (path: string) => boolean,
+  out: string[] = []
+): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walk(path, predicate, out);
+    } else if (predicate(path)) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+function readAll(paths: string[]): string {
+  return paths.map(p => readFileSync(p, 'utf8')).join('\n');
+}
+
+function isCss(path: string): boolean {
+  return extname(path) === '.css';
+}
+
+function isUiSource(path: string): boolean {
+  // A test that names a token is not a component consuming it: counting them
+  // lets a waiver go stale the moment someone asserts on the token's name.
+  if (path.includes('.test.') || path.includes('/test-utils/')) return false;
+  const ext = extname(path);
+  return ext === '.ts' || ext === '.tsx' || ext === '.css';
+}
+
+describe('token consumption: tokyo', () => {
+  const TOKYO_THEME_CSS = join(
+    REPO_ROOT,
+    'packages',
+    'tokyo',
+    'src',
+    'tokyo-theme.css'
+  );
+  const themeCss = readFileSync(TOKYO_THEME_CSS, 'utf8');
+  const defined = new Set(
+    definedVars(themeCss).filter(name => name.startsWith('--tk-'))
+  );
+
+  const tokyoCssFiles = walk(
+    join(REPO_ROOT, 'packages', 'tokyo', 'src'),
+    isCss
+  );
+  const uiFiles = walk(join(REPO_ROOT, 'packages', 'ui', 'src'), isUiSource);
+  const referenced = referencedVars(readAll([...tokyoCssFiles, ...uiFiles]));
+
+  it('every --tk-* name defined in tokyo-theme.css is referenced or waived', () => {
+    const unaccounted = [...defined]
+      .filter(name => !referenced.has(name) && !(name in WAIVED_TOKYO))
+      .sort();
+
+    expect(
+      unaccounted,
+      unaccounted.length === 0
+        ? undefined
+        : `These --tk-* names are defined but never referenced beyond their definition, and are not in WAIVED_TOKYO: ${unaccounted.join(', ')}.`
+    ).toEqual([]);
+  });
+
+  it('every WAIVED_TOKYO entry is a real defined-but-unreferenced name (no stale waivers)', () => {
+    const stale = Object.keys(WAIVED_TOKYO).filter(
+      name => !defined.has(name) || referenced.has(name)
+    );
+    expect(
+      stale,
+      stale.length === 0
+        ? undefined
+        : `These WAIVED_TOKYO entries no longer describe a real failure -- remove them: ${stale.join(', ')}.`
+    ).toEqual([]);
+  });
+});
+
+describe('token consumption: tui-kit', () => {
+  const GENERATED_THEME_CSS = join(
+    REPO_ROOT,
+    'packages',
+    'tui-kit',
+    'src',
+    'generated',
+    'theme.css'
+  );
+  const themeCss = readFileSync(GENERATED_THEME_CSS, 'utf8');
+  const defined = new Set(definedVars(themeCss));
+
+  const canvasCss = readFileSync(
+    join(REPO_ROOT, 'packages', 'tui-kit', 'src', 'canvas.css'),
+    'utf8'
+  );
+  const recipeCssFiles = walk(
+    join(REPO_ROOT, 'packages', 'tui-kit', 'src', 'recipes'),
+    p => p.endsWith('.module.css')
+  );
+  const referenced = referencedVars(
+    [themeCss, canvasCss, readAll(recipeCssFiles)].join('\n')
+  );
+
+  it('every custom property emitted in generated/theme.css is referenced or waived', () => {
+    const unaccounted = [...defined]
+      .filter(name => !referenced.has(name) && !(name in WAIVED_TUI))
+      .sort();
+
+    expect(
+      unaccounted,
+      unaccounted.length === 0
+        ? undefined
+        : `These custom properties are emitted but never referenced in src/recipes/**/*.module.css, src/canvas.css, or elsewhere in src/generated/theme.css, and are not in WAIVED_TUI: ${unaccounted.join(', ')}.`
+    ).toEqual([]);
+  });
+
+  it('every WAIVED_TUI entry is a real defined-but-unreferenced name (no stale waivers)', () => {
+    const stale = Object.keys(WAIVED_TUI).filter(
+      name => !defined.has(name) || referenced.has(name)
+    );
+    expect(
+      stale,
+      stale.length === 0
+        ? undefined
+        : `These WAIVED_TUI entries no longer describe a real failure -- remove them: ${stale.join(', ')}.`
+    ).toEqual([]);
+  });
+});

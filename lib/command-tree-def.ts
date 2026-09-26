@@ -1238,6 +1238,14 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Remove", flag: "--remove", type: "boolean", default: false, hint: "Handle a WorktreeRemove event (courtesy guarded dispose)" },
         ],
       },
+      "announce-relocation": {
+        description: "Claude Code EnterWorktree PreToolUse hook endpoint (stdin JSON in, nothing out); never call directly",
+        module: "./commands/worktree-hook.ts",
+        fn: "announceRelocation",
+        hidden: true,
+        omitBehavior: { exempt: "agent-facing; driven by Claude Code over stdin, never interactively" },
+        args: [],
+      },
       hook: {
         description: "Claude Code worktree hook: install, remove, or inspect the WorktreeCreate/WorktreeRemove wiring",
         subcommands: {
@@ -1507,6 +1515,14 @@ export const TREE: Record<string, CommandNode> = {
         omitBehavior: { exempt: "agent-facing; spawned by a plugin config, takes no positionals" },
         args: [],
       },
+      tools: {
+        description: "Every tool the mattstack MCP server publishes: name, description, input schema (the source the docs and the skills reference are generated from)",
+        module: "./commands/mcp.ts",
+        fn: "mcpToolsList",
+        hidden: true,
+        omitBehavior: { exempt: "no positional argument; a listing" },
+        args: [{ name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the full roster as JSON" }],
+      },
     },
   },
 
@@ -1685,7 +1701,7 @@ export const TREE: Record<string, CommandNode> = {
         ],
       },
       app: {
-        description: "Patch-release one served app end to end: bump it, bundle it, merge its pin, write the notes, tag, and verify the publish",
+        description: "Patch-release one served app end to end: qualify the path gate, write the notes, tag and verify",
         module: "./commands/release.ts",
         fn: "releaseApp",
         omitBehavior: "picker",
@@ -2260,6 +2276,17 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Verb", flag: "--verb", type: "text", placeholder: "watch-ci", hint: "Check only this verb (repeatable); omit for every compiled verb" },
           { name: "Manifest", flag: "--manifest", type: "text", placeholder: "/path/to/skills.jsonc", hint: "Manifest path; omit to auto-find the newest ~/.mattstack/repos/*/skills.jsonc naming this pack" },
           { name: "Pack dir", flag: "--pack-dir", type: "text", placeholder: "/path/to/pack", hint: "Check this pack directory's sources (a worktree, say) instead of resolving --pack through the registry" },
+          { name: "Strict", flag: "--strict", type: "boolean", default: false, hint: "Fail the exit code on mcp lint hits (mattstack-skills CI uses this; rt skills sync applies it to a pack whose plugin.json sets strictLint)" },
+          SETUP_JSON_ARG,
+        ],
+      },
+      audit: {
+        description: "Advisory LLM audit of a pack's skills and fills for shell instructions the MCP tools cover (plain-words commands, shell-variable hand-offs, wrapped calls); slow, costs tokens, never a gate",
+        module: "./commands/skills-audit.ts",
+        fn: "skillsAudit",
+        args: [
+          { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack name; omit with --pack-dir" },
+          { name: "Pack dir", flag: "--pack-dir", type: "text", placeholder: "/path/to/pack", hint: "Audit this pack directory instead of resolving --pack" },
           SETUP_JSON_ARG,
         ],
       },

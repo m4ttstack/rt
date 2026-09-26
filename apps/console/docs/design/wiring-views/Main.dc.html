@@ -1,0 +1,301 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    :root{
+      --tk-bg:#e1e2e7; --tk-panel:#eff0f5; --tk-card:#f6f6fa; --tk-l4:#e6e6ec;
+      --tk-border:#c8cad6; --tk-border-soft:#d5d7e2;
+      --tk-fg:#111; --tk-muted:#8990b3; --tk-muted-strong:#6a7099;
+      --tk-accent:#2e7de9; --tk-green:#587539; --tk-red:#f52a65; --tk-amber:#8c6c3e;
+      --tk-purple:#7847bd; --tk-cyan:#007197;
+      --tk-grid:rgba(52,59,88,0.05);
+      --tk-dot-ok:#1f9d3a; --tk-dot-warn:#e08a00; --tk-dot-bad:#e5153f;
+    }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--tk-fg); }
+    a{ color:var(--tk-accent); text-decoration:none; } a:hover{ text-decoration:underline; }
+
+    .grid-bg{
+      background-color:var(--tk-bg);
+      background-image:
+        linear-gradient(var(--tk-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px);
+      background-size:28px 28px;
+    }
+    .crumb{ font-size:11.5px; color:var(--tk-muted-strong); }
+    .title{ font-size:20px; font-weight:700; letter-spacing:-0.01em; }
+    .provenance{ font-size:11px; color:var(--tk-muted); }
+
+    .select{
+      display:inline-flex; align-items:center; gap:8px;
+      height:30px; padding:0 10px; border:1px solid var(--tk-border);
+      border-radius:8px; background:var(--tk-card); font-size:12.5px; color:var(--tk-fg);
+    }
+    .select svg{ color:var(--tk-muted); }
+
+    /* Tabs */
+    .tabbar{ display:flex; align-items:flex-end; gap:2px; border-bottom:1px solid var(--tk-border); }
+    .tab{ display:inline-flex; align-items:center; gap:7px; padding:9px 14px 10px; font-size:13px; color:var(--tk-muted-strong); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .tab.active{ color:var(--tk-fg); font-weight:600; border-bottom-color:var(--tk-accent); }
+    .tab .cnt{ font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:999px; background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .tab.active .cnt.warn{ background:rgba(224,138,0,0.16); color:var(--tk-amber); }
+
+    /* Card */
+    .card{ background:var(--tk-panel); border:1px solid var(--tk-border); border-radius:10px; overflow:hidden; }
+
+    /* Summary strip */
+    .summary{ display:flex; align-items:center; gap:0; padding:14px 18px; border-bottom:1px solid var(--tk-border-soft); background:var(--tk-card); }
+    .fact{ display:flex; flex-direction:column; gap:3px; padding:0 18px; border-right:1px solid var(--tk-border-soft); }
+    .fact:first-child{ padding-left:0; }
+    .fact:last-child{ border-right:0; }
+    .flabel{ font-size:9.5px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--tk-muted); }
+    .fval{ font-size:13px; font-weight:600; }
+    .fval a{ font-weight:600; }
+    .attn{ color:var(--tk-amber); }
+
+    /* Spine */
+    .spine{ padding:8px 18px 14px; }
+    .spine-note{ font-size:11px; color:var(--tk-muted); padding:8px 2px 12px; }
+    .lane{ position:relative; padding-left:34px; }
+    .lane::before{ content:""; position:absolute; left:11px; top:6px; bottom:6px; width:2px; background:var(--tk-border-soft); }
+
+    .node{ position:relative; margin:0 0 4px; }
+    .bullet{ position:absolute; left:-34px; top:8px; width:24px; height:24px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; background:var(--tk-card); border:1px solid var(--tk-border); color:var(--tk-muted-strong); z-index:1; }
+    .bullet.orch{ background:var(--tk-accent); border-color:var(--tk-accent); color:#fff; }
+
+    .row{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid transparent; border-radius:8px; cursor:pointer; }
+    .row:hover{ background:var(--tk-card); border-color:var(--tk-border-soft); }
+    .row.sel{ background:var(--tk-card); border-color:var(--tk-accent); box-shadow:0 0 0 1px var(--tk-accent) inset; }
+    .rname{ font-size:13.5px; font-weight:700; }
+    .rref{ font-size:11px; color:var(--tk-muted); }
+    .rspacer{ flex:1; }
+    .rmeta{ font-size:11px; color:var(--tk-muted-strong); }
+    .chev{ color:var(--tk-muted); display:flex; }
+
+    /* chips */
+    .badge{ display:inline-flex; align-items:center; gap:5px; height:19px; padding:0 8px; border-radius:6px; font-size:10.5px; font-weight:600; white-space:nowrap; }
+    .b-orch{ background:rgba(46,125,233,0.12); color:var(--tk-accent); }
+    .b-internal{ background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .b-plugin{ background:rgba(120,71,189,0.12); color:var(--tk-purple); }
+    .dot{ width:7px; height:7px; border-radius:999px; display:inline-block; }
+    .health{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; }
+    .h-ok{ color:var(--tk-green); }
+    .h-warn{ color:var(--tk-amber); }
+    .h-unmeasured{ color:var(--tk-muted); font-weight:400; }
+    .h-none{ color:var(--tk-red); }
+
+    /* collapsed off-pipeline */
+    .offpipe{ margin-top:6px; border-top:1px solid var(--tk-border-soft); }
+    .offpipe-head{ display:flex; align-items:center; gap:10px; padding:14px 18px; cursor:pointer; }
+    .offpipe-head:hover{ background:var(--tk-card); }
+    .offpipe-title{ font-size:13px; font-weight:700; }
+    .offpipe-sub{ font-size:11px; color:var(--tk-muted); }
+  </style>
+</helmet>
+
+<div class="grid-bg" style="width:1180px; min-height:900px; padding:26px 30px 40px;">
+
+  <div class="crumb">console</div>
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+    <div class="title">Wiring</div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="provenance" style="color:var(--tk-muted);">rt&nbsp;skills&nbsp;composition&nbsp;·&nbsp;11:30&nbsp;PM</div>
+      <div class="select">acme
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="select">work type&nbsp;<span style="font-weight:600;">feature</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabbar" style="margin-top:16px;">
+    <div class="tab active">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+      Pipeline
+    </div>
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>
+      Surface
+    </div>
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Health <span class="cnt warn">3</span>
+    </div>
+  </div>
+
+  <!-- Card -->
+  <div class="card" style="margin-top:18px;">
+
+    <!-- Summary -->
+    <div class="summary">
+      <div class="fact"><div class="flabel">Orchestrator</div><div class="fval"><a href="#">mattstack:work</a></div></div>
+      <div class="fact"><div class="flabel">Work type</div><div class="fval">feature</div></div>
+      <div class="fact"><div class="flabel">Stages</div><div class="fval">8 in run order</div></div>
+      <div class="fact"><div class="flabel">Pack health</div><div class="fval"><span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span>in sync</span></div></div>
+      <div class="fact"><div class="flabel">Attention</div><div class="fval attn">3 need attention</div></div>
+    </div>
+
+    <div class="spine">
+      <div class="spine-note">The orchestrator reads the pipeline and runs each stage in order. Stages compile into it, so they carry no artifact of their own to check.</div>
+
+      <div class="lane">
+
+        <!-- Orchestrator -->
+        <div class="node">
+          <div class="bullet orch">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+          </div>
+          <div class="row">
+            <span class="rname">work</span>
+            <span class="rref">mattstack:work</span>
+            <span class="badge b-orch">orchestrator</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span>in sync</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 1 -->
+        <div class="node">
+          <div class="bullet">1</div>
+          <div class="row">
+            <span class="rname">stage-provision</span>
+            <span class="rref">mattstack:stage-provision</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 2 -->
+        <div class="node">
+          <div class="bullet">2</div>
+          <div class="row">
+            <span class="rname">stage-plan</span>
+            <span class="rref">mattstack:stage-plan</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 3 -->
+        <div class="node">
+          <div class="bullet">3</div>
+          <div class="row">
+            <span class="rname">stage-gates</span>
+            <span class="rref">mattstack:stage-gates</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 4 -->
+        <div class="node">
+          <div class="bullet">4</div>
+          <div class="row">
+            <span class="rname">stage-evidence</span>
+            <span class="rref">mattstack:stage-evidence</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 5 -->
+        <div class="node">
+          <div class="bullet">5</div>
+          <div class="row">
+            <span class="rname">stage-implement</span>
+            <span class="rref">mattstack:stage-implement</span>
+            <span class="rspacer"></span>
+            <span class="rmeta" style="color:var(--tk-muted);">no slots</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 6 -->
+        <div class="node">
+          <div class="bullet">6</div>
+          <div class="row">
+            <span class="rname">stage-self-review</span>
+            <span class="rref">mattstack:stage-self-review</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 7 -->
+        <div class="node">
+          <div class="bullet">7</div>
+          <div class="row">
+            <span class="rname">stage-ship</span>
+            <span class="rref">mattstack:stage-ship</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">1 slot</span>
+            <span class="health h-unmeasured">unmeasured</span>
+            <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Stage 8 (selected) -->
+        <div class="node">
+          <div class="bullet">8</div>
+          <div class="row sel">
+            <span class="rname">stage-watch-ci</span>
+            <span class="rref">mattstack:stage-watch-ci</span>
+            <span class="rspacer"></span>
+            <span class="rmeta">2 slots</span>
+            <span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span>in sync</span>
+            <span class="chev" style="color:var(--tk-accent);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Off-pipeline, collapsed -->
+    <div class="offpipe">
+      <div class="offpipe-head">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--tk-muted-strong)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+        <div>
+          <div class="offpipe-title">Not run by this pipeline</div>
+          <div class="offpipe-sub">12 skills you invoke directly, plus fills another plugin binds. No run order.</div>
+        </div>
+        <span class="rspacer"></span>
+        <span class="badge b-plugin">1 other plugin</span>
+        <span class="badge" style="background:rgba(245,42,101,0.10); color:var(--tk-red);">5 unwired</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

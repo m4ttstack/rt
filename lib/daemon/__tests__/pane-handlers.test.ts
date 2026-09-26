@@ -706,3 +706,14 @@ test("pane:focus with a bg: ref and no callerWorkspace errors cleanly, without t
   expect(res).toEqual({ ok: false, error: "focus for a background pane must run from a herdr pane; HERDR_WORKSPACE_ID is unset" });
   expect(called).toBe(false);
 });
+
+test("pane:announce-relocation refuses an empty sessionId, a relative cwd, and an empty path", async () => {
+  const db = freshDb();
+  const pane = createPaneHandlers({ db, repoIndex: () => ({}) });
+  expect(await pane["pane:announce-relocation"]({ sessionId: "", tool: "EnterWorktree", cwd: "/repo" }))
+    .toEqual({ ok: false, error: "sessionId must not be empty" });
+  expect(await pane["pane:announce-relocation"]({ sessionId: "s1", tool: "EnterWorktree", cwd: "repo" }))
+    .toEqual({ ok: false, error: "cwd must be an absolute path" });
+  expect(await pane["pane:announce-relocation"]({ sessionId: "s1", tool: "EnterWorktree", cwd: "/repo", path: "" }))
+    .toEqual({ ok: false, error: "path must be a non-empty string" });
+});

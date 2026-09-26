@@ -1,15 +1,26 @@
+import { mcpTools, type McpToolDef } from "../lib/mcp/tools.ts";
+
 declare const RT_VERSION: string;
+
+export function mcpToolsPayload(tools: McpToolDef[] = mcpTools()): { tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> } {
+  return { tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) };
+}
+
+export async function mcpToolsList(args: string[]): Promise<void> {
+  const payload = mcpToolsPayload();
+  if (args.includes("--json")) { console.log(JSON.stringify(payload)); return; }
+  for (const t of payload.tools) console.log(t.name);
+}
 
 /**
  * McpServer.registerTool in the pinned SDK requires zod schemas, so this
  * uses the low-level Server to serve each tool's raw JSON Schema unchanged.
  */
 export async function mcpServe(_args: string[]): Promise<void> {
-  const [{ Server }, { StdioServerTransport }, { ListToolsRequestSchema, CallToolRequestSchema }, { mcpTools }] = await Promise.all([
+  const [{ Server }, { StdioServerTransport }, { ListToolsRequestSchema, CallToolRequestSchema }] = await Promise.all([
     import("@modelcontextprotocol/sdk/server/index.js"),
     import("@modelcontextprotocol/sdk/server/stdio.js"),
     import("@modelcontextprotocol/sdk/types.js"),
-    import("../lib/mcp/tools.ts"),
   ]);
 
   const tools = mcpTools();

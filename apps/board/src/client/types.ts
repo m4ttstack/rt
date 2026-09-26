@@ -1,0 +1,299 @@
+import type { MouseEvent } from 'react';
+
+import type { GateDomain } from '@mattstack/gate-kit';
+import type { TabConfig } from '../config.ts';
+import type { BoardMR, BoardSyncError } from '../data.ts';
+import type { GateRow } from '../gates/store.ts';
+import type { RespondStatus } from '../respond-outcome.ts';
+import type { SlackTemplates } from '../template.ts';
+
+export interface RosterMember {
+  username: string;
+  name: string | null;
+  count: number;
+}
+
+/** Every configured member with its hidden state and MR count — for the settings modal.
+    `count` is null for checked-out members, whose MRs the server doesn't fetch. */
+export interface ConfigMember {
+  username: string;
+  name: string | null;
+  hidden: boolean;
+  count: number | null;
+}
+
+/** One row from the rt daemon's `/reconciler` sweep (SDD executor-reconciler,
+    task 12) -- defined locally rather than imported from rt-client, since
+    that endpoint's client-side type lands in a parallel lane. */
+export type ExecutorState =
+  'live' | 'blocked' | 'hidden' | 'gone' | 'cleared' | 'unknown';
+export interface ExecutorView {
+  agentId: string;
+  repo: string | null;
+  subject: string | null;
+  surface: string;
+  sessionId: string;
+  paneRef: string | null;
+  state: ExecutorState;
+  since: number;
+  openGateIds: string[];
+}
+
+export type ReviewStatus = 'queued' | 'reviewing' | 'done' | 'error';
+export interface ReviewInfo {
+  status: ReviewStatus;
+  message?: string;
+  reportReady?: boolean;
+  sessionId?: string;
+  tabId?: string;
+  startedAt?: number;
+  outcome?: string;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
+}
+export interface RespondInfo {
+  status: RespondStatus;
+  message?: string;
+  reportReady?: boolean;
+  sessionId?: string;
+  posted?: number;
+  threads?: number;
+  held?: number;
+  tabId?: string;
+  startedAt?: number;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
+}
+export type DoctorStatus =
+  | 'queued'
+  | 'diagnosing'
+  | 'rebasing'
+  | 'fixing'
+  | 'watching'
+  | 'done'
+  | 'error';
+export interface DoctorInfo {
+  status: DoctorStatus;
+  message?: string;
+  origin?: 'auto' | 'manual';
+  tabId?: string;
+  startedAt?: number;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
+}
+export interface DraftInfo {
+  kind: string;
+  body: string;
+  createdAt: number;
+}
+export interface SlackInfo {
+  status: 'found' | 'notfound';
+  permalink?: string;
+  reactions: string[];
+  posted: boolean;
+}
+/** How a peer's board says their review of one of our MRs is going. `status`
+    and `outcome` stay loose strings: they're another board's lifecycle words,
+    relayed verbatim, and a peer may run a version whose vocabulary we don't know. */
+export interface PeerReviewInfo {
+  mrUrl: string;
+  iid: number;
+  reviewer: string;
+  status: string;
+  outcome?: string;
+  updatedAt: number;
+}
+/** The re-review this board asked a peer for, and where that ask now stands.
+    `reason` only comes with a rejection (the peer's own words for the refusal). */
+export interface SentNudgeInfo {
+  display:
+    | 'requested'
+    | 'confirmed'
+    | 'launched'
+    | 'rejected'
+    | 'expired'
+    | 'no-response';
+  reviewer: string;
+  reason?: string;
+  sentAt?: number;
+  /** Absent means re-review (older boards never send the other kinds). */
+  kind?: 'review' | 're-review' | 'respond';
+}
+/** A peer waiting on us: an inbound re-review request we haven't handled yet. */
+export interface InboundNudgeInfo {
+  from: string;
+  receivedAt: number;
+  /** Absent means re-review. */
+  kind?: 'review' | 're-review' | 'respond';
+}
+export type BoardMRWithReview = BoardMR & {
+  review?: ReviewInfo;
+  respond?: RespondInfo;
+  doctor?: DoctorInfo;
+  /** Operator stood auto-doctor down on THIS MR (row-menu toggle); true only
+      on the row it was set from, never computed for a descendant -- see
+      attachStandDown. */
+  standDown?: true;
+  slack?: SlackInfo;
+  drafts?: DraftInfo[];
+  /** The seat's own note on this MR (B10), kept in the board's state db and
+      shown as the row's last line. */
+  note?: string;
+  peerReviews?: PeerReviewInfo[];
+  sentNudge?: SentNudgeInfo;
+  nudges?: InboundNudgeInfo[];
+  /** Each gate carries `executor` when the reconciler sweep's `openGateIds`
+      names it -- the pane state currently blocking on that gate. */
+  gates: Array<GateRow & { executor?: ExecutorState }>;
+  /** A dead/hidden reconciler executor whose subject matched this row --
+      distinct from `BoardData.orphans`, which only holds the leftover
+      entries no MR row claimed. */
+  orphan?: ExecutorView;
+};
+
+export interface BoardData {
+  title: string;
+  defaultMember: string;
+  members: RosterMember[];
+  allMembers: ConfigMember[];
+  mrs: BoardMRWithReview[];
+  /** Enrolled peer-board usernames from the relay; absent when peering is off
+      or the relay hasn't answered yet, and the ask pickers then fall back to
+      the whole roster. */
+  peers?: string[];
+  fetchedAt: number;
+  fetchError: string | null;
+  local: boolean;
+  slackEnabled: boolean;
+  /** Configured review-signal emoji names by role; absent on older servers. */
+  slackEmoji?: { looking: string; commented: string; approved: string };
+  slackTemplates: SlackTemplates;
+  /** Oldest daemon syncedAt across projects; null when no daemon read reached
+      this snapshot. Drives the honest footer (distinct from `fetchedAt`, which
+      only says the board's own poll succeeded). */
+  dataSyncedAt: number | null;
+  /** The longest-running rt project sync failure behind this snapshot;
+      null when rt reported none. Names the cause in the freshness banner. */
+  syncError: BoardSyncError | null;
+  /** Authors this board demanded but rt hasn't finished backfilling yet. */
+  scopeUncovered: string[];
+  /** Codeowners sections this board demanded but rt hasn't finished backfilling
+      yet -- drives the "codeowner queue syncing" badge on the matching tab. */
+  scopeUncoveredSections: string[];
+  /** Section headers in the projects' default-branch CODEOWNERS, unioned; null
+      when rt did not report them. Drives the wrong-section banner, chip and
+      editor hints; null disables all three. */
+  scopeKnownSections: string[] | null;
+  /** Narrowest sync window (days) among the daemon reads; null when none carried one. */
+  scopeWindowDays: number | null;
+  /** The board's own configured stale cutoff (days), for comparing against
+      `scopeWindowDays` -- a board asking for more history than rt syncs. */
+  staleAfterDays: number;
+  /** Whether this board can hand out peer-board invites: local request, and the
+      board holds both a switchboard url and the credential that authorizes it. */
+  canInvite: boolean;
+  /** Peering health: "ok" when the switchboard accepts us, "unauthorized" when
+      it rejects us, null when this board isn't peering at all. */
+  peering: 'ok' | 'unauthorized' | null;
+  /** Board tabs, in display order. Always non-empty (config.tabs falls back to
+      IMPLICIT_TABS server-side). */
+  tabs: TabConfig[];
+  /** Human-owned gates (pane-attention or otherwise), plus escalated
+      herd-owned gates, admitted by non-"mr:" subject prefix -- an
+      unescalated herd-owned gate never reaches this list. */
+  queueExtras: GateRow[];
+  /** Reconciler executors in state "gone" that matched no MR row's subject;
+      one that did match rides that row's own `orphan` field instead. */
+  orphans: ExecutorView[];
+}
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export interface Toast {
+  id: number;
+  text: string;
+}
+
+export interface RowMenuState {
+  x: number;
+  y: number;
+  mr: BoardMR;
+}
+
+/** Shared per-render context threaded through RowView and RowMenu: the
+    board-owned bits every row and menu needs that are not specific to one
+    MR. */
+export interface RowContext {
+  local: boolean;
+  /** The board's own seat (`BoardData.defaultMember`): rows this user
+      authored word their standing state as the author's move, every other
+      row as the reviewer's. Null when the board is set to "all". */
+  self: string | null;
+  slackTemplates: SlackTemplates;
+  slackEnabled: boolean;
+  onContext: (e: MouseEvent, mr: BoardMR) => void;
+  onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenRespond: (mr: BoardMRWithReview) => void;
+  onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
+  /** Opens the comments drawer. Board mounts it outside every row, so its
+      events never reach a row's click or context-menu handler. */
+  onOpenComments: (mr: BoardMR) => void;
+  draftResolved: ReadonlyMap<string, 'posted' | 'dismissed'>;
+  onResumeRespond: (mr: BoardMR, note?: string) => void;
+  /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
+      the same dedup-and-focus path launching that domain again already takes
+      (see the review sheet's and pane notice's "focus pane"), not a
+      distinct endpoint. */
+  onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
+  onLaunch: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
+  onReReview: (mr: BoardMR, note?: string) => void;
+  onRespond: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
+  onDoctor: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
+  /** Opens the decision queue modal at this gate: the status line's answer
+      verb, which never mounts a form on the row itself. */
+  onOpenGate: (gateId: string) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
+  /** The status line's clear verb: POSTs /reconciler/clear for the gone
+      orphan's agentId, whether or not an attention gate still exists. */
+  onClearOrphan: (agentId: string) => void;
+  /** The status line's merge verb, through the same /mr/action call the row
+      menu's merge item makes. */
+  onMerge: (mr: BoardMR) => void;
+  /** Stop showing a failed lane's line on the row; nothing is deleted. */
+  onDismissLane: (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => void;
+  /** Row menu's "never diagnose this stack" toggle: mutes auto-doctor for
+      this MR and every descendant (server-enforced), and on -> true clears
+      whatever's currently on this row -- see POST /triage/stand-down. */
+  onStandDown: (mr: BoardMR, on: boolean) => void;
+  /** The MR whose note is open for editing, by webUrl: one row at a time,
+      and the row menu's item opens the same editor the note tool does. */
+  noteEditing: string | null;
+  onEditNote: (mrUrl: string | null) => void;
+  /** Write the row's note; an empty string clears it. */
+  onSaveNote: (mr: BoardMR, text: string) => void;
+}
+
+export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';
+export type CommentNote = {
+  id: number;
+  name: string;
+  username: string | null;
+  at: string;
+  body: string;
+};
+export type CommentThread = {
+  discussionId: string;
+  status: ThreadStatus;
+  notes: CommentNote[];
+};
+export type GeneralComment = CommentNote;

@@ -1,0 +1,17 @@
+{
+  "name": "boxscore",
+  "displayName": "boxscore",
+  "description": "Ranks a hand-picked set of GitLab users on a live leaderboard.",
+  "icon": "./public/favicon.svg",
+  "port": 11005,
+  "includeInBundle": true,
+  "bundle": {
+    "build": "bun run build:binary",
+    "artifact": "dist-bin/boxscore"
+  },
+  "dev": {
+    "start": "bun src/server/index.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart boxscore"
+  }
+}

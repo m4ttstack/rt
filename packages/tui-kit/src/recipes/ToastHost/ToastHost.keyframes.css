@@ -1,0 +1,19 @@
+/* The toast slide-in and its keyframes live here, outside
+   ToastHost.module.css, keyed on the public `data-part`: see
+   docs/decisions.md, "Keyframes live outside the CSS module". */
+@layer soribashi.recipes {
+  [data-part="toasthost-toast"] {
+    animation: toasthost-in 220ms ease-out;
+  }
+
+  @keyframes toasthost-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--spacing-px12));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

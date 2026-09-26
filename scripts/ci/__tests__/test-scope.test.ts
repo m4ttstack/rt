@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { alwaysRun, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
+import { alwaysRun, alwaysRunPaths, CHANGED_ARGS, collectSources, decide, ROOT, unitDirs, type ScopeInput } from "../test-scope.ts";
 
 // Synthetic unit test sources: one parity test that reads a Swift file and a
 // tray shell script by path, and one plain test.
@@ -17,6 +17,12 @@ const preloadImports = new Set(["packages/rt-client/src/test-isolation.ts", "lib
 
 function pr(changed: string[]): ScopeInput {
   return { event: "pull_request", changed, sources, preloadImports };
+}
+
+// The real unit sources, for cases that depend on what an actual rt test reads.
+const real = collectSources();
+function prInput(changed: string[]): ScopeInput {
+  return { event: "pull_request", changed, ...real };
 }
 
 describe("decide", () => {
@@ -93,6 +99,27 @@ describe("decide", () => {
       expect(decide(pr(changed)).reason.length).toBeGreaterThan(0);
     }
   });
+
+  test("an apps-only PR skips the unit shards", () => {
+    const d = decide(prInput(["apps/board/src/App.tsx", "packages/ui/src/index.ts", "docs/apps/README.md"]));
+    expect(d.mode).toBe("skip");
+  });
+
+  test("apps root config read by a unit test still runs", () => {
+    // scripts/__tests__/turbo-inputs.test.ts reads turbo.json
+    const d = decide(prInput(["turbo.json"]));
+    expect(d.mode).not.toBe("skip");
+  });
+
+  test("an apps fixture does not force the full suite", () => {
+    const d = decide(prInput(["apps/deck/src/registry/__fixtures__/deps-lock-serve.fixture.json"]));
+    expect(d.mode).toBe("skip");
+  });
+
+  test("an apps package.json skips too, since //#turbo:test covers it", () => {
+    const d = decide(prInput(["apps/board/package.json"]));
+    expect(d.mode).toBe("skip");
+  });
 });
 
 describe("unitDirs", () => {
@@ -108,8 +135,12 @@ describe("unitDirs", () => {
   test("the real script parses and test:timings, test:watch and test:all delegate to it", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     const dirs = unitDirs(pkg);
-    expect(dirs).toContain("lib");
-    expect(dirs).toContain("commands");
+    // Every dir keeps its "./" prefix: this is what lands in the dirs=
+    // GITHUB_OUTPUT line CI runs as `bun test $DIRS`, and a bare name there
+    // is a substring filter that sweeps in any path containing it.
+    for (const dir of dirs) expect(dir.startsWith("./")).toBe(true);
+    expect(dirs).toContain("./lib");
+    expect(dirs).toContain("./commands");
     expect(pkg.scripts["test:timings"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:watch"]).toMatch(/\bbun run test\b/);
     expect(pkg.scripts["test:all"]).toMatch(/\bbun run test\b/);
@@ -136,6 +167,15 @@ describe("alwaysRun", () => {
       expect(files).toContain(f);
     }
     for (const f of files) expect(existsSync(join(ROOT, f))).toBe(true);
+  });
+});
+
+describe("alwaysRunPaths", () => {
+  test("every token in the emitted always= line keeps its \"./\" prefix", () => {
+    const line = alwaysRunPaths().join(" ");
+    const tokens = line.split(" ");
+    expect(tokens.length).toBe(alwaysRun().length);
+    for (const token of tokens) expect(token.startsWith("./")).toBe(true);
   });
 });
 

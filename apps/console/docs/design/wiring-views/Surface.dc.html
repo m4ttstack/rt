@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    :root{
+      --tk-bg:#e1e2e7; --tk-panel:#eff0f5; --tk-card:#f6f6fa; --tk-l4:#e6e6ec;
+      --tk-border:#c8cad6; --tk-border-soft:#d5d7e2;
+      --tk-fg:#111; --tk-muted:#8990b3; --tk-muted-strong:#6a7099;
+      --tk-accent:#2e7de9; --tk-green:#587539; --tk-red:#f52a65; --tk-amber:#8c6c3e;
+      --tk-purple:#7847bd; --tk-cyan:#007197; --tk-grid:rgba(52,59,88,0.05);
+    }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--tk-fg); }
+    a{ color:var(--tk-accent); text-decoration:none; } a:hover{ text-decoration:underline; }
+    .grid-bg{ background-color:var(--tk-bg); background-image:linear-gradient(var(--tk-grid) 1px, transparent 1px),linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px); background-size:28px 28px; }
+    .title{ font-size:20px; font-weight:700; }
+    .card{ background:var(--tk-panel); border:1px solid var(--tk-border); border-radius:10px; overflow:hidden; }
+
+    .tabbar{ display:flex; align-items:flex-end; gap:2px; border-bottom:1px solid var(--tk-border); }
+    .tab{ display:inline-flex; align-items:center; gap:7px; padding:9px 14px 10px; font-size:13px; color:var(--tk-muted-strong); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .tab.active{ color:var(--tk-fg); font-weight:600; border-bottom-color:var(--tk-accent); }
+    .tab .cnt{ font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:999px; background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .tab .cnt.warn{ background:rgba(224,138,0,0.16); color:var(--tk-amber); }
+
+    .badge{ display:inline-flex; align-items:center; height:18px; padding:0 7px; border-radius:6px; font-size:10px; font-weight:600; white-space:nowrap; }
+    .b-fill{ background:rgba(0,113,151,0.12); color:var(--tk-cyan); }
+    .b-compiled{ background:rgba(120,71,189,0.12); color:var(--tk-purple); }
+    .b-missing{ background:rgba(245,42,101,0.12); color:var(--tk-red); }
+
+    .switch{ width:32px; height:18px; border-radius:999px; background:var(--tk-accent); position:relative; display:inline-block; flex:none; }
+    .switch::after{ content:""; position:absolute; top:2px; right:2px; width:14px; height:14px; border-radius:999px; background:#fff; }
+    .switch.off{ background:#c3c6d4; }
+    .switch.off::after{ right:auto; left:2px; }
+
+    .rrow{ display:flex; align-items:center; gap:11px; padding:8px 12px; border:1px solid transparent; border-radius:8px; }
+    .rrow:hover{ background:var(--tk-card); }
+    .rrow.on{ background:var(--tk-card); }
+    .rrow.changed{ border-color:var(--tk-accent); background:rgba(46,125,233,0.05); }
+    .rname{ font-size:12.5px; font-weight:600; }
+    .reffect{ font-size:10.5px; color:var(--tk-muted); }
+
+    .searchbar{ display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--tk-border-soft); background:var(--tk-card); }
+    .search{ flex:1; display:flex; align-items:center; gap:8px; height:32px; padding:0 11px; border:1px solid var(--tk-border); border-radius:8px; background:var(--tk-panel); font-size:12px; color:var(--tk-muted); }
+    .chip{ height:26px; padding:0 11px; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--tk-border); border-radius:999px; font-size:11px; color:var(--tk-muted-strong); background:var(--tk-panel); cursor:pointer; }
+    .chip.active{ background:var(--tk-accent); border-color:var(--tk-accent); color:#fff; }
+
+    .footer{ display:flex; align-items:center; gap:14px; padding:14px 18px; border-top:1px solid var(--tk-border); background:var(--tk-card); }
+    .cmd{ font-size:11px; color:var(--tk-muted-strong); background:var(--tk-bg); border:1px solid var(--tk-border-soft); border-radius:6px; padding:7px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cmd .k{ color:var(--tk-fg); }
+    .btn-primary{ height:30px; padding:0 16px; border:0; border-radius:7px; background:var(--tk-accent); color:#fff; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+    .btn-ghost{ height:30px; padding:0 13px; border:1px solid var(--tk-border); border-radius:7px; background:transparent; color:var(--tk-muted-strong); font-size:12px; cursor:pointer; font-family:inherit; }
+  </style>
+</helmet>
+
+<div class="grid-bg" style="width:1180px; min-height:900px; padding:26px 30px 40px;">
+
+  <div style="font-size:11.5px; color:var(--tk-muted-strong);">console</div>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+    <div class="title">Wiring</div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="font-size:11px; color:var(--tk-muted);">acme/surface.jsonc · 11:31 PM</div>
+    </div>
+  </div>
+
+  <div class="tabbar" style="margin-top:16px;">
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Pipeline
+    </div>
+    <div class="tab active">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>Surface
+    </div>
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Health <span class="cnt warn">3</span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+
+    <div style="padding:14px 18px 4px;">
+      <div style="font-size:12px; color:var(--tk-muted);">Public skills can be invoked by name. Internal ones exist only to compile into a verb.</div>
+    </div>
+
+    <div class="searchbar">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        Filter skills...
+      </div>
+      <div class="chip active">All <span style="opacity:.8;">36</span></div>
+      <div class="chip">Public <span style="opacity:.7;">6</span></div>
+      <div class="chip">Internal <span style="opacity:.7;">30</span></div>
+      <div class="chip">Fill</div>
+      <div class="chip">Compiled</div>
+    </div>
+
+    <!-- two-column roster -->
+    <div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:2px 22px; padding:12px 16px;">
+
+      <div class="rrow on"><span class="switch"></span><span class="rname">context</span><span class="badge b-fill">fill</span><span style="flex:1;"></span><span class="reffect">public</span></div>
+      <div class="rrow on"><span class="switch"></span><span class="rname">review</span><span class="badge b-compiled">compiled</span><span style="flex:1;"></span><span class="reffect">public</span></div>
+
+      <div class="rrow on"><span class="switch"></span><span class="rname">shepherdr</span><span class="badge b-compiled">compiled</span><span style="flex:1;"></span><span class="reffect">public</span></div>
+      <div class="rrow on"><span class="switch"></span><span class="rname">ship</span><span class="badge b-compiled">compiled</span><span style="flex:1;"></span><span class="reffect">public</span></div>
+
+      <!-- changed: turning watch-ci internal -->
+      <div class="rrow changed"><span class="switch off"></span><span class="rname">watch-ci</span><span class="badge b-compiled">compiled</span><span style="flex:1;"></span><span class="reffect" style="color:var(--tk-amber);">→ internal</span></div>
+      <!-- changed: turning provision public -->
+      <div class="rrow changed"><span class="switch"></span><span class="rname">provision</span><span class="badge b-fill">fill</span><span style="flex:1;"></span><span class="reffect" style="color:var(--tk-accent);">skills/provision/ → attachments/provision/</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">capture-evidence</span><span class="badge b-fill">fill</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">checkout</span><span class="badge b-compiled">compiled</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">checkout-and-open</span><span class="badge b-compiled">compiled</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">policy-conventions</span><span class="badge b-fill">fill</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">policy-gates</span><span class="badge b-fill">fill</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">design</span><span class="badge b-fill">fill</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">dev-servers</span><span class="badge b-fill">fill</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">feature-flags</span><span class="badge b-fill">fill</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">map-open-mrs</span><span class="badge b-compiled">compiled</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">mr-board-doctor</span><span class="badge b-fill">fill</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">query-claim-entity</span><span class="badge b-fill">fill</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">reply-rules</span><span class="badge b-fill">fill</span></div>
+
+      <div class="rrow"><span class="switch off"></span><span class="rname">self-review</span><span class="badge b-compiled">compiled</span></div>
+      <div class="rrow"><span class="switch off"></span><span class="rname">stage-plan</span><span class="badge b-compiled">compiled</span></div>
+
+    </div>
+
+    <div class="footer">
+      <div style="font-size:12px; font-weight:600;">2 changes staged</div>
+      <div class="cmd" style="flex:1;">$ rt skills surface set <span class="k">watch-ci</span> --internal &nbsp;·&nbsp; set <span class="k">provision</span> --public</div>
+      <button class="btn-ghost">Discard</button>
+      <button class="btn-primary">Apply</button>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

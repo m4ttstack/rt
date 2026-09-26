@@ -57,6 +57,12 @@ const socketDir = mkdtempSync(join(testRoot, `${process.pid}-sock-`));
 process.env.TMPDIR = runTmp;
 process.env.HOME = home;
 process.env.RT_TEST_SOCKET_DIR = socketDir;
+
+// board's tests read BOARD_APP_ROOT for their state root; a bare root run must
+// never reach the live board state any more than the live ~/.mattstack.
+const testBoardRoot = mkdtempSync(join(tmpdir(), "mattstack-root-test-board-"));
+process.env.BOARD_APP_ROOT = testBoardRoot;
+
 // A whole run's tree takes longer to delete than bun's 5s hook timeout, so
 // a detached rm does it after the process exits. Go writes its module cache
 // read-only, so a go build under this HOME needs the chmod first.
@@ -65,6 +71,7 @@ afterAll(() => {
     detached: true,
     stdio: "ignore",
   }).unref();
+  rmSync(testBoardRoot, { recursive: true, force: true });
 });
 
 // A HOME left unset, "undefined" or relative sends every later HOME-derived

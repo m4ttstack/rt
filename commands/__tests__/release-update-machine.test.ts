@@ -16,7 +16,7 @@ function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSe
   let appPid = 5000;
   return {
     repoRoot: "/repo",
-    appsCheckoutPath: "/apps",
+    sharedCheckoutPath: "/apps",
     workDir: "/work",
     uid: 501,
     isTTY: true,
@@ -31,6 +31,7 @@ function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSe
         return ok(JSON.stringify({ ok: true, state: "running", data: { identity: { flavor: "dev", version: "2.11.0", sourceRev: SHA.slice(0, 9) } } }));
       }
       if (cmd === "git branch --show-current") return ok("main\n");
+      if (cmd.startsWith("git show") && cmd.includes(":apps/deck/package.json")) return ok(JSON.stringify({ version: "3.4.0" }));
       if (cmd === "/Applications/mattstack-dev.app/Contents/Helpers/deck list") return ok(`${"board".padEnd(24)} ${"11006".padEnd(6)} ${"up".padEnd(5)} rt\n`);
       // Every read after the restart snapshot sees a new pid, so board reads as cycled.
       if (cmd.startsWith("launchctl print")) return ok(`\tstate = running\n\tpid = ${++appPid}\n`);
@@ -106,7 +107,7 @@ describe("rt release update-machine", () => {
     expect(body.contract).toBe(1);
     expect(body.tag).toBe("v2.11.0");
     expect(body.ok).toBe(true);
-    expect(body.legs).toHaveLength(5);
+    expect(body.legs).toHaveLength(6);
     expect(exitCode ?? 0).toBe(0);
   });
 

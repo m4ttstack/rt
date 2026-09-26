@@ -1,0 +1,398 @@
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  jest,
+  test,
+} from 'bun:test';
+
+GlobalRegistrator.register({ url: 'http://localhost/' });
+
+(
+  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
+let React: typeof import('react');
+let createRoot: typeof import('react-dom/client').createRoot;
+let StatusLine: typeof import('../StatusLine.tsx').StatusLine;
+let MERGE_ARM_MS: number;
+type RowContext = import('../../types.ts').RowContext;
+type BoardMRWithReview = import('../../types.ts').BoardMRWithReview;
+type RowStatus = import('../row-status.ts').RowStatus;
+
+beforeAll(async () => {
+  React = await import('react');
+  ({ createRoot } = await import('react-dom/client'));
+  ({ StatusLine, MERGE_ARM_MS } = await import('../StatusLine.tsx'));
+});
+
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
+
+const MR = {
+  iid: 1418,
+  webUrl: 'https://gitlab.example.com/acme/webapp/-/merge_requests/1418',
+  gates: [],
+} as unknown as BoardMRWithReview;
+
+function ctx(over: Partial<RowContext> = {}): RowContext {
+  const noop = () => {};
+  return {
+    local: true,
+    self: 'me',
+    slackTemplates: { single: '', multiHeader: '', multiItem: '' },
+    slackEnabled: false,
+    onContext: noop,
+    onOpenReview: noop,
+    onOpenRespond: noop,
+    onOpenDraft: noop,
+    draftResolved: new Map(),
+    onResumeRespond: noop,
+    onFocusPane: noop,
+    onOpenGate: noop,
+    selected: new Set(),
+    onToggleSelect: noop,
+    onClearOrphan: noop,
+    onDismissLane: noop,
+    onLaunch: noop,
+    onReReview: noop,
+    onRespond: noop,
+    onDoctor: noop,
+    ...over,
+  } as RowContext;
+}
+
+let container: HTMLElement;
+let root: ReturnType<typeof createRoot>;
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await React.act(async () => root.unmount());
+  container.remove();
+});
+
+async function render(status: RowStatus, c: RowContext) {
+  await React.act(async () => {
+    root.render(<StatusLine mr={MR} status={status} ctx={c} />);
+  });
+}
+
+test('a hot line renders its word, detail, and the primary verb at the end; the secondary verb sits to its left, marked hover-only; agent verbs carry their lane and the bot mark', async () => {
+  const calls: string[] = [];
+  await render(
+    {
+      line: {
+        tone: 'warn',
+        word: 'review interrupted',
+        detail: 'pane closed 12m ago',
+        verbs: [
+          { kind: 'relaunch', label: 'relaunch', domain: 'review' },
+          { kind: 'clear', label: 'clear', agentId: 'ag-1' },
+        ],
+      },
+      more: [],
+      bar: 'warn',
+    },
+    ctx({
+      onFocusPane: (_mr, domain) => calls.push(`focus:${domain}`),
+      onClearOrphan: id => calls.push(`clear:${id}`),
+    })
+  );
+  const line = container.querySelector('.tui-status')!;
+  expect(line.getAttribute('data-tone')).toBe('warn');
+  expect(line.querySelector('.tui-status-word')!.textContent).toBe(
+    'review interrupted'
+  );
+  expect(line.querySelector('.tui-status-detail')!.textContent).toBe(
+    'pane closed 12m ago'
+  );
+  const verbs = [
+    ...line.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
+  ];
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['clear', 'relaunch']);
+  const [clear, relaunch] = verbs as [HTMLButtonElement, HTMLButtonElement];
+  expect(clear.dataset.secondary).toBe('true');
+  expect(clear.dataset.lane).toBeUndefined();
+  expect(clear.querySelector('svg')).toBeNull();
+  expect(relaunch.dataset.secondary).toBeUndefined();
+  expect(relaunch.dataset.lane).toBe('review');
+  expect(relaunch.querySelector('svg')).not.toBeNull();
+  await React.act(async () => relaunch.click());
+  await React.act(async () => clear.click());
+  expect(calls).toEqual(['focus:review', 'clear:ag-1']);
+});
+
+test('every agent verb wears its lane; answer is a decide verb; navigation carries neither', async () => {
+  const lanes: Array<
+    [import('../row-status.ts').VerbKind, string | undefined]
+  > = [
+    ['launch-review', 'review'],
+    ['re-review', 'review'],
+    ['launch-respond', 'respond'],
+    ['restart-respond', 'respond'],
+    ['resume-respond', 'respond'],
+    ['call-doctor', 'doctor'],
+    ['open-mr', undefined],
+    ['read-review', undefined],
+  ];
+  for (const [kind, lane] of lanes) {
+    await render(
+      {
+        line: { tone: 'quiet', word: 'x', verbs: [{ kind, label: kind }] },
+        more: [],
+        bar: null,
+      },
+      ctx()
+    );
+    const b = container.querySelector<HTMLButtonElement>('button[data-verb]')!;
+    expect([kind, b.dataset.lane]).toEqual([kind, lane]);
+    expect([kind, b.querySelector('svg') !== null]).toEqual([
+      kind,
+      lane !== undefined,
+    ]);
+    expect(b.dataset.decide).toBeUndefined();
+  }
+  await render(
+    {
+      line: {
+        tone: 'warn',
+        word: 'x',
+        verbs: [{ kind: 'answer', label: 'answer', gateId: 'g' }],
+      },
+      more: [],
+      bar: 'warn',
+    },
+    ctx()
+  );
+  const answer =
+    container.querySelector<HTMLButtonElement>('button[data-verb]')!;
+  expect(answer.dataset.decide).toBe('true');
+  expect(answer.dataset.lane).toBeUndefined();
+});
+
+test('a focus verb carries its lane to onFocusPane', async () => {
+  const calls: string[] = [];
+  await render(
+    {
+      line: {
+        tone: 'work',
+        word: 'fixing…',
+        spin: true,
+        verbs: [{ kind: 'focus', label: 'focus', domain: 'doctor' }],
+      },
+      more: [],
+      bar: null,
+    },
+    ctx({ onFocusPane: (m, domain) => calls.push(`${m.iid}:${domain}`) })
+  );
+  await React.act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('button[data-verb="focus"]')!
+      .click()
+  );
+  expect(calls).toEqual(['1418:doctor']);
+});
+
+test('a working line renders the spinner ring, not a dot', async () => {
+  await render(
+    {
+      line: { tone: 'work', word: 'review running…', spin: true, verbs: [] },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  expect(container.querySelector('.tui-status-ring')).not.toBeNull();
+});
+
+test('an answer verb opens the queue on its gate', async () => {
+  const opened: string[] = [];
+  await render(
+    {
+      line: {
+        tone: 'warn',
+        word: 'post which findings?',
+        verbs: [{ kind: 'answer', label: 'answer', gateId: 'g1' }],
+      },
+      more: [],
+      bar: 'warn',
+    },
+    ctx({ onOpenGate: id => opened.push(id) })
+  );
+  await React.act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('button[data-verb="answer"]')!
+      .click()
+  );
+  expect(opened).toEqual(['g1']);
+});
+
+test('the all-clear line puts the word first, then the sun, then the open verb', async () => {
+  await render(
+    {
+      line: {
+        tone: 'clear',
+        word: 'all clear',
+        verbs: [{ kind: 'open-mr', label: 'open ↗' }],
+      },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  const line = container.querySelector('.tui-status[data-tone="clear"]')!;
+  const word = line.querySelector('.tui-status-word')!;
+  expect(word.textContent).toBe('all clear');
+  expect(word.querySelector('svg')).toBeNull();
+  expect(word.nextElementSibling!.className).toBe('tui-status-sun');
+  expect(word.nextElementSibling!.querySelector('svg')).not.toBeNull();
+  expect(line.querySelector('.tui-status-detail')).toBeNull();
+  expect(
+    container.querySelector('button[data-verb="open-mr"]')!.textContent
+  ).toBe('open ↗');
+});
+
+test('suppressed candidates render as +N active with their words in the title', async () => {
+  await render(
+    {
+      line: { tone: 'warn', word: 'post which findings?', verbs: [] },
+      more: [
+        { tone: 'work', word: 'implementing…', verbs: [] },
+        { tone: 'work', word: 'watching CI…', verbs: [] },
+      ],
+      bar: 'warn',
+    },
+    ctx()
+  );
+  const more = container.querySelector('.tui-status-more')!;
+  expect(more.textContent).toBe('+2 active');
+  expect(more.getAttribute('title')).toBe('implementing…, watching CI…');
+});
+
+test('a long detail renders its first clause and keeps the whole message as the tooltip', async () => {
+  const full =
+    'rebased acme-2214 onto origin/main (pat); resolved Overview.test.tsx conflict (kept both sides)';
+  await render(
+    {
+      line: { tone: 'go', word: 'diagnosed', detail: full, verbs: [] },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  const detail = container.querySelector('.tui-status-detail')!;
+  expect(detail.textContent).toBe('rebased acme-2214 onto origin/main');
+  expect(detail.getAttribute('title')).toBe(full);
+  await render(
+    {
+      line: { tone: 'go', word: 'diagnosed', detail: 'short', verbs: [] },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  expect(
+    container.querySelector('.tui-status-detail')!.getAttribute('title')
+  ).toBeNull();
+});
+
+const MERGE_LINE: RowStatus = {
+  line: {
+    tone: 'go',
+    word: 'review ready',
+    verbs: [
+      { kind: 'merge', label: 'merge' },
+      { kind: 'read-review', label: 'read ↗' },
+    ],
+  },
+  more: [],
+  bar: null,
+};
+
+test('merge takes two clicks: the first arms it as "really merge?", the second merges', async () => {
+  const merged: number[] = [];
+  await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
+  const merge = () =>
+    container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
+  expect(merge().textContent).toBe('merge');
+  expect(merge().dataset.armed).toBeUndefined();
+  expect(merge().dataset.lane).toBeUndefined();
+  await React.act(async () => merge().click());
+  expect(merged).toEqual([]);
+  expect(merge().textContent).toBe('really merge?');
+  expect(merge().dataset.armed).toBe('true');
+  await React.act(async () => merge().click());
+  expect(merged).toEqual([1418]);
+  expect(merge().textContent).toBe('merge');
+});
+
+test('an armed merge outlives the pointer leaving and disarms on a timer', async () => {
+  jest.useFakeTimers();
+  try {
+    const merged: number[] = [];
+    await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
+    const merge = () =>
+      container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
+    await React.act(async () => merge().click());
+    await React.act(async () => {
+      container
+        .querySelector('.tui-status')!
+        .dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+    expect(merge().textContent).toBe('really merge?');
+    await React.act(async () => jest.advanceTimersByTime(MERGE_ARM_MS));
+    expect(merge().textContent).toBe('merge');
+    await React.act(async () => merge().click());
+    expect(merged).toEqual([]);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('a board that is not local hides merge, as the row menu does; the next verb leads', async () => {
+  await render(MERGE_LINE, ctx({ local: false }));
+  const verbs = [
+    ...container.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
+  ];
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['read-review']);
+  expect(verbs[0]!.dataset.secondary).toBeUndefined();
+});
+
+test('the dismiss secondary sits left of the relaunch and carries the lane it drops', async () => {
+  const calls: string[] = [];
+  await render(
+    {
+      line: {
+        tone: 'bad',
+        word: 'doctor stuck',
+        detail: 'registry push flake',
+        verbs: [
+          { kind: 'call-doctor', label: 'call again' },
+          { kind: 'dismiss', label: 'dismiss', domain: 'doctor' },
+        ],
+      },
+      more: [],
+      bar: 'bad',
+    },
+    ctx({ onDismissLane: (_mr, lane) => calls.push(`dismiss:${lane}`) })
+  );
+  const line = container.querySelector('.tui-status')!;
+  const verbs = [
+    ...line.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
+  ];
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['dismiss', 'call-doctor']);
+  const [dismiss] = verbs as [HTMLButtonElement];
+  expect(dismiss.dataset.secondary).toBe('true');
+  expect(dismiss.dataset.lane).toBeUndefined();
+  await React.act(async () => {
+    dismiss.click();
+  });
+  expect(calls).toEqual(['dismiss:doctor']);
+});

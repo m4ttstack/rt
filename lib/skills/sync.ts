@@ -9,7 +9,7 @@ export type RunResult = { code: number; stdout: string; stderr: string };
 export type SyncDeps = {
   run: (cmd: string, args: string[], opts?: { cwd?: string }) => Promise<RunResult>;
   claudeBin: string | null;
-  checkPack: (packName: string) => Promise<{ drift: boolean }>;
+  checkPack: (packName: string) => Promise<{ drift: boolean; lintHits: number; strict: boolean }>;
   compilePack: (packName: string) => Promise<{ ok: boolean; errors: string[] }>;
   configDir: string;
   cswapSessionsDir: string;
@@ -239,7 +239,13 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   const checkStep = await tryStep(async () => {
     const result = await deps.checkPack(pack.name);
     drift = result.drift;
-    return ran(`drift=${drift}`);
+    if (result.strict && result.lintHits > 0) {
+      return refused(`mcp lint: ${result.lintHits} hits; run rt skills check --pack ${pack.name} and fix them before syncing`);
+    }
+    const lintNote = result.lintHits > 0
+      ? ` mcp lint: ${result.lintHits} hits (advisory; set "strictLint": true in the pack's plugin.json to refuse on them)`
+      : "";
+    return ran(`drift=${drift}${lintNote}`);
   });
   steps.push({ name: "check", ...checkStep });
   if (stops(checkStep)) return finish();

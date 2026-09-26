@@ -1,0 +1,202 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    :root{
+      --tk-bg:#e1e2e7; --tk-panel:#eff0f5; --tk-card:#f6f6fa; --tk-l4:#e6e6ec;
+      --tk-border:#c8cad6; --tk-border-soft:#d5d7e2;
+      --tk-fg:#111; --tk-muted:#8990b3; --tk-muted-strong:#6a7099;
+      --tk-accent:#2e7de9; --tk-green:#587539; --tk-red:#f52a65; --tk-amber:#8c6c3e;
+      --tk-purple:#7847bd; --tk-cyan:#007197;
+      --tk-grid:rgba(52,59,88,0.05);
+      --tk-dot-ok:#1f9d3a; --tk-dot-warn:#e08a00; --tk-dot-bad:#e5153f;
+    }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--tk-fg); }
+    a{ color:var(--tk-accent); text-decoration:none; } a:hover{ text-decoration:underline; }
+    .grid-bg{ background-color:var(--tk-bg); background-image:linear-gradient(var(--tk-grid) 1px, transparent 1px),linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px); background-size:28px 28px; }
+    .title{ font-size:20px; font-weight:700; }
+    .card{ background:var(--tk-panel); border:1px solid var(--tk-border); border-radius:10px; }
+    .badge{ display:inline-flex; align-items:center; gap:5px; height:19px; padding:0 8px; border-radius:6px; font-size:10.5px; font-weight:600; white-space:nowrap; }
+    .b-stage{ background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .dot{ width:7px; height:7px; border-radius:999px; display:inline-block; }
+    .health{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; }
+    .h-ok{ color:var(--tk-green); } .h-unmeasured{ color:var(--tk-muted); font-weight:400; }
+
+    /* left mini list */
+    .mini{ display:flex; align-items:center; gap:9px; padding:7px 10px; border-radius:7px; cursor:pointer; }
+    .mini:hover{ background:var(--tk-card); }
+    .mini.sel{ background:var(--tk-card); border:1px solid var(--tk-accent); box-shadow:0 0 0 1px var(--tk-accent) inset; }
+    .mini .num{ width:20px; height:20px; border-radius:999px; background:var(--tk-card); border:1px solid var(--tk-border); font-size:10px; font-weight:700; color:var(--tk-muted-strong); display:flex; align-items:center; justify-content:center; }
+    .mini.sel .num{ border-color:var(--tk-accent); color:var(--tk-accent); }
+    .mini .num.orch{ background:var(--tk-accent); border-color:var(--tk-accent); color:#fff; }
+    .mini .mname{ font-size:12.5px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* detail panel */
+    .dhead{ padding:16px 18px 14px; border-bottom:1px solid var(--tk-border-soft); }
+    .dtabs{ display:flex; gap:2px; padding:0 18px; border-bottom:1px solid var(--tk-border-soft); background:var(--tk-card); }
+    .dtab{ padding:9px 12px 10px; font-size:12px; color:var(--tk-muted-strong); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .dtab.active{ color:var(--tk-fg); font-weight:600; border-bottom-color:var(--tk-accent); }
+    .dbody{ padding:16px 18px 18px; }
+
+    .ctlbtn{ display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--tk-border); border-radius:7px; background:var(--tk-card); font-size:11.5px; color:var(--tk-fg); cursor:pointer; }
+    .ctlbtn svg{ color:var(--tk-muted-strong); }
+
+    /* toggle */
+    .switch{ width:34px; height:19px; border-radius:999px; background:var(--tk-accent); position:relative; display:inline-block; }
+    .switch::after{ content:""; position:absolute; top:2px; right:2px; width:15px; height:15px; border-radius:999px; background:#fff; }
+    .switch.off{ background:#c3c6d4; }
+    .switch.off::after{ right:auto; left:2px; }
+
+    /* slot cards */
+    .slot{ border:1px solid var(--tk-border-soft); border-radius:8px; background:var(--tk-card); padding:12px 14px; margin-bottom:10px; }
+    .slot-top{ display:flex; align-items:center; gap:10px; }
+    .slot-name{ font-size:12.5px; font-weight:700; min-width:64px; }
+    .slot-contract{ font-size:11px; color:var(--tk-muted); }
+    .arrow{ color:var(--tk-muted); }
+    .fill{ font-size:12px; }
+    .sites{ font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:6px; background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .rebind{ display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 9px; border:1px solid var(--tk-border); border-radius:7px; background:var(--tk-panel); font-size:11px; color:var(--tk-fg); cursor:pointer; }
+
+    /* inline rebind editor */
+    .editor{ margin-top:11px; padding:11px 12px; border-radius:7px; background:var(--tk-panel); border:1px solid var(--tk-border); }
+    .ed-label{ font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--tk-muted); margin-bottom:6px; }
+    .ed-select{ display:flex; align-items:center; justify-content:space-between; height:32px; padding:0 11px; border:1px solid var(--tk-border); border-radius:7px; background:var(--tk-card); font-size:12px; }
+    .cmd{ margin-top:9px; font-size:11px; color:var(--tk-muted-strong); background:var(--tk-bg); border:1px solid var(--tk-border-soft); border-radius:6px; padding:8px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cmd .k{ color:var(--tk-fg); }
+    .ed-actions{ display:flex; gap:8px; margin-top:11px; }
+    .btn-primary{ height:28px; padding:0 14px; border:0; border-radius:7px; background:var(--tk-accent); color:#fff; font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+    .btn-ghost{ height:28px; padding:0 12px; border:1px solid var(--tk-border); border-radius:7px; background:transparent; color:var(--tk-muted-strong); font-size:11.5px; cursor:pointer; font-family:inherit; }
+  </style>
+</helmet>
+
+<div class="grid-bg" style="width:1180px; min-height:900px; padding:26px 30px 40px;">
+
+  <div style="font-size:11.5px; color:var(--tk-muted-strong);">console</div>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+    <div class="title">Wiring</div>
+    <div style="font-size:11px; color:var(--tk-muted);">acme · work type feature · 11:30 PM</div>
+  </div>
+
+  <!-- Split view -->
+  <div style="display:flex; gap:18px; align-items:flex-start; margin-top:18px;">
+
+    <!-- LEFT: condensed spine -->
+    <div class="card" style="width:400px; flex:none; padding:10px;">
+      <div style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--tk-muted); padding:6px 8px 8px;">Pipeline · 8 stages</div>
+
+      <div class="mini"><span class="num orch">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="#fff"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+        <span class="mname">work</span><span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span></span></div>
+
+      <div class="mini"><span class="num">1</span><span class="mname">stage-provision</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">2</span><span class="mname">stage-plan</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">3</span><span class="mname">stage-gates</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">4</span><span class="mname">stage-evidence</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">5</span><span class="mname">stage-implement</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">6</span><span class="mname">stage-self-review</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini"><span class="num">7</span><span class="mname">stage-ship</span><span class="health h-unmeasured">·</span></div>
+      <div class="mini sel"><span class="num">8</span><span class="mname">stage-watch-ci</span><span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span></span></div>
+
+      <div style="border-top:1px solid var(--tk-border-soft); margin:8px 4px 0; padding:11px 6px 4px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tk-muted-strong)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+        <span style="font-size:12px; font-weight:600;">Not run by this pipeline</span>
+        <span style="flex:1;"></span>
+        <span style="font-size:11px; color:var(--tk-muted);">12</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: detail panel -->
+    <div class="card" style="flex:1; min-width:0;">
+      <div class="dhead">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="font-size:16px; font-weight:700;">stage-watch-ci</div>
+          <span class="badge b-stage">stage 8</span>
+          <span class="health h-ok"><span class="dot" style="background:var(--tk-dot-ok);"></span>in sync</span>
+          <span style="flex:1;"></span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--tk-muted)" stroke-width="2" style="cursor:pointer;"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </div>
+        <div style="font-size:11.5px; color:var(--tk-muted); margin-top:4px;">mattstack:stage-watch-ci</div>
+
+        <div style="display:flex; align-items:center; gap:9px; margin-top:13px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-right:4px;">
+            <span class="switch off"></span>
+            <span style="font-size:11.5px; color:var(--tk-muted-strong);">internal</span>
+          </div>
+          <div class="ctlbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Open source</div>
+          <div class="ctlbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Preview compile</div>
+          <div class="ctlbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Copy agent context</div>
+        </div>
+      </div>
+
+      <div class="dtabs">
+        <div class="dtab active">Slots &amp; bindings</div>
+        <div class="dtab">Compiled</div>
+        <div class="dtab">History</div>
+        <div class="dtab">Used by</div>
+      </div>
+
+      <div class="dbody">
+
+        <!-- forge slot: normal -->
+        <div class="slot">
+          <div class="slot-top">
+            <span class="slot-name">forge</span>
+            <span class="slot-contract">ci-forge@1</span>
+            <span class="arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+            <a class="fill" href="#">mattstack:ci-forge-gitlab</a>
+            <span style="flex:1;"></span>
+            <span class="sites">2 sites</span>
+            <span class="rebind"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>Rebind</span>
+          </div>
+        </div>
+
+        <!-- domain slot: inline rebind editor open -->
+        <div class="slot" style="border-color:var(--tk-accent); box-shadow:0 0 0 1px var(--tk-accent) inset;">
+          <div class="slot-top">
+            <span class="slot-name">domain</span>
+            <span class="slot-contract">watch-ci-domain@1</span>
+            <span class="arrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+            <a class="fill" href="#">acme:watch-ci-domain</a>
+            <span style="flex:1;"></span>
+            <span class="sites">2 sites</span>
+            <span class="rebind" style="border-color:var(--tk-accent); color:var(--tk-accent);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>Rebinding</span>
+          </div>
+
+          <div class="editor">
+            <div class="ed-label">Bind to a fill providing watch-ci-domain@1</div>
+            <div class="ed-select">
+              <span>acme:watch-ci-domain <span style="color:var(--tk-muted);">(current)</span></span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--tk-muted)" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="cmd">$ rt skills bind <span class="k">stage-watch-ci</span> <span class="k">domain</span> <span class="k">acme:watch-ci-domain</span> --pack acme</div>
+            <div class="ed-actions">
+              <button class="btn-primary">Apply</button>
+              <button class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px; color:var(--tk-muted); margin-top:12px;">Rebind stages a command and previews it here. Nothing is written until you Apply. This is the same panel for every skill... no more chasing five different drawers.</div>
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
