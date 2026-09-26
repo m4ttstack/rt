@@ -3,8 +3,8 @@
  * steps 1-2c) as one read-only report: git/tag state, picker conformance,
  * settings schema lock, the candidate's settings check against the real
  * stores, per-layer pin freshness across every vendored surface, catalog pin
- * drift, extension currency, rt-client npm-vs-source parity, and the gate
- * (fast vs full) the pending diff implies.
+ * drift, extension currency, and the gate (fast vs full) the pending diff
+ * implies.
  *
  * Read-only by contract: the catalog check re-resolves refs with
  * `git ls-remote` itself because `marketplace.sh --refresh` rewrites
@@ -63,12 +63,24 @@ export interface PreflightSeams {
   violations(): { path: string }[];
 }
 
-/** Rows deck merely serves; a pin-only diff limited to these keeps the fast path (user-ratified 2026-09-18). */
-const SERVE_ONLY_ROWS = new Set(["board", "chat", "console", "gitq", "boxscore"]);
+/** Apps deck merely serves; a diff limited to their directories, the notes and website keeps the fast path. */
+export const SERVE_ONLY_APPS = ["board", "boxscore", "chat", "console", "gitq"] as const;
+const FAST_PATH_FILES = new Set(["RELEASE_NOTES.md"]);
 
-/** Whether moving this row's pin alone keeps a release on the fast path. */
+export function fastPathApp(file: string): string | null {
+  for (const app of SERVE_ONLY_APPS) if (file.startsWith(`apps/${app}/`)) return app;
+  return null;
+}
+
+export function movedServedApps(files: string[]): string[] {
+  const seen = new Set<string>();
+  for (const f of files) { const app = fastPathApp(f); if (app) seen.add(app); }
+  return SERVE_ONLY_APPS.filter((a) => seen.has(a));
+}
+
+/** Whether this name is one of the apps deck merely serves. */
 export function keepsFastPath(name: string): boolean {
-  return SERVE_ONLY_ROWS.has(name);
+  return (SERVE_ONLY_APPS as readonly string[]).includes(name);
 }
 
 /** Numeric per-segment semver compare; non-numeric segments fall back to string order. */
@@ -105,19 +117,17 @@ export function pinnedTagFromUrl(url: string): string | null {
   return m ? m[1]! : null;
 }
 
-export function classifyRows(rows: DepsRow[]): { apps: DepsRow[]; standalone: DepsRow[]; tools: DepsRow[] } {
-  const apps: DepsRow[] = [];
+export function classifyRows(rows: DepsRow[]): { standalone: DepsRow[]; tools: DepsRow[] } {
   const standalone: DepsRow[] = [];
   const tools: DepsRow[] = [];
   for (const r of rows) {
-    // A tree row carries no url or repo to diff against; none of the three
-    // checks below apply to it, so it lands in no bucket at all.
+    // A tree row carries no url or repo to diff against; neither check
+    // below applies to it, so it lands in no bucket at all.
     if (r.source === "tree") continue;
-    if (r.repo === "m4ttstack/apps" && r.subdir) apps.push(r);
-    else if (r.name in STANDALONE_REPOS) standalone.push(r);
+    if (r.name in STANDALONE_REPOS) standalone.push(r);
     else tools.push(r);
   }
-  return { apps, standalone, tools };
+  return { standalone, tools };
 }
 
 export type ToolUpstream =
@@ -272,89 +282,18 @@ export async function checkSettingsStores(seams: PreflightSeams): Promise<CheckR
   }
 }
 
-/** The paths a pin-only release may touch besides the pins themselves. */
-const FAST_PATH_FILES = new Set(["rt-tray/deps.lock", "RELEASE_NOTES.md"]);
-
-/** Compared, never validated: any difference in what deck is told to run leaves the fast path. */
-function serveKey(row: DepsRow | undefined): string {
-  return JSON.stringify(row?.serve ?? null);
-}
-
-/**
- * `ref` other than HEAD reads that ref's committed deps.lock; HEAD reads the
- * working tree, which is what a release from this checkout would build.
- */
-export async function checkGate(
-  seams: Pick<PreflightSeams, "repoRoot" | "exec" | "readFile">,
-  tag: string,
-  ref = "HEAD",
-): Promise<GateImplication> {
+export async function checkGate(seams: Pick<PreflightSeams, "repoRoot" | "exec">, tag: string, ref = "HEAD"): Promise<GateImplication> {
   try {
     const files = (await git(seams, ["diff", "--name-only", `${tag}..${ref}`])).split("\n").map((f) => f.trim()).filter(Boolean);
     if (files.length === 0) return { path: "full", reason: "no changes since the tag" };
-
-    const outside = files.filter((f) => !FAST_PATH_FILES.has(f) && !f.startsWith("website/"));
-    if (outside.length > 0) return { path: "full", reason: `changes outside the pin allowlist: ${outside.slice(0, 5).join(", ")}` };
-    if (!files.includes("rt-tray/deps.lock")) return { path: "full", reason: "no deps.lock change to fast-path" };
-
-    const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
-    const oldRows = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r]));
-    const rows = ref === "HEAD"
-      ? readDepsRows(seams)
-      : (JSON.parse(await git(seams, ["show", `${ref}:rt-tray/deps.lock`])) as { tools: DepsRow[] }).tools;
-    const newNames = new Set(rows.map((r) => r.name));
-    const removed = [...oldRows.keys()].filter((name) => !newNames.has(name));
-    if (removed.length > 0) return { path: "full", reason: `row(s) removed from deps.lock: ${removed.join(", ")}` };
-    const changed = rows.filter((r) => oldRows.get(r.name)?.version !== r.version).map((r) => r.name);
-    // A row absent from the old lock, or one leaving pending, is a first-ever
-    // ship of that app, which is beyond "pin-only" no matter how it is served.
-    const added = changed.filter((name) => !oldRows.has(name));
-    if (added.length > 0) return { path: "full", reason: `new row(s) in deps.lock: ${added.join(", ")}` };
-    const restatused = rows.filter((r) => oldRows.has(r.name) && oldRows.get(r.name)!.status !== r.status).map((r) => r.name);
-    if (restatused.length > 0) return { path: "full", reason: `status changed on row(s): ${restatused.join(", ")}` };
-    const reserved = rows.filter((r) => oldRows.has(r.name) && serveKey(oldRows.get(r.name)) !== serveKey(r)).map((r) => r.name);
-    if (reserved.length > 0) return { path: "full", reason: `serve changed on row(s): ${reserved.join(", ")}` };
-    const gated = changed.filter((name) => !SERVE_ONLY_ROWS.has(name));
-    if (gated.length > 0) return { path: "full", reason: `full-gate row(s) changed: ${gated.join(", ")}` };
-    if (changed.length === 0) return { path: "full", reason: "deps.lock changed but no row version moved" };
-    return { path: "fast", reason: `serve-only rows changed: ${changed.join(", ")}` };
+    const outside = files.filter((f) => !FAST_PATH_FILES.has(f) && !f.startsWith("website/") && !fastPathApp(f));
+    if (outside.length > 0) return { path: "full", reason: `changes outside the served apps, notes and website: ${outside.slice(0, 5).join(", ")}` };
+    const moved = movedServedApps(files);
+    if (moved.length === 0) return { path: "full", reason: "no served app moved since the tag" };
+    return { path: "fast", reason: `served app(s) moved: ${moved.join(", ")}` };
   } catch (err) {
     return { path: "full", reason: `could not classify the diff (${String((err as Error).message ?? err)}); assume full` };
   }
-}
-
-export async function checkAppPins(seams: PreflightSeams, apps: DepsRow[]): Promise<CheckRow[]> {
-  return Promise.all(
-    apps.map(async (app): Promise<CheckRow> => {
-      const id = `app:${app.name}`;
-      const label = `app ${app.name}`;
-      try {
-        const tag = pinnedTagFromUrl(app.url);
-        if (!tag) throw new Error("no release tag in the pinned url");
-        const published = await ghApi(seams, `repos/${app.repo}/releases/tags/${tag}`, ".published_at");
-        const lastCommit = await ghApi(seams, `repos/${app.repo}/commits?path=${app.subdir}&per_page=1`, ".[0].commit.committer.date");
-        const publishedAt = new Date(published).getTime();
-        const lastCommitAt = new Date(lastCommit).getTime();
-        // jq prints the literal text "null" for a draft release's published_at
-        // or an empty commit list; NaN would compare as fresh, the exact
-        // silent pass this check exists to kill.
-        if (Number.isNaN(publishedAt) || Number.isNaN(lastCommitAt)) {
-          throw new Error(`unparseable dates (published ${published || "?"}, last commit ${lastCommit || "?"})`);
-        }
-        const stale = lastCommitAt > publishedAt;
-        return {
-          id, label,
-          status: stale ? "stale" : "ok",
-          pinned: app.version,
-          detail: stale
-            ? `pin published ${published.slice(0, 10)}, ${app.subdir} moved ${lastCommit.slice(0, 10)}`
-            : `pin ${app.version} covers ${app.subdir} through ${lastCommit.slice(0, 10)}`,
-        };
-      } catch (err) {
-        return { id, label, status: "error", pinned: app.version, detail: String((err as Error).message ?? err) };
-      }
-    }),
-  );
 }
 
 export async function checkStandaloneRows(seams: PreflightSeams, rows: DepsRow[]): Promise<CheckRow[]> {
@@ -522,45 +461,26 @@ export async function checkExtension(seams: PreflightSeams): Promise<CheckRow> {
   }
 }
 
-export async function checkRtClient(seams: PreflightSeams): Promise<CheckRow> {
-  const id = "rt-client";
-  const label = "rt-client parity";
-  try {
-    const raw = seams.readFile(join(seams.repoRoot, "packages", "rt-client", "package.json"));
-    if (!raw) throw new Error("packages/rt-client/package.json not readable");
-    const source = (JSON.parse(raw) as { version: string }).version;
-    const npm = ((await seams.fetchJson("https://registry.npmjs.org/@mattstack/rt-client/latest")) as { version: string }).version;
-    if (source === npm) return { id, label, status: "ok", pinned: npm, current: source, detail: `npm and source agree at ${source}` };
-    const which = compareVersions(source, npm) > 0 ? `unpublished source bump (source ${source}, npm ${npm})` : `npm ahead of source (npm ${npm}, source ${source})`;
-    return { id, label, status: "stale", pinned: npm, current: source, detail: which };
-  } catch (err) {
-    return { id, label, status: "error", detail: String((err as Error).message ?? err) };
-  }
-}
-
 export async function runPreflight(seams: PreflightSeams): Promise<PreflightReport> {
   const gitState = await checkGitState(seams);
 
-  let apps: DepsRow[] = [];
   let standalone: DepsRow[] = [];
   let tools: DepsRow[] = [];
   let lockError: CheckRow | null = null;
   try {
-    ({ apps, standalone, tools } = classifyRows(readDepsRows(seams)));
+    ({ standalone, tools } = classifyRows(readDepsRows(seams)));
   } catch (err) {
     lockError = { id: "deps-lock", label: "deps.lock", status: "error", detail: String((err as Error).message ?? err) };
   }
 
-  const [gate, schemaLockRow, settingsStoresRow, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
+  const [gate, schemaLockRow, settingsStoresRow, standaloneRows, toolRows, catalogRows, extensionRow] = await Promise.all([
     gitState.tag ? checkGate(seams, gitState.tag) : Promise.resolve(null),
     checkSchemaLock(seams, gitState.tag),
     checkSettingsStores(seams),
-    checkAppPins(seams, apps),
     checkStandaloneRows(seams, standalone),
     checkToolRows(seams, tools),
     checkCatalog(seams),
     checkExtension(seams),
-    checkRtClient(seams),
   ]);
 
   const rows: CheckRow[] = [
@@ -569,12 +489,10 @@ export async function runPreflight(seams: PreflightSeams): Promise<PreflightRepo
     schemaLockRow,
     settingsStoresRow,
     ...(lockError ? [lockError] : []),
-    ...appRows,
     ...standaloneRows,
     ...toolRows,
     ...catalogRows,
     extensionRow,
-    rtClientRow,
   ];
 
   const staleCount = rows.filter((r) => r.status === "stale").length;

@@ -8,9 +8,9 @@
  *
  * Read-only report of the release's mechanical checks (the rt:release skill's
  * steps 1-2c): git/tag state, picker conformance, pin freshness for every
- * vendored layer, catalog pin drift, extension currency, rt-client parity,
- * and which gate (fast vs full) the pending diff implies. Exit 0 only when
- * every layer is verified current; stale or unverifiable layers exit 1.
+ * vendored layer, catalog pin drift, extension currency, and which gate
+ * (fast vs full) the pending diff implies. Exit 0 only when every layer is
+ * verified current; stale or unverifiable layers exit 1.
  *
  * `verify` confirms a tagged release actually published (step 10): the
  * release.yml run, the release body against the committed RELEASE_NOTES.md,

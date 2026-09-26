@@ -84,21 +84,15 @@ afterEach(() => {
   else process.env.RT_BATCH = savedBatch;
 });
 
+// Apps rows carry no per-app pin in deps.lock any more (they moved to
+// source: "tree"), so eligibleApps is always empty and the omitted-name
+// picker never has anything to offer; it falls through to the usage error.
 describe("rt release app: the omitted-name picker", () => {
-  test("on a TTY it offers the eligible apps with their pinned versions and releases the pick", async () => {
+  test("no eligible apps means no picker, even on a TTY", async () => {
     const h = await invoke([], { tty: true, pick: "chat" });
-    expect(h.picks).toEqual([[
-      { value: "board", label: "board", hint: "0.1.7" },
-      { value: "chat", label: "chat", hint: "0.1.3" },
-    ]]);
-    expect(h.runs.map((r) => r.name)).toEqual(["chat"]);
-  });
-
-  test("cancelling the picker releases nothing and exits clean", async () => {
-    const h = await invoke([], { tty: true, pick: null });
+    expect(h.picks).toEqual([]);
     expect(h.runs).toEqual([]);
-    expect(h.exitCalled).toBeUndefined();
-    expect(h.exitCode).toBe(0);
+    expect(h.exitCalled).toBe(2);
   });
 
   test("off a TTY it is the usage error, never a picker", async () => {

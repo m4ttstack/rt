@@ -80,27 +80,24 @@ describe("versions", () => {
   });
 });
 
+// Apps rows carry no per-app pin in deps.lock any more (they moved to
+// source: "tree"), so this pin-only selection has nothing left to select.
+// The apps-monorepo release path itself is pending a rewrite onto the new
+// path-based gate.
 describe("qualification", () => {
-  test("eligibleApps is the apps-monorepo rows whose pin keeps the fast path", () => {
-    expect(eligibleApps(ROWS).map((r) => r.name)).toEqual(["board", "console", "chat", "boxscore"]);
+  test("eligibleApps is empty: no row can be an apps-monorepo pin any more", () => {
+    expect(eligibleApps(ROWS)).toEqual([]);
   });
 
-  test("an eligible row qualifies", () => {
-    expect(qualifyRow("board", ROWS).version).toBe("0.1.7");
-  });
-
-  test("an unknown name is refused with the eligible list", () => {
-    expect(() => qualifyRow("nope", ROWS)).toThrow("board, console, chat, boxscore");
-  });
-
-  test("a standalone or tool row is refused as not an apps-monorepo row", () => {
+  test("every known row is refused as not an apps-monorepo row", () => {
+    expect(() => qualifyRow("board", ROWS)).toThrow("not an apps-monorepo row");
     expect(() => qualifyRow("gitq", ROWS)).toThrow("not an apps-monorepo row");
     expect(() => qualifyRow("jq", ROWS)).toThrow("not an apps-monorepo row");
+    expect(() => qualifyRow("deck", ROWS)).toThrow("not an apps-monorepo row");
   });
 
-  test("deck is refused because its pin keeps the full gate", () => {
-    expect(() => qualifyRow("deck", ROWS)).toThrow("full gate");
-    expect(() => qualifyRow("deck", ROWS)).toThrow("/rt:release");
+  test("an unknown name is refused with no eligible apps", () => {
+    expect(() => qualifyRow("nope", ROWS)).toThrow(`no rt-tray/deps.lock row named "nope"`);
   });
 });
 

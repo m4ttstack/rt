@@ -11,7 +11,7 @@
 import { createHash } from "crypto";
 import { join } from "path";
 import type { RunResult } from "../subprocess.ts";
-import { checkGate, classifyRows, compareVersions, keepsFastPath, pinnedTagFromUrl, type DepsRow } from "./preflight.ts";
+import { checkGate, compareVersions, keepsFastPath, pinnedTagFromUrl, type DepsRow } from "./preflight.ts";
 import { pollRunCompletion, runVerify, type VerifyReport, type VerifySeams } from "./verify.ts";
 
 export const APPS_REPO = "m4ttstack/apps";
@@ -61,21 +61,18 @@ export function setPackageVersion(text: string, from: string, to: string): strin
   return out;
 }
 
-export function eligibleApps(rows: DepsRow[]): DepsRow[] {
-  return classifyRows(rows).apps.filter((r) => keepsFastPath(r.name));
+// Apps rows carry no per-app pin in deps.lock any more (they moved to
+// source: "tree"), so no row can satisfy the apps-monorepo selection this
+// pin-only release path was built on.
+export function eligibleApps(_rows: DepsRow[]): DepsRow[] {
+  return [];
 }
 
 export function qualifyRow(name: string, rows: DepsRow[]): DepsRow {
   const eligible = eligibleApps(rows).map((r) => r.name).join(", ");
   const row = rows.find((r) => r.name === name);
   if (!row) throw new Error(`no ${LOCK_PATH} row named "${name}"; eligible apps: ${eligible}`);
-  if (!classifyRows([row]).apps.length) {
-    throw new Error(`${name} is not an apps-monorepo row in ${LOCK_PATH}; eligible apps: ${eligible}`);
-  }
-  if (!keepsFastPath(name)) {
-    throw new Error(`${name}'s pin keeps the full gate (the walkthrough gates it), so it cannot ship on the fast path; cut it with the full /rt:release`);
-  }
-  return row;
+  throw new Error(`${name} is not an apps-monorepo row in ${LOCK_PATH}; eligible apps: ${eligible}`);
 }
 
 /**
@@ -728,16 +725,13 @@ async function appTagExists(seams: ReleaseAppSeams, tag: string): Promise<boolea
   throw new Error(`gh api repos/${APPS_REPO}/git/ref/tags/${tag} failed: ${(r.stderr || r.stdout).trim()}`);
 }
 
-/** Every other app whose code moved since its pin; the notes record that this release holds it back. */
-async function heldApps(apps: AppsHistory, mainRows: DepsRow[], shippedRows: DepsRow[], name: string): Promise<HeldApp[]> {
-  const shipped = byName(shippedRows);
-  const held: HeldApp[] = [];
-  for (const r of classifyRows(mainRows).apps) {
-    if (r.name === name || shipped.get(r.name)?.version !== r.version) continue;
-    const pinTag = pinnedTagFromUrl(r.url) ?? appTagFor(r.name, r.version);
-    if (await apps.movedSince(pinTag, r.name)) held.push({ app: r.name, version: r.version, pinTag });
-  }
-  return held;
+/**
+ * Every other app whose code moved since its pin; the notes record that this
+ * release holds it back. Apps rows carry no per-app pin any more (they moved
+ * to source: "tree"), so classifyRows has none left to iterate here.
+ */
+async function heldApps(_apps: AppsHistory, _mainRows: DepsRow[], _shippedRows: DepsRow[], _name: string): Promise<HeldApp[]> {
+  return [];
 }
 
 const unverifiedSummary = (report: VerifyReport): string =>
@@ -1153,15 +1147,11 @@ async function noteSections(ctx: Ctx): Promise<NotesSection[]> {
   await ctx.apps.refresh();
   const sections: NotesSection[] = [];
   for (const r of moved) {
+    // Apps rows carry no per-app pin any more (they moved to source: "tree"),
+    // so a moved row is always reported as a plain pin move, never resolved
+    // through the apps-monorepo commit history.
     const old = before.get(r.name);
-    if (old && classifyRows([r]).apps.length) {
-      const from = pinnedTagFromUrl(old.url) ?? appTagFor(r.name, old.version);
-      const to = pinnedTagFromUrl(r.url) ?? appTagFor(r.name, r.version);
-      const subjects = (await ctx.apps.subjects(from, to, r.name)).filter((s) => s !== bumpSubject(r.name, r.version));
-      sections.push({ app: r.name, version: r.version, subjects });
-    } else {
-      sections.push({ app: r.name, version: r.version, subjects: [old ? `pin moves from ${old.version} to ${r.version}` : `first pin at ${r.version}`] });
-    }
+    sections.push({ app: r.name, version: r.version, subjects: [old ? `pin moves from ${old.version} to ${r.version}` : `first pin at ${r.version}`] });
   }
   return sections;
 }
