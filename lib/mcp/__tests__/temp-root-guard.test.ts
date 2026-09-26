@@ -85,19 +85,30 @@ describe("checkTempRootPath", () => {
     expect(r.ok ? "" : r.error).toContain("non-regular file");
   });
 
-  test("a `..` traversal through a symlinked component lands outside the root and is refused, pinning today's realpath behavior", () => {
+  test("a `..` traversal through a symlinked component is refused as non-normalized, whichever way a resolver walks it", () => {
     const root = realTempDir("rt-temp-root-guard-");
     mkdirSync(join(root, "a", "b"), { recursive: true });
     symlinkSync(join(root, "a", "b"), join(root, "L"));
     const outsideSibling = realTempDir("rt-temp-root-guard-sibling-");
-    // Built by string concatenation, not path.join/resolve, so the literal
-    // "L/../.." components survive to reach checkTempRootPath's own
-    // dirname()+realpathSync() -- path.join would collapse them first and
-    // the trap would never be exercised.
+    // A physical walk of L/../.. lands back in root, so this directory makes
+    // the trap's parent exist INSIDE the root for a physical resolver while a
+    // textual one lands on outsideSibling: the two disagree.
+    mkdirSync(join(root, basename(outsideSibling)));
+    // Concatenated, not path.join'd: join would collapse the `..` segments.
     const trap = `${root}/L/../../${basename(outsideSibling)}/pwn.md`;
     expect(dirname(trap)).toBe(`${root}/L/../../${basename(outsideSibling)}`);
     const r = checkTempRootPath(trap, [root]);
     expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain("must be normalized");
+  });
+
+  test("a `.` segment or a doubled slash is refused as non-normalized", () => {
+    const root = realTempDir("rt-temp-root-guard-");
+    for (const p of [`${root}/./brief.md`, `${root}//brief.md`]) {
+      const r = checkTempRootPath(p, [root]);
+      expect(r.ok, p).toBe(false);
+      expect(r.ok ? "" : r.error).toContain("must be normalized");
+    }
   });
 
   test("a symlinked PARENT directory that resolves inside a root is ok (macOS's /tmp -> /private/tmp shape)", () => {

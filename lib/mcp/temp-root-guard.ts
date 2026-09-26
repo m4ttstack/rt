@@ -88,6 +88,9 @@ export function checkTempRootPath(path: unknown, roots: readonly string[]): Path
   if (typeof path !== "string" || path.length === 0 || !isAbsolute(path)) {
     return { ok: false, error: `path must be an absolute path inside ${allowed}` };
   }
+  if (nonCanonical(path)) {
+    return { ok: false, error: `path must be normalized, with no "." or ".." segments (got "${path}")` };
+  }
 
   let finalStat;
   try {
