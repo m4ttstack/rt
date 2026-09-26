@@ -1350,7 +1350,10 @@ export const TREE: Record<string, CommandNode> = {
         module: "./commands/worktree.ts",
         fn: "worktreeAwaitReady",
         agentSafe: true,
-        agentTimeoutMs: 600_000,
+        // AWAIT_READY_TIMEOUT_MS (commands/worktree.ts) is 600_000: this cap must
+        // outlast it, or rt_verb kills the child before the handler's own
+        // structured timeout error has a chance to return.
+        agentTimeoutMs: 660_000,
         omitBehavior: "picker",
         fullscreen: true,
         args: [

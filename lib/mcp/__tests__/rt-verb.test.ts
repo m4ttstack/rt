@@ -50,6 +50,12 @@ describe("runRtVerb", () => {
     expect((calls[0]!.opts as { timeoutMs: number }).timeoutMs).toBe(600_000);
   });
 
+  test("a timed-out leaf's own cap names the timeout, not the default", async () => {
+    const r = await runRtVerb({ args: ["worktree", "slow"] }, deps({ code: 124, stdout: "", stderr: "" }));
+    expect(r.ok ? "" : r.error).toContain("timed out after 600s");
+    expect(r.ok ? "" : r.error).not.toContain("30s");
+  });
+
   test("does not double --json and canonicalizes aliases", async () => {
     const calls: { argv: string[]; opts: unknown }[] = [];
     await runRtVerb({ args: ["wt", "list", "--json", "--repo=x"] }, deps(ok("{}"), calls));

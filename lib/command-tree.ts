@@ -140,13 +140,11 @@ export interface CommandNode {
   /**
    * An agent may run this leaf through the mattstack MCP server's `rt_verb`
    * tool with no permission prompt, including from a pane reading untrusted
-   * text (an MR under review). The bar: no state change the caller directs,
-   * under any flag the leaf declares. It never deletes, and never writes
-   * settings, secrets, worktrees, runs, or another agent's state. Housekeeping
-   * the implementation does on any read (a legacy import, a self-healing index
-   * row) is not a caller-directed change and does not disqualify a leaf.
-   * Set it only on a leaf that declares --json. Guarded by
-   * lib/__tests__/agent-safe.test.ts.
+   * text (an MR under review). The bar: a read, or a routine write that
+   * stays inside rt's own state and the caller's own work -- a pack it
+   * compiles, checks, syncs or binds; its own runs, gates and briefs. It
+   * never merges, pushes, or writes another agent's state. Set it only on
+   * a leaf that declares --json. Guarded by lib/__tests__/agent-safe.test.ts.
    */
   agentSafe?: true;
 
