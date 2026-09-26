@@ -162,9 +162,9 @@ export async function stageLocalDevApp(seams: StageSeams, cwd: string): Promise<
     );
   }
 
-  // fetch-deps now skips the tree rows (board, boxscore, chat, console, gitq): without
-  // building them here, a worktree's rt-tray/deps carries whatever pre-fold-in binaries
-  // it last had, and build.sh dev either bundles them stale or refuses for lacking them.
+  // fetch-deps does not cover the tree rows (board, boxscore, chat, console, gitq): without
+  // building them here, build.sh dev either bundles stale binaries from a worktree's
+  // rt-tray/deps or refuses for lacking them.
   const install = await seams.exec(["bun", "install", "--frozen-lockfile"], { cwd: scratch, timeoutMs: 1_800_000 });
   if (install.exitCode !== 0) throw new UserActionableError("dev-app-deps-failed", `bun install failed: ${tail(install)}`);
 

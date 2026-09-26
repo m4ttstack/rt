@@ -75,8 +75,8 @@ worktree, else from `~/Documents/GitHub/repo-tools`.
 
 Scratch copy (or clone); for `--local`, after `fetch-deps.sh` it also runs
 `bun install` and `scripts/build-apps.ts` in the scratch copy to build the
-tree rows (board, boxscore, chat, console, gitq), since fetch-deps no longer
-covers them; then `rt-tray/build.sh dev`, then a swap with rollback that
+tree rows (board, boxscore, chat, console, gitq), since fetch-deps does not
+cover them; then `rt-tray/build.sh dev`, then a swap with rollback that
 reopens the app and restarts deck and its managed apps (they run the
 bundle's `Helpers/bun`, so they must move to the new bundle). Doing any of
 this by hand is how the app ends up built in a shared checkout, opened from a

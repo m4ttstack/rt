@@ -638,7 +638,7 @@ export async function runCommand(
         return 0;
       }
       case '--version': {
-        // Bare semver, nothing else: update-machine's served-suite leg
+        // Bare semver, nothing else: update-machine's verify leg
         // compares this output against apps/deck/package.json's version at
         // the released tag verbatim.
         io.out(VERSION);

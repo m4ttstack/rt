@@ -28,7 +28,7 @@ interface Run {
 class World {
   commits = new Map<string, Commit>();
   main: string;
-  /** Shas a `git fetch` has pulled in; a commit the gh API lands on main is remote-only until fetched, so local git commands (tag, rev-parse) refuse it before that. */
+  /** Shas a `git fetch` has pulled in; a commit the gh API lands on main is remote-only until fetched, so `git tag -a` refuses it before that. */
   localShas = new Set<string>();
   localTags = new Map<string, string>();
   remoteTags = new Map<string, string>();
@@ -260,6 +260,22 @@ describe("runReleaseApp: qualification", () => {
     const r = await runReleaseApp(w.seams(), opts({ dryRun: true }));
     expect(r.status).toBe("declined");
     expect(r.steps[0]!.detail).toContain("lib/daemon.ts");
+  });
+
+  test("a git failure while building the notes still returns the --json envelope", async () => {
+    const w = new World();
+    w.land(["apps/board/x.ts"], { subject: "board: fix a" });
+    const exec = w.exec;
+    const seams = w.seams({
+      exec: async (argv) => {
+        if (argv.join(" ").startsWith("git log --format=%s")) return err("fatal: bad revision");
+        return exec(argv);
+      },
+    });
+    const r = await runReleaseApp(seams, opts());
+    expect(r.status).toBe("failed");
+    expect(r.steps.find((s) => s.id === "notes")).toMatchObject({ status: "failed" });
+    expect(r.resume).toBe("rt release app board");
   });
 });
 
