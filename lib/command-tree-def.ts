@@ -417,7 +417,7 @@ const herdSubcommands: Record<string, CommandNode> = {
       { name: "Strategy", flag: "--strategy", type: "text", placeholder: "direct-tdd", hint: "Strategy body to copy in as ## Method (mutually exclusive with --method-file)" },
       { name: "Strategies", flag: "--strategies", type: "text", placeholder: "<skill-dir>/parts/strategy/references/strategies.md", hint: "Strategy bodies file; required with --strategy" },
       { name: "Method file", flag: "--method-file", type: "text", placeholder: "method.md", hint: "Domain-supplied Method block (mutually exclusive with --strategy)" },
-      { name: "Fill", flag: "--fill", type: "text", placeholder: "goal, one short paragraph=ship the widget", hint: "Fill one template slot; repeat per slot (the real template has no discrete --fence/--branch slots, see C8 note)" },
+      { name: "Fill", flag: "--fill", type: "text", placeholder: "goal, one short paragraph=ship the widget", hint: "Fill one template slot as slot=value, where slot is the slot's label in the template; repeat per slot" },
       { name: "Out", flag: "--out", type: "text", placeholder: "brief.md", hint: "Write the brief here; omit to print it" },
       { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the brief as JSON instead of printing it plain" },
     ],

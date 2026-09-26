@@ -35,6 +35,12 @@ describe("agent-safe surface", () => {
     expect([...(brief.agentReadRootFlags ?? [])].sort()).toEqual(["--method-file", "--strategies", "--template"]);
   });
 
+  test("herd brief's --fill hint says what the flag does, with no review-round reference", () => {
+    const fill = TREE.herd!.subcommands!.brief!.args!.find((a) => a.flag === "--fill")!;
+    expect(fill.hint).not.toMatch(/\bC\d+\b|\bnote\b/);
+    expect(fill.hint).toContain("slot");
+  });
+
   test("every confined flag names a declared text flag of its leaf", () => {
     for (const { path, node } of listAgentSafe(TREE)) {
       const textFlags = new Set((node.args ?? []).filter((a) => a.flag && a.type === "text").map((a) => a.flag));
