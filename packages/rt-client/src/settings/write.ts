@@ -233,7 +233,7 @@ export function unsetSetting(key: string, scope: SettingScope, opts: SetSettingO
     const diverged = readSection(def, section, { layer: true }).older.filter((o) => o.label === "diverged");
     if (diverged.length > 0) {
       refuse(
-        `"${key}" has an older store name edited after its current one (${diverged.map((o) => o.storeName).join(", ")}) in the ${scope} store; compare both values with \`rt settings migrate\` and remove the older one with \`rt settings migrate --prune --force ${key}\` first`,
+        `"${key}" has an older store name edited after its current one (${diverged.map((o) => o.storeName).join(", ")}) in the ${scope} store; compare both values with \`rt settings migrate\`, then remove the older one with \`rt settings migrate --prune --force ${key}\` (add --team for a team-store name); prune lists every name it will delete before asking to confirm`,
       );
     }
     const names = [currentStoreName(def), ...olderStoreNames(def).map((o) => o.name)].filter((n) => section[n] !== undefined);
@@ -429,9 +429,11 @@ function writeIntoStore(storePath: string, planEdits: (root: Record<string, unkn
 }
 
 /**
- * Removes `jsonPath` from an existing store file. A key that isn't present
- * yields zero edits from `modify` and the file is left untouched (no write,
- * no mtime churn). Malformed stores refuse exactly as on the set side —
+ * Removes every path `planPaths` plans against the store's root from an
+ * existing store file. A path that isn't present yields zero edits from
+ * `modify`, and the resulting text is compared byte-for-byte against the
+ * original: no textual change means no write and no mtime churn. Malformed
+ * stores refuse exactly as on the set side...
  * `modify`-by-offset against a duplicate-key document is as wrong for
  * removal as it is for writes.
  */

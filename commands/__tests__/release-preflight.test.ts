@@ -180,4 +180,14 @@ describe("rt release preflight settings-stores row", () => {
   test("no JSON from the check is an error", async () => {
     expect((await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, "boom")))?.status).toBe("error");
   });
+
+  test("a repo-level merged finding (no scope) still names its repo", async () => {
+    const report = JSON.stringify({
+      ok: false,
+      findings: [{ key: "rt.repoRoots", repo: "gitlab.example.com/acme/app", kind: "merged", storeName: "rt.repoRoots", issues: [] }],
+    });
+    const row = await storesRow(fakeSeams("0.20.0", COMMITTED_LOCK, COMMITTED_LOCK, report));
+    expect(row?.status).toBe("stale");
+    expect(row?.detail).toBe("rt.repoRoots merged (rt.repoRoots) in gitlab.example.com/acme/app");
+  });
 });

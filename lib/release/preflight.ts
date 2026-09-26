@@ -248,7 +248,10 @@ export async function checkSettingsStores(seams: PreflightSeams): Promise<CheckR
     if (report.ok) return { id, label, status: "ok", detail: "every stored value passes after migration; no diverged names" };
     const detail = report.findings
       .filter((f) => FAILING_KINDS.has(f.kind))
-      .map((f) => `${f.key} ${f.kind}${f.storeName ? ` (${f.storeName})` : ""}${f.scope ? ` in ${[f.scope, f.repo].filter(Boolean).join("/")}` : ""}`)
+      .map((f) => {
+        const location = [f.scope, f.repo].filter(Boolean).join("/");
+        return `${f.key} ${f.kind}${f.storeName ? ` (${f.storeName})` : ""}${location ? ` in ${location}` : ""}`;
+      })
       .join("; ");
     return { id, label, status: "stale", detail };
   } catch (err) {

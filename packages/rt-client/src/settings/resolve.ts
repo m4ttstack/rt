@@ -760,7 +760,7 @@ function listUnregistered(stores: StoreBundle, opts: ResolveOpts): ListedSetting
         emitSettingsWarning(`rt: "${key}" in ${hit.file} was written by a newer rt; ignoring it (this rt may be older than the store)`);
       } else {
         emitSettingsWarning(
-          `rt: unregistered setting "${key}" in ${hit.file} — ignoring it (this rt may be older than the store)`,
+          `rt: unregistered setting "${key}" in ${hit.file}, ignoring it (this rt may be older than the store)`,
         );
       }
       return {

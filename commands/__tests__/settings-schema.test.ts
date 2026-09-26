@@ -212,7 +212,11 @@ describe("settingsSchemaDiff", () => {
     copyFileSync(MIGRATIONS_INDEX_PATH, indexPath);
     copyFileSync(MIGRATION_SCHEMAS_PATH, schemasPath);
 
-    await settingsSchemaDiff(["--against", writeLock(prev), "--draft", "--json"], { migrationsIndexPath: indexPath, migrationSchemasPath: schemasPath });
+    await settingsSchemaDiff(["--against", writeLock(prev), "--draft", "--json"], {
+      shippedLock: null,
+      migrationsIndexPath: indexPath,
+      migrationSchemasPath: schemasPath,
+    });
 
     const body = JSON.parse(logs.join("\n")) as { drafts: { kind: string; key: string }[] };
     expect(body.drafts).toContainEqual(expect.objectContaining({ kind: "step", key }));
