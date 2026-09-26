@@ -1,7 +1,8 @@
 # Releasing @mattstack/glance and @mattstack/glance-react
 
-Both packages are consumed inside this repo as `workspace:*`; a publish
-exists only for a consumer outside it. Publish from a checkout on `main`,
+glance is consumed inside this repo as `workspace:*` and glance-react has
+no in-repo consumer yet; a publish exists only for a consumer outside it.
+Publish from a checkout on `main`,
 from the package directory, with `bun publish` and never `npm publish`:
 glance-react depends on glance as `workspace:*`, which bun rewrites to the
 version in the tree and npm ships verbatim.

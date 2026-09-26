@@ -52,14 +52,14 @@ one that hardcodes an absolute path is a bug, not a convention.
 
 ## Release
 
-Manual and per package: bump `version` in the package's `package.json`,
-add the `CHANGELOG.md` entry (changesets style, hand-written), commit, then
-see `docs/releasing.md` for how to publish. `prepublishOnly` runs
-`check-types` and `check:node` (glance) or `check-types` and `build`
-(glance-react), so a publish that skips scripts ships unchecked output.
-There is no release workflow; turbo runs the build, lint and test gates from
-rt's root (`bun run check`) instead. Consumers in the estate pin glance by
-version, so a behaviour change needs a bump before the consumer can see it.
+Manual and per package; follow `packages/glance/docs/releasing.md`.
+`prepublishOnly` runs `check-types` and `check:node` (glance) or
+`check-types` and `build` (glance-react), so a publish that skips scripts
+ships unchecked output. There is no release workflow; turbo runs the
+typecheck, lint and test gates from rt's root (`bun run check`) instead.
+In-repo consumers link the workspace package; external consumers (gitq
+today) pin glance by version, so a behaviour change needs a bump before
+they can see it.
 
 ## Invariants from recent releases
 
