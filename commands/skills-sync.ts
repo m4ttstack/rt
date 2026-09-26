@@ -106,7 +106,7 @@ export async function skillsSync(args: string[]): Promise<void> {
     claudeBin: resolveClaudeBin(),
     checkPack: async (name) => {
       const payload = await checkPack({ pack: name, ...(manifest ? { manifest } : {}) });
-      return { drift: payload.drift };
+      return { drift: payload.drift, lintHits: payload.mcpLint.length, strict: payload.strictLint };
     },
     compilePack: (name) => compilePackAll({ pack: name, ...(manifest ? { manifest } : {}) }),
     configDir,
