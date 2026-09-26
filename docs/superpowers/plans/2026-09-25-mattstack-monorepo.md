@@ -1493,7 +1493,7 @@ No code. Each step needs Matt's go; stop after each and report.
 
 - [ ] **Step 0: Refresh the import.** Work keeps landing on apps main while this branch is built. Re-run Task 1 Steps 1 and 2 against apps' current `main`, including the message scrub with the same three rules in the same order (filter-repo is deterministic, so the rewritten history shares its older commits with the first import; a new banned term in a newer apps message gets a fourth rule, which changes only the commits after it), then `git fetch apps-import main && git merge --no-ff -m "monorepo: refresh the apps import" apps-import/main`. Paths do not move, so it merges clean; re-run `bun install --frozen-lockfile`, `bun run test`, `scripts/turbo.sh check`. Anything still on a branch in the apps repo at cutover carries over with `git format-patch` there and `git am` here.
 - [ ] **Step 1: Open the PR** from the branch with `gh pr create`, title `monorepo: absorb m4ttstack/apps`, body per the repo's PR conventions. Wait for green `checks`, `e2e`, `purity` and the review (CodeRabbit, or an opus subagent review when it is rate-limited).
-- [ ] **Step 2: Merge** (squash) on Matt's confirmation.
+- [ ] **Step 2: Merge** (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported apps history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 3: Release** from the merged main with the `rt:release` skill: full gate (rehearsal plus local walkthrough), then tag. This release proves the in-tree build path end to end.
 - [ ] **Step 4: Update this machine**: `rt release update-machine` (it re-registers the five deck apps at the rt checkout).
 - [ ] **Step 5: Archive the apps repo**: `gh repo archive m4ttstack/apps --yes`.
@@ -1661,7 +1661,7 @@ git commit -m "glance: publish on demand with bun publish"
 
 ### Task 17: Stage B cutover (Matt-gated)
 
-- [ ] **Step 1: PR**, review, green CI, squash-merge on Matt's confirmation.
+- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported apps history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (rt code changed: the glance link).
 - [ ] **Step 3: `gh repo archive m4ttstack/glance --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches with format-patch first); move `~/Documents/GitHub/glance/harness_credentials.json` to the repo-tools root (gitignored) and repoint the path in `~/.claude/CLAUDE.md`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fglance` entry; delete `~/Documents/GitHub/glance`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fglance/`.
 - [ ] **Step 4: README links**: in `mattstack-skills/README.md` and `fast-browser/README.md` point the glance link at `https://github.com/m4ttstack/rt/tree/main/packages/glance` (a direct commit on each repo's main; both are docs-only).
@@ -1810,7 +1810,7 @@ git commit -m "docs: gitq lives in apps/gitq"
 
 ### Task 21: Stage C cutover (Matt-gated)
 
-- [ ] **Step 1: PR**, review, green CI, squash-merge on Matt's confirmation.
+- [ ] **Step 1: PR**, review, green CI, merge (`gh pr merge --merge`, never squash or rebase: a squash flattens the imported apps history into one commit and loses blame and `--follow`) on Matt's confirmation.
 - [ ] **Step 2: Release** with the full gate (deps.lock and rt code changed).
 - [ ] **Step 3: `gh repo archive m4ttstack/gitq --yes`**, then migrate this machine's state the way Task 13 Step 6 does: dispose its worktrees (carry in-flight branches first); relink the five `~/.claude/skills/gitq:*` symlinks (absorb, publish, restructure, sync, track) to `~/Documents/GitHub/repo-tools/apps/gitq/skills/<name>`; `rt settings set gitq.board --scope machine` with the `gitq` repo entry's path at `~/Documents/GitHub/repo-tools`; `rt settings set rt.repoTracking --scope machine` without the `remote:github.com%2Fm4ttstack%2Fgitq` entry; delete `~/Documents/GitHub/gitq`; `rt repos prune`; remove `~/.mattstack/rt/repos/remote:github.com%2Fm4ttstack%2Fgitq/`.
 - [ ] **Step 4: README links** in `mattstack-skills/README.md` and `fast-browser/README.md` point the gitq link at `https://github.com/m4ttstack/rt/tree/main/apps/gitq`.
