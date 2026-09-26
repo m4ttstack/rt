@@ -2,6 +2,7 @@ import { useSearchParams } from 'wouter';
 
 const PARAM = 'explain';
 const FIX = 'fix';
+const SWITCHED = 'explainSwitchedRepo';
 
 /** The key whose explain modal is open on /settings, kept in `?explain=` so
     a reload or a shared link reopens it; `?fix=` names the layer whose
@@ -12,7 +13,8 @@ export function useExplainParam() {
     key: string | null,
     push: boolean,
     opts: { fix?: string; repo?: string } = {}
-  ) =>
+  ) => {
+    const switched = !!opts.repo && opts.repo !== params.get('repo');
     setParams(
       prev => {
         const next = new URLSearchParams(prev);
@@ -23,18 +25,24 @@ export function useExplainParam() {
         if (opts.repo) next.set('repo', opts.repo);
         return next;
       },
-      push ? { state: { [PARAM]: true } } : { replace: true }
+      push
+        ? { state: { [PARAM]: true, [SWITCHED]: switched } }
+        : { replace: true }
     );
+  };
   return {
     key: params.get(PARAM),
     fix: params.get(FIX),
     // Opening pushes so Back closes the modal before it leaves the page;
     // closing an entry we pushed pops it, so no duplicate is left behind.
+    // An open that switched repo is closed in place instead: popping would
+    // also undo the repo the Fix just moved the page to.
     open: (key: string, opts?: { fix?: string; repo?: string }) =>
       write(key, true, opts),
     close: () => {
       const state = window.history.state as Record<string, unknown> | null;
-      if (state?.[PARAM] === true) window.history.back();
+      if (state?.[PARAM] === true && state[SWITCHED] !== true)
+        window.history.back();
       else write(null, false);
     },
   };

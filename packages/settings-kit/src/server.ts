@@ -398,7 +398,17 @@ export async function settingsHandler(
         if (hasSchema(d) && d.secret !== true && "value" in effective) {
           wire.mergedIssues = checkSchema(d, effective.value, { layer: false });
         }
-        if (d.repoScoped === true) wire.repos = rt.repoSectionsFor(d.key);
+        if (d.repoScoped === true) {
+          wire.repos = rt.repoSectionsFor(d.key);
+          // With no repo picked the resolver reads no repo rung, so a broken
+          // repo override would stay invisible; sweep each section's rungs.
+          if (!repo) {
+            for (const section of wire.repos) {
+              const sectionRows = rt.explainSetting(d.key, { repoIdentity: section.identity });
+              wire.issues.push(...issuesFromRows(d, sectionRows.filter((r) => r.scope.endsWith(".repo")), section.identity));
+            }
+          }
+        }
         return wire;
       });
     return json({ defs, unregistered: rt.listUnregisteredSettings() });

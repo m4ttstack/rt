@@ -268,6 +268,45 @@ describe('Needs fixing on the page', () => {
       ]);
     });
   });
+
+  it('closing the modal after a Fix that switched repo keeps that repo picked', async () => {
+    renderPage();
+    const line = await screen.findByText(
+      'team · acme/app · dev.fixedPort: expected number, got string'
+    );
+    await userEvent.click(
+      within(line.closest('[data-testid="issue-line"]')!).getByRole('button', {
+        name: 'Fix',
+      })
+    );
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => {
+      const p = new URLSearchParams(window.location.search);
+      expect(p.get('explain')).toBeNull();
+      expect(p.get('fix')).toBeNull();
+      expect(p.get('repo')).toBe(REPO);
+    });
+  });
+
+  it('closing the modal after a Fix with no repo switch returns to the page as it was', async () => {
+    renderPage();
+    const line = await screen.findByText(
+      'user · [2].url: expected string, got number'
+    );
+    await userEvent.click(
+      within(line.closest('[data-testid="issue-line"]')!).getByRole('button', {
+        name: 'Fix',
+      })
+    );
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => {
+      const p = new URLSearchParams(window.location.search);
+      expect(p.get('explain')).toBeNull();
+      expect(p.get('repo')).toBeNull();
+    });
+  });
 });
 
 describe('Fix in the explain modal', () => {
