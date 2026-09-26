@@ -233,6 +233,22 @@ describe("branchSyncPreflight", () => {
     }
   });
 
+  describe("branch names rt sync cannot pass safely", () => {
+    test("a branch with shell metacharacters or whitespace refuses before any config read or fetch", async () => {
+      for (const branch of ["x$(touch${IFS}PWNED)", "a;id|sh", "a b"]) {
+        const calls: string[] = [];
+        const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: `${branch}\n` } }, calls));
+        expect(r.ok, branch).toBe(false);
+        expect((r as { error: string }).error, branch).toContain("cannot pass safely");
+        expect(calls.filter((c) => c.startsWith("config") || c.startsWith("fetch")), branch).toEqual([]);
+      }
+    });
+    test("a branch of letters, digits, dots, slashes, dashes and underscores passes", async () => {
+      const r = await branchSyncPreflight("/t", fakeGit({ ...base, "symbolic-ref --quiet --short HEAD": { stdout: "feat/x-1.2_y\n" }, "rev-parse --verify --quiet origin/feat/x-1.2_y": { code: 1 } }));
+      expect(r).toEqual({ ok: true, diverged: false });
+    });
+  });
+
   describe("push redirection", () => {
     test("remote.origin.push set refuses, naming the setting, before any fetch", async () => {
       const calls: string[] = [];
@@ -301,6 +317,15 @@ describe("branch_sync tool", () => {
     const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
     expect(r.ok).toBe(false);
     expect(ran).toBe(false);
+  });
+  test("a branch name carrying shell never reaches rt sync", async () => {
+    let ran = false;
+    const calls: string[] = [];
+    const tool = gitToolDefs({ git: fakeGit({ ...clean, "symbolic-ref --quiet --short HEAD": { stdout: "x$(touch${IFS}PWNED)\n" } }, calls), guard, sync: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } }).find((t) => t.name === "branch_sync")!;
+    const r = await tool.handler({ tree: "/t" }, {} as NodeJS.ProcessEnv);
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
+    expect(calls).not.toContain("fetch origin");
   });
   test("a push redirect never runs rt sync", async () => {
     let ran = false;

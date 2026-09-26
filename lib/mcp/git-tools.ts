@@ -166,10 +166,17 @@ async function pushDestinationRedirected(cwd: string, git: GitRunner, branch: st
   return { ok: true };
 }
 
+// rt sync interpolates the branch name into shell command strings, and git
+// accepts `$`, `(`, `;`, `|` and `${IFS}` in branch names.
+const SHELL_SAFE_BRANCH = /^[A-Za-z0-9._\/-]+$/;
+
 export async function branchSyncPreflight(cwd: string, git: GitRunner): Promise<{ ok: true; diverged: boolean } | { ok: false; error: string }> {
   const b = await pushableBranch(cwd, git);
   if ("error" in b) return { ok: false, error: b.error.replace("push", "sync") };
   const { branch, defaultBranch } = b;
+  if (!SHELL_SAFE_BRANCH.test(branch)) {
+    return { ok: false, error: `refusing to sync ${JSON.stringify(branch)}: the branch name has characters rt sync cannot pass safely (only letters, digits, ".", "_", "/" and "-")` };
+  }
 
   const redirect = await pushDestinationRedirected(cwd, git, branch);
   if (!redirect.ok) return { ok: false, error: redirect.error };
