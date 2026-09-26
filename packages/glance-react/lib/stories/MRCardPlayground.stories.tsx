@@ -46,7 +46,7 @@ interface PlaygroundArgs {
   awaitingApprovals: boolean;
   hasUnresolvedDiscussions: boolean;
   isDraft_blocker: boolean;
-  behindBy: number;
+  behindTarget: number;
 
   // Buttons
   mergeVisible: boolean;
@@ -99,6 +99,7 @@ function assembleMR(args: PlaygroundArgs): MRDashboardProps {
     title: args.title,
     sourceBranch: args.sourceBranch,
     targetBranch: args.targetBranch,
+    behindTarget: args.behindTarget,
     isDraft: args.isDraft,
     status,
     isLoading: args.isLoading,
@@ -138,7 +139,6 @@ function assembleMR(args: PlaygroundArgs): MRDashboardProps {
       visible: args.rebaseVisible,
       loading: false,
       label: 'Rebase',
-      behindBy: args.behindBy,
     },
     autoMergeButton: {
       ...mergeable.autoMergeButton,
@@ -176,7 +176,7 @@ const meta: Meta<PlaygroundArgs> = {
     additions: { control: { type: 'range', min: 0, max: 500 } },
     deletions: { control: { type: 'range', min: 0, max: 500 } },
     filesChanged: { control: { type: 'range', min: 0, max: 50 } },
-    behindBy: { control: { type: 'range', min: 0, max: 100 } },
+    behindTarget: { control: { type: 'range', min: 0, max: 100 } },
   },
   args: {
     title: 'feat: add getMRDashboardProps — headless UI props',
@@ -205,7 +205,7 @@ const meta: Meta<PlaygroundArgs> = {
     awaitingApprovals: false,
     hasUnresolvedDiscussions: false,
     isDraft_blocker: false,
-    behindBy: 0,
+    behindTarget: 0,
     mergeVisible: true,
     mergeDisabled: false,
     rebaseVisible: false,

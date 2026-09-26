@@ -230,6 +230,11 @@ function Root({
   children,
   className,
 }: MRSidebarProps) {
+  const ctx = React.useMemo(
+    () => (mr ? { mr, actions, onCopyBranch } : null),
+    [mr, actions, onCopyBranch]
+  );
+
   // ── Loading skeleton ──────────────────────────────────────────────────
   if (loading && !mr) {
     return (
@@ -285,11 +290,6 @@ function Root({
   }
 
   if (!mr) return null;
-
-  const ctx = React.useMemo(
-    () => ({ mr, actions, onCopyBranch }),
-    [mr, actions, onCopyBranch]
-  );
 
   return (
     <SidebarCtx.Provider value={ctx}>

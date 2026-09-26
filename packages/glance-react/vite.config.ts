@@ -38,10 +38,12 @@ export default defineConfig({
         'react-dom',
         // FA tree-shaking — consumers provide their own config
         '@fortawesome/fontawesome-svg-core',
+        // node:crypto usage in its provider code is not browser-bundleable; consumers already depend on it directly
+        '@mattstack/glance',
       ],
     },
   },
-  //@ts-ignore
+  // @ts-expect-error -- vitest's UserConfigExport augmentation isn't picked up under this tsconfig's moduleResolution
   test: {
     globals: true,
     environment: 'happy-dom',

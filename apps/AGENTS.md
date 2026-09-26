@@ -62,9 +62,9 @@ pinning its own version. `packages/tui-kit` and `apps/board` each pin
 `"typescript": "^7"` as deliberate exceptions -- the catalog's `~6` line
 would downgrade their compiler, so both opt out on purpose, for the same
 reason. Do not add a further exception without the same kind of reason.
-`packages/glance` and `packages/glance-react` pin TypeScript 5.9 and vite 7
-explicitly, the third documented exception, until they are bumped in their
-own PR.
+`packages/glance` and `packages/glance-react` pin TypeScript 5.9, vite 7 and
+`@vitejs/plugin-react` 5 explicitly, the third documented exception, until
+they are bumped in their own PR.
 Member-level lockfiles are forbidden: the root
 `bun.lock` is the only lockfile that owns resolution, so a workspace
 member never runs `bun install` scoped to itself in a way that would

@@ -156,6 +156,7 @@ export const mergeable: MRDashboardProps = {
   createdAt: '2026-03-09T14:30:00Z',
   sourceBranch: 'feat/mr-dashboard-props',
   targetBranch: 'main',
+  behindTarget: 0,
   diff,
   pipeline: passingPipeline,
   reviews: baseReviews(reviewers, 2, 2),
@@ -184,7 +185,6 @@ export const mergeable: MRDashboardProps = {
     visible: false,
     loading: false,
     label: 'Rebase',
-    behindBy: 0,
   },
   blockers: noBlockers,
   connection: 'connected',
@@ -247,6 +247,7 @@ export const needsRebase: MRDashboardProps = {
   status: 'blocked',
   statusDetail: 'NEED_REBASE',
   isReady: false,
+  behindTarget: 14,
   mergeButton: {
     visible: true,
     disabled: true,
@@ -257,7 +258,6 @@ export const needsRebase: MRDashboardProps = {
     visible: true,
     loading: false,
     label: 'Rebase',
-    behindBy: 14,
   },
   blockers: {
     ...noBlockers,
@@ -297,7 +297,6 @@ export const merged: MRDashboardProps = {
     visible: false,
     loading: false,
     label: 'Rebase',
-    behindBy: 0,
   },
   blockers: noBlockers,
 };

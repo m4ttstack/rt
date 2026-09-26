@@ -16,10 +16,10 @@ import { StatusIcon } from './StatusIcon';
 
 export function BlockerList({
   blockers,
-  behindBy,
+  behindTarget,
 }: {
   blockers: MRDashboardProps['blockers'];
-  behindBy: number;
+  behindTarget: number | null;
 }) {
   return (
     <>
@@ -29,10 +29,10 @@ export function BlockerList({
           Merge conflicts
         </Row>
       )}
-      {blockers.needsRebase && (
+      {blockers.needsRebase && behindTarget !== null && (
         <Row gap={1.5}>
           <StatusIcon icon={BlockerRebaseIcon} color="caution" />
-          Branch is behind target by {behindBy} commits
+          Branch is behind target by {behindTarget} commits
         </Row>
       )}
       {blockers.hasUnresolvedDiscussions && (

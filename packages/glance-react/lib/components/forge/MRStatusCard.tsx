@@ -35,7 +35,7 @@ export function MRStatusCard({
     >
       <PipelineStatus pipeline={mr.pipeline} />
       <ReviewerStatus reviews={mr.reviews} />
-      <BlockerList blockers={mr.blockers} behindBy={mr.rebaseButton.behindBy} />
+      <BlockerList blockers={mr.blockers} behindTarget={mr.behindTarget} />
     </div>
   );
 }
